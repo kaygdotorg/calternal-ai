@@ -67,8 +67,8 @@ export class HttpTransport implements Transport {
 export interface ProductTransportOptions {
   /** The view's address, for example `http://127.0.0.1:3210/api/v2/spaces/<space>/reading-list-view` (the same transport serves a Notes view at its own address). */
   base: string;
-  /** The signed-in session's bearer token; held in memory only. */
-  bearer: string;
+  /** The signed-in session's bearer token; held in memory only. Empty when a same-origin proxy adds it (so a browser never holds it). */
+  bearer?: string;
   fetch?: typeof fetch;
 }
 
@@ -80,11 +80,11 @@ export interface ProductTransportOptions {
 export class ProductTransport implements Transport {
   readonly #base: string; readonly #bearer: string; readonly #fetch: typeof fetch;
   #partition = "";
-  constructor(o: ProductTransportOptions) { this.#base = o.base.replace(/\/$/, ""); this.#bearer = o.bearer; this.#fetch = o.fetch ?? ((...a) => fetch(...a)); }
+  constructor(o: ProductTransportOptions) { this.#base = o.base.replace(/\/$/, ""); this.#bearer = o.bearer ?? ""; this.#fetch = o.fetch ?? ((...a) => fetch(...a)); }
 
   /** The view's own description: its `view_ref` and the emitted description. */
   async describe<T = { view_ref: string; description: unknown }>(): Promise<T> {
-    const res = await this.#fetch(this.#base, { headers: { authorization: `Bearer ${this.#bearer}` } });
+    const res = await this.#fetch(this.#base, { headers: this.#bearer ? { authorization: `Bearer ${this.#bearer}` } : {} });
     if (!res.ok) throw new HostError(res.status, undefined, `The host answered ${res.status}.`);
     return (await res.json()) as T;
   }
@@ -92,7 +92,7 @@ export class ProductTransport implements Transport {
   async post<T>(route: Route, body: unknown, opts: { lease?: string; signal?: AbortSignal } = {}): Promise<T> {
     const path = route === "view.open" ? "" : route === "window" ? "/window" : route === "view.renew" ? "/renew" : null;
     if (path === null) throw new HostError(501, "unsupported_route", `This product route does not serve ${route}.`);
-    const headers: Record<string, string> = { "content-type": "application/json", authorization: `Bearer ${this.#bearer}` };
+    const headers: Record<string, string> = { "content-type": "application/json", ...(this.#bearer ? { authorization: `Bearer ${this.#bearer}` } : {}) };
     if (opts.lease) { headers["x-calternal-view-lease"] = opts.lease; headers["x-calternal-cache-partition"] = this.#partition; }
     const res = await this.#fetch(`${this.#base}${path}`, { method: "POST", headers, body: JSON.stringify(body), signal: opts.signal });
     const text = await res.text();

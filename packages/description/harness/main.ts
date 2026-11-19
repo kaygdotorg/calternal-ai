@@ -18,7 +18,7 @@ let description = fixtures[q.get("fixture") ?? "reading-list"] as AppDescription
 let viewRef = q.get("view") ?? "v-mock";
 const bearer = q.get("bearer") ?? undefined;
 // A product route (`?product=<view address>&token=<bearer>`): the view describes itself.
-const product = q.has("product") ? new ProductTransport({ base: q.get("product")!, bearer: q.get("token")! }) : null;
+const product = q.has("product") ? new ProductTransport({ base: q.get("product")!, bearer: q.get("token") ?? undefined }) : null;
 if (product) { const d = await product.describe(); viewRef = d.view_ref; description = d.description as AppDescription; }
 else if (rows === 0) {
   // A real host: its /fixture names the views it will open and carries each one's template.

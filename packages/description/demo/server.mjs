@@ -10,10 +10,24 @@ const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.DEMO_PORT ?? 4312), UP = (process.env.STEP0_BASE ?? "http://127.0.0.1:43125/step0/v2").replace(/\/$/, "");
 const TOKEN_FILE = (process.env.BEARER_FILE ?? `${process.env.HOME}/Developer/calternal-ai-lanes/.owner.token`).replace(/^~/, process.env.HOME ?? "");
 const DIST = join(here, "../dist-harness");
+// Optional second upstream: a product view (`PRODUCT_VIEW` = its full address, `PRODUCT_TOKEN_FILE` = the session bearer) forwarded at /product, /product/window, /product/renew with the lease headers.
+const PRODUCT = process.env.PRODUCT_VIEW?.replace(/\/$/, ""), PRODUCT_TOKEN_FILE = process.env.PRODUCT_TOKEN_FILE;
 const ALLOW = /^\/api\/(fixture|view\.open|view\.renew|window|selection\.settled|selection\.set|activation\.(resolve|confirm|dispatch)|choice\.options|undo|status|search|row-images\/[\w.-]+)$/;
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json" };
 let token = "", read = 0;
 const bearer = () => { if (Date.now() - read > 5000) { try { token = readFileSync(TOKEN_FILE, "utf8").trim(); } catch { token = ""; } read = Date.now(); } return token; };
+
+async function product(req, res, sub) {
+  const chunks = []; let size = 0;
+  for await (const c of req) { size += c.length; if (size > 131072) { res.writeHead(413).end(); return; } chunks.push(c); }
+  let t = ""; try { t = readFileSync(PRODUCT_TOKEN_FILE, "utf8").trim(); } catch { /* none */ }
+  const headers = { authorization: `Bearer ${t}` };
+  for (const [k, v] of Object.entries(req.headers)) if (k === "content-type" || k.startsWith("x-calternal-")) headers[k] = v;
+  try {
+    const up = await fetch(`${PRODUCT}${sub}`, { method: req.method, headers, body: size ? Buffer.concat(chunks) : undefined, signal: AbortSignal.timeout(15000) });
+    res.writeHead(up.status, { "content-type": up.headers.get("content-type") ?? "application/json", "cache-control": "no-store" }).end(Buffer.from(await up.arrayBuffer()));
+  } catch { res.writeHead(502, { "content-type": "application/json" }).end(JSON.stringify({ code: "host_unreachable" })); }
+}
 
 async function proxy(req, res, path) {
   const chunks = []; let size = 0;
@@ -31,6 +45,7 @@ function file(res, p, type) { res.writeHead(200, { "content-type": type, "cache-
 
 createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://x");
+  if (PRODUCT && /^\/product(\/window|\/renew)?$/.test(url.pathname)) return product(req, res, url.pathname.slice(8));
   if (url.pathname.startsWith("/api/")) {
     if (!ALLOW.test(url.pathname) || !["GET", "POST"].includes(req.method ?? "")) { res.writeHead(404).end(); return; }
     return proxy(req, res, url.pathname.slice(5));

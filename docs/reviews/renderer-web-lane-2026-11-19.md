@@ -31,3 +31,9 @@ Used by the fixtures (name = SF Symbol): archive = archivebox; arrow-down = arro
 Native already ships (not in fixtures yet): info, key, lock, shield, bell, search, more, close, chevron, back, pulse, terminal, file, files, table, changes, branch, stop, play, person, copy, reply, mail, question, tasks, apps, sidebar, sidebar-right.
 
 Collisions to settle in the contract: `code` vs `codex` (same SF Symbol) so `code = curlybraces`; `send` vs `arrow-up` so `send = paperplane`. Web: `claude` (one star) and `spark` (three) must stay visually distinct. Web renames to match the shared names: `up` becomes `arrow-up`, `down` becomes `arrow-down`; `book` and `reply`, `mail`, `person` are not in the web set yet.
+
+## Gaps the host components rely on (confirmed by the backend lane, 2026-11-19; revision 14 will specify)
+
+- **Composer context key.** Revision 13.15 puts composer contexts in view-open and renew replies but does not say under which key. The renderer's stand-in reads `viewContexts[<component id>]` and uses the component id as `action_id`; both are assumptions, kept in `src/components/Composer.svelte` and `testing/synthetic-source.ts`.
+- **Request card content.** `RequestCardResolve` is defined (`card_context`, `request_ref`, `decision`, `lifetime` required for approvals) but nothing reads a card's title and trusted material. The stand-in invents a `request.card` route; the real one is revision 14's.
+- **Transcript, composer options, Send:** synthetic stand-ins stay until the host serves them.
