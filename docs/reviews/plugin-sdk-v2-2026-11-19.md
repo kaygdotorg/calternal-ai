@@ -50,6 +50,18 @@ The guide builds the same example it publishes as Markdown.
   exits with failure before making any effect. Runtime work must enforce
   placement and qualify cross-space reference and schedule delivery.
 
+## Revision 13.2 check
+
+The draft at `539c10b6` accepted an isolated Reading List build with three
+author changes. Add `host_create: { defaults: { title: "Untitled" } }` to
+`reading-item`. Add a New blank item button invoking `host.item.create`
+with `inputs: { kind: { literal: item } }` and
+`then: { route: { name: "item" } }`. Remove the search Bind's `mode`
+so it uses the new default across all authorized searchable fields. The
+generated types, manifest and description validators, and two fixture parity
+tests passed on dev02. The checked-in package uses the sealed contract on
+`dev` while revision 13.2 is still under review.
+
 ## Proposed revision 14 for the morning
 
 How should the host create a personal reminder from an item open in a shared
