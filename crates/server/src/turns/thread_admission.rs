@@ -67,7 +67,7 @@ pub(crate) async fn admit<D: Directory>(
                 let resume = ProviderSession::owned(&current.metadata, who.id);
                 let id = st.jobs.admit(Admission {
                     space: space.clone(),
-                    plugin: "calternal-orchestrator".into(),
+                    plugin: crate::plugins::threads_owner().into(),
                     account: who.id,
                     session,
                     operation: "agent.turn".into(),

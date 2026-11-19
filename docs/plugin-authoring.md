@@ -42,10 +42,29 @@ space only.
 ## Installation
 
 The server operator runs the package commands with local access to protected
-appdata. No image rebuild is needed. Package input is a directory with
-`manifest.json` and optional bundled `dist/worker.js`, or one bounded
-`.calplugin` archive. Run `calternal plugin pack <dir> <archive>` to generate
-an archive.
+appdata. No image rebuild is needed. Package input is a built directory or
+one bounded `.calplugin` archive. Run `calternal plugin pack <dir> <archive>`
+to generate an archive. The manifest's `api_version` selects the reader.
+
+### Manifest v2
+
+Use `calternal plugin review <source>` to see the declared kinds, Bind reads,
+operations, broker calls, network permissions, credential routes, jobs, schedules and inbound webhooks. For a package that requests
+neither network access nor anonymous host image fetches, the review shows
+**No network access**. The review uses the pinned v2 schemas and verifies the
+SHA-256 of each pinned package asset. Use the review checksum with
+`calternal plugin install <source> --appdata <dir> --approve <sha256>`.
+
+The installer publishes an installation-local declaration for the kind and
+operation registry, with no space activation or worker start. The v2 installer
+currently accepts new packages and supports removal. Updates and space
+enablement are unavailable. Heavy jobs, scratch disks and conversation kinds
+are refused. Revision 13.18 supplies the `host_create` declaration and its checked follow-up shape.
+
+### Manifest v1
+
+Version 1 directories contain `manifest.json` and may include a bundled
+`dist/worker.js`.
 
 1. Run `calternal plugin review <source>`. Review the operation capability and
    risk table, broker calls and requested secret names. JSON output includes
@@ -84,6 +103,23 @@ its checksum. Superseded revisions with unchanged or preserved authority
 remain available for jobs admitted under those revisions. Up to 128 retained
 revisions are stored across the catalog. Narrowing or removal clears retained
 authority for that package. Preserve appdata when reinstalling the server.
+
+The catalogue reserves each package's operation prefixes. Manifest v2
+also reserves its app IDs for that package. An app or package cannot claim
+a host operation namespace. The compiled-in namespace owner map assigns
+shared prefixes whose exact host operations stay reserved. Operator
+distribution catalogues cannot supply this map. Installed
+packages keep their original registration order through updates. Startup
+registers valid rows in that order, checks reads against the complete
+catalogue and then applies skipped-row reservations.
+A reservation blocks reassignment, while the current live owner can retain
+its existing names on update. If a stored package no longer validates, the
+server keeps its recoverable names and folders reserved while its
+operations and kinds are unavailable. A dependent v2 package stays
+unavailable while its read has no owner. Resolve the unavailable rows
+before assigning those names elsewhere. If the server cannot recover the
+declarations from the archive, it names the row to remove before accepting
+new declarations.
 
 A trusted package is one the operator has elected to install at an exact
 checksum. This records provenance within the installation. It grants no

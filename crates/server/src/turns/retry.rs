@@ -70,7 +70,7 @@ pub(super) fn manifest_defaults<D: Directory>(
 ) -> Result<AgentRetrySettings, Error> {
     let catalog = state.registry.snapshot();
     let plugin = catalog
-        .get("calternal-orchestrator")
+        .get(crate::plugins::threads_owner())
         .ok_or_else(|| Error::unavailable("orchestrator plugin is not installed"))?;
     let boolean = |id: &str| {
         plugin

@@ -76,7 +76,7 @@ pub(crate) fn checkpoint<D: Directory>(
     }
     let catalog = state.registry.snapshot();
     let plugin = catalog
-        .get("calternal-orchestrator")
+        .get(crate::plugins::threads_owner())
         .ok_or_else(|| Error::not_found("item not found"))?;
     let activation = crate::plugins::activation(&state.store, space, plugin)?;
     if !activation.enabled || activation.generation != job.generation {
@@ -311,7 +311,7 @@ mod tests {
         let id = jobs
             .admit(Admission {
                 space: space.clone(),
-                plugin: "calternal-orchestrator".into(),
+                plugin: crate::plugins::threads_owner().into(),
                 account: AccountId::new(),
                 session: Session::Static,
                 operation: "agent.turn".into(),

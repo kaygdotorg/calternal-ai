@@ -25,7 +25,7 @@ mod tests {
                 space: space.clone(),
                 account: AccountId::new(),
                 session: Session::Static,
-                plugin: "calternal-orchestrator".into(),
+                plugin: crate::plugins::threads_owner().into(),
                 operation: "agent.turn".into(),
                 input: json!({"request":{"thread_id":uuid::Uuid::now_v7()}}),
                 parent: None,

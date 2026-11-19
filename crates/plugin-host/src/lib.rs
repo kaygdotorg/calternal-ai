@@ -7,14 +7,18 @@
 //! enforce CPU/memory/deadline limits and kill unresponsive cancelled workers.
 //! Host brokers must recheck current authority at every effect and delivery boundary.
 mod bounded;
+mod claims;
 mod input_diagnostics;
 mod registry;
+mod registry_v2;
 mod runtime;
 mod slots;
 /// Private wire protocol for an enrolled space runtime.
 pub mod space_channel;
 mod strict_json;
+pub use claims::{DeclarationIndex, PackageClaims};
 pub use registry::*;
+pub use registry_v2::ManifestV2;
 pub use runtime::*;
 
 /// Safe boundary failure; never includes plugin input or secret values.

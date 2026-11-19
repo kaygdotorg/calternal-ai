@@ -46,12 +46,15 @@ pub(crate) async fn dispatch<D: Directory>(
         .and_then(Value::as_str)
         .and_then(|s| SpaceId::parse(s).ok())
         .ok_or_else(|| Error::not_found("space not found"))?;
-    let generation =
-        crate::turns::enabled_generation(&state, &space.to_string(), "calternal-orchestrator")
-            .await?;
+    let generation = crate::turns::enabled_generation(
+        &state,
+        &space.to_string(),
+        crate::plugins::threads_owner(),
+    )
+    .await?;
     let catalog = state.registry.snapshot();
     let plugin = catalog
-        .get("calternal-orchestrator")
+        .get(crate::plugins::threads_owner())
         .ok_or_else(|| Error::not_found("unknown operation"))?;
     plugin
         .schemas

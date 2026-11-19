@@ -26,7 +26,7 @@ pub(super) async fn read<D: Directory>(
             |plugin: &crate::plugins::Plugin| crate::threads::index::enabled(&controls, plugin);
         let catalog = state.registry.snapshot();
         let orchestrator = catalog
-            .get("calternal-orchestrator")
+            .get(crate::plugins::threads_owner())
             .map(|p| active(p))
             .transpose()?
             .unwrap_or(false);

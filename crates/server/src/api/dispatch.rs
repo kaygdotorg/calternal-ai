@@ -377,7 +377,7 @@ pub(super) async fn run_admitted_operation<D: Directory>(
         return super::spaces::dispatch(state, p, actor, request_id, op, input).await;
     }
     let owner = catalog.owner_of_operation(op);
-    if owner.is_some_and(|p| p.manifest.id == "calternal-orchestrator")
+    if owner.is_some_and(|p| p.manifest.id == crate::plugins::threads_owner())
         && op.starts_with("threads.")
     {
         let result = crate::threads::dispatch(

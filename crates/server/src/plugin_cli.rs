@@ -3,7 +3,7 @@ use calternal_cli::output::{CliError, Reply};
 use calternal_plugin_host::MAX_MANIFEST_BYTES;
 use calternal_server::plugins::{
     live_catalog::{self, Change},
-    package_store::{self, Package},
+    package_store::{self, InstallPackage},
 };
 use clap::Subcommand;
 use serde_json::{Value, json};
@@ -17,6 +17,7 @@ use std::{
 #[cfg(feature = "dev-plugin-drafts")]
 mod dev;
 mod question;
+mod review_v2;
 mod scaffold;
 mod submission;
 
@@ -176,7 +177,7 @@ fn run(command: PluginCommand) -> Result<Reply, CliError> {
         PluginCommand::Review { source, appdata } => review(&source, appdata.as_deref()),
         PluginCommand::Pack { source, archive } => {
             use std::io::Write;
-            let package = Package::read(&source).map_err(package_error)?;
+            let package = InstallPackage::read(&source).map_err(package_error)?;
             let bytes = package.archive().map_err(package_error)?;
             let mut file = fs::File::create_new(&archive).map_err(local)?;
             file.write_all(&bytes).map_err(local)?;
@@ -260,7 +261,26 @@ fn applied(id: &str, message: &str) -> Reply {
 }
 
 fn install(args: InstallArgs, update: bool) -> Result<Reply, CliError> {
-    let package = Package::read(&args.source).map_err(package_error)?;
+    let package = match InstallPackage::read(&args.source).map_err(package_error)? {
+        InstallPackage::V1(package) => package,
+        InstallPackage::V2(package, manifest) => {
+            if update || args.space.is_some() || args.account.is_some() {
+                return Err(package_error(
+                    "V2 packages can be registered as new packages. Updates and space enablement are unavailable.".into()
+                ));
+            }
+            let id = manifest.id();
+            live_catalog::request(
+                &args.appdata,
+                Change::install_v2(&package, args.approve).map_err(package_error)?,
+            )
+            .map_err(package_error)?;
+            return Ok(
+                Reply::new(json!({"id":id, "api_version":2, "activation":"registered", "status":"Registered declarations"}))
+                    .fields([("Plugin", id), ("Status", "Registered declarations")]),
+            );
+        }
+    };
     let id = package.manifest.id.clone();
     live_catalog::request(
         &args.appdata,
@@ -277,7 +297,10 @@ fn install(args: InstallArgs, update: bool) -> Result<Reply, CliError> {
 }
 
 fn review(source: &Path, appdata: Option<&Path>) -> Result<Reply, CliError> {
-    let package = Package::read(source).map_err(package_error)?;
+    let package = match InstallPackage::read(source).map_err(package_error)? {
+        InstallPackage::V1(package) => package,
+        InstallPackage::V2(package, manifest) => return review_v2::review(&package, &manifest),
+    };
     let checksum = package.checksum().map_err(package_error)?;
     let manifest = &package.manifest;
     let previous = appdata

@@ -1,7 +1,7 @@
 //! Versioned settings document and per-setting conflict handling.
-use serde::{Deserialize, Deserializer, Serialize, de, ser::SerializeMap};
+use serde::{Deserialize, Serialize, de, ser::SerializeMap};
 use serde_json::{Value, value::RawValue};
-use std::{collections::BTreeMap, fmt};
+use std::collections::BTreeMap;
 
 pub(super) const FORMAT: &str = "calternal-plugin-settings/v1";
 pub(super) const MAX_FILE_BYTES: usize = 1024 * 1024;
@@ -10,32 +10,14 @@ pub(super) const MAX_ALTERNATIVES: usize = 8;
 
 // Keep untouched records verbatim, including numbers outside Rust's ordinary
 // JSON number range. A duplicate member makes the document unsafe to rewrite.
-#[derive(Default, Serialize)]
+#[derive(Default, Deserialize, Serialize)]
 #[serde(transparent)]
-struct Records(BTreeMap<String, Box<RawValue>>);
+struct Records(#[serde(deserialize_with = "setting_members")] BTreeMap<String, Box<RawValue>>);
 
-impl<'de> Deserialize<'de> for Records {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Unique;
-        impl<'de> de::Visitor<'de> for Unique {
-            type Value = Records;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("an object with unique setting keys")
-            }
-
-            fn visit_map<M: de::MapAccess<'de>>(self, mut input: M) -> Result<Records, M::Error> {
-                let mut records = BTreeMap::new();
-                while let Some((key, value)) = input.next_entry::<String, Box<RawValue>>()? {
-                    if records.insert(key, value).is_some() {
-                        return Err(de::Error::custom("duplicate setting key"));
-                    }
-                }
-                Ok(Records(records))
-            }
-        }
-        deserializer.deserialize_map(Unique)
-    }
+fn setting_members<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<BTreeMap<String, Box<RawValue>>, D::Error> {
+    calternal_types::unique_json::deserialize_unique_members_with_error(d, "duplicate setting key")
 }
 
 #[derive(Default)]

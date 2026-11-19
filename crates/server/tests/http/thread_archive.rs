@@ -145,3 +145,37 @@ fn archived_thread_refuses_send_before_saving_an_intent() {
     assert_eq!(saved.body["data"]["thread"]["metadata"]["message_count"], 0);
     assert_no_turn(&data.0, &server.personal, &thread);
 }
+
+#[test]
+fn bundled_threads_create_and_send_persist_the_message() {
+    let data = TempDir::new("bundled-threads-send");
+    let server = start_full(&data.0, None, None, Some(&plugins()));
+    let thread = create_thread(&server);
+    let sent = op(
+        &server,
+        &server.owner,
+        "bundled-send",
+        "threads.send",
+        json!({"id":thread,"message":"A message through the bundled distribution"}),
+    );
+    assert_eq!(sent.status, 200, "{}", sent.body);
+    assert!(sent.body["data"]["job"]["id"].is_string());
+    drop(server);
+
+    let server = start_full(&data.0, None, None, Some(&plugins()));
+    let saved = op(
+        &server,
+        &server.owner,
+        "bundled-get",
+        "threads.get",
+        json!({"id":thread}),
+    );
+    assert_eq!(saved.status, 200, "{}", saved.body);
+    assert_eq!(saved.body["data"]["thread"]["metadata"]["message_count"], 1);
+    assert!(
+        saved.body["data"]["thread"]["markdown"]
+            .as_str()
+            .unwrap()
+            .contains("A message through the bundled distribution")
+    );
+}

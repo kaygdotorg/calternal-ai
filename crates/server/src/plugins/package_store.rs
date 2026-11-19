@@ -1,5 +1,5 @@
 //! Installation-local package catalog and checksum-backed worker materialization.
-use super::{Plugin, Registry, TrustedEntry, TrustedFile, check_operations};
+use super::{Plugin, TrustedEntry, check_operations};
 use calternal_core::ManifestV1;
 use calternal_plugin_host::{self as host, MAX_MANIFEST_BYTES};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -13,7 +13,13 @@ use std::{
 
 mod bundled_notes;
 pub(crate) mod provider_runtime;
+mod startup;
+mod v2;
 mod worker_cache;
+
+pub use startup::load;
+pub use v2::{InstallPackage, PackageV2};
+pub(super) use v2::{commit_v2, validate_v2_archive};
 
 const MAX_WORKER: usize = calternal_machine::sandbox::worker::MAX_SOURCE_BYTES;
 pub(super) const MAX_PACKAGES: usize = 128;
@@ -34,21 +40,44 @@ impl Package {
     /// Read a bounded manifest plus optional dist/worker.js, or one .calplugin
     /// JSON archive. Reject invalid declarations without executing code.
     pub fn read(path: &Path) -> Result<Self, String> {
-        let package = if path.is_dir() {
-            let base = path.canonicalize().map_err(reason)?;
-            let manifest = safe_member(&base, "manifest.json", MAX_MANIFEST_BYTES)?;
-            let manifest =
-                serde_json::from_slice(&manifest).map_err(|e| format!("manifest.json: {e}"))?;
-            let worker = if base.join("dist/worker.js").exists() {
-                let bytes = safe_member(&base, "dist/worker.js", MAX_WORKER)?;
-                Some(String::from_utf8(bytes).map_err(reason)?)
-            } else {
-                None
-            };
-            Self { manifest, worker }
+        if path.is_dir() {
+            let source = calternal_fsio::beneath::Folder::open_existing(path).map_err(reason)?;
+            let manifest = read_bounded(
+                source.open_file("manifest.json").map_err(reason)?,
+                MAX_MANIFEST_BYTES,
+            )?;
+            Self::read_directory(&source, &manifest)
         } else {
-            serde_json::from_slice(&read_regular(path, MAX_ARCHIVE)?).map_err(reason)?
+            Self::read_archive(&read_regular(path, MAX_ARCHIVE)?)
+        }
+    }
+
+    fn read_directory(
+        base: &calternal_fsio::beneath::Folder,
+        bytes: &[u8],
+    ) -> Result<Self, String> {
+        let manifest = serde_json::from_slice(bytes).map_err(|e| format!("manifest.json: {e}"))?;
+        let worker = match base.open_sub("dist", false) {
+            Ok(dist) => match dist.open_file("worker.js") {
+                Ok(file) => {
+                    Some(String::from_utf8(read_bounded(file, MAX_WORKER)?).map_err(reason)?)
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    dist.check_replacement("worker.js").map_err(reason)?;
+                    None
+                }
+                Err(error) => return Err(reason(error)),
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(reason(error)),
         };
+        let package = Self { manifest, worker };
+        package.validate()?;
+        Ok(package)
+    }
+
+    fn read_archive(bytes: &[u8]) -> Result<Self, String> {
+        let package: Self = serde_json::from_slice(bytes).map_err(reason)?;
         package.validate()?;
         Ok(package)
     }
@@ -102,10 +131,12 @@ fn read_regular(path: &Path, max: usize) -> Result<Vec<u8>, String> {
     if !fs::symlink_metadata(path).map_err(reason)?.is_file() {
         return Err("package member must be a regular file".into());
     }
+    read_bounded(fs::File::open(path).map_err(reason)?, max)
+}
+
+fn read_bounded(file: fs::File, max: usize) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
-    fs::File::open(path)
-        .map_err(reason)?
-        .take((max + 1) as u64)
+    file.take((max + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(reason)?;
     if bytes.len() > max {
@@ -114,20 +145,12 @@ fn read_regular(path: &Path, max: usize) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn safe_member(root: &Path, relative: &str, max: usize) -> Result<Vec<u8>, String> {
-    let path = root.join(relative);
-    let resolved = path.canonicalize().map_err(reason)?;
-    if resolved != path {
-        return Err("package members must be regular files without symbolic links".into());
-    }
-    read_regular(&resolved, max)
-}
-
 const PACKAGE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS installed_plugins (
             revision INTEGER PRIMARY KEY AUTOINCREMENT CHECK (revision <= 2147483647),
             id TEXT NOT NULL UNIQUE, archive BLOB NOT NULL, checksum TEXT NOT NULL,
             default_enabled INTEGER NOT NULL CHECK (default_enabled IN (0, 1)),
-            approval INTEGER NOT NULL DEFAULT 0
+            approval INTEGER NOT NULL DEFAULT 0,
+            install_order INTEGER
         );
         CREATE TABLE IF NOT EXISTS retained_plugins (
             revision INTEGER PRIMARY KEY, id TEXT NOT NULL, archive BLOB NOT NULL,
@@ -174,27 +197,55 @@ pub(super) fn next_draft_revision(root: &Path) -> Result<u32, String> {
 }
 
 fn validate_registered(conn: &Connection, package: &Package) -> Result<(), String> {
-    let plugin = Plugin::new(package.entry(false), package.manifest.clone(), None)?;
-    check_operations(&plugin)?;
+    check_operations(&package.manifest)?;
     let mut index = host::Registry::default();
     let mut query = conn
-        .prepare("SELECT archive, checksum FROM installed_plugins WHERE id <> ?1")
+        .prepare("SELECT archive, checksum, id FROM installed_plugins WHERE id <> ?1")
         .map_err(reason)?;
     let mut rows = query.query([&package.manifest.id]).map_err(reason)?;
     while let Some(row) = rows.next().map_err(reason)? {
-        let existing = decode(row.get(0).map_err(reason)?, row.get(1).map_err(reason)?)?;
-        index.register(existing.manifest).map_err(reason)?;
+        let bytes: Vec<u8> = row.get(0).map_err(reason)?;
+        let checksum: String = row.get(1).map_err(reason)?;
+        let id: String = row.get(2).map_err(reason)?;
+        verify_archive(&bytes, &checksum).map_err(|error| unavailable(&id, error))?;
+        if let Some(existing) = read_v1_archive(&bytes).map_err(|error| unavailable(&id, error))? {
+            index
+                .register(existing.manifest)
+                .map_err(|error| unavailable(&id, error))?;
+        }
     }
     index.register(package.manifest.clone()).map_err(reason)
 }
 
+fn unavailable(id: &str, error: impl std::fmt::Display) -> String {
+    format!(
+        "Installed package {id} is unavailable: {error}. Remove it with calternal plugin remove {id}."
+    )
+}
+
 fn decode(bytes: Vec<u8>, checksum: String) -> Result<Package, String> {
-    let package: Package = serde_json::from_slice(&bytes).map_err(reason)?;
-    if checksum != super::sha256_hex(&bytes) {
-        return Err("installed archive checksum does not match".into());
+    verify_archive(&bytes, &checksum)?;
+    read_v1_archive(&bytes)?
+        .ok_or_else(|| "This package uses manifest v2. Review it with the v2 installer.".into())
+}
+
+// Try the legacy reader once. The fallback discriminator is only needed for
+// a non-v1 archive; a successful v1 read never scans the worker twice.
+fn read_v1_archive(bytes: &[u8]) -> Result<Option<Package>, String> {
+    match Package::read_archive(bytes) {
+        Ok(package) => Ok(Some(package)),
+        Err(_) if v2::archive_version(bytes) == Ok(2) => Ok(None),
+        Err(error) => Err(error),
     }
-    package.validate()?;
-    Ok(package)
+}
+
+fn verify_archive(bytes: &[u8], checksum: &str) -> Result<(), String> {
+    if bytes.len() > MAX_ARCHIVE || checksum != super::sha256_hex(bytes) {
+        return Err(
+            "installed archive checksum does not match or archive exceeds its byte budget".into(),
+        );
+    }
+    Ok(())
 }
 
 /// Look up the current manifest for an operator's capability comparison.
@@ -214,7 +265,11 @@ pub fn installed_manifest(appdata: &Path, id: &str) -> Result<Option<ManifestV1>
         .optional()
         .map_err(reason)?;
     entry
-        .map(|(archive, checksum)| decode(archive, checksum).map(|package| package.manifest))
+        .map(|(archive, checksum)| {
+            decode(archive, checksum)
+                .map(|package| package.manifest)
+                .map_err(|error| unavailable(id, error))
+        })
         .transpose()
 }
 
@@ -325,7 +380,8 @@ pub(super) fn prepare(
             if approved == previous_checksum {
                 return Ok(None);
             }
-            let old = decode(previous_bytes, previous_checksum)?;
+            let old = decode(previous_bytes, previous_checksum)
+                .map_err(|error| unavailable(id, error))?;
             // Search coverage is a disposable projection. Only changes to the
             // kinds' stored declarations require a migration.
             let mut prior_kinds = old.manifest.kinds.clone();
@@ -361,7 +417,7 @@ pub(super) fn prepare(
             }
             (false, None, false)
         };
-    validate_registered(&tx, &package)?;
+    check_operations(&package.manifest)?;
     let revision: u32 = tx.query_row(
         "SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'installed_plugins'), 0) + 1",
         [], |row| row.get(0),
@@ -404,9 +460,17 @@ pub(super) fn commit(appdata: &Path, candidate: Candidate) -> Result<(), String>
         return Err("the package catalog changed while the worker was starting".into());
     }
     let id = &plugin.manifest.id;
+    let install_order: Option<u32> = tx
+        .query_row(
+            "SELECT COALESCE(install_order, revision) FROM installed_plugins WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(reason)?;
     if candidate.retain_previous {
         tx.execute(
-            "INSERT INTO retained_plugins SELECT * FROM installed_plugins WHERE id = ?1",
+            "INSERT INTO retained_plugins SELECT revision, id, archive, checksum, default_enabled, approval FROM installed_plugins WHERE id = ?1",
             [id],
         )
         .map_err(reason)?;
@@ -417,15 +481,16 @@ pub(super) fn commit(appdata: &Path, candidate: Candidate) -> Result<(), String>
     tx.execute("DELETE FROM installed_plugins WHERE id = ?1", [id])
         .map_err(reason)?;
     tx.execute(
-        "INSERT INTO installed_plugins (revision, id, archive, checksum, default_enabled, approval)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO installed_plugins (revision, id, archive, checksum, default_enabled, approval, install_order)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             plugin.revision,
             id,
             candidate.archive,
             candidate.checksum,
             plugin.entry.default_enabled,
-            plugin.activation_approval
+            plugin.activation_approval,
+            install_order,
         ],
     )
     .map_err(reason)?;
@@ -452,213 +517,6 @@ pub(super) fn remove(appdata: &Path, id: &str) -> Result<(), String> {
     )
     .map_err(reason)?;
     tx.commit().map_err(reason)
-}
-
-fn distribution_entries(root: &Path, development: bool) -> Result<Vec<TrustedEntry>, String> {
-    let mut candidates = vec![
-        root.join("trusted-plugins.json"),
-        root.join("../crates/server/trusted-plugins.json"),
-    ];
-    // Development may overlay packages from a temporary root while still using
-    // the catalog from the launcher's checkout.
-    if development && root.is_dir() {
-        candidates.extend([
-            PathBuf::from("crates/server/trusted-plugins.json"),
-            PathBuf::from("trusted-plugins.json"),
-        ]);
-    }
-    let mut path = None;
-    for candidate in candidates {
-        if candidate.try_exists().map_err(reason)? {
-            path = Some(candidate);
-            break;
-        }
-    }
-    let Some(path) = path else {
-        return Ok(Vec::new());
-    };
-    let bytes = read_regular(&path, MAX_MANIFEST_BYTES)?;
-    let file: TrustedFile =
-        serde_json::from_slice(&bytes).map_err(|e| format!("distribution plugin catalog: {e}"))?;
-    if file.plugins.len() > MAX_PACKAGES {
-        return Err("distribution plugin catalog exceeds the installation limit".into());
-    }
-    Ok(file.plugins)
-}
-
-fn install_distribution_package(
-    tx: &Connection,
-    package: Package,
-    default_enabled: bool,
-) -> Result<(), String> {
-    validate_registered(tx, &package)?;
-    let archive = package.archive()?;
-    let checksum = super::sha256_hex(&archive);
-    tx.execute(
-        "INSERT OR IGNORE INTO installed_plugins (id, archive, checksum, default_enabled)
-         VALUES (?1, ?2, ?3, ?4)",
-        params![package.manifest.id, archive, checksum, default_enabled],
-    )
-    .map_err(reason)?;
-    Ok(())
-}
-
-fn initialize_distribution(
-    conn: &mut Connection,
-    root: &Path,
-    defaults: bool,
-    development: bool,
-) -> Result<(), String> {
-    let tx = conn
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(reason)?;
-    if tx
-        .query_row("SELECT 1 FROM plugin_seed", [], |_| Ok(()))
-        .optional()
-        .map_err(reason)?
-        .is_some()
-    {
-        return Ok(());
-    }
-    let entries = distribution_entries(root, development)?;
-    if defaults
-        && !entries
-            .iter()
-            .any(|entry| entry.id == "calternal-orchestrator")
-    {
-        let manifest = host::parse_manifest(include_bytes!(
-            "../../../../plugins/calternal-orchestrator/manifest.json"
-        ))
-        .map_err(reason)?;
-        let package = Package {
-            manifest,
-            worker: None,
-        };
-        install_distribution_package(&tx, package, true)?;
-    }
-    for entry in entries {
-        let plugin = match super::load_one(root, &entry) {
-            Ok(plugin) if plugin.unavailable.is_none() => plugin,
-            Ok(plugin) => {
-                tracing::warn!(plugin = %entry.id, reason = ?plugin.unavailable, "seed package unavailable");
-                continue;
-            }
-            Err(error) => {
-                tracing::warn!(plugin = %entry.id, reason = %error, "seed package unavailable");
-                continue;
-            }
-        };
-        let worker = match plugin.worker {
-            Some(path) => {
-                let bytes = read_regular(&path, MAX_WORKER)?;
-                if entry.worker_sha256.as_deref() != Some(&super::sha256_hex(&bytes)) {
-                    return Err("seed worker changed during installation".into());
-                }
-                Some(String::from_utf8(bytes).map_err(reason)?)
-            }
-            None => None,
-        };
-        let package = Package {
-            manifest: plugin.manifest,
-            worker,
-        };
-        install_distribution_package(&tx, package, entry.default_enabled)?;
-    }
-    tx.execute("INSERT INTO plugin_seed VALUES (1)", [])
-        .map_err(reason)?;
-    tx.commit().map_err(reason)
-}
-
-/// Initialize fresh installations from the distribution catalog and construct a bounded,
-/// immutable plugin snapshot. While the server holds its installation lock,
-/// reuse private current and retained workers matching the archive and discard
-/// stale cache files. Cost: one bounded read per worker and one cache scan.
-/// Missing or invalid workers are atomically written and synced. Worker launches
-/// verify the pinned hash again. Development may use the launcher's source catalog
-/// to validate packages in an alternate root.
-pub fn load(
-    appdata: &Path,
-    seed_root: Option<&Path>,
-    test_root: Option<&Path>,
-    development: bool,
-) -> Result<Registry, String> {
-    let mut conn = open(appdata)?;
-    initialize_distribution(
-        &mut conn,
-        seed_root.unwrap_or(Path::new("plugins")),
-        seed_root.is_none(),
-        development,
-    )?;
-    let cache = appdata.join("installed-plugin-workers");
-    calternal_fsio::private::directory(&cache).map_err(reason)?;
-    let mut plugins = load_rows(&conn, &cache, "installed_plugins", MAX_PACKAGES)?;
-    let retained = load_rows(&conn, &cache, "retained_plugins", MAX_RETAINED)?;
-    worker_cache::remove_stale(
-        &cache,
-        plugins
-            .iter()
-            .chain(&retained)
-            .filter_map(|plugin| plugin.worker.as_deref()),
-    )
-    .map_err(reason)?;
-    if let Some(root) = test_root {
-        for entry in super::test_entries() {
-            match super::load_one(root, &entry) {
-                Ok(plugin) => plugins.push(plugin),
-                Err(error) => {
-                    tracing::warn!(plugin = %entry.id, reason = %error, "test package unavailable")
-                }
-            }
-        }
-    }
-    let registry = Registry::from_plugins(plugins);
-    let mut catalog = (*registry.snapshot()).clone();
-    catalog.retained = retained
-        .into_iter()
-        .map(|plugin| {
-            (
-                (plugin.manifest.id.clone(), plugin.revision),
-                std::sync::Arc::new(plugin),
-            )
-        })
-        .collect();
-    registry.publish(catalog);
-    Ok(registry)
-}
-
-fn load_rows(
-    conn: &Connection,
-    cache: &Path,
-    table: &str,
-    limit: usize,
-) -> Result<Vec<Plugin>, String> {
-    let mut query = conn.prepare(&format!(
-        "SELECT archive, checksum, default_enabled, revision, approval FROM {table} ORDER BY revision"
-    )).map_err(reason)?;
-    let mut rows = query.query([]).map_err(reason)?;
-    let mut plugins = Vec::new();
-    while let Some(row) = rows.next().map_err(reason)? {
-        if plugins.len() >= limit {
-            return Err("the installed plugin catalog exceeds its capacity".into());
-        }
-        let package = decode(row.get(0).map_err(reason)?, row.get(1).map_err(reason)?)?;
-        let entry = package.entry(row.get(2).map_err(reason)?);
-        let revision: u32 = row.get(3).map_err(reason)?;
-        let worker = if let Some(code) = package.worker {
-            let path = cache.join(format!("{}.{revision}.js", entry.id));
-            if !worker_cache::matches_private_file(&path, code.as_bytes()) {
-                calternal_fsio::write_atomic_mode(&path, code.as_bytes(), 0o600).map_err(reason)?;
-            }
-            Some(path)
-        } else {
-            None
-        };
-        let mut plugin = Plugin::new(entry, package.manifest, worker)?;
-        plugin.revision = revision;
-        plugin.activation_approval = row.get(4).map_err(reason)?;
-        plugins.push(plugin);
-    }
-    Ok(plugins)
 }
 
 /// Package database schema shared by startup and release admission. Worker

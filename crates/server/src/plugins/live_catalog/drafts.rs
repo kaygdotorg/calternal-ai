@@ -79,7 +79,7 @@ async fn publish_checked(
             );
         }
         let mut plugin = Plugin::new(entry, package.manifest, Some(file.clone()))?;
-        crate::plugins::check_operations(&plugin)?;
+        crate::plugins::check_operations(&plugin.manifest)?;
         plugin.revision = revision;
         plugin.draft_space = Some(space);
         calternal_fsio::write_atomic_mode(&file, code.as_bytes(), 0o600).map_err(reason)?;
@@ -128,14 +128,20 @@ async fn activate(
         .cloned()
         .chain([plugin.clone()])
         .collect::<Vec<_>>();
-    let retained = base.retained.clone();
+    let original = base.clone();
     let next = crate::blocking::spawn(move || {
+        let manifest = &batch.last().expect("draft candidate").manifest;
+        original.declarations.check_reserved(
+            &manifest.id,
+            &calternal_plugin_host::PackageClaims::v1(manifest),
+        )?;
         let count = batch.len();
         let mut next = Catalog::from_plugins(batch);
         if next.plugins().len() != count {
             return Err("draft conflicts with a currently registered plugin".into());
         }
-        next.retained = retained;
+        next.retained = original.retained.clone();
+        next.carry_v2(&original, None)?;
         Ok::<_, String>(next)
     })
     .await

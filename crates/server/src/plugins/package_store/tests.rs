@@ -49,7 +49,7 @@ fn installed_package_v2_opts_in_only_the_original_seed_and_preserves_rollback() 
         migrate_release(&db, v1, false).unwrap();
         let checksum = super::super::sha256_hex(original);
         db.execute(
-            "INSERT INTO installed_plugins VALUES (2,?1,?2,?3,0,?4)",
+            "INSERT INTO installed_plugins (revision, id, archive, checksum, default_enabled, approval) VALUES (2,?1,?2,?3,0,?4)",
             params![id, original, checksum, approval],
         )
         .unwrap();
@@ -98,7 +98,7 @@ fn startup_reuses_verified_current_and_retained_workers_and_prunes_stale_files()
     db.execute("INSERT INTO plugin_seed VALUES (1)", [])
         .unwrap();
     db.execute(
-        "INSERT INTO installed_plugins VALUES (2, ?1, ?2, ?3, 1, 2)",
+        "INSERT INTO installed_plugins (revision, id, archive, checksum, default_enabled, approval) VALUES (2, ?1, ?2, ?3, 1, 2)",
         params![id, archive, checksum],
     )
     .unwrap();
@@ -162,7 +162,7 @@ fn startup_reuses_verified_current_and_retained_workers_and_prunes_stale_files()
 }
 
 #[test]
-fn installed_package_v3_registers_the_provider_without_changing_its_archive() {
+fn upgrading_registers_the_provider_without_changing_its_archive() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("installed-plugins.sqlite3");
     let db = Connection::open(path).unwrap();
@@ -183,7 +183,7 @@ fn installed_package_v3_registers_the_provider_without_changing_its_archive() {
     let archive = package.archive().unwrap();
     let checksum = package.checksum().unwrap();
     db.execute(
-        "INSERT INTO installed_plugins VALUES (7, ?1, ?2, ?3, 1, 4)",
+        "INSERT INTO installed_plugins (revision, id, archive, checksum, default_enabled, approval) VALUES (7, ?1, ?2, ?3, 1, 4)",
         params![package.manifest.id, &archive, &checksum],
     )
     .unwrap();
@@ -239,5 +239,68 @@ fn installed_package_v3_registers_the_provider_without_changing_its_archive() {
     assert_eq!(
         calternal_store::migrations::inspect(&db, baseline).unwrap(),
         3
+    );
+}
+
+/// Distribution gate: run `npm run build:plugins` before explicitly running
+/// this test, so the loader checks the real pinned worker bytes.
+#[test]
+#[ignore = "requires built plugin workers; run npm run build:plugins first"]
+fn real_distribution_registers_every_bundled_package_and_operation() {
+    let data = tempfile::tempdir().unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+    let entries = super::super::registry_entries();
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry.id == "calternal-orchestrator")
+    );
+    assert!(entries.iter().any(|entry| entry.id == "calternal-notes"));
+    for entry in &entries {
+        if let Some(worker) = &entry.worker {
+            assert!(
+                root.join(worker).is_file(),
+                "run npm run build:plugins before the real distribution test ({worker})"
+            );
+        }
+    }
+    for _ in 0..2 {
+        let registry = load(data.path(), Some(&root), None, false).unwrap();
+        let catalog = registry.snapshot();
+        assert_eq!(catalog.plugins().len(), entries.len());
+        for entry in &entries {
+            let manifest =
+                host::parse_manifest(&fs::read(root.join(&entry.manifest)).unwrap()).unwrap();
+            let plugin = catalog
+                .get(&entry.id)
+                .unwrap_or_else(|| panic!("{} unavailable", entry.id));
+            assert_eq!(plugin.manifest, manifest);
+            assert!(plugin.unavailable.is_none());
+            for operation in manifest.operations {
+                let owner = catalog
+                    .owner_of_operation(&operation.id)
+                    .unwrap_or_else(|| panic!("{} missing", operation.id));
+                assert_eq!(owner.manifest.id, entry.id);
+                assert!(catalog.policy(&operation.id).is_some());
+            }
+        }
+    }
+}
+
+#[test]
+fn external_distribution_cannot_assign_native_namespaces() {
+    let data = tempfile::tempdir().unwrap();
+    let distribution = tempfile::tempdir().unwrap();
+    fs::write(
+        distribution.path().join("trusted-plugins.json"),
+        br#"{"plugins":[],"operation_namespace_owners":{"threads":"replacement"}}"#,
+    )
+    .unwrap();
+    let error = load(data.path(), Some(distribution.path()), None, false)
+        .err()
+        .expect("external namespace mapping must be refused");
+    assert!(
+        error.contains("unknown field `operation_namespace_owners`"),
+        "{error}"
     );
 }

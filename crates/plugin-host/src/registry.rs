@@ -40,16 +40,33 @@ fn folder_name(name: &str) -> bool {
         && nfc(name) == name
         && !matches!(fold(name).as_str(), "trash" | ".calternal")
 }
-fn visible_folders(m: &ManifestV1) -> BTreeSet<String> {
-    m.kinds
-        .iter()
-        .filter_map(|k| match &k.storage {
-            ManifestPlacement::Visible { folder }
-            | ManifestPlacement::VisibleTree { folder, .. } => Some(fold(folder)),
-            _ => None,
-        })
-        .collect()
+pub(crate) fn valid_storage(placement: &ManifestPlacement) -> bool {
+    match placement {
+        ManifestPlacement::Visible { folder } => folder_name(folder),
+        ManifestPlacement::VisibleTree {
+            folder,
+            subdirectories,
+        } => {
+            folder_name(folder)
+                && !(folder.eq_ignore_ascii_case("AI")
+                    && subdirectories.first().is_some_and(|name| {
+                        name.eq_ignore_ascii_case("Skills")
+                            || name.eq_ignore_ascii_case("Automations")
+                    }))
+                && !subdirectories.is_empty()
+                && subdirectories.len() <= 8
+                && subdirectories.iter().all(|s| folder_name(s))
+                && !calternal_types::is_reserved_space_path(
+                    &std::iter::once(folder.as_str())
+                        .chain(subdirectories.iter().map(String::as_str))
+                        .collect::<Vec<_>>()
+                        .join("/"),
+                )
+        }
+        ManifestPlacement::Hidden { hidden } => *hidden,
+    }
 }
+
 fn schema(value: &serde_json::Value) -> bool {
     (value.is_object() || value.is_boolean()) && jsonschema::validator_for(value).is_ok()
 }
@@ -285,30 +302,7 @@ pub fn validate_manifest_detailed(m: &ManifestV1) -> Result<(), String> {
                 .is_some_and(|value| !value.is_boolean())
             || !extension(x.claimed_text, x.extension.as_deref())
             || !schema(&x.schema)
-            || !match &x.storage {
-                ManifestPlacement::Visible { folder } => folder_name(folder),
-                ManifestPlacement::VisibleTree {
-                    folder,
-                    subdirectories,
-                } => {
-                    folder_name(folder)
-                        && !(folder.eq_ignore_ascii_case("AI")
-                            && subdirectories.first().is_some_and(|name| {
-                                name.eq_ignore_ascii_case("Skills")
-                                    || name.eq_ignore_ascii_case("Automations")
-                            }))
-                        && !subdirectories.is_empty()
-                        && subdirectories.len() <= 8
-                        && subdirectories.iter().all(|s| folder_name(s))
-                        && !calternal_types::is_reserved_space_path(
-                            &std::iter::once(folder.as_str())
-                                .chain(subdirectories.iter().map(String::as_str))
-                                .collect::<Vec<_>>()
-                                .join("/"),
-                        )
-                }
-                ManifestPlacement::Hidden { hidden } => *hidden,
-            }
+            || !valid_storage(&x.storage)
         {
             return invalid(
                 &format!("/kinds/{index}"),
@@ -434,11 +428,7 @@ pub struct PolicyRow {
 #[derive(Debug, Default)]
 pub struct Registry {
     manifests: BTreeMap<String, ManifestV1>,
-    kinds: BTreeSet<String>,
-    operations: BTreeSet<String>,
-    collections: BTreeSet<String>,
-    folders: BTreeSet<String>,
-    palette_commands: BTreeSet<String>,
+    declarations: crate::DeclarationIndex,
 }
 impl Registry {
     /// Cost: O(new declarations * log registered IDs + schema compilation); allocates only new index keys.
@@ -446,41 +436,18 @@ impl Registry {
     /// Validate and register all contributions, rejecting kind/operation/template collisions.
     pub fn register(&mut self, manifest: ManifestV1) -> Result<(), Error> {
         validate_manifest(&manifest)?;
-        let folders = visible_folders(&manifest);
-        let commands = manifest.palette.iter().flat_map(|menu| {
-            menu.commands
-                .iter()
-                .map(|c| &c.id)
-                .chain(menu.settings_sections.iter().map(|section| &section.id))
-        });
-        if self.manifests.contains_key(&manifest.id)
-            || folders.iter().any(|f| self.folders.contains(f))
-            || commands
-                .clone()
-                .any(|id| self.palette_commands.contains(id))
-            || manifest.kinds.iter().any(|k| self.kinds.contains(&k.id))
-            || manifest
-                .operations
-                .iter()
-                .any(|op| self.operations.contains(&op.id))
-            || manifest
-                .collections
-                .iter()
-                .any(|c| self.collections.contains(&c.id))
-        {
-            return Err(Error::Collision);
-        }
-        self.folders.extend(folders);
-        self.palette_commands.extend(commands.cloned());
-        self.kinds
-            .extend(manifest.kinds.iter().map(|k| k.id.clone()));
-        self.operations
-            .extend(manifest.operations.iter().map(|op| op.id.clone()));
-        self.collections
-            .extend(manifest.collections.iter().map(|c| c.id.clone()));
+        self.declarations
+            .register_v1(&manifest)
+            .map_err(|_| Error::Collision)?;
         self.manifests.insert(manifest.id.clone(), manifest);
         Ok(())
     }
+    /// Transfer the shared ownership index to the host snapshot.
+    /// Cost: O(1), moves the indexed declarations without cloning them.
+    pub fn into_declarations(self) -> crate::DeclarationIndex {
+        self.declarations
+    }
+
     /// Cost: O(log installed plugins), borrowed output, no allocations, I/O or locks.
     /// Return the complete requested declarations for a trusted grant surface; grants are separate.
     pub fn requests(&self, plugin: &str) -> Option<&ManifestV1> {
