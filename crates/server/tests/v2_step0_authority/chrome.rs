@@ -215,3 +215,187 @@ async fn sealed_chrome_scale() {
     churn.abort();
     assert_eq!(saw, (true, true, true));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "disposable renderer activate-and-redraw path"]
+async fn sealed_chrome_actions_at_scale() {
+    let f = ClientFixture::with_rows(5000).await;
+    let boot = f.bootstrap(&f.owner).await;
+    let notes = f
+        .ok(&f.owner, "view.open", None, open(&boot["views"]["notes"]))
+        .await;
+    let lease = &notes["lease"]["lease_ref"];
+    let page = |bind: &str, from: u64| json!({"type":"window","request":{"bind":bind,"from":from,"to":from+4}});
+    let rows = f
+        .ok(&f.owner, "window", Some(lease), page("notes", 4996))
+        .await;
+    let selected = &rows["rows"][0]["id"];
+    let contexts = &rows["activation_contexts"][0]["contexts"];
+    let invoke = |action: &str, context: &Value, interaction: Value| {
+        json!({"type":"invoke","action_id":action,"activation_id":uuid::Uuid::new_v4(),
+            "activation_context":context,"interaction":interaction})
+    };
+    let mut pin = invoke("pin", &contexts["pin"], json!({}));
+    pin["dispatch"] = json!(true);
+    let pinned = f
+        .ok(&f.owner, "activation.resolve", None, pin.clone())
+        .await;
+    assert_eq!(pinned["state"], "ok");
+    assert_eq!(
+        f.ok(&f.owner, "activation.resolve", None, pin).await,
+        pinned
+    );
+    let updated = f
+        .ok(&f.owner, "window", Some(lease), page("notes", 4996))
+        .await;
+    assert_eq!(updated["rows"][0]["fields"]["pinned"], true);
+    f.ok(
+        &f.owner,
+        "undo",
+        Some(lease),
+        json!({"type":"undo","undo_ref":pinned["undo"]["ref"]}),
+    )
+    .await;
+    let old = invoke(
+        "rename",
+        &contexts["rename"],
+        json!({"prompt":{"title":"stale"}}),
+    );
+    assert_ne!(
+        f.call(&f.owner, "activation.resolve", None, old).await.0,
+        200
+    );
+    let rows = f
+        .ok(&f.owner, "window", Some(lease), page("notes", 4996))
+        .await;
+    let settled = f
+        .ok(
+            &f.owner,
+            "selection.settled",
+            Some(lease),
+            json!({"type":"selection","bind":"notes","row":selected}),
+        )
+        .await;
+    let rename = invoke(
+        "rename",
+        &settled["activation_contexts"]["rename"],
+        json!({"prompt":{"title":"Renamed deep row"}}),
+    );
+    let r = f.ok(&f.owner, "activation.resolve", None, rename).await;
+    let proof = f
+        .ok(
+            &f.owner,
+            "activation.confirm",
+            None,
+            json!({"type":"invoke_confirm","activation_id":r["activation_id"],
+        "resolution_ref":r["resolution_ref"],"confirmation_challenge":r["confirmation_challenge"]}),
+        )
+        .await;
+    f.ok(
+        &f.owner,
+        "activation.dispatch",
+        None,
+        json!({"type":"invoke_dispatch","activation_id":r["activation_id"],
+        "resolution_ref":r["resolution_ref"],"confirmation_proof":proof["confirmation_proof"]}),
+    )
+    .await;
+    let fresh = f
+        .ok(&f.owner, "window", Some(lease), page("notes", 4996))
+        .await;
+    assert_eq!(fresh["rows"][0]["fields"]["title"], "Renamed deep row");
+    let collection = f.ok(&f.owner,"choice.options",None,json!({"type":"choice_options",
+        "activation_context":fresh["activation_contexts"][0]["contexts"]["move"],"slot":"collection"})).await;
+    assert_eq!(collection["bind"], "collections");
+
+    let set = f
+        .ok(
+            &f.owner,
+            "selection.set",
+            Some(lease),
+            json!({"type":"selection_set","bind":"notes","rows":[selected,rows["rows"][1]["id"]]}),
+        )
+        .await;
+    let bulk = invoke(
+        "trash-selected",
+        &notes["activation_contexts"]["trash-selected"],
+        json!({"selection_ref":set["selection_ref"]}),
+    );
+    let r = f
+        .ok(&f.owner, "activation.resolve", None, bulk.clone())
+        .await;
+    let proof = f
+        .ok(
+            &f.owner,
+            "activation.confirm",
+            None,
+            json!({"type":"invoke_confirm","activation_id":r["activation_id"],
+        "resolution_ref":r["resolution_ref"],"confirmation_challenge":r["confirmation_challenge"]}),
+        )
+        .await;
+    f.ok(
+        &f.owner,
+        "activation.dispatch",
+        None,
+        json!({"type":"invoke_dispatch","activation_id":r["activation_id"],
+        "resolution_ref":r["resolution_ref"],"confirmation_proof":proof["confirmation_proof"]}),
+    )
+    .await;
+    let trash = f
+        .ok(&f.owner, "window", Some(lease), page("trash", 0))
+        .await;
+    assert_eq!(trash["count"]["value"], 5);
+    assert_ne!(
+        f.call(&f.guest, "activation.resolve", None, bulk).await.0,
+        200
+    );
+
+    let threads = f
+        .ok(&f.owner, "view.open", None, open(&boot["views"]["threads"]))
+        .await;
+    let lease = &threads["lease"]["lease_ref"];
+    let roots = f
+        .ok(&f.owner, "window", Some(lease), page("all", 4996))
+        .await;
+    let actions = &roots["activation_contexts"][0]["contexts"];
+    let sections = f
+        .ok(
+            &f.owner,
+            "choice.options",
+            None,
+            json!({"type":"choice_options",
+        "activation_context":actions["move-to-all"],"slot":"section"}),
+        )
+        .await;
+    assert_eq!(sections["bind"], "layout");
+    let move_to = invoke(
+        "move-to-all",
+        &actions["move-to-all"],
+        json!({"choices":{"section":sections["options"][0]["ref"]}}),
+    );
+    let r = f.ok(&f.owner, "activation.resolve", None, move_to).await;
+    let proof = f
+        .ok(
+            &f.owner,
+            "activation.confirm",
+            None,
+            json!({"type":"invoke_confirm","activation_id":r["activation_id"],
+        "resolution_ref":r["resolution_ref"],"confirmation_challenge":r["confirmation_challenge"]}),
+        )
+        .await;
+    f.ok(
+        &f.owner,
+        "activation.dispatch",
+        None,
+        json!({"type":"invoke_dispatch","activation_id":r["activation_id"],
+        "resolution_ref":r["resolution_ref"],"confirmation_proof":proof["confirmation_proof"]}),
+    )
+    .await;
+    let layout = f
+        .ok(&f.owner, "window", Some(lease), page("layout", 0))
+        .await;
+    let mut nested = page("in-section", 0);
+    nested["request"]["parent"] = layout["rows"][0]["parent_refs"]["in-section"].clone();
+    let placed = f.ok(&f.owner, "window", Some(lease), nested).await;
+    assert_eq!(placed["count"]["value"], 7);
+    assert!(placed["activation_contexts"][0]["contexts"]["move-up-in-section"].is_string());
+}

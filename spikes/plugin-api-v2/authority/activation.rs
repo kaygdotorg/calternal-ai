@@ -64,6 +64,42 @@ impl Host {
         let (context, _, view) = self.context(who, session, key).await?;
         let _fence = view.gate.lock().await;
         self.context(who, session, key).await?;
+        if let Action::Display(_, effect) = context.action {
+            let (slot, bind) = effect.choice().ok_or(HIDDEN)?;
+            if input["slot"] != slot {
+                return Err(HIDDEN);
+            }
+            let display = view.display.as_ref().ok_or(HIDDEN)?;
+            if let Some(row) = context.row {
+                self.check_targets(
+                    who,
+                    &view,
+                    &[(row, context.revision.clone().ok_or(HIDDEN)?)],
+                )
+                .await?;
+            }
+            let items = display.options(who.id, bind);
+            let mut live = self.live.lock().unwrap();
+            live.choices.retain(|_, choice| choice.context != key);
+            let out = items
+                .into_iter()
+                .map(|(destination, label, revision)| {
+                    let token = Uuid::new_v4();
+                    let reply = json!({"ref":token,"label":label});
+                    live.choices.insert(
+                        token,
+                        Choice {
+                            context: key,
+                            destination,
+                            revision,
+                            label,
+                        },
+                    );
+                    reply
+                })
+                .collect::<Vec<_>>();
+            return Ok(json!({"bind":bind,"options":out}));
+        }
         if context.action != Action::Choice || input["slot"] != CHOICE {
             return Err(HIDDEN);
         }
@@ -97,7 +133,7 @@ impl Host {
         let key = ref_at(input, "activation_context")?;
         let activation = ref_at(input, "activation_id")?;
         let (context, lease, view) = self.context(who, session, key).await?;
-        if Action::from_id(input["action_id"].as_str().ok_or(INVALID)?) != Some(context.action) {
+        if input["action_id"] != context.action.name() {
             return Err(HIDDEN);
         }
         let interaction = input
@@ -130,6 +166,99 @@ impl Host {
         }
         let fields = interaction.as_object().ok_or(INVALID)?;
         match context.action {
+            Action::Display(_, effect) => {
+                use display_actions::Effect;
+                let display = view.display.as_ref().ok_or(HIDDEN)?;
+                if let Some((slot, _)) = effect.choice() {
+                    if fields.len() != 1
+                        || interaction["choices"]
+                            .as_object()
+                            .is_none_or(|c| c.len() != 1)
+                    {
+                        return Err(INVALID);
+                    }
+                    let token = ref_at(&interaction["choices"], slot)?;
+                    let picked = self
+                        .live
+                        .lock()
+                        .unwrap()
+                        .choices
+                        .get(&token)
+                        .cloned()
+                        .ok_or(HIDDEN)?;
+                    if picked.context != key {
+                        return Err(HIDDEN);
+                    }
+                    if display.destination(who.id, picked.destination)? != picked.revision {
+                        return Err(STALE);
+                    }
+                    destination = Some((picked.destination, picked.revision));
+                    material.push(
+                        json!({"name":"destination","label":"Destination","value":picked.label}),
+                    );
+                } else if matches!(
+                    effect,
+                    Effect::Rename | Effect::RenameSection | Effect::CreateSection
+                ) {
+                    if fields.len() > 1 || fields.keys().any(|k| k != "prompt" && k != "form") {
+                        return Err(INVALID);
+                    }
+                    let prompt = interaction
+                        .get("prompt")
+                        .or_else(|| interaction.get("form"));
+                    if prompt.is_some_and(|p| {
+                        p.as_object().is_none_or(|p| p.keys().any(|k| k != "title"))
+                    }) {
+                        return Err(INVALID);
+                    }
+                    let title = match prompt.and_then(|p| p.get("title")) {
+                        Some(value) => value.as_str().ok_or(INVALID)?.to_owned(),
+                        None if effect == Effect::Rename => {
+                            display.title(context.row.ok_or(HIDDEN)?)?
+                        }
+                        None => return Err(INVALID),
+                    };
+                    if title.trim().is_empty() || title.len() > 256 {
+                        return Err(INVALID);
+                    }
+                    material.push(json!({"name":"title","label":"New title","value":title}));
+                } else if effect == Effect::BulkTrash {
+                    if fields.len() != 1 {
+                        return Err(INVALID);
+                    }
+                    if interaction.get("selection_ref").is_some() {
+                        let token = ref_at(&interaction, "selection_ref")?;
+                        let live = self.live.lock().unwrap();
+                        let (_, rows) = live
+                            .display_sets
+                            .get(&token)
+                            .filter(|(id, _)| *id == lease.id)
+                            .ok_or(HIDDEN)?;
+                        targets.extend(rows.iter().cloned());
+                        selection = Some(token);
+                    } else {
+                        for value in interaction["rows"].as_array().ok_or(INVALID)? {
+                            let row = value
+                                .as_str()
+                                .and_then(|s| Uuid::parse_str(s).ok())
+                                .ok_or(HIDDEN)?;
+                            targets.push((
+                                row,
+                                self.display_row(lease.id, row, "notes").ok_or(HIDDEN)?,
+                            ));
+                        }
+                    }
+                    selection.get_or_insert_with(Uuid::new_v4);
+                    if targets.is_empty() {
+                        return Err(INVALID);
+                    }
+                    material.push(
+                        json!({"name":"selection","label":"Selected notes","value":targets.len()}),
+                    );
+                } else if !fields.is_empty() {
+                    return Err(INVALID);
+                }
+            }
             Action::Add => {
                 if view.display.as_ref().is_none_or(|d| d.app != App::Reading) {
                     return Err(HIDDEN);
@@ -252,7 +381,11 @@ impl Host {
         record: &Resolution,
         input: &Value,
     ) -> Reply<(&'static str, Value)> {
-        if input["dispatch"] == true && action == Action::Pin {
+        let atomic = matches!(
+            action,
+            Action::Pin | Action::Display(_, display_actions::Effect::Pin)
+        );
+        if input["dispatch"] == true && atomic {
             return Ok((
                 "outcome",
                 self.dispatch(
@@ -270,7 +403,7 @@ impl Host {
             out["confirm"] = json!("challenge");
             out["confirmation_challenge"] = json!(challenge);
             out["material"] = json!(record.material);
-        } else if action == Action::Pin {
+        } else if atomic {
             out["confirm"] = json!("none");
         }
         if let Some(selection) = record.selection {
@@ -295,14 +428,14 @@ impl Host {
         Ok((id, value))
     }
 
-    async fn check_targets(
+    pub(super) async fn check_targets(
         &self,
         who: Identity,
         view: &View,
         targets: &[(Uuid, String)],
     ) -> Reply<()> {
         for (row, rev) in targets {
-            if !self.current_item(who, view, *row, true).await {
+            if view.display.is_none() && !self.current_item(who, view, *row, true).await {
                 return Err(HIDDEN);
             }
             if self.current_head(view, *row).await? != *rev {
@@ -331,10 +464,15 @@ impl Host {
         }
         self.check_targets(who, &view, &r.targets).await?;
         if let Some((destination, revision)) = &r.destination {
-            if !self.collection_current(who, &view, *destination).await {
-                return Err(HIDDEN);
-            }
-            if self.collection_revision(&view, *destination).await? != *revision {
+            let current = if let Some(display) = &view.display {
+                display.destination(who.id, *destination)?
+            } else {
+                if !self.collection_current(who, &view, *destination).await {
+                    return Err(HIDDEN);
+                }
+                self.collection_revision(&view, *destination).await?
+            };
+            if current != *revision {
                 return Err(STALE);
             }
         }
@@ -366,6 +504,16 @@ impl Host {
             }
         } else if supplied.is_some() {
             return Err(INVALID);
+        }
+        if let Action::Display(_, effect) = ctx.action {
+            let display = view.display.as_ref().ok_or(HIDDEN)?;
+            return display.apply(
+                who.id,
+                r.activation,
+                effect,
+                &r,
+                &self.undo_ref(who.id, view.space, r.activation),
+            );
         }
         if ctx.action == Action::Add {
             let display = view

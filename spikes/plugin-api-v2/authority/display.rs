@@ -1,5 +1,7 @@
 //! In-memory renderer data sets. Storage and authority timings use the original views.
 use super::*;
+#[path = "display_actions.rs"]
+pub(super) mod actions;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub(super) enum App {
@@ -24,7 +26,16 @@ impl App {
                 include_str!("rev13/reading-list-app.json")
             }
         };
-        serde_json::from_str(src).unwrap()
+        let mut template: Value = serde_json::from_str(src).unwrap();
+        if self == Self::Notes {
+            let bulk: Value =
+                serde_json::from_str(include_str!("rev13/notes-bulk-and-snooze-app.json")).unwrap();
+            template["chrome"]["header"]["trailing"]
+                .as_array_mut()
+                .unwrap()
+                .push(bulk["view"]["root"]["children"][1]["children"][0]["invoke"].clone());
+        }
+        template
     }
 
     pub(super) fn manifest(self) -> Value {
@@ -35,18 +46,28 @@ impl App {
             Self::Threads => include_str!("rev13/manifests/threads-nested-catalogue-app.json"),
             Self::Reading => include_str!("rev13/manifests/reading-list-app.json"),
         };
-        serde_json::from_str(src).unwrap()
+        let mut manifest: Value = serde_json::from_str(src).unwrap();
+        if self == Self::Notes {
+            let bytes = serde_json::to_vec(&self.template()).unwrap();
+            manifest["apps"][0]["description"]["template"]["sha256"] = json!(hex::encode(
+                ring::digest::digest(&ring::digest::SHA256, &bytes)
+            ));
+        }
+        manifest
     }
 }
 
+#[derive(Clone)]
 struct Row {
     id: Uuid,
+    rev: Uuid,
     fields: Value,
 }
 impl Row {
     fn new(fields: Value) -> Self {
         Self {
             id: Uuid::new_v4(),
+            rev: Uuid::new_v4(),
             fields,
         }
     }
@@ -67,6 +88,9 @@ impl Row {
             "waiting" => {
                 json!({"title":fields["title"],"state":"waiting","waiting_on":actor})
             }
+            "all" => {
+                json!({"title":fields["title"],"state":fields["state"],"updated":fields["updated"]})
+            }
             "children" | "in-section" => {
                 json!({"title":fields["title"],"state":fields["state"]})
             }
@@ -86,16 +110,17 @@ struct Rows {
     generation: u64,
     change: u64,
     ephemeral: Option<Uuid>,
+    children: HashMap<Uuid, Vec<Row>>,
+    layouts: HashMap<AccountId, Vec<Row>>,
+    collection_member: HashMap<Uuid, usize>,
+    section_members: HashMap<Uuid, Vec<Row>>,
 }
 pub(super) struct Display {
     pub(super) app: App,
     rows: Mutex<Rows>,
     collections: Vec<Row>,
-    children: HashMap<Uuid, Vec<Row>>,
-    layouts: HashMap<AccountId, Vec<Row>>,
-    collection_member: HashMap<Uuid, usize>,
-    section_members: Vec<Vec<Row>>,
     reading_receipts: Mutex<HashMap<(AccountId, Uuid), Value>>,
+    effects: Mutex<HashMap<(AccountId, Uuid), actions::Receipt>>,
 }
 
 impl Display {
@@ -138,7 +163,7 @@ impl Display {
         } else {
             HashMap::new()
         };
-        let layouts = if app == App::Threads {
+        let layouts: HashMap<_, Vec<_>> = if app == App::Threads {
             actors
                 .into_iter()
                 .map(|actor| {
@@ -155,20 +180,18 @@ impl Display {
         } else {
             HashMap::new()
         };
-        let section_members = if app == App::Threads {
-            (0..2)
-                .map(|section| {
-                    active
-                        .iter()
-                        .skip(section * 6)
-                        .take(6)
-                        .map(|thread| Row::new(thread.fields.clone()))
-                        .collect()
-                })
-                .collect()
-        } else {
-            vec![]
-        };
+        let mut section_members = HashMap::new();
+        for sections in layouts.values() {
+            for (section, item) in sections.iter().enumerate() {
+                let placements = active
+                    .iter()
+                    .skip(section * 6)
+                    .take(6)
+                    .map(|thread| Self::placement(thread))
+                    .collect();
+                section_members.insert(item.id, placements);
+            }
+        }
         let trash = if app == App::Notes {
             (0..3).map(|i| Self::sample(app, size + i, now)).collect()
         } else {
@@ -182,13 +205,14 @@ impl Display {
                 generation: 0,
                 change: 0,
                 ephemeral: None,
+                children,
+                layouts,
+                collection_member,
+                section_members,
             }),
             collections,
-            children,
-            layouts,
-            collection_member,
-            section_members,
             reading_receipts: Mutex::default(),
+            effects: Mutex::default(),
         })
     }
 
@@ -224,8 +248,11 @@ impl Display {
                 rows.active.insert(0, row);
             }
             1 => {
-                let index = rows.active.len().min(4) - 1;
+                let Some(index) = rows.active.len().min(4).checked_sub(1) else {
+                    return;
+                };
                 let mut row = rows.active.remove(index);
+                row.rev = Uuid::new_v4();
                 row.fields["title"] = json!(format!("Renamed fixture {}", serial));
                 row.fields["updated"] = json!(calternal_content::format_rfc3339(now));
                 rows.active.insert(0, row);
@@ -236,6 +263,7 @@ impl Display {
                 let index = rows.active.iter().position(|row| Some(row.id) == ephemeral);
                 if let Some(index) = index {
                     let mut row = rows.active.remove(index);
+                    row.rev = Uuid::new_v4();
                     row.fields["updated"] = json!(calternal_content::format_rfc3339(now));
                     if self.app == App::Notes {
                         rows.trash.insert(0, row);
@@ -348,8 +376,11 @@ impl Host {
         if input["type"] != "search"
             || input.as_object().is_none_or(|o| {
                 o.keys()
-                    .any(|k| !["type", "text", "bind"].contains(&k.as_str()))
+                    .any(|k| !["type", "text", "bind", "match"].contains(&k.as_str()))
             })
+            || input
+                .get("match")
+                .is_some_and(|m| m != "terms" && m != "prefix")
             || (input.get("bind").is_some() && input["bind"] != search_bind)
         {
             return Err(INVALID);
@@ -358,7 +389,7 @@ impl Host {
             .lock()
             .unwrap()
             .display_search
-            .insert(lease.id, text.to_lowercase());
+            .insert(lease.id, (text.to_lowercase(), input["match"] == "prefix"));
         Ok(json!({"bind":search_bind}))
     }
 
@@ -385,6 +416,7 @@ impl Host {
             .get("parent")
             .map(|_| ref_at(input, "parent"))
             .transpose()?;
+        let editor = self.editor(actor, view).await;
         let mut live = self.live.lock().unwrap();
         let parent_row = parent
             .map(|id| {
@@ -399,11 +431,18 @@ impl Host {
             return Err(HIDDEN);
         }
         let rows = display.rows.lock().unwrap();
-        let search = live
-            .display_search
-            .get(&lease.id)
-            .map(String::as_str)
-            .unwrap_or("");
+        let matches_search = |text: &str| {
+            let text = text.to_lowercase();
+            live.display_search
+                .get(&lease.id)
+                .is_none_or(|(query, prefix)| {
+                    if *prefix {
+                        text.split_whitespace().any(|term| term.starts_with(query))
+                    } else {
+                        query.split_whitespace().all(|term| text.contains(term))
+                    }
+                })
+        };
         let search_page = matches!(bind, "note-search" | "reading-search");
         let has_count = !search_page && !matches!(bind, "note" | "current");
         if end && !has_count {
@@ -426,18 +465,15 @@ impl Host {
         match (display.app, bind) {
             (App::Notes, "notes" | "note-search") if member.is_some() || search_page => {
                 filtered.extend(rows.active.iter().filter(|row| {
-                    member.is_none_or(|m| display.collection_member.get(&row.id) == Some(&m))
+                    member.is_none_or(|m| rows.collection_member.get(&row.id) == Some(&m))
                         && (!search_page
-                            || row.fields["title"]
-                                .as_str()
-                                .unwrap()
-                                .to_lowercase()
-                                .contains(search))
+                            || matches_search(&format!(
+                                "{} {}",
+                                row.fields["title"], row.fields["snippet"]
+                            )))
                 }));
             }
-            (App::Notes, "notes") | (App::Threads, "all") | (App::Reading, "items") => {
-                counted = Some(&rows.active)
-            }
+            (App::Notes, "notes") | (App::Reading, "items") => counted = Some(&rows.active),
             (App::Notes, "trash" | "trash-count") => counted = Some(&rows.trash),
             (App::Notes, "collections") => counted = Some(&display.collections),
             (App::Notes, "note" | "current") => filtered.extend(
@@ -446,25 +482,55 @@ impl Host {
                     .filter(|r| route.item == Some(r.id))
                     .take(1),
             ),
-            (App::Threads, "waiting") => filtered.extend(rows.active.iter().take(3)),
-            (App::Threads, "children") => {
-                counted = Some(display.children.get(&parent_row.unwrap()).ok_or(HIDDEN)?)
-            }
-            (App::Threads, "layout") => counted = Some(display.layouts.get(&person).ok_or(HIDDEN)?),
-            (App::Threads, "in-section") => {
-                let section = display.layouts[&person]
+            (App::Threads, "all") => filtered.extend(
+                rows.active
                     .iter()
-                    .position(|r| Some(r.id) == parent_row)
-                    .ok_or(HIDDEN)?;
-                counted = Some(&display.section_members[section]);
+                    .filter(|row| row.fields["archived"] != true),
+            ),
+            (App::Threads, "waiting") => filtered.extend(
+                rows.active
+                    .iter()
+                    .filter(|row| row.fields["archived"] != true)
+                    .take(3),
+            ),
+            (App::Threads, "children") => {
+                let parent = parent_row.ok_or(HIDDEN)?;
+                if rows
+                    .row(parent)
+                    .is_none_or(|row| row.fields["archived"] == true)
+                {
+                    return Err(HIDDEN);
+                }
+                filtered.extend(
+                    rows.children
+                        .get(&parent)
+                        .ok_or(HIDDEN)?
+                        .iter()
+                        .filter(|row| row.fields["archived"] != true),
+                );
             }
-            (App::Reading, "reading-search") => filtered.extend(rows.active.iter().filter(|row| {
-                row.fields["title"]
-                    .as_str()
-                    .unwrap()
-                    .to_lowercase()
-                    .contains(search)
-            })),
+            (App::Threads, "layout") => counted = Some(rows.layouts.get(&person).ok_or(HIDDEN)?),
+            (App::Threads, "in-section") => {
+                let section = parent_row.ok_or(HIDDEN)?;
+                if !rows.layouts[&person].iter().any(|row| row.id == section) {
+                    return Err(HIDDEN);
+                }
+                filtered.extend(
+                    rows.section_members
+                        .get(&section)
+                        .into_iter()
+                        .flatten()
+                        .filter(|row| {
+                            rows.row(rows.underlying(row.id))
+                                .is_some_and(|thread| thread.fields["archived"] != true)
+                        }),
+                );
+            }
+            (App::Reading, "reading-search") => filtered.extend(
+                rows.active
+                    .iter()
+                    .filter(|row| matches_search(row.fields["title"].as_str().unwrap())),
+            ),
             (App::Reading, "reminders") => {}
             _ => return Err(HIDDEN),
         }
@@ -482,10 +548,16 @@ impl Host {
         let window_ref = Uuid::new_v4();
         let version = Uuid::new_v4();
         let mut wire_rows = Vec::with_capacity(selected.len());
+        let mut contexts = Vec::new();
+        if editor && !actions::row_actions(display.app, bind).is_empty() {
+            let protected: std::collections::HashSet<_> =
+                selected.iter().map(|row| row.id).collect();
+            actions::release_display_contexts(&mut live, lease, &protected);
+        }
         for row in &selected {
             let mut body = row.wire(bind, person);
             let edge = match bind {
-                "all" if display.children.contains_key(&row.id) => Some("children"),
+                "all" if rows.children.contains_key(&row.id) => Some("children"),
                 "layout" => Some("in-section"),
                 _ => None,
             };
@@ -499,6 +571,17 @@ impl Host {
                 live.display_parents.insert(token, key);
                 body["parent_refs"] = json!({(edge):token});
             }
+            if editor && !actions::row_actions(display.app, bind).is_empty() {
+                let issued = self.mint_in(
+                    &mut live,
+                    lease,
+                    Some((row.id, rows.revision_for(row))),
+                    actions::row_actions(display.app, bind),
+                );
+                if issued.as_object().is_some_and(|map| !map.is_empty()) {
+                    contexts.push(json!({"row":row.id,"contexts":issued}));
+                }
+            }
             wire_rows.push(body);
         }
         let generation = rows.generation;
@@ -510,7 +593,10 @@ impl Host {
                 lease: lease.id,
                 version,
                 order,
-                rows: selected.iter().map(|row| (row.id, String::new())).collect(),
+                rows: selected
+                    .iter()
+                    .map(|row| (row.id, rows.revision_for(row)))
+                    .collect(),
                 display: Some((bind.into(), generation)),
             },
         );
@@ -532,7 +618,7 @@ impl Host {
             }
         }
         let mut reply = json!({"bind":bind,"state":if total==0 && from==0 {"empty"}else{"ready"},"offset":from,
-            "rows":wire_rows,"window_ref":window_ref,"result_version":version,"audience":lease.audience,"activation_contexts":[]});
+            "rows":wire_rows,"window_ref":window_ref,"result_version":version,"audience":lease.audience,"activation_contexts":contexts});
         if end {
             reply["anchor"] = json!("end");
         }
@@ -550,33 +636,36 @@ impl Host {
         lease: &Lease,
         display: &Display,
         input: &Value,
+        editor: bool,
     ) -> Reply<Value> {
         let row = ref_at(input, "row")?;
         let bind = input["bind"].as_str().ok_or(INVALID)?;
-        let live = self.live.lock().unwrap();
+        let revision = display.revision(row)?;
+        let mut live = self.live.lock().unwrap();
         if !live.windows.values().any(|w| {
             w.lease == lease.id
                 && w.display.as_ref().is_some_and(|(b, _)| b == bind)
-                && w.rows.iter().any(|r| r.0 == row)
+                && w.rows
+                    .iter()
+                    .any(|(id, rev)| *id == row && *rev == revision)
         }) {
             return Err(STALE);
         }
-        let rows = display.rows.lock().unwrap();
-        let has = |items: &[Row]| items.iter().any(|r| r.id == row);
-        let present = match bind {
-            "layout" => has(&display.layouts[&lease.actor]),
-            "in-section" => display.section_members.iter().any(|r| has(r)),
-            "children" => display.children.values().any(|r| has(r)),
-            "collections" => has(&display.collections),
-            "trash" | "trash-count" => has(&rows.trash),
-            _ => has(&rows.active),
+        let contexts = if editor {
+            let requested = Some((row, revision));
+            let actions = actions::row_actions(display.app, bind);
+            let mut issued = self.mint_in(&mut live, lease, requested.clone(), actions);
+            if !actions.is_empty() && issued.as_object().is_some_and(|map| map.is_empty()) {
+                actions::release_display_contexts(&mut live, lease, &[row].into_iter().collect());
+                issued = self.mint_in(&mut live, lease, requested, actions);
+            }
+            issued
+        } else {
+            json!({})
         };
-        if !present {
-            return Err(STALE);
-        }
         Ok(
             json!({"type":"selection_context","lease_ref":lease.id,"cache_partition":lease.partition,
-            "bind":bind,"row":row,"activation_contexts":{}}),
+            "bind":bind,"row":row,"activation_contexts":contexts}),
         )
     }
 }

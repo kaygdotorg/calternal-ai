@@ -163,7 +163,16 @@ impl Host {
     }
 
     fn mint(&self, lease: &Lease, row: Option<(Uuid, String)>, actions: &[Action]) -> Value {
-        let mut state = self.live.lock().unwrap();
+        self.mint_in(&mut self.live.lock().unwrap(), lease, row, actions)
+    }
+
+    pub(super) fn mint_in(
+        &self,
+        state: &mut Volatile,
+        lease: &Lease,
+        row: Option<(Uuid, String)>,
+        actions: &[Action],
+    ) -> Value {
         let mut result = serde_json::Map::new();
         let spaces = state
             .leases
@@ -177,24 +186,38 @@ impl Host {
             .filter(|(_, p)| p.actor == lease.actor)
             .map(|(id, _)| *id)
             .collect::<std::collections::HashSet<_>>();
-        let count = |leases: &std::collections::HashSet<_>| {
+        let count = |state: &Volatile, leases: &std::collections::HashSet<_>| {
             state
                 .contexts
                 .values()
                 .filter(|c| leases.contains(&c.lease))
                 .count()
         };
-        if count(&spaces) + actions.len() > 4096 || count(&person) + actions.len() > 256 {
+        let existing = |action: Action| {
+            state.contexts.iter().find_map(|(id, prior)| {
+                (prior.lease == lease.id
+                    && prior.row == row.as_ref().map(|r| r.0)
+                    && prior.revision.as_ref() == row.as_ref().map(|r| &r.1)
+                    && prior.action == action)
+                    .then_some(*id)
+            })
+        };
+        let issued: Vec<_> = actions
+            .iter()
+            .map(|action| (*action, existing(*action)))
+            .collect();
+        let needed = issued.iter().filter(|(_, id)| id.is_none()).count();
+        if count(state, &spaces) + needed > 4096 || count(state, &person) + needed > 256 {
             return json!({});
         }
-        for &action in actions {
+        for (action, id) in issued {
             let c = Context {
                 lease: lease.id,
                 row: row.as_ref().map(|r| r.0),
                 revision: row.as_ref().map(|r| r.1.clone()),
                 action,
             };
-            let id = Uuid::new_v4();
+            let id = id.unwrap_or_else(Uuid::new_v4);
             state.contexts.insert(id, c);
             result.insert(action.name().into(), json!(id));
         }
@@ -223,7 +246,7 @@ impl Host {
         let contexts = if self.editor(who, view).await {
             match view.display.as_ref().map(|d| d.app) {
                 Some(App::Reading) => self.mint(&lease, None, &[Action::Add]),
-                Some(_) => json!({}),
+                Some(app) => self.mint(&lease, None, display_actions::view_actions(app)),
                 None => self.mint(&lease, None, &[Action::Bulk]),
             }
         } else {
@@ -259,6 +282,9 @@ impl Host {
     }
 
     pub(super) async fn current_head(&self, view: &View, id: Uuid) -> Reply<String> {
+        if let Some(display) = &view.display {
+            return display.revision(id);
+        }
         let state = self.state.clone();
         let space = view.space;
         tokio::task::spawn_blocking(move || state.store.content().live_revision(space, NOTES, id))
@@ -382,7 +408,7 @@ impl Host {
         let _fence = view.gate.lock().await;
         self.lease(who, session, id).await?;
         if let Some(display) = &view.display {
-            return self.display_selection(&lease, display, input);
+            return self.display_selection(&lease, display, input, self.editor(who, &view).await);
         }
         if input["bind"] != NOTES {
             return Err(HIDDEN);
@@ -485,8 +511,17 @@ impl Host {
             .unwrap()
             .leases
             .insert(lease.id, lease.clone());
+        let actions = if self.editor(who, &view).await {
+            match view.display.as_ref().map(|d| d.app) {
+                Some(app) => display_actions::view_actions(app),
+                None => &[Action::Bulk],
+            }
+        } else {
+            &[]
+        };
+        let contexts = self.mint(&lease, None, actions);
         Ok(
-            json!({"lease":lease.wire(),"retained_results":kept,"activation_contexts":{},"windows":[],
+            json!({"lease":lease.wire(),"retained_results":kept,"activation_contexts":contexts,"windows":[],
             "renewal_id":input["renewal_id"],"request_lease_ref":id,"cache_partition":lease.partition}),
         )
     }

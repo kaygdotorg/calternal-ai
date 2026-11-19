@@ -15,6 +15,8 @@ const TYPES: &[(&str, &str)] = &[
     ("window", "WindowReply"),
     ("selection", "SettledSelectionRequest"),
     ("selection_context", "SelectionContextResult"),
+    ("selection_set", "SelectionSetRequest"),
+    ("selection_set_result", "SelectionSetResult"),
     ("choice_request", "ChoiceOptionsRequest"),
     ("choices", "ChoiceOptions"),
     ("resolve", "ResolveActivation"),
@@ -57,7 +59,7 @@ fn reachable(schema: &Value, catalogue: &Map<String, Value>, found: &mut Map<Str
 impl Wire {
     pub(super) fn new() -> Self {
         let src: Value =
-            serde_json::from_str(include_str!("../../../contract/host-catalogue-v2.json")).unwrap();
+            serde_json::from_str(include_str!("rev13/host-catalogue-v2.json")).unwrap();
         let defs = src["$defs"].as_object().unwrap();
         let schemas = TYPES.iter().map(|&(name,ty)| {
             let reference=format!("#/$defs/{ty}");

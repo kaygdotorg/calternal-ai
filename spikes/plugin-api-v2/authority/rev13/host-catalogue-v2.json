@@ -1,0 +1,3541 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
+  "description": "Review contract for host kinds, operations, query limits and the activation exchange. A reference shape conveys no authority. The host semantic loader still validates scope, profiles, contracts and dependencies. A description, manifest, event or reply conforms only if it passes contract/verify-description.py at the pinned revision. The JSON Schemas define necessary structural rules and are insufficient on their own. A schema validator used alone must assert formats, including calendar validity for date-time. Differences in verifier-only rule classes are by design.",
+  "reserved_operation_prefixes": [
+    "host.",
+    "turns."
+  ],
+  "audiences": {
+    "member_item": "Live item authority and field policy on the member path.",
+    "shared_projection": "Member authority or a host-approved explicit projection for this guest's home root/children. Counts require a separate projection flag.",
+    "viewer_self": "The actor may access only their own projected value. AccountRef predicates are limited to eq viewer.person; only counts over that actor’s already authorized projection are allowed. Other typed personal fields use the actor’s index only.",
+    "designated_request_actor": "Host-private request addressed to the designated viewer. Covers only the referenced eligible request. No guest list or count. A row id resolves only to a checked RequestRef.",
+    "eligible_turn_actor": "The current turn actor or an actor with live authority to inspect/control that turn under the Turns engine. A thread grant alone does not confer Stop.",
+    "personal_layout": "Only a live space member may read or mutate their own layout for this space and app. Check membership and actor on every read and write. Layout membership grants no item access."
+  },
+  "kinds": {
+    "collections": {
+      "owner": "content",
+      "row_ref": "CollectionRef",
+      "audience": "member_item",
+      "fields": {},
+      "search_corpora": [
+        "member_title",
+        "shared_titles"
+      ],
+      "icon": "folder",
+      "includes_generic_item_fields": true
+    },
+    "threads": {
+      "owner": "turns",
+      "row_ref": "ThreadRef",
+      "audience": "member_item",
+      "fields": {
+        "provider": {
+          "type": "ProviderId",
+          "index_owner": "turns",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "provider_icon": {
+          "type": "Text",
+          "index_owner": null,
+          "audience": "member_item",
+          "nullable": true,
+          "description": "Host-projected catalogue symbol for the installed provider contribution identified by the thread's provider. Emit it only after the provider_marks binding check. On a missing or conflicting binding, omit the field so the row template uses its generic fallback symbol."
+        },
+        "state": {
+          "type": "Text",
+          "index_owner": "turns",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "waiting_on": {
+          "type": "AccountRef",
+          "index_owner": "turns",
+          "audience": "viewer_self",
+          "nullable": true
+        },
+        "active_turn": {
+          "type": "TurnRef",
+          "index_owner": null,
+          "audience": "eligible_turn_actor",
+          "nullable": true
+        },
+        "snoozed_until": {
+          "type": "Timestamp",
+          "index_owner": "turns",
+          "audience": "viewer_self",
+          "nullable": true,
+          "description": "Actor-scoped active snooze deadline. Null once the deadline passes; host invalidates affected Bind results at expiry."
+        },
+        "archived": {
+          "type": "Boolean",
+          "index_owner": "turns",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "parent": {
+          "type": "ThreadRef",
+          "nullable": true,
+          "index_owner": "turns",
+          "audience": "member_item",
+          "description": "Host-owned parent relation. Authorize both the parent and child before reporting the relation or filling a nested window."
+        }
+      },
+      "search_corpora": [
+        "member_title",
+        "member_body",
+        "shared_titles"
+      ],
+      "icon": "threads",
+      "includes_generic_item_fields": true,
+      "description": "For row action targets, context:item resolves to the checked underlying ThreadRef. In a repeated section, context:placement resolves to that LayoutEntryRef."
+    },
+    "requests": {
+      "owner": "requests",
+      "row_ref": "RequestRef",
+      "audience": "designated_request_actor",
+      "fields": {
+        "id": {
+          "type": "RequestRef",
+          "index_owner": "requests",
+          "audience": "designated_request_actor",
+          "nullable": false
+        },
+        "title": {
+          "type": "Text",
+          "index_owner": null,
+          "audience": "designated_request_actor",
+          "nullable": false
+        },
+        "thread_ref": {
+          "type": "ThreadRef",
+          "index_owner": "requests",
+          "audience": "designated_request_actor",
+          "nullable": true
+        },
+        "pending_for": {
+          "type": "AccountRef",
+          "index_owner": "requests",
+          "audience": "viewer_self",
+          "nullable": true
+        }
+      },
+      "search_corpora": [],
+      "icon": "warning",
+      "includes_generic_item_fields": false
+    },
+    "layout_sections": {
+      "owner": "host_layout",
+      "row_ref": "LayoutSectionRef",
+      "audience": "personal_layout",
+      "fields": {
+        "id": {
+          "type": "LayoutSectionRef",
+          "nullable": false,
+          "index_owner": "host_layout",
+          "audience": "personal_layout"
+        },
+        "title": {
+          "type": "Text",
+          "nullable": false,
+          "index_owner": "host_layout",
+          "audience": "personal_layout"
+        },
+        "position": {
+          "type": "Number",
+          "nullable": false,
+          "index_owner": "host_layout",
+          "audience": "personal_layout"
+        }
+      },
+      "search_corpora": [],
+      "includes_generic_item_fields": false,
+      "icon": "folder",
+      "description": "Section repeater source for the live member’s own layout scoped to space and app. Section.repeat.over must read layout_sections. In repeated item windows the host binds a placement reference and an underlying item reference separately in the action context."
+    }
+  },
+  "provider_marks": {
+    "trust": "A provider-specific mark name belongs to the verified publisher identified by a trusted signed gallery entry or an explicit operator checksum pin. The signed entry or operator pin binds the approved package artifact and publisher identity to the canonical mark names it owns. A checksum without an explicit publisher and mark binding does not establish mark ownership.",
+    "install": "Verify the installed artifact and its publisher using the existing gallery signature or operator checksum pin. Record the canonical mark name, verified publisher, installed package identity, provider contribution ID, pinned manifest digest and trusted ownership source. Record a usable distinctive mark only if the verified publisher owns that name. Do not grant an unowned mark based on installation order. Calternal providers use the same rules.",
+    "projection": "Emit provider_icon only when the active installed contribution matches the recorded binding and its verified publisher still owns the mark. Omit it on missing trust, missing ownership or any conflict, including on a fresh or offline host without verified ownership data. Recheck on installation updates, uninstalls and trust changes. The row draws its generic fallback symbol when the field is omitted."
+  },
+  "operations": {
+    "host.item.create": {
+      "engine": "generic item creation",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Live content creation authority in the current space and the owning installed kind’s host_create declaration. For optional collection placement check live authority to edit membership in that collection in the same space under the commit fence.",
+      "surfaces": ["authorized_template_action", "host_item_control"],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind"],
+        "properties": {
+          "kind": { "$ref": "#/$defs/KindId", "description": "The host resolves this from the template’s declared literal kind and checks its owning manifest." },
+          "collection": { "$ref": "#/$defs/CollectionRef", "description": "Optional. Take only a server-resolved route operand or a template literal. Omit when the named route parameter is absent. Apply the opaque collection refusal to any supplied ref that is absent, foreign, unreadable or not editable." }
+        }
+      },
+      "outcome_schema": { "$ref": "#/$defs/ActionOutcome" },
+      "atomic_undo": true,
+      "confirmation_when": "No challenge, including for a shared collection. The checked operation creates a new empty item and exposes no existing material.",
+      "refusals": {
+        "collection_unavailable": {
+          "state": "refused",
+          "message": "This collection is unavailable.",
+          "rule": "Use the same outer status and ActionOutcome code and message for a supplied ref that is absent, foreign, unreadable or not editable. Look up the ref only in the current space and return no collection-specific fields. At resolve and dispatch check this access before any quota or dependency result that could reveal the collection. For an otherwise authentic host.item.create activation whose collection was deleted or lost edit access after resolve, the opaque collection_unavailable outcome takes precedence over the generic stale dependency outcome."
+        },
+        "create_limit_reached": {
+          "state": "refused",
+          "message": "This item could not be created because a limit was reached.",
+          "rule": "Check the normal item and collection membership quotas under the commit fence. Refuse the whole transaction when either would be exceeded."
+        }
+      },
+      "atomic_undo_when": "Validate the opted-in kind’s defaults. Under the same fence check authority and the normal item and membership quotas, then commit the empty item, its optional collection membership and Undo in one FULL content transaction. Record the item head, item-wide membership and sharing revisions and revision of the introduced membership, if any. Undo checks live authority and all these revisions under the fence and refuses if any changed. On success it removes the item and the membership introduced by this create together. Return the created ref only after commit. Optional declared package follow-up runs separately after commit and cannot delay this no-wake operation."
+    },
+    "host.item.rename": {
+      "engine": "item_rename",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Editor on target",
+      "surfaces": [
+        "authorized_template_action",
+        "host_item_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item",
+          "title"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/$defs/ItemRef"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "Single-item rename in the FULL content transaction with its Undo and no deferred inbound-link rewrites."
+    },
+    "host.item.trash": {
+      "engine": "item_trash",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Editor on every target",
+      "surfaces": [
+        "authorized_template_action",
+        "host_item_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": true,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item",
+        "selection_ref"
+      ],
+      "input_schema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "item"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/$defs/ItemRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "selection_ref"
+            ],
+            "properties": {
+              "selection_ref": {
+                "$ref": "#/$defs/SelectionRef"
+              }
+            }
+          }
+        ],
+        "$comment": "The host supplies Undo when the committed lifecycle result is eligible."
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "Single item whose complete lifecycle change is in the FULL content transaction (including replayable placement and Undo). Excludes lifecycle cleanup in another engine.",
+      "full_swipe_when": "First swipe action, effective confirm:none and this operation’s atomic_undo_when condition."
+    },
+    "host.item.restore": {
+      "engine": "item_restore",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Editor on target",
+      "surfaces": [
+        "authorized_template_action",
+        "host_item_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": true,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item",
+        "source_revision"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/$defs/ItemRef"
+          },
+          "source_revision": {
+            "$ref": "#/$defs/RevisionRef"
+          }
+        },
+        "$comment": "Source revision selects history restore. Absent selects a current Trash head. Host pins expected revision from the activation context."
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "Single-item Trash restore or history restore in the FULL content transaction with its Undo.",
+      "full_swipe_when": "First swipe action restoring one item from Trash, effective confirm:none and this operation’s atomic_undo_when condition."
+    },
+    "host.undo": {
+      "engine": "item_rename_undo / protected eligible inverse",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Original authorized actor or permitted current editor with a live eligible reference",
+      "surfaces": [
+        "host_outcome"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "ref"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ref"
+        ],
+        "properties": {
+          "ref": {
+            "$ref": "#/$defs/UndoRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "host.trash.purge": {
+      "engine": "item_purge / empty_trash",
+      "effect": "irreversible",
+      "idempotency": "request_id",
+      "authority": "Manager or Owner, with confirmation of the pinned selection and authority at every batch",
+      "surfaces": [
+        "host_trash_sheet"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "selection_ref"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "selection_ref"
+        ],
+        "properties": {
+          "selection_ref": {
+            "$ref": "#/$defs/TrashSelectionRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "host.approval.resolve": {
+      "engine": "protected Inbox resolver",
+      "effect": "widens_access",
+      "idempotency": "request_id",
+      "authority": "Designated approver with current grant",
+      "surfaces": [
+        "protected_request_card"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "request"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "request",
+          "decision"
+        ],
+        "properties": {
+          "request": {
+            "$ref": "#/$defs/RequestRef"
+          },
+          "decision": {
+            "enum": [
+              "approve",
+              "deny"
+            ]
+          },
+          "lifetime": {
+            "enum": [
+              "once",
+              "this_thread"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "decision": {
+                  "const": "approve"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "lifetime"
+              ]
+            },
+            "else": {
+              "properties": {
+                "lifetime": false
+              }
+            }
+          }
+        ]
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "host.panel.ask": {
+      "engine": "authorized host panel turn admission",
+      "effect": "external",
+      "idempotency": "request_id",
+      "authority": "Person authorized to use the panel and its item/draft; guest Prompt disabled",
+      "surfaces": [
+        "host_panel"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item",
+        "quote"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "$ref": "#/$defs/Text"
+          },
+          "item": {
+            "$ref": "#/$defs/ItemRef"
+          },
+          "draft": {
+            "$ref": "#/$defs/Draft"
+          },
+          "quote": {
+            "$ref": "#/$defs/Quote"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "host.turn.stop": {
+      "engine": "turn_cancel",
+      "effect": "irreversible",
+      "idempotency": "request_id",
+      "authority": "Actor authorized to stop the referenced turn",
+      "surfaces": [
+        "host_composer",
+        "host_turn_control"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "turn"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "turn"
+        ],
+        "properties": {
+          "turn": {
+            "$ref": "#/$defs/TurnRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "host.route.set": {
+      "engine": "host shell route state",
+      "effect": "read",
+      "idempotency": "read_only",
+      "authority": "Viewer with live access to the target route",
+      "surfaces": [
+        "host_shell"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "route",
+        "target"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "route"
+        ],
+        "properties": {
+          "route": {
+            "$ref": "#/$defs/Ref"
+          },
+          "target": {
+            "$ref": "#/$defs/Ref"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "host.session.end": {
+      "engine": "host session revocation",
+      "effect": "irreversible",
+      "idempotency": "request_id",
+      "authority": "Signed-in actor's own session only",
+      "surfaces": [
+        "host_account_menu"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {}
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "host.item.share": {
+      "engine": "host sharing service",
+      "effect": "widens_access",
+      "idempotency": "request_id",
+      "authority": "Actor allowed to manage sharing for the exact selected items",
+      "surfaces": [
+        "host_audience_sheet"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item",
+        "selection_ref"
+      ],
+      "input_schema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "item"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/$defs/ItemRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "selection_ref"
+            ],
+            "properties": {
+              "selection_ref": {
+                "$ref": "#/$defs/SelectionRef"
+              }
+            }
+          }
+        ]
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "host.item.patch-metadata": {
+      "engine": "item_save metadata arm",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Editor with current room-backed head and package-approved metadata field",
+      "surfaces": [
+        "authorized_template_action",
+        "host_item_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": true,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item",
+          "field",
+          "value"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/$defs/ItemRef"
+          },
+          "field": {
+            "$ref": "#/$defs/ActionId"
+          },
+          "value": {
+            "$ref": "#/$defs/Scalar"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "full_swipe_when": "Host-validated single-item boolean toggle, confirm:none and atomic Undo. Expected revision comes from the activation context.",
+      "atomic_undo": true,
+      "atomic_undo_when": "A checked single boolean toggle with its Undo in the room-checked FULL content transaction."
+    },
+    "host.action.status": {
+      "engine": "protected action / rename / Trash job status",
+      "effect": "read",
+      "idempotency": "read_only",
+      "authority": "Live authorized audience of the originating host outcome",
+      "surfaces": [
+        "host_outcome"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "status_ref"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status_ref"
+        ],
+        "properties": {
+          "status_ref": {
+            "$ref": "#/$defs/StatusRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "turns.start": {
+      "engine": "turn_start",
+      "effect": "external",
+      "idempotency": "request_id",
+      "authority": "Actor with live turn, draft, provider and machine authority; guest Prompt disabled",
+      "surfaces": [
+        "host_composer"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "thread",
+        "options"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "thread",
+          "draft",
+          "options"
+        ],
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadRef"
+          },
+          "draft": {
+            "$ref": "#/$defs/Draft"
+          },
+          "options": {
+            "$ref": "#/$defs/ComposerOptions"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "turns.create": {
+      "engine": "thread create",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Actor with thread creation authority",
+      "surfaces": [
+        "authorized_template_action",
+        "host_thread_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "title": {
+            "$ref": "#/$defs/Text"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "turns.archive": {
+      "engine": "thread archive",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Actor with live thread lifecycle authority",
+      "surfaces": [
+        "authorized_template_action",
+        "host_thread_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "thread"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "thread"
+        ],
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false,
+      "atomic_undo_unavailable": "The current writer commits the archived head without Undo, then enters a separate protected authority transaction. Keep both flags false and the challenge in place until the Step 2 idle-archive writer gate passes.",
+      "confirmation_when": "Before the writer gate passes, require a challenge. After it passes, an eligible idle archive resolves and dispatches in one exchange without a sheet. Challenge archive outside atomic_undo_when. Retiring grants with head-only Undo requires a challenge. For an active turn the host-written material says: The running turn will be stopped.",
+      "atomic_undo_when": "Idle archive requires no active turn, unresolved send intent or pending approval to retire. Saved authority requires a challenge unless it consists only of thread grants that the Step 2 writer retires in the same FULL thread content transaction as archive and that Undo restores together with the thread head. Retiring grants with head-only Undo requires a challenge. Check idle eligibility under the commit fence. Turn admission rejects a fresh admission to an archived head under the same fence. Commit the archived head and its unarchive Undo in one FULL thread content transaction, with no separate cleanup.",
+      "full_swipe_when": "After the Step 2 idle-archive atomic writer with Undo passes, enable atomic_undo and full_swipe for the first swipe action with effective confirm:none and the idle condition."
+    },
+    "turns.unarchive": {
+      "engine": "thread unarchive",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Actor with live thread lifecycle authority",
+      "surfaces": [
+        "authorized_template_action",
+        "host_thread_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": true,
+      "worker_wake": "never",
+      "target_inputs": [
+        "thread"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "thread"
+        ],
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "Single-thread unarchive in the FULL content transaction with its Undo. Undo refuses if the thread revision or lifecycle dependencies changed.",
+      "full_swipe_when": "First swipe action, effective confirm:none and this operation’s atomic_undo_when condition."
+    },
+    "turns.snooze": {
+      "engine": "actor-scoped thread snooze",
+      "available": false,
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Member changing their own thread snooze",
+      "surfaces": [
+        "authorized_template_action",
+        "host_thread_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "thread"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "thread",
+          "until"
+        ],
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadRef"
+          },
+          "until": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false,
+      "atomic_undo_unavailable": "The current thread writer stores one shared manual deadline and cannot implement this actor-scoped operation. Set available to true only after the Step 2 actor-keyed snooze writer gate proves that the actor’s deadline, its index entry and Undo commit together. The host refuses snooze on every route while available is false. Subscription retry state is unaffected."
+    },
+    "turns.follow_up": {
+      "engine": "turn_follow_up",
+      "effect": "external",
+      "idempotency": "request_id",
+      "authority": "Actor allowed to queue against this turn on the selected provider/machine",
+      "surfaces": [
+        "host_composer",
+        "host_turn_control"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "turn"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "turn",
+          "draft"
+        ],
+        "properties": {
+          "turn": {
+            "$ref": "#/$defs/TurnRef"
+          },
+          "draft": {
+            "$ref": "#/$defs/Draft"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "host.collection.move": {
+      "engine": "collection_membership",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Live write authority on selected items and both named collections",
+      "surfaces": [
+        "authorized_template_action",
+        "host_item_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item",
+        "selection_ref",
+        "collection",
+        "from_collection"
+      ],
+      "input_schema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "item",
+              "collection"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/$defs/ItemRef"
+              },
+              "collection": {
+                "$ref": "#/$defs/CollectionRef"
+              },
+              "from_collection": {
+                "$ref": "#/$defs/CollectionRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "selection_ref",
+              "collection"
+            ],
+            "properties": {
+              "selection_ref": {
+                "$ref": "#/$defs/SelectionRef"
+              },
+              "collection": {
+                "$ref": "#/$defs/CollectionRef"
+              },
+              "from_collection": {
+                "$ref": "#/$defs/CollectionRef"
+              }
+            }
+          }
+        ]
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "The destination’s effective audience contains only the actor and the FULL content transaction commits the complete move and its Undo. A move across two collections is ineligible until both membership changes commit together.",
+      "confirmation_when": "Require a challenge only if the destination collection’s effective audience contains anyone other than the actor. Recheck under the commit fence. If the destination becomes shared, require a fresh challenge before dispatch."
+    },
+    "host.layout.move_to": {
+      "engine": "personal layout placement with complete effect and Undo committed together",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Live space membership and the actor’s own space/app layout, with context-pinned layout revision and live item and parent access for placements.",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "thread",
+        "entry",
+        "section"
+      ],
+      "input_schema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "thread",
+              "section"
+            ],
+            "properties": {
+              "thread": {
+                "$ref": "#/$defs/ThreadRef",
+                "description": "Adds the underlying thread if it has no placement in this layout. Refuse if a placement already exists."
+              },
+              "section": {
+                "$ref": "#/$defs/LayoutSectionRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "entry",
+              "section"
+            ],
+            "properties": {
+              "entry": {
+                "$ref": "#/$defs/LayoutEntryRef",
+                "description": "Moves the existing placement. Check its underlying item authority."
+              },
+              "section": {
+                "$ref": "#/$defs/LayoutSectionRef"
+              }
+            }
+          }
+        ],
+        "description": "The destination comes from the scoped ChoiceRef and requires a protected preview. Host reconstructs the thread or entry from the checked action context."
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true
+    },
+    "host.layout.move_up": {
+      "engine": "personal layout order with complete effect and Undo committed together",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Live space membership and the actor’s own space/app layout, with context-pinned layout revision and live item and parent access for placements.",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "entry"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entry"
+        ],
+        "properties": {
+          "entry": {
+            "$ref": "#/$defs/LayoutEntryRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true
+    },
+    "host.layout.move_down": {
+      "engine": "personal layout order with complete effect and Undo committed together",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Live space membership and the actor’s own space/app layout, with context-pinned layout revision and live item and parent access for placements.",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "entry"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entry"
+        ],
+        "properties": {
+          "entry": {
+            "$ref": "#/$defs/LayoutEntryRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true
+    },
+    "host.layout.section.create": {
+      "engine": "personal layout create section",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Live space membership and the actor’s own space/app layout, with context-pinned layout revision and live item and parent access for placements.",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "Commit the new section and Undo that removes it in one per-person layout revision transaction."
+    },
+    "host.layout.section.rename": {
+      "engine": "personal layout rename section",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Live space membership and the actor’s own space/app layout, with context-pinned layout revision and live item and parent access for placements.",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "entry"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entry",
+          "title"
+        ],
+        "properties": {
+          "entry": {
+            "$ref": "#/$defs/LayoutSectionRef"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "Commit the new title and Undo carrying the prior title in one per-person layout revision transaction."
+    },
+    "host.layout.section.remove": {
+      "engine": "personal layout remove section without changing item content or access",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Live space membership and the actor’s own space/app layout, with context-pinned layout revision and live item and parent access for placements.",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "entry"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entry"
+        ],
+        "properties": {
+          "entry": {
+            "$ref": "#/$defs/LayoutSectionRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "One per-person layout revision transaction retires the section and its placement generation and commits Undo for that generation. Until Undo expires, retain the generation and exclude it from reads. Undo rechecks live membership and the post-effect layout revision and reactivates the exact generation atomically. Reactivation grants no item access. Reclaim expired retired generations in bounded background batches. Removal and Undo perform no per-placement work."
+    }
+  },
+  "planned_operation_replacements": {
+    "turns.*": "Replace these host operations with the orchestrator plugin composed from the generic durable stream, machine container execution under scoped rights, and approval request. The replacement remains open."
+  },
+  "query": {
+    "operators": {
+      "eq": "Same scalar type or an explicitly nullable field compared to null.",
+      "ne": "Same scalar type; available only for a bounded indexed complement.",
+      "in": "One to 32 homogeneous scalars of the field type; no coercion or nested list.",
+      "lt": "Ordered indexed number, timestamp or approved collation key.",
+      "lte": "Same as lt.",
+      "gt": "Same as lt.",
+      "gte": "Same as lt.",
+      "exists": "No operand. Tests indexed non-null presence; use equality with null on nullable fields for absence.",
+      "prefix": "Nonempty text normalized with the field's indexed collation; up to 128 UTF-8 bytes."
+    },
+    "filter_groups": [
+      "all",
+      "any"
+    ],
+    "max_predicates": 16,
+    "max_sort_fields": 2,
+    "tie_breaker": "id",
+    "count_modes": {
+      "exact": "Count of the authorized projection at its checked result version; guest requires explicit count permission.",
+      "estimate": "Audience-certified member estimate only. A guest never gets an estimate. Refuse an end anchor with end_unavailable and never send an end-relative result.",
+      "none": "Omit count. This is always the guest fallback, including nested windows, unless the authorized projection allows an exact count. Refuse an end anchor with end_unavailable and never send an end-relative result."
+    },
+    "window": {
+      "request_schema": {
+        "$ref": "#/$defs/WindowRequest"
+      },
+      "result_schema": {
+        "$ref": "#/$defs/WindowReply"
+      },
+      "max_rows": 200,
+      "default_rows": 60,
+      "max_offset": 500000,
+      "max_encoded_bytes": 131072,
+      "max_request_span": 200,
+      "row_reference_schema": {
+        "$ref": "#/$defs/Ref"
+      },
+      "description": "The declared parent edge constrains the nested lookup and any count before filtering or pagination. Authorize the entire parent ancestry and each returned row. A parent operand is an optional extra predicate. A Bind may be a section rows Bind or a children target, never both. Section rows present LayoutEntryRef; child rows present their kind’s row ref. The window_ref identifies the Bind, stable parent, anchor and issued range within the current lease and partition. Separately cap materialized rows and entries skipped in an index-only jump over the scoped covering index from the nearer end. Absolute jumps are capped by max_offset. An explicit start anchor can cross that cap only for forward continuation without exact count authority, exactly at the next row of a host-issued ready start window for the current view, Bind, parent and result version. Seek from the checked boundary key. Before planning an end-relative request, check the effective authorized count mode for its Bind and scope. Require a non-search Bind and exact count authority. For search or with mode estimate or none return WindowPlanError with reason end_unavailable and no end distance. A view with count mode none shows no scroll extent implying a total. An index-only jump beyond the skip cap returns WindowPlanError with reason skip_limit. Non-search list plans use maintained scope counts. Search counts use query.search.count.",
+      "max_nested_row_depth": 3
+    },
+    "unsupported_plan": {
+      "$ref": "#/$defs/WindowPlanError"
+    },
+    "live_limits": {
+      "binds_per_view": 16,
+      "subscriptions_per_view": 8,
+      "subscriptions_per_actor": 16,
+      "subscriptions_per_space": 128,
+      "pending_windows_per_view": 2,
+      "queued_bytes_per_view": 262144,
+      "queued_bytes_per_actor": 524288,
+      "queued_bytes_per_space": 8388608,
+      "query_starts_per_view_per_second": 8,
+      "query_starts_per_actor_per_second": 16,
+      "query_starts_per_space_per_second": 64,
+      "live_updates_per_bind_per_second": 4,
+      "index_visits_per_count": 100000,
+      "count_starts_per_space_per_second": 4,
+      "pending_windows_per_actor": 4,
+      "pending_windows_per_space": 32,
+      "query_concurrency_per_space": 8,
+      "subscriber_session_lease_seconds": 15,
+      "materialized_rows_per_window": 4096,
+      "index_jump_skips_per_window": 250000,
+      "effective_scopes_per_item": 32,
+      "search_input_postings_per_window": 160000
+    },
+    "body_excerpt": {
+      "max_utf8_bytes": 160,
+      "description": "A claimed-text kind may declare an indexed Text field with source body_excerpt. The host index produces the first plain text after the title, collapses whitespace and truncates at a UTF-8 character boundary within max_utf8_bytes. Expose it only to a viewer authorized for the body and the declared field. Writers cannot supply the derived value."
+    },
+    "row_images": {
+      "read": "GET /api/v2/row-images/{ref}",
+      "provenance": "The host marks an image body-derived from trusted provenance, including a device snapshot of the body or a job output produced from it. A manifest flag alone cannot determine provenance. Without established provenance, withhold the image.",
+      "retention": "Retain an image only while its source revision is retained. Purge it when that revision is erased, or with all its revisions when the item is purged. An old-revision image is not eligible for a current row.",
+      "ref_schema": { "$ref": "#/$defs/RowImageRef" },
+      "content_types": ["image/png", "image/jpeg"],
+      "max_bytes": 65536,
+      "max_pixel_edge": 128,
+      "authorization": "Only the host may mint a ref, in an authorized ready window. Bind it to the account, space, live view lease, row, item revision, field and exact asset. Resolve through the host origin with authentication and recheck the binding and live item and image-field authority before sending bytes. For a body-derived image also recheck live body authority at fetch, even when the item and image-field grants remain valid. Return the same opaque 404 for absent, expired, stale, oversized or unauthorized images. No redirects, worker wake or outbound fetch.",
+      "cache": "Use Cache-Control: no-store on the HTTP reply. Keep decoded images only in renderer memory keyed by ref for a currently authorized row. Drop them on row or ref replacement, revocation, lease loss or account switch. Omit refs and images from persisted member rows and refine_query replies.",
+      "draw": "Request the image asynchronously. While a navigation key repeats, defer new image reads and cancel reads in flight. Once the key settles, fetch only still-visible rows' current refs. While loading or unavailable, use the declared RowImageIcon fallback if present; otherwise leave the image slot blank."
+    },
+    "cross_bind_operands": "Forbidden in the first query slice. Action and component references to upstream fields still require one authorized projected row and a checked dependency edge.",
+    "scope_limit_refusal": {
+      "status": 422,
+      "code": "effective_scope_limit_exceeded",
+      "description": "Check projected scope fan-out before committing a grant or other scope-expanding change. Count distinct effective (collection, audience) scopes per item after resolving direct and inherited ACL paths. Refuse the whole change if any item would exceed the cap. A save touches at most two index keys per effective scope.",
+      "message": "An item can belong to at most 32 effective scopes."
+    },
+    "search": {
+      "claimed_text": {
+        "eligibility": "Any plugin kind with claimed_text and searchable both true in its installed manifest. Notes uses this same qualification.",
+        "scopes": [
+          "space",
+          "manual_collection"
+        ],
+        "tokenizer": {
+          "name": "unicode61",
+          "remove_diacritics": 2,
+          "prefix_index_lengths": [
+            2,
+            3
+          ],
+          "qualification": "Compile each full-text literal and token prefix using the published generation’s own qualified FTS5 tokenizer. Apply the token and posting bounds to those tokens and that generation’s term statistics. A tokenizer change requires a rebuilt generation and matching term statistics. Accented Latin and Cyrillic qualify. Refuse Devanagari full text, including token prefixes, with unsupported_query_plan until a rebuilt generation with the mark-aware categories is ready. CJK qualifies only for a whole unspaced run or its leading prefix. Implicit word segmentation and interior substring matching are unsupported_query_plan.",
+          "categories": "L* N* Co M*"
+        },
+        "match": "For all, match authorized title and body together in the published scope-local FTS index. An AND query may match terms in different fields of the same item. Return each item once in the kind’s stable scope-local order.",
+        "field_filter_schema": {
+          "$ref": "#/$defs/ClaimedTextSearchFilter"
+        }
+      },
+      "turns": {
+        "kind": "threads",
+        "scopes": [
+          "space"
+        ],
+        "tokenizer": "Titles use the existing claimed-text FTS5 tokenizer. Messages use the existing message_terms tokenizer, which splits at non-alphanumeric characters and lowercases Unicode.",
+        "qualification": "For all, match the full query against an authorized title or within one authorized message. Emit distinct threads with title matches first, in stable thread ID order, followed by message-only matches ordered by the newest matching authorized message timestamp and message UUID. A thread matching both appears once in the title tier. Reuse the authority-versioned title and message indexes under one scope snapshot. Deduplicate token expansions across both sources and sum their posting bounds and row work under the existing shared budgets. Field filters restrict this same matching and delivery path.",
+        "field_filter_schema": {
+          "$ref": "#/$defs/TurnsSearchFilter"
+        }
+      },
+      "qualified_depth": 200,
+      "max_authorized_items_per_scope": 100000,
+      "max_literal_and_terms": 3,
+      "max_token_prefix_expansions": 32,
+      "qualification": "For each ready authority-versioned Bind, qualify its supported literal-term and prefix modes for windows up to query.window.max_request_span starting at offsets through qualified_depth. Serve later windows while both query.live_limits budgets for scoped postings and materialized rows hold. Use only the kind’s authorized scopes, order and scope-local statistics. Refuse unqualified shapes, scopes and sorts with unsupported_query_plan. End anchors are unavailable for search. The host returns WindowPlanError with reason end_unavailable and the renderer pages forward for End.",
+      "publication": "The host owns the qualified list and search projections of item text and declared indexed fields. Its index maintains the list projections, and its existing background search worker maintains the search projections and same-generation term statistics independently of save acknowledgement. Check live access to the scope, searchable fields and output fields before evaluation. Readiness and invalidation compare revisions of the viewer’s authorized row-and-field projection, never a space-wide watermark. While that projection is behind or stale after revocation, return loading with no rows, count or activation contexts. A hidden-only edit leaves the visible search state, result version, rows, ranks and counts unchanged during and after publication. Fence cached results on revocation and recheck authority on delivery. Deny access if the scope is no longer authorized.",
+      "refinement": "Bound scoped posting work using same-generation term frequencies. When an otherwise qualified query exhausts the scoped-posting or materialized-row budget, return refine_query with only bounded provisional rows from the same authorized query and published generation. A prefix exceeding either the expansion cap or the posting budget returns refine_query without starting expansion and can include only already-issued rows for that query, audience and generation. Omit count, activation contexts and member cache record. Provisional replies have null result_version and window_ref.",
+      "count": "Non-search lists use maintained per-scope counts. Claimed-text exact search counts measure qualified matches in a ready authorized projection under the separate count-work and rate budgets and require exact-count authority. Search defaults to count mode none. Search estimates and exact distinct-thread search counts are unqualified. Refuse an unqualified count request with unsupported_query_plan.",
+      "request_schema": {
+        "$ref": "#/$defs/SearchWindowRequest"
+      },
+      "field_filter": "Optional on the Bind. Default all. Claimed-text kinds allow all, title or body. Turns allows all, title or messages. The request match shape is independent of the field filter and defaults to literal AND terms. A prefix is explicitly requested as one token prefix.",
+      "match_schema": {
+        "$ref": "#/$defs/SearchMatchShape"
+      }
+    }
+  },
+  "$defs": {
+    "Ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "ActionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "ActivationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "ContextRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "ProofRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "Text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "Boolean": {
+      "type": "boolean"
+    },
+    "Number": {
+      "type": "number"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$(?![\\s\\S])",
+      "maxLength": 40,
+      "description": "The host emits RFC 3339 timestamps with seconds 00 to 59 only, recording a leap-second instant as second 59 with the fraction clamped to the maximum representable value."
+    },
+    "KindId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "CollectionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized CollectionRef reference. A compatible string shape does not grant authority."
+    },
+    "ThreadRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized ThreadRef reference. A compatible string shape does not grant authority."
+    },
+    "TurnRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized TurnRef reference. A compatible string shape does not grant authority."
+    },
+    "RequestRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized RequestRef reference. A compatible string shape does not grant authority."
+    },
+    "AccountRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized AccountRef reference. A compatible string shape does not grant authority."
+    },
+    "AttachmentRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized AttachmentRef reference. A compatible string shape does not grant authority."
+    },
+    "StatusRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized StatusRef reference. A compatible string shape does not grant authority."
+    },
+    "UndoRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized UndoRef reference. A compatible string shape does not grant authority."
+    },
+    "TrashSelectionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized TrashSelectionRef reference. A compatible string shape does not grant authority."
+    },
+    "DestinationFrameRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized DestinationFrameRef reference. A compatible string shape does not grant authority."
+    },
+    "RevisionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized RevisionRef reference. A compatible string shape does not grant authority."
+    },
+    "QuoteRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized QuoteRef reference. A compatible string shape does not grant authority."
+    },
+    "ItemRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Typed host reference for the declared kind and target. A scoped row may carry it; client markup cannot create it."
+    },
+    "Quote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thread",
+        "quote_ref"
+      ],
+      "properties": {
+        "thread": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "quote_ref": {
+          "$ref": "#/$defs/QuoteRef"
+        }
+      }
+    },
+    "Draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "attachments": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/AttachmentRef"
+          }
+        },
+        "mentions": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/AccountRef"
+          }
+        },
+        "quote": {
+          "$ref": "#/$defs/Quote"
+        }
+      }
+    },
+    "Interaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "form": {
+          "type": "object",
+          "maxProperties": 32
+        },
+        "prompt": {
+          "type": "object",
+          "maxProperties": 8
+        },
+        "draft": {
+          "$ref": "#/$defs/Draft"
+        },
+        "selection_ref": {
+          "$ref": "#/$defs/SelectionRef"
+        },
+        "options": {
+          "$ref": "#/$defs/ComposerOptions"
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/Ref"
+          },
+          "uniqueItems": true,
+          "description": "Stable row IDs from the context-bound Bind for a bulk activation."
+        },
+        "choices": {
+          "type": "object",
+          "maxProperties": 8,
+          "additionalProperties": {
+            "$ref": "#/$defs/ChoiceRef"
+          }
+        }
+      }
+    },
+    "ResolveActivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "action_id",
+        "activation_id",
+        "activation_context"
+      ],
+      "properties": {
+        "type": {
+          "const": "invoke"
+        },
+        "action_id": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
+        },
+        "activation_context": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "interaction": {
+          "$ref": "#/$defs/Interaction"
+        },
+        "dispatch": {
+          "const": true,
+          "description": "Resolve and dispatch in one exchange only for an eligible catalogue operation with effective confirm:none. Otherwise return a resolution without running the operation."
+        }
+      }
+    },
+    "ConfirmActivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "activation_id",
+        "resolution_ref",
+        "confirmation_challenge"
+      ],
+      "properties": {
+        "type": {
+          "const": "invoke_confirm"
+        },
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
+        },
+        "resolution_ref": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "confirmation_challenge": {
+          "$ref": "#/$defs/ProofRef"
+        },
+        "final_text": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "Message content for the prepared host composer only. Any parser-derived change to recipients, routing, permissions or other prepared material requires a fresh resolve and preview."
+        }
+      }
+    },
+    "DispatchActivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "activation_id",
+        "resolution_ref"
+      ],
+      "properties": {
+        "type": {
+          "const": "invoke_dispatch"
+        },
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
+        },
+        "resolution_ref": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "confirmation_proof": {
+          "$ref": "#/$defs/ProofRef"
+        }
+      }
+    },
+    "ConfirmationMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "label",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/Text"
+        },
+        "label": {
+          "$ref": "#/$defs/Text"
+        },
+        "value": {}
+      }
+    },
+    "ActivationResolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "activation_id",
+        "resolution_ref"
+      ],
+      "properties": {
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
+        },
+        "resolution_ref": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "confirmation_challenge": {
+          "$ref": "#/$defs/ProofRef"
+        },
+        "material": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/ConfirmationMaterial"
+          }
+        },
+        "confirm": {
+          "$ref": "#/$defs/ConfirmMode",
+          "description": "Omitted for the ordinary separate resolve/dispatch path without an extra challenge. None permits the catalogue shortcut only. Challenge requires protected confirmation."
+        },
+        "selection_ref": {
+          "$ref": "#/$defs/SelectionRef"
+        }
+      },
+      "dependentRequired": {
+        "confirmation_challenge": [
+          "material"
+        ],
+        "material": [
+          "confirmation_challenge"
+        ]
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "confirm": {
+                "const": "challenge"
+              }
+            },
+            "required": [
+              "confirm"
+            ]
+          },
+          "then": {
+            "required": [
+              "confirmation_challenge",
+              "material"
+            ]
+          },
+          "else": {
+            "properties": {
+              "confirmation_challenge": false,
+              "material": false
+            }
+          }
+        }
+      ]
+    },
+    "UndoResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "label",
+        "expires_at"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/UndoRef"
+        },
+        "label": {
+          "$ref": "#/$defs/Text"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      }
+    },
+    "ActionOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "activation_id",
+        "state"
+      ],
+      "properties": {
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
+        },
+        "state": {
+          "enum": [
+            "ok",
+            "pending",
+            "error",
+            "stale",
+            "refused",
+            "unknown"
+          ]
+        },
+        "status_ref": {
+          "$ref": "#/$defs/StatusRef"
+        },
+        "undo": {
+          "$ref": "#/$defs/UndoResult"
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "created": {
+          "$ref": "#/$defs/ItemRef"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "pending"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "status_ref"
+            ]
+          },
+          "else": {
+            "properties": {
+              "status_ref": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "ok"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "undo": false,
+              "created": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "error",
+                  "refused",
+                  "stale",
+                  "unknown"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "code",
+              "message"
+            ]
+          },
+          "else": {
+            "properties": {
+              "code": false,
+              "message": false
+            }
+          }
+        }
+      ]
+    },
+    "WindowRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "request"
+      ],
+      "properties": {
+        "type": {
+          "const": "window"
+        },
+        "request": {
+          "$ref": "#/$defs/WindowRequestPayload"
+        }
+      }
+    },
+    "WindowRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "fields"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "fields": {
+          "type": "object",
+          "maxProperties": 32,
+          "additionalProperties": { "$ref": "#/$defs/Scalar" }
+        },
+        "parent_refs": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "$ref": "#/$defs/ActionId"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/WindowParentRef"
+          },
+          "description": "Host-issued parent row reference for each authorized child Bind reached through a declared edge. Omit when the row has no eligible edge."
+        }
+      }
+    },
+    "WindowResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bind",
+        "state",
+        "result_version",
+        "offset",
+        "rows",
+        "window_ref",
+        "audience"
+      ],
+      "properties": {
+        "result_version": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Actual offset of the delivered range from the reply anchor. Start is measured at its first returned row; end is the distance of the nearest returned row to the end. The rows are always in normal Bind order. If no rows are returned, use the requested from. The host checks this equality against the originating request before issuing the reply."
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/WindowRow"
+          },
+          "description": "Opaque stable row IDs; no position is an authority reference."
+        },
+        "count": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "value"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "exact",
+                "estimate"
+              ]
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "description": "Present only for an authorized ready or empty result. On empty, a supplied count is exact zero. On ready with an exact count, the host checks the returned range against that count before delivery, from either anchor. If rows are returned, offset plus their number is at most the count. A zero-row ready reply starts at or beyond the count."
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "state": {
+          "enum": [
+            "loading",
+            "ready",
+            "empty",
+            "error",
+            "throttled",
+            "refine_query"
+          ],
+          "description": "refine_query asks the viewer to narrow a qualified search that exceeded a posting, row work or prefix expansion limit in query.search. Its rows are provisional and display only. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: \"empty\"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero."
+        },
+        "activation_contexts": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/RowActivationContexts"
+          },
+          "description": "Present only for an authorized ready or empty result."
+        },
+        "window_ref": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent": {
+          "$ref": "#/$defs/WindowParentRef"
+        },
+        "member_cache_record": {
+          "$ref": "#/$defs/MemberRowCacheRecord"
+        },
+        "audience": {
+          "$ref": "#/$defs/WindowAudience"
+        },
+        "anchor": {
+          "$ref": "#/$defs/WindowAnchor"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "ready",
+                  "empty"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "result_version": {
+                "$ref": "#/$defs/Ref"
+              },
+              "window_ref": {
+                "$ref": "#/$defs/Ref"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "activation_contexts": false,
+              "count": false,
+              "result_version": {
+                "type": "null"
+              },
+              "window_ref": {
+                "type": "null"
+              },
+              "member_cache_record": false
+            },
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "refine_query"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "rows": {
+                  "maxItems": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "empty"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "offset": {
+                "const": 0
+              },
+              "rows": {
+                "maxItems": 0
+              },
+              "activation_contexts": {
+                "maxItems": 0
+              },
+              "count": {
+                "properties": {
+                  "mode": {
+                    "const": "exact"
+                  },
+                  "value": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "ready"
+              },
+              "offset": {
+                "const": 0
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "rows": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "member_cache_record"
+            ]
+          },
+          "then": {
+            "properties": {
+              "audience": {
+                "const": "own_space_member"
+              },
+              "parent": false,
+              "anchor": {
+                "const": "start"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "anchor"
+            ],
+            "properties": {
+              "anchor": {
+                "const": "end"
+              }
+            }
+          },
+          "else": {
+            "if": {
+              "properties": {
+                "offset": {
+                  "maximum": 500000
+                }
+              }
+            },
+            "else": {
+              "required": [
+                "anchor"
+              ],
+              "properties": {
+                "anchor": {
+                  "const": "start"
+                },
+                "count": false,
+                "member_cache_record": false
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "count"
+            ],
+            "properties": {
+              "count": {
+                "properties": {
+                  "mode": {
+                    "const": "exact"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "description": "An authenticated reply for the active view and its audience. At from zero, the host sends empty for a wholly empty result. A ready reply at offset zero contains rows. Check the session, lease partition and audience before consuming rows or a cache record. Any cache record must match this view and window. Only a non-search Bind in a view with exact count authority receives an end anchor and end-relative offset. Every end-anchored reply carries count.mode exact. Check count policy for the active Bind and scope on each delivery. An absolute offset above max_offset is only returned to a contiguous forward continuation without exact count authority, with anchor:start and no count or persistent cache record."
+    },
+    "ProviderId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "description": "Installed provider identifier. Known built-in IDs are icon-map seeds, not a closed allowlist."
+    },
+    "TranscriptCursor": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque, checked cursor for a thread and committed event position."
+    },
+    "TranscriptPageRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thread"
+      ],
+      "properties": {
+        "thread": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "after": {
+          "$ref": "#/$defs/TranscriptCursor"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        }
+      }
+    },
+    "CommittedTranscriptEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "event_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "kind": {
+          "$ref": "#/$defs/Text"
+        },
+        "data": {
+          "type": "object",
+          "description": "Host-owned typed event from the admitted Turns schema."
+        }
+      }
+    },
+    "TranscriptPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "events",
+        "committed_cursor"
+      ],
+      "properties": {
+        "events": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/CommittedTranscriptEvent"
+          }
+        },
+        "committed_cursor": {
+          "$ref": "#/$defs/TranscriptCursor"
+        }
+      }
+    },
+    "SealedFrameOpen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frame"
+      ],
+      "properties": {
+        "frame": {
+          "$ref": "#/$defs/DestinationFrameRef"
+        }
+      }
+    },
+    "SealedFrameResize": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frame",
+        "height"
+      ],
+      "properties": {
+        "frame": {
+          "$ref": "#/$defs/DestinationFrameRef"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        }
+      }
+    },
+    "SealedFrameOpenLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frame",
+        "link_ref"
+      ],
+      "properties": {
+        "frame": {
+          "$ref": "#/$defs/DestinationFrameRef"
+        },
+        "link_ref": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "SelectionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Host-issued reference to an eligible selection of at most 50 stable row IDs in this activation context."
+    },
+    "SelectionSetRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bind",
+        "rows"
+      ],
+      "properties": {
+        "type": {
+          "const": "selection_set"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Ref"
+          },
+          "description": "Stable rows in the checked Bind window set. An empty array clears the selection."
+        },
+        "sentAt": {
+          "type": "number",
+          "description": "Optional renderer telemetry. Never used for authorization, ordering or expiry."
+        }
+      }
+    },
+    "SelectionSetResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bind",
+        "selection_ref"
+      ],
+      "properties": {
+        "type": {
+          "const": "selection_result"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "selection_ref": {
+          "$ref": "#/$defs/SelectionRef"
+        }
+      }
+    },
+    "ComposerControl": {
+      "enum": [
+        "provider",
+        "model",
+        "reasoning",
+        "permission",
+        "machine"
+      ]
+    },
+    "ComposerOptionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Host-issued choice bound to viewer, thread and the needed option-source versions."
+    },
+    "ComposerOptionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thread",
+        "control"
+      ],
+      "properties": {
+        "thread": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "control": {
+          "$ref": "#/$defs/ComposerControl"
+        },
+        "after": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ComposerOptionPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "control",
+        "options",
+        "selected",
+        "default"
+      ],
+      "properties": {
+        "control": {
+          "$ref": "#/$defs/ComposerControl"
+        },
+        "options": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ref",
+              "label"
+            ],
+            "properties": {
+              "ref": {
+                "$ref": "#/$defs/ComposerOptionRef"
+              },
+              "label": {
+                "$ref": "#/$defs/Text"
+              }
+            }
+          }
+        },
+        "next": {
+          "$ref": "#/$defs/Ref"
+        },
+        "selected": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ComposerOptionRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "default": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ComposerOptionRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "FieldAudience": {
+      "enum": [
+        "member_item",
+        "shared_projection",
+        "viewer_self",
+        "designated_request_actor",
+        "eligible_turn_actor",
+        "personal_layout"
+      ]
+    },
+    "FieldType": {
+      "enum": [
+        "Text",
+        "Number",
+        "Boolean",
+        "Timestamp",
+        "ItemRef",
+        "CollectionRef",
+        "ThreadRef",
+        "TurnRef",
+        "RequestRef",
+        "AccountRef",
+        "ProviderId",
+        "LayoutSectionRef",
+        "LayoutEntryRef",
+        "RowImageRef"
+      ]
+    },
+    "ViewerRole": {
+      "enum": [
+        "owner",
+        "manager",
+        "editor",
+        "reader"
+      ]
+    },
+    "Scalar": {
+      "type": [
+        "string",
+        "number",
+        "boolean",
+        "null"
+      ]
+    },
+    "ConfirmMode": {
+      "enum": [
+        "none",
+        "challenge"
+      ]
+    },
+    "ComposerOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ComposerOptionRef"
+        },
+        "model": {
+          "$ref": "#/$defs/ComposerOptionRef"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/ComposerOptionRef"
+        },
+        "permission": {
+          "$ref": "#/$defs/ComposerOptionRef"
+        },
+        "machine": {
+          "$ref": "#/$defs/ComposerOptionRef"
+        }
+      }
+    },
+    "ActionContexts": {
+      "type": "object",
+      "maxProperties": 32,
+      "additionalProperties": {
+        "$ref": "#/$defs/ContextRef"
+      }
+    },
+    "RowActivationContexts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "row",
+        "contexts"
+      ],
+      "properties": {
+        "row": {
+          "$ref": "#/$defs/Ref"
+        },
+        "contexts": {
+          "$ref": "#/$defs/ActionContexts"
+        }
+      }
+    },
+    "SubscriptionLease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lease_ref",
+        "lease_seconds",
+        "grant_revision",
+        "cache_partition"
+      ],
+      "properties": {
+        "lease_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "lease_seconds": {
+          "const": 15
+        },
+        "grant_revision": {
+          "$ref": "#/$defs/Ref"
+        },
+        "cache_partition": {
+          "$ref": "#/$defs/CachePartitionRef"
+        }
+      }
+    },
+    "ViewOpenResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lease",
+        "activation_contexts",
+        "audience"
+      ],
+      "properties": {
+        "lease": {
+          "$ref": "#/$defs/SubscriptionLease",
+          "description": "Starts the shared lease for current view, windows and authorized activation contexts."
+        },
+        "activation_contexts": {
+          "$ref": "#/$defs/ActionContexts"
+        },
+        "audience": {
+          "$ref": "#/$defs/WindowAudience"
+        }
+      }
+    },
+    "LeaseRenewRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "lease_ref",
+        "grant_revision",
+        "result_versions",
+        "renewal_id",
+        "cache_partition"
+      ],
+      "properties": {
+        "type": {
+          "const": "lease_renew"
+        },
+        "lease_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "grant_revision": {
+          "$ref": "#/$defs/Ref"
+        },
+        "result_versions": {
+          "type": "object",
+          "maxProperties": 16,
+          "additionalProperties": {
+            "$ref": "#/$defs/Ref"
+          },
+          "description": "Exact result versions keyed by current host-issued window_ref, including parent-specific windows.",
+          "propertyNames": {
+            "$ref": "#/$defs/Ref"
+          }
+        },
+        "renewal_id": {
+          "$ref": "#/$defs/Ref",
+          "description": "Renderer-generated identifier unique to this renewal attempt. A newer attempt supersedes it."
+        },
+        "cache_partition": {
+          "$ref": "#/$defs/CachePartitionRef"
+        }
+      }
+    },
+    "LeaseRenewResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lease",
+        "retained_results",
+        "activation_contexts",
+        "windows",
+        "renewal_id",
+        "request_lease_ref",
+        "cache_partition"
+      ],
+      "properties": {
+        "lease": {
+          "$ref": "#/$defs/SubscriptionLease"
+        },
+        "retained_results": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/RetainedResult"
+          },
+          "uniqueItems": true
+        },
+        "activation_contexts": {
+          "$ref": "#/$defs/ActionContexts"
+        },
+        "windows": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/WindowResult"
+          }
+        },
+        "renewal_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "request_lease_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "cache_partition": {
+          "$ref": "#/$defs/CachePartitionRef"
+        }
+      },
+      "description": "Accept only an authenticated host reply matching the outstanding renewal_id, current request_lease_ref and cache_partition. Retain only exact window_ref and result_version pairs authorized and previously issued to that lease. Ignore superseded replies and keep live rows hidden on timeout or refusal."
+    },
+    "UndoRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "undo_ref"
+      ],
+      "properties": {
+        "type": {
+          "const": "undo"
+        },
+        "undo_ref": {
+          "$ref": "#/$defs/UndoRef"
+        }
+      }
+    },
+    "StatusRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "status_ref"
+      ],
+      "properties": {
+        "type": {
+          "const": "action_status"
+        },
+        "status_ref": {
+          "$ref": "#/$defs/StatusRef"
+        }
+      }
+    },
+    "RequestCardResolve": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "card_context",
+        "request_ref",
+        "decision"
+      ],
+      "properties": {
+        "type": {
+          "const": "request_resolve"
+        },
+        "card_context": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "request_ref": {
+          "$ref": "#/$defs/RequestRef"
+        },
+        "decision": {
+          "enum": [
+            "approve",
+            "deny"
+          ]
+        },
+        "lifetime": {
+          "enum": [
+            "once",
+            "this_thread"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "approve"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "lifetime"
+            ]
+          },
+          "else": {
+            "properties": {
+              "lifetime": false
+            }
+          }
+        }
+      ]
+    },
+    "ShareSheetRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "activation_context"
+      ],
+      "properties": {
+        "type": {
+          "const": "share_sheet"
+        },
+        "activation_context": {
+          "$ref": "#/$defs/ContextRef"
+        }
+      }
+    },
+    "TrashSheetRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "activation_context",
+        "kind"
+      ],
+      "properties": {
+        "type": {
+          "const": "trash_sheet"
+        },
+        "activation_context": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "kind": {
+          "$ref": "#/$defs/KindId"
+        }
+      }
+    },
+    "ScheduleCalendar": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "at"
+          ],
+          "properties": {
+            "type": {
+              "const": "once"
+            },
+            "at": {
+              "$ref": "#/$defs/Timestamp"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "expression"
+          ],
+          "properties": {
+            "type": {
+              "const": "recurring"
+            },
+            "expression": {
+              "type": "string",
+              "maxLength": 256
+            }
+          }
+        }
+      ]
+    },
+    "ScheduleCreateInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "input",
+        "calendar",
+        "time_zone"
+      ],
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/Ref"
+        },
+        "input": {
+          "type": "object"
+        },
+        "calendar": {
+          "$ref": "#/$defs/ScheduleCalendar"
+        },
+        "time_zone": {
+          "$ref": "#/$defs/Ref"
+        },
+        "notify_creator": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "ChoiceRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Host-issued choice bound to one eligible row, option Bind result, owning prompt slot, viewer and activation context."
+    },
+    "ChoiceOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bind",
+        "options"
+      ],
+      "properties": {
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "options": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ref",
+              "label"
+            ],
+            "properties": {
+              "ref": {
+                "$ref": "#/$defs/ChoiceRef"
+              },
+              "label": {
+                "$ref": "#/$defs/Text"
+              }
+            }
+          }
+        }
+      }
+    },
+    "ViewOpenRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "view_ref"
+      ],
+      "properties": {
+        "type": {
+          "const": "view_open"
+        },
+        "view_ref": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ChoiceOptionsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "activation_context",
+        "slot"
+      ],
+      "properties": {
+        "type": {
+          "const": "choice_options"
+        },
+        "activation_context": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "slot": {
+          "$ref": "#/$defs/ActionId"
+        }
+      },
+      "description": "Fetch scoped options before displaying the prompt. The host reconstructs the option Bind from the activation context and slot. Show the returned labels, then submit only the picked ref under that slot in interaction.choices."
+    },
+    "ShareSheetResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sheet_ref",
+        "audiences"
+      ],
+      "properties": {
+        "sheet_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "audiences": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ref",
+              "label"
+            ],
+            "properties": {
+              "ref": {
+                "$ref": "#/$defs/ChoiceRef"
+              },
+              "label": {
+                "$ref": "#/$defs/Text"
+              }
+            }
+          },
+          "maxItems": 50
+        }
+      }
+    },
+    "TrashSheetResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sheet_ref",
+        "kind",
+        "selection_ref",
+        "count"
+      ],
+      "properties": {
+        "sheet_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "kind": {
+          "$ref": "#/$defs/KindId"
+        },
+        "selection_ref": {
+          "$ref": "#/$defs/TrashSelectionRef"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "WindowRequestPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bind",
+        "from",
+        "to"
+      ],
+      "properties": {
+        "to": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "parent": {
+          "$ref": "#/$defs/WindowParentRef",
+          "description": "Required for source.parent:true and absent at the root. Use the ref issued for this child Bind in the actual parent row."
+        },
+        "anchor": {
+          "$ref": "#/$defs/WindowAnchor"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "anchor"
+            ]
+          },
+          "else": {
+            "properties": {
+              "from": {
+                "maximum": 500000
+              },
+              "to": {
+                "maximum": 500200
+              }
+            }
+          }
+        }
+      ],
+      "description": "Request half-open [from,to) from the chosen anchor. The semantic loader requires from < to and a span within query.window.max_request_span for either anchor. Check authorized scope before using its count or index and return rows in normal Bind order. An end anchor requires a non-search Bind and an effective authorized count mode of exact. Refuse before computing or returning any end distance. Absolute jumps remain capped by query.window.max_offset, including explicit start anchors. Above the cap, an explicit start anchor is accepted only for a contiguous forward continuation without exact count authority at a checked, current ready window boundary."
+    },
+    "CachePartitionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host partition identifier bound to the account, session, space, audience and view. It grants no authority."
+    },
+    "RetainedResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "window_ref",
+        "result_version"
+      ],
+      "properties": {
+        "window_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "result_version": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "SelectionContextResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "lease_ref",
+        "cache_partition",
+        "bind",
+        "row",
+        "activation_contexts"
+      ],
+      "properties": {
+        "type": {
+          "const": "selection_context"
+        },
+        "lease_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "cache_partition": {
+          "$ref": "#/$defs/CachePartitionRef"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "row": {
+          "$ref": "#/$defs/Ref"
+        },
+        "activation_contexts": {
+          "$ref": "#/$defs/ActionContexts"
+        }
+      },
+      "description": "Host issues selection contexts for exactly the stable row reported as drawn. Renderer waits if none matches that row and ignores unrelated or superseded contexts."
+    },
+    "LayoutEntryRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Host-issued ref for a section or placement in the current actor’s personal layout."
+    },
+    "LayoutSectionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Host-issued ref for a section in the current actor’s personal layout."
+    },
+    "SettledSelectionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bind",
+        "row"
+      ],
+      "properties": {
+        "type": {
+          "const": "selection"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "row": {
+          "$ref": "#/$defs/Ref"
+        },
+        "sentAt": {
+          "type": "number",
+          "description": "Optional telemetry. Never used for authorization or ordering."
+        }
+      },
+      "description": "Settled single selection in the current authorized view. The host validates the drawn row under the Bind and returns its SelectionContextResult."
+    },
+    "WindowParentRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Host-issued row reference bound to the declared parent edge, child Bind, full parent ancestry and current authorized view and audience. Validate every request, including counts. Invalid, foreign or stale references confer no scope."
+    },
+    "RowActionTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context"
+      ],
+      "properties": {
+        "context": {
+          "enum": [
+            "item",
+            "placement"
+          ]
+        }
+      },
+      "description": "Author operand resolved by the host from the checked row action context. item is the underlying kind reference, ThreadRef for threads. placement is a LayoutEntryRef and exists only for a row from Section.repeat.rows. Neither value is supplied by the renderer."
+    },
+    "MemberRowCacheRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "audience",
+        "account",
+        "space",
+        "template_digest",
+        "bind",
+        "window_ref",
+        "offset",
+        "issued_at",
+        "expires_at",
+        "rows",
+        "proof"
+      ],
+      "properties": {
+        "audience": {
+          "const": "own_space_member"
+        },
+        "account": {
+          "$ref": "#/$defs/AccountRef"
+        },
+        "space": {
+          "$ref": "#/$defs/Ref"
+        },
+        "template_digest": {
+          "$ref": "#/$defs/Ref"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "window_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500000
+        },
+        "issued_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "title"
+            ],
+            "properties": {
+              "title": {
+                "$ref": "#/$defs/Text"
+              },
+              "subtitle": {
+                "$ref": "#/$defs/Text",
+                "description": "Host-allowlisted offline text only. Dates use subtitle_timestamp. The host checks source provenance and excludes every body-derived part before signing."
+              },
+              "subtitle_timestamp": {
+                "$ref": "#/$defs/Timestamp",
+                "description": "Authorized timestamp of the first declared date part, if approved for offline display. Use the format of that part from the pinned row template on the device. For Notes this is the date from its secondary line."
+              }
+            },
+            "not": { "required": ["subtitle", "subtitle_timestamp"] }
+          }
+        },
+        "proof": {
+          "$ref": "#/$defs/ProofRef",
+          "description": "Host authentication of the complete record excluding this proof, verified against the expected host on disk write and load. Conveys no action or renewal authority."
+        }
+      },
+      "description": "The only persistable viewer projection. Issue only on an opted-in, ready or empty start-anchored root window for a live own-space member whose Bind has invariant query inputs. A list may name a literal collection. No reference, search text, route, form, selection or parent operand in its source, filter or sort. Authenticate the account, space, template, Bind, window and offset. The host builds the display record from the authoritative title and host-allowlisted non-body display fields approved for offline use. Exclude body excerpts and any field marked body_derived from every display part, regardless of its template position. Omit the record if any required title is ineligible. Body-derived parts appear only from a fresh authorized window. Never include row IDs, contexts, action material or credentials."
+    },
+    "WindowPlanError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "code",
+        "reason"
+      ],
+      "properties": {
+        "status": {
+          "const": 422
+        },
+        "code": {
+          "const": "unsupported_query_plan"
+        },
+        "reason": {
+          "enum": [
+            "skip_limit",
+            "unsupported_plan",
+            "materialization_limit",
+            "end_unavailable"
+          ],
+          "description": "skip_limit means an otherwise qualified index-only jump would skip too many entries. end_unavailable means the requested end anchor targets a search Bind or the effective count mode is estimate or none. unsupported_plan means no qualified plan for the scope, filters, sort, search or count. materialization_limit means a qualified non-search plan would materialize too many rows. Search row-budget exhaustion returns refine_query. After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: \"empty\"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state."
+        }
+      },
+      "description": "Typed response to the corresponding window request when no qualified bounded plan is available."
+    },
+    "WindowReply": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/WindowResult"
+        },
+        {
+          "$ref": "#/$defs/WindowPlanError"
+        }
+      ]
+    },
+    "NoNetworkBadgeManifest": {
+      "type": "object",
+      "required": [
+        "network"
+      ],
+      "properties": {
+        "network": {
+          "const": "none"
+        },
+        "content_fetch": false
+      },
+      "description": "Install and gallery badge and filter predicate for an already validated manifest. Worker egress denial separately follows network:none."
+    },
+    "WindowAudience": {
+      "enum": [
+        "own_space_member",
+        "member",
+        "guest",
+        "public"
+      ],
+      "description": "Host-asserted audience of the authenticated active view. member denotes other member views. Compare with the active view before accepting any window."
+    },
+    "WindowAnchor": {
+      "enum": [
+        "start",
+        "end"
+      ],
+      "default": "start",
+      "description": "start counts from the first row; end counts backward from the last authorized row, with zero at the last row. The end anchor is available only for a non-search Bind whose effective authorized count mode is exact."
+    },
+    "ClaimedTextSearchFilter": {
+      "enum": [
+        "all",
+        "title",
+        "body"
+      ]
+    },
+    "TurnsSearchFilter": {
+      "enum": [
+        "all",
+        "title",
+        "messages"
+      ]
+    },
+    "SearchFieldFilter": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClaimedTextSearchFilter"
+        },
+        {
+          "$ref": "#/$defs/TurnsSearchFilter"
+        }
+      ],
+      "default": "all"
+    },
+    "SearchMatchShape": {
+      "enum": [
+        "terms",
+        "prefix"
+      ],
+      "default": "terms",
+      "description": "Terms combines compiled literal tokens with AND within query.search.max_literal_and_terms. Prefix explicitly requests one literal token prefix within query.search.max_token_prefix_expansions. Punctuation never chooses the match shape. Raw Boolean, phrase and fuzzy syntax and mixtures of terms and prefixes are unqualified."
+    },
+    "RowImageRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22,128}$",
+      "description": "Host-issued opaque display reference carried in a projected field. It has no sort or filter operators and cannot supply an operation operand. Read through query.row_images."
+    },
+    "RowImageIcon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image"
+      ],
+      "properties": {
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field"
+          ],
+          "properties": {
+            "field": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,47}$"
+            },
+            "fallback": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,47}$",
+              "description": "Projected body_excerpt Text field. Draw a simple document miniature from the freshly authorized snippet when the image is missing or loading. When no snippet is available, draw the document miniature without text."
+            }
+          }
+        }
+      },
+      "description": "The description names a projected field of type RowImageRef. The renderer reads it as specified by query.row_images. Use the optional fallback according to query.row_images."
+    },
+    "SearchWindowRequest": {
+      "$ref": "#/$defs/WindowRequest",
+      "properties": {
+        "request": {
+          "properties": {
+            "anchor": {
+              "const": "start"
+            }
+          }
+        }
+      },
+      "description": "The shared window envelope validated after resolving its Bind as a search. A missing anchor defaults to start. Refuse an end anchor with end_unavailable."
+    }
+  },
+  "activation_limits": {
+    "per_viewer": 256,
+    "per_space": 4096,
+    "resolve_interaction_encoded_bytes": 131072
+  },
+  "component_routes": {
+    "transcript.page": {
+      "input_schema": {
+        "$ref": "#/$defs/TranscriptPageRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/TranscriptPage"
+      },
+      "encoded_page_bytes": 131072,
+      "scope": "Authorized thread and current audience"
+    },
+    "sealed_frame.open": {
+      "input_schema": {
+        "$ref": "#/$defs/SealedFrameOpen"
+      },
+      "scope": "Authorized committed revision and current audience",
+      "max_ref_seconds": 300
+    },
+    "sealed_frame.resize": {
+      "input_schema": {
+        "$ref": "#/$defs/SealedFrameResize"
+      },
+      "scope": "Trusted wrapper for the current frame"
+    },
+    "sealed_frame.open_link": {
+      "input_schema": {
+        "$ref": "#/$defs/SealedFrameOpenLink"
+      },
+      "scope": "Host link ID from the current frame, with fresh route authorization"
+    },
+    "selection.set": {
+      "input_schema": {
+        "$ref": "#/$defs/SelectionSetRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/SelectionSetResult"
+      },
+      "scope": "Current authorized Bind and lease, for a checked set of selected rows or a clear."
+    },
+    "composer.options": {
+      "input_schema": {
+        "$ref": "#/$defs/ComposerOptionRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/ComposerOptionPage"
+      },
+      "scope": "Host-authorized thread, viewer, and provider/runtime option source"
+    },
+    "undo": {
+      "input_schema": {
+        "$ref": "#/$defs/UndoRequest"
+      },
+      "scope": "Host surface and current actor/target authority",
+      "output_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      }
+    },
+    "status": {
+      "input_schema": {
+        "$ref": "#/$defs/StatusRequest"
+      },
+      "scope": "Host surface and current actor/target authority",
+      "output_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      }
+    },
+    "request_resolve": {
+      "input_schema": {
+        "$ref": "#/$defs/RequestCardResolve"
+      },
+      "scope": "Host surface and current actor/target authority",
+      "output_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      }
+    },
+    "share_sheet": {
+      "input_schema": {
+        "$ref": "#/$defs/ShareSheetRequest"
+      },
+      "scope": "Host surface and current actor/target authority",
+      "output_schema": {
+        "$ref": "#/$defs/ShareSheetResult"
+      }
+    },
+    "trash_sheet": {
+      "input_schema": {
+        "$ref": "#/$defs/TrashSheetRequest"
+      },
+      "scope": "Host surface and current actor/target authority",
+      "output_schema": {
+        "$ref": "#/$defs/TrashSheetResult"
+      }
+    },
+    "view.open": {
+      "output_schema": {
+        "$ref": "#/$defs/ViewOpenResult"
+      },
+      "scope": "Authenticated view session, including data-free render and its sources",
+      "input_schema": {
+        "$ref": "#/$defs/ViewOpenRequest"
+      }
+    },
+    "view.renew": {
+      "input_schema": {
+        "$ref": "#/$defs/LeaseRenewRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/LeaseRenewResult"
+      },
+      "scope": "Original authenticated view session and cache partition, with fresh authority for the requested lease and its issued window versions"
+    },
+    "choice.options": {
+      "output_schema": {
+        "$ref": "#/$defs/ChoiceOptions"
+      },
+      "scope": "Context-bound prompt and authorized option Bind; never accepts a raw client target",
+      "input_schema": {
+        "$ref": "#/$defs/ChoiceOptionsRequest"
+      }
+    },
+    "selection.settled": {
+      "input_schema": {
+        "$ref": "#/$defs/SettledSelectionRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/SelectionContextResult"
+      },
+      "scope": "Current authorized Bind and lease. Reconstruct the exact stable row named by the settled selection before issuing contexts.",
+      "surface": "direct_shell"
+    }
+  },
+  "generic_item_fields": {
+    "id": {
+      "type": "ItemRef",
+      "index_owner": "content",
+      "audience": "shared_projection",
+      "nullable": false
+    },
+    "title": {
+      "type": "Text",
+      "index_owner": "content",
+      "audience": "shared_projection",
+      "nullable": false
+    },
+    "updated": {
+      "type": "Timestamp",
+      "index_owner": "content",
+      "audience": "shared_projection",
+      "nullable": false
+    },
+    "trashed": {
+      "type": "Boolean",
+      "index_owner": "content",
+      "audience": "member_item",
+      "nullable": false
+    },
+    "trashed_at": {
+      "type": "Timestamp",
+      "index_owner": "content",
+      "audience": "member_item",
+      "nullable": true
+    }
+  },
+  "confirmation": {
+    "schema": {
+      "$ref": "#/$defs/ConfirmMode"
+    },
+    "none": "A host catalogue read, or a host catalogue mutation marked atomic_undo whose engine commits the complete effect and Undo in one recovery-visible transaction and satisfies any atomic_undo_when condition. For mutations the only material may be the drawn target or fields of the submitting form. host.item.create may also use its checked route or literal CollectionRef. For host.collection.move, the checked ChoiceRef and its actor-only destination may use the shortcut under confirmation_when.",
+    "challenge": "Irreversible, external, widens_access, bulk sets, declared material_inputs, any destination, recipient, audience or permission, or unproven material. Never bypassed by atomic_undo. Use the confirmation_when rules for host.item.create and host.collection.move.",
+    "ordinary": "Worker operations always use separate resolution and dispatch. A reversible manifest declaration never permits the shortcut. Return a challenge only for required material or effects; otherwise omit confirm."
+  },
+  "schedule_create_input": {
+    "$ref": "#/$defs/ScheduleCreateInput"
+  },
+  "cache_policy": {
+    "member_rows_max_age_seconds": 1209600,
+    "persistent_row_scope": "Start-anchored root list windows with invariant inputs only. Permit a literal collection and account-bound viewer:person. Deny search, references and route, form, selection or parent operands in source, filter or sort. Verify shape, host proof, account, space, template, Bind, offset, lifetime and opt-ins on write and load. On write the record must match the authenticated active view and reply, including own_space_member audience and window_ref. On load use only the matching local own-space root display. Never serialize a WindowResult.",
+    "persistent_row_authority": "Display on unlocked devices as unconfirmed until the host confirms or corrects the rows. Encrypt with account- and space-bound keys. Never persist guest or public rows, action credentials or contexts. Erase on sign-out, account switch or known revocation. Every action requires a fresh host context.",
+    "record_schema": {
+      "$ref": "#/$defs/MemberRowCacheRecord"
+    }
+  }
+}

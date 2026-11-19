@@ -29,7 +29,9 @@ the same endpoint through its CORS preflight.
    `templates`. `views.notes`, `views.threads` and `views.reading` are the
    app views with chrome. Their manifests are under `manifests`. The
    existing `home` and `shared` views still exercise the authority matrix.
-   The app templates and manifests are exact [revision 13.5 snapshots](https://git.kayg.org/kayg/calternal-ai/src/commit/5f0d7df436a591c4c494dda3acfe1e2fc78ec248/contract/fixtures/description-v2).
+   The app templates, manifests and wire validator pin
+   [revision 13.15](https://git.kayg.org/kayg/calternal-ai/src/commit/40ce0396ed3155f792d4d1f287b5987f2b2d0cc6/contract/fixtures/description-v2).
+   The Notes toolbar also mounts the pinned Notes bulk fixture's Trash action.
    Notes projects snippets for secondary text and the row-image fallback.
    No preview asset refs are issued.
    The top-level `template` is the original small member template.
@@ -54,7 +56,8 @@ Notes uses `notes`, `collections`, `trash`, `trash-count`, `note`,
 for the selected collection or note. To settle a search, send
 `POST /search` with the lease header and
 `{"type":"search","bind":"note-search","text":"Note"}`, then request that
-Bind's window. Reading List uses the same search flow with
+Bind's window. Use optional `match: "terms"` or `match: "prefix"`.
+The Bind owns the field filter. Reading List uses the same flow with
 `reading-search`.
 
 Threads uses `waiting` for the Inbox, `all` for root rows, `children` for
@@ -63,13 +66,24 @@ each parent's nested window, `layout` for the viewer's two sections, and
 `rows[].parent_refs` entry as `request.parent`. Requests across parents
 or edges use the usual lease and ref checks.
 
+Read `WindowResult.activation_contexts` by row ID and action ID. Use the
+view map for New note, New thread, New section and Notes Trash selection.
+The scale rows support Pin with Undo, Rename, Move to collection and
+Trash/Restore. Threads support Archive, personal section actions and
+moves using the checked ChoiceRef for the target section. Resolve a
+bulk Trash with up to 50 IDs from issued Notes windows in
+`interaction.rows`, or call `POST /selection.set` with
+`{"type":"selection_set","bind":"notes","rows":[...]}` and the lease header.
+Use its returned `selection_ref` in the activation interaction. Data changes
+appear on a fresh window read. These display effects use disposable
+in-memory state. The original authority tests still use the real engines.
+
 The owner can submit Reading List's `add` form. Resolve with
 `action_id:"add"`, its view-level activation context and
 `interaction.form` containing `title` and `url`. Dispatch its resolution on
 the normal dispatch route. The outcome carries `created`, and a new
 `items` window includes the saved fixture row. The fixture stores the
-address locally and does not visit it. Other app actions are present in
-the sealed descriptions for drawing. Original authority actions remain
+address locally and does not visit it. Original authority actions remain
 available on the small views. The second account reads shared views as
 a member by default.
 
@@ -79,7 +93,10 @@ nix develop -c cargo test --locked --release -p calternal-server \
 ```
 
 The transcript, request-card and composer components in the Threads template
-are for drawing. The fixture has no transcript or composer backend routes.
+are for drawing. Revision 13.15 gives the composer host-owned Send/Stop and
+view contexts but leaves the action ID lookup unspecified. It defines
+`RequestCardResolve` but leaves the read route and record unspecified. The
+fixture supplies no transcript, composer or request-card routes.
 
 Routes, references and activation contexts belong to this fixture only.
 The listener binds to loopback and uses fresh sample Notes and collections.

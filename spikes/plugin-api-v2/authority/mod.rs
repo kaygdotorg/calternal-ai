@@ -1,5 +1,6 @@
 //! Disposable host-side implementation of the sealed activation protocol.
 mod activation;
+use display::actions as display_actions;
 mod display;
 use display::{App, Display, Route as DisplayRoute};
 mod queue;
@@ -68,19 +69,9 @@ enum Action {
     Bulk,
     Ordinary,
     Add,
+    Display(&'static str, display_actions::Effect),
 }
 impl Action {
-    fn from_id(id: &str) -> Option<Self> {
-        Some(match id {
-            "pin" => Self::Pin,
-            "rename" => Self::Prefill,
-            "choose-destination" => Self::Choice,
-            "trash-selected" => Self::Bulk,
-            "touch" => Self::Ordinary,
-            "add" => Self::Add,
-            _ => return None,
-        })
-    }
     fn name(self) -> &'static str {
         match self {
             Self::Pin => "pin",
@@ -89,10 +80,12 @@ impl Action {
             Self::Bulk => "trash-selected",
             Self::Ordinary => "touch",
             Self::Add => "add",
+            Self::Display(id, _) => id,
         }
     }
     fn challenge(self) -> bool {
         matches!(self, Self::Prefill | Self::Choice | Self::Bulk)
+            || matches!(self, Self::Display(_, effect) if effect.challenge())
     }
 }
 
@@ -139,7 +132,8 @@ struct Volatile {
     leases: HashMap<Uuid, Lease>,
     contexts: HashMap<Uuid, Context>,
     windows: HashMap<Uuid, IssuedWindow>,
-    display_search: HashMap<Uuid, String>,
+    display_search: HashMap<Uuid, (String, bool)>,
+    display_sets: HashMap<Uuid, (Uuid, Vec<(Uuid, String)>)>,
     display_parents: HashMap<Uuid, (Uuid, &'static str, Uuid)>,
     window_order: u64,
     choices: HashMap<Uuid, Choice>,
@@ -332,6 +326,7 @@ impl Host {
                 contexts,
                 windows,
                 display_search,
+                display_sets,
                 display_parents,
                 choices,
                 resolutions,
@@ -341,6 +336,7 @@ impl Host {
             contexts.retain(|_, c| leases.contains_key(&c.lease));
             windows.retain(|_, w| leases.contains_key(&w.lease));
             display_search.retain(|id, _| leases.contains_key(id));
+            display_sets.retain(|_, (lease, _)| leases.contains_key(lease));
             display_parents.retain(|_, parent| leases.contains_key(&parent.0));
             choices.retain(|_, c| contexts.contains_key(&c.context));
             resolutions.retain(|_, r| contexts.contains_key(&r.context));
@@ -358,6 +354,7 @@ impl Host {
             "view.renew" => "renew_request",
             "window" => "window_request",
             "selection.settled" => "selection",
+            "selection.set" => "selection_set",
             "choice.options" => "choice_request",
             "activation.resolve" => "resolve",
             "activation.confirm" => "confirm",
@@ -385,6 +382,11 @@ impl Host {
                     display_route,
                 )
                 .await?,
+            ),
+            "selection.set" => (
+                "selection_set_result",
+                self.display_set(who, session, lease_header.ok_or(HIDDEN)?, &input)
+                    .await?,
             ),
             "selection.settled" => (
                 "selection_context",

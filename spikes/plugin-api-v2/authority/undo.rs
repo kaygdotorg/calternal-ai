@@ -66,6 +66,9 @@ impl Host {
         if !self.editor(who, &view).await {
             return Err(FORBIDDEN);
         }
+        if let Some(display) = &view.display {
+            return display.undo(who.id, activation);
+        }
         let original = {
             let state = self.state.clone();
             let space = view.space;
