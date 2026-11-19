@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 4
+# Plugin API v2 · revision 5
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -27,8 +27,13 @@ chrome/content templates, kinds with metadata/index declarations and an
 optional live-room profile, operations with input/output schemas, capability,
 risk, idempotency and optional item target, jobs/waits, schedule eligibility,
 settings, secrets and typed credential routes. Before wake, resolve
-`target: {kind, field}` from the required top-level string in the input.
-Palette commands reference operations and typed inputs.
+`target: {kind, field}` from the required top-level item ref. A bulk
+operation uses `{kind, selection_field}` with a checked host selection ref.
+Operations name a title. The host supplies its own effect and target
+labels and may require a preview in addition to
+the operation’s labeled `material_inputs` keyed by input field. An operation that
+declares `creates` can expose only a ref that the owning host engine
+recorded in the committed receipt and the viewer may currently open.
 Turns is the one named engine an app can select. Provider contributions
 pin a Turns adapter descriptor. Claude Code and Codex use the existing
 [provider protocol](../contract/provider-v1.schema.json) and
@@ -48,8 +53,8 @@ user data. A job may checkpoint its own run as part of the durable job
 protocol. Receipt-backed mutations retry with the same request ID. Never
 automatically retry a non-idempotent external action.
 
-Install shows kinds, methods, capabilities, risks, settings/secrets,
-providers and outbound disclosures. Gallery installs take one tap. Source
+Install shows kinds, declared Bind reads, methods, capabilities, risks,
+settings/secrets, providers and outbound disclosures. Gallery installs take one tap. Source
 installs warn. Pin the digest. Members see packages, grants and destinations. Check and probe agent-authored code
 in the space without broker authority, then enable the exact digest and
 grant the Owner confirmed. Verify updates before fencing/draining the old
@@ -76,7 +81,7 @@ root or use raw network sockets.
 | --- | --- |
 | Asleep | Serve authorized engine reads and saved templates. An admitted logic call, runnable job or due schedule can wake. A signed wait webhook wakes only via a winning signal that makes a job runnable. Cache misses, page reads, public links and rejected requests do not wake. |
 | Waking | Coalesce wakes into one placement lease. Reserve capacity first. Recheck queued authority before first dispatch. Late startup after cancellation discards the old work. |
-| Awake | Reuse processes between calls. A tap has three seconds of plugin execution after a separate short wake allowance. Slower work uses a durable job with progress. A package crash retires that process and its tickets. Other packages continue. |
+| Awake | Reuse processes between calls. A tap gets a result or `pending` within three seconds of plugin time after a separate wake allowance. A pending call keeps its original ticket, request receipt and status ref. It may continue until that ticket expires. Long work uses a durable job with progress. A package crash retires that process and its tickets. Other packages continue. |
 | Draining → going to sleep | Stop admissions to the current epoch, drain within the placement bound, cancel/fence the remainder and retain committed engine effects and checkpoints. Close I/O, stop with acknowledged teardown or durable placement revocation, then sleep. A racing wake coalesces after shutdown. |
 
 Nothing in memory is required to survive sleep. First release proves clean
@@ -103,6 +108,22 @@ awake/idle/snapshot memory, agent containers inside the space with provider
 login isolation, and self-hosted KVM/no-KVM shapes. Self-hosted operators
 choose the wall with the weaker option labelled. Container tests prove the
 selected fixture wall only.
+
+**Interactive cutoff.** Start the three-second response clock after
+wake and admission. On cutoff issue a host-owned `status_ref` and record
+a bounded diagnostic. Do not launch a second invocation on retry. The
+held invocation can still finish under its original authority until
+the 60-second ticket expires. Cancel or expiry fences late effects and
+status presents the last authorized outcome. Durable work needing more
+time must checkpoint and continue as a job.
+
+The base full-snapshot fixture uses a **three-second wake allowance**,
+separate from plugin time. Its 256 MiB image answered at 269.12 ms p95
+cached and 488.74 ms evicted (100 each). With 20 simultaneous wakes it
+measured 922.41 ms and 2,518.85 ms p95 (60 each). These measurements are
+from the wall lane on `calternal-perf-01-backup01` under
+`/usr/local/bin/perf-lock.sh`. The hosted allowance awaits measurement
+with the full workload, before freeze. [Wall A measurements](https://git.kayg.org/kayg/calternal-ai/src/commit/2562b95e/docs/measurements/space-runtime-walls.md)
 
 ## 3. Channel, authority and effects
 
@@ -195,9 +216,11 @@ such and replay only against an explicitly idempotent endpoint.
 A schedule is a separate revocable enrollment of creator, package digest,
 operation, target/payload, allowed effects, approval mode and IANA time zone.
 Reuse [automation calendars](../crates/core/src/automation_schedule.rs).
-Accept the canonical OnCalendar subset for daily, weekdays, weekly or
-monthly at a single local time, such as `Mon..Fri *-*-* 09:00:00`. No shell or
-arbitrary timer expression. Reuse the scheduler’s civil-time gap/fold rules.
+The catalogue’s `ScheduleCreateInput` accepts a one-date `{type:"once", at}`
+or recurring `{type:"recurring", expression}` calendar and an IANA time
+zone. Recurring uses the canonical OnCalendar subset for daily, weekdays,
+weekly or monthly at a single local time. Reject arbitrary timer or shell
+expressions. Reuse the scheduler’s civil-time gap/fold rules.
 Receipt identity is enrollment plus the scheduled instant. Run with the
 creator’s authority and selected eligible machine or sandbox and their
 configured permission mode (Approve for me by default). On machine outage,
@@ -238,10 +261,11 @@ remove their configured hosts independently of package installation.
 Direct sockets and private-network access stay disabled. TCP comes later
 as “Servers you add” with a port.
 
-Declare `network: "none"` for the explicit **No network access** tier.
-Install shows that statement. The gallery generates the same badge and
-filter from the checked manifest digest. An update adding a network line
-loses the badge and asks for approval. Every package process has no ambient
+Declare `network: "none"` for the explicit **No network access** worker tier.
+Install and gallery derive its badge and filter from the checked manifest
+only when `content_fetch` is absent. With content fetch, say “No plugin
+network access. Loads remote images anonymously.” Adding a network line
+removes the badge and asks for approval. Every package process has no ambient
 socket route and has only its own supervisor endpoint. The host checks
 that endpoint’s package identity/digest and current installed policy on
 every broker egress entry, including delegated jobs and credential
@@ -250,8 +274,8 @@ route, even in a space with a network-enabled package. Refuse before DNS,
 connection or proxy-cache lookup. Cross-package IPC cannot borrow egress.
 
 Render remote images only if the package declares `content_fetch: true`.
-The declaration grants no worker egress and does not affect the No
-network badge. If absent, load no remote images. If present, the
+The declaration grants no worker egress. It withholds the No network badge
+because rendering image URLs still contacts their destinations. If absent, load no remote images. If present, the
 authorized host renderer may fetch through the anonymous proxy with one
 per-person setting, default on. No worker broker method prepares or reads
 these assets. The host media route exposes no fetched bytes or handles to
@@ -303,7 +327,7 @@ its receipt, with long work as a durable job.
 | Jobs · `start_job`, `checkpoint_job`, `job_status`, `cancel_job` | Declared job, payload and resolved target/grant → durable job ID. Checkpoint only the owning current run. Status/cancel uses a scoped job ID with opaque `404` for foreign jobs. Bounded checkpoints, live progress and park count per space/package. |
 | Settings / secrets · `read_setting`, `set_setting`, `request_secret_handle` | Declared key or secret purpose → effective value/version or opaque handle. Validate type, compare revision on writes and bind personal values to the actor. One bounded engine operation. Missing authorization is `403` or opaque `404` as appropriate. |
 | Proxy · `proxy_request`, `credential_call` | Approved install line and bounded HTTPS request → bounded response. The host-only sealed content route exposes authorized opaque image refs to the renderer. Unapproved destination is `403`, oversize `413`, quota `429`. Anonymous media keeps the existing 10 MB, three redirects and 16 hosts/minute fixture ceilings. Typed call returns the profile output or `403` without contacting the endpoint. |
-| Turns · `turn_start`, `turn_status`, `turn_cancel`, `turn_follow_up`, `turn_answer`, `turn_select_machine` | Thread ref to start and Turn ref for run controls, with typed payload → admitted turn, bounded status, queue state or protected-request receipt. A person can select their own eligible enrolled machine and login for their own turn. The host resolves eligibility and approval. A plugin cannot select arbitrary placement. Host drafts resolve to checked message text and attachment refs at submit. Transcript pages and append are client-to-host. |
+| Turns · `turn_start`, `turn_status`, `turn_cancel`, `turn_follow_up`, `turn_answer` | Thread ref to start and Turn ref for run controls, with typed payload → admitted turn, bounded status, queue state or protected-request receipt. A person can select their own eligible enrolled machine and login for their own turn. The host resolves eligibility and approval. A plugin cannot select arbitrary placement. Host drafts resolve to checked message text and attachment refs at submit. Transcript pages and append are client-to-host. |
 | Schedules · `schedule_create`, `schedule_remove` | Declared eligible operation, pinned target/payload, time zone and calendar or enrollment ID → durable enrollment or removal receipt. One indexed, bounded write. Resume requires the enrollment and live authority. |
 
 The Turns engine owns the `threads` kind, with indexed status. The item
@@ -365,9 +389,16 @@ template supplies trusted authority or operation semantics.
 
 ### 4.1 Catalogue and qualified queries
 
-`notes`, `threads` and `collections` are existing kind IDs. `requests` is a
-host-private projection. The catalogue registers canonical field types,
-the index owner (or no index) and the audience rule. A scoped row ID
+The catalogue owns generic `id`, `title`, `updated`, `trashed` and
+`trashed_at` fields for every item kind. `threads`, `collections` and
+`requests` are host-owned. Notes declares its own `notes` kind and
+`pinned` metadata through the same manifest API a community app uses.
+Kind declarations name an icon, a string title field and indexed fields
+using the catalogue’s type and audience vocabularies. The host derives
+generic fields from the engine record and its configured title field.
+The manifest’s `reads` names every kind a package’s Bind may access,
+including its own. Check this list before authorizing the viewer and
+field graph. A package or a field declaration cannot confer authority. A scoped row ID
 identifies the kind’s reference. A request row resolves only to an
 authorized `RequestRef`. `waiting_on` and `pending_for` support the
 viewer’s own equality operand only. `threads.active_turn` resolves as a
@@ -379,9 +410,12 @@ before opening subscriptions. Reject cycles, ambiguous multi-row operands,
 out-of-scope action inputs and references to undeclared binds or actions.
 At query execution and delivery authorize the package and viewer, kind,
 collection, each field of every input or output, each filter/sort,
-corpus and any upstream Bind field. A cross-bind query operand is unsupported initially. Action or component
-dependencies may name one current, authorized projected row under the same
-audience. The viewer
+corpus and any upstream Bind field. Cross-bind query operands are unsupported, including a foreign Bind’s
+selection as a filter or collection operand. Action/component edges may
+refer to one authorized stable row under the same audience. A Choice prompt
+may read up to 50 options from an independently authorized Bind. The host
+issues opaque ChoiceRefs scoped to the prompt and versions. Resolve the
+chosen row ID from the host snapshot. A raw client value conveys no target. The viewer
 cannot turn an unreadable field into a predicate, sort key, string prefix,
 search term, order, count or error observable. Do not evaluate a disallowed
 plan. Search in the explicitly authorized member or shared corpus **before**
@@ -399,8 +433,11 @@ Ordering and `prefix` require the field’s declared type and index collation.
 `all` and `any` have a combined 16-predicate cap and no nesting.
 Two sort keys maximum plus stable ID as a tiebreaker. Use half-open
 `[from,to)`. The host may prefetch within the row and byte cap and returns
-the actual offset, rows and result version. Count is exact, estimate or
-omitted, as allowed by audience and plan. Stable window/rank locators
+one catalogue WindowResult with bind, state, result version, actual offset
+and stable rows. Count is an exact/estimate object or omitted, as allowed
+by audience and plan. The chrome/content pair shares one Bind list.
+`viewer_self` permits counts over the actor’s own authorized projection
+only. Turn controls require current turn-specific authority. Stable window/rank locators
 belong to the checked query and result version. Missing indexes, unbounded
 ACL intersections, unavailable authorized counts and linear offset scans
 return `422 unsupported_query_plan`. Never silently fall back to a scan.
@@ -416,17 +453,21 @@ It emits up to four coalesced pushes/sec per bind. Authorize before spending wor
 coalesce invalidations before evaluating and share a plan only within an
 identical audience/authority scope. Supersede obsolete requests, return a
 safe throttled state on exhaustion and preserve fair space progress.
-Keyboard viewport prefetch is bounded host I/O during repeated keys;
-only selection/navigation waits for settling. No query, push or refill
-wakes a worker.
+Keyboard viewport prefetch is bounded host I/O during repeated keys.
+Apply prefetch replies for the result version already drawn at once.
+Hold pushes that change the version while selection settles. Navigation
+waits for settling, but flush pending selection before an activation
+that depends on it. Prefetch and pushes never wake a worker.
 
-Persist data-free templates only. Partition filled rows in memory by
-session, space and audience. Discard on revocation, disconnect, sign-out,
-audience switch or guest link closure. Keep a 15-second renewable
-subscription lease in the fixture. On expiry clear rows before repaint. Require current host authorization
-before repaint or resume. `stale` and unsupported-renderer fallback contain
-no protected data without a fresh grant check. Draw skeletons without
-authorized session data.
+Persist data-free templates only in this draft. Keep filled rows and their
+grant/result versions in bounded memory, partitioned by session, space and
+audience. At lease expiry or transient disconnect stop painting those rows.
+Renewal requires fresh authority. If grant revision and result version both
+match, repaint the retained rows without refetch. Otherwise discard
+invalidated rows and fetch only fresh authorized windows. Discard on
+revocation, sign-out, audience switch or guest link closure. No protected
+data paints until authorization is current. Persistence for members’
+own-space rows is **OPEN** (Q10). Guest/public rows stay session-only.
 
 The catalogue gives typed host component routes. `transcript.page`
 accepts a checked Thread ref, a durable committed cursor
@@ -441,10 +482,14 @@ Changing selection cancels the old delivery. Composer input carries typed
 text and host-checked attachment/mention refs. A quote is a thread and
 opaque transcript passage ref, minted for an authorized durable range;
 a selection or arbitrary source string cannot serve as a quote. Composer
-options use the host-owned catalogue routes. Resolve provider, model,
-reasoning, permission and machine choices under the active Thread and
-viewer. Check the component’s typed interaction slots and issued option
-refs before admitting `turns.start`.
+options use `composer.options` and carry authorized selected/default
+refs. Map `interaction.draft` and `interaction.options` into the host-owned
+`turns.start`, with the Thread from the context. Validate each provider,
+model, reasoning, permission and machine choice for the active actor and
+Thread. The host supplies missing defaults, rejects stale choices and
+checks attachment/mention/quote refs. The composer owns this admission.
+The template does not construct a send operation or a second Thread ref.
+Progress streaming is host-internal.
 
 A sealed frame ref names a committed content revision and belongs to a
 space and audience. Verify it on first use and each asset request. Expire
@@ -467,62 +512,71 @@ Never accept a URL/navigation target or data sent by the frame as authority.
 | `request_id` | Host-owned durable action receipt identity, mapped from the activation in the actor/space namespace. Uses configured receipt retention (default seven days). |
 | `ticket` | Host-issued ephemeral channel authority for one worker invocation. Ends on terminal, cancellation, fencing or expiry. Never reaches the device or persists. |
 
-The host supplies `activation_context` after authorizing what was
-rendered. The opaque bounded context names the live viewer/session and
-audience, space, package/template digest, action scope and ID, route,
-stable row/target, and versions of **that action’s** actual dependencies.
-These can include source fields, grant state, selection and the expected
-item or room head. Fixture lifetime is 30 seconds. Limit contexts to 256
-per viewer and 4,096 per space. Renew visible contexts before they expire.
-A change to another row or window version leaves a valid context usable.
-A changed target or material dependency returns `stale` without a new
-target. Recheck only relevant versions and live grants at dispatch,
-including a relevant source update during confirmation.
+`view.open` returns a 15-second subscription lease and view-level
+`activation_contexts` for header, form and composer. Each WindowResult
+delivers row/action contexts for the stable rows it authorized. The opaque
+token binds viewer/session, space/audience, template digest, action, route,
+stable row and only that action’s dependency versions. It expires with the
+subscription lease. Renew view and valid window contexts through
+`view.renew`, along with unchanged grant/result versions. A newer grant or
+material dependency invalidates affected contexts. Unrelated window churn
+never retargets or stales a still-valid action. Bound context count (256 per
+viewer and 4,096 per space) and encoded WindowResult bytes. Withhold actions
+until their context is available.
 
-1. **Resolve.** `ResolveActivation` carries action ID, activation ID, the
-   context, and only declared typed `interaction` slots (form, prompt,
-   draft, or a scoped selection ref). Reconstruct server-owned row,
-   route, selection membership, bind values, viewer and operation from
-   host state and the checked context. Reject client substitutes and
-   undeclared device inputs. A selection ref must have been issued for the
-   eligible rows/context. Validate form provenance and draft references
-   against their owning component, check normalized operation input,
-   and return `resolution_ref`. Where required, return a
-   `confirmation_challenge` and host-written preview of the material data.
-2. **Confirm.** `ConfirmActivation` submits the challenge via the
-   protected host control. The host checks actor, scope, normalized
-   input fingerprint and required confirmation (fresh verification where
-   policy requires it). It issues a single-use `confirmation_proof`
-   bound to that resolution and activation. A generic template cannot
-   confirm, an echo of the challenge is insufficient, and a client
-   “typed” flag does not establish consent. In the first contract preview
-   all required material inputs, including defaults, autofill, restored
-   drafts and hidden/offscreen values. Never exempt destinations,
-   recipients, permission changes or destructive effects.
-3. **Dispatch.** `DispatchActivation` supplies the resolution and proof
-   when required. Verify dependency versions and current authority,
-   then consume confirmation at effect admission and resolve through
-   the engine fence. The host result is status/error, optionally with a
-   status or Undo ref. No worker payload. Hold resolution and proof only
-   under the live context lifetime. Keep only a fingerprint binding for
-   replay at receipt retention, with no stored ticket or proof. Reuse the durable receipt after an
-   ACK loss: replay checks actor, space, package digest, action,
-   activation and normalized input fingerprint, plus current disclosure
-   rights. Changed input conflicts. A committed retry does not need the
-   old proof again. Once the receipt has expired an old activation cannot
-   recreate the effect.
+1. **Resolve.** Accept action/activation IDs, the context and declared
+   typed device interactions only. Reconstruct server-owned route, row,
+   viewer, Bind values and action from host state and the context.
+   Validate form/prompt slots and host draft refs. Bulk resolve may submit
+   up to 50 stable IDs from the context-bound Bind. Reauthorize every ID
+   against that snapshot and return a scoped `selection_ref` inside the
+   resolution. A separate `selection.set` call is unnecessary for bulk
+   activation. For a Choice prompt, resolve the host-issued ChoiceRef,
+   never a client-supplied collection or item value.
+2. **Derive confirmation.** The host combines declared risk and the actual
+   method’s effect with its catalogue policy. `confirm:none` applies to
+   reads or a host-proven reversible effect whose only material is the
+   rendered target or its submitting form’s own fields (including a
+   host prompt scoped to that submission). Undo must be available for the
+   precise effect. Irreversible, external, widening, bulk, declared material
+   inputs and any destination, recipient or permission require
+   `confirm:challenge`. Validate those inputs even if a label, a default,
+   autofill or a typed field supplied them. The description cannot waive or
+   reclassify them. If reconstruction cannot prove the `none` conditions,
+   require the challenge.
+3. **Confirm and dispatch.** For a challenge, the host returns written
+   material and a one-use proof only after the authorized protected control
+   confirms the exact checked input. Check actor, scope, dependencies and
+   fingerprint again at dispatch and consume the proof under the commit
+   fence. For `confirm:none`, `ResolveActivation{dispatch:true}`
+   performs resolution and dispatch in the **same exchange**. Return an
+   ActionOutcome. If effective policy requires challenge, that request
+   returns a resolution without running the operation. The host may return
+   a checked created ref, status ref or Undo ref, with no worker payload.
 
-The catalogue sets built-in effects. For a plugin the host combines
-manifest risk and declared `material_inputs` with the checked method’s
-effect classification. An external disclosure changes the effective policy
-even when the operation does not change stored data. The interface may add
-safety prompts within host policy. Effect-free reads can retry. Mutations
-and disclosures require both method and declaration to allow `request_id`
-and use the same receipt. Otherwise return outcome unknown after uncertain
-dispatch. Check destinations, recipients and data computed by plugin logic
-at actual broker dispatch. Require new protected approval for
-anything outside the already confirmed disclosure. The commit/egress
-fence remains the last authority check.
+**One-exchange Send.** The host composer pre-resolves when material changes
+(entered thread, approved provider/model/reasoning/permission/machine,
+attachments, mentions or quote) and when its context needs renewal.
+Preflight contains no final text. The host-bound composer preview presents
+those fields in place. Explicit Send confirms the same material and supplies
+only the final text in one `invoke_confirm` with `final_text`.
+The host checks the exact prepared material, live context and typed text,
+then confirms and dispatches in that one exchange. A material change,
+unknown field or stale reference refuses. The proof’s material fingerprint
+excludes text only for this authenticated host Turns Send route. The durable
+receipt fingerprint includes the final text and all other input, so a
+replay cannot change the message or duplicate a submission. The proof
+confers no approval for a later tool or external disclosure.
+
+A replay checks actor, space, package digest, action, activation and
+normalized input fingerprint plus current delivery authority. Retry
+mutations/disclosures only with the same receipt where the checked
+operation allows `request_id`. Changed input conflicts. A lost reply after
+commit does not require the old proof again. The saved receipt itself
+requires current disclosure authority. An uncertain non-replayable effect
+returns outcome unknown. A plugin-computed destination, recipient or
+disclosed data outside the checked preview needs new protected approval
+at actual broker dispatch. The commit fence remains the final check.
 
 ### 4.4 Protected built-ins
 
@@ -535,11 +589,18 @@ contains at most 50 eligible items in the fixture. `SelectionSetRequest`
 and `SelectionSetResult` accept stable IDs from the checked Bind and return
 a scoped `selection_ref` for authorization at dispatch. Purge and Empty Trash
 use a trusted preview, Manager/Owner confirmation of a host-pinned set and per-batch authority.
-Status polling uses the originating action’s audience. Panel, composer,
-route and session controls use only their catalogue-designated surfaces.
-The host supplies trusted operation titles and material facts. Enable
-full swipe only for a catalogue-permitted reversible host action with
-Undo and no outstanding preview or confirmation requirement.
+Use the catalogue’s typed Undo, status, request-card resolve, Share and
+kind-specific Trash-sheet routes. Status polling uses the original action’s
+audience. `showWhen` may use viewer roles for visibility; the host still
+authorizes every operation. Metadata patch takes scalar field/value with
+the rendered head from context. Allow full swipe for a checked, single
+boolean toggle with Undo and `confirm:none`. Bulk and protected actions
+stay on their designated surfaces. Move to collection resolves the chosen
+CollectionRef from the option Bind, authorizes every affected item and both
+collections, previews the chosen collection and exact set, and applies one
+bounded membership change. Leave unrelated
+memberships intact. On success, Invoke `then:{route}` may navigate using a
+host-minted created ref, reauthorized at open.
 
 ## 5. Sharing and aggregation
 
@@ -584,13 +645,16 @@ No package owns a database. Build a host-owned table engine, open to every
 plugin through the broker, when an app needs bulk records or aggregates.
 Mail is the expected first consumer.
 
-Description patches and base revisions, viewer
-projections, worker-published feeds, room hook acknowledgments, standalone
+Description patches, persisted viewer projections and worker-published feeds, room hook acknowledgments, standalone
 inbound dispatch, direct sockets, brokered TCP and private-network access,
 guest Prompt execution, snapshots, and gallery listing fields are outside
 the first contract. Live room sync is an engine facility. Gallery listing
 policy stays in the submissions repo. These cuts do not retire existing
-features from the current API.
+features from the current API. The first renderer contract omits author
+confirmation and preview overrides, pending overrides, result-display
+policy, general viewer operands except person, index-based row sources,
+sidebar cards, appearance/scheme/accent/title image and manifest commands.
+Use host policy for trusted operations and results.
 
 ## 7. Author SDK and conformance
 
@@ -645,20 +709,36 @@ pinned manifest and drops it on a newly approved line. This preparation and chec
 
 ### Step 0 — Spikes before freeze
 
-Exercise the real engines and enrolled carrier on disposable fixtures.
-The time limits below are spike gates measured after readiness on the
-documented fixture, separate from the three-second product deadline and
-plan limits (Q8). Record
-wall, payload, rows visited, reads, commits and flushes as applicable.
-Run timings that claim a performance result on the designated perf VM.
+**Entry evidence.** Paper-walk Reading List (list, Add, mark-read and a
+one-date private reminder), Notes (created ref, room edit, Move to collection,
+bulk Trash and Share), Threads (create, archive, snooze, composer, follow-up,
+protected approval), and Mail (list, sealed body, credentials and new
+arrival). Check Reading List, Notes and Threads executable chrome/content
+fixtures with their fixture manifests using the catalogue. Include malformed
+fixtures, declared reads, one shared Bind list, and every host surface used.
+The carrier, cold page and atomic save spikes are independently cleared.
+The combined host/renderer spike starts after its paper paths verify.
+
+Use disposable real engines and the **Svelte web renderer in Playwright
+Chromium** for the combined browser/phone fixture. For each timed condition
+run **100 measured repetitions** and report **p95** on
+`calternal-perf-01-backup01` under `/usr/local/bin/perf-lock.sh`, using
+binaries built on a dev VM. Record Chromium version, wall, payload, query
+plans, rows visited, reads, commits and flushes. Use an emulated phone link
+at 150 ms RTT for exchange counts and the keyboard trial. Measure indexed
+engine latency without the added link delay. Protocol safety deadlines
+and zero-effect assertions must hold on every repetition.
 
 | Spike | Injections and pass condition |
 | --- | --- |
-| **One enrolled channel** | Run two real package processes multiplexed over **one** enrolled channel for Space A and a channel for Space B. Stall A's real write path mid-frame by blocking the carrier receiver until buffers fill. Also run a deliberately slow callback. With a writable carrier, a control frame and the other package’s callback finish within 500 ms while the slow callback is held for 2 s. With the carrier physically stalled, the host fences cancel/revocation within 500 ms and closes the channel within 2 s. Space B makes progress within 2 s throughout. On reconnect reject prior epoch frames/tickets and accept an authorized receipt replay once. Expire the remote lease within 5 s of its last authenticated renewal with no delivered cancel. Assert zero old-lease effects after local fencing. |
-| **Cold indexed page** | Seed 100,000 mixed-visibility rows. At offsets 0, 10,000 and 90,000 test every qualified plan family, including collection + ACL + sort, search audience/rank and indexed filter/count under grant and content churn. Use deepest supported index windows. Record plans and rows visited. Keep window work bounded independent of offset and meter counts separately under matching authority/result versions. Reject unbounded plans. Each window finishes within 500 ms with zero wakes. Invalidate counts and fan out pushes under aggregate caps, with no leak on mid-query revoke. |
-| **Atomic large save** | Write an escape-heavy 2 MiB body through bounded stages. Reconstruct byte-for-byte with revision-pinned range reads after the live head advances with a 60 s fixture revision pin. Recheck authority per range. Purge and revocation invalidate the pin and refuse later ranges. Race two begins, lose a chunk ACK, replace a chunk with different bytes, cancel mid-stage and crash with an orphan. One reservation per receipt and no partial edit. Race each of revocation, cancellation, epoch loss, enrollment removal and run replacement immediately before and after the recovery-visible commit. Inject crash after content commit before journal publication and after publication before reply. Before commit yields no revision or success receipt. After commit recovers one revision, one journal event and a correctly scoped replay. Save plus reconstruction completes within 5 s on the fixture, and restart reclaims orphan reservations before serving. No worker/hook blocks the commit path. |
-| **Durable transcript** | Append batches from a real turn, stall the reader, cut the stream after commit before its ACK, then reconnect from the last committed cursor. Restart the server. Backfill starts within 2 s and matches the durable cursor, stable event sequence and submission receipt without duplicates. A revoked reconnect reveals neither data nor bookmark. Revoke before delivering a page and assert no subsequent bytes or bookmark are disclosed. Slow delivery cannot monopolize the writer. |
-| **Host + renderer authority** | Real renderer and host against both chrome and content. Resolve a real approval and live Bind with an independent member, guest, foreign and revoked matrix. Inject forged row/route/bind values and activation contexts, untouched prefills/draft defaults, built-in and approval-card spoofing, duplicate request IDs, relevant stale dependencies and cache-reopen revocation. Require zero unauthorized effects or rendered bytes, one commit for authorized replay and one valid action completing within 2 s of dispatch during unrelated window churn. Enforce the catalogue query/queue caps. Also race revocation with egress dispatch, job claim/park and protected approval resolution before freezing any of those routes. |
+| **One enrolled channel** | Two real package processes on one enrolled channel in Space A, plus Space B. Block A’s carrier receiver until its actual writer stalls mid-frame. Hold a slow callback for two seconds. With a writable carrier, control and the other callback complete p95 ≤500 ms. While stalled, local fencing p95 ≤500 ms, close p95 ≤2 s and Space B progress p95 ≤2 s. No old-lease effect after local fencing. Remote stops within 5 s of its last authenticated renewal on every run. Reconnect rejects the old epoch and authorized replay commits once. |
+| **Cold indexed page** | 100,000 mixed-visibility rows. Test offsets 0, 10,000 and 90,000 for each qualified plan family including collection + ACL + sort, search and filtered counts during grant/content churn. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms, work independent of offset, counts separately metered. Reject scans, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
+| **Atomic large save** | Stage an escape-heavy 2 MiB body and reconstruct it by revision-pinned ranges after the head moves, p95 ≤5 s. The 60 s range pin is invalidated by purge or revoke. Race duplicate begin, lost chunk ACK, conflicting bytes, cancel and orphan cleanup. Race revoke, epoch loss, enrollment removal and run replacement on both sides of commit and inject crashes before publication and before reply. No partial edit or success receipt before commit. After commit recover one revision and receipt. |
+| **Durable transcript** | Stall the reader, cut after commit before ACK and restart. First screenful drawn p95 ≤150 ms on a warm authorized reconnect, with the durable cursor, stable event and receipt sequences unchanged. Revoked reconnect reveals neither rows nor bookmarks. An independent control request completes p95 ≤500 ms with the transcript reader stalled. |
+| **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. |
+| **Phone activation exchanges** | In the same Chromium phone link fixture, from action intent to host outcome, swipe uses at most two exchanges and prepared Send at most one. Require the bounds on every run and report p95 exchange counts and elapsed time. Alter prepared material before Send or drop its reply. Refuse stale material and replay the exact final text once. |
+| **Keyboard windowing** | 5,000 rows with 30 keys/sec on the phone fixture. Report p95 window requests/sec (≤4) and selection/navigation events during repeat (zero on every run). No skeleton while continuous scrolling is steady. Same-version prefetch applies while keys repeat; a selection-dependent action flushes its settled target first. |
+| **Interactive pending** | Force work past three plugin seconds, including a cold wake with the separate measured/fixture allowance. Check caller-visible pending p95 ≤3 s from admission, one diagnostic and one status ref. Poll while it finishes and retry after a lost reply. Never launch again or allow effects after ticket expiry. |
 
 If a gate misses, record the measured failure and change the mechanism or
 reduce the first surface before freeze. A fixture using separate per-package
@@ -693,10 +773,6 @@ cases all pass, the author uses only public documentation/SDK input, there
 are zero failed commands, and a second verifier run passes unchanged.
 Exercise a bound page, typed parked question with answer and deadline, and
 an intentional refusal/retry with an actionable expected response.
-Before freeze, paper-walk a list/form/reminder, Notes and Threads against
-both formats with the shared renderer schema, and walk Mail’s list, sealed body, credential and
-new-mail paths. Identify the real-mail dependencies that remain deferred.
-
 ### Step 2 — Integrate placement and engines
 
 Pass these end-to-end flows on the selected wall before app migration.
@@ -728,22 +804,22 @@ fixtures, with final revisions, visible authority and durable outcomes equal.
   offline draft, retain body and history, rename and Undo, Trash, restore
   from Trash and history, and confirm Empty Trash as a Manager. Verify
   linked-user View/Comment and revocation, the host Share sheet and bounded
-  bulk Trash/share/collection creation, no worker wake for built-in
+  bulk Trash/share/collection creation and Choice-from-Bind Move, no worker wake for built-in
   lifecycle actions, and recover a committed save after rollback.
 - **Threads.** After Notes passes, open an indexed thread list, submit a
   composer draft with an attachment on the person’s eligible machine,
   reconnect at a committed transcript cursor, queue a follow-up, act on
-  a protected approval, and stop. Require exactly one submission per
+  a protected approval, archive and unarchive, snooze, and stop. Require exactly one submission per
   receipt, correct machine/login attribution, no lost committed transcript,
   and equivalent rollback/reopen behavior. Exercise host-owned
   provider/model/reasoning/permission/machine controls and authorized
   options, checked attachments and snooze presets plus the shipped custom
   date/time picker unless the Owner approves a parity exception.
 
-Run executable catalogue fixtures for both apps. Generic selectors, nested
-rows, drag, repeaters and conditional fields can wait for primitives.
-A shipped workflow still needs a host equivalent or an approved parity
-exception before replacement.
+Run executable catalogue fixtures for both apps. General-purpose selectors,
+repeaters and conditional fields wait for the first primitives. Nested
+child rows and user-made sections/drag await the Owner (Q11). A shipped
+workflow needs parity or an explicit Owner exception before replacement.
 
 Rollback is a release-pair exercise. Show that a committed change remains
 readable exactly once after rollback or refuse the downgrade before it
@@ -760,58 +836,11 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/b8c
 - **Q5 Storage parity — DECIDED.** No plugin database. Host engines serve official and community plugins equally. Build the table engine when needed, expected for Mail (§6).
 - **Q6, Q7, Q9 Network — DECIDED.** Install lines and actor approval follow §3. No network access is explicit. Declared content fetch loads anonymous images through the host, default on per person. No private network in the first release. TCP follows later under “Servers you add”.
 - **Q8 Plan mapping — OPEN pending measurement.** Choose plan ceilings from measured wake, memory and saturation.
+- **Q10 Own-space member row persistence — OPEN.** This draft authorizes only
+  session memory. The Owner is deciding persistent own-space rows.
+- **Q11 Nested child rows and user-made sections/drag — OPEN.** The Owner
+  is deciding whether they enter the first contract. Choice-from-Bind
+  (up to 50 options) is included for Move to collection and tags.
 
-## Third-round review responses
-
-See the [second-round response table](https://git.kayg.org/kayg/calternal-ai/src/commit/cca3d12db6cb2f9b5f08252df2b7d8e3672d19be/docs/plugin-api-v2.md#second-round-review-responses)
-for earlier decisions. Part B refers to the renderer specification in this
-same tree. Test gates in §8 are requirements for later implementation.
-
-| # | Resolution |
-| --- | --- |
-| 1 | Part B defines strict variant shapes and action uniqueness. §§4.1, 8 require the same checks at host activation. |
-| 2 | §4.2 and Part B cache rules keep authorized rows in session memory and require fresh authority to paint them. |
-| 3 | §3 and catalogue retain rename status and protected Undo. |
-| 4 | §3 retains one recovery-visible fence for commit and invalidation. |
-| 5 | §5 retains narrow guest descendants and denies guest jobs pending proof. |
-| 6 | §3 and manifest retain typed redemption against fixed sites or actor-configured servers. |
-| 7 | §8 retains the real shared writer stall and range/staging checks. |
-| 8 | §8 labels the checked-in guide v1, excludes it from v2 trials and requires the rewritten examples. |
-| 9 | §4.1 authorizes all dependency edges, rejecting cross-bind query operands in the first slice. |
-| 10 | §4.3 requires independent resolution, host confirmation and fenced dispatch. |
-| 11 | §3 retains the authoritative content/outbox transaction and recovery ordering. |
-| 12 | §3 retains one staging reservation per checked receipt and bounded cleanup. |
-| 13 | §§4, 8 add a real combined activation, approval and live-bind gate before freezing those surfaces. |
-| 14 | Part B retains shared Bind, row template and placement. |
-| 15 | §4.3, catalogue and Part B require activation identifiers, context and typed source scope. |
-| 16 | §4.2 and catalogue specify typed draft, attachment, mention and quote refs. Component variants are in Part B. |
-| 17 | §4.4 and catalogue specify status polling and protected purge inputs. |
-| 18 | §3 retains hosted calendar, missed-run and notification semantics. |
-| 19 | §7 retains `defineView` and `defineChrome` for exercised schemas. |
-| 20 | §8 gates the rewritten v2 guide and compiled examples. No runtime or guide implementation in this revision. |
-| 21 | §3 and Q9 record the Owner’s decision: TCP comes later under “Servers you add”. |
-| 22 | §4.1, catalogue and Part B retain authorized viewer/route operands. |
-| 23 | §§3, 4.1 and catalogue register canonical kinds and Trash/inbox fields. |
-| 24 | §3 retains metadata save against the live room head. |
-| 25 | §4.4 and catalogue map lifecycle/Turns actions to host dispatch without waking a plugin worker. §8 tests wake counts. |
-| 26 | §§1, 3, 4.1 retain one method list, one approval resolver and scoped Bind references. |
-| 27 | §8 requires executable Notes/Threads catalogue fixtures, cold read and a Mail paper walk before their gates. |
-| 28 | §4.1 and catalogue define kinds, typed fields, owners, audience and the private Request ref. |
-| 29 | §4.4 and catalogue give exact built-ins, routes, authority, arguments, outcomes and wake behavior. |
-| 30 | §§3, 4.3 derive preview/confirmation/retry from host effects and checked idempotency, including material at egress dispatch. |
-| 31 | §4.3 defines four identities, retention and replay fingerprint. |
-| 32 | §4.1 and catalogue define predicate operands, count modes, half-open bounded windows and unsupported-plan errors. |
-| 33 | §4.2 and catalogue define transcript, draft/quote and sealed frame scopes, retention, paging and sandbox/navigation. |
-| 34 | Combined tip pins both parts. Manifest uses the shared schema and §8 gates host-loader parity with strict paper fixtures. |
-| 35 | §4.3 requires the host context and server-side reconstruction. Only declared typed interactions leave the device. |
-| 36 | §4.3 and Part B include untouched defaults, autofill and offscreen material and disallow client typing flags as proof. |
-| 37 | §4.1 rejects cycles, pins search to the approved corpus and limits guest counts to count-enabled shared projections. |
-| 38 | §4.2 and catalogue cap aggregate subscriptions, bytes, pending windows and work. Host prefetch/push never wakes plugins. |
-| 39 | §4.3 uses stable target IDs and per-action dependency versions. §8 requires success during unrelated churn. |
-| 40 | §4.4 and catalogue limit approval/Undo/share/purge to their protected surfaces and derive swipe eligibility. |
-| 41 | §4.2 and Part B keep filled rows session-only, clear on invalidation and require authority for fallback. |
-| 42 | §8 sets a five-second lease expiry bound and range pin behavior, and races invalidation across real commits and egress. |
-| 43 | §8 tests deepest qualified plans, count churn/fan-out and committed transcript replay after restart. |
-| 44 | §8 adds real host/renderer fault injections and keeps schema-only/author evidence insufficient for Invoke freeze. |
-| 45 | §8 and Part B gate app migration on Share, bulk Notes, Turns provider/composer controls and executable fixtures. |
-| 46 | §8 and Part B preserve custom snooze and require shipped workflow parity or Owner-approved exceptions. |
+See the [review dispositions](reviews/plugin-api-v2-review-dispositions.md)
+for the revision 4 and 5 finding maps.

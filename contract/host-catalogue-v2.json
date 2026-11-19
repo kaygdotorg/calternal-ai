@@ -810,6 +810,70 @@
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
       }
+    },
+    "host.collection.move": {
+      "engine": "collection_membership",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Live write authority on selected items and both named collections",
+      "surfaces": [
+        "authorized_template_action",
+        "host_item_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item",
+        "selection_ref",
+        "collection",
+        "from_collection"
+      ],
+      "input_schema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "item",
+              "collection"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/$defs/ItemRef"
+              },
+              "collection": {
+                "$ref": "#/$defs/CollectionRef"
+              },
+              "from_collection": {
+                "$ref": "#/$defs/CollectionRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "selection_ref",
+              "collection"
+            ],
+            "properties": {
+              "selection_ref": {
+                "$ref": "#/$defs/SelectionRef"
+              },
+              "collection": {
+                "$ref": "#/$defs/CollectionRef"
+              },
+              "from_collection": {
+                "$ref": "#/$defs/CollectionRef"
+              }
+            }
+          }
+        ]
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      }
     }
   },
   "query": {
@@ -1051,6 +1115,13 @@
           },
           "uniqueItems": true,
           "description": "Stable row IDs from the context-bound Bind for a bulk activation."
+        },
+        "choices": {
+          "type": "object",
+          "maxProperties": 8,
+          "additionalProperties": {
+            "$ref": "#/$defs/ChoiceRef"
+          }
         }
       }
     },
@@ -1435,7 +1506,8 @@
               "type": "integer",
               "minimum": 0
             }
-          }
+          },
+          "description": "Present only for an authorized ready or empty result."
         },
         "bind": {
           "$ref": "#/$defs/ActionId"
@@ -1454,9 +1526,62 @@
           "maxItems": 200,
           "items": {
             "$ref": "#/$defs/RowActivationContexts"
+          },
+          "description": "Present only for an authorized ready or empty result."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "ready",
+                  "empty"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "result_version": {
+                "$ref": "#/$defs/Ref"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "rows": {
+                "maxItems": 0
+              },
+              "activation_contexts": false,
+              "count": false,
+              "result_version": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "empty"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "rows": {
+                "maxItems": 0
+              },
+              "activation_contexts": {
+                "maxItems": 0
+              }
+            }
           }
         }
-      }
+      ]
     },
     "ProviderId": {
       "type": "string",
@@ -2092,6 +2217,43 @@
           "default": false
         }
       }
+    },
+    "ChoiceRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Host-issued choice bound to one eligible row, option Bind result, owning prompt slot, viewer and activation context."
+    },
+    "ChoiceOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bind",
+        "options"
+      ],
+      "properties": {
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "options": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ref",
+              "label"
+            ],
+            "properties": {
+              "ref": {
+                "$ref": "#/$defs/ChoiceRef"
+              },
+              "label": {
+                "$ref": "#/$defs/Text"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "activation_limits": {
@@ -2191,6 +2353,12 @@
         "$ref": "#/$defs/LeaseRenewResult"
       },
       "scope": "Original view session and audience; fresh authority required"
+    },
+    "choice.options": {
+      "output_schema": {
+        "$ref": "#/$defs/ChoiceOptions"
+      },
+      "scope": "Context-bound prompt and authorized option Bind; never accepts a raw client target"
     }
   },
   "generic_item_fields": {

@@ -156,7 +156,7 @@
         "collection_create", "collection_membership", "items_list", "items_search", "sharing_check",
         "start_job", "checkpoint_job", "job_status", "cancel_job", "read_setting", "set_setting",
         "request_secret_handle", "proxy_request", "credential_call", "turn_start", "turn_status", "turn_cancel",
-        "turn_follow_up", "turn_answer", "turn_select_machine", "schedule_create", "schedule_remove"
+        "turn_follow_up", "turn_answer", "schedule_create", "schedule_remove"
       ]
     },
     "provider": {
