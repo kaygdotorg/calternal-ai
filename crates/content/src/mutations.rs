@@ -118,9 +118,11 @@ impl Content {
     /// Admit a control mutation while holding the target item's space lock. The
     /// callback sees the current head before replay and may check its lifecycle;
     /// it must not re-enter content. A crash after its commit replays its own
-    /// idempotent result. This fences deletion against turn admission without a
-    /// second lock/store. Cost: `admit` plus one indexed head read; the lock spans
-    /// the callback's job fsync to keep the lifecycle decision atomic within a space.
+    /// idempotent result. This fences archive and deletion against turn
+    /// admission without a second lock or store. A caller can publish a refusal
+    /// as a receipt when it must survive retry. Cost: `admit` plus one indexed
+    /// head read. The lock spans the callback's job fsync to keep the lifecycle
+    /// decision atomic within a space.
     /// Missing heads, reused request identities and callback/storage failures are
     /// returned without acknowledging a new control mutation.
     pub fn admit_item(
