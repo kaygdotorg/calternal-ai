@@ -314,8 +314,8 @@ impl Runner {
                     match me.sandbox(s, sandbox).await {
                         Err(reason) => failed_exec(reason),
                         Ok(sb) => match action {
-                            Ok(request) => sb.exec(request).await,
-                            Err(request) => sb.preview(request).await,
+                            ExecAction::Command(request) => sb.exec(request).await,
+                            ExecAction::Preview(request) => sb.preview(request).await,
                         }
                         .unwrap_or_else(|e| failed_exec(e.0)),
                     }
