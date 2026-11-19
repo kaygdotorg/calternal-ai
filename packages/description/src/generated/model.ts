@@ -41,6 +41,8 @@ export type Boolean = boolean
  */
 export type Number = number
 /**
+ * The host emits RFC 3339 timestamps with seconds 00 to 59 only, recording a leap-second instant as second 59 with the fraction clamped to the maximum representable value.
+ * 
  * This interface was referenced by `ContractModel`'s JSON-Schema
  * via the `definition` "Timestamp".
  */
@@ -152,6 +154,11 @@ export type WindowAnchor = ("start" | "end")
  */
 export type Ref4 = string
 /**
+ * This interface was referenced by `ContractModel`'s JSON-Schema
+ * via the `definition` "Scalar".
+ */
+export type Scalar = (string | number | boolean | null)
+/**
  * Host-asserted audience of the authenticated active view. member denotes other member views. Compare with the active view before accepting any window.
  * 
  * This interface was referenced by `ContractModel`'s JSON-Schema
@@ -190,11 +197,6 @@ export type FieldType = ("Text" | "Number" | "Boolean" | "Timestamp" | "ItemRef"
  * via the `definition` "ViewerRole".
  */
 export type ViewerRole = ("owner" | "manager" | "editor" | "reader")
-/**
- * This interface was referenced by `ContractModel`'s JSON-Schema
- * via the `definition` "Scalar".
- */
-export type Scalar = (string | number | boolean | null)
 export type CachePartitionRef = string
 /**
  * This interface was referenced by `ContractModel`'s JSON-Schema
@@ -374,7 +376,7 @@ export type Icon = (Id | {
 name?: Id
 field?: FieldName
 /**
- * A static map from the value of `field` to an icon name, owned by the renderer (provider to its icon); an unmapped value draws the kind's icon.
+ * A static map from the value of `field` to an icon name. An unmapped value uses `name` if supplied, or the kind icon.
  */
 map?: {
 [k: string]: Id
@@ -399,6 +401,11 @@ tone?: ("good" | "warn" | "bad")
 icon?: Icon
 }[]
 /**
+ * This interface was referenced by `ContractModel`'s JSON-Schema
+ * via the `definition` "NonSwipeAction".
+ */
+export type NonSwipeAction = (Action & NonSwipeFlag)
+/**
  * An action in chrome: an Invoke (an operation the host dispatches) or a ShellAction (a control the shell performs).
  * 
  * This interface was referenced by `ContractModel`'s JSON-Schema
@@ -406,12 +413,86 @@ icon?: Icon
  */
 export type Action = (Invoke | ShellAction)
 /**
+ * This interface was referenced by `ContractModel`'s JSON-Schema
+ * via the `definition` "NonSwipeInvoke".
+ */
+export type NonSwipeInvoke = (Invoke & NonSwipeFlag)
+/**
+ * Only the first action may enable full swipe. The host catalogue determines eligibility.
+ * 
+ * @maxItems 3
+ * 
+ * This interface was referenced by `ContractModel`'s JSON-Schema
+ * via the `definition` "SwipeActionSet".
+ */
+export type SwipeActionSet = NonSwipeAction[]
+/**
+ * Where a value comes from. A description never carries viewer data; it names a SOURCE. Row, route, selection and bind sources are reconstructed by the HOST from the activation context; form, draft and prompt sources are the only values the device sends (`interaction`). Exactly one key.
+ * 
+ * This interface was referenced by `ContractModel`'s JSON-Schema
+ * via the `definition` "ShortcutRouteValue".
+ */
+export type ValueSource1 = ({
+literal: Literal
+} | {
+viewer: "person"
+} | {
+route: string
+} | {
+selection: Id
+/**
+ * The set of rows the person ticked in a list whose `selectionMode` is `multiple` (at most 50), as a HOST-ISSUED selection reference (`interaction.selection_ref` in the catalogue's Interaction): the shell sends the ticked row ids to the host, the host validates them against the bind's snapshot and the viewer and returns the reference; an action names the reference, never the ids.
+ */
+set?: true
+} | {
+row: ("id" | "field")
+field?: Id
+} | {
+bind: Id
+field: FieldName
+} | {
+form: Id
+field: Id
+} | {
+draft: Id
+} | {
+prompt: {
+title: string
+placeholder?: string
+initial?: ValueSource
+/**
+ * text: a text field; date or datetime: a picker; choice: one row of a bind (Move to collection, a tag). A choice is NOT a client value: the shell asks the host to issue a `ChoiceRef` for the picked option row and sends it in `interaction.choices` under the prompt's slot; the host resolves the row from the authorised option bind and never accepts a client-supplied id as the choice.
+ */
+kind?: ("text" | "date" | "datetime" | "choice")
+/**
+ * For kind `choice`: the options, as the rows of a bind.
+ */
+options?: {
+bind: Id
+}
+}
+} | RowActionTarget)
+/**
+ * Open a named route or invoke a declared action from a shortcut row. A literal route value uses the same Id as EventRoute.row.
+ * 
+ * This interface was referenced by `ContractModel`'s JSON-Schema
+ * via the `definition` "ShortcutOpen".
+ */
+export type ShortcutOpen = {
+[k: string]: unknown
+}
+/**
  * A host component: a rich surface the host draws natively; the description only configures it, and its events go to the host (or to the named invoke), not to a page.
  * 
  * This interface was referenced by `ContractModel`'s JSON-Schema
  * via the `definition` "Component".
  */
 export type Component = (ItemEditor | TurnTranscript | Composer | RequestCard | SealedHtmlFrame)
+/**
+ * This interface was referenced by `ContractModel`'s JSON-Schema
+ * via the `definition` "HeaderAction".
+ */
+export type NonSwipeAction1 = (Action & NonSwipeFlag)
 /**
  * Shell to host. In a page-hosted shell the page relays; in a native app without a page the shell sends the same typed request to the host directly. Each variant has its own required fields. The three activation events are the host catalogue's (ResolveActivation, ConfirmActivation, DispatchActivation: action_id, activation_id, activation_context, interaction; the shell sends no resolved row, route or bind value, and the host reconstructs every server-owned source). Also the catalogue's view_open, lease_renew, choice_options, undo and action_status requests (each cited, none redefined).
  * 
@@ -614,7 +695,7 @@ anchor?: WindowAnchor
 export interface WindowRow {
 id: Ref
 fields: {
-[k: string]: unknown
+[k: string]: Scalar
 }
 /**
  * Host-issued parent row reference for each authorized child Bind reached through a declared edge. Omit when the row has no eligible edge.
@@ -702,6 +783,7 @@ expires_at: Timestamp
 rows: {
 title: Text
 subtitle?: Text
+subtitle_timestamp?: Timestamp
 }[]
 proof: ProofRef
 }
@@ -1128,75 +1210,11 @@ parent?: true
 field_filter?: SearchFieldFilter
 }
 /**
- * How an item becomes one row: fields map to title, optional secondary line, icon and marks; actions name the row through the row scope. Rows have no free-form content, so the host can project them for any audience.
- * 
  * This interface was referenced by `ContractModel`'s JSON-Schema
- * via the `definition` "RowTemplate".
+ * via the `definition` "NonSwipeFlag".
  */
-export interface RowTemplate {
-/**
- * The host-issued row reference identifies the row in selection, events and scope. Item rows use their kind’s row reference. Rows of a repeated section use a LayoutEntryRef.
- */
-id?: "id"
-/**
- * One ellipsised title line from a declared field.
- */
-title: {
-field: FieldName
-fallback?: string
-}
-/**
- * Optional ellipsised secondary line under the title, in secondary colour. Parts read projected fields in order; date formats require Timestamp and text requires Text. Join present parts with a space, middle dot and space. Omit an absent part and its separator. Format relative dates at draw time against the local clock, without host pushes. Rows without the declaration have one line.
- * 
- * @minItems 1
- * @maxItems 3
- */
-secondary?: [{
-field: FieldName
-format: ("relative_date" | "short_date" | "text")
-}, ...({
-field: FieldName
-format: ("relative_date" | "short_date" | "text")
-})[]]
-icon?: (Icon | RowImageIcon)
-marks?: Marks
-selectable?: boolean
-/**
- * Swipe-right actions. Only the first may set fullSwipe.
- * 
- * @maxItems 3
- */
-leadingActions?: Action[]
-/**
- * Swipe-left actions.
- * 
- * @maxItems 3
- */
-trailingActions?: Action[]
-/**
- * Context menu.
- * 
- * @maxItems 12
- */
-menu?: Action[]
-/**
- * What activating the row does: set the route parameter (navigate) or invoke an action.
- */
-open?: ({
-route: {
-name: string
-value: "id"
-}
-} | {
-invoke: Action
-})
-/**
- * Nested child rows: a bind with `source.parent: true`, requested per parent row with its own windows. Depth is at most 3 (host-checked, counted through the chain of children); a row with children draws a disclosure control, the system's own. A bind that is a children target is never also a section's rows (`Section.repeat.rows`): the verifier rejects every dual-edge bind.
- */
-children?: {
-bind: Id
-expanded?: boolean
-}
+export interface NonSwipeFlag {
+fullSwipe?: false
 }
 /**
  * ONE definition used as a content node and as a row, header or footer action. Activation sends the host ONLY an activation context and the values held on the device (`interaction`): the host reconstructs row, selection and route from the context it issued for what was rendered, validates the operation for the acting person, and answers with an outcome (3.2). The description names inputs as value sources; it never carries a resolved row, a destination chosen at activation time, a confirmation or a retry policy.
@@ -1275,6 +1293,67 @@ item?: ValueSource
 role?: "destructive"
 }
 /**
+ * How an item becomes one row: fields map to title, optional secondary line, icon and marks; actions name the row through the row scope. Rows have no free-form content, so the host can project them for any audience.
+ * 
+ * This interface was referenced by `ContractModel`'s JSON-Schema
+ * via the `definition` "RowTemplate".
+ */
+export interface RowTemplate {
+/**
+ * The host-issued row reference identifies the row in selection, events and scope. Item rows use their kind’s row reference. Rows of a repeated section use a LayoutEntryRef.
+ */
+id?: "id"
+/**
+ * One ellipsised title line from a declared field.
+ */
+title: {
+field: FieldName
+fallback?: string
+}
+/**
+ * Optional ellipsised secondary line under the title, in secondary colour. Parts read projected fields in order; date formats require Timestamp and text requires Text. Join present parts with a space, middle dot and space. Omit an absent part and its separator. Format relative dates at draw time against the local clock, without host pushes. Rows without the declaration have one line.
+ * 
+ * @minItems 1
+ * @maxItems 3
+ */
+secondary?: [{
+field: FieldName
+format: ("relative_date" | "short_date" | "text")
+}, ...({
+field: FieldName
+format: ("relative_date" | "short_date" | "text")
+})[]]
+icon?: (Icon | RowImageIcon)
+marks?: Marks
+selectable?: boolean
+leadingActions?: SwipeActionSet
+trailingActions?: SwipeActionSet
+/**
+ * Context menu.
+ * 
+ * @maxItems 12
+ */
+menu?: NonSwipeAction[]
+/**
+ * What activating the row does: set the route parameter (navigate) or invoke an action.
+ */
+open?: ({
+route: {
+name: string
+value: "id"
+}
+} | {
+invoke: NonSwipeAction
+})
+/**
+ * Nested child rows: a bind with `source.parent: true`, requested per parent row with its own windows. Depth is at most 3 (host-checked, counted through the chain of children); a row with children draws a disclosure control, the system's own. A bind that is a children target is never also a section's rows (`Section.repeat.rows`): the verifier rejects every dual-edge bind.
+ */
+children?: {
+bind: Id
+expanded?: boolean
+}
+}
+/**
  * A message state for a bind: empty, loading or failed. The title and detail are literals of the description or host-written text; never worker output.
  * 
  * This interface was referenced by `ContractModel`'s JSON-Schema
@@ -1284,7 +1363,14 @@ export interface State {
 title: string
 detail?: string
 icon?: Icon
-action?: Action
+action?: NonSwipeAction
+}
+/**
+ * This interface was referenced by `ContractModel`'s JSON-Schema
+ * via the `definition` "NonParentPredicate".
+ */
+export interface NonParentPredicate {
+value?: unknown
 }
 /**
  * ONE definition used by chrome and content: a data-free request for rows, counts or one item. Several binds may be in one view; every reference names its bind id. A description with binds contains no viewer data, so it may be cached and shared.
@@ -1389,12 +1475,7 @@ id: Id
 title: string
 icon?: Icon
 marks?: Marks
-/**
- * As a row template's `open`.
- */
-open?: {
-[k: string]: unknown
-}
+open?: ShortcutOpen
 }[]
 bind?: Id
 /**
@@ -1409,11 +1490,11 @@ minRole: ("editor" | "manager" | "owner")
 /**
  * @maxItems 3
  */
-actions?: Action[]
+actions?: NonSwipeAction[]
 /**
  * @maxItems 12
  */
-menu?: Action[]
+menu?: NonSwipeAction[]
 /**
  * User-made sections: one section per row of the bind `over` (the per-person layout the host stores: its title is the row's title, its order the person's order), each section's rows from the per-parent bind `rows` (`source.parent: true`; the declared edge is the mandatory constraint and a `{parent: true}` filter is only an optional extra predicate). The host stores and authorizes the layout; moving a row or a section is a host operation (Move to, Move up, Move down in the catalogue), never a description. A per-parent bind is consumed ONLY through its edge: no ordinary section, list or count may reference it, and a bind is a section's rows OR a children target, never both (section rows present LayoutEntryRef, child rows the kind's own row ref).
  */
@@ -1438,7 +1519,7 @@ mode?: ("edit" | "read")
  * The item's title is the first line of the editor and renames through host.item.rename.
  */
 showTitle?: boolean
-onTitleChange?: Invoke
+onTitleChange?: NonSwipeInvoke
 }
 }
 /**
@@ -1519,6 +1600,15 @@ maxHeight?: number
 }
 }
 /**
+ * This interface was referenced by `ContractModel`'s JSON-Schema
+ * via the `definition` "HeaderInput".
+ */
+export interface HeaderInput {
+prompt?: {
+initial?: HeaderInput
+}
+}
+/**
  * The header over the content card: a literal title or one from the selected item, and actions. The sidebar toggle is the shell's.
  * 
  * This interface was referenced by `ContractModel`'s JSON-Schema
@@ -1532,11 +1622,11 @@ field: FieldName
 /**
  * @maxItems 2
  */
-leading?: Action[]
+leading?: NonSwipeAction1[]
 /**
  * @maxItems 3
  */
-trailing?: Action[]
+trailing?: NonSwipeAction1[]
 }
 /**
  * Account at the left, the apps in the middle, search at the right.
@@ -1554,7 +1644,7 @@ title?: string
 /**
  * @maxItems 12
  */
-menu?: Action[]
+menu?: NonSwipeAction[]
 }
 /**
  * @maxItems 6
@@ -1854,7 +1944,7 @@ type: "notice"
 tone?: ("good" | "warn" | "bad")
 title: string
 detail?: string
-action?: Invoke
+action?: NonSwipeInvoke
 }
 /**
  * An action as a button. The label is the invoke's title; the trusted-preview rule applies (the host resolves it against what was rendered).
@@ -1864,7 +1954,7 @@ action?: Invoke
  */
 export interface ButtonNode {
 type: "button"
-invoke: Invoke
+invoke: NonSwipeInvoke
 style?: ("primary" | "quiet")
 }
 /**
@@ -1882,7 +1972,7 @@ title?: string
  * @maxItems 12
  */
 fields: [FormField, ...(FormField)[]]
-submit: Invoke
+submit: NonSwipeInvoke
 /**
  * Clear the fields after an `ok` outcome; an error or unknown outcome keeps what was typed.
  */
@@ -1963,6 +2053,15 @@ footer?: Footer
 panel?: Panel
 }
 /**
+ * This interface was referenced by `ContractModel`'s JSON-Schema
+ * via the `definition` "ContentDepthSeven".
+ */
+export interface ContentDepthSeven {
+children: {
+[k: string]: unknown
+}
+}
+/**
  * The content of the card for one place.
  * 
  * This interface was referenced by `ContractModel`'s JSON-Schema
@@ -2020,6 +2119,7 @@ expires_at: Timestamp
 rows: {
 title: Text
 subtitle?: Text
+subtitle_timestamp?: Timestamp
 }[]
 proof: ProofRef
 }
