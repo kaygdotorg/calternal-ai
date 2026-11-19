@@ -64,27 +64,27 @@ Renew only against the live session or scheduled principal, grants, package
 generation, eligible placement and exact attempt. Recheck authority at broker
 effects and output egress. Revoke fences both immediately and stops renewal.
 
-An independent machine supervisor contains all tool and harness processes,
-including descendants that start a new session. A machine-local watchdog
-outside the supervisor owns the freezer, kill timer and gateway fence.
-It accepts host renewal only with a fresh heartbeat from the current
-supervisor generation and records it for the exact attempt. A heartbeat
-may be at most 2 s old. On heartbeat loss or within 5 s of the last
-renewal, whichever comes first, the watchdog fences queued dispatch
-and egress and freezes the cgroup subtree. It keeps both deadlines when
-the supervisor dies or hangs. The placement runtime independently
-monitors watchdog exit and liveness, holds the active deadlines, and
-tears down the subtree and closes the gateway on watchdog death or hang.
-Release reservations only after both are verified gone. Discard
-unsubmitted requests. Treat dispatched effects as uncertain until reconciled.
+The machine supervisor contains every tool and harness process, including
+descendants that start a new session. The placement runtime directly owns
+the cgroup and gateway fences and one pair of attempt deadlines on its
+local monotonic clock. It accepts host renewal only with a fresh pulse
+from the current supervisor generation. An optional watchdog can report
+faults. The runtime's clocks, fencing and teardown do not depend on it.
 
-Kill within 10 minutes of the last authenticated renewal or immediately
-on an authenticated exact-attempt host Stop. Only the watchdog can
-release the fence after the supervisor verifies safe transport and
-presents fresh, one-use host renewal for the exact attempt and current
-watchdog fence. Supervisor loss invalidates earlier thaw authority.
-Direct and unproven placements remain disabled, including on personal
-machines. [Current freezer][podman] · [Direct code][direct]
+| Deadline | Runtime work |
+| --- | --- |
+| Freeze cutoff | Earlier of last supervisor heartbeat +2 s and last authenticated host renewal +5 s. Reserve the last 250 ms for gateway closure and cgroup freeze. Fence queued dispatch and egress and verify that the full subtree is frozen by the cutoff. |
+| Verified teardown cutoff | Last authenticated renewal +10 min. Reserve the last 5 s to kill the subtree, close the gateway and verify both are gone. Authenticated exact-attempt Stop starts teardown immediately and moves the deadline to the earlier of this cutoff and Stop receipt +5 s. |
+
+Runtime timers are armed while the attempt is admitted. Once fencing
+starts, a late heartbeat or stale renewal cannot reopen the gate. Only the
+runtime may thaw after safe provider continuation is verified and the
+host issues a fresh one-use renewal for the exact attempt and current
+runtime fence. Thaw is unavailable once teardown starts. Discard queued
+requests that never dispatched. Reconcile uncertain dispatched effects.
+Hold quota until verified teardown. If verification misses its deadline,
+keep the placement fenced and quota charged. Direct and unproven
+placements remain disabled. [Current freezer][podman] · [Direct code][direct]
 
 A frozen attempt holds memory, capacity, workspace and locks. Keep the
 reservations until verified death or continued ownership after thaw. Keep
@@ -373,8 +373,10 @@ and staging expiry is five minutes. Retire expired reservations and delete
 their orphan staging within another 30 s, including a sweep before new
 admission after restart. Recheck the upload session, expiry and item grant
 before accepting bytes and before publishing the pointer. Make bytes
-durable before pointer publication. Eviction withdraws the pointer before
-reclaiming bytes.
+durable before pointer publication. A crash in between leaves the
+previous authorized preview or fallback visible. Retire the durable
+orphan and its reservation by the staging cleanup deadline. Eviction
+withdraws the pointer before reclaiming bytes.
 
 ### B.3 Private scratch design
 
@@ -531,11 +533,11 @@ flushes. Start with an independent-runner paper exercise.
 | --- | --- |
 | Generic runner, tool and lifecycle authority | On both shipped adapters and an independent one, drive actual Send, checked request, steer, child, Stop, archive, Undo and snooze through generic routes. Assert the eligible operation effects and read them back, including one tool dispatch for an exact approved digest in a broker-actionable arm. Exercise native dismissal-only integrations separately. A changed digest or consumed grant dispatches zero times. Race two child starts with one slot left and require exactly one admission. Revoke the ancestor while the admitted child acts. Cover unauthorized and replacement-attempt archive, a title-only transcript ref and another actor's Inbox changes. Assert zero unauthorized effects, bytes, count or version changes. |
 | Sleeping-space Send and park | Verify zero VM residency before a prepared Send on the sealed link. Require one exchange and p95 ≤500 ms to painted Starting backed by a durable receipt that survives a lost reply and restart. Measure p95 ≤8 s to the real container's authenticated ready handshake for one wake and ≤15 s at 20 concurrent wakes. Require a first provider token and report its time separately. Inject terminal, approval and phase transitions on either side of park, replay each signal, and include a no-transition control. Verify exactly one resumed job per transition and none for the control, with no duplicate execution or plugin wakes for tokens. |
-| Transport, supervisor and watchdog loss | Cut the real carrier with a queued provider request and detached tool process. Exercise 30 s and 5 min outages with surviving and timed-out provider transports. Timestamp the last heartbeat and renewal independently. Stage both deadline orders and require useful progress before the fault, then verify by process and receiver-side probes that freeze and fencing occur by the earlier of heartbeat +2 s and renewal +5 s on every run. Kill and hang the supervisor and, separately, kill and hang the watchdog. On watchdog loss require runtime teardown of the complete subtree and gateway by that earlier deadline. Verify quota still held until both are gone, then use the released slot for a new attempt. On supervisor loss reject stale thaw and verify teardown by 10 min or authenticated Stop. An intact attempt must resume on fresh proof with a safe transport. An uncertain effect requires reconciliation and explicit Resume. Require zero post-fence egress and sealed first-screen/control gates. |
+| Transport, supervisor and watchdog loss | Cut the real carrier with a queued provider request and detached tool process. Exercise 30 s and 5 min outages with surviving and timed-out provider transports. Timestamp heartbeat and renewal independently and stage both deadline orders. After demonstrated progress, verify by process and receiver-side probes that the runtime freezes and fences by the earlier cutoff, with the 250 ms fencing budget reserved. Kill and hang the supervisor. Separately kill and hang the watchdog immediately before each reserved work window and again 1 ms before each cutoff. Record runtime arm and completion timestamps. Require the same deadlines in those arms. Verify complete subtree and gateway teardown by the 10-minute cutoff or the earlier Stop cutoff, with quota held until verified cleanup and reusable afterward. Reject stale thaw. An intact attempt must resume on fresh proof with a safe transport. An uncertain effect requires reconciliation and explicit Resume. Require zero post-fence egress and sealed first-screen/control gates. |
 | Stream custody and publication | Cut after spool persistence before ingest ACK, after file publication before its ACK and after that ACK before reclaim. Split an issued credential across frames and restart after the checkpoint. Compare exact committed records and receipts against the input oracle, with no credential or forged trusted control. Abandon at quota and cross expiry during restart. Verify cleanup and unchanged canonical records. For 120 s of **ingest** saturation offer twice the space byte/frame caps in 4 KiB frames across four attempts. After warm-up accept ≥90% of both ceilings, account for every offered frame and reconcile accepted work after drain. In a separate 120 s **publication** arm send real assistant text, rotate conversations at 8 MiB or earlier, and require ≥512 KiB/s of new durable canonical text in every 10 s window after warm-up. Read the canonical records independently and count only new correct bytes. Run the foreground load against the same writer throughout publication, with at least 100 samples per foreground operation across measured runs. Require p95 ≤40 ms save, ≤100 ms first cold window, ≤150 ms first transcript screen and ≤500 ms independent control, with bounded spool and commit work throughout. |
 | File cutover, notice and rollback | At zero live attempts migrate both proven and unprovable bindings. Delete projections and rebuild. Verify exact historical message bodies, record IDs/order and render equality. The proven binding must Resume under its original profile. The unproven one shows the fresh-session notice and never attempts native Resume. Write new records and rebuild on the rollback target with projections removed. Disconnect after the attempted notice. Complete sign-in, then reconnect from the last record both with an unchanged tail and, separately, after it grows. The existing transcript reply must replace the attempted notice with exactly one completed notice in both arms and refresh the grown record in the second arm. Require no revoked rows, bookmarks or notices. Inspect canonical files and ordinary backups for private state and confirm exactly-once records and receipts after rollback. |
 | Notes extractors, tags and scope changes | Compare room and ordinary-save outputs, ordered rows and exact scoped counts against the old scanner and a live-authority oracle. Exercise the peak input and total-key limits, an eligible scope add/Undo and an over-budget expansion with typed refusal and no effects. Revoke one grant across enough tagged items to prove synchronous work exceeds 1,152 keys. First prove all viewer windows and counts are ready. Pause cleanup after fencing and verify the over-budget work is deferred. Query the same windows and counts as revoked and still-authorized viewers during the pause. Require no revoked data and correct scoped results or the typed loading state for affected authorized projections. Unaffected viewers must still receive exact results. Resume cleanup and require fresh ready results within 5 s on the just-over-budget fixture, all matching the live-authority oracle. Require p95 ≤40 ms for saves and eligible scope adds/Undo, p95 ≤500 ms to revoke fencing, and zero wakes. Report committed-field and search publication lag separately. |
-| Notes device previews | On a confirmed sleeping space require save intent to durable ACK p95 ≤40 ms, capture to local paint p95 ≤100 ms, and ACK to current paint on a second authorized viewer p95 ≤2 s. Use distinguishable revision images. Assert the second viewer sees the last authorized image marked stale during an intervening save, then the exact new capture and attribution. Without an authorized image, compare the painted miniature with the current summary. Race old-head and copied grants and cut before bytes are durable and after pointer commit. Require fallback or stale image before commit and the current image once after committed replay. Both fresh and conditional revoked reads must return no image or `304`. Verify cleanup by the staging deadline and zero preview-driven wakes. |
+| Notes device previews | On a confirmed sleeping space require save intent to durable ACK p95 ≤40 ms, capture to local paint p95 ≤100 ms, and ACK to current paint on a second authorized viewer p95 ≤2 s. Use distinguishable revision images. Assert the second viewer sees the last authorized image marked stale during an intervening save, then the exact new capture and attribution. Without an authorized image, compare the painted miniature with the current summary. Race old-head and copied grants and cut before byte durability, after durable bytes but before pointer commit, and after pointer commit. In the middle arm, require the previous authorized preview or fallback. Verify the durable orphan is unaddressable and both it and its reservation are reclaimed by the staging cleanup deadline. Require the current image exactly once after committed replay. Both fresh and conditional revoked reads must return no image or `304`. Verify cleanup by the staging deadline and zero preview-driven wakes. |
 
 ### C.2 Deferred qualification
 
@@ -545,7 +547,7 @@ These gates apply only to the later consumer revision.
 | --- | --- |
 | Scratch rebuild | Seed current, stale and revoked artifacts. Delete scratch during a real job and at rest. Require the same published fields and an independently checked rebuilt index. Count model calls and fail if a still-current artifact is recomputed or a stale/revoked artifact is read. Kill the worker with the disk attached, then require cleanup and exclusive reattach. Verify uninstall wipe and no scratch in ordinary backup or runtime snapshots. |
 | Originals and thumbnails | Import 10,000 mixed-visibility 4 MiB originals over a provisioned 200 Mbit/s link in ≤35 min while driving sealed foreground traffic. Drive the same work across a lost chunk ACK and compare every final digest with its input. Require the first of the correct thumbnails within 15 s of the first eligible original commit on the heavy-job arm (5 s on the fixture-only device arm). Verify actual image-to-revision identity. Revoke upload and read grants mid-stream with bytes buffered. Assert zero writes and deliveries after the fence and bounded staging retirement. |
-| Labels | Drive 300 eligible source changes/s for two minutes with contended writes. Require all 36,000 accounted for by an exact publication or a visible successor. Compare label fields, pointers, windows and counts to the live-authority oracle. Score completion or supersession at ≥300/s during steady load, source-commit-to-publication age p95 ≤2 s and oldest eligible age ≤5 s. In a separate arm offer at least twice the configured admission rate and require the backpressure boundary to be reached. Verify bounded backlog, exact recovery through batch/journal/outbox cuts, full reconciliation after drain, and sealed foreground gates. |
+| Labels | Drive 300 eligible source changes/s for two minutes with contended writes. Credit each of the 36,000 inputs once, when its exact label or an oracle-correct label and pointer for a newer eligible revision of the same item are visible through the authorized item view. Unpublished coalescing earns no credit. Measure each input's age from its original source commit to that visibility, including superseded inputs. Compare label fields, pointers, windows and counts to the live-authority oracle. Require ≥300 visibility credits/s during steady load, p95 age ≤2 s and oldest eligible age ≤5 s. In a separate arm offer at least twice the configured admission rate and require the backpressure boundary to be reached. Verify bounded backlog, exact recovery through batch/journal/outbox cuts, full reconciliation after drain, and sealed foreground gates. |
 | Similarity | Complete 1,000 authorized requests on warmed embeddings with p95 ≤5 s and compare ordered IDs and scores against an independent authorized oracle. Revoke a ranking input outside the returned window before status delivery and require invalidation. Poll by the requester as a positive control, then as another viewer, after expiry and through generic job status, checkpoint and stream. Require zero private result bytes on those paths and zero cross-space writes. |
 
 ### C.3 Numbered contract revision
@@ -653,6 +655,14 @@ heavy-job volume and bulk paths with their first consumer.
 | 2. Sign-in notice on reconnect | R2.18, R3.09, R4.03 | §§A.3, A.5, C.1 bounded prefix in the existing response and disconnected completion |
 | 3. Over-budget revoke | R2.11, R3.10, R4.06 | §§B.5, C.1 proven over-limit work, paused cleanup and scoped oracle |
 | 4. Canonical publication load | R2.19, R4.07 | §§A.3, C.1 separate ingest/publication gates, rotating files and scored foreground load |
+
+## Sixth review disposition
+
+| Finding | Earlier partial findings covered | Where addressed |
+| --- | --- | --- |
+| 1. Runtime-owned deadlines | R1.02, R2.01, R3.01, R4.01, R5.01 | §§A.2, C.1 one pair of cutoffs, explicit fencing and teardown margins, late watchdog loss |
+| 2. Durable preview orphan | New | §§B.2, C.1 cut between byte durability and pointer commit, visibility and reservation cleanup |
+| 3. Label publication accounting | New | §C.2 per-input visibility credit and age from original source commit |
 
 [owners]: https://git.kayg.org/kayg/calternal-ai/src/commit/85add29af840b225dd9a83cae2e5cd4ce3aecfc9/docs/open-questions.md
 [sealed]: ../plugin-api-v2.md
