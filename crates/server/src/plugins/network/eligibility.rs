@@ -56,7 +56,11 @@ mod tests {
         for preference in [Ask, Always] {
             assert!(!may_enqueue(preference, SourceAge::ExplicitOnly, Ingest));
             assert!(!may_enqueue(preference, SourceAge::ExplicitOnly, Open));
-            assert!(may_enqueue(preference, SourceAge::ExplicitOnly, ExplicitLoad));
+            assert!(may_enqueue(
+                preference,
+                SourceAge::ExplicitOnly,
+                ExplicitLoad
+            ));
         }
         assert!(!may_enqueue(Never, SourceAge::ExplicitOnly, ExplicitLoad));
         for trigger in [Ingest, Open, ExplicitLoad] {

@@ -73,7 +73,9 @@ impl ContentPolicy {
     /// Resolve an exact hostname and apply the configured deny policy to all answers.
     /// Dial one of these addresses directly. The port does not affect admission.
     pub(crate) async fn checked_addresses(
-        &self, host: &str, port: u16,
+        &self,
+        host: &str,
+        port: u16,
     ) -> io::Result<Vec<std::net::SocketAddr>> {
         let answers = lookup(host, self.fixture).await?;
         if answers.is_empty()
@@ -85,7 +87,10 @@ impl ContentPolicy {
         {
             return Err(refused());
         }
-        Ok(answers.into_iter().map(|address| std::net::SocketAddr::new(address.ip(), port)).collect())
+        Ok(answers
+            .into_iter()
+            .map(|address| std::net::SocketAddr::new(address.ip(), port))
+            .collect())
     }
 }
 

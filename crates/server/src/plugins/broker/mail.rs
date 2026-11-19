@@ -156,14 +156,21 @@ impl<D: Directory> SpaceHost<D> {
         }
         let handle = handle.map_err(|_| Error::Refused)?;
         let _permit = CONNECTIONS.try_acquire().map_err(|_| Error::Refused)?;
-        let _budget = self.state.store.plugin_fetch.reserve(self.space, imaps::MAX_RESPONSE as u64)
+        let _budget = self
+            .state
+            .store
+            .plugin_fetch
+            .reserve(self.space, imaps::MAX_RESPONSE as u64)
             .map_err(|_| Error::Refused)?;
         let addresses = self
             .runtime
             .block_on(async {
                 tokio::time::timeout(
                     Duration::from_secs(3),
-                    self.state.store.plugin_fetch.mail_addresses(&endpoint.host, endpoint.port),
+                    self.state
+                        .store
+                        .plugin_fetch
+                        .mail_addresses(&endpoint.host, endpoint.port),
                 )
                 .await
             })

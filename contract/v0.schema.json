@@ -1300,6 +1300,13 @@
           "enum": [
             "text"
           ]
+        },
+        {
+          "description": "The inline HTML part of the item's stored RFC 5322/MIME message.",
+          "type": "string",
+          "enum": [
+            "mail_html"
+          ]
         }
       ]
     },
@@ -2285,6 +2292,13 @@
           ]
         },
         {
+          "description": "Use a declared account-owned IMAPS connection through the host.",
+          "type": "string",
+          "enum": [
+            "mail_v1"
+          ]
+        },
+        {
           "description": "Write an authorized item.",
           "type": "string",
           "enum": [
@@ -2720,7 +2734,7 @@
           ]
         },
         "sources": {
-          "description": "Up to 32 distinct text sources owned by the declaring package.",
+          "description": "Up to 32 distinct supported sources owned by the declaring package.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ContentFetchSource"
@@ -2871,6 +2885,13 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "mail_connection": {
+          "description": "Name of this package's built-in, personal-space IMAPS connection.",
+          "type": [
+            "string",
+            "null"
           ]
         }
       },

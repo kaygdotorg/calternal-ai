@@ -54,7 +54,9 @@ impl Default for Service {
 impl Service {
     /// Reserve a Mail dial under the same per-space budget as media requests.
     pub(in crate::plugins) fn reserve(
-        &self, space: calternal_types::SpaceId, bytes: u64,
+        &self,
+        space: calternal_types::SpaceId,
+        bytes: u64,
     ) -> Result<super::admission::Reservation, calternal_types::Error> {
         self.admission.try_start(space, bytes)
     }
@@ -62,10 +64,19 @@ impl Service {
     /// Check the Mail destination with the live origin and interface deny rules.
     /// Enumerates interfaces off the async runtime, then resolves an exact FQDN.
     pub(in crate::plugins) async fn mail_addresses(
-        &self, host: &str, port: u16,
+        &self,
+        host: &str,
+        port: u16,
     ) -> io::Result<Vec<std::net::SocketAddr>> {
-        build_policy(self.ranges.clone(), self.nat64.clone(), false, self.own.clone())
-            .await?.checked_addresses(host, port).await
+        build_policy(
+            self.ranges.clone(),
+            self.nat64.clone(),
+            false,
+            self.own.clone(),
+        )
+        .await?
+        .checked_addresses(host, port)
+        .await
     }
 }
 

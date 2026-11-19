@@ -189,10 +189,23 @@ fn check_frame(field: ContentFetchField) {
         assert!(!html.contains("example.com"));
         assert!(!html.contains("key=hidden"));
         assert!(!html.contains("<script"));
-        let asset = html.split_once("src=\"").unwrap().1.split('"').next().unwrap();
-        let frame = state.store.plugin_frames.get(frame.frame_id.parse().unwrap()).unwrap();
+        let asset = html
+            .split_once("src=\"")
+            .unwrap()
+            .1
+            .split('"')
+            .next()
+            .unwrap();
+        let frame = state
+            .store
+            .plugin_frames
+            .get(frame.frame_id.parse().unwrap())
+            .unwrap();
         if mail {
-            assert!(matches!(frame.source.age, eligibility::SourceAge::ExplicitOnly));
+            assert!(matches!(
+                frame.source.age,
+                eligibility::SourceAge::ExplicitOnly
+            ));
         }
         let parts: Vec<_> = asset.rsplit('/').collect();
         assert!(asset_authorized(

@@ -200,7 +200,9 @@ pub(super) fn prepare(
             activation_generation,
             age: match (request.field, source_age(&item)) {
                 (_, eligibility::SourceAge::Junk) => eligibility::SourceAge::Junk,
-                (calternal_core::ContentFetchField::MailHtml, _) => eligibility::SourceAge::ExplicitOnly,
+                (calternal_core::ContentFetchField::MailHtml, _) => {
+                    eligibility::SourceAge::ExplicitOnly
+                }
                 (_, age) => age,
             },
             kind: item.kind,
