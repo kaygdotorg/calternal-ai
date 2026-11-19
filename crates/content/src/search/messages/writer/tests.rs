@@ -118,7 +118,7 @@ fn append_backlog_advances_in_batches_without_rebuilding_the_thread() {
         tx.query_row(
             "SELECT revision,(SELECT count(*) FROM locations) FROM threads WHERE id='t'",
             [],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, usize>(1)?)),
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)),
         )
         .unwrap()
     };
