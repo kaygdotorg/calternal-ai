@@ -177,6 +177,7 @@ impl Space {
             names: HashMap::new(),
             registrations: RefCell::new(HashMap::new()),
             pending_since: None,
+            published_appends: None,
             last_receipt_prune: std::time::Instant::now(),
         })
     }

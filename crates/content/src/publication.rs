@@ -3,6 +3,7 @@ use crate::{Content, Result, db::Space, instructions, journal::lock, types::inte
 use calternal_types::{SpaceId, Via};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 pub(crate) const OUTBOX_VIA: &str = "_calternal_outbox_via";
 
@@ -38,21 +39,24 @@ impl Content {
     }
     /// Publish ordered intents, finishing linked placements and purge intents
     /// first. Cost: indexed intent/kind/route/receipt reads and one FULL journal
-    /// commit plus FULL retirement per new event; failures retain replayable work.
+    /// commit per new event. Other intents retire immediately. Published append
+    /// intents retain their receipt pins until the next patch or a worker commit.
     pub(crate) fn publish_pending(&self, space: &mut Space) -> Result<()> {
         loop {
             let row=space.conn.query_row(
                 "SELECT o.account,o.request,o.operation,o.fingerprint,o.item,o.revision,o.result,i.kind,i.mat_state,
-                    EXISTS(SELECT 1 FROM outbox_placement p WHERE p.account=o.account AND p.request=o.request)
-                 FROM outbox o LEFT JOIN items i ON i.id=o.item ORDER BY o.rowid LIMIT 1",
-                [], |r| Ok((
+                    EXISTS(SELECT 1 FROM outbox_placement p WHERE p.account=o.account AND p.request=o.request),
+                    o.rowid,EXISTS(SELECT 1 FROM versions v JOIN thread_revision_patches p USING(item,seq)
+                                    WHERE v.revision=o.revision AND p.item=o.item)
+                 FROM outbox o LEFT JOIN items i ON i.id=o.item
+                 WHERE o.rowid>?1 ORDER BY o.rowid LIMIT 1",
+                [space.published_append_cutoff()], |r| Ok((
                     r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,
                     r.get::<_,String>(3)?,r.get::<_,Option<String>>(4)?,r.get::<_,String>(5)?,
-                    r.get::<_,String>(6)?,r.get::<_,Option<String>>(7)?,r.get::<_,Option<String>>(8)?,r.get::<_,bool>(9)?,
+                    r.get::<_,String>(6)?,r.get::<_,Option<String>>(7)?,r.get::<_,Option<String>>(8)?,r.get::<_,bool>(9)?,r.get::<_,i64>(10)?,r.get::<_,bool>(11)?,
                 )),
             ).optional().map_err(internal)?;
-            let Some((account, request, op, fp, id, revision, result, kind, state, place_related)) =
-                row
+            let Some((account, request, op, fp, id, revision, result, kind, state, place_related, rowid, append)) = row
             else {
                 return Ok(());
             };
@@ -124,6 +128,11 @@ impl Content {
             journal.finish();
             #[cfg(debug_assertions)]
             (self.fault)(crate::FaultPoint::AfterJournalCommit);
+            if append {
+                let started = space.published_appends.map_or_else(Instant::now, |(_, at)| at);
+                space.published_appends = Some((rowid, started));
+                continue;
+            }
             #[cfg(feature = "perf-timings")]
             let retirement = calternal_store::timings::SaveStage::Retirement.start();
             space
@@ -136,5 +145,31 @@ impl Content {
             #[cfg(feature = "perf-timings")]
             retirement.finish();
         }
+    }
+}
+
+impl Space {
+    pub(crate) fn published_append_cutoff(&self) -> i64 {
+        self.published_appends.map_or(0, |(through, _)| through)
+    }
+
+    /// Retire the published prefix in one FULL commit. Until then every pin is
+    /// still in SQLite, including during boot-time replay after a crash.
+    pub(crate) fn retire_appends_if_due(&mut self) -> bool {
+        let Some((through, started)) = self.published_appends else {
+            return false;
+        };
+        if started.elapsed() < Duration::from_secs(1) {
+            return true;
+        }
+        let result = self.conn.pragma_update(None, "synchronous", "FULL").and_then(|()| {
+            self.conn.execute("DELETE FROM outbox WHERE rowid<=?1", [through])
+        });
+        if let Err(error) = result {
+            tracing::warn!(space = %self.id, ?error, "append outbox retirement deferred");
+            return true;
+        }
+        self.published_appends = None;
+        false
     }
 }

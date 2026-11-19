@@ -278,7 +278,7 @@ impl Content {
             if s.append_task.is_some() {
                 return true;
             }
-            s.pending_since.is_some()
+            s.pending_since.is_some() || s.published_appends.is_some()
         });
         drop(held);
         if pending {

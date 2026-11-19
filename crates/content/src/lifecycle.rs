@@ -28,7 +28,7 @@ impl Slot {
         match self.space.try_lock() {
             Ok(space) => space
                 .as_ref()
-                .is_some_and(|s| s.pending_since.is_some() || !s.journal.is_unused()),
+                .is_some_and(|s| s.pending_since.is_some() || s.published_appends.is_some() || !s.journal.is_unused()),
             Err(_) => true,
         }
     }
@@ -79,7 +79,8 @@ pub(crate) fn place_pending(slot: &Slot, fault: fn(crate::FaultPoint)) -> bool {
         let retry = space.pending_since.is_some() && space.materialize_pending(fault).is_err();
         // The journal wait can consume a placement wake. A quick pass after
         // pruning also catches a write to a slot this pass already visited.
-        space.prune_receipts_if_due() || retry
+        let retire = space.retire_appends_if_due();
+        space.prune_receipts_if_due() || retry || retire
     })
 }
 

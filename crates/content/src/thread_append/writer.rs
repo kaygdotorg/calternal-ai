@@ -125,6 +125,7 @@ impl Content {
                     revision:revision.clone(),updated_at:now_rfc3339() },
                 seq,path:head.path,expected:head.file_hash,room:None,
             };
+            let cutoff = s.published_append_cutoff();
             let tx = s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
             calternal_store::migrations::require_writer_version(
                 &tx, super::revision::PATCH_SCHEMA_VERSION,
@@ -137,7 +138,12 @@ impl Content {
             ).map_err(internal)?;
             staged.outbox(&tx, request, &receipt(&revision))?;
             staged.require_placement(&tx, request)?;
+            if cutoff > 0 {
+                tx.execute("DELETE FROM outbox WHERE rowid<=?1", [cutoff])
+                    .map_err(internal)?;
+            }
             tx.commit().map_err(internal)?;
+            s.published_appends = None;
             s.pending_since.get_or_insert_with(Instant::now);
             s.append_recovering = true;
             (self.fault)(FaultPoint::AfterCommit);

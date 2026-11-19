@@ -140,7 +140,11 @@ impl Space {
         // Never let its old wake publish newer file bytes before journal recovery.
         let unpublished: bool = self
             .conn
-            .query_row("SELECT EXISTS(SELECT 1 FROM outbox)", [], |r| r.get(0))
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM outbox WHERE rowid>?1)",
+                [self.published_append_cutoff()],
+                |r| r.get(0),
+            )
             .map_err(internal)?;
         if unpublished {
             return Err(crate::Error::unavailable(

@@ -87,8 +87,13 @@ A warm append reads up to 8 KiB of staged prefix when it needs document
 framing, one bounded prepared-record row in SQLite, and one preceding
 range of at most 4 KiB from the file. It appends at most 64 KiB in one write
 and syncs the file once. The SQLite write stores the new patch bytes once
-with the existing FULL content commit, FULL journal publication and
-outbox retirement. The incremental hasher holds a fixed-size state and a
+with one FULL content commit and one FULL journal commit before acknowledgement.
+The journal commit publishes the message and its retry receipt together.
+The published outbox intent keeps its receipt pinned until the next append
+commit retires it or the existing space worker retires the batch after one
+second. A crash before retirement replays publication idempotently and keeps
+the pin in the meantime. Turn admission has its own job-and-receipt commit.
+The incremental hasher holds a fixed-size state and a
 4 KiB tail. Ordinary checkpoint appends do not allocate a transcript-sized
 buffer or rehash the file. Message indexing consumes only new fragments
 when the existing projection is caught up. An initial or stale projection
