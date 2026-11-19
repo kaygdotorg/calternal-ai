@@ -19,6 +19,7 @@ enum ShellConfig {
         let raw = UserDefaults.standard.string(forKey: "CalternalStartURL")
             ?? ProcessInfo.processInfo.environment["CALTERNAL_START_URL"]
         guard let text = raw?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return productionURL }
+        if text == "chrome-demo" { return Bundle.main.url(forResource: "chrome-demo", withExtension: "html") ?? productionURL }
         if text == demoAddress { return demoURL }
         if text.hasPrefix(demoAddress + "#"), var parts = URLComponents(url: demoURL, resolvingAgainstBaseURL: false) { parts.fragment = String(text.dropFirst(demoAddress.count + 1)); return parts.url ?? demoURL }
         return URL(string: text) ?? productionURL
@@ -32,6 +33,10 @@ enum ShellConfig {
     /// Whether the experimental native glass bar is drawn over the page (launch argument
     /// `-CalternalNativeBar YES`, or the switch in iOS Settings > Calternal).
     static var nativeBar: Bool { UserDefaults.standard.bool(forKey: "CalternalNativeBar") }
+
+    /// Whether the page may hand its sidebar and header to the native chrome (launch argument
+    /// `-CalternalNativeChrome YES`, or the switch in iOS Settings > Calternal). Off by default.
+    static var nativeChrome: Bool { UserDefaults.standard.bool(forKey: "CalternalNativeChrome") }
 
     /// True if `url` belongs to the web app and stays inside the shell; other sites open in Safari.
     /// The app's own hosts are the start address's host and `calternal.cloud` with its subdomains

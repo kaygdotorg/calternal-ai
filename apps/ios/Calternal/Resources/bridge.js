@@ -23,6 +23,13 @@
     menu: (o) => send('menu', o),
     /** Keep unsaved state (a JSON-able object, at most 64 KB) the shell hands back after iOS ends the page's process. */
     saveState: (state) => send('saveState', { state }),
+    /** Experimental native chrome: publish the chrome description (docs/ios-shell.md, "Chrome description") or null to withdraw
+     *  -> { native: boolean } (false: switch off, keep drawing your own). Native events arrive as 'calternal:chrome'. */
+    chrome: (description) => send('chrome', { chrome: description }),
+    /** Round-trip test: resolves { t } (shell clock, ms) when the shell has answered. */
+    ping: () => send('ping', {}),
+    /** Writes a line to the app's log (development). */
+    log: (message) => send('log', { message: String(message) }),
     /** Experimental native glass bar: { items: [{id,title,symbol}], selected: id } or null to remove -> { native: boolean }
      *  (false: the switch is off, draw your own). Taps arrive as the 'calternal:bar' event; --native-bar-inset is set on :root while shown. */
     bar: (o) => send('bar', { bar: o }),

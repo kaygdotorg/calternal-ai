@@ -20,6 +20,8 @@ final class ShellViewController: UIViewController {
     private var savedPageState: String?
     private var pendingRestore = false
     var nativeBar: NativeBar?
+    /// The experimental native chrome, present while the page publishes a chrome description.
+    var chromeLayout: ChromeLayout?
 
     init() {
         let config = WKWebViewConfiguration()
@@ -234,6 +236,26 @@ final class ShellViewController: UIViewController {
         pendingRestore = false
         let payload = savedPageState ?? "null"
         webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('calternal:restore',{detail:\(payload)}))")
+    }
+
+    /// Bridge op `chrome`: the page publishes (or, with null, withdraws) its chrome description.
+    /// Ignored, with `{native: false}`, unless the switch is on (Settings > Calternal > Native
+    /// chrome, or `-CalternalNativeChrome YES`) so the page keeps drawing its own.
+    func setChrome(_ object: Any?, reply: @escaping @MainActor (Any?, String?) -> Void) {
+        guard ShellConfig.nativeChrome else { return reply(["native": false], nil) }
+        guard let object, !(object is NSNull) else {
+            chromeLayout?.tearDown(); chromeLayout = nil
+            return reply(["native": false], nil)
+        }
+        do {
+            let description = try ChromeDescription.decode(object)
+            if let layout = chromeLayout { layout.update(description) } else {
+                chromeLayout = ChromeLayout(shell: self, description: description)
+            }
+            reply(["native": true], nil)
+        } catch {
+            reply(nil, "chrome description rejected: \(error)")
+        }
     }
 
     /// Delivers a native event to the page (e.g. `calternal:bar`).

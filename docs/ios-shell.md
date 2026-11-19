@@ -95,3 +95,72 @@ entitlement and an APNs key (`.p8`, handled like the App Store Connect key: neve
 uploads to the share page. Both archive unsigned, ad hoc sign with the entitlements, and export
 with Apple cloud signing through the key in `~/.config/asc` (path passed to `xcodebuild`, never
 printed). `Local.xcconfig` supplies the team ID and phone UDID.
+
+## Page loading and cache
+
+The shell loads the top-level page with `reloadRevalidatingCacheData`, on launch, for `calternal://`
+links and when the app returns after more than 30 minutes away. Subresources use normal caching, so
+hashed assets stay cached. Why: a server that sends `index.html` with no `Cache-Control` and an old
+`Last-Modified` lets WebKit reuse an old document by heuristic, so a new bundle is never fetched.
+Observed with a test server in the Simulator: three launches, three requests for `/`.
+
+`Settings > Calternal > Clear page cache` (applied at the next start) and `calternal://clear-cache`
+drop cached files, service workers and offline copies but keep cookies, local storage and IndexedDB, so
+the person stays signed in.
+
+## Native chrome (experiment, draft contract)
+
+Behind `Settings > Calternal > Native chrome (experiment)` (or `-CalternalNativeChrome YES`). Off by
+default: the page then draws its own sidebar and header and nothing below applies. When on, the page
+**publishes a description** of its navigation chrome with `calternalNative.chrome(description)`
+(resolves `{native: boolean}`; false means keep drawing your own) and republishes whenever it
+changes. The shell draws it in SwiftUI with Liquid Glass and sends back **events**. The shell knows
+nothing about threads or notes: it draws rows, selectors, apps and buttons.
+
+When `native` is true the web view becomes the content card, full height under a native header, and
+the shell sets on `:root`: `data-native-chrome` (attribute) and `--chrome-top` (points the header
+covers, including the status bar), `--chrome-bottom` (home indicator). The page then hides its own
+sidebar and header and pads itself with those. `chrome(null)` gives everything back.
+
+```jsonc
+{ "version": 1, "revision": 7, "scheme": "dark",            // revision rises per publication
+  "header":  { "leading": [Item], "title": "Expired invite test", "trailing": [Item] },
+  "sidebar": { "open": false,                                // page-controlled; shell follows when it changes
+    "title": "Calternal",
+    "selectors": [ { "id": "filter", "selected": "all", "options": [ {"id":"inbox","title":"Inbox"}, {"id":"all","title":"All Threads"} ] } ],
+    "sections":  [ { "id": "threads", "title": "Threads", "collapsed": false, "menu": [Item],
+                     "rows": [ { "id": "t1", "title": "…", "detail": "06:10", "symbol": "pin.fill",
+                                 "badge": {"kind":"dot"} /* or count / text + value */, "selected": true,
+                                 "leadingActions": [Item], "trailingActions": [Item], "menu": [Item] } ] } ],
+    "apps":    [ { "id": "threads", "title": "Threads", "symbol": "bubble.left", "selected": true } ],
+    "account": { "id": "account", "initial": "K", "title": "Account" },
+    "search":  { "placeholder": "Search threads" } } }
+// Item = { "id", "title", "symbol"?: SF Symbol name, "role"?: "destructive", "disabled"?, "menu"?: [Item] }
+```
+
+Events arrive as `window` `calternal:chrome` with `detail` `{type, id?, rowId?, option?, text?, open?,
+revision, sentAt}` (`sentAt` is milliseconds since 1970 for latency measurement):
+`row` (id), `action` (id of the swipe action, rowId), `menu` (id of the context-menu entry, rowId or
+section id), `selector` (id, option), `app` (id), `header` (id of a header item, `title` for the pill;
+`rowId` is the button whose menu it came from), `account`, `search` (text, every change),
+`section` (id: toggle collapse), `sidebar` (open: the person opened or closed it). The page updates
+its stores and republishes; the shell never changes the description on its own, except that the
+sidebar opens and closes immediately when dragged or tapped (and says so with `sidebar`).
+
+Reference publisher: `Calternal/Resources/chrome-demo.html` (start address `chrome-demo`).
+
+### What the format cannot express (found while building it)
+
+* **Wallpaper behind the sidebar.** The page's wallpaper lives in the web view; the native sidebar has
+  a plain colour. The format needs a `background` (image URL plus blur) or the shell must snapshot the page.
+* **Icons.** Only SF Symbols by name; the page's own SVG icon set has no native form.
+* **Typography and theme.** No fonts (the "Calternal" wordmark is approximated), no accent colour
+  (the system accent is used), only a light/dark `scheme`.
+* **Rich rows.** Title, detail, symbol and one badge only: no avatars, status chips, progress, several
+  lines of metadata, inline rename, drag to reorder, multi-select.
+* **Large lists.** Each revision sends every row; there is no windowing, paging or patch format.
+  Fine for tens of rows, wrong for thousands.
+* **Sheets and dialogs** (the contract reserves them; not built). **Search** has no scopes, tokens or
+  suggestions; results are whatever rows the page republishes. **Header** has no subtitle or status
+  dot, and no per-page layout hints (a permanent split view on iPad).
+* **Card corner radius** is a fixed 55 pt (the display's true radius is private API).

@@ -1,0 +1,103 @@
+<!doctype html>
+<!-- Bundled proof of the native chrome contract (start address "chrome-demo"): a tiny in-page store (threads, filter,
+     selection, search) publishes a chrome description to the shell and reacts to its events. This is the reference
+     publisher for docs/ios-shell.md, "Chrome description"; the real page publishes from its own stores the same way. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual">
+<title>Chrome demo</title>
+<style>
+  :root { color-scheme: dark; --bg: #16120e; --chrome-top: env(safe-area-inset-top); }
+  html { background: var(--bg); }
+  html, body { margin: 0; height: 100%; color: #eee; font: 17px -apple-system, system-ui; }
+  .wall { position: fixed; inset: 0; z-index: -1; background-color: var(--bg);
+    background-image: radial-gradient(circle at 25% 20%, #8a4b25, transparent 55%), radial-gradient(circle at 75% 85%, #25507f, transparent 55%); }
+  main { box-sizing: border-box; height: 100%; overflow: auto; padding: calc(var(--chrome-top) + 12px) 18px 120px; overscroll-behavior: contain; }
+  /* The page's own header, shown only when the shell does not draw it. */
+  body:not([data-x]) .own { display: block; } .own { display: none; padding: 8px 0; opacity: .8; }
+  h1 { font-size: 26px; margin: 8px 0; } p { line-height: 1.5; opacity: .9; }
+  textarea { position: fixed; left: 14px; right: 14px; bottom: calc(env(safe-area-inset-bottom) + 10px); height: 50px; box-sizing: border-box;
+    border-radius: 25px; border: 0; padding: 14px 18px; font: inherit; color: inherit; background: rgba(255,255,255,.12); backdrop-filter: blur(20px); }
+  #stats { font: 12px ui-monospace, monospace; white-space: pre-wrap; opacity: .8; }
+</style>
+</head>
+<body>
+<div class="wall"></div>
+<main>
+  <div class="own">[no native chrome: the page would draw its own sidebar and header here]</div>
+  <h1 id="title"></h1>
+  <p id="body"></p>
+  <pre id="stats"></pre>
+</main>
+<textarea placeholder="Message…"></textarea>
+<script>
+  const N = window.calternalNative, $ = (id) => document.getElementById(id);
+  const store = {
+    threads: Array.from({ length: 14 }, (_, i) => ({ id: 't' + i, title: ['Expired invite test', 'Plan the storage layout', 'Passkey flake on dev VM', 'Notes editor port', 'Release checklist', 'Why is CI slow', 'Wallpaper picker', 'Sidebar rework', 'Haptics bridge', 'Push design', 'Icon ideas', 'Settings copy', 'Keyboard glass', 'Top band'][i],
+      time: ['06:10', '06:07', 'Yesterday', 'Yesterday', 'Mon', 'Mon', 'Sun', 'Sun', 'Sat', 'Sat', 'Fri', 'Fri', 'Thu', 'Thu'][i], unread: i % 4 === 1, pinned: false })),
+    selected: 't0', filter: 'all', query: '', open: false, revision: 0, toast: '', lat: [],
+  };
+  const shown = () => store.threads.filter(t => (store.filter === 'all' || t.unread) && t.title.toLowerCase().includes(store.query.toLowerCase()))
+    .sort((a, b) => b.pinned - a.pinned);
+  const row = (t) => ({ id: t.id, title: t.title, detail: t.time, selected: t.id === store.selected, badge: t.unread ? { kind: 'dot' } : undefined,
+    symbol: t.pinned ? 'pin.fill' : undefined,
+    leadingActions: [{ id: 'pin', title: t.pinned ? 'Unpin' : 'Pin', symbol: 'pin' }],
+    trailingActions: [{ id: 'archive', title: 'Archive', symbol: 'archivebox', role: 'destructive' }, { id: 'read', title: t.unread ? 'Mark read' : 'Mark unread', symbol: 'envelope.badge' }],
+    menu: [{ id: 'rename', title: 'Rename', symbol: 'pencil' }, { id: 'pin', title: 'Pin', symbol: 'pin' }, { id: 'archive', title: 'Archive', symbol: 'archivebox', role: 'destructive' }] });
+  const describe = () => ({
+    version: 1, revision: ++store.revision, scheme: 'dark',
+    header: { title: (store.threads.find(t => t.id === store.selected) || { title: 'Threads' }).title,
+      trailing: [{ id: 'more', title: 'More', symbol: 'ellipsis', menu: [{ id: 'rename', title: 'Rename', symbol: 'pencil' }, { id: 'share', title: 'Share', symbol: 'square.and.arrow.up' }, { id: 'archive', title: 'Archive', symbol: 'archivebox', role: 'destructive' }] }] },
+    sidebar: { open: store.open, title: 'Calternal',
+      selectors: [{ id: 'filter', options: [{ id: 'inbox', title: 'Inbox' }, { id: 'all', title: 'All Threads' }], selected: store.filter }],
+      sections: [{ id: 'main', rows: [{ id: 'new', title: 'New thread', symbol: 'plus' }, { id: 'automations', title: 'Automations', symbol: 'clock' }, { id: 'skills', title: 'Skills', symbol: 'wrench' }] },
+        { id: 'threads', title: 'Threads', menu: [{ id: 'read-all', title: 'Mark all read', symbol: 'checkmark.circle' }], rows: shown().map(row) }],
+      apps: [{ id: 'threads', title: 'Threads', symbol: 'bubble.left', selected: true }, { id: 'notes', title: 'Notes', symbol: 'doc.text' }, { id: 'settings', title: 'Settings', symbol: 'gearshape' }],
+      account: { id: 'account', initial: 'K', title: 'Account' }, search: { placeholder: 'Search threads' } },
+  });
+  let native = false;
+  async function publish() {
+    if (!N) return;
+    const t0 = performance.now();
+    const reply = await N.chrome(describe());
+    store.lat.push(performance.now() - t0);
+    native = reply.native; document.body.toggleAttribute('data-x', native); render();
+  }
+  function render() {
+    const t = store.threads.find(x => x.id === store.selected);
+    $('title').textContent = t ? t.title : 'Choose a thread';
+    $('body').textContent = t ? 'Body of the thread card. The sidebar, header, app capsule and account control around it are drawn by the shell from the description this page publishes.' : '';
+    const avg = (a) => a.length ? (a.reduce((x, y) => x + y, 0) / a.length).toFixed(1) : '-';
+    $('stats').textContent = 'native chrome: ' + native + ' | revision ' + store.revision + ' | publish round trip ms (avg of ' + store.lat.length + '): ' + avg(store.lat) + '\n' + store.toast;
+  }
+  addEventListener('calternal:chrome', (e) => {
+    const ev = e.detail, lat = Date.now() - ev.sentAt;
+    store.toast = 'event ' + JSON.stringify({ type: ev.type, id: ev.id, rowId: ev.rowId, option: ev.option, text: ev.text }) + ' arrived ' + lat.toFixed(0) + ' ms after it was sent';
+    N.log(store.toast);
+    if (ev.type === 'row') { if (ev.id === 'new') { store.toast = 'new thread (not wired)'; } else if (store.threads.some(t => t.id === ev.id)) { store.selected = ev.id; store.open = false; } }
+    else if (ev.type === 'selector') store.filter = ev.option;
+    else if (ev.type === 'search') store.query = ev.text || '';
+    else if (ev.type === 'sidebar') store.open = ev.open;
+    else if (ev.type === 'action' || ev.type === 'menu') {
+      const t = store.threads.find(x => x.id === ev.rowId);
+      if (t && ev.id === 'archive') { store.threads = store.threads.filter(x => x !== t); if (store.selected === t.id) store.selected = null; }
+      if (t && ev.id === 'pin') t.pinned = !t.pinned;
+      if (t && ev.id === 'read') t.unread = !t.unread;
+    }
+    publish();
+  });
+  if (N) {
+    N.appearance({ scheme: 'dark', background: '#16120e' });
+    publish().then(async () => {
+      const n = 300, a = performance.now(); for (let i = 0; i < n; i++) await N.ping(); const per = (performance.now() - a) / n;
+      N.log('bridge round trip ms (page to shell and back, mean of ' + n + '): ' + per.toFixed(3));
+      store.lat.push(per);
+      N.ready();
+    });
+    addEventListener('calternal:restore', () => {});
+  } else { $('stats').textContent = 'no native bridge (plain web)'; render(); }
+  render();
+</script>
+</body>
+</html>

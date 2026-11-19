@@ -38,6 +38,13 @@ final class NativeBridge: NSObject, WKScriptMessageHandlerWithReply {
             share(body, reply: replyHandler)
         case "menu":
             menu(body, reply: replyHandler)
+        case "chrome":
+            host?.setChrome(body["chrome"], reply: replyHandler)
+        case "ping":
+            replyHandler(["t": Date().timeIntervalSince1970 * 1000], nil)
+        case "log":
+            log.notice("page: \(String(describing: body["message"]), privacy: .public)")
+            replyHandler(nil, nil)
         case "bar":
             replyHandler(["native": host?.setBar(body["bar"] as? [String: Any]) ?? false], nil)
         default:
