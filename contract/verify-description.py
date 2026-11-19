@@ -230,7 +230,14 @@ def semantic(doc, errors, catalogue, manifest):
                                 if ctx_kind == "item" and owner_kind != "threads": errors.append(f"{path}: {{context: item}} fills a ThreadRef only from a row of kind `threads`, not {owner_kind!r}")
                             if ctx_kind == "placement" and declared_type not in ("LayoutEntryRef", ""): errors.append(f"{path}: {{context: placement}} fills a LayoutEntryRef, not {declared_type}")
                             if ctx_kind == "item" and declared_type == "LayoutEntryRef": errors.append(f"{path}: {{context: item}} cannot fill the LayoutEntryRef input {name!r}")
-                            if declared_type in ("ThreadRef", "ItemRef", "TurnRef", "RequestRef", "CollectionRef", "LayoutEntryRef") and ctx_kind is None:
+                            REF_TYPES = ("ThreadRef", "ItemRef", "TurnRef", "RequestRef", "CollectionRef", "LayoutEntryRef")
+                            row_ref_of_owner = (cat_kinds.get(owner_kind) or {}).get("row_ref") if owner_kind in cat_kinds else ("ItemRef" if owner_kind else None)
+                            if declared_type in REF_TYPES and ctx_kind == "item" and declared_type != row_ref_of_owner:
+                                errors.append(f"{path}: {{context: item}} gives the row's own {row_ref_of_owner} and cannot fill the {declared_type} input {name!r} of {op}")
+                            strict_thread = (op, name) == ("host.layout.move_to", "thread")
+                            if strict_thread and not (ctx_kind == "item" or (isinstance(source, dict) and source == {"row": "id"})):
+                                errors.append(f"{path}: the `thread` of host.layout.move_to takes only {{context: item}} or the bare id of a threads row, not {json.dumps(source, sort_keys=True)}")
+                            if declared_type in REF_TYPES and ctx_kind is None:
                                 bare_id = isinstance(source, dict) and source == {"row": "id"}
                                 from_route = isinstance(source, dict) and set(source) == {"route"}
                                 row_ref = (cat_kinds.get(owner_kind) or {}).get("row_ref") if owner_kind in cat_kinds else ("ItemRef" if owner_kind else None)
@@ -239,6 +246,7 @@ def semantic(doc, errors, catalogue, manifest):
                                 if isinstance(prompt, dict) and prompt.get("kind") == "choice":
                                     option_bind = binds.get(((prompt.get("options") or {}).get("bind")))
                                     choice_ok = (cat_kinds.get(((option_bind or {}).get("source") or {}).get("kind")) or {}).get("row_ref") == declared_type
+                                if strict_thread: from_route = choice_ok = False
                                 if not (from_route or choice_ok or (bare_id and row_ref == declared_type and not owner_in_repeat)):
                                     errors.append(f"{path}: the {declared_type} input {name!r} of {op} takes only a source of that ref type ({{context}}, a bare row id of a row of that type, or a route), not {json.dumps(source, sort_keys=True)}")
                             if declared_type in ("ChoiceRef", "LayoutSectionRef") and (declared_type == "ChoiceRef" or name == "section"):

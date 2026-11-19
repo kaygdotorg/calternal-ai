@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "t",
+      "source": {
+        "type": "list",
+        "kind": "threads"
+      },
+      "fields": [
+        "title"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "menu": [
+          {
+            "id": "mv",
+            "title": "Move",
+            "operation": "host.collection.move",
+            "inputs": {
+              "item": {
+                "context": "item"
+              },
+              "collection": {
+                "context": "item"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
