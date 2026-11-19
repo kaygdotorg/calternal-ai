@@ -1,4 +1,6 @@
 //! Locked-perf probe of declared parent edges and personal layout transactions.
+#[path = "v2_step0_nested/bounded.rs"]
+mod bounded;
 #[path = "../../../spikes/plugin-api-v2/fixture.rs"]
 mod fixture;
 #[path = "v2_step0_nested/layout.rs"]

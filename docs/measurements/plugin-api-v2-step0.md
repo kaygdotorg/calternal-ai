@@ -557,6 +557,52 @@ and `TMPDIR` to the disposable directory. Run the executable under the
 perf lock with `--ignored --exact parent_windows_and_personal_sections
 --nocapture --test-threads=1`. The second arm sets `STEP0_LAYOUT_SIZE=4096`.
 
+### Follow-up — retained section generations
+
+The locked perf-01 run used the prototype's per-person SQLite transaction
+with the actual directory membership view. The three widths use
+synthetic UUID-shaped placement projections. The earlier real-engine
+fixture supplies the two copy-based observations above. Each timed
+foreground cell has 100 repetitions. All latencies are p50 / p95 in ms.
+
+| Injection | Pass condition | Measured | Verdict |
+| --- | --- | --- | --- |
+| Remove and Undo 256 placements | Each p95 ≤40 ms, no placement writes | Remove 6.761 / 8.142. Undo 6.741 / 8.196. | Pass |
+| Remove and Undo 4,096 placements | Same commit work as 256 | Remove 6.728 / 8.186. Undo 6.683 / 9.730. | Pass |
+| Remove and Undo 100,000 placements | Same commit work as 256 and exact retained generation | Remove 6.806 / 8.512. Undo 6.795 / 8.050. | Pass |
+| Foreground key touches and flushes | A single FULL transaction per effect or Undo, no size-dependent writes | Exactly three table rows change each time. The five logical B-tree keys include the layout watermark, section row and active-order entry, and Undo row and expiry entry. Zero placement keys change. At each width both paths made one actual sync call in 99/100 runs. The remaining removal made two sync calls and the remaining Undo made three, with WAL setup/checkpoint work included. | Pass |
+| 200-row live section read before and during retention | No retired rows. Live windows keep the same order and visit bound. | Before → during p95 was 0.097 → 0.130, 0.087 → 0.113, and 0.106 → 0.128 at the three widths. Retired reads refused at p95 0.054, 0.041, and 0.051. | Pass |
+| Reclaim after the Undo deadline | No reclaim before expiry or successful expired Undo. Bounded deletes, no reclaim on foreground commit. | At most 256 placement keys per maintenance step. Reclaimed all 256 / 4,096 / 100,000 in 2 / 17 / 391 successful steps, p95 7.224 / 7.336 / 10.352 ms per step. | Pass |
+
+Removal reads membership and the active section, then bumps and obtains
+the layout revision in the write statement. Undo reads membership,
+Undo and the revision it pins. Each writes one FULL WAL transaction.
+A live section page checks membership, reads the active generation and
+seeks its first 200 placement keys. A retired section read stops at the
+active-section check and visits zero placement keys. Reads commit and
+flush zero times. The expired-Undo index selects one generation per
+maintenance transaction. Each batch deletes the next at most 256 keys.
+The last batch also discards the section marker and expired Undo. An
+exact multiple of 256 uses a separate final metadata transaction. This
+spike uses a 60-second fixture clock. The product retention duration
+follows the host's Undo policy.
+
+In the §4.4 remove row and the catalogue's `atomic_undo_when`, require
+retirement and Undo to name one retained placement generation. Exclude
+retired generations from reads and reactivate the exact generation
+atomically after checking current membership and the post-effect layout
+revision. Reactivation grants no item access. Reclaim only after Undo
+expiry in bounded background batches. Removal and Undo perform zero
+per-placement work.
+
+The benchmark uses the same release test executable and the
+`bounded::retained_layout_generation` filter. Build the Linux
+sync-call probe on dev-01 with
+`nix develop -c cc -O2 -shared -fPIC spikes/plugin-api-v2/layout_sync_probe.c -o target/release/libstep0_layout_sync.so -ldl`.
+Copy it to perf-01 and set `LD_PRELOAD` to its absolute path inside the
+perf lock. The probe counts `fsync` and `fdatasync` calls separately from
+the timing statistic.
+
 ## Reproducing the measurements
 
 Build in the existing lane copy on `calternal-dev-01-compute02`.
@@ -588,6 +634,8 @@ pre-existing recovery test that waits for the debug-only
 `AfterJournalCommit` hook. That test passed in the debug suite.
 
 ## Simplification opportunities
+
+- Retain retired placement generations under the Undo lifetime and reclaim them in background batches.
 
 - Use the same scoped count for empty, end and arbitrary-jump decisions.
 - Keep a single item receipt namespace and use the committed outbox intent as
