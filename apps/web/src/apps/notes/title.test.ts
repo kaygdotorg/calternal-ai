@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { titleOf } from "./title";
+import { titleOf, withTitle } from "./title";
 
 describe("a note's title is its first real level-one heading", () => {
   test("the plain case, and the fallback when there is none", () => {
@@ -24,5 +24,13 @@ describe("a note's title is its first real level-one heading", () => {
     expect(titleOf("---\r\n# c\r\n---\r\n# Real ##\r\n", "x")).toBe("Real");
     expect(titleOf("#tag\n# Real", "x")).toBe("Real");
     expect(titleOf("## Two\n# One", "x")).toBe("One");
+  });
+});
+
+describe("renaming rewrites the real heading only", () => {
+  test("not a YAML comment or a fenced line, and a line break stays as it was", () => {
+    expect(withTitle("---\n# c\n---\n```\n# s\n```\n# Old\nbody", "New")).toBe("---\n# c\n---\n```\n# s\n```\n# New\nbody");
+    expect(withTitle("# Old\r\nbody\r\n", "New")).toBe("# New\r\nbody\r\n");
+    expect(withTitle("no heading", "New")).toBe("no heading");
   });
 });

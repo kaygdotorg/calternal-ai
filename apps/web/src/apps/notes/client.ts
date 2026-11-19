@@ -4,6 +4,7 @@
  */
 import { ServerClient, ServerError } from "../../server/client";
 import { FIXTURE_SPACES } from "../../shell/spaces.svelte";
+import { withTitle } from "./title";
 
 /** One page of a list: its rows and the cursor for the next page (null at the end). A cursor is opaque, belongs to the account, space and filter that made it, and may stop working (the server restarted): the caller then starts over. */
 export interface Page<T> { items: T[]; next: string | null }
@@ -116,7 +117,7 @@ export class FixtureNotes implements NotesClient {
   }
   private trashed = new Map<string, Note>();
   private tagsOf = (n: Note): string[] => [...new Set([...n.markdown.matchAll(/(?:^|\s)#([\p{L}\d_/-]+)/gu)].map((m) => m[1]!))];
-  async rename(id: string, revision: string, title: string): Promise<Note> { const n = await this.get("", id); return this.update("", id, revision || n.revision, title, n.markdown.replace(/^# .*/m, `# ${title}`)); }
+  async rename(id: string, revision: string, title: string): Promise<Note> { const n = await this.get("", id); return this.update("", id, revision || n.revision, title, withTitle(n.markdown, title)); }
   async remove(id: string): Promise<void> { const n = await this.get("", id); this.notes.delete(id); this.trashed.set(id, { ...n, updatedAt: new Date().toISOString() }); this.ping(); }
   async restore(id: string): Promise<Note> { const n = this.trashed.get(id); if (!n) throw new ServerError("not_found", "not in the trash"); this.trashed.delete(id); this.notes.set(id, n); this.ping(); return n; }
   async trash(spaceId: string, cursor?: string): Promise<Page<NoteSummary>> { return pageOf([...this.trashed.values()].filter((n) => n.spaceId === spaceId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(({ markdown: _m, ...x }) => x), cursor); }

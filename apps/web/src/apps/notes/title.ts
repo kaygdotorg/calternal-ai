@@ -4,7 +4,21 @@
  * heading, never the whole document twice. `fallback` is returned when the note has none.
  */
 export function titleOf(markdown: string, fallback: string): string {
-  const lines = markdown.split(/\r?\n/);
+  const at = headingAt(markdown.split(/\r?\n/));
+  return at ? at.title : fallback;
+}
+
+/** The text with its title heading rewritten to `title` (line break kept); unchanged when it has no heading. */
+export function withTitle(markdown: string, title: string): string {
+  const lines = markdown.split(/(\r?\n)/); // the breaks kept as their own elements, so each one comes back as it was
+  const at = headingAt(lines.filter((_, n) => n % 2 === 0));
+  if (!at) return markdown;
+  lines[at.line * 2] = `# ${title}`;
+  return lines.join("");
+}
+
+/** Where the title heading is (its line, zero-based) and what it says. */
+function headingAt(lines: string[]): { line: number; title: string } | null {
   let i = 0;
   if (lines[0]?.trimEnd() === "---") {
     // Frontmatter runs to the next line that is only `---` (or `...`); without one it is not frontmatter and the lines are text.
@@ -23,7 +37,7 @@ export function titleOf(markdown: string, fallback: string): string {
     }
     if (fence) continue;
     const h = /^ {0,3}# +(.*?)(?: +#+)?\s*$/.exec(line);
-    if (h && h[1]!.trim()) return h[1]!.trim();
+    if (h && h[1]!.trim()) return { line: i, title: h[1]!.trim() };
   }
-  return fallback;
+  return null;
 }
