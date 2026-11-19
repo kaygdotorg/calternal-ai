@@ -2,10 +2,10 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.com/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 2 review draft for the first contract. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 3 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "host_methods"],
+  "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations"],
   "properties": {
     "api_version": { "const": 2 },
     "id": { "$ref": "#/definitions/localId" },
@@ -16,11 +16,6 @@
     "apps": { "type": "array", "maxItems": 16, "items": { "$ref": "#/definitions/app" } },
     "kinds": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/kind" } },
     "operations": { "type": "array", "maxItems": 128, "items": { "$ref": "#/definitions/operation" } },
-    "host_methods": {
-      "description": "The host also checks each requested method against the approved scope and operation.",
-      "type": "array", "uniqueItems": true, "maxItems": 64,
-      "items": { "$ref": "#/definitions/hostMethod" }
-    },
     "commands": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/command" } },
     "providers": { "type": "array", "maxItems": 16, "items": { "$ref": "#/definitions/provider" } },
     "jobs": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/job" } },
@@ -28,6 +23,7 @@
     "wait_webhooks": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/webhook" } },
     "settings": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/setting" } },
     "secrets": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/secret" } },
+    "credential_routes": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/credentialRoute" } },
     "network": {
       "type": "object", "additionalProperties": false, "required": ["destinations"],
       "properties": {
@@ -43,11 +39,11 @@
   "if": {
     "anyOf": [
       { "properties": { "operations": { "minItems": 1 } } },
-      { "required": ["host_methods"], "properties": { "host_methods": { "minItems": 1 } } },
       { "required": ["jobs"], "properties": { "jobs": { "minItems": 1 } } },
       { "required": ["commands"], "properties": { "commands": { "minItems": 1 } } },
       { "required": ["schedule_eligibility"], "properties": { "schedule_eligibility": { "minItems": 1 } } },
-      { "required": ["wait_webhooks"], "properties": { "wait_webhooks": { "minItems": 1 } } }
+      { "required": ["wait_webhooks"], "properties": { "wait_webhooks": { "minItems": 1 } } },
+      { "required": ["credential_routes"], "properties": { "credential_routes": { "minItems": 1 } } }
     ]
   },
   "then": { "required": ["worker"] },
@@ -73,10 +69,9 @@
       "type": ["object", "boolean"]
     },
     "description": {
-      "type": "object", "additionalProperties": false, "required": ["id", "version", "template"],
+      "type": "object", "additionalProperties": false, "required": ["id", "template"],
       "properties": {
         "id": { "$ref": "#/definitions/localId" },
-        "version": { "const": 2 },
         "template": { "$ref": "#/definitions/asset" }
       }
     },
@@ -117,9 +112,10 @@
     "hostMethod": {
       "enum": [
         "item_head", "item_range", "item_history", "item_save", "item_trash", "item_restore", "item_rename",
+        "item_rename_status", "item_rename_undo", "item_purge", "empty_trash",
         "collection_create", "collection_membership", "items_list", "items_search", "sharing_check",
         "start_job", "checkpoint_job", "job_status", "cancel_job", "read_setting", "set_setting",
-        "request_secret_handle", "content_prepare", "proxy_request", "turn_start", "turn_status", "turn_cancel",
+        "request_secret_handle", "content_prepare", "proxy_request", "credential_call", "turn_start", "turn_status", "turn_cancel",
         "turn_follow_up", "turn_answer", "turn_select_machine", "schedule_create", "schedule_remove"
       ]
     },
@@ -133,32 +129,40 @@
       }
     },
     "provider": {
-      "type": "object", "additionalProperties": false, "required": ["id", "name", "engine", "adapter", "protocol_version"],
+      "type": "object", "additionalProperties": false, "required": ["id", "name", "engine", "adapter"],
       "properties": {
         "id": { "$ref": "#/definitions/localId" },
         "name": { "$ref": "#/definitions/label" },
         "engine": { "const": "turns" },
-        "adapter": { "$ref": "#/definitions/asset", "description": "Pinned executable descriptor for the host's existing provider loader." },
-        "protocol_version": { "const": 1 }
+        "adapter": { "$ref": "#/definitions/asset", "description": "Pinned executable descriptor for the host's existing provider loader and handshake." }
       }
     },
     "operation": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "input_schema", "output_schema", "required_capability", "risk", "mutates", "idempotency", "methods"],
+      "required": ["id", "input_schema", "output_schema", "required_capability", "risk", "idempotency", "methods"],
       "properties": {
         "id": { "$ref": "#/definitions/operationId" },
         "input_schema": { "$ref": "#/definitions/embeddedSchema" },
         "output_schema": { "$ref": "#/definitions/embeddedSchema" },
         "required_capability": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestCapability" },
         "risk": { "$ref": "plugin-manifest-v1.schema.json#/definitions/OperationRisk" },
-        "mutates": { "type": "boolean" },
         "idempotency": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestIdempotency" },
         "target": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestTarget" },
-        "methods": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/definitions/hostMethod" } }
+        "methods": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/definitions/hostMethod" } },
+        "credential_routes": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/localId" } }
       },
-      "if": { "properties": { "risk": { "const": "read" } } },
-      "then": { "properties": { "mutates": { "const": false }, "idempotency": { "const": "read_only" } } },
-      "else": { "properties": { "mutates": { "const": true }, "idempotency": { "enum": ["request_id", "never"] } } }
+      "allOf": [
+        {
+          "if": { "properties": { "risk": { "const": "read" } } },
+          "then": { "properties": { "idempotency": { "const": "read_only" } } },
+          "else": { "properties": { "idempotency": { "enum": ["request_id", "never"] } } }
+        },
+        {
+          "if": { "properties": { "methods": { "contains": { "enum": ["request_secret_handle", "credential_call"] } } } },
+          "then": { "required": ["credential_routes"], "properties": { "credential_routes": { "minItems": 1 } } },
+          "else": { "properties": { "credential_routes": { "maxItems": 0 } } }
+        }
+      ]
     },
     "wait": {
       "type": "object", "additionalProperties": false, "required": ["kind"],
@@ -219,21 +223,40 @@
         "scope": { "enum": ["personal", "space"] }, "required": { "type": "boolean" }
       }
     },
+    "credentialRoute": {
+      "description": "Approved endpoints and a host profile bind an operation to typed credential redemption. Validate referenced routes, destination and schemas against the host profile registry.",
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "destination", "host", "port", "profile", "secret", "input_schema", "output_schema"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "destination": { "$ref": "#/definitions/localId" },
+        "host": { "$ref": "#/definitions/hostname" },
+        "port": { "$ref": "#/definitions/port" },
+        "profile": { "$ref": "#/definitions/localId" },
+        "secret": { "$ref": "#/definitions/localId" },
+        "input_schema": { "$ref": "#/definitions/embeddedSchema" },
+        "output_schema": { "$ref": "#/definitions/embeddedSchema" }
+      }
+    },
+    "hostname": {
+      "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$",
+      "description": "Exact DNS name, checked and normalized by netguard."
+    },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
     "hosts": {
       "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
-      "items": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9][a-z0-9.-]*[a-z0-9]$", "description": "Exact DNS name, checked and normalized by netguard." }
+      "items": { "$ref": "#/definitions/hostname" }
     },
     "ports": {
       "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true,
-      "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      "items": { "$ref": "#/definitions/port" }
     },
     "named": {
       "type": "object", "additionalProperties": false, "required": ["kind", "id", "hosts", "ports", "protocol"],
       "properties": {
         "kind": { "const": "named_connection" },
         "id": { "$ref": "#/definitions/localId" }, "hosts": { "$ref": "#/definitions/hosts" },
-        "ports": { "$ref": "#/definitions/ports" }, "protocol": { "const": "https" },
-        "secret": { "$ref": "#/definitions/localId" }
+        "ports": { "$ref": "#/definitions/ports" }, "protocol": { "const": "https" }
       }
     },
     "media": {
