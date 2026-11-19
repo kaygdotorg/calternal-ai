@@ -65,7 +65,9 @@ and the lineage of any persisted local copy. Accept `joined` only when
 `room` and `membership` match the pending join. Require `info.lineage`,
 verify `info.id` against the requested item UUID, and require
 `info.text === "md"` before binding. A `join_failed` control includes
-the public error. Drop frames for old memberships. Leave with the same
+the public error. If authority stays in transition, the code is
+`retry_after` and `details.retry_after_ms` gives the delay before a fresh join.
+Drop frames for old memberships. Leave with the same
 address and nonce.
 
 Binary frames start with a lib0 var-string `@<membership>/<room>`,
