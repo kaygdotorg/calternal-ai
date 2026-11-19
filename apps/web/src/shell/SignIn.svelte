@@ -1,7 +1,7 @@
 <script lang="ts">
   // The signed-out screen, shown instead of the app when the real server is selected and this browser has no session. One card on the app's backdrop:
   // "Sign in with a passkey", or, on a fresh installation, the setup form (the setup link's token and a name). Success reloads into the app.
-  import { Button, Card, Spinner } from "@calternal/ui";
+  import { Button, Callout, Card } from "@calternal/ui";
   import { setup, signIn } from "../server/auth";
   import { say } from "../server/say";
   import { finishPending, providers, returning, start, type Provider } from "../server/oidc";
@@ -70,10 +70,9 @@
       {:else}
         <p class="note">Use the passkey on this device, or a phone nearby.</p>
       {/if}
-      {#if error}<p class="error" role="alert">{error}</p>{/if}
+      <Callout message={error} />
       <div class="go">
-        <Button type="submit" variant="primary" text={needsSetup ? "Create passkey" : joining ? "Create passkey and join" : "Sign in with a passkey"} disabled={busy || ((needsSetup || joining) && (!token.trim() || !name.trim()))} />
-        {#if busy}<Spinner />{/if}
+        <Button type="submit" variant="primary" text={needsSetup ? "Create passkey" : joining ? "Create passkey and join" : "Sign in with a passkey"} busy={busy} disabled={(needsSetup || joining) && (!token.trim() || !name.trim())} />
       </div>
     </form>
   </Card>
@@ -86,7 +85,8 @@
   .providers :global(button) { width: 100%; }
   .or { text-align: center; margin: 0; }
   .wrap { min-height: 100dvh; display: grid; place-content: center; justify-items: center; gap: var(--s-6); padding: var(--s-6); background: linear-gradient(rgb(var(--tint) / 0.55) 0 0), var(--wall-cheap, none) center / cover no-repeat; }
-  .mark { font-family: var(--font-brand, inherit); font-size: var(--text-title); font-weight: var(--strong-weight); color: var(--ink); }
+  /* The script face's last "l" swings past its advance width; the box is padded so the whole stroke is inside it. Without the padding Safari paints the overhang as a separate piece while the word moves (a stray comma-like mark after the wordmark when the page re-centres). */
+  .mark { font-family: var(--font-brand, inherit); font-size: var(--text-title); font-weight: var(--strong-weight); color: var(--ink); padding-inline: 0.3em; }
   .wrap :global(.card) { width: min(26rem, 100%); }
   .in { display: grid; gap: var(--s-5); padding: var(--s-7); }
   h1 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
@@ -94,6 +94,5 @@
   label { display: grid; gap: var(--s-2); font-size: var(--text-label); color: var(--ink-3); }
   input { border: 0; min-height: var(--pill-h); padding: 0 var(--s-5); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); }
   .link { text-decoration: underline; color: var(--ink-2); font-size: var(--text-label); }
-  .error { font-size: var(--text-label); color: var(--danger); }
   .go { display: flex; align-items: center; gap: var(--s-4); }
 </style>

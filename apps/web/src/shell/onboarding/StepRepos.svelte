@@ -1,7 +1,7 @@
 <script lang="ts">
   // Coding step one: the repositories threads work on. Paste an address (https or ssh) and add it; each added one is listed. The server's repositories operations do not exist yet (the real implementation says so); until they do this
   // step explains where to add one (the first thread) and can be skipped.
-  import { Button } from "@calternal/ui";
+  import { Button, Callout } from "@calternal/ui";
   import type { OnboardingApi, RepoInfo } from "./api";
   let { api, ondone }: { api: OnboardingApi; ondone: () => void } = $props();
   let repos = $state<RepoInfo[]>([]), url = $state(""), error = $state(""), unsupported = $state(false), busy = $state(false);
@@ -23,8 +23,8 @@
       <Button type="submit" variant="secondary" text="Add" disabled={busy || !url.trim()} />
     </form>
     {#if repos.length}<ul>{#each repos as r (r.id)}<li><strong>{r.name}</strong><small>{r.url}</small></li>{/each}</ul>{/if}
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
   {/if}
+  <Callout message={error} />
   <div class="go"><Button variant="primary" text="Continue" onclick={ondone} /></div>
 </div>
 
@@ -37,6 +37,5 @@
   ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s-3); }
   li { display: grid; padding: var(--s-4) var(--s-5); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.05); }
   li small { color: var(--ink-3); font-size: var(--text-label); overflow-wrap: anywhere; }
-  .error { font-size: var(--text-label); color: var(--danger); }
   .go { display: flex; gap: var(--s-4); }
 </style>

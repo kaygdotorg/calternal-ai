@@ -14,7 +14,8 @@
 </main>
 <style>
   .wrap { position: relative; z-index: 1; min-height: 100dvh; display: grid; align-content: center; justify-items: center; gap: var(--s-6); padding: calc(var(--safe-top) + var(--s-6)) calc(var(--safe-right) + var(--s-6)) calc(var(--safe-bottom) + var(--s-6)) calc(var(--safe-left) + var(--s-6)); box-sizing: border-box; }
-  .mark { font-family: var(--font-brand, inherit); font-size: var(--text-title); font-weight: var(--strong-weight); color: var(--ink); }
+  /* The script face's last "l" swings past its advance width; the box is padded so the whole stroke is inside it. Without the padding Safari paints the overhang as a separate piece while the word moves (a stray comma-like mark after the wordmark when the page re-centres). */
+  .mark { font-family: var(--font-brand, inherit); font-size: var(--text-title); font-weight: var(--strong-weight); color: var(--ink); padding-inline: 0.3em; }
   .wrap :global(.card) { width: min(30rem, 100%); }
   .in { display: grid; gap: var(--s-5); padding: var(--s-7); }
   h1 { font-size: var(--text-heading); font-weight: var(--strong-weight); }

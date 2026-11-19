@@ -2,17 +2,20 @@
   // Step four: sign in to a provider (Claude Code, Codex) on the machine, from here. "Sign in" starts it on the machine (`provider.sign_in.start`); the machine answers with a link to open and, when the provider shows one back,
   // a code to type here (both come in the person's own request, `requests.list`); the screen follows the status until it is done. Nothing to run in a terminal. If that cannot be used (an older server, a machine that is
   // offline) the provider's own command is there to copy and Check again asks the machine (`agent.check`). One provider signed in ends the step.
-  import { Button, Tick } from "@calternal/ui";
+  import { Button, Callout, Tick } from "@calternal/ui";
   import { say } from "../../server/say";
   import type { OnboardingApi, ProviderRow, SignInRequest, SignInStatus } from "./api";
   import CopyButton from "./CopyButton.svelte";
   import Waiting from "./Waiting.svelte";
-  let { api, ondone }: { api: OnboardingApi; ondone: () => void } = $props();
+  let { api, ondone, satisfied = $bindable(false) }: { api: OnboardingApi; ondone: () => void; /** True once a provider is signed in: the step needs nothing more, so the card hides Skip and its warning. */ satisfied?: boolean } = $props();
   let rows = $state<ProviderRow[] | null>(null), error = $state(""), checking = $state<string | null>(null);
   /** The sign-in in progress, if any: which provider, what the machine asked for, how it is going. */
   let flow = $state<{ key: string; id: string; request: SignInRequest | null; status: SignInStatus; code: string; sending: boolean } | null>(null);
   const ready = $derived(rows?.some((r) => r.state === "signed_in") ?? false);
-  async function look() { try { rows = await api.providers(); error = ""; } catch (e) { error = say(e, "read the providers"); rows ??= []; } }
+  /** Whether a machine is connected at all: it decides what to say when there is no provider to sign in to. */
+  let machine = $state<boolean | null>(null);
+  $effect(() => { satisfied = ready; return () => { satisfied = false; }; });
+  async function look() { try { rows = await api.providers(); machine = (await api.machineStatus()).ready; error = ""; } catch (e) { error = say(e, "read the providers"); rows ??= []; } }
   $effect(() => { void look(); const t = setInterval(() => void look(), 3000); return () => clearInterval(t); });
   // Follows a started sign-in: asks for its link and code until they exist, then for its status, until it is done or failed.
   $effect(() => {
@@ -44,10 +47,15 @@
 </script>
 
 <div class="in">
+  <Callout message={error} />
   {#if rows === null}
     <Waiting label="Asking the machine" />
   {:else if !rows.length}
-    <p class="note">No machine is connected yet, so there is nothing to sign in to. Go back to add one, or skip and do it later.</p>
+    {#if machine}
+      <p class="note">Your machine is connected, but no provider is turned on for it in this space, so there is nothing to sign in to yet. Turn on Claude Code or Codex in Settings, Space plugins, then sign in under Settings, Machines. Until a provider is signed in, no thread can get an answer.</p>
+    {:else}
+      <p class="note">No machine is connected yet, so there is nothing to sign in to. Go back to add one, or skip and do it later.</p>
+    {/if}
   {:else}
     <p class="note">The agents answer through a provider's own account. Sign in from here: the machine gives you a link to open.</p>
     <ul>
@@ -67,7 +75,7 @@
                 </ol>
               {/if}
             {:else}
-              {#if mine?.status === "failed"}<p class="error" role="alert">That sign-in did not finish. Try again.</p>{/if}
+              <Callout message={mine?.status === "failed" ? "That sign-in did not finish. Try again." : ""} />
               <Button variant="secondary" text={mine?.status === "failed" ? "Try again" : "Sign in"} onclick={() => start(r)} />
             {/if}
             {#if r.command && r.state === "not_signed_in"}
@@ -83,7 +91,6 @@
     {#if checking}<Waiting label="Checking on the machine" />{/if}
     {#if ready}<div class="go"><Button variant="primary" text="Continue" onclick={ondone} /></div>{/if}
   {/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
 </div>
 
 <style>
@@ -103,6 +110,5 @@
   details { display: grid; gap: var(--s-3); }
   .cmd { display: flex; align-items: center; gap: var(--s-4); }
   code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--text-label); }
-  .error { font-size: var(--text-label); color: var(--danger); }
   .go { display: flex; gap: var(--s-4); }
 </style>

@@ -68,18 +68,33 @@ export function encodeCredential(c: PublicKeyCredential): Json {
   return { id: c.id, rawId: b64.fromBytes(c.rawId), type: c.type, response, extensions: c.getClientExtensionResults() };
 }
 
+/** A WebAuthn rejection that comes back sooner than this was not the person: no sheet had time to be shown, so the browser (or the app's web view) refused the request itself. */
+export const REFUSED_AT_ONCE_MS = 400;
+/**
+ * What a rejected `navigator.credentials.create/get` means, by the error's name and how long it took (milliseconds from the call): `InvalidStateError` (a passkey for this account is already here),
+ * `SecurityError` (the page's address cannot be used for passkeys), `NotSupportedError`, `NotAllowedError` at once (refused outright: in an app's web view with no site association there is no sheet to cancel), a
+ * `NotAllowedError` or `AbortError` that took longer (the person closed the sheet, or it timed out), anything else. Pure, so the wording can be tested without a browser.
+ */
+export function passkeyFailure(name: string, elapsedMs: number): { code: string; message: string } {
+  if (name === "InvalidStateError") return { code: "passkey_failed", message: "This device already has a passkey here. Sign in instead." };
+  if (name === "SecurityError") return { code: "passkey_origin", message: "This page's address cannot be used for passkeys." };
+  if (name === "NotSupportedError") return { code: "passkey_unsupported", message: "This device or browser does not support passkeys." };
+  if (name === "NotAllowedError" && elapsedMs < REFUSED_AT_ONCE_MS) return { code: "passkey_unavailable", message: "Passkeys are not available in this app or browser." };
+  if (name === "NotAllowedError" || name === "AbortError") return { code: "cancelled", message: "The passkey prompt was closed or timed out. Try again." };
+  return { code: "passkey_failed", message: "This browser could not use a passkey." };
+}
+
 async function ceremony(kind: "create" | "get", options: Json): Promise<PublicKeyCredential> {
   const d = decodeOptions(options);
+  const t0 = performance.now();
   try {
     const c = (kind === "create" ? await navigator.credentials.create({ publicKey: d.create! }) : await navigator.credentials.get({ publicKey: d.get! })) as PublicKeyCredential | null;
     if (!c) throw new ServerError("cancelled", "No passkey was chosen.");
     return c;
   } catch (e) {
     if (e instanceof ServerError) throw e;
-    const name = (e as Error).name;
-    if (name === "NotAllowedError" || name === "AbortError") throw new ServerError("cancelled", "The passkey prompt was closed or timed out. Try again.");
-    if (name === "InvalidStateError") throw new ServerError("passkey_failed", "This device already has a passkey here. Sign in instead.");
-    throw new ServerError("passkey_failed", "This browser could not use a passkey.");
+    const f = passkeyFailure((e as Error).name, performance.now() - t0);
+    throw new ServerError(f.code, f.message);
   }
 }
 

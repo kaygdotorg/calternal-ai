@@ -307,3 +307,28 @@ Wrong or stale: the Apps row's help text still described a switcher under the ca
 ## Timing checks: budgets and the quiet list (2026-11-18)
 
 The palette's keystroke check measures main-thread work per key (the input event, the framework's update and the style and layout a read forces) at 6x CPU slowdown against a budget of 2 ms per key at normal speed (a quarter of the owner's 8 ms rule for typing surfaces, because the standing instruction is to beat budgets): 12 ms for the median and 24 ms for the p95 at 6x. Measured 4.3 ms and 7.6 ms; the wait for the next frame (up to 16.7 ms by itself) is printed as information, not judged. `npm run e2e:quiet -w apps/web` waits (CAL_QUIET_WAIT_S, 600 s by default) for the machine to be quiet; if it never is, it runs nothing and exits 3 ("not judged"), distinct from 1 (a suite failed).
+
+## Onboarding screens: back chevron, info panel, passkey wording, motion (2026-11-19)
+
+Owner feedback from a native shell on an iPhone 16 Pro Max, built as asked (feature pause: these are fixes, not new interface).
+
+**Back.** A chevron at the top left of the card (our `IconButton`, glyph `back`, accessible name "Back", 44 pt), on every step but the first screen of "Who you are"; it goes back one screen inside that step (email to who, code and passkey to email) and otherwise one step (not from the recovery codes or the second passkey: the account already exists). The text "Back" buttons under the primary actions are gone. Its row opens by growing from nothing (`--dur-base`, `--ease-out`) so the card does not jump.
+
+**Errors and notices.** One shared component, `Callout` (`packages/ui`): tone `bad`, `warn` or `info`, an icon, the plain sentence, placed above the primary action. It is always in the page, closed, so there is no jump: it opens by growing its row and fading and rising into it (`--dur-base`), and leaves the same way (`--dur-leave`). Announced once: a hidden live region (`alert` for `bad`, `status` otherwise) is filled when the message is set and emptied when it is cleared; the painted copy is hidden from assistive technology.
+
+**Passkey wording** (`passkeyFailure` in `server/auth.ts`, by error name and timing): `NotAllowedError` that comes back in under 400 ms means no sheet was shown (the browser or an app's web view refused it: no site association), so we say "Passkeys are not available in this app or browser yet. Open Calternal in Safari or Chrome and continue there."; a `NotAllowedError` or `AbortError` after that is a real close or timeout ("closed or timed out"); `SecurityError` (the address cannot be used), `NotSupportedError` and `InvalidStateError` each have their own sentence.
+
+**Motion design** (every transition: order, duration, curve; all from the motion tokens, all CSS transitions so a second move turns round where it is; under reduced motion the tokens are 1 ms and the arrival delays are 0):
+
+| What | Order | Duration and curve |
+|---|---|---|
+| First load | wordmark, then the step dots one by one (45 ms apart), then the card (220 ms in) | wordmark and card `--dur-slow`, dots `--dur-base`, all `--ease-out`, each rising 16 px (`--s-4`) while fading in |
+| Step to step | the old content leaves, then the new content arrives | leave `--dur-fast` toward the side the move came from (forward: to the left, back: to the right, 16 px), arrive `--dur-base` from 24 px on the other side; the direction follows forward or back; the same slide (20 px) between the screens inside "Who you are" |
+| Step dots | the finished step's tick draws on (existing), the line to the next step fills with the accent from its left end, the next dot swells | line `--dur-slow` `--ease-out`; dot scale 1 to 1.08 over `--dur-slow` with `--spring` |
+| Info panel | enters: row grows, panel fades and rises 8 px; leaves: the same back | in `--dur-base`, out `--dur-leave`, `--ease-out` |
+| Back chevron row | grows open, the chevron slides in 16 px from the left | `--dur-base` `--ease-out` |
+| Primary button | pressed: scale to `--press-scale` (existing); busy: a ring grows in before the label (width and opacity), the button stays at full strength, disabled | `--dur-fast` press, `--dur-base` busy, `--ease-out` |
+
+Interruptible: nothing waits on a timer except the beat between leaving and arriving content (`--dur-fast`), which a newer move replaces. Checked for fluidity on the Simulator (frames on issue #15) and by the quiet list.
+
+**The stray mark after the wordmark.** See the report on issue #15; the cause and the fix are written there and in `docs/ui-shell-status.md`.

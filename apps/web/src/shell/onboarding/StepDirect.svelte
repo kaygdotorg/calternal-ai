@@ -1,7 +1,7 @@
 <script lang="ts">
   // Coding step three: direct mode on your own machine. By default threads run sandboxed on a machine; direct runs them on the machine itself, with your own tools, files and credentials in reach. A switch for the machine,
   // `machines.set`; off is the safe default and the step can be skipped.
-  import { Button, Switch } from "@calternal/ui";
+  import { Button, Callout, Switch } from "@calternal/ui";
   import { say } from "../../server/say";
   import type { MachineInfo, OnboardingApi } from "./api";
   let { api, ondone }: { api: OnboardingApi; ondone: () => void } = $props();
@@ -22,13 +22,12 @@
   {:else}
     <p class="note">There is no machine yet, so there is nothing to change. Add one in Settings, Machines.</p>
   {/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  <Callout message={error} />
   <div class="go"><Button variant="primary" text="Continue" onclick={ondone} /></div>
 </div>
 
 <style>
   .in { display: grid; gap: var(--s-5); }
   .note { font-size: var(--text-label); color: var(--ink-3); }
-  .error { font-size: var(--text-label); color: var(--danger); }
   .go { display: flex; gap: var(--s-4); }
 </style>

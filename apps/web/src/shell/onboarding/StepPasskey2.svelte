@@ -1,6 +1,6 @@
 <script lang="ts">
   // Step three: a second passkey, so losing one device does not lock the account. Skipping is explicit (Not now, below) and the prompt returns in Settings, Account while there is only one passkey.
-  import { Button, Tick } from "@calternal/ui";
+  import { Button, Callout, Tick } from "@calternal/ui";
   import { account } from "../../server/auth";
   import { say } from "../../server/say";
   let { demo = false, ondone }: { demo?: boolean; ondone: () => void } = $props();
@@ -19,16 +19,15 @@
     <div class="go"><Button variant="primary" text="Continue" onclick={ondone} /></div>
   {:else}
     <p class="note">A second passkey, on another device or a hardware key, means losing one is not losing the account. It takes a few seconds.</p>
-    <div class="go"><Button class="settings-action" variant="primary" text="Add a passkey on another device" disabled={busy} onclick={add} /></div>
+    <Callout message={error} />
+    <div class="go"><Button class="settings-action" variant="primary" text="Add a passkey on another device" busy={busy} onclick={add} /></div>
   {/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
 </div>
 
 <style>
   .in { display: grid; gap: var(--s-5); }
   .note { font-size: var(--text-label); color: var(--ink-3); }
   .ready { display: flex; align-items: center; gap: var(--s-5); }
-  .error { font-size: var(--text-label); color: var(--danger); }
   .go { display: flex; }
   @media (max-width: 520px) { .go :global(.settings-action) { width: 100%; } }
 </style>
