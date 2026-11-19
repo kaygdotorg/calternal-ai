@@ -79,7 +79,10 @@ impl Publisher {
             let mut retire_at = None;
             let mut journal = None;
             loop {
-                let more = match publisher.drain_page(space, &conn, &mut journal, &mut through).await {
+                let more = match publisher
+                    .drain_page(space, &conn, &mut journal, &mut through)
+                    .await
+                {
                     Ok(more) => more,
                     Err(error) => {
                         tracing::warn!(%space, %error, "saved turn journal publication deferred");
@@ -91,7 +94,9 @@ impl Publisher {
                 }
                 if retire_at.is_some_and(|at| at <= Instant::now()) {
                     let write = conn.clone();
-                    let retry = match blocking(move || write.retire_turn_events(through, PAGE)).await {
+                    let retry = match blocking(move || write.retire_turn_events(through, PAGE))
+                        .await
+                    {
                         Ok(retry) => retry,
                         Err(error) => {
                             tracing::warn!(%space, %error, "saved turn outbox retirement deferred");
@@ -140,7 +145,6 @@ impl Publisher {
         }
         Ok(more)
     }
-
 }
 
 struct Event {
@@ -260,11 +264,19 @@ mod tests {
         let publisher = Publisher::new(content.clone());
         let mut through = 0;
         let mut journal = None;
-        assert!(!publisher.drain_page(space, &conn, &mut journal, &mut through).await.unwrap());
+        assert!(
+            !publisher
+                .drain_page(space, &conn, &mut journal, &mut through)
+                .await
+                .unwrap()
+        );
         assert_eq!(through, 2);
         assert_eq!(read_page(&conn, 0).unwrap().len(), 2);
         let mut after_restart = 0;
-        publisher.drain_page(space, &conn, &mut journal, &mut after_restart).await.unwrap();
+        publisher
+            .drain_page(space, &conn, &mut journal, &mut after_restart)
+            .await
+            .unwrap();
         assert_eq!(after_restart, through);
         assert_eq!(content.journal(space).unwrap().len(), 2);
         insert(3);

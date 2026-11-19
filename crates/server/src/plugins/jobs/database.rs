@@ -1,7 +1,10 @@
 //! One space's jobs connection and its journal publication scheduling state.
 use calternal_types::{OwnerLifecycle, OwnerScoped, SpaceId};
 use rusqlite::{Connection, OpenFlags, config::DbConfig};
-use std::{path::PathBuf, sync::{Mutex, MutexGuard}};
+use std::{
+    path::PathBuf,
+    sync::{Mutex, MutexGuard},
+};
 use tokio::sync::Notify;
 
 /// Serializes SQLite work for one cached space. Publication scheduling holds
@@ -18,7 +21,12 @@ pub(crate) struct JobDatabase {
 
 impl JobDatabase {
     /// Wrap an open connection. Cost: no I/O or allocation.
-    pub(super) fn new(connection: Connection, path: PathBuf, lifecycle: OwnerLifecycle, space: SpaceId) -> Self {
+    pub(super) fn new(
+        connection: Connection,
+        path: PathBuf,
+        lifecycle: OwnerLifecycle,
+        space: SpaceId,
+    ) -> Self {
         Self {
             connection: Mutex::new(connection),
             path,
@@ -96,7 +104,8 @@ impl JobDatabase {
         };
         let retired = (|| {
             let conn = Connection::open_with_flags(
-                &self.path, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+                &self.path,
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW,
             )?;
             conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true)?;
             conn.busy_timeout(std::time::Duration::ZERO)?;
@@ -120,8 +129,12 @@ impl JobDatabase {
         match retired {
             Err(rusqlite::Error::SqliteFailure(code, _))
                 if matches!(
-                    code.code, rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
-                ) => Ok(true),
+                    code.code,
+                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                ) =>
+            {
+                Ok(true)
+            }
             result => result,
         }
     }
