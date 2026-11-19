@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://calternal.com/contract/plugin-manifest-v2.schema.json",
+  "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 4 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 5 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -16,7 +16,11 @@
     "apps": { "type": "array", "maxItems": 16, "items": { "$ref": "#/definitions/app" } },
     "kinds": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/kind" } },
     "operations": { "type": "array", "maxItems": 128, "items": { "$ref": "#/definitions/operation" } },
-    "commands": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/command" } },
+    "reads": {
+      "description": "Kinds an authored Bind can query. Show at install and intersect with current viewer and field authority.",
+      "type": "array", "maxItems": 64, "uniqueItems": true,
+      "items": { "$ref": "host-catalogue-v2.json#/$defs/KindId" }
+    },
     "providers": { "type": "array", "maxItems": 16, "items": { "$ref": "#/definitions/provider" } },
     "jobs": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/job" } },
     "schedule_eligibility": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/schedule" } },
@@ -47,7 +51,6 @@
     "anyOf": [
       { "properties": { "operations": { "minItems": 1 } } },
       { "required": ["jobs"], "properties": { "jobs": { "minItems": 1 } } },
-      { "required": ["commands"], "properties": { "commands": { "minItems": 1 } } },
       { "required": ["schedule_eligibility"], "properties": { "schedule_eligibility": { "minItems": 1 } } },
       { "required": ["wait_webhooks"], "properties": { "wait_webhooks": { "minItems": 1 } } },
       { "required": ["credential_routes"], "properties": { "credential_routes": { "minItems": 1 } } }
@@ -116,9 +119,11 @@
       }
     },
     "kind": {
-      "type": "object", "additionalProperties": false, "required": ["id", "storage", "claimed_text", "schema"],
+      "type": "object", "additionalProperties": false, "required": ["id", "icon", "title_field", "storage", "claimed_text", "schema"],
       "properties": {
-        "id": { "$ref": "#/definitions/localId" },
+        "id": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
+        "icon": { "$ref": "#/definitions/icon" },
+        "title_field": { "$ref": "#/definitions/localId", "description": "Declared string field exposed as the generated generic title." },
         "storage": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestPlacement" },
         "claimed_text": { "type": "boolean" },
         "extension": { "type": "string", "pattern": "^[a-z0-9]{1,16}$" },
@@ -127,7 +132,13 @@
         "indexed_fields": {
           "type": "object", "maxProperties": 32,
           "propertyNames": { "$ref": "#/definitions/localId" },
-          "additionalProperties": { "enum": ["string", "number", "boolean", "timestamp"] }
+          "additionalProperties": {
+            "type": "object", "additionalProperties": false, "required": ["type", "audience"],
+            "properties": {
+              "type": { "$ref": "host-catalogue-v2.json#/$defs/FieldType" },
+              "audience": { "$ref": "host-catalogue-v2.json#/$defs/FieldAudience" }
+            }
+          }
         },
         "live_room": { "enum": ["yjs-v1"] }
       },
@@ -148,15 +159,6 @@
         "turn_follow_up", "turn_answer", "turn_select_machine", "schedule_create", "schedule_remove"
       ]
     },
-    "command": {
-      "type": "object", "additionalProperties": false, "required": ["id", "label", "operation", "input"],
-      "properties": {
-        "id": { "$ref": "#/definitions/localId" },
-        "label": { "$ref": "#/definitions/label" },
-        "operation": { "$ref": "#/definitions/operationId" },
-        "input": { "$ref": "https://calternal.cloud/contract/description-v2.schema.json#/$defs/Invoke/properties/inputs" }
-      }
-    },
     "provider": {
       "type": "object", "additionalProperties": false, "required": ["id", "name", "engine", "adapter"],
       "properties": {
@@ -168,19 +170,39 @@
     },
     "operation": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "input_schema", "output_schema", "required_capability", "risk", "idempotency", "methods"],
+      "required": ["id", "title", "input_schema", "output_schema", "required_capability", "risk", "idempotency", "methods"],
       "properties": {
         "id": { "$ref": "#/definitions/operationId" },
+        "title": { "$ref": "#/definitions/label" },
         "input_schema": { "$ref": "#/definitions/embeddedSchema" },
         "output_schema": { "$ref": "#/definitions/embeddedSchema" },
         "required_capability": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestCapability" },
         "risk": { "$ref": "plugin-manifest-v1.schema.json#/definitions/OperationRisk" },
         "idempotency": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestIdempotency" },
-        "target": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestTarget" },
+        "target": {
+          "oneOf": [
+            {
+              "type": "object", "additionalProperties": false, "required": ["kind", "field"],
+              "properties": {
+                "kind": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
+                "field": { "$ref": "#/definitions/localId" }
+              }
+            },
+            {
+              "type": "object", "additionalProperties": false, "required": ["kind", "selection_field"],
+              "properties": {
+                "kind": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
+                "selection_field": { "$ref": "#/definitions/localId" }
+              }
+            }
+          ]
+        },
+        "creates": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
         "material_inputs": {
-          "description": "Additional top-level input keys the host must show in a trusted preview. The host also determines mandatory fields from the effect and target.",
-          "type": "array", "maxItems": 32, "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+          "description": "Labels by input key for extra required material. The host enforces its own required preview fields.",
+          "type": "object", "maxProperties": 32,
+          "propertyNames": { "$ref": "#/definitions/localId" },
+          "additionalProperties": { "$ref": "#/definitions/label" }
         },
         "methods": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/definitions/hostMethod" } },
         "credential_routes": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/localId" } }

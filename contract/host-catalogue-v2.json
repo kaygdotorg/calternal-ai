@@ -9,124 +9,28 @@
   "audiences": {
     "member_item": "Live item authority and field policy on the member path.",
     "shared_projection": "Member authority or a host-approved explicit projection for this guest's home root/children. Counts require a separate projection flag.",
-    "viewer_self": "Member may address only their own value. In filters only eq with viewer.person. No general readback, sort, aggregation or access to another person's value.",
-    "designated_request_actor": "Host-private request addressed to the designated viewer. Covers only the referenced eligible request. No guest list or count. A row id resolves only to a checked RequestRef."
+    "viewer_self": "The actor may access only their own projected value. AccountRef predicates are limited to eq viewer.person; only counts over that actor’s already authorized projection are allowed. Other typed personal fields use the actor’s index only.",
+    "designated_request_actor": "Host-private request addressed to the designated viewer. Covers only the referenced eligible request. No guest list or count. A row id resolves only to a checked RequestRef.",
+    "eligible_turn_actor": "The current turn actor or an actor with live authority to inspect/control that turn under the Turns engine. A thread grant alone does not confer Stop."
   },
   "kinds": {
-    "notes": {
-      "owner": "content",
-      "row_ref": "ItemRef",
-      "audience": "member_item",
-      "fields": {
-        "id": {
-          "type": "ItemRef",
-          "index_owner": "content",
-          "audience": "shared_projection",
-          "nullable": false
-        },
-        "title": {
-          "type": "Text",
-          "index_owner": "content",
-          "audience": "shared_projection",
-          "nullable": false
-        },
-        "updated": {
-          "type": "Timestamp",
-          "index_owner": "content",
-          "audience": "shared_projection",
-          "nullable": false
-        },
-        "pinned": {
-          "type": "Boolean",
-          "index_owner": "content",
-          "audience": "member_item",
-          "nullable": false
-        },
-        "trashed": {
-          "type": "Boolean",
-          "index_owner": "content",
-          "audience": "member_item",
-          "nullable": false
-        },
-        "trashed_at": {
-          "type": "Timestamp",
-          "index_owner": "content",
-          "audience": "member_item",
-          "nullable": true
-        }
-      },
-      "search_corpora": [
-        "member_title",
-        "member_body",
-        "shared_titles"
-      ],
-      "icon": "notes"
-    },
     "collections": {
       "owner": "content",
       "row_ref": "CollectionRef",
       "audience": "member_item",
-      "fields": {
-        "id": {
-          "type": "CollectionRef",
-          "index_owner": "content",
-          "audience": "shared_projection",
-          "nullable": false
-        },
-        "title": {
-          "type": "Text",
-          "index_owner": "content",
-          "audience": "shared_projection",
-          "nullable": false
-        },
-        "updated": {
-          "type": "Timestamp",
-          "index_owner": "content",
-          "audience": "shared_projection",
-          "nullable": false
-        },
-        "trashed": {
-          "type": "Boolean",
-          "index_owner": "content",
-          "audience": "member_item",
-          "nullable": false
-        },
-        "trashed_at": {
-          "type": "Timestamp",
-          "index_owner": "content",
-          "audience": "member_item",
-          "nullable": true
-        }
-      },
+      "fields": {},
       "search_corpora": [
         "member_title",
         "shared_titles"
       ],
-      "icon": "folder"
+      "icon": "folder",
+      "includes_generic_item_fields": true
     },
     "threads": {
       "owner": "turns",
       "row_ref": "ThreadRef",
       "audience": "member_item",
       "fields": {
-        "id": {
-          "type": "ThreadRef",
-          "index_owner": "turns",
-          "audience": "shared_projection",
-          "nullable": false
-        },
-        "title": {
-          "type": "Text",
-          "index_owner": "turns",
-          "audience": "shared_projection",
-          "nullable": false
-        },
-        "updated": {
-          "type": "Timestamp",
-          "index_owner": "turns",
-          "audience": "shared_projection",
-          "nullable": false
-        },
         "provider": {
           "type": "ProviderId",
           "index_owner": "turns",
@@ -152,20 +56,20 @@
         "active_turn": {
           "type": "TurnRef",
           "index_owner": null,
+          "audience": "eligible_turn_actor",
+          "nullable": true
+        },
+        "snoozed_until": {
+          "type": "Timestamp",
+          "index_owner": "turns",
           "audience": "viewer_self",
           "nullable": true
         },
-        "trashed": {
+        "archived": {
           "type": "Boolean",
-          "index_owner": "content",
+          "index_owner": "turns",
           "audience": "member_item",
           "nullable": false
-        },
-        "trashed_at": {
-          "type": "Timestamp",
-          "index_owner": "content",
-          "audience": "member_item",
-          "nullable": true
         }
       },
       "search_corpora": [
@@ -173,7 +77,8 @@
         "member_body",
         "shared_titles"
       ],
-      "icon": "threads"
+      "icon": "threads",
+      "includes_generic_item_fields": true
     },
     "requests": {
       "owner": "requests",
@@ -206,7 +111,8 @@
         }
       },
       "search_corpora": [],
-      "icon": "warning"
+      "icon": "warning",
+      "includes_generic_item_fields": false
     }
   },
   "operations": {
@@ -245,23 +151,7 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      },
-      "outcomes": [
-        "pending",
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      }
     },
     "host.item.trash": {
       "engine": "item_trash",
@@ -310,23 +200,7 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      },
-      "outcomes": [
-        "pending",
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      }
     },
     "host.item.restore": {
       "engine": "item_restore",
@@ -362,23 +236,7 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      },
-      "outcomes": [
-        "pending",
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      }
     },
     "host.undo": {
       "engine": "item_rename_undo / protected eligible inverse",
@@ -408,23 +266,7 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      },
-      "outcomes": [
-        "pending",
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      }
     },
     "host.trash.purge": {
       "engine": "item_purge / empty_trash",
@@ -454,23 +296,7 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      },
-      "outcomes": [
-        "pending",
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      }
     },
     "host.approval.resolve": {
       "engine": "protected Inbox resolver",
@@ -534,16 +360,7 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      },
-      "outcomes": [
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      }
     },
     "host.panel.ask": {
       "engine": "authorized host panel turn admission",
@@ -583,23 +400,7 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      },
-      "outcomes": [
-        "pending",
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      }
     },
     "host.turn.stop": {
       "engine": "turn_cancel",
@@ -630,23 +431,7 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      },
-      "outcomes": [
-        "pending",
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      }
     },
     "host.route.set": {
       "engine": "host shell route state",
@@ -680,16 +465,7 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      },
-      "outcomes": [
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      }
     },
     "host.session.end": {
       "engine": "host session revocation",
@@ -711,16 +487,7 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      },
-      "outcomes": [
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      }
     },
     "host.item.share": {
       "engine": "host sharing service",
@@ -767,74 +534,47 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      },
-      "outcomes": [
-        "pending",
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      }
     },
     "host.item.patch-metadata": {
       "engine": "item_save metadata arm",
       "effect": "reversible",
       "idempotency": "request_id",
-      "authority": "Editor with the current room-backed item head",
+      "authority": "Editor with current room-backed head and package-approved metadata field",
       "surfaces": [
         "authorized_template_action",
         "host_item_control"
       ],
       "generic_invoke": true,
-      "full_swipe": false,
+      "full_swipe": true,
       "worker_wake": "never",
       "target_inputs": [
-        "item",
-        "expected_revision"
+        "item"
       ],
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
         "required": [
           "item",
-          "expected_revision",
-          "patch"
+          "field",
+          "value"
         ],
         "properties": {
           "item": {
             "$ref": "#/$defs/ItemRef"
           },
-          "expected_revision": {
-            "$ref": "#/$defs/RevisionRef"
+          "field": {
+            "$ref": "#/$defs/ActionId"
           },
-          "patch": {
-            "type": "object",
-            "minProperties": 1,
-            "maxProperties": 32
+          "value": {
+            "$ref": "#/$defs/Scalar"
           }
         }
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
       },
-      "outcomes": [
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      "full_swipe_when": "Host-validated single-item boolean toggle, confirm:none and durable eligible Undo. Expected revision comes from the activation context."
     },
     "host.action.status": {
       "engine": "protected action / rename / Trash job status",
@@ -864,23 +604,7 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      },
-      "outcomes": [
-        "pending",
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      }
     },
     "turns.start": {
       "engine": "turn_start",
@@ -895,10 +619,73 @@
       "worker_wake": "never",
       "target_inputs": [
         "thread",
-        "attachments",
-        "mentions",
-        "quote",
         "options"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "thread",
+          "draft",
+          "options"
+        ],
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadRef"
+          },
+          "draft": {
+            "$ref": "#/$defs/Draft"
+          },
+          "options": {
+            "$ref": "#/$defs/ComposerOptions"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      }
+    },
+    "turns.create": {
+      "engine": "thread create",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Actor with thread creation authority",
+      "surfaces": [
+        "authorized_template_action",
+        "host_thread_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "title": {
+            "$ref": "#/$defs/Text"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      }
+    },
+    "turns.archive": {
+      "engine": "thread archive",
+      "effect": "irreversible",
+      "idempotency": "request_id",
+      "authority": "Actor with live thread lifecycle authority",
+      "surfaces": [
+        "authorized_template_action",
+        "host_thread_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "thread"
       ],
       "input_schema": {
         "type": "object",
@@ -909,71 +696,120 @@
         "properties": {
           "thread": {
             "$ref": "#/$defs/ThreadRef"
-          },
-          "text": {
-            "type": "string",
-            "maxLength": 65536
-          },
-          "attachments": {
-            "type": "array",
-            "maxItems": 16,
-            "items": {
-              "$ref": "#/$defs/AttachmentRef"
-            }
-          },
-          "mentions": {
-            "type": "array",
-            "maxItems": 32,
-            "items": {
-              "$ref": "#/$defs/AccountRef"
-            }
-          },
-          "quote": {
-            "$ref": "#/$defs/Quote"
-          },
-          "options": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [],
-            "properties": {
-              "provider": {
-                "$ref": "#/$defs/ComposerOptionRef"
-              },
-              "model": {
-                "$ref": "#/$defs/ComposerOptionRef"
-              },
-              "reasoning": {
-                "$ref": "#/$defs/ComposerOptionRef"
-              },
-              "permission": {
-                "$ref": "#/$defs/ComposerOptionRef"
-              },
-              "machine": {
-                "$ref": "#/$defs/ComposerOptionRef"
-              }
-            }
           }
         }
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
+      }
+    },
+    "turns.unarchive": {
+      "engine": "thread unarchive",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Actor with live thread lifecycle authority",
+      "surfaces": [
+        "authorized_template_action",
+        "host_thread_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "thread"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "thread"
+        ],
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadRef"
+          }
+        }
       },
-      "outcomes": [
-        "pending",
-        "ok",
-        "stale",
-        "refused",
-        "error",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown",
-        "unknown"
-      ]
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      }
+    },
+    "turns.snooze": {
+      "engine": "thread snooze",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Member changing their own thread snooze",
+      "surfaces": [
+        "authorized_template_action",
+        "host_thread_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "thread"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "thread",
+          "until"
+        ],
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadRef"
+          },
+          "until": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      }
+    },
+    "turns.follow_up": {
+      "engine": "turn_follow_up",
+      "effect": "external",
+      "idempotency": "request_id",
+      "authority": "Actor allowed to queue against this turn on the selected provider/machine",
+      "surfaces": [
+        "host_composer",
+        "host_turn_control"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "turn"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "turn",
+          "draft"
+        ],
+        "properties": {
+          "turn": {
+            "$ref": "#/$defs/TurnRef"
+          },
+          "draft": {
+            "$ref": "#/$defs/Draft"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      }
     }
   },
   "query": {
@@ -1011,7 +847,10 @@
       "default_rows": 60,
       "max_offset": 100000,
       "max_encoded_bytes": 131072,
-      "max_request_span": 200
+      "max_request_span": 200,
+      "row_reference_schema": {
+        "$ref": "#/$defs/Ref"
+      }
     },
     "unsupported_plan": {
       "status": 422,
@@ -1200,6 +1039,18 @@
         },
         "selection_ref": {
           "$ref": "#/$defs/SelectionRef"
+        },
+        "options": {
+          "$ref": "#/$defs/ComposerOptions"
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/Ref"
+          },
+          "uniqueItems": true,
+          "description": "Stable row IDs from the context-bound Bind for a bulk activation."
         }
       }
     },
@@ -1227,6 +1078,10 @@
         },
         "interaction": {
           "$ref": "#/$defs/Interaction"
+        },
+        "dispatch": {
+          "const": true,
+          "description": "Resolve and dispatch once when the host derives confirm:none; otherwise return a challenge and perform no effect."
         }
       }
     },
@@ -1251,6 +1106,11 @@
         },
         "confirmation_challenge": {
           "$ref": "#/$defs/ProofRef"
+        },
+        "final_text": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "Only a prepared host composer Send accepts final text and confirms and dispatches in this exchange."
         }
       }
     },
@@ -1300,7 +1160,8 @@
       "additionalProperties": false,
       "required": [
         "activation_id",
-        "resolution_ref"
+        "resolution_ref",
+        "confirm"
       ],
       "properties": {
         "activation_id": {
@@ -1318,6 +1179,12 @@
           "items": {
             "$ref": "#/$defs/ConfirmationMaterial"
           }
+        },
+        "confirm": {
+          "$ref": "#/$defs/ConfirmMode"
+        },
+        "selection_ref": {
+          "$ref": "#/$defs/SelectionRef"
         }
       },
       "dependentRequired": {
@@ -1327,7 +1194,30 @@
         "material": [
           "confirmation_challenge"
         ]
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "confirm": {
+                "const": "challenge"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "confirmation_challenge",
+              "material"
+            ]
+          },
+          "else": {
+            "properties": {
+              "confirmation_challenge": false,
+              "material": false
+            }
+          }
+        }
+      ]
     },
     "UndoResult": {
       "type": "object",
@@ -1385,6 +1275,9 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 512
+        },
+        "created": {
+          "$ref": "#/$defs/ItemRef"
         }
       },
       "allOf": [
@@ -1417,7 +1310,8 @@
           },
           "else": {
             "properties": {
-              "undo": false
+              "undo": false,
+              "created": false
             }
           }
         },
@@ -1453,6 +1347,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "bind",
         "from",
         "to"
       ],
@@ -1466,6 +1361,9 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 100000
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
         }
       }
     },
@@ -1490,13 +1388,22 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "bind",
+        "state",
         "result_version",
         "offset",
         "rows"
       ],
       "properties": {
         "result_version": {
-          "$ref": "#/$defs/Ref"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "offset": {
           "type": "integer",
@@ -1507,7 +1414,8 @@
           "maxItems": 200,
           "items": {
             "$ref": "#/$defs/WindowRow"
-          }
+          },
+          "description": "Opaque stable row IDs; no position is an authority reference."
         },
         "count": {
           "type": "object",
@@ -1527,6 +1435,25 @@
               "type": "integer",
               "minimum": 0
             }
+          }
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "state": {
+          "enum": [
+            "loading",
+            "ready",
+            "empty",
+            "error",
+            "throttled"
+          ]
+        },
+        "activation_contexts": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/RowActivationContexts"
           }
         }
       }
@@ -1739,7 +1666,9 @@
       "additionalProperties": false,
       "required": [
         "control",
-        "options"
+        "options",
+        "selected",
+        "default"
       ],
       "properties": {
         "control": {
@@ -1767,12 +1696,405 @@
         },
         "next": {
           "$ref": "#/$defs/Ref"
+        },
+        "selected": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ComposerOptionRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "default": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ComposerOptionRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "FieldAudience": {
+      "enum": [
+        "member_item",
+        "shared_projection",
+        "viewer_self",
+        "designated_request_actor",
+        "eligible_turn_actor"
+      ]
+    },
+    "FieldType": {
+      "enum": [
+        "Text",
+        "Number",
+        "Boolean",
+        "Timestamp",
+        "ItemRef",
+        "CollectionRef",
+        "ThreadRef",
+        "TurnRef",
+        "RequestRef",
+        "AccountRef",
+        "ProviderId"
+      ]
+    },
+    "ViewerRole": {
+      "enum": [
+        "owner",
+        "manager",
+        "editor",
+        "reader"
+      ]
+    },
+    "Scalar": {
+      "type": [
+        "string",
+        "number",
+        "boolean",
+        "null"
+      ]
+    },
+    "ConfirmMode": {
+      "enum": [
+        "none",
+        "challenge"
+      ]
+    },
+    "ComposerOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ComposerOptionRef"
+        },
+        "model": {
+          "$ref": "#/$defs/ComposerOptionRef"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/ComposerOptionRef"
+        },
+        "permission": {
+          "$ref": "#/$defs/ComposerOptionRef"
+        },
+        "machine": {
+          "$ref": "#/$defs/ComposerOptionRef"
+        }
+      }
+    },
+    "ActionContexts": {
+      "type": "object",
+      "maxProperties": 32,
+      "additionalProperties": {
+        "$ref": "#/$defs/ContextRef"
+      }
+    },
+    "RowActivationContexts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "row",
+        "contexts"
+      ],
+      "properties": {
+        "row": {
+          "$ref": "#/$defs/Ref"
+        },
+        "contexts": {
+          "$ref": "#/$defs/ActionContexts"
+        }
+      }
+    },
+    "SubscriptionLease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lease_ref",
+        "lease_seconds",
+        "grant_revision"
+      ],
+      "properties": {
+        "lease_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "lease_seconds": {
+          "const": 15
+        },
+        "grant_revision": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ViewOpenResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lease",
+        "activation_contexts"
+      ],
+      "properties": {
+        "lease": {
+          "$ref": "#/$defs/SubscriptionLease"
+        },
+        "activation_contexts": {
+          "$ref": "#/$defs/ActionContexts"
+        }
+      }
+    },
+    "LeaseRenewRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "lease_ref",
+        "grant_revision",
+        "result_versions"
+      ],
+      "properties": {
+        "type": {
+          "const": "lease_renew"
+        },
+        "lease_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "grant_revision": {
+          "$ref": "#/$defs/Ref"
+        },
+        "result_versions": {
+          "type": "object",
+          "maxProperties": 16,
+          "additionalProperties": {
+            "$ref": "#/$defs/Ref"
+          }
+        }
+      }
+    },
+    "LeaseRenewResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lease",
+        "retained_results",
+        "activation_contexts",
+        "windows"
+      ],
+      "properties": {
+        "lease": {
+          "$ref": "#/$defs/SubscriptionLease"
+        },
+        "retained_results": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/ActionId"
+          }
+        },
+        "activation_contexts": {
+          "$ref": "#/$defs/ActionContexts"
+        },
+        "windows": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/WindowResult"
+          }
+        }
+      }
+    },
+    "UndoRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "undo_ref"
+      ],
+      "properties": {
+        "type": {
+          "const": "undo"
+        },
+        "undo_ref": {
+          "$ref": "#/$defs/UndoRef"
+        }
+      }
+    },
+    "StatusRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "status_ref"
+      ],
+      "properties": {
+        "type": {
+          "const": "action_status"
+        },
+        "status_ref": {
+          "$ref": "#/$defs/StatusRef"
+        }
+      }
+    },
+    "RequestCardResolve": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "card_context",
+        "request_ref",
+        "decision"
+      ],
+      "properties": {
+        "type": {
+          "const": "request_resolve"
+        },
+        "card_context": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "request_ref": {
+          "$ref": "#/$defs/RequestRef"
+        },
+        "decision": {
+          "enum": [
+            "approve",
+            "deny"
+          ]
+        },
+        "lifetime": {
+          "enum": [
+            "once",
+            "this_thread"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "approve"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "lifetime"
+            ]
+          },
+          "else": {
+            "properties": {
+              "lifetime": false
+            }
+          }
+        }
+      ]
+    },
+    "ShareSheetRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "activation_context"
+      ],
+      "properties": {
+        "type": {
+          "const": "share_sheet"
+        },
+        "activation_context": {
+          "$ref": "#/$defs/ContextRef"
+        }
+      }
+    },
+    "TrashSheetRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "activation_context",
+        "kind"
+      ],
+      "properties": {
+        "type": {
+          "const": "trash_sheet"
+        },
+        "activation_context": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "kind": {
+          "$ref": "#/$defs/KindId"
+        }
+      }
+    },
+    "ScheduleCalendar": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "at"
+          ],
+          "properties": {
+            "type": {
+              "const": "once"
+            },
+            "at": {
+              "$ref": "#/$defs/Timestamp"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "expression"
+          ],
+          "properties": {
+            "type": {
+              "const": "recurring"
+            },
+            "expression": {
+              "type": "string",
+              "maxLength": 256
+            }
+          }
+        }
+      ]
+    },
+    "ScheduleCreateInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "input",
+        "calendar",
+        "time_zone"
+      ],
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/Ref"
+        },
+        "input": {
+          "type": "object"
+        },
+        "calendar": {
+          "$ref": "#/$defs/ScheduleCalendar"
+        },
+        "time_zone": {
+          "$ref": "#/$defs/Ref"
+        },
+        "notify_creator": {
+          "type": "boolean",
+          "default": false
         }
       }
     }
   },
   "activation_limits": {
-    "context_seconds": 30,
     "per_viewer": 256,
     "per_space": 4096,
     "resolve_interaction_encoded_bytes": 131072
@@ -1824,6 +2146,93 @@
         "$ref": "#/$defs/ComposerOptionPage"
       },
       "scope": "Host-authorized thread, viewer, and provider/runtime option source"
+    },
+    "undo": {
+      "input_schema": {
+        "$ref": "#/$defs/UndoRequest"
+      },
+      "scope": "Host surface and current actor/target authority"
+    },
+    "status": {
+      "input_schema": {
+        "$ref": "#/$defs/StatusRequest"
+      },
+      "scope": "Host surface and current actor/target authority"
+    },
+    "request_resolve": {
+      "input_schema": {
+        "$ref": "#/$defs/RequestCardResolve"
+      },
+      "scope": "Host surface and current actor/target authority"
+    },
+    "share_sheet": {
+      "input_schema": {
+        "$ref": "#/$defs/ShareSheetRequest"
+      },
+      "scope": "Host surface and current actor/target authority"
+    },
+    "trash_sheet": {
+      "input_schema": {
+        "$ref": "#/$defs/TrashSheetRequest"
+      },
+      "scope": "Host surface and current actor/target authority"
+    },
+    "view.open": {
+      "output_schema": {
+        "$ref": "#/$defs/ViewOpenResult"
+      },
+      "scope": "Authenticated view session, including data-free render and its sources"
+    },
+    "view.renew": {
+      "input_schema": {
+        "$ref": "#/$defs/LeaseRenewRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/LeaseRenewResult"
+      },
+      "scope": "Original view session and audience; fresh authority required"
     }
+  },
+  "generic_item_fields": {
+    "id": {
+      "type": "ItemRef",
+      "index_owner": "content",
+      "audience": "shared_projection",
+      "nullable": false
+    },
+    "title": {
+      "type": "Text",
+      "index_owner": "content",
+      "audience": "shared_projection",
+      "nullable": false
+    },
+    "updated": {
+      "type": "Timestamp",
+      "index_owner": "content",
+      "audience": "shared_projection",
+      "nullable": false
+    },
+    "trashed": {
+      "type": "Boolean",
+      "index_owner": "content",
+      "audience": "member_item",
+      "nullable": false
+    },
+    "trashed_at": {
+      "type": "Timestamp",
+      "index_owner": "content",
+      "audience": "member_item",
+      "nullable": true
+    }
+  },
+  "confirmation": {
+    "schema": {
+      "$ref": "#/$defs/ConfirmMode"
+    },
+    "none": "An effect-free read, or a reversible effect with host-proven Undo whose only material is the rendered target or the owning submitting form fields.",
+    "challenge": "Irreversible, external, widens_access, bulk sets, declared material_inputs, and any destination, recipient or permission. If the host cannot prove the none conditions, require a challenge."
+  },
+  "schedule_create_input": {
+    "$ref": "#/$defs/ScheduleCreateInput"
   }
 }
