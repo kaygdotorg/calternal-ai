@@ -46,6 +46,8 @@ pub struct PluginDiagnostics {
     pub reason: Option<String>,
     /// Up to eight recent failures, newest first.
     pub recent_errors: Vec<PluginRuntimeFailure>,
+    /// Latest 32 distinct Class B hostnames attempted in this space over seven days.
+    pub fetch_hosts: Vec<String>,
     /// Up to 4 KiB from the last failed worker's own stderr in this space.
     pub stderr_tail: Option<String>,
 }

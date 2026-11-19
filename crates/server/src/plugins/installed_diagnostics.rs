@@ -118,7 +118,7 @@ fn reason(error: &Error) -> &'static str {
 }
 
 /// Read one package revision's bounded telemetry after current capability and
-/// activation checks. Cost: a catalog snapshot, activation read and short copy.
+/// activation checks. Cost: an activation read, short copy and one bounded audit query.
 pub(crate) fn read<D: Directory>(
     state: &Shared<D>,
     account: AccountId,
@@ -153,7 +153,7 @@ pub(crate) fn read<D: Directory>(
             None => (PluginReadiness::NotStarted, None),
         }
     };
-    let result = PluginDiagnostics {
+    let mut result = PluginDiagnostics {
         space_id: space.to_string(),
         plugin_id: input.plugin_id,
         revision: plugin.revision,
@@ -165,12 +165,15 @@ pub(crate) fn read<D: Directory>(
             .filter(|failure| failure.at_ms > cutoff)
             .cloned()
             .collect(),
+        fetch_hosts: Vec::new(),
         stderr_tail: row
             .and_then(|row| row.stderr.as_ref())
             .filter(|(at, _)| *at > cutoff)
             .map(|(_, text)| text.clone()),
     };
     drop(rows);
+    result.fetch_hosts =
+        super::network::recent_fetch_hosts(&state.store, space, &result.plugin_id)?;
     crate::requests::authorize(state, account, &input.space_id, Capability::PluginsManage)?;
     Ok(result)
 }

@@ -13,7 +13,7 @@ use crate::plugins::Session;
 
 const SHARDS: usize = 16;
 const PER_SHARD: usize = 4;
-const LIFETIME: Duration = Duration::from_secs(300);
+pub(super) const LIFETIME: Duration = Duration::from_secs(300);
 
 /// The stored revision behind a sealed frame.
 #[derive(Clone)]

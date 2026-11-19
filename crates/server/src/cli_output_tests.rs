@@ -2,9 +2,10 @@
 
 use super::*;
 use crate::admin_cli::MachinesCmd;
-use calternal_cli::testing::assert_golden;
+use calternal_cli::testing::{assert_golden, transcript};
+use calternal_server::plugins::TrustedEntry;
 use calternal_server::store::Store;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use time::UtcOffset;
 
 fn golden(name: &str) -> PathBuf {
@@ -77,6 +78,16 @@ fn machine_and_plugin_list_goldens_cover_120_80_and_40_columns() {
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "build-machine-with-a-long-name",
     )]);
+    let fixture = tempfile::tempdir().unwrap();
+    let entries = ["example-worker", "example-worker-with-a-long-name"].map(|id| TrustedEntry {
+        id: id.into(),
+        version: "0.1.0".into(),
+        manifest: format!("{id}/manifest.json"),
+        worker: Some(format!("{id}/dist/worker.js")),
+        worker_sha256: None,
+        default_enabled: false,
+    });
+    let digest = admin_cli::digest_reply(fixture.path(), &entries);
     for width in [120, 80, 40] {
         let out = Output::fixed_terminal(false, width, UtcOffset::UTC, true);
         let machines = admin_cli::machines(
@@ -91,10 +102,17 @@ fn machine_and_plugin_list_goldens_cover_120_80_and_40_columns() {
             &out.render(&machines),
         );
 
-        let digest = admin_cli::plugin_digest(Path::new("/nonexistent-plugins"));
         assert_golden(
             &golden(&format!("plugin-digest-width-{width}.txt")),
             &out.render(&digest),
+        );
+    }
+    // Keep the published command example stable as bundled packages change.
+    for (extension, json) in [("txt", false), ("json", true)] {
+        let out = Output::fixed(json, None, UtcOffset::UTC);
+        assert_golden(
+            &golden(&format!("plugin-digest.{extension}")),
+            &transcript(Some(0), &out.render(&digest), ""),
         );
     }
 }

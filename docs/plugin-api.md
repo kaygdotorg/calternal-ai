@@ -275,36 +275,56 @@ the returned links. Frame references expire after five minutes or on eviction.
 Use `plugins.network.content.preference.get` and
 `plugins.network.content.preference.set` with the space UUID to read or edit
 the signed-in person's choice. Defaults are Always, with Ask for explicit
-loads and Never for placeholders. Committed broker writes queue eligible media before the frame is opened.
+loads and Never for placeholders. Committed broker writes queue eligible
+media before the frame is opened.
 Opening a frame for an item last committed more than 90 days ago can queue
 the older-content fallback. Items marked as junk never fetch. For Ask mode,
 the host can explicitly POST the authenticated frame URL with the normal
 same-origin session. HTTP 202 acknowledges the action. Open or reload the
 frame to display any queued media. Recent opens alone cause no upstream
-requests. The media URL is a short-lived signed reference scoped to the
-viewer and the frame. It rechecks live session, permission, source revision,
+requests. The media URL signs the viewer’s short-lived frame, asset index, and expiry.
+The host rechecks live session, permission, source revision,
 plugin activation, and the current preference before serving.
+
+Remote media URLs can carry data in their hostname, path or query. A plugin
+that can write a declared source can put data there and trigger outbound
+requests under Always. The proxy's anonymity strips host-provided identifying
+headers, while the destination receives the plugin-supplied URL. Each plugin
+can contact up to 16 distinct hostnames per space per rolling minute, counting
+redirect destinations. Managers can see the latest 32 attempted hostnames in
+`plugins.diagnostics` as `fetch_hosts`. Paths and queries stay out of diagnostics.
 
 The server fetches image and font bytes off the request path. HTTPS GET on
 443 uses a generic `calternal` User-Agent without cookies, credentials,
 referrers, retries, or environment proxies. The guard checks every DNS
-answer, connects using those results, and repeats its checks on redirects.
+answer, connects to the first checked address, and repeats its checks on
+redirects.
 It refuses IP literals, nonpublic addresses, attached interface networks
-and the configured public origin hostname. Set
+and the configured public origin hostname and its resolved addresses. The
+server resolves its origin at startup and refreshes that set every minute,
+retaining the last confirmed addresses after a failed refresh. Startup logs
+a warning when the additional deny-range setting is empty. Set
 `CALTERNAL_CONTENT_FETCH_DENY_CIDRS` to comma-separated CIDRs for additional
 internal or hairpin public ranges. An invalid configured CIDR disables
-outbound media. See the [OWASP SSRF prevention guidance](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html).
+outbound media. On DNS64/NAT64 networks, set
+`CALTERNAL_CONTENT_FETCH_NAT64_PREFIX` to the deployment's IPv6 translation
+prefix. The proxy refuses that entire prefix. Supported lengths are 32, 40,
+48, 56, 64 and 96. See the [OWASP SSRF prevention guidance](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html).
 
 Each asset allows 10 MB, three redirects, 5 seconds to connect and 10
 seconds total for outbound work. Only checked PNG, JPEG, GIF, WebP, AVIF,
 WOFF, WOFF2, TrueType and OpenType are served. SVG, HTML and unrecognized
 or conflicting types are refused. A read can wait for work already queued.
-Unavailable assets return a generic 404. The installation admits 128 queued or running assets, 16
-running assets and two concurrent hops per host. The rolling limits are 60
-hops per plugin per minute across spaces, 120 per space per minute, four
-active hops per space and 64 MiB per space per hour. Redirects count as
-separate hops. Space budgets include reservations for outstanding reads
-and conservatively charge failed reads of unknown size.
+Unavailable assets return a generic 404. Dropped work returns HTTP 429 with
+`Retry-After: 60` and a plain-text message. The installation admits 128 queued or
+running assets, 16 running assets and two concurrent hops per checked IP.
+Each plugin may hold up to 16
+queue slots across spaces, with at most eight in any one space. The rolling
+limits are 60 source fetches per plugin and space per minute, 120 hops per
+space per minute, four active hops per space and 64 MiB per space per hour.
+Redirects spend the space hop budget and reuse the plugin's source slot.
+Space budgets include reservations for outstanding reads and conservatively
+charge failed reads of unknown size.
 
 The viewer-scoped memory cache has 16 shards of up to 32 MiB and 256
 entries each, for at most 512 MiB and 4,096 entries installation-wide.

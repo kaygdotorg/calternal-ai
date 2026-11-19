@@ -9,24 +9,29 @@ use std::{
 pub(super) struct Local(Vec<(IpAddr, IpAddr)>);
 
 impl Local {
-    pub(super) fn load(extra: &str) -> io::Result<Self> {
+    pub(super) fn load(extra: &str, nat64: Option<&str>) -> io::Result<Self> {
         if extra.len() > 4096 {
             return Err(super::refused());
         }
         let mut result = Self(interfaces()?);
-        for range in extra
+        for (range, translation) in extra
             .split(',')
             .map(str::trim)
             .filter(|value| !value.is_empty())
+            .map(|range| (range, false))
+            .chain(nat64.map(|range| (range.trim(), true)))
         {
             let (address, bits) = range.split_once('/').ok_or_else(super::refused)?;
             let address: IpAddr = address.parse().map_err(|_| super::refused())?;
             let bits: u32 = bits.parse().map_err(|_| super::refused())?;
             let mask = match address {
-                IpAddr::V4(_) if bits <= 32 => {
+                IpAddr::V4(_) if !translation && bits <= 32 => {
                     IpAddr::V4(u32::MAX.checked_shl(32 - bits).unwrap_or(0).into())
                 }
-                IpAddr::V6(_) if bits <= 128 => {
+                IpAddr::V6(_)
+                    if bits <= 128
+                        && (!translation || matches!(bits, 32 | 40 | 48 | 56 | 64 | 96)) =>
+                {
                     IpAddr::V6(u128::MAX.checked_shl(128 - bits).unwrap_or(0).into())
                 }
                 _ => return Err(super::refused()),
@@ -119,11 +124,19 @@ mod tests {
 
     #[test]
     fn configured_ranges_refuse_matching_addresses_and_bad_config() {
-        let denied = Local::load("93.184.215.16/29,2606:4700:4700::/48").unwrap();
+        let denied = Local::load("93.184.215.16/29,2606:4700:4700::/48", None).unwrap();
         for ip in ["93.184.215.17", "2606:4700:4700::1111"] {
             assert!(denied.denies(ip.parse().unwrap()));
         }
         assert!(!denied.denies("93.184.215.24".parse().unwrap()));
-        assert!(Local::load("93.184.215.16/33").is_err());
+        assert!(Local::load("93.184.215.16/33", None).is_err());
+    }
+    #[test]
+    fn configured_nat64_prefix_denies_translated_addresses() {
+        let policy = Local::load("", Some("2606:4700:abcd::/96")).unwrap();
+        assert!(policy.denies("2606:4700:abcd::a02:304".parse().unwrap()));
+        assert!(!policy.denies("2606:4700:abce::a02:304".parse().unwrap()));
+        assert!(Local::load("", Some("93.184.215.16/32")).is_err());
+        assert!(Local::load("", Some("2606:4700:abcd::/72")).is_err());
     }
 }

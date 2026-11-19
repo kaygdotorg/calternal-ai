@@ -9,7 +9,7 @@ use axum::{
 use uuid::Uuid;
 
 use super::{
-    asset_signature, current_frame, db,
+    asset_authorized, asset_now, current_frame, db,
     eligibility::{self, Trigger},
     fetch, frame_path, missing,
 };
@@ -17,13 +17,12 @@ use crate::{
     api::Shared,
     auth::{Directory, Identity},
 };
-use subtle::ConstantTimeEq;
 
 /// Authenticated document GET and explicit-load POST.
 pub(crate) const FRAME_ROUTE: &str = "/api/v1/plugin-content/{frame}";
 
 /// Signed asset read for a sandboxed frame with an opaque browser origin.
-pub(crate) const ASSET_ROUTE: &str = "/api/v1/plugin-content/{frame}/{signature}/{asset}";
+pub(crate) const ASSET_ROUTE: &str = "/api/v1/plugin-content/{frame}/{asset}/{expiry}/{signature}";
 
 /// Match only the media route shape for the narrow signed-read guard exception.
 pub(crate) fn is_asset_read(method: &axum::http::Method, path: &str) -> bool {
@@ -34,11 +33,11 @@ pub(crate) fn is_asset_read(method: &axum::http::Method, path: &str) -> bool {
         return false;
     };
     let mut segments = path.split('/');
-    matches!((segments.next(), segments.next(), segments.next(), segments.next()),
-        (Some(frame), Some(signature), Some(asset), None)
+    matches!((segments.next(), segments.next(), segments.next(), segments.next(), segments.next()),
+        (Some(frame), Some(asset), Some(expiry), Some(signature), None)
         if Uuid::parse_str(frame).is_ok() && signature.len() == 64
             && signature.bytes().all(|byte| byte.is_ascii_hexdigit())
-            && asset.parse::<usize>().is_ok())
+            && asset.parse::<usize>().is_ok() && expiry.parse::<i64>().is_ok())
 }
 
 /// Typed response extension inspected by the general header guard.
@@ -69,7 +68,7 @@ pub(crate) async fn document<D: Directory>(
             let host = headers.get(header::HOST).and_then(|h| h.to_str().ok()).ok_or_else(missing)?;
             format!("http://{host}")
         };
-        let assets = format!("{origin}{}/{}/", frame_path(frame), asset_signature(&state.store, frame));
+        let assets = format!("{origin}{}/", frame_path(frame));
         let csp = HeaderValue::from_str(&format!(
             "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors {origin}; sandbox; style-src 'unsafe-inline'; img-src {assets}; font-src {assets}"
         )).map_err(|_| missing())?;
@@ -135,19 +134,41 @@ pub(crate) async fn load<D: Directory>(
 /// frame and contains no upstream URL. Recheck live access after any cache wait.
 pub(crate) async fn asset<D: Directory>(
     State(state): State<Shared<D>>,
-    Path((frame, signature, index)): Path<(Uuid, String, usize)>,
+    Path((frame, index, expiry, signature)): Path<(Uuid, usize, i64, String)>,
 ) -> Response {
     let result = async {
-        let expected = asset_signature(&state.store, frame);
-        if !bool::from(expected.as_bytes().ct_eq(signature.as_bytes())) {
+        if !asset_authorized(
+            &state.store.cursor_key,
+            frame,
+            index as u64,
+            expiry,
+            &signature,
+            asset_now(),
+        ) {
             return Err(missing());
         }
         let (current, entry) = ready_entry(&state, frame, index).await?;
-        let asset = entry.read().await.ok_or_else(missing)?;
+        let asset = entry.read().await;
         let (after, _) = ready_entry(&state, frame, index).await?;
-        if !std::sync::Arc::ptr_eq(&current, &after) {
+        if expiry <= asset_now() || !std::sync::Arc::ptr_eq(&current, &after) {
             return Err(missing());
         }
+        let asset = match asset {
+            Ok(asset) => asset,
+            Err(super::cache::Failure::Unavailable) => return Err(missing()),
+            Err(super::cache::Failure::Capacity) => {
+                let mut response = (
+                    axum::http::StatusCode::TOO_MANY_REQUESTS,
+                    "Remote media is busy. Try again in a minute.",
+                )
+                    .into_response();
+                response.headers_mut().insert(
+                    header::RETRY_AFTER,
+                    HeaderValue::from(super::cache::FAILED_TTL.as_secs()),
+                );
+                return Ok(response);
+            }
+        };
         Ok::<_, calternal_types::Error>(
             (
                 [
