@@ -300,17 +300,18 @@ Rule (owner): use the platform's own primitives; a custom component needs a stat
 | Component | System primitive used | Stays custom, and why |
 | --- | --- | --- |
 | Mac and iPad window: two columns | none (`containerBackground(for: .window)`, `glassEffect`, `.regularMaterial` for the base layer) | the container: macOS 26's `NavigationSplitView` draws its sidebar as a floating glass panel over the content, the inverse of the owner's structure (base layer under everything, sidebar content directly on it with no panel, the middle card floating with rounded corners and a shadow, as on the web and phone); no configuration found hides that panel while keeping the split view, so the two columns are ours and everything inside them is system |
-| Title, centred at the top (all platforms) | `Button` with `.buttonStyle(.glass)` over a `ZStack`, in the header over the card | the arrangement (a window toolbar would centre the title on the window, not on the card) |
-| Header buttons and menus | `Button` / `Menu` with `.buttonStyle(.glass)`, `.buttonBorderShape(.circle)`, `.menuIndicator(.hidden)` on icon-only menus, `GlassEffectContainer` | |
+| Header (title, sidebar toggle, actions) | the window `.toolbar` on a Mac (`ToolbarItem(.navigation)` toggle, `.principal` title, `ToolbarItemGroup(.primaryAction)`, hidden toolbar background, `.toolbar(removing: .title)`); on an iPhone and iPad the card's `NavigationStack` toolbar (`.topBarLeading`, `.principal`, `.topBarTrailing`, hidden bar background, `containerBackground(.clear, for: .navigation)`) | none. The earlier hand-built header (glass buttons in a `ZStack`) is gone on every platform |
+| Header buttons and menus | `Button` / `Menu` as toolbar items, `.menuIndicator(.hidden)` on icon-only menus | |
 | Phone sidebar drawer (card slides aside) | `withAnimation`/springs, system `scrollEdgeEffectStyle` | the slide: `NavigationSplitView` collapses to push navigation on an iPhone, no system container slides a card over a sidebar |
 | Sidebar list, selection, arrow keys, Home/End, type-to-select | `List(selection:)`, `.listStyle(.sidebar)` (Mac) / `.plain` (phone), `Label`, `Section(isExpanded:)` | |
 | Row swipe actions, context menu, refresh | `.swipeActions`, `.contextMenu`, `.refreshable` | |
 | Counts and marks | `Text`, `Image(systemName:)` | `.badge` takes one number or text; rows here carry several marks (dot, warning, count) |
 | Selector (Inbox / All) | `Picker` with `.pickerStyle(.segmented)` | |
 | Attention card | `GroupBox`, `.buttonStyle(.bordered)` / `.borderedProminent` | |
-| App switcher | `Picker` `.segmented` of icon-only `Label`s, in the sidebar footer | |
+| App switcher and account | `Picker` `.segmented` of icon-only `Label`s (`.controlSize(.extraLarge)`), `Menu` with `.buttonStyle(.glass)`, in the sidebar footer on a `.bar` background so rows never show through | |
+| Gutter handle (sidebar width) | `DragGesture`, `.pointerStyle(.columnResize)`, `onHover`, double-tap to reset | the handle: there is no system sidebar-resize control outside `NavigationSplitView` |
 | Account | `Menu` with `.buttonStyle(.glass)` | |
-| Search | `TextField` in the sidebar footer | `searchable` needs a navigation container; neither the phone drawer nor our two-column window is one |
+| Search | Mac: `.searchable(placement: .toolbar)`; iPhone and iPad: `TextField` in the sidebar footer | iPhone and iPad: the drawer is not a navigation context |
 | Rename prompt | `.alert` with a `TextField` | |
 | Window base layer (Mac) | `.containerBackground(for: .window)`, `.glassEffect`, `.regularMaterial`, `.toolbarBackgroundVisibility(.hidden, for: .windowToolbar)` | the wallpaper picture and its solved veils: no system material knows the person's wallpaper |
 | Wallpaper pane behind the phone card | none | the design's pane (blurred copy under the veil) |
@@ -358,3 +359,15 @@ and under the status bar that space starts one safe-area inset below the screen,
 The phone and wide layouts now draw the pane at screen size (`PhonePane`) with no named space. `apps/ios/Tests/top-safe-area.sh` (Simulator, on the Mac, after `./sim.sh build`)
 launches the demo closed and with the sidebar open, takes a screenshot of the Simulator, and fails when the strip above the safe-area line differs from the strip
 below it by more than 14 of 255 at two columns clear of the header buttons: it measured steps of 22 to 60 on the old build and 0 to 1 now.
+
+### Structure, as the web has it (review 2026-11-19)
+
+Wide window: the base layer runs under everything; the sidebar's rows sit directly on it (flat `List(.plain)`, no row separators, no scroll indicators, no panel, no
+material); the card is the one raised surface (its own pane, 28 pt radius, visible shadow). **Measured on the web at the same window size** (fixtures build in the
+same Mac app with native chrome off): the card runs flush to the window's bottom, with the base showing in an 8 pt gutter at its sides and the title bar above it;
+the review asked for a gutter on all four sides, and this build follows the web (gutter left, right and under the title bar; flush bottom). The web also has a right
+panel (Side chat); native chrome has no right panel yet (a format gap). The wallpaper's side veil is drawn over the whole window in native chrome, because the web's
+stops at the sidebar's edge and leaves a seam where the gutter begins. The drag handle sits in the gutter, no divider line anywhere; the width is
+`sidebar.width` in the description (the person's preference), range 200 to 420 pt, double-click resets, reported as a `layout` event when the drag ends.
+Selection colour: a system `List` draws its selection in the system accent (pink on this Mac), not the page's accent; the page's accent colours the unread mark and prominent
+buttons only (selectors, header, footer and section buttons are neutral).

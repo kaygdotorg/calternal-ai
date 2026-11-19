@@ -8,7 +8,7 @@ import SwiftUI
 struct CalternalMacApp: App {
     var body: some Scene {
         WindowGroup { MacRoot() }
-            .windowStyle(.hiddenTitleBar)
+            .windowToolbarStyle(.unified)
             .defaultSize(width: 1180, height: 780)
             .commands { MacCommands() }
         Settings { MacSettings() }

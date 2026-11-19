@@ -472,6 +472,12 @@
               "type": "string"
             }
           }
+        },
+        "width": {
+          "type": "number",
+          "minimum": 200,
+          "maximum": 420,
+          "description": "Sidebar column width in points on a wide window (the person's saved preference); the shell reports drag changes as a layout event."
         }
       }
     },
@@ -496,7 +502,8 @@
             "section",
             "sidebar",
             "refresh",
-            "window"
+            "window",
+            "layout"
           ]
         },
         "id": {
@@ -526,6 +533,9 @@
         "sentAt": {
           "type": "number",
           "description": "ms since 1970, for latency measurement"
+        },
+        "width": {
+          "type": "number"
         }
       }
     }

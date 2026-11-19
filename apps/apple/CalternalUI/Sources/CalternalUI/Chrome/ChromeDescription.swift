@@ -120,6 +120,9 @@ public struct ChromeDescription: Codable, Equatable, Sendable {
     public struct Sidebar: Codable, Equatable, Sendable {
         /// Desired state, page-controlled: the shell opens or closes to match when this value changes.
         public var open: Bool?
+        /// The sidebar column's width in points on a wide window: the person's saved preference. The shell lets the person drag the gutter handle, sends a `layout` event
+        /// with the new `width` when the drag ends (or `nil` when reset by double-click) and expects it back here, so every device keeps the same value.
+        public var width: Double?
         /// Heading at the top (the wordmark).
         public var title: String?
         /// The heading as a picture (`data:image/png;base64,...`, transparent background) for a face the device does not have; wins over `title` when it decodes.
@@ -279,7 +282,7 @@ public struct ChromeDescription: Codable, Equatable, Sendable {
 /// What the person did in the native chrome; encoded as the `detail` of the page's
 /// `calternal:chrome` event: `{type, id?, rowId?, option?, text?, open?, revision, sentAt}`.
 public struct ChromeEvent: Sendable {
-    /// `row`, `action`, `menu`, `selector`, `app`, `header`, `account`, `search`, `section`, `sidebar`, `refresh`, `window`.
+    /// `row`, `action`, `menu`, `selector`, `app`, `header`, `account`, `search`, `section`, `sidebar`, `refresh`, `window`, `layout`.
     public var type: String
     /// Id of the thing acted on (row, app, selector, header item, section, action).
     public var id: String?
@@ -295,6 +298,8 @@ public struct ChromeEvent: Sendable {
     public var from: Int?
     /// For `window` events: last visible row index (inclusive).
     public var to: Int?
+    /// For `layout` events: the sidebar width in points the person chose (absent: reset to the default).
+    public var width: Double?
 
     /// JSON text for the page, stamped with the revision the shell was showing and a send time (milliseconds since 1970) for latency measurement.
     public func json(revision: Int?) -> String {
@@ -306,6 +311,7 @@ public struct ChromeEvent: Sendable {
         if let open { dict["open"] = open }
         if let from { dict["from"] = from }
         if let to { dict["to"] = to }
+        if let width { dict["width"] = width }
         if let revision { dict["revision"] = revision }
         let data = (try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])) ?? Data("{}".utf8)
         return String(data: data, encoding: .utf8) ?? "{}"

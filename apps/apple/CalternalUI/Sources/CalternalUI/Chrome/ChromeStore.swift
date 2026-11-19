@@ -27,6 +27,8 @@ public final class ChromeStore {
     var pending: (section: String, index: Int)?
     /// The window last requested per windowed section (so a held key asks once per shift).
     var lastWindowRequest: [String: (from: Int, to: Int)] = [:]
+    /// The sidebar width while the person drags the gutter handle, or until the page echoes the saved value back.
+    public var liveSidebarWidth: CGFloat?
     /// The last selection the page was told about (the settle task skips repeats).
     var reportedSelection: String?
     /// Whether a non-empty search was sent (so clearing the field sends one final empty search).
@@ -54,6 +56,7 @@ public final class ChromeStore {
     public func update(_ new: ChromeDescription) {
         let wasOpen = description.sidebar?.open
         revision = new.revision
+        if let live = liveSidebarWidth, let saved = new.sidebar?.width, abs(saved - Double(live)) < 1 { liveSidebarWidth = nil }
         // Pages republish on every store change, often with nothing the chrome draws different: that must cost nothing (no SwiftUI invalidation). The page's
         // `selected` flags are not drawn (the list's own selection is), so a republication that only moves them is not a change either.
         if Self.drawn(new) != Self.drawn(description) {
@@ -89,6 +92,14 @@ public final class ChromeStore {
         let i = pending.index - (section.offset ?? 0)
         if section.rows.indices.contains(i) { selection = section.rows[i].id; reportedSelection = selection; self.pending = nil }
     }
+
+    /// The sidebar column width on a wide window: the drag in progress, else the saved preference, else the design's default; always within the allowed range.
+    public func sidebarWidth(default fallback: CGFloat) -> CGFloat {
+        min(Self.sidebarWidthRange.upperBound, max(Self.sidebarWidthRange.lowerBound, liveSidebarWidth ?? description.sidebar?.width.map { CGFloat($0) } ?? fallback))
+    }
+
+    /// The widths the gutter handle allows, points.
+    public static let sidebarWidthRange: ClosedRange<CGFloat> = 200...420
 
     /// The description reduced to what is drawn: no revision, no `selected` flags.
     private static func drawn(_ d: ChromeDescription) -> ChromeDescription {

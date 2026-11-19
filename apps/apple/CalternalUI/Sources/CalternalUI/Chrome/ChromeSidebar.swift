@@ -31,10 +31,9 @@ enum ChromeImage {
 /// Cost: the system list is lazy; the selection paints at once and the page hears about it after the selection settles.
 struct ChromeSidebar: View {
     @Bindable var store: ChromeStore
-    /// True on a phone (the sidebar sits behind the sliding card, which is not a navigation context, so search is a field in the footer there).
-    let phone: Bool
-    /// Height of the window's top controls the list scrolls under (phone: the status bar).
+    /// Height of what covers the top of the column (a Mac window's toolbar and traffic lights, a phone's status bar): the list starts below it, nothing draws under it.
     let topInset: CGFloat
+    @Environment(\.chromeAccent) private var accent
     @State private var prompt: Prompt?
     @State private var promptText = ""
     @State private var height: CGFloat = 800
@@ -51,7 +50,7 @@ struct ChromeSidebar: View {
     var body: some View {
         let sidebar = store.description.sidebar
         List(selection: $store.selection) {
-            if phone, sidebar?.title != nil || sidebar?.titleImage != nil {
+            if sidebar?.title != nil || sidebar?.titleImage != nil {
                 Heading(sidebar: sidebar).listRowSeparator(.hidden).listRowBackground(Color.clear).selectionDisabled()
             }
             ForEach(sidebar?.cards ?? []) { card in
@@ -61,7 +60,7 @@ struct ChromeSidebar: View {
                 Picker(selector.id, selection: Binding(get: { selector.selected }, set: { store.send(ChromeEvent(type: "selector", id: selector.id, option: $0)) })) {
                     ForEach(selector.options) { option in Text(option.badge.map { option.title + " " + $0 } ?? option.title).tag(option.id) }
                 }
-                .pickerStyle(.segmented).labelsHidden().listRowSeparator(.hidden).listRowBackground(Color.clear).selectionDisabled()
+                .pickerStyle(.segmented).labelsHidden().tint(.primary).listRowSeparator(.hidden).listRowBackground(Color.clear).selectionDisabled()
             }
             ForEach(sidebar?.sections ?? []) { section in
                 Section(isExpanded: Binding(get: { section.collapsed != true }, set: { _ in store.send(ChromeEvent(type: "section", id: section.id)) })) {
@@ -73,14 +72,11 @@ struct ChromeSidebar: View {
                 } header: { sectionHeader(section) }
             }
         }
-        #if os(macOS)
-        .listStyle(.sidebar)
-        #else
-        .listStyle(.plain)   // the decided phone sidebar is flat on the wallpaper, not inset cards
-        #endif
+        .listStyle(.plain)   // flat rows on the base layer: the sidebar style draws a panel of its own, which the decided structure does not have
         .scrollContentBackground(.hidden)
+        .scrollIndicators(.never)
         .scrollEdgeEffectStyle(.soft, for: .all)
-        .contentMargins(.top, phone ? 0 : topInset, for: .scrollContent)   // a Mac window's traffic lights sit over the list's top
+        .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: topInset) }   // nothing draws under the window buttons
         .coordinateSpace(name: Self.listSpace)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer(sidebar) }
@@ -106,9 +102,10 @@ struct ChromeSidebar: View {
                 Spacer(minLength: 4)
                 ForEach(row.trailing ?? []) { MarkView(badge: $0) }
             }
-        } icon: { ChromeIconView(icon: row.icon) }
+        } icon: { ChromeIconView(icon: row.icon).foregroundStyle(.secondary) }   // neutral: row icons do not take the system accent
         .tag(row.id)
-        .listRowBackground(Color.clear)
+        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 2, leading: 10, bottom: 2, trailing: 10))
         .accessibilityHint(row.hint ?? "")
         .accessibilityValue((row.trailing ?? []).compactMap(\.spoken).joined(separator: ", "))
         .swipeActions(edge: .leading, allowsFullSwipe: true) { actions(row.leadingActions, owner: row.id) }
@@ -148,10 +145,10 @@ struct ChromeSidebar: View {
             Spacer(minLength: 0)
             ForEach(section.actions ?? []) { item in
                 Button { fire(item, owner: section.id, type: "action") } label: { Label(item.title, systemImage: item.icon?.name.flatMap(IconName.init(rawValue:))?.symbol ?? "plus").labelStyle(.iconOnly) }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.borderless).tint(.primary)
             }
             if let items = section.menu, !items.isEmpty {
-                Menu { menu(items, owner: section.id) } label: { Label("More", systemImage: "ellipsis").labelStyle(.iconOnly) }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                Menu { menu(items, owner: section.id) } label: { Label("More", systemImage: "ellipsis").labelStyle(.iconOnly) }.menuStyle(.borderlessButton).menuIndicator(.hidden).tint(.primary).fixedSize()
             }
         }
     }
@@ -159,42 +156,52 @@ struct ChromeSidebar: View {
     // MARK: Footer
 
     @ViewBuilder private func footer(_ sidebar: ChromeDescription.Sidebar?) -> some View {
-        // The decided footer (docs/ui-shell.md, 2026-11-18): account at the left, the app switcher (icons only) at the centre, search at the right (a phone;
-        // on a Mac search is the system's sidebar search field). The apps' position is part of the contract, not the shell's guess.
-        if store.searching {
+        // The decided footer (docs/ui-shell.md, 2026-11-18): account at the left, the app switcher (icons only, full size) at the centre, search at the right (an
+        // iPhone or iPad; on a Mac search is the window toolbar's system field). A bar surface, so rows never show through its controls.
+        let showsSearchButton = sidebar?.search != nil && !isMac
+        if store.searching && !isMac {
             HStack {
                 TextField(sidebar?.search?.placeholder ?? "Search", text: $store.searchText).textFieldStyle(.roundedBorder).submitLabel(.search)
                 Button("Cancel") { store.searching = false; store.searchText = "" }.buttonStyle(.borderless)
             }
-            .padding(.horizontal).padding(.vertical, 8).background(.regularMaterial)
-        } else if sidebar?.account != nil || !(sidebar?.apps ?? []).isEmpty || sidebar?.search != nil {
-            GlassEffectContainer {
+            .padding(.horizontal).padding(.vertical, 8).background(.bar)
+        } else if sidebar?.account != nil || !(sidebar?.apps ?? []).isEmpty || showsSearchButton {
+            ZStack {
                 HStack {
                     if let account = sidebar?.account { accountButton(account) }
                     Spacer(minLength: 0)
-                    if let apps = sidebar?.apps, !apps.isEmpty {
-                        Picker("Apps", selection: Binding(get: { (apps.first { $0.selected == true } ?? apps[0]).id }, set: { store.send(ChromeEvent(type: "app", id: $0)) })) {
-                            ForEach(apps) { app in Label(app.title, systemImage: app.icon.name.flatMap(IconName.init(rawValue:))?.symbol ?? app.icon.symbol ?? "app").labelStyle(.iconOnly).tag(app.id) }
-                        }
-                        .pickerStyle(.segmented).labelsHidden().fixedSize()
-                    }
-                    Spacer(minLength: 0)
-                    if sidebar?.search != nil {
+                    if showsSearchButton {
                         Button { store.searching = true } label: { Label("Search", systemImage: IconName.search.symbol).labelStyle(.iconOnly) }
-                            .buttonStyle(.glass).buttonBorderShape(.circle)
+                            .buttonStyle(.glass).buttonBorderShape(.circle).tint(.primary)
                     }
                 }
+                if let apps = sidebar?.apps, !apps.isEmpty {
+                    Picker("Apps", selection: Binding(get: { (apps.first { $0.selected == true } ?? apps[0]).id }, set: { store.send(ChromeEvent(type: "app", id: $0)) })) {
+                        ForEach(apps) { app in Label(app.title, systemImage: app.icon.name.flatMap(IconName.init(rawValue:))?.symbol ?? app.icon.symbol ?? "app").labelStyle(.iconOnly).tag(app.id) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.extraLarge).tint(.primary)
+                }
             }
-            .controlSize(phone ? .large : .regular).tint(.primary).padding(.horizontal, 12).padding(.vertical, 8)
+            .controlSize(.large)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(.bar)
         }
+    }
+
+    private var isMac: Bool {
+        #if os(macOS)
+        true
+        #else
+        false
+        #endif
     }
 
     @ViewBuilder private func accountButton(_ account: ChromeDescription.Account) -> some View {
         let face = Text(account.initial).font(.headline)
         if let items = account.menu, !items.isEmpty {
-            Menu { menu(items, owner: account.id) } label: { face }.menuStyle(.button).menuIndicator(.hidden).buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel(account.title ?? "Account")
+            Menu { menu(items, owner: account.id) } label: { face }.menuStyle(.button).menuIndicator(.hidden).buttonStyle(.glass).buttonBorderShape(.circle).tint(.primary).accessibilityLabel(account.title ?? "Account")
         } else {
-            Button { store.send(ChromeEvent(type: "account", id: account.id)) } label: { face }.buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel(account.title ?? "Account")
+            Button { store.send(ChromeEvent(type: "account", id: account.id)) } label: { face }.buttonStyle(.glass).buttonBorderShape(.circle).tint(.primary).accessibilityLabel(account.title ?? "Account")
         }
     }
 }
@@ -217,11 +224,12 @@ private struct Heading: View {
 /// A trailing mark of a row: dot, count, text or icon (a second cue is the spoken value on the row).
 private struct MarkView: View {
     let badge: ChromeDescription.Badge
+    @Environment(\.chromeAccent) private var accent
 
     var body: some View {
-        let tint: Color = badge.tone == "bad" ? .red : badge.tone == "warn" ? .orange : .accentColor
+        let tint: Color = badge.tone == "bad" ? .red : badge.tone == "warn" ? .orange : accent   // the unread mark carries the accent
         switch badge.kind {
-        case "dot": Image(systemName: "circle.fill").imageScale(.small).foregroundStyle(badge.tone == nil ? AnyShapeStyle(.tint) : AnyShapeStyle(tint))
+        case "dot": Image(systemName: "circle.fill").imageScale(.small).foregroundStyle(tint)
         case "icon", "symbol":
             if let name = badge.value.flatMap(IconName.init(rawValue:)) { Image(systemName: name.symbol).foregroundStyle(tint) }
             else { Image(systemName: badge.value ?? "circle").foregroundStyle(tint) }
@@ -245,15 +253,16 @@ private extension ChromeDescription.Badge {
 private struct CardView: View {
     let card: ChromeDescription.Card
     let act: (ChromeDescription.Item) -> Void
+    @Environment(\.chromeAccent) private var accent
 
     var body: some View {
-        let tint: Color = card.tone == "bad" ? .red : card.tone == "warn" ? .orange : .accentColor
+        let tint: Color = card.tone == "bad" ? .red : card.tone == "warn" ? .orange : accent
         GroupBox {
             VStack(alignment: .leading, spacing: 8) {
                 if let detail = card.detail { Text(detail).font(.footnote).foregroundStyle(.secondary) }
                 HStack {
-                    if let secondary = card.secondary { Button(secondary.title) { act(secondary) }.buttonStyle(.bordered) }
-                    if let primary = card.primary { Button(primary.title) { act(primary) }.buttonStyle(.borderedProminent) }
+                    if let secondary = card.secondary { Button(secondary.title) { act(secondary) }.buttonStyle(.bordered).tint(.primary) }
+                    if let primary = card.primary { Button(primary.title) { act(primary) }.buttonStyle(.borderedProminent).tint(accent) }   // a primary action carries the accent
                 }
             }
         } label: { Label { Text(card.title) } icon: { ChromeIconView(icon: card.icon).foregroundStyle(tint) } }
@@ -275,15 +284,18 @@ private struct WindowedRows<Content: View>: View {
         let h = ChromeStore.windowedRowHeight
         let offset = min(section.offset ?? 0, total), shown = section.rows.count
         let after = max(0, total - offset - shown)
-        Color.clear.frame(height: CGFloat(offset) * h).listRowSeparator(.hidden).listRowInsets(EdgeInsets()).selectionDisabled()
-            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(ChromeSidebar.listSpace)).minY } action: { minY in
-                firstVisible = max(0, min(total - 1, Int((-minY / h).rounded(.down))))
-            }
-            .accessibilityHidden(true)
+        if offset > 0 {   // no top spacer row when the window starts at the first row: an empty row would leave a gap under the header
+            Color.clear.frame(height: CGFloat(offset) * h).listRowSeparator(.hidden).listRowInsets(EdgeInsets()).selectionDisabled()
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(ChromeSidebar.listSpace)).minY } action: { minY in
+                    firstVisible = max(0, min(total - 1, Int((-minY / h).rounded(.down))))
+                }
+                .accessibilityHidden(true)
+        }
         if offset > 0 { Color.clear.frame(height: 1).tag("\(ChromeStore.sentinelPrefix)before:\(section.id)").listRowSeparator(.hidden).listRowInsets(EdgeInsets()).accessibilityHidden(true) }
         ForEach(section.rows) { row($0).frame(height: h).clipped() }
         if after > 0 { Color.clear.frame(height: 1).tag("\(ChromeStore.sentinelPrefix)after:\(section.id)").listRowSeparator(.hidden).listRowInsets(EdgeInsets()).accessibilityHidden(true) }
-        Color.clear.frame(height: CGFloat(after) * h).listRowSeparator(.hidden).listRowInsets(EdgeInsets()).selectionDisabled().accessibilityHidden(true)
+        if after > 0 { Color.clear.frame(height: CGFloat(after) * h).listRowSeparator(.hidden).listRowInsets(EdgeInsets()).selectionDisabled().accessibilityHidden(true) }
+        Color.clear.frame(height: 0).listRowInsets(EdgeInsets()).listRowSeparator(.hidden).accessibilityHidden(true)
             .task(id: firstVisible) {
                 try? await Task.sleep(for: .milliseconds(120))
                 guard !Task.isCancelled else { return }
