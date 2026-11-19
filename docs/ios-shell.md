@@ -118,24 +118,27 @@ changes. The shell draws it in SwiftUI with Liquid Glass and sends back **events
 nothing about threads or notes: it draws rows, selectors, apps and buttons.
 
 When `native` is true the web view becomes the content card, full height under a native header, and
-the shell sets on `:root`: `data-native-chrome` (attribute) and `--chrome-top` (points the header
+the shell sets on `:root`: `data-native-chrome` (attribute), `--device-r` (card corner radius, 55px fixed) and `--chrome-top` (points the header
 covers, including the status bar), `--chrome-bottom` (home indicator). The page then hides its own
 sidebar and header and pads itself with those. `chrome(null)` gives everything back.
 
 ```jsonc
-{ "version": 1, "revision": 7, "scheme": "dark",            // revision rises per publication
+{ "version": 1, "revision": 7, "scheme": "dark", "accent": "#d9822b",   // revision rises per publication
   "header":  { "leading": [Item], "title": "Expired invite test", "trailing": [Item] },
   "sidebar": { "open": false,                                // page-controlled; shell follows when it changes
-    "title": "Calternal",
-    "selectors": [ { "id": "filter", "selected": "all", "options": [ {"id":"inbox","title":"Inbox"}, {"id":"all","title":"All Threads"} ] } ],
-    "sections":  [ { "id": "threads", "title": "Threads", "collapsed": false, "menu": [Item],
-                     "rows": [ { "id": "t1", "title": "…", "detail": "06:10", "symbol": "pin.fill",
-                                 "badge": {"kind":"dot"} /* or count / text + value */, "selected": true,
-                                 "leadingActions": [Item], "trailingActions": [Item], "menu": [Item] } ] } ],
+    "title": "Calternal", "refresh": true,                   // refresh: pull down sends a "refresh" event
+    "selectors": [ { "id": "filter", "selected": "all", "options": [ {"id":"inbox","title":"Inbox","badge":"5"}, {"id":"all","title":"All Threads"} ] } ],
+    "sections":  [ { "id": "threads", "title": "Threads", "collapsed": false, "menu": [Item], "actions": [Item],
+                     "rows": [ { "id": "t1", "title": "…", "detail": "06:10", "label": "spoken", "hint": "spoken",
+                                 "icon": { "symbol": "pin.fill" /* or "image": "data:image/png;base64,…" */ },
+                                 "trailing": [ {"kind":"dot"}, {"kind":"symbol","value":"exclamationmark.triangle","tone":"warn"} ],
+                                 "selected": true, "leadingActions": [Item], "trailingActions": [Item], "menu": [Item] } ] } ],
     "apps":    [ { "id": "threads", "title": "Threads", "symbol": "bubble.left", "selected": true } ],
-    "account": { "id": "account", "initial": "K", "title": "Account" },
+    "account": { "id": "account", "initial": "K", "title": "Account", "menu": [Item] },
     "search":  { "placeholder": "Search threads" } } }
-// Item = { "id", "title", "symbol"?: SF Symbol name, "role"?: "destructive", "disabled"?, "menu"?: [Item] }
+// Item = { "id", "title", "symbol"?: SF Symbol name, "role"?: "destructive", "disabled"?, "menu"?: [Item],
+//          "checked"?: bool, "sub"?: second line, "input"?: {"placeholder","value"} /* asks for text, returned as event.text */ }
+// Badge kinds: dot | count | text | symbol (value = SF Symbol); tone: info (accent) | warn | bad.
 ```
 
 Events arrive as `window` `calternal:chrome` with `detail` `{type, id?, rowId?, option?, text?, open?,
@@ -143,7 +146,7 @@ revision, sentAt}` (`sentAt` is milliseconds since 1970 for latency measurement)
 `row` (id), `action` (id of the swipe action, rowId), `menu` (id of the context-menu entry, rowId or
 section id), `selector` (id, option), `app` (id), `header` (id of a header item, `title` for the pill;
 `rowId` is the button whose menu it came from), `account`, `search` (text, every change),
-`section` (id: toggle collapse), `sidebar` (open: the person opened or closed it). The page updates
+`section` (id: toggle collapse), `refresh`, `sidebar` (open: the person opened or closed it). An `action` from a section heading button has `rowId` = the section id. The page updates
 its stores and republishes; the shell never changes the description on its own, except that the
 sidebar opens and closes immediately when dragged or tapped (and says so with `sidebar`).
 
@@ -153,14 +156,48 @@ Reference publisher: `Calternal/Resources/chrome-demo.html` (start address `chro
 
 * **Wallpaper behind the sidebar.** The page's wallpaper lives in the web view; the native sidebar has
   a plain colour. The format needs a `background` (image URL plus blur) or the shell must snapshot the page.
-* **Icons.** Only SF Symbols by name; the page's own SVG icon set has no native form.
-* **Typography and theme.** No fonts (the "Calternal" wordmark is approximated), no accent colour
-  (the system accent is used), only a light/dark `scheme`.
-* **Rich rows.** Title, detail, symbol and one badge only: no avatars, status chips, progress, several
-  lines of metadata, inline rename, drag to reorder, multi-select.
+* **Icons.** SF Symbols by name or PNG data URLs; SVG has no native renderer (rasterise on the page).
+* **Typography.** No fonts (the "Calternal" wordmark is approximated with a system script face; a `titleImage` is wanted), no Dynamic Type hand-off to the page.
+* **Rich rows.** Title, detail, icon and trailing marks only: no avatars, progress, several lines of
+  metadata, drag to reorder (wanted: a `moved` event), multi-select, attention cards with buttons.
 * **Large lists.** Each revision sends every row; there is no windowing, paging or patch format.
   Fine for tens of rows, wrong for thousands.
 * **Sheets and dialogs** (the contract reserves them; not built). **Search** has no scopes, tokens or
   suggestions; results are whatever rows the page republishes. **Header** has no subtitle or status
   dot, and no per-page layout hints (a permanent split view on iPad).
 * **Card corner radius** is a fixed 55 pt (the display's true radius is private API).
+
+## Design skills review (2026-11-19)
+
+The owner asked for the eight skills in the "mobile app design" collection of ui-skills.com. They are
+third-party guidance: read in full, applied where they fit; `AGENTS.md` and `docs/open-questions.md`
+win where they disagree (said below); no install command from them was run. Page-side rules are in
+[native-feel.md](native-feel.md).
+
+| Skill | Adopted | Rejected, and why | Concrete change in what exists |
+| --- | --- | --- | --- |
+| dimillian/swiftui-ui-patterns | `@Observable` state owned at the root and passed explicitly; stable `ForEach` identity; `.task(id:)` for debounced work; item-driven presentation; previews with fixtures; single `progress` value as the source of truth for the drawer | `RouterPath`/tab scaffolding (no tabs or stacks: the card drawer is gesture-driven UIKit); central sheet enum (no sheets built yet) | `ChromeModel` `ObservableObject` to `@Observable`; trailing badges `Badge: Identifiable` (was `id: \.offset`, an anti-pattern); search debounced with `.task(id:)` instead of an `onChange` event per key; rename prompt is a `PromptRequest: Identifiable` (was a tuple behind a flag); `ChromePreview.swift` fixtures |
+| figma/figma-swiftui | Use the system control, never rebuild it: glass buttons via `.buttonStyle(.glass)`, `Picker(.segmented)`, `scrollEdgeEffectStyle`, no hard-coded black/white backgrounds, SF Symbols by name | Figma/MCP tooling (no Figma file); `.searchable` bottom toolbar (needs a NavigationStack; the sidebar is a drawer) | circle buttons were hand-built `glassEffect` stacks: now `.buttonStyle(.glass)` + `.buttonBorderShape(.circle)`; the selector was a custom capsule ([before](https://git.kayg.org/attachments/d6ef77aa-c921-4f34-842f-40fc4cefe509)), now the system segmented picker ([after](https://git.kayg.org/attachments/05edb104-4030-4517-8924-f3964e4ac65f)); soft scroll edge on the list |
+| joe-bell/apple-web-app | Zero safe-area inset is valid; keep pinch zoom; `touch-action`; keyboard by `visualViewport`; fixed layers follow the layout viewport; `overscroll-behavior` parsed early; theme colour is sampled, not declared | "`interactive-widget` unimplemented in WebKit": contradicted by measurement (it shrinks the layout viewport, evidence in native-feel.md); standalone-PWA items (splash images, manifest) do not apply inside the shell | shell no longer disables pinch zoom; page to-do list in native-feel.md |
+| callstackincubator/react-native-best-practices | Measure first; window long lists; stable identity; avoid re-render cascades | Everything React Native specific (bundle size, Hermes, Reanimated) | list windowing recorded as a chrome-format gap (thousands of notes) |
+| jakubkrehel/better-accessibility | 44 pt targets; second cue besides colour; accessible name/hint/value; single-pointer alternative to drag; focus/screen-reader order; no timers on needed content | web-only parts (ARIA, tabindex, landmarks) apply to the page, listed in native-feel.md | section "+" and "…" were ~20 pt, now 44 ([before](https://git.kayg.org/attachments/a8f79990-5947-4c03-9549-40c2dcd0f7be)); dots and warnings speak "unread" / "warning"; selected row has the selected trait; card hidden from VoiceOver while the sidebar is open and the sidebar while closed; two-finger Z closes the sidebar; the sidebar button is the non-drag path |
+| wshobson/interaction-design | Motion communicates (feedback, orientation, continuity); feedback in the same frame; loading states; interruptible spring | its generic timing table and CSS easings (our motion tokens win, `AGENTS.md`); framer-motion recipes | selection haptic on row, selector and app taps fires with the tap; the drawer states order (card slides and rounds together), 0.42 s spring, bounce 0.12, carries the finger's velocity, interruptible |
+| iart-ai/accessible-animation | Tier motion (remove, soften, keep); fade not teleport; live setting | CSS/GSAP/Lenis layers (page-side, in native-feel.md) | Reduce Motion: the drawer uses a 0.18 s linear move with no spring (Tier 2). **Not verified in the Simulator** (no switch driven) |
+| ibelick/improve-ui | The method: a finding needs a contract, a runtime proof and one correction; try to falsify each before reporting; plan, do not guess | its limits (three findings, never modify source, plans only): the owner asked for ten ranked changes and lanes implement | the ten below, each with evidence |
+
+### The ten highest-impact changes (ranked by what the owner sees)
+
+1. **Keyboard glass shows flat colour** (page): `interactive-widget=resizes-content` shrinks the layout viewport. [before](https://git.kayg.org/attachments/e9dd2282-d244-4995-a44b-76e4aef0309a), [after](https://git.kayg.org/attachments/07b64736-b8f7-4602-b00f-0b26a3ca3069). Page lane's change.
+2. **Solid band at the top** (shell, done): the iOS 26 scroll edge effect faded the page into the shell's colour. [before](https://git.kayg.org/attachments/4427f0a8-8c0a-45e8-acfd-31a71be1aa87), [after](https://git.kayg.org/attachments/3699863f-609d-4157-b54c-d262f329b921).
+3. **Stale `index.html` kept for ever** (shell, done): the main document is revalidated on launch and after 30 minutes away. No frame; evidence is a request log: three launches made three requests for `/` (the "before" behaviour was not measured in the Simulator).
+4. **Native search under the keyboard overlapped the list** (shell, done): [before](https://git.kayg.org/attachments/0dbcaf85-4d02-4fdb-87f3-7ba0c8c54653), [after](https://git.kayg.org/attachments/44db382e-f97b-4047-a35d-c0b0fdfaa53a) (material behind the bar, 44 pt cancel).
+5. **Sidebar has no wallpaper** (open): the native sidebar is a flat colour where the page's sidebar shows the blurred wallpaper ([before](https://git.kayg.org/attachments/1b7a84fa-15bc-4fc0-891f-bbf6c2bcc086)). Needs the coordinator's choice between a snapshot, a `background` field, or a floating glass sidebar over a full-screen web view.
+6. **Tiny section buttons** (shell, done): 20 pt to 44 pt. [before](https://git.kayg.org/attachments/a8f79990-5947-4c03-9549-40c2dcd0f7be).
+7. **Selector was a hand-built capsule** (shell, done): now the system segmented picker. [before](https://git.kayg.org/attachments/d6ef77aa-c921-4f34-842f-40fc4cefe509), [after](https://git.kayg.org/attachments/05edb104-4030-4517-8924-f3964e4ac65f).
+8. **Pinch zoom disabled** (shell, done): re-enabled (WCAG 1.4.4). No frame.
+9. **Colour-only marks** (shell, done): unread and warning marks now speak; selected row announced. Not verified with VoiceOver (not driven).
+10. **Drawer under Reduce Motion** (shell, done, unverified): 0.18 s linear instead of a spring.
+
+Anti-patterns of the first skill found in what was built, and changed: `ObservableObject` where `@Observable`
+fits; index identity in `ForEach`; a tuple behind a boolean for the prompt; per-keystroke event with no
+debounce. Not found: giant views, `AnyView`, live calls in `body`, multiple booleans for exclusive sheets.

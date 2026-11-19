@@ -5,7 +5,18 @@ import SwiftUI
 /// comes from `ChromeDescription.sidebar`; taps become `ChromeEvent`s. It sits behind the content
 /// card and is `model.sidebarWidth` wide; the rest of the screen is the card.
 struct SidebarView: View {
-    @ObservedObject var model: ChromeModel
+    @Bindable var model: ChromeModel
+    /// A pending text prompt (rename); `Identifiable` so the alert follows the item, not a flag.
+    @State private var prompt: PromptRequest?
+    @State private var promptText = ""
+
+    /// What the prompt asks and where its answer goes.
+    struct PromptRequest: Identifiable {
+        let item: ChromeDescription.Item
+        let owner: String
+        let type: String
+        var id: String { type + owner + item.id }
+    }
 
     var body: some View {
         let sidebar = model.description.sidebar
@@ -31,8 +42,20 @@ struct SidebarView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .scrollEdgeEffectStyle(.soft, for: .all)
             .contentMargins(.bottom, 96, for: .scrollContent)
+            .refreshable {
+                guard sidebar?.refresh == true else { return }
+                model.send(ChromeEvent(type: "refresh"))
+                try? await Task.sleep(for: .milliseconds(700))
+            }
             bottomBar(sidebar)
+        }
+        .tint(model.accent)
+        .alert(prompt?.item.title ?? "", isPresented: Binding(get: { prompt != nil }, set: { if !$0 { prompt = nil } }), presenting: prompt) { request in
+            TextField(request.item.input?.placeholder ?? "", text: $promptText)
+            Button("OK") { model.send(ChromeEvent(type: request.type, id: request.item.id, rowId: request.owner, text: promptText)) }
+            Button("Cancel", role: .cancel) {}
         }
         .frame(width: model.sidebarWidth)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -45,14 +68,17 @@ struct SidebarView: View {
     private func rowView(_ row: ChromeDescription.Row) -> some View {
         Button { model.send(ChromeEvent(type: "row", id: row.id)) } label: {
             HStack(spacing: 12) {
-                if let symbol = row.symbol { Image(systemName: symbol).frame(width: 24).foregroundStyle(.secondary) }
+                icon(row.icon)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.title).font(.body).lineLimit(2)
                     if let detail = row.detail { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 Spacer(minLength: 4)
-                badge(row.badge)
+                ForEach(row.trailing ?? []) { mark in badge(mark) }
             }
+            .accessibilityLabel(row.label ?? row.title).accessibilityHint(row.hint ?? "")
+            .accessibilityAddTraits(row.selected == true ? .isSelected : [])
+            .accessibilityValue((row.trailing ?? []).compactMap(spoken).joined(separator: ", "))
             .padding(.vertical, 4)
             .contentShape(Rectangle())
         }
@@ -66,20 +92,50 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
-    private func badge(_ badge: ChromeDescription.Badge?) -> some View {
-        switch badge?.kind {
-        case "dot": Circle().fill(Color.accentColor).frame(width: 9, height: 9)
-        case "count", "text": Text(badge?.value ?? "").font(.caption2.weight(.semibold)).padding(.horizontal, 7).padding(.vertical, 2)
-            .background(Capsule().fill(Color.accentColor.opacity(0.85))).foregroundStyle(.white)
+    private func icon(_ icon: ChromeDescription.Icon?) -> some View {
+        if let name = icon?.symbol {
+            Image(systemName: name).frame(width: 24).foregroundStyle(.secondary)
+        } else if let url = icon?.image, let comma = url.firstIndex(of: ","),
+                  let data = Data(base64Encoded: String(url[url.index(after: comma)...])), let image = UIImage(data: data) {
+            Image(uiImage: image).resizable().scaledToFit().frame(width: 24, height: 24)
+        }
+    }
+
+    /// What a mark says to VoiceOver: a second cue besides colour (WCAG 1.4.1).
+    private func spoken(_ badge: ChromeDescription.Badge) -> String? {
+        switch badge.kind {
+        case "dot": return "unread"
+        case "count", "text": return badge.value
+        default: return badge.tone == "bad" ? "problem" : badge.tone == "warn" ? "warning" : badge.value
+        }
+    }
+
+    private func tone(_ badge: ChromeDescription.Badge) -> Color {
+        switch badge.tone { case "warn": .orange; case "bad": .red; default: model.accent }
+    }
+
+    @ViewBuilder
+    private func badge(_ badge: ChromeDescription.Badge) -> some View {
+        switch badge.kind {
+        case "dot": Circle().fill(tone(badge)).frame(width: 9, height: 9)
+        case "symbol": Image(systemName: badge.value ?? "circle").font(.footnote).foregroundStyle(tone(badge))
+        case "count", "text": Text(badge.value ?? "").font(.caption2.weight(.semibold)).padding(.horizontal, 7).padding(.vertical, 2)
+            .background(Capsule().fill(tone(badge).opacity(0.85))).foregroundStyle(.white)
         default: EmptyView()
         }
+    }
+
+    /// Sends `type` for `item`, or asks for text first when the item declares an `input`.
+    private func fire(_ item: ChromeDescription.Item, owner: String, type: String) {
+        if item.input != nil { promptText = item.input?.value ?? ""; prompt = PromptRequest(item: item, owner: owner, type: type) }
+        else { model.send(ChromeEvent(type: type, id: item.id, rowId: owner)) }
     }
 
     @ViewBuilder
     private func actionButtons(_ items: [ChromeDescription.Item]?, row: String) -> some View {
         ForEach(items ?? []) { item in
             Button(role: item.role == "destructive" ? .destructive : nil) {
-                model.send(ChromeEvent(type: "action", id: item.id, rowId: row))
+                fire(item, owner: row, type: "action")
             } label: { Label(item.title, systemImage: item.symbol ?? "circle") }
         }
     }
@@ -88,8 +144,12 @@ struct SidebarView: View {
     private func menuItems(_ items: [ChromeDescription.Item]?, owner: String) -> some View {
         ForEach(items ?? []) { item in
             Button(role: item.role == "destructive" ? .destructive : nil) {
-                model.send(ChromeEvent(type: "menu", id: item.id, rowId: owner))
-            } label: { Label(item.title, systemImage: item.symbol ?? "circle") }
+                fire(item, owner: owner, type: "menu")
+            } label: {
+                if item.checked == true { Label(item.title, systemImage: "checkmark") }
+                else if let symbol = item.symbol { Label(item.title, systemImage: symbol) } else { Text(item.title) }
+                if let sub = item.sub { Text(sub) }
+            }
             .disabled(item.disabled == true)
         }
     }
@@ -105,8 +165,17 @@ struct SidebarView: View {
                 }.buttonStyle(.plain).foregroundStyle(.secondary)
             }
             Spacer()
+            ForEach(section.actions ?? []) { item in
+                Button { fire(item, owner: section.id, type: "action") } label: {
+                    Image(systemName: item.symbol ?? "plus").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel(item.title)
+            }
             if let menu = section.menu, !menu.isEmpty {
-                Menu { menuItems(menu, owner: section.id) } label: { Image(systemName: "ellipsis").foregroundStyle(.secondary) }
+                Menu { menuItems(menu, owner: section.id) } label: {
+                    Image(systemName: "ellipsis").foregroundStyle(.secondary).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                }
+                .accessibilityLabel("More")
             }
         }
         .textCase(nil)
@@ -120,18 +189,27 @@ struct SidebarView: View {
             HStack(spacing: 10) {
                 SearchField(model: model, placeholder: sidebar?.search?.placeholder ?? "Search")
                 Button("Cancel") { model.searching = false; model.searchText = ""; model.send(ChromeEvent(type: "search", text: "")) }
+                    .frame(minHeight: 44)
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 14).padding(.bottom, 10)
+            .padding(.horizontal, 14).padding(.bottom, 10).padding(.top, 8)
+            .background(.regularMaterial)
         } else {
             GlassEffectContainer(spacing: 14) {
                 HStack(spacing: 14) {
                     if let account = sidebar?.account {
-                        Button { model.send(ChromeEvent(type: "account", id: account.id)) } label: {
-                            Text(account.initial).font(.headline).frame(width: 48, height: 48)
+                        if let menu = account.menu, !menu.isEmpty {
+                            Menu { menuItems(menu, owner: account.id) } label: {
+                                Text(account.initial).font(.headline).frame(width: 48, height: 48)
+                            }
+                            .buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel(account.title ?? "Account")
+                        } else {
+                            Button { model.send(ChromeEvent(type: "account", id: account.id)) } label: {
+                                Text(account.initial).font(.headline).frame(width: 48, height: 48)
+                            }
+                            .buttonStyle(.plain).glassEffect(.regular.interactive(), in: .circle)
+                            .accessibilityLabel(account.title ?? "Account")
                         }
-                        .buttonStyle(.plain).glassEffect(.regular.interactive(), in: .circle)
-                        .accessibilityLabel(account.title ?? "Account")
                     }
                     Spacer(minLength: 0)
                     if let apps = sidebar?.apps, !apps.isEmpty {
@@ -149,7 +227,7 @@ struct SidebarView: View {
                     if sidebar?.search != nil {
                         Button { model.searching = true } label: {
                             Image(systemName: "magnifyingglass").font(.system(size: 19)).frame(width: 48, height: 48)
-                        }.buttonStyle(.plain).glassEffect(.regular.interactive(), in: .circle).accessibilityLabel("Search")
+                        }.buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel("Search")
                     }
                 }
             }
@@ -158,27 +236,24 @@ struct SidebarView: View {
     }
 }
 
-/// A segmented choice drawn as a glass capsule with the selected option highlighted.
+/// A segmented choice: the system segmented picker (glass on iOS 26, with its own VoiceOver and Dynamic Type behaviour).
 private struct SelectorView: View {
     let selector: ChromeDescription.Selector
     let choose: (String) -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
+        Picker(selector.id, selection: Binding(get: { selector.selected }, set: choose)) {
             ForEach(selector.options) { option in
-                Button { choose(option.id) } label: {
-                    Text(option.title).font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 11)
-                        .background(Capsule().fill(option.id == selector.selected ? Color.primary.opacity(0.16) : Color.clear))
-                }.buttonStyle(.plain)
+                Text(option.badge.map { option.title + " " + $0 } ?? option.title).tag(option.id)
             }
         }
-        .padding(3).glassEffect(.regular, in: .capsule)
+        .pickerStyle(.segmented).labelsHidden()
     }
 }
 
 /// The search field: native text field, native keyboard; each change is reported as a `search` event.
 private struct SearchField: View {
-    @ObservedObject var model: ChromeModel
+    @Bindable var model: ChromeModel
     let placeholder: String
     @FocusState private var focused: Bool
 
@@ -190,6 +265,11 @@ private struct SearchField: View {
         }
         .padding(.horizontal, 14).frame(height: 48).glassEffect(.regular.interactive(), in: .capsule)
         .onAppear { focused = true }
-        .onChange(of: model.searchText) { _, text in model.send(ChromeEvent(type: "search", text: text)) }
+        // One event per pause in typing: the task restarts (and the old one is cancelled) on each keystroke.
+        .task(id: model.searchText) {
+            guard !model.searchText.isEmpty else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            if !Task.isCancelled { model.send(ChromeEvent(type: "search", text: model.searchText)) }
+        }
     }
 }

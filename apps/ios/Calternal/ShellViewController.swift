@@ -59,7 +59,7 @@ final class ShellViewController: UIViewController {
         webView.scrollView.bounces = false                      // no rubber-band of the whole page
         webView.scrollView.alwaysBounceVertical = false
         webView.scrollView.alwaysBounceHorizontal = false
-        webView.scrollView.pinchGestureRecognizer?.isEnabled = false
+        // Pinch zoom stays on: it is the low-vision path (WCAG 1.4.4); the page opts controls out with touch-action: manipulation.
         if !UserDefaults.standard.bool(forKey: "CalternalProbeEdgeEffects") {
             // iOS 26 fades scroll content into the container's colour at the screen edges (a "top
             // band" in the shell's colour over the page's wallpaper). The page draws its own fades.
@@ -257,6 +257,9 @@ final class ShellViewController: UIViewController {
             reply(nil, "chrome description rejected: \(error)")
         }
     }
+
+    /// VoiceOver escape (two-finger Z): closes the native sidebar when it is open.
+    override func accessibilityPerformEscape() -> Bool { chromeLayout?.accessibilityEscape() ?? false }
 
     /// Delivers a native event to the page (e.g. `calternal:bar`).
     func dispatch(event: String, detail: String) {

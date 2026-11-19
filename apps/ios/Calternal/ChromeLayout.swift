@@ -74,6 +74,9 @@ final class ChromeLayout: NSObject, UIGestureRecognizerDelegate {
         scrim.frame = card.bounds
         scrim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         scrim.isUserInteractionEnabled = false
+        scrim.isAccessibilityElement = true
+        scrim.accessibilityLabel = "Close sidebar"
+        scrim.accessibilityTraits = .button
         scrim.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(closeTapped)))
         let close = UIPanGestureRecognizer(target: self, action: #selector(drag(_:)))
         close.delegate = self
@@ -117,10 +120,12 @@ final class ChromeLayout: NSObject, UIGestureRecognizerDelegate {
         let top = shell.view.safeAreaInsets.top + 2 + headerHeight
         shell.setRootVariable("--chrome-top", to: "\(Int(top))px")
         shell.setRootVariable("--chrome-bottom", to: "\(Int(shell.view.safeAreaInsets.bottom))px")
+        shell.setRootVariable("--device-r", to: "\(Int(cardRadius))px")
         shell.webView.evaluateJavaScript("document.documentElement.dataset.nativeChrome=''")
     }
 
     func send(_ event: ChromeEvent) {
+        if ["row", "selector", "app"].contains(event.type) { UISelectionFeedbackGenerator().selectionChanged() }   // feedback within the same frame as the tap
         shell.dispatch(event: "calternal:chrome", detail: event.json(revision: revision))
     }
 
@@ -140,12 +145,26 @@ final class ChromeLayout: NSObject, UIGestureRecognizerDelegate {
         if open == value && progress == (value ? 1 : 0) { return }
         open = value
         let apply = { self.layout(value ? 1 : 0) }
-        if animated {
+        if animated, UIAccessibility.isReduceMotionEnabled {
+            // Reduce Motion: no spring and no overshoot, a short straight fade-slide (0.18 s linear).
+            UIView.animate(withDuration: 0.18, delay: 0, options: [.allowUserInteraction, .beginFromCurrentState, .curveLinear], animations: apply)
+        } else if animated {
+            // Order: card slides and its corners round together; spring 0.42 s, bounce 0.12, carries the finger's velocity; interruptible.
             UIView.animate(springDuration: 0.42, bounce: 0.12, initialSpringVelocity: velocity, delay: 0,
                            options: [.allowUserInteraction, .beginFromCurrentState], animations: apply)
         } else { apply() }
+        card.accessibilityElementsHidden = value        // VoiceOver reads only what is on top
+        sidebarHost.view.accessibilityElementsHidden = !value
+        UIAccessibility.post(notification: .screenChanged, argument: nil)
         if report { send(ChromeEvent(type: "sidebar", open: value)) }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    /// The VoiceOver escape gesture (two-finger Z) closes the sidebar.
+    @discardableResult func accessibilityEscape() -> Bool {
+        guard open == true else { return false }
+        setOpen(false, animated: true, report: true)
+        return true
     }
 
     @objc private func closeTapped() { setOpen(false, animated: true, report: true) }

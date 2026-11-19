@@ -4,7 +4,7 @@ import SwiftUI
 /// trailing buttons, each a Liquid Glass control. Items come from `ChromeDescription.header`; the
 /// sidebar button is the shell's own (it opens the sidebar without a round trip to the page).
 struct HeaderView: View {
-    @ObservedObject var model: ChromeModel
+    let model: ChromeModel
 
     var body: some View {
         let header = model.description.header
@@ -18,9 +18,9 @@ struct HeaderView: View {
                 ForEach(header?.leading ?? []) { item in itemView(item) }
                 if let title = header?.title {
                     Button { model.send(ChromeEvent(type: "header", id: "title")) } label: {
-                        Text(title).font(.headline).lineLimit(1).padding(.horizontal, 18).frame(height: 44)
+                        Text(title).font(.headline).lineLimit(1).padding(.horizontal, 10).frame(minHeight: 36)
                     }
-                    .buttonStyle(.plain).glassEffect(.regular.interactive(), in: .capsule)
+                    .buttonStyle(.glass)
                 }
                 Spacer(minLength: 0)
                 ForEach(header?.trailing ?? []) { item in itemView(item) }
@@ -40,19 +40,15 @@ struct HeaderView: View {
                     } label: { Label(entry.title, systemImage: entry.symbol ?? "circle") }
                         .disabled(entry.disabled == true)
                 }
-            } label: { glyph(item.symbol ?? "ellipsis") }
-            .accessibilityLabel(item.title)
+            } label: { Image(systemName: item.symbol ?? "ellipsis").font(.system(size: 18, weight: .medium)).frame(width: 36, height: 36) }
+            .buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel(item.title)
         } else {
             circle(item.symbol ?? "circle", label: item.title) { model.send(ChromeEvent(type: "header", id: item.id)) }
         }
     }
 
     private func circle(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { glyph(symbol) }.buttonStyle(.plain).accessibilityLabel(label)
-    }
-
-    private func glyph(_ symbol: String) -> some View {
-        Image(systemName: symbol).font(.system(size: 18, weight: .medium)).frame(width: 44, height: 44)
-            .glassEffect(.regular.interactive(), in: .circle)
+        Button(action: action) { Image(systemName: symbol).font(.system(size: 18, weight: .medium)).frame(width: 36, height: 36) }
+            .buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel(label)
     }
 }

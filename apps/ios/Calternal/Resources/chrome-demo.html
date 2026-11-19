@@ -40,21 +40,21 @@
   };
   const shown = () => store.threads.filter(t => (store.filter === 'all' || t.unread) && t.title.toLowerCase().includes(store.query.toLowerCase()))
     .sort((a, b) => b.pinned - a.pinned);
-  const row = (t) => ({ id: t.id, title: t.title, detail: t.time, selected: t.id === store.selected, badge: t.unread ? { kind: 'dot' } : undefined,
-    symbol: t.pinned ? 'pin.fill' : undefined,
+  const row = (t) => ({ id: t.id, title: t.title, detail: t.time, selected: t.id === store.selected, trailing: [...(t.unread ? [{ kind: 'dot' }] : []), ...(t.id === 't2' ? [{ kind: 'symbol', value: 'exclamationmark.triangle', tone: 'warn' }] : [])],
+    icon: t.pinned ? { symbol: 'pin.fill' } : undefined,
     leadingActions: [{ id: 'pin', title: t.pinned ? 'Unpin' : 'Pin', symbol: 'pin' }],
     trailingActions: [{ id: 'archive', title: 'Archive', symbol: 'archivebox', role: 'destructive' }, { id: 'read', title: t.unread ? 'Mark read' : 'Mark unread', symbol: 'envelope.badge' }],
-    menu: [{ id: 'rename', title: 'Rename', symbol: 'pencil' }, { id: 'pin', title: 'Pin', symbol: 'pin' }, { id: 'archive', title: 'Archive', symbol: 'archivebox', role: 'destructive' }] });
+    menu: [{ id: 'rename', title: 'Rename', symbol: 'pencil', input: { placeholder: 'Name', value: t.title } }, { id: 'pin', title: 'Pin', symbol: 'pin' }, { id: 'archive', title: 'Archive', symbol: 'archivebox', role: 'destructive' }] });
   const describe = () => ({
-    version: 1, revision: ++store.revision, scheme: 'dark',
+    version: 1, revision: ++store.revision, scheme: 'dark', accent: '#d9822b',
     header: { title: (store.threads.find(t => t.id === store.selected) || { title: 'Threads' }).title,
       trailing: [{ id: 'more', title: 'More', symbol: 'ellipsis', menu: [{ id: 'rename', title: 'Rename', symbol: 'pencil' }, { id: 'share', title: 'Share', symbol: 'square.and.arrow.up' }, { id: 'archive', title: 'Archive', symbol: 'archivebox', role: 'destructive' }] }] },
-    sidebar: { open: store.open, title: 'Calternal',
-      selectors: [{ id: 'filter', options: [{ id: 'inbox', title: 'Inbox' }, { id: 'all', title: 'All Threads' }], selected: store.filter }],
-      sections: [{ id: 'main', rows: [{ id: 'new', title: 'New thread', symbol: 'plus' }, { id: 'automations', title: 'Automations', symbol: 'clock' }, { id: 'skills', title: 'Skills', symbol: 'wrench' }] },
-        { id: 'threads', title: 'Threads', menu: [{ id: 'read-all', title: 'Mark all read', symbol: 'checkmark.circle' }], rows: shown().map(row) }],
+    sidebar: { open: store.open, title: 'Calternal', refresh: true,
+      selectors: [{ id: 'filter', options: [{ id: 'inbox', title: 'Inbox', badge: String(store.threads.filter(t => t.unread).length) }, { id: 'all', title: 'All Threads' }], selected: store.filter }],
+      sections: [{ id: 'main', rows: [{ id: 'new', title: 'New thread', icon: { symbol: 'plus' } }, { id: 'automations', title: 'Automations', icon: { symbol: 'clock' } }, { id: 'skills', title: 'Skills', icon: { symbol: 'wrench' } }] },
+        { id: 'threads', title: 'Threads', actions: [{ id: 'add', title: 'New thread', symbol: 'plus' }], menu: [{ id: 'read-all', title: 'Mark all read', symbol: 'checkmark.circle' }], rows: shown().map(row) }],
       apps: [{ id: 'threads', title: 'Threads', symbol: 'bubble.left', selected: true }, { id: 'notes', title: 'Notes', symbol: 'doc.text' }, { id: 'settings', title: 'Settings', symbol: 'gearshape' }],
-      account: { id: 'account', initial: 'K', title: 'Account' }, search: { placeholder: 'Search threads' } },
+      account: { id: 'account', initial: 'K', title: 'Account', menu: [{ id: 'space-personal', title: 'Personal', checked: true, sub: 'kayg' }, { id: 'settings', title: 'Settings', symbol: 'gearshape' }, { id: 'signout', title: 'Sign out', symbol: 'rectangle.portrait.and.arrow.right', role: 'destructive' }] }, search: { placeholder: 'Search threads' } },
   });
   let native = false;
   async function publish() {
@@ -77,12 +77,14 @@
     N.log(store.toast);
     if (ev.type === 'row') { if (ev.id === 'new') { store.toast = 'new thread (not wired)'; } else if (store.threads.some(t => t.id === ev.id)) { store.selected = ev.id; store.open = false; } }
     else if (ev.type === 'selector') store.filter = ev.option;
+    else if (ev.type === 'refresh') store.toast = 'refresh requested'
     else if (ev.type === 'search') store.query = ev.text || '';
     else if (ev.type === 'sidebar') store.open = ev.open;
     else if (ev.type === 'action' || ev.type === 'menu') {
       const t = store.threads.find(x => x.id === ev.rowId);
       if (t && ev.id === 'archive') { store.threads = store.threads.filter(x => x !== t); if (store.selected === t.id) store.selected = null; }
       if (t && ev.id === 'pin') t.pinned = !t.pinned;
+      if (t && ev.id === 'rename' && ev.text) t.title = ev.text;
       if (t && ev.id === 'read') t.unread = !t.unread;
     }
     publish();
