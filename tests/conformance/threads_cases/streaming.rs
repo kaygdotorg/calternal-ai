@@ -21,6 +21,10 @@ impl Drop for DirectMachine {
 }
 
 async fn direct_fixture(f: &Fixture) -> DirectMachine {
+    direct_fixture_with_binary(f, false).await
+}
+
+async fn direct_fixture_with_binary(f: &Fixture, renamed: bool) -> DirectMachine {
     let code = f
         .req(
             "POST",
@@ -38,6 +42,19 @@ async fn direct_fixture(f: &Fixture) -> DirectMachine {
     let bin = f.dir.path().join("fixture-bin");
     std::fs::create_dir(&bin).unwrap();
     std::os::unix::fs::symlink(adapter.join("test/fake-claude.mjs"), bin.join("claude")).unwrap();
+    let machine_binary = if renamed {
+        let renamed_binary = f.dir.path().join("renamed-machine");
+        if std::fs::hard_link(&binary, &renamed_binary).is_err() {
+            std::fs::copy(&binary, &renamed_binary).unwrap();
+        }
+        let missing = bin.join("calternal");
+        std::fs::write(&missing, "#!/bin/sh\nexit 87\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(missing, std::fs::Permissions::from_mode(0o700)).unwrap();
+        renamed_binary
+    } else {
+        binary.clone()
+    };
     let search_path = std::env::join_paths(
         [
             bin,
@@ -63,7 +80,7 @@ async fn direct_fixture(f: &Fixture) -> DirectMachine {
         String::from_utf8_lossy(&enroll.stderr)
     );
     DirectMachine(
-        Command::new(&binary)
+        Command::new(&machine_binary)
             .args(["machine", "run", "--backend", "direct", "--dir"])
             .arg(dir)
             .env("PATH", search_path)
@@ -466,4 +483,75 @@ async fn thread_full_reaches_live_and_saved_reads_without_losing_prior_output() 
     assert!(text.contains("overflow-segment-0:"));
     assert!(!text.contains("overflow-segment-32:"));
     assert!(saved["markdown"].as_str().unwrap().len() <= 2 * 1024 * 1024);
+}
+
+#[tokio::test]
+async fn completed_tool_turn_is_saved_in_the_thread_and_on_disk() {
+    let f = Fixture::new().await;
+    let _machine = direct_fixture_with_binary(&f, true).await;
+    let space = &f.spaces[0];
+    let created = f
+        .op(
+            1,
+            "threads.create",
+            json!({"space_id":space,"title":"Steps run"}),
+        )
+        .await;
+    created.ok();
+    let id = &created.body["data"]["thread"]["id"];
+    let sent = f
+        .op(
+            1,
+            "threads.send",
+            json!({"id":id,"message":"scripted-tool-steps"}),
+        )
+        .await;
+    sent.ok();
+    let job = sent.body["data"]["job"]["id"].as_str().unwrap();
+    let mut feed = Sse::open(&f, &f.cookies[1], job, None).await.unwrap();
+    let (end, tool) = tokio::time::timeout(Duration::from_secs(30), async {
+        let mut tool = false;
+        loop {
+            let (kind, _, frame) = feed.next().await.expect("terminal turn event");
+            tool |= frame["data"]["event"]["type"] == "tool_started";
+            if kind == "end" {
+                break (frame, tool);
+            }
+        }
+    })
+    .await
+    .expect("fixture tool turn");
+    let saved = f
+        .op(1, "threads.get", json!({"id":id,"space_id":space}))
+        .await;
+    saved.ok();
+    let snapshot = &saved.body["data"]["thread"];
+    let markdown = body(snapshot);
+    assert_eq!(
+        snapshot["messages"].as_array().unwrap().len(),
+        2,
+        "terminal={end}; {markdown}"
+    );
+    assert!(
+        markdown.contains("Tool Bash") && markdown.contains("Tool Read"),
+        "{markdown}"
+    );
+
+    assert_eq!(end["job"]["state"], "done", "{end}");
+    assert!(tool, "the live stream lost the tool step");
+    let path = f
+        .dir
+        .path()
+        .join("userdata-ssd/spaces")
+        .join(space)
+        .join("AI/Chats/Steps run.md");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let file = std::fs::read_to_string(&path).unwrap();
+        if file.contains("role:agent") && file.contains("Tool Bash") && file.contains("Tool Read") {
+            break;
+        }
+        assert!(Instant::now() < deadline, "{}: {file}", path.display());
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
 }

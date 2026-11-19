@@ -420,14 +420,14 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     ];
     // Trusted guide workers exercise session and activation in plugin conformance.
     let guide = [
-        ("calternal-plugin-guide.explain", Capability::SpaceRead),
-        ("calternal-plugin-guide.scaffold", Capability::SpaceRead),
-        ("calternal-plugin-guide.check", Capability::SpaceRead),
-        ("calternal-plugin-guide.publish", Capability::ContentWrite),
         (
             "calternal-plugin-submission-guide.explain",
             Capability::SpaceRead,
         ),
+        ("calternal-plugin-guide.explain", Capability::SpaceRead),
+        ("calternal-plugin-guide.scaffold", Capability::SpaceRead),
+        ("calternal-plugin-guide.check", Capability::SpaceRead),
+        ("calternal-plugin-guide.publish", Capability::ContentWrite),
     ];
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
     let registry = Registry::load(&root).snapshot();

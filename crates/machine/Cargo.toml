@@ -26,7 +26,8 @@ base64.workspace = true
 tracing.workspace = true
 rustix = { workspace = true, features = ["process"] }
 
-[dev-dependencies]
 tempfile.workspace = true
+
+[dev-dependencies]
 calternal-cli = { workspace = true, features = ["testing"] }
 time.workspace = true

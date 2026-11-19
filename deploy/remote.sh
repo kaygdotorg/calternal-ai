@@ -223,7 +223,9 @@ diagnose_machine_connection() {
 }
 
 start_machine() {
-  sysd enable "$machine" >/dev/null || return 1
+  if ! sysd is-enabled --quiet "$machine"; then
+    sysd enable "$machine" >/dev/null || return 1
+  fi
   if sysd is-failed --quiet "$machine"; then sysd reset-failed "$machine" || return 1; fi
   local type
   type=$(sysd show --property=Type --value "$machine") || return 1
@@ -234,13 +236,30 @@ start_machine() {
   return 1
 }
 
+units_current() {
+  local release=$1 loaded
+  # The old release pointer is the installation record for the last reload.
+  # An interrupted activation before the reload still points at the old units.
+  [[ -n $current ]] &&
+    cmp -s "$current/server.container" "$release/server.container" &&
+    cmp -s "$current/machine.service" "$release/machine.service" &&
+    cmp -s "$release/server.container" "$quadlets/$name.container" &&
+    cmp -s "$release/machine.service" "$systemd/$machine" || return 1
+  loaded=$(sysd show "$server" "$machine" --property=LoadState,NeedDaemonReload |
+    sed '/^$/d' | LC_ALL=C sort) || return 1
+  [[ $loaded == $'LoadState=loaded\nLoadState=loaded\nNeedDaemonReload=no\nNeedDaemonReload=no' ]]
+}
+
 activate() {
   local release=$1
-  podman tag "$(<"$release/image.id")" "$image:current" &&
-    set_pointer "$release" current &&
+  if ! units_current "$release"; then
     install -m 0644 "$release/server.container" "$quadlets/$name.container" &&
-    install -m 0644 "$release/machine.service" "$systemd/$machine" &&
-    sysd daemon-reload || return 1
+      install -m 0644 "$release/machine.service" "$systemd/$machine" &&
+      sysd daemon-reload || return 1
+    sync "$quadlets/$name.container" "$systemd/$machine" "$quadlets" "$systemd" || return 1
+  fi
+  podman tag "$(<"$release/image.id")" "$image:current" &&
+    set_pointer "$release" current || return 1
   if sysd is-failed --quiet "$server"; then sysd reset-failed "$server" || return 1; fi
   sysd start --no-block "$server" || return 1
   wait_for_http || { log 'The published HTTP listener did not become ready.'; return 1; }

@@ -764,9 +764,15 @@ pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
 /// `calternal plugin-digest`: the SHA-256 of each trusted worker bundle and
 /// whether `trusted-plugins.json` pins it. Cost: reads and hashes each bundle once.
 pub fn plugin_digest(root: &Path) -> Reply {
+    digest_reply(root, &plugins::registry_entries())
+}
+
+/// Format the digest report for the selected distribution entries, reading
+/// each worker once. The CLI supplies the compiled trust seed.
+pub(super) fn digest_reply(root: &Path, entries: &[plugins::TrustedEntry]) -> Reply {
     let mut rows = Vec::new();
     let mut workers = Vec::new();
-    for e in plugins::registry_entries() {
+    for e in entries {
         let Some(w) = &e.worker else { continue };
         let (digest, state, pinned) = match plugins::file_sha256(&root.join(w)) {
             Ok(d) => {

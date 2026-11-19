@@ -66,22 +66,78 @@ pub(crate) async fn run_at(
     ));
     let boot_id = Uuid::new_v4();
     tracing::info!(machine = %creds.machine_id, server = %creds.server, "machine role starting");
+    let mut ack = 0;
     let result = tokio::select! {
-        r = session_loop(&creds, &link, &runner, boot_id, ready) => r,
-        () = shutdown => Ok(()),
+        biased;
+        () = shutdown => None,
+        result = session_loop(&creds, &link, &runner, boot_id, ready, &mut ack) => Some(result),
     };
-    let closed = runner.release_all().await;
-    let backend_closed = config.backend.shutdown().await;
-    result.and_then(|()| {
-        if closed {
-            backend_closed.map_err(|e| Error::Protocol(e.0))
-        } else {
-            Err(Error::Protocol(
+    let started = Instant::now();
+    let drained = tokio::time::timeout(Duration::from_millis(1750), async {
+        if result.is_none() {
+            announce_drain(&link, &runner, ack).await;
+        }
+        let closed = runner.release_all().await;
+        let backend_closed = config.backend.shutdown().await;
+        if result.is_none() {
+            runner.drain_outputs().await;
+            announce_drain(&link, &runner, ack).await;
+        }
+        if !closed {
+            return Err(Error::Protocol(
                 "sandbox teardown incomplete; restart the machine role to sweep its sandboxes"
                     .into(),
-            ))
+            ));
         }
+        backend_closed.map_err(|e| Error::Protocol(e.0))
     })
+    .await
+    .unwrap_or_else(|_| {
+        Err(Error::Protocol(
+            "machine did not drain within 1750 ms; restart it to sweep its sandboxes".into(),
+        ))
+    });
+    if result.is_none() && drained.is_ok() {
+        tracing::info!(
+            elapsed_ms = started.elapsed().as_millis(),
+            "machine drain finished"
+        );
+    }
+    result.unwrap_or(Ok(())).and(drained)
+}
+
+async fn announce_drain(link: &Link, runner: &Arc<Runner>, ack: u64) {
+    // An older or an unreachable server may not answer immediately. Closing
+    // local sandboxes must still proceed before the shutdown deadline.
+    let Ok(capacity) = capacity(runner).await else {
+        return;
+    };
+    let req = SyncRequest {
+        ack,
+        capacity,
+        draining: true,
+        leases: runner.reports(),
+        discards: runner.discard_reports(),
+    };
+    if link
+        .post::<_, SyncResponse>(
+            "/api/v1/machine/sync",
+            &req,
+            true,
+            Duration::from_millis(200),
+        )
+        .await
+        .is_ok()
+    {
+        runner.ack_discards(&req.discards);
+    }
+}
+
+async fn capacity(runner: &Arc<Runner>) -> Result<crate::protocol::Capacity> {
+    let runner = runner.clone();
+    tokio::task::spawn_blocking(move || runner.capacity())
+        .await
+        .map_err(|error| Error::Protocol(error.to_string()))
 }
 
 async fn session_loop(
@@ -90,6 +146,7 @@ async fn session_loop(
     runner: &Arc<Runner>,
     boot_id: Uuid,
     ready: &Ready,
+    ack: &mut u64,
 ) -> Result<()> {
     let mut backoff = Backoff::default();
     let mut last_ok = Instant::now();
@@ -117,14 +174,11 @@ async fn session_loop(
             }
             tracing::warn!(%error, "could not update the machine service status");
         }
-        let mut ack = 0u64;
+        *ack = 0;
         loop {
-            let machine = runner.clone();
-            let capacity = tokio::task::spawn_blocking(move || machine.capacity())
-                .await
-                .map_err(|error| Error::Protocol(error.to_string()))?;
+            let capacity = capacity(runner).await?;
             let req = SyncRequest {
-                ack,
+                ack: *ack,
                 capacity,
                 draining: false,
                 leases: runner.reports(),
@@ -155,9 +209,9 @@ async fn session_loop(
                     backoff = Backoff::default();
                     last_ok = Instant::now();
                     for env in resp.messages {
-                        if env.seq > ack {
-                            ack = env.seq;
+                        if env.seq > *ack {
                             runner.handle(env.message).await;
+                            *ack = env.seq;
                         }
                     }
                     let runner = runner.clone();
