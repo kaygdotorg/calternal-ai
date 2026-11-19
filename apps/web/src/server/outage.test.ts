@@ -36,12 +36,6 @@ describe("the server away: a proxy's 502, 503 and 504, and a dropped connection"
     expect(states[1]).toBe("reconnecting"); // the shell shows it while the server is away
     expect(link.state).toBe("ok"); // and settles once it answers
   });
-  test("the server's own JSON answer with a 503 is an answer, not an outage (no retry, no reconnecting)", async () => {
-    const { c, ids, states } = away(() => new Response(JSON.stringify({ ok: false, error: { code: "conflict", message: "no machine to run on" } }), { status: 503, headers: { "content-type": "application/json" } }), 5);
-    await expect(c.operate("automations.run_now", { id: "a" })).rejects.toMatchObject({ code: "conflict", status: 503 });
-    expect(ids).toHaveLength(1);
-    expect(states).not.toContain("reconnecting");
-  });
   test("a dropped connection is the same", async () => {
     const { c, ids } = away(() => { throw new TypeError("Failed to fetch"); }, 2);
     expect(await c.operate("notes.update", { id: "n" })).toEqual({ note: "saved" });
@@ -80,5 +74,31 @@ describe("the server's own answers are never retried", () => {
     await expect(c.operate("notes.update", { id: "n" })).rejects.toMatchObject({ code });
     expect(calls).toBe(1);
     expect(ServerError).toBeDefined();
+  });
+});
+
+describe("the server's own 503 is its answer, not an outage", () => {
+  const envelope = (status: number) => new Response(JSON.stringify({ ok: false, error: { code: "unavailable", message: "no machine is enrolled" } }), { status, headers: { "content-type": "application/json" } });
+  test.each([502, 503, 504])("%i with our JSON envelope is returned at once: one attempt, the server's code, and no reconnecting state", async (status) => {
+    let calls = 0;
+    const c = new ServerClient({ token: () => null, retry: { first: 1, max: 2, total: 2000 }, fetch: (async () => { calls++; return envelope(status); }) as typeof fetch });
+    await expect(c.operate("automations.run_now", { id: "a" })).rejects.toMatchObject({ code: "unavailable", message: "no machine is enrolled", status });
+    expect(calls).toBe(1);
+    expect(link.state).toBe("ok");
+  });
+  test("an account route's { error: { code } } answer is the server's too", async () => {
+    let calls = 0;
+    const c = new ServerClient({ token: () => null, retry: { first: 1, max: 2, total: 2000 }, fetch: (async () => { calls++; return new Response(JSON.stringify({ error: { code: "internal", message: "x" } }), { status: 503 }); }) as typeof fetch });
+    await expect(c.json("/api/v1/machines")).rejects.toMatchObject({ code: "internal", status: 503 });
+    expect(calls).toBe(1);
+    expect(link.state).toBe("ok");
+  });
+  test("a gateway's 503 (HTML, or JSON that is not ours) is still waited out and repeated", async () => {
+    for (const make of [() => html(503), () => new Response(JSON.stringify({ message: "Service Unavailable" }), { status: 503 }), () => new Response("", { status: 503 })]) {
+      const { c, ids } = away(make, 2);
+      expect(await c.operate("notes.update", { id: "n" })).toEqual({ note: "saved" });
+      expect(ids).toHaveLength(3);
+      expect(new Set(ids).size).toBe(1);
+    }
   });
 });
