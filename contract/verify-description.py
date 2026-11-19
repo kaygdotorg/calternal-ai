@@ -247,8 +247,14 @@ def semantic(doc, errors, catalogue, manifest):
                                 if isinstance(prompt, dict) and prompt.get("kind") == "choice":
                                     option_bind = binds.get(((prompt.get("options") or {}).get("bind")))
                                     choice_ok = (cat_kinds.get(((option_bind or {}).get("source") or {}).get("kind")) or {}).get("row_ref") == declared_type
-                                if strict_thread: from_route = choice_ok = False
-                                if not (from_route or choice_ok or (bare_id and row_ref == declared_type and not owner_in_repeat)):
+                                selection_ok = False
+                                if isinstance(source, dict) and "selection" in source and not source.get("set"):
+                                    sel_bind = binds.get(source["selection"])
+                                    sel_kind = ((sel_bind or {}).get("source") or {}).get("kind")
+                                    sel_ref = (cat_kinds.get(sel_kind) or {}).get("row_ref") if sel_kind in cat_kinds else ("ItemRef" if sel_kind else None)
+                                    selection_ok = sel_ref == declared_type
+                                if strict_thread: from_route = choice_ok = selection_ok = False
+                                if not (from_route or choice_ok or selection_ok or (bare_id and row_ref == declared_type and not owner_in_repeat)):
                                     errors.append(f"{path}: the {declared_type} input {name!r} of {op} takes only a source of that ref type ({{context}}, a bare row id of a row of that type, or a route), not {json.dumps(source, sort_keys=True)}")
                             if declared_type in ("ChoiceRef", "LayoutSectionRef") and (declared_type == "ChoiceRef" or name == "section"):
                                 prompt = source.get("prompt") if isinstance(source, dict) else None
