@@ -69,6 +69,8 @@ export class WindowStore {
   #endUnavailable = false;
   /** Chunks to ask for again although loaded (after a mutation): the reply replaces them in place, so nothing flickers. */
   readonly #stale = new Set<number>();
+  /** Chunks whose request in flight is such a re-read: its reply never starts another one (a host that gives every reply a new `result_version` would otherwise be asked again for ever). */
+  readonly #refreshing = new Set<number>();
   /** Requests sent so far (tests and the harness read it). */
   requests = 0;
 
@@ -166,7 +168,7 @@ export class WindowStore {
     let req: WindowRequestPayload;
     if (this.#endChunk(c)) req = { bind: this.bind.id, from: limit - e, to: limit - s, anchor: "end" };
     else { const from = this.#stale.has(c) ? s : Math.max(s, this.#firstMissing(c, limit)); req = { bind: this.bind.id, from, to: (c + 1) * this.size }; }
-    this.#stale.delete(c);
+    if (this.#stale.delete(c)) this.#refreshing.add(c);
     this.#dispatch(req, c, false);
   }
 
@@ -240,7 +242,8 @@ export class WindowStore {
         this.#clear(); this.#count = { mode: "exact", value: 0 }; this.resultVersion = reply.result_version; this.windowRef = reply.window_ref; this.#set("empty", null); this.#bump(); return;
       case "ready": case "refine_query": break;
     }
-    if (reply.state === "ready" && this.resultVersion !== null && reply.result_version !== this.resultVersion) {
+    const wasRefresh = this.#refreshing.delete(chunk);
+    if (reply.state === "ready" && this.resultVersion !== null && reply.result_version !== this.resultVersion && !wasRefresh) {
       // A new result set replaces the window wholesale, but never in the middle of a key burst.
       if (navHold.held) { this.#held = { reply, req }; return; }
       this.#supersede(req);
@@ -269,7 +272,7 @@ export class WindowStore {
    * reply): rows far from what is drawn are dropped, the drawn chunks are asked for again, and each reply overwrites its rows in place; rows past the new exact count are dropped when it is known.
    */
   #supersede(req: WindowRequestPayload) {
-    this.#walk = null; this.#refused.clear(); this.#tailCover = 0; this.#ended = false; this.#count = null; this.#loadedEnd = 0;
+    this.#walk = null; this.#refused.clear(); this.#tailCover = 0; this.#ended = false; this.#count = null; this.#loadedEnd = 0; this.#refreshing.clear();
     const keep = [...this.#visible.values()];
     const near = (i: number) => keep.some(([f, l]) => i >= f - this.size && i < l + this.size) || (!keep.length && i < this.size);
     for (const i of [...this.#rows.keys()]) if (!near(i)) this.#rows.delete(i);

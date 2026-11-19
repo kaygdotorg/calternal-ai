@@ -146,3 +146,17 @@ describe("a list that changes on every reply (churn)", () => {
     expect(missing).toBe(0); expect(store.length).toBe(500); expect(store.resultVersion).not.toBe("rv-1");
   });
 });
+
+describe("a host that gives every reply a new result_version", () => {
+  it("is not asked again for ever: re-reads settle after one round", async () => {
+    let v = 0;
+    const host: MockHost = new MockHost({ rows: 200, intercept: (req) => { const r = host.answer(req) as { result_version: string }; r.result_version = `rv-${++v}`; return r as never; } });
+    const { store } = await open(host);
+    store.ensure("a", 0, 30); store.ensure("b", 60, 90);
+    await vi.advanceTimersByTimeAsync(4000); await settle();
+    const settled = host.windowCalls;
+    await vi.advanceTimersByTimeAsync(8000); await settle();
+    expect(host.windowCalls).toBe(settled); // quiet: no request loop
+    expect(store.row(0)).toBeDefined(); expect(store.row(60)).toBeDefined();
+  });
+});
