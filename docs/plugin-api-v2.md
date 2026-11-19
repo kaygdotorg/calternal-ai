@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.1 draft
+# Plugin API v2 · revision 14.2 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic conversation and execution engines. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -75,7 +75,12 @@ authorized message corpus, scoped parent edge and checked
 transcript engine is the sole conversation body writer. Conversation
 kinds cannot declare a live editor room. See §3 for the corpus fence.
 Provider contributions pin an adapter, image digest and model options.
-IDs are open and resolved from installed contributions. A distinctive provider mark requires a
+IDs are open and unique across the installation, including bundled
+contributions. Refuse a duplicate at install. Before profile lookup, pin
+the resolved contribution's package identity, manifest digest and adapter
+digest. Use only a profile bound to that contribution. A replacement
+requires fresh resolution and eligibility checks.
+A distinctive provider mark requires a
 verified publisher that owns the canonical mark name. Its binding comes
 from the existing trusted signed gallery entry or an operator checksum
 pin that explicitly binds the approved artifact, publisher and mark names.
@@ -228,7 +233,12 @@ frame fences that process. Outer corruption or disconnect closes the channel.
 Check raw bytes before a parser that collapses keys.
 
 The outer header is `{v:1, epoch, seq, package, digest, ticket, message}`.
-`invoke` carries operation, checked input and deadline. `call` carries
+The host-to-worker `HostWorkerInvokeFrame` carries an `invoke` message
+with operation, checked input and deadline. Claims and replays of a job
+declaring `execution_intent: true` must include the host-stamped
+`message.job_context` (`ExecutionJobContext`). Every other invocation
+omits it. Refuse wrong-direction invokes or supplied context on worker
+input. `call` carries
 method, input and callback ID. `reply` correlates by callback ID and returns
 typed data or a safe error. `chunk` is bounded ephemeral job progress.
 `complete` is the only terminal worker result, including failure or park.
@@ -454,7 +464,7 @@ accepts exactly its required target `ItemRef` in a closed input object.
 At install, resolve these declarations and reject aliases from generic
 dispatch, scheduling, or create follow-up into the prepared Send path.
 Only that composer may admit the job. At claim and replay the host injects
-`ExecutionJobContext.intent` outside operation input, bound to the exact
+`message.job_context.intent` outside operation input, bound to the exact
 durable intent and owning job receipt. `execution_start` compares it under
 the lifecycle fence and refuses a supplied, foreign or retired intent.
 The host validates the final material, provider options and eligibility
@@ -474,11 +484,19 @@ A replayable job may park on `execution` under the owning job and attempt.
 Check the durable transition cursor and install the wait atomically.
 Only host-verified phase, protected request, checked child request or
 terminal transitions wake it, once per receipt. Tokens do not wake the
-plugin VM. A child request wakes the declared parent job. That job
-calls `execution_spawn_child`; the host owns generic child creation from
-declared defaults, parent edge and tree admission under one fence. Verify
-the exact parent, caller, target and aggregate tree quota. Child rights
-are the intersection of the request, caller and live ancestor ceilings.
+plugin VM. An authenticated attempt sends `ExecutionAttemptChildRequest`
+over its attempt channel with a receipt ID, a target conversation kind and
+up to 32 distinct admitted refs. The host derives the exact parent and
+actor from that channel, checks their live rights, target eligibility and
+ancestor ceilings, then commits the immutable request and
+`child_requested` transition before acknowledgement. A replay of the
+same receipt returns the same checked ref. Changed input and stale fences
+are refused. Only the owning parent job consumes that ref through
+`execution_spawn_child`. The host resolves the kind and refs from the
+checked request, rechecks the exact parent, actor, eligible target,
+ancestors and tree quota, and commits generic child creation, parent edge
+and admission under one fence. Child rights are the intersection of the
+request, live caller and every ancestor's admitted refs and effect ceilings.
 
 The placement runtime enforces the heartbeat/renewal freeze and verified
 teardown cutoffs in the sealed proposal. Keep quota until verified
@@ -524,7 +542,15 @@ Timestamp. It cannot mint a host reference. Outputs and their counts
 inherit the intersection of input audiences. No worker wake, regex or callback. A first-block
 summary skips the title when declared and feeds the existing mini preview.
 Inline tags take the manifest’s marker, hierarchy separator and exclusions.
-The host has no Notes defaults. The existing body_excerpt declaration is
+For a shared `TextSet` output, collect all selector values under their
+declared grammars, union them, and expand every nonempty parent with the
+common inline separator, including parents of frontmatter entries. Exact
+normalized values and parents appear once in deterministic order. Use a
+flat union when no inline selector supplies a separator. Require one
+separator per output and a single producer for any scalar output.
+Charge the element, set and index-work limits to the merged result and
+publish it with the source commit. Notes preserves the shipped scanner's
+spelling and case. The host has no Notes defaults. The existing body_excerpt declaration is
 the shorthand for the checked preview text selector. Notes declares its shipped grammar and
 uses its package for tag rename and link rewrite.
 
@@ -787,7 +813,9 @@ versions it issued. `LeaseRenewRequest` carries `renewal_id`, `lease_ref`,
 `cache_partition`, `grant_revision` and `result_versions` keyed by
 `window_ref`. Accept `LeaseRenewResult` only from the authenticated host
 session with matching outstanding `renewal_id`, current `request_lease_ref`
-and current `cache_partition`. Repaint only exact `retained_results`
+and current `cache_partition`. Replace the composer action map and its
+contexts together, with omission meaning an empty map. Re-evaluate Stop
+against the exact pending intent or current attempt. Repaint only exact `retained_results`
 pairs of `window_ref` and `result_version`. Changed grants or versions
 require fresh authorized windows. Ignore superseded replies and keep rows
 hidden on timeout or refusal. Clear live rows on revocation, sign-out,
@@ -847,8 +875,11 @@ operation. See §4.3 for the cold prepared exchange.
 Row images use the existing `RowImageIcon` and read route. Notes declares
 a portrait aspect and the existing snippet fallback. An editing device
 captures the saved revision, paints locally, and obtains the same slot’s
-session-bound upload grant after the save ACK. Prepare binds the exact
-committed state digest, MIME type, byte length and upload digest. Keep
+session-bound upload grant after the save ACK. Use the active editable
+`item-editor` component to call `row_images.prepare` with the exact
+committed state digest, MIME type, byte length and upload digest. The
+request component must match the envelope and checked editor target.
+Send the capture bytes to the upload route using the returned grant. Keep
 separate bounds for upload and delivery. Upload accepts at most 512 KiB
 and a 256 × 384 decoded still image, with two simultaneous decodes, 64
 pending grants and 8 MiB of reserved staging per space. The grant and
@@ -859,6 +890,10 @@ at ingest and publication. Normalize and strip metadata, stamp authenticated
 uploader provenance and make the bytes durable before committing the
 pointer. Pixels supplied by an editor can be misleading. Attribution
 identifies their source, and the next eligible capture replaces them.
+On the authorized ready member row, `image_attribution[field]` identifies
+the exact asset's uploader and host-projected label when the viewer can
+see that identity. Use the older asset's uploader while it is retained.
+Guest and public replies, caches and non-ready rows omit attribution.
 The first valid image wins the revision and exact replay by that session
 returns its receipt. The host serves the smaller normalized variant,
 at most 64 KiB and 128 px on its longest edge. Keep the last authorized
@@ -1290,13 +1325,14 @@ authorizes, commits and delivers.
 
 | Fixture | Required result |
 | --- | --- |
-| Attempt broker and renewal | A member can enumerate in an ordinary invocation and the attempt can read its admitted item. The same member's attempt gets zero rows, counts or jobs when it requests discovery, supplies the member ticket, or delegates to an indexer. Revoke the item grant during an admitted output and replace the attempt before renewal. Require zero old-attempt effects, delivery or successful renewal after either fence. |
+| Attempt broker and renewal | A member can enumerate in an ordinary invocation and the attempt can read its admitted item. The same member's attempt gets zero rows, counts or jobs when it requests discovery, supplies the member ticket, or delegates to an indexer. Revoke the item grant during an admitted output and replace the attempt before renewal. Require zero old-attempt effects, delivery or successful renewal after either fence. Mint one checked child request and one transition across replay. Reject forged parent/refs, a stale attempt and changed receipt material. On child admission, recheck all authority and tree quotas. |
 | Cold composer job and Stop | Pause after a durable Send and before claim. Stop using the pending-intent context, restart and admit the job. Require the refusal receipt, zero starts and no effect on a later intent. In the control arm the claimed job receives the exact intent and starts once on replay. Supplying a sibling intent or calling without injected context starts zero runs. |
 | Conversation body | A canonical append can be paged and, with corpus rights, its exact bytes can be read through a pinned range. A same-kind package save, staged replacement, history-body restore or room write cannot publish a forged role, provenance or bytes. A title-only viewer gets zero corpus bytes, lengths or bookmarks via transcript, editor, range or export. Revoke after opening a pin and before delivery to cover both readers. |
 | Native approval and lifetime | For each provider offer Approve only on the approvable, contained arm. With native approvability false or containment unproved, forge an approval and require zero dispatches. Use a valid context with an unoffered lifetime and require zero dispatches. An exact offered one-use decision dispatches once, including on replay. |
 | Read from an empty or clipped transcript | Open and follow a new conversation before its first append. Require no fabricated cursor, then one committed UUID and a usable cursor after append. Read a clipped multilingual body across pages and compare exact UTF-8 bytes with the pinned record. A copied or revoked continuation returns the same opaque refusal as an absent ref. |
-| Device preview | Accept a valid 100 KiB capture and serve the normalized delivery variant with authenticated uploader provenance. Refuse oversize, copied or late uploads. After head advance, the current authorized viewer fetches the same retained previous image, marked stale. Revoke only body authority and repeat the same fetch, including a conditional request. Require the same 404 as an absent ref, zero bytes and no 304 or wake. Cut before byte durability and before pointer commit. Require the prior authorized image or fallback in both arms and reclaim orphans and reservations by the staging deadline. |
-| Search settle race | Send two different texts to one Bind. Delay the first acknowledgement and a window carrying a previously unseen older result version until the second result renders. Require zero changes to rows, counts or navigation from superseded acknowledgements, results or plan refusals. Deliver the newer request before the older one in a second arm and require the newer search to remain current. |
+| Device preview | Prepare a valid 100 KiB capture through the active editor and serve the normalized variant. On a distinct authorized member's row verify the exact host-stamped uploader ref and label. Verify the previous uploader remains on the stale asset and changes only on replacement. A guest or a member without uploader identity visibility receives no attribution. Refuse oversize, copied or late uploads. After head advance, the current authorized viewer fetches the same retained previous image, marked stale. Revoke only body authority and repeat the same fetch, including a conditional request. Require the same 404 as an absent ref, zero bytes and no 304 or wake. Cut before byte durability and before pointer commit. Require the prior authorized image or fallback in both arms and reclaim orphans and reservations by the staging deadline. |
+| Merged Notes tags | Compare the declared frontmatter and inline selectors with the existing tag scanner. With frontmatter `tags: [work/q4, work]` and body `#personal #work/q4`, require exactly `personal`, `work` and `work/q4`, including one count per authorized item. Run with both selector orders. Over-budget merged expansion must refuse the save before publication. |
+| Search settle race | Pin a collection at settle and verify an allowed window uses that exact scope. Send a window using another valid collection with the same generation and require a refusal. Settle the second collection with a fresh generation. Send two different texts to one Bind. Delay the first acknowledgement and a window carrying a previously unseen older result version until the second result renders. Require zero changes to rows, counts or navigation from superseded acknowledgements, results or plan refusals. Deliver the newer request before the older one in a second arm and require the newer search to remain current. |
 
 Pass these end-to-end flows on the selected wall before app migration.
 
@@ -1463,7 +1499,7 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   qualifies. Scratch activation and Photos-scale I/O and metadata stay
   outside this revision.
 
-### Revision 14 draft questions and implementation seams
+### Revision 14.2 draft questions and implementation seams
 
 - Discovery rights, canonical writer and who owns a cross-runner list are
   separate owner questions in [the sealed proposal’s §C][generic-engines].
@@ -1478,13 +1514,11 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   needs cold Send/intent and child transaction proofs, park race and
   restart qualification, and archive/snooze writers. Do not enable an
   atomic-Undo shortcut before its gate.
-- The [renderer gap report][renderer-gaps] tracks route operands for
-  ordinary window and selection requests, attachment upload, mention and
-  quote acquisition, request-card read, item editor wire and the other
-  renderer details. This delta defines the conversation components and
-  prepared Send. Those remaining transports and surfaces need their own
-  revision. An implementation can omit an unavailable optional composer
-  control until its checked route is implemented.
+- The [renderer gap report][renderer-gaps] includes the remaining portable
+  attachment-upload and mention-lookup transports. Omit those controls
+  until their portable checked routes qualify. This draft specifies the
+  route operands, quote acquisition, request-card read and item editor
+  open alongside the other conversation components and prepared Send.
 
 See the [review dispositions](reviews/plugin-api-v2-review-dispositions.md)
 for the revision 4 through 6 finding maps.

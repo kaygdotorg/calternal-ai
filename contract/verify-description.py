@@ -444,20 +444,42 @@ def validate_description(doc, manifest, installed, errors):
     semantic(doc, errors, verification.CATALOGUE, manifest, installed)
 
 
+def validate_composer_capture(capture, bindings, errors):
+    """Validate the recorded authority reply used to resolve a host Send or Stop."""
+    base = {"view_open", "event"}
+    renewal = {"renew_request", "renew_result"}
+    if capture.keys() not in (base, base | renewal) or not bindings or verification.CATALOGUE is None:
+        errors.append("$: composer capture requires an originating description, view_open and event. Include both renewal records when using a renewal")
+        return
+    catalogue = verification.CATALOGUE
+    for name, definition in errors.each((("view_open", "ViewOpenResult"), ("event", "ResolveActivation"),
+                                        ("renew_request", "LeaseRenewRequest"), ("renew_result", "LeaseRenewResult"))):
+        if name in capture:
+            check({"$ref": f"#/$defs/{definition}"}, capture[name], f"$.{name}", errors, catalogue)
+    if errors:
+        return
+    opened = capture["view_open"]
+    reply = opened
+    if "renew_request" in capture:
+        request, reply = capture["renew_request"], capture["renew_result"]
+        lease = opened["lease"]
+        if (request["lease_ref"] != lease["lease_ref"]
+                or request["grant_revision"] != lease["grant_revision"]
+                or reply["renewal_id"] != request["renewal_id"]
+                or reply["request_lease_ref"] != request["lease_ref"]
+                or not (lease["cache_partition"] == request["cache_partition"] == reply["cache_partition"]
+                        == reply["lease"]["cache_partition"])):
+            errors.append("$.renew_result: must match the originating lease, partition and outstanding renewal")
+            return
+    origin = bindings()
+    if not errors:
+        check_composer_invoke(capture["event"], origin, reply, errors)
+
+
 def validate_event(doc, bindings, errors):
     """Check event shape and contextual Bind and window range requirements."""
-    view_open = None
     if isinstance(doc, dict) and "view_open" in doc:
-        if doc.keys() != {"view_open", "event"} or not bindings or verification.CATALOGUE is None:
-            errors.append("$: composer capture requires an originating description, view_open and event")
-            return
-        view_open, doc = doc["view_open"], doc["event"]
-        check({"$ref": "#/$defs/ViewOpenResult"}, view_open, "$.view_open", errors, verification.CATALOGUE)
-        check({"$ref": "#/$defs/ResolveActivation"}, doc, "$.event", errors, verification.CATALOGUE)
-        if not errors:
-            origin = bindings()
-            if not errors:
-                check_composer_invoke(doc, origin, view_open, errors)
+        validate_composer_capture(doc, bindings, errors)
         return
     check({"$ref": "#/$defs/Event"}, doc, "$", errors)
     if errors:
@@ -568,6 +590,9 @@ def run_fixtures():
         case = read_json(file, errors)
         if not errors:
             check({"$ref": f"#/$defs/{case['definition']}"}, case["value"], "$", errors, verification.CATALOGUE)
+        if not errors and case["definition"] == "HostWorkerInvokeFrame":
+            manifest = verification.load_checked_manifest(manifests_dir / case["manifest"], errors)
+            verification.check_worker_invocation(case["value"], manifest, case.get("job"), errors)
         want = case.get("error") if case else None
         passed = any(want in error for error in errors) if want else not errors
         print(("ok   " if passed else "FAIL ") + file.name + ("" if passed else f"  {list(errors)!r}"))
@@ -632,6 +657,7 @@ def check_package_owners(owners, errors):
     """Reject duplicate package and kind identities before linking across manifests."""
     packages = set()
     kinds = set(verification.CATALOGUE["kinds"])
+    providers = set()
     for owner in errors.each(owners):
         if owner["id"] in packages:
             errors.append(f"Duplicate installed package ID {owner['id']!r}")
@@ -640,6 +666,11 @@ def check_package_owners(owners, errors):
             if kind in kinds:
                 errors.append(f"Duplicate installed kind ID {kind!r}")
             kinds.add(kind)
+        for provider in errors.each(owner.get("providers", [])):
+            ident = provider["id"]
+            if ident in providers:
+                errors.append(f"Duplicate installed provider ID {ident!r}")
+            providers.add(ident)
 
 
 def run_package(args):

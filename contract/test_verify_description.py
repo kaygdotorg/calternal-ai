@@ -96,7 +96,8 @@ class PackageTests(unittest.TestCase):
         self.event(invoke("create-blank", form={"title": "text"}), "unknown form field")
 
     def test_window_checks_bind_and_parent_scope(self):
-        self.event({"type": "window", "request": {"bind": "notes", "from": 0, "to": 10}})
+        self.event({"type": "window", "request": {"bind": "notes", "from": 0, "to": 10,
+                                                   "route": {"collection": "opaque"}}})
         self.event({"type": "window", "request": {"bind": "bogus", "from": 0, "to": 10}}, "active description")
         self.event({"type": "window", "request": {"bind": "notes", "parent": "opaque", "from": 0, "to": 10}}, "parent scope")
         self.event({"type": "window", "request": {"bind": "notes", "from": 0, "to": 201}}, "max_request_span")
@@ -107,7 +108,7 @@ class PackageTests(unittest.TestCase):
         self.event(scoped, "parent scope")
 
     def test_selection_checks_bind_and_row_scope(self):
-        self.event({"type": "selection", "bind": "notes", "row": "opaque"})
+        self.event({"type": "selection", "bind": "notes", "row": "opaque", "route": {"collection": "opaque"}})
         self.event({"type": "selection", "bind": "bogus", "row": "opaque"}, "active description")
         self.event({"type": "selection_set", "bind": "bogus", "rows": []}, "active description")
         self.event({"type": "selection_set", "bind": "notes", "rows": []}, "multiple-selection Bind")
@@ -118,6 +119,44 @@ class PackageTests(unittest.TestCase):
     def test_search_checks_bind_type(self):
         self.event({"type": "search", "bind": "bogus", "text": "words", "settle_generation": 1}, "active description")
         self.event({"type": "search", "bind": "notes", "text": "words", "settle_generation": 1}, "not a search bind")
+
+    def test_installed_provider_id_is_unique_across_packages(self):
+        self.stage("independent-runner-app")
+        manifest = json.loads(self.manifest.read_bytes())
+        provider = manifest["providers"][0]
+        other = {
+            "api_version": 2, "id": "another-runner", "version": "1.0.0",
+            "name": "Another runner", "icon": "puzzle", "network": "none",
+            "apps": [], "kinds": [], "operations": [], "providers": [provider],
+        }
+        installed = self.package / "installed-provider.json"
+        self.installed = ["--installed-manifest", installed]
+        write_json(installed, other)
+        self.verify(failure=f"Duplicate installed provider ID {provider['id']!r}")
+        provider["id"] = "distinct-provider"
+        write_json(installed, other)
+        self.verify()
+
+    def test_standalone_card_requires_its_editor_route_on_open(self):
+        self.replace_template({
+            "version": 2, "kind": "app", "revision": 1, "binds": [],
+            "view": {"root": {"type": "component", "component": {
+                "type": "item-editor", "id": "editor", "config": {"item": {"route": "item"}}
+            }}}
+        })
+        event = {"type": "view_open", "view_ref": "opaque"}
+        self.event(event | {"route": {"item": "note-1"}})
+        self.event(event, "missing required route operand 'item'")
+
+    def test_selection_set_checks_the_same_bind_route_as_windows(self):
+        self.stage("notes-bulk-and-snooze-app")
+        app = json.loads((self.package / self.template).read_bytes())
+        bind = next(bind for bind in app["binds"] if bind["id"] == "notes")
+        bind["source"]["collection"] = {"route": "collection"}
+        self.replace_template(app)
+        event = {"type": "selection_set", "bind": "notes", "rows": ["opaque"]}
+        self.event(event | {"route": {"collection": "opaque"}})
+        self.event(event, "missing required route operand 'collection'")
 
     def test_route_checks_name(self):
         self.event({"type": "route", "id": "item", "row": "opaque"})

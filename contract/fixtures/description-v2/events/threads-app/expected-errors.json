@@ -6,5 +6,8 @@
   "invalid-event-catalogue-component-transcript-quote.json": "'approval' cannot use route 'transcript.quote'",
   "invalid-event-catalogue-component-transcript-body.json": "'approval' cannot use route 'transcript.body'",
   "invalid-event-catalogue-component-request-card-read.json": "'transcript' cannot use route 'request-card.read'",
-  "invalid-event-catalogue-composer-on-card.json": "is not a composer in the active description"
+  "invalid-event-catalogue-composer-on-card.json": "is not a composer in the active description",
+  "invalid-event-catalogue-composer-renewal-superseded.json": "must match the originating lease, partition and outstanding renewal",
+  "invalid-event-catalogue-composer-renewal-retired-context.json": "must match the issued composer action context",
+  "invalid-event-catalogue-composer-renewal-stop-not-mapped.json": "expected a composer action issued in the originating view"
 }

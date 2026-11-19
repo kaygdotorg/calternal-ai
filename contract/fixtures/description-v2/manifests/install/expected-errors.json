@@ -13,5 +13,7 @@
   "invalid-conversation-room.json": "live_room: not allowed here",
   "invalid-frontmatter-mints-ref.json": "frontmatter cannot produce 'RowImageRef'",
   "invalid-frontmatter-no-provenance.json": "requires a claimed-text source and body_derived output",
-  "invalid-composer-send-schedule.json": "prepared Send is reserved for the host composer"
+  "invalid-composer-send-schedule.json": "prepared Send is reserved for the host composer",
+  "invalid-text-set-extractors-conflicting-separators.json": "inline selectors for 'tags' require one hierarchy separator",
+  "invalid-extractors-repeated-scalar-output.json": "repeated output 'summary' requires TextSet"
 }

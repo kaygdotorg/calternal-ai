@@ -1,0 +1,21 @@
+{
+  "definition": "HostWorkerInvokeFrame",
+  "value": {
+    "v": 1,
+    "epoch": "epoch-first",
+    "seq": 1,
+    "package": "reading",
+    "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "ticket": "host-ticket",
+    "message": {
+      "type": "invoke",
+      "operation": "reading.add",
+      "input": {
+        "title": "Example article",
+        "url": "https://example.test/"
+      },
+      "deadline": "2026-11-20T12:00:00Z"
+    }
+  },
+  "manifest": "reading-list-app.json"
+}

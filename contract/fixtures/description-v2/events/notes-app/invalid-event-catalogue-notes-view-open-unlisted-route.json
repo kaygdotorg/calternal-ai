@@ -1,0 +1,7 @@
+{
+  "type": "view_open",
+  "view_ref": "app-with-active-note",
+  "route": {
+    "unlisted": "note-1"
+  }
+}

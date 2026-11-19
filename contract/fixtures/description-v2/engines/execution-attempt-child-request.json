@@ -1,0 +1,11 @@
+{
+  "definition": "ExecutionAttemptChildRequest",
+  "value": {
+    "type": "child_request",
+    "request_id": "child-request-1",
+    "kind": "lantern-conversation",
+    "refs": [
+      "checked-item-1"
+    ]
+  }
+}

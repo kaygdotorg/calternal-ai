@@ -152,7 +152,7 @@
           }
         },
         "extractors": {
-          "description": "Closed selectors over the same claimed-text body. Their outputs must be declared body_derived fields of the types in catalogue query.extractors.",
+          "description": "Closed selectors over the same claimed-text body. Their outputs must be declared body_derived fields of the types in catalogue query.extractors. Only TextSet outputs may have multiple selectors and all inline selectors for that output must use one separator.",
           "type": "array",
           "maxItems": 8,
           "items": {
@@ -393,7 +393,8 @@
       ],
       "properties": {
         "id": {
-          "$ref": "#/definitions/localId"
+          "$ref": "#/definitions/localId",
+          "description": "Globally unique installed ProviderId. Reject a collision with any bundled or installed contribution before activation."
         },
         "name": {
           "$ref": "#/definitions/label"

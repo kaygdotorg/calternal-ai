@@ -105,14 +105,19 @@ checks live authority over opaque references such as rows, leases, activations
 and proofs. To verify a captured host-issued composer Invoke, submit
 `{"view_open": <ViewOpenResult>, "event": <ResolveActivation>}` as the
 event artifact. The verifier matches the composer and exact context against
-the originating description and view-open reply. The wrapper is a verifier
-input, not a host request.
+the originating description and view-open reply. For an Invoke issued
+on renewal, include the paired `renew_request` and `renew_result` in the
+same capture. The verifier checks the earlier lease and the matching
+outstanding renewal, then uses the replacement composer map and contexts.
+The wrapper is a verifier input.
 
 Directory mode finds replies in
 `replies/`. Use `--reply FILE` to select replies and `--origins FILE` to override
 `replies/origins.json`. The origins map names a verified description and Bind
 for each reply. Events and app templates alone need no origins map. Use
-`--installed-manifest FILE` for additional kind owners.
+`--installed-manifest FILE` for additional kind owners and provider
+contributions. The verifier rejects provider IDs repeated across the
+supplied installation manifests.
 
 | Input | Bound or check |
 | --- | --- |

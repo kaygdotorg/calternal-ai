@@ -9,6 +9,7 @@
       "fields": {
         "title": "Notes",
         "tags": [
+          "personal",
           "work",
           "work/q4"
         ],
@@ -16,7 +17,13 @@
       },
       "stale_images": [
         "thumbnail"
-      ]
+      ],
+      "image_attribution": {
+        "thumbnail": {
+          "uploader": "editor-1",
+          "label": "Sample editor"
+        }
+      }
     }
   ],
   "window_ref": "tags-window",

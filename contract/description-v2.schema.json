@@ -2497,6 +2497,7 @@
             "transcript.body",
             "request-card.read",
             "editor.open",
+            "row_images.prepare",
             "sealed_frame.open",
             "sealed_frame.resize",
             "sealed_frame.open_link",

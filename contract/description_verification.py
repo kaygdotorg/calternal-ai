@@ -471,6 +471,21 @@ def composer_send_operations(manifest, errors):
             if "composer" in kind}
 
 
+def check_worker_invocation(frame, manifest, job_id, errors):
+    """Validate a host-frame specimen against the admitted manifest job."""
+    message = frame["message"]
+    job = manifest.get("jobs", {}).get(job_id)
+    if frame["package"] != manifest["id"] or message["operation"] not in manifest["operations"]:
+        errors.append("$.message.operation: invocation must name an operation of the pinned package")
+    if job_id is not None and (job is None or job["run_operation"] != message["operation"]):
+        errors.append("$.message.operation: invocation must match the admitted job entry")
+    if job and job.get("execution_intent") is True:
+        if "job_context" not in message:
+            errors.append("$.message.job_context: required for the composer intent job")
+    elif "job_context" in message:
+        errors.append("$.message.job_context: allowed only for an admitted composer intent job")
+
+
 def check_manifest_install(manifest, errors):
     """Check reserved indexed fields and host_create follow-ups at install."""
     if CATALOGUE is None:
@@ -505,8 +520,17 @@ def check_manifest_install(manifest, errors):
                 if not target_field or not is_only_item_input(run.get("input_schema"), target_field, errors):
                     errors.append(f"{path}.composer.job: run input must accept only its target ItemRef")
         fields = kind.get("fields", {})
+        outputs, separators = set(), {}
         for extractor in errors.each(kind.get("extractors", [])):
-            output = fields.get(extractor.get("output"), {})
+            field = extractor["output"]
+            output = fields.get(field, {})
+            if field in outputs and output.get("type") != "TextSet":
+                errors.append(f"{path}.extractors: repeated output {field!r} requires TextSet")
+            outputs.add(field)
+            if extractor["selector"] == "inline_tags":
+                separator = extractor["separator"]
+                if separators.setdefault(field, separator) != separator:
+                    errors.append(f"{path}.extractors: inline selectors for {field!r} require one hierarchy separator")
             allowed = CATALOGUE["query"]["extractors"]["output_types"][extractor["selector"]]
             if kind.get("claimed_text") is not True or output.get("body_derived") is not True:
                 errors.append(f"{path}.extractors: requires a claimed-text source and body_derived output")
@@ -644,10 +668,11 @@ def check_window_rows(reply, origin, catalogue, errors):
         return
     declared_types = catalogue["$defs"]["FieldType"]["enum"]
     for index, row in enumerate(errors.each(reply["rows"])):
-        for field in errors.each(row.get("stale_images", [])):
-            if (reply["state"] != "ready" or field not in row["fields"] or row["fields"][field] is None
-                    or field_meta(kind, field, generic).get("type") != "RowImageRef"):
-                errors.append(f"$.rows[{index}].stale_images: must name a delivered RowImageRef in a ready row")
+        for decoration in errors.each(("stale_images", "image_attribution")):
+            for field in errors.each(row.get(decoration, [])):
+                if (reply["state"] != "ready" or row["fields"].get(field) is None
+                        or field_meta(kind, field, generic).get("type") != "RowImageRef"):
+                    errors.append(f"$.rows[{index}].{decoration}: must name a delivered RowImageRef in a ready row")
         for field, value in errors.each(row["fields"].items()):
             path = f"$.rows[{index}].fields.{field}"
             meta = field_meta(kind, field, generic)

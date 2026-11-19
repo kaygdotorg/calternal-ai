@@ -1062,8 +1062,7 @@
       "atomic_undo_when": "One per-person layout revision transaction retires the section and its placement generation and commits Undo for that generation. Until Undo expires, retain the generation and exclude it from reads. Undo rechecks live membership and the post-effect layout revision and reactivates the exact generation atomically. Reactivation grants no item access. Reclaim expired retired generations in bounded background batches. Removal and Undo perform no per-placement work."
     }
   },
-  "planned_operation_replacements": {
-  },
+  "planned_operation_replacements": {},
   "query": {
     "operators": {
       "eq": "Same scalar type or an explicitly nullable field compared to null.",
@@ -1178,7 +1177,8 @@
         "max_staging_bytes_per_space": 8388608,
         "grant_and_staging_seconds": 300,
         "orphan_cleanup_additional_seconds": 30
-      }
+      },
+      "attribution": "On a ready authorized member row, include image_attribution only when the viewer may see the exact asset uploader's identity. Bind its host-authenticated account and display label to the delivered image field and retained asset. Omit for guest or public, identity loss, every cache record and every non-ready row. Image metadata is stripped."
     },
     "cross_bind_operands": "Forbidden in the first query slice. Action and component references to upstream fields still require one authorized projected row and a checked dependency edge.",
     "scope_limit_refusal": {
@@ -1252,7 +1252,11 @@
           "TextSet"
         ]
       },
-      "provenance": "Every selector reads the same checked claimed-text item and produces a body-derived field. Expose the value and any filtered count only under the intersection of source and field audiences. No selector can mint an opaque host ref."
+      "provenance": "Every selector reads the same checked claimed-text item and produces a body-derived field. Expose the value and any filtered count only under the intersection of source and field audiences. No selector can mint an opaque host ref.",
+      "merge": {
+        "TextSet": "Union all grammar-normalized selector values. Use the output's common inline hierarchy separator to expand parents for all values, including frontmatter. Deduplicate exact normalized entries, including parents, and order deterministically. If there is no inline separator, use a flat union. Apply element, set and index-work caps to the resulting set before publishing it.",
+        "other_fields": "Allow one selector per output. Multiple inline selectors on the same TextSet output require the same separator."
+      }
     }
   },
   "$defs": {
@@ -1788,6 +1792,17 @@
             "$ref": "#/$defs/ActionId"
           },
           "description": "Field names of retained older assets actually projected on this row. They remain fetchable under live authority and retention checks. Omit on persistence."
+        },
+        "image_attribution": {
+          "type": "object",
+          "maxProperties": 8,
+          "propertyNames": {
+            "$ref": "#/$defs/ActionId"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/RowImageAttribution"
+          },
+          "description": "Optional uploader attribution by projected RowImageRef field. The host stamps it from the exact asset after checking the live viewer may see the uploader's identity. Only on ready member rows. Omit from cached records and refine replies."
         }
       }
     },
@@ -2062,6 +2077,32 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "audience": {
+                "enum": [
+                  "own_space_member",
+                  "member"
+                ]
+              },
+              "state": {
+                "const": "ready"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "rows": {
+                "items": {
+                  "properties": {
+                    "image_attribution": false
+                  }
+                }
+              }
+            }
+          }
         }
       ],
       "description": "An authenticated reply for the active view and its audience. At from zero, the host sends empty for a wholly empty result. A ready reply at offset zero contains rows. Check the session, lease partition and audience before consuming rows or a cache record. Any cache record must match this view and window. Only a non-search Bind in a view with exact count authority receives an end anchor and end-relative offset. Every end-anchored reply carries count.mode exact. Check count policy for the active Bind and scope on each delivery. An absolute offset above max_offset is only returned to a contiguous forward continuation without exact count authority, with anchor:start and no count or persistent cache record."
@@ -2070,7 +2111,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 96,
-      "description": "Installed provider identifier. Known built-in IDs are icon-map seeds, not a closed allowlist."
+      "description": "Installed provider contribution ID, unique across the installation. Refuse duplicate IDs at install, across packages and with bundled contributions. Before profile lookup pin the resolved package, manifest and adapter digests. Use only a profile bound to that contribution. Provider IDs remain open."
     },
     "RowImageUploadGrant": {
       "type": "object",
@@ -2105,6 +2146,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "component",
         "item",
         "revision",
         "field",
@@ -2141,6 +2183,9 @@
         "sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "component": {
+          "$ref": "#/$defs/ActionId"
         }
       }
     },
@@ -2296,8 +2341,6 @@
       "required": [
         "parent",
         "request_id",
-        "kind",
-        "refs",
         "request"
       ],
       "properties": {
@@ -2306,16 +2349,6 @@
         },
         "request_id": {
           "$ref": "#/$defs/Ref"
-        },
-        "kind": {
-          "$ref": "#/$defs/KindId"
-        },
-        "refs": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "$ref": "#/$defs/ItemRef"
-          }
         },
         "request": {
           "$ref": "#/$defs/ExecutionChildRequestRef"
@@ -2857,7 +2890,8 @@
           "maxProperties": 8,
           "additionalProperties": {
             "$ref": "#/$defs/ComposerActionIds"
-          }
+          },
+          "description": "Current complete per-component Send/Stop ID map. Omission means empty. Every listed ID has an exact context in activation_contexts in the same accepted reply."
         },
         "kind_icons": {
           "type": "object",
@@ -3033,6 +3067,14 @@
         },
         "cache_partition": {
           "$ref": "#/$defs/CachePartitionRef"
+        },
+        "composer_actions": {
+          "type": "object",
+          "maxProperties": 8,
+          "additionalProperties": {
+            "$ref": "#/$defs/ComposerActionIds"
+          },
+          "description": "Current complete per-component Send/Stop ID map. Omission means empty. Every listed ID has an exact context in activation_contexts in the same accepted reply."
         }
       },
       "description": "Accept only an authenticated host reply matching the outstanding renewal_id, current request_lease_ref and cache_partition. Retain only exact window_ref and result_version pairs authorized and previously issued to that lease. Ignore superseded replies and keep live rows hidden on timeout or refusal."
@@ -3774,7 +3816,7 @@
       "additionalProperties": {
         "$ref": "#/$defs/Ref"
       },
-      "description": "Device navigation supplies opaque references. Reject an undeclared name or inaccessible reference. This object conveys no activation authority."
+      "description": "The shell supplies values only for route operands declared by the consuming Bind or view. Require every route operand used by a Bind query. For an app view-open, missing component or action operands make those surfaces unavailable. A content-only app requires the operands its root components need. The host checks live type and authority. This map conveys no activation authority."
     },
     "ComposerActionIds": {
       "type": "object",
@@ -4172,6 +4214,9 @@
         },
         "settle_generation": {
           "$ref": "#/$defs/SearchSettleGeneration"
+        },
+        "route": {
+          "$ref": "#/$defs/RouteOperands"
         }
       }
     },
@@ -4320,6 +4365,130 @@
       "minimum": 1,
       "maximum": 9007199254740991,
       "description": "Renderer sequence per lease and resolved search Bind. A lower generation never supersedes a higher one. Reuse a generation only for exact replay."
+    },
+    "HostWorkerInvokeFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "v",
+        "epoch",
+        "seq",
+        "package",
+        "digest",
+        "ticket",
+        "message"
+      ],
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "epoch": {
+          "$ref": "#/$defs/Ref"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "package": {
+          "$ref": "#/$defs/KindId"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "ticket": {
+          "$ref": "#/$defs/Ref"
+        },
+        "message": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "operation",
+            "input",
+            "deadline"
+          ],
+          "properties": {
+            "type": {
+              "const": "invoke"
+            },
+            "operation": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "input": {},
+            "deadline": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "job_context": {
+              "$ref": "#/$defs/ExecutionJobContext"
+            }
+          }
+        }
+      },
+      "description": "Host-to-worker only. The trusted host stamps job_context on claims and replays of a manifest job with execution_intent:true. For every other invocation omit it. It is separate from operation input and conveys no new authority."
+    },
+    "RowImageAttribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uploader",
+        "label"
+      ],
+      "properties": {
+        "uploader": {
+          "$ref": "#/$defs/AccountRef"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "ExecutionAttemptChildRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "request_id",
+        "kind",
+        "refs"
+      ],
+      "properties": {
+        "type": {
+          "const": "child_request"
+        },
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "kind": {
+          "$ref": "#/$defs/KindId"
+        },
+        "refs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ItemRef"
+          }
+        }
+      },
+      "description": "Authenticated attempt channel only. Resolve the parent attempt and actor from the channel. Accept a bounded target conversation kind and only host-issued refs within current parent and ancestor ceilings."
+    },
+    "ExecutionAttemptChildAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request"
+      ],
+      "properties": {
+        "request": {
+          "$ref": "#/$defs/ExecutionChildRequestRef"
+        }
+      }
     }
   },
   "activation_limits": {
@@ -4365,7 +4534,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStatus"
       },
-      "scope": "Owning job and exact parent, live caller and eligible target. Reserve tree capacity and commit child create and edge atomically under admission."
+      "scope": "Only the owning job consumes the checked child request. Resolve pinned kind and refs from it. Recheck exact parent, live caller, target, ancestor ceilings and aggregate tree quota. Commit the child item, parent edge and admission under one fence by receipt."
     },
     "execution_stop": {
       "input": {
@@ -4390,6 +4559,16 @@
         "$ref": "#/$defs/ExecutionDisplayFrame"
       },
       "scope": "Authenticated attempt transport. Host validates, scrubs and maintains canonical records. This format is not a renderer route."
+    },
+    "child_request": {
+      "transport": "authenticated_attempt",
+      "input": {
+        "$ref": "#/$defs/ExecutionAttemptChildRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/ExecutionAttemptChildAck"
+      },
+      "scope": "Check exact current parent, actor, eligible target, refs and ceilings. Deduplicate the request under the parent-attempt receipt. Atomically store the immutable checked request and its child_requested transition before ACK. Replay the exact receipt and emit the transition once. A changed request under that ID or a stale fence is refused."
     }
   },
   "component_routes": {
@@ -4400,7 +4579,7 @@
       "output_schema": {
         "$ref": "#/$defs/RowImageUploadGrant"
       },
-      "scope": "Current editor session and exact committed source revision with a declared device snapshot slot."
+      "scope": "Editor-scoped EventComponent after the save ACK. The request component matches the envelope and the current item-editor in edit mode. Check live editor lease, item, slot and exact source revision and digest before issuing the upload grant."
     },
     "transcript.follow": {
       "input_schema": {
@@ -4522,7 +4701,7 @@
       "output_schema": {
         "$ref": "#/$defs/LeaseRenewResult"
       },
-      "scope": "Original authenticated view session and cache partition, with fresh authority for the requested lease and its issued window versions"
+      "scope": "Original authenticated view session and cache partition, with fresh authority for the requested lease and its issued window versions Replace the composer action map and its contexts together after accepting the correlated renewal. Recompute eligibility and retire omitted IDs or replaced contexts. A newly eligible Stop may target a pending intent."
     },
     "choice.options": {
       "output_schema": {
@@ -4577,7 +4756,7 @@
       "output_schema": {
         "$ref": "#/$defs/SettledSearchResult"
       },
-      "scope": "Bind each acknowledgement and subsequent window or plan refusal to the current view lease, resolved search Bind and settle_generation. Supersede older generations atomically and reject changed text or match on replay. Use only the Bind’s field filter. A new generation starts at offset zero."
+      "scope": "Bind each acknowledgement and subsequent window or plan refusal to the current view lease, resolved search Bind and settle_generation. Supersede older generations atomically and reject changed text or match on replay. Use only the Bind’s field filter. A new generation starts at offset zero. Resolve required route operands before accepting the generation. Bind that generation to the exact resolved scope including any collection. A window must resolve to the same scope. A route change requires a new generation and never widens the prior search."
     },
     "transcript.body": {
       "input_schema": {
@@ -4697,5 +4876,11 @@
     "principal": "A distinct host-minted principal per exact attempt. Its separately fenced lease never confers an ordinary invocation ticket or the member principal. Interim refs-only policy applies in every space.",
     "broker": "Only purpose-specific operations on admitted host-issued refs within effect ceilings. Reject list, search, count, enumeration and bulk reads. Refuse job enqueue, ticket minting and delegation that could acquire discovery rights.",
     "renewal_and_egress": "Recheck the exact attempt and runtime fence, live session or scheduled principal, grants, package generation and placement at renewal, effects and output egress. Revoke fences immediately and stops renewal."
+  },
+  "carrier": {
+    "invoke_schema": {
+      "$ref": "#/$defs/HostWorkerInvokeFrame"
+    },
+    "invoke_scope": "The host dispatches to the exact admitted package, digest, epoch and ticket. For composer job claims and replays include the pinned ExecutionJobContext. For all other invocations omit it. Refuse a worker-origin invoke or any worker-supplied job context."
   }
 }

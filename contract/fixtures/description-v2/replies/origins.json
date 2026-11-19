@@ -93,7 +93,10 @@
       "reply-catalogue-window-tags.json",
       "invalid-reply-catalogue-window-tags-string.json",
       "reply-catalogue-window-stale-preview.json",
-      "invalid-reply-catalogue-window-stale-non-image.json"
+      "invalid-reply-catalogue-window-stale-non-image.json",
+      "invalid-reply-catalogue-guest-image-attribution.json",
+      "invalid-reply-catalogue-public-image-attribution.json",
+      "invalid-reply-catalogue-attribution-without-image-field.json"
     ]
   }
 }

@@ -11,6 +11,7 @@ TYPED_ROUTES = {
     "transcript.quote": "conversation-transcript",
     "transcript.body": "conversation-transcript",
     "editor.open": "item-editor",
+    "row_images.prepare": "item-editor",
     "transcript.follow": "conversation-transcript",
     "sealed_frame.open": "sealed-html-frame",
     "sealed_frame.resize": "sealed-html-frame",
@@ -33,6 +34,26 @@ def walk(node, errors, path="$"):
             yield from walk(value, errors, f"{path}[{index}]")
 
 
+def route_operands(node, errors):
+    """Find route value consumers without mistaking a route's target for an input."""
+    return {value["route"] for _, value in walk(node, errors)
+            if isinstance(value, dict) and value.keys() == {"route"} and isinstance(value["route"], str)}
+
+
+def check_route_operands(request, allowed, required, path, errors):
+    """Check the declared names and leave runtime ref authority to the host."""
+    supplied = request.get("route", {}).keys()
+    for name in errors.each(sorted(supplied - allowed)):
+        errors.append(f"{path}: undeclared route operand {name!r}")
+    for name in errors.each(sorted(required - supplied)):
+        errors.append(f"{path}: missing required route operand {name!r}")
+
+
+def check_bind_route(request, bind, path, errors):
+    required = route_operands([bind["source"], bind.get("filter", {})], errors)
+    check_route_operands(request, required, required, path, errors)
+
+
 def prompt_slots(action, errors):
     """Index the device-held prompt and choice slots by their input names."""
     inputs = action.get("inputs", {})
@@ -45,6 +66,13 @@ class EventBindings:
 
     def __init__(self, view, errors):
         chrome = view.get("chrome", {})
+        card = view.get("view", {}).get("root", {})
+        self.view_operands = route_operands([chrome.get("header", {}), chrome.get("panel", {}), card], errors)
+        self.required_view_operands = set()
+        if "chrome" not in view:
+            for _, node in walk(card, errors):
+                if isinstance(node, dict) and node.get("type") in COMPONENT_TYPES:
+                    self.required_view_operands.update(route_operands(node.get("config", {}), errors))
         self.sidebar = chrome.get("sidebar")
         self.panel = chrome.get("panel")
         footer = chrome.get("footer", {})
@@ -106,23 +134,23 @@ class EventBindings:
         return bind
 
 
-def check_composer_invoke(event, bindings, view_open, errors):
-    """Resolve a host-owned action from its recorded opening reply."""
+def check_composer_invoke(event, bindings, reply, errors):
+    """Resolve a host-owned action from its accepted opening or renewal reply."""
     issued = {}
-    for component, actions in errors.each(view_open.get("composer_actions", {}).items()):
+    for component, actions in errors.each(reply.get("composer_actions", {}).items()):
         if bindings.components.get(component, {}).get("type") != "composer":
-            errors.append(f"$.view_open.composer_actions: {component!r} is not a composer in the active description")
+            errors.append(f"$.authority_reply.composer_actions: {component!r} is not a composer in the active description")
         for purpose, action_id in errors.each(actions.items()):
             if action_id in issued or action_id in bindings.actions or action_id in bindings.shell_actions:
-                errors.append(f"$.view_open.composer_actions: duplicate action ID {action_id!r}")
-            if action_id not in view_open["activation_contexts"]:
-                errors.append(f"$.view_open.activation_contexts: missing issued context for {action_id!r}")
+                errors.append(f"$.authority_reply.composer_actions: duplicate action ID {action_id!r}")
+            if action_id not in reply["activation_contexts"]:
+                errors.append(f"$.authority_reply.activation_contexts: missing issued context for {action_id!r}")
             issued[action_id] = purpose
     action_id = event["action_id"]
     if action_id not in issued:
         errors.append("$.action_id: expected a composer action issued in the originating view")
         return
-    if view_open["activation_contexts"].get(action_id) != event["activation_context"]:
+    if reply["activation_contexts"].get(action_id) != event["activation_context"]:
         errors.append("$.activation_context: must match the issued composer action context")
     interaction = event.get("interaction", {})
     if issued[action_id] == "send":
@@ -205,6 +233,8 @@ def check_component(event, bindings, errors, catalogue):
     allowed = route in HOST_SURFACE_ROUTES
     if route in TYPED_ROUTES:
         allowed = component is not None and component["type"] == TYPED_ROUTES[route]
+        if allowed and route == "row_images.prepare" and component["config"].get("mode") == "read":
+            errors.append("$.component: row_images.prepare requires an editable item editor")
         if allowed and route == "composer.options":
             controls = component["config"].get("controls", [])
             if request["control"] not in errors.each(controls):
@@ -221,6 +251,8 @@ def check_component(event, bindings, errors, catalogue):
         errors.append(f"$.component: {ident!r} cannot use route {route!r}")
     elif "component" in request and request["component"] != ident:
         errors.append("$.request.component: must match the component envelope")
+    elif route == "view.open":
+        check_route_operands(request, bindings.view_operands, bindings.required_view_operands, "$.request.route", errors)
 
 
 def check_event_binding(event, bindings, errors, catalogue):
@@ -238,12 +270,15 @@ def check_event_binding(event, bindings, errors, catalogue):
         bind = bindings.bind_for(request["bind"], errors)
         if bind is not None:
             validate_search_generation(request, bind, errors)
+            check_bind_route(request, bind, "$.request.route", errors)
             if ("parent" in request) != bool(bind["source"].get("parent")):
                 errors.append("$.request.parent: window parent scope must match source.parent")
             if bind["source"]["type"] == "search":
                 check({"$ref": "#/$defs/EventSearchWindow"}, event, "$", errors)
     elif event_type in ("selection", "selection_set"):
         bind = bindings.bind_for(event["bind"], errors)
+        if bind:
+            check_bind_route(event, bind, "$.route", errors)
         if bind and bind["source"]["type"] not in ("list", "search"):
             errors.append("$.bind: selection requires a list or search Bind")
         if bind and event_type == "selection_set" and event["bind"] not in bindings.multiple:
@@ -252,6 +287,10 @@ def check_event_binding(event, bindings, errors, catalogue):
         bind = bindings.bind_for(event.get("bind", bindings.footer_search), errors)
         if bind and bind["source"]["type"] != "search":
             errors.append(f"$: bind {bind['id']!r} is not a search bind")
+        elif bind:
+            check_bind_route(event, bind, "$.route", errors)
+    elif event_type == "view_open":
+        check_route_operands(event, bindings.view_operands, bindings.required_view_operands, "$.route", errors)
     elif event_type == "refresh":
         if "bind" in event:
             bindings.bind_for(event["bind"], errors)
@@ -277,5 +316,5 @@ def check_event_binding(event, bindings, errors, catalogue):
     elif event_type == "choice_options":
         if event["slot"] not in bindings.choices:
             errors.append(f"$.slot: unknown choice slot {event['slot']!r} in the active description")
-    elif event_type not in {"invoke_confirm", "invoke_dispatch", "view_open", "lease_renew", "undo", "action_status"}:
+    elif event_type not in {"invoke_confirm", "invoke_dispatch", "lease_renew", "undo", "action_status"}:
         errors.append(f"$.type: missing template checker for event {event_type!r}")

@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.1 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.2 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.
@@ -288,7 +288,9 @@ the system toolbar.
 
 ### 5.0 Content nodes (`$defs/View`, `$defs/ContentNode`)
 
-A **view** is the content of the card for one place, as a sibling of chrome: `{version: 2, kind: "view", revision, title?, binds, root}`. It is data-free like chrome:
+The app description's **`view`** is the content of the card for one
+place, a sibling of `chrome`. It contains `root` and an optional title.
+A content-only app description omits `chrome`. It is data-free:
 binds are requests the host fills; a view never carries a row, a title of a person's item, a message, or HTML. It is drawn with each platform's own controls (Svelte on
 the web, SwiftUI natively); no plugin is written twice, and anything the vocabulary cannot say stays a **host component** (5.1), never plugin-drawn.
 
@@ -361,11 +363,15 @@ plugin code). A description can run a named **invoke** on a component's event on
 ### 5.1 Host surfaces and navigation on the wire
 
 A route-dependent Bind uses the same `route` operands on its window, settled
-selection and explicit selection set. View-open accepts operands for
-view-level actions and components. The shell supplies at most eight declared
-names and opaque refs. The host verifies declaration, kind, space, live
-viewer authority and the specific Bind or component before issuing results.
-Reject undeclared names or a missing required value. A change of relevant
+selection, explicit selection set and search settle. Supply every route
+operand consumed by the Bind source or filter. View-open accepts only
+operands consumed by its view-level actions and components. Missing app
+operands leave the dependent actions or components unavailable. A
+content-only app requires the operands used by its root components.
+The shell supplies at most eight declared names and opaque refs. The host
+verifies declaration, kind, space, live viewer authority and the specific
+Bind or component before issuing results. Reject undeclared names or a
+missing required value. A change of relevant
 route drops the old selection and opens new view scope for view actions and
 components. Activation carries only its issued context and device material.
 It never carries the raw route values again. After an `ok` outcome,
@@ -374,7 +380,11 @@ It never carries the raw route values again. After an `ok` outcome,
 
 **Composer.** In `view.open`, `composer_actions[component_id]` names the
 eligible host-issued `send` and `stop` action IDs. Their tokens come from
-`activation_contexts`, refreshed by renewal. The component ID is the lookup
+`activation_contexts` in the same reply. An accepted `view.renew` supplies
+the complete replacement map and contexts, with omission meaning empty.
+Apply them atomically and discard retired IDs and replaced contexts.
+This lets an open composer receive Stop when a cold Send enters Starting.
+The component ID is the lookup
 key. A composer action ID is not author-defined. Send the exact context
 under that action ID, scoped to the opening view and current lease. Use
 an issued ID only for its own composer and purpose. Omit an action
@@ -436,6 +446,11 @@ current head and keeps the local draft. Live rooms remain a separate
 negotiated transport with edit authorization for eligible kinds.
 Conversation body reads require message-corpus authority. Conversation
 body edits use the host composer and transcript engine.
+An editable item can prepare a device preview after the save ACK through
+`row_images.prepare` on the same item-editor component, echoing its ID in
+the request. The host checks the component, item and exact saved revision
+before issuing the upload grant. Draw a delivered uploader label only
+from the ready member row's `image_attribution` for that image field.
 `sealed_frame.open` returns a
 short-lived same-host content URL, enforced CSP and byte ceiling. Load in an
 isolated, non-persistent sandbox with network denied except for the pinned
@@ -454,9 +469,11 @@ surface. Guest and public views receive none of these identity fields.
 
 **Search and counts.** The shell increments `settle_generation` for each
 new settled input within the current lease and resolved Bind. It posts the
-generation, text and optional `match` to `search.settled`. The host echoes
-the generation with the Bind, fences older settles and accepts exact
-replay of the current one. Require a matching current acknowledgement, then
+generation, text, optional `match` and the Bind's checked route operands to
+`search.settled`. The host pins the resolved scope, including any collection,
+before acknowledging. It echoes the generation with the Bind, fences older
+settles and accepts an exact replay of the current one. A later window must
+resolve to the pinned scope. A changed route needs a new generation. Require a matching current acknowledgement, then
 clear previous results and request a start-anchored window at offset zero.
 Carry the same generation on every search window request. Match lease,
 Bind and generation before applying a reply, push or plan refusal, even

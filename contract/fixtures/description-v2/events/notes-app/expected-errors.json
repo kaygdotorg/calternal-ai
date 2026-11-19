@@ -1,3 +1,9 @@
 {
-  "invalid-event-catalogue-component-editor-open.json": "unknown component 'wrong-editor'"
+  "invalid-event-catalogue-component-editor-open.json": "unknown component 'wrong-editor'",
+  "invalid-event-catalogue-row-image-wrong-component.json": "$.request.component: must match the component envelope",
+  "invalid-event-catalogue-notes-window-unknown-route.json": "undeclared route operand 'unknown'",
+  "invalid-event-catalogue-notes-window-missing-collection.json": "missing required route operand 'collection'",
+  "invalid-event-catalogue-notes-selection-missing-route.json": "missing required route operand 'collection'",
+  "invalid-event-catalogue-notes-view-open-unlisted-route.json": "undeclared route operand 'unlisted'",
+  "invalid-event-catalogue-notes-search-without-collection.json": "missing required route operand 'collection'"
 }

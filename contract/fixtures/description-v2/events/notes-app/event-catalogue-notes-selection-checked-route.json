@@ -1,0 +1,8 @@
+{
+  "type": "selection",
+  "bind": "notes",
+  "row": "note-1",
+  "route": {
+    "collection": "opaque-coll-1"
+  }
+}
