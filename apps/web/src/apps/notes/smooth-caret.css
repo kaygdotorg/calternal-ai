@@ -1,0 +1,2 @@
+/* The one rule of the smooth caret that lives outside the editor's scope (smooth-caret.ts): while keys are typed (lib/input.ts) the blink holds solid, and it restarts only on a move that is not typing. */
+:root[data-typing] .cm-smooth-caret { animation: none; opacity: 1; }
