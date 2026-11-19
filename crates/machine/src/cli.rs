@@ -160,8 +160,8 @@ pub enum Command {
         /// Verify and install the server's signed machine release after active leases finish.
         #[arg(long, conflicts_with = "bootstrap_handoff")]
         self_update: bool,
-        /// Most threads run at once.
-        #[arg(long, default_value_t = 10)]
+        /// Optional operator ceiling on concurrent sandboxes.
+        #[arg(long, default_value_t = u32::MAX)]
         max_sandboxes: u32,
     },
     /// Show this machine's identity and server.

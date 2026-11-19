@@ -8,7 +8,7 @@ LC_ALL=C
 export LC_ALL
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
-server= image=docker.io/library/alpine:3 backend=auto max=10 code=${CALTERNAL_ENROLL_CODE:-}
+server= image=docker.io/library/alpine:3 backend=auto max=4294967295 code=${CALTERNAL_ENROLL_CODE:-}
 unset CALTERNAL_ENROLL_CODE
 release_key=
 yes=false uninstall=false
@@ -90,7 +90,7 @@ case $(uname -m) in
 esac
 platform=$os-$arch
 case $max in ''|*[!0-9]*) die 'Use a positive sandbox limit.' ;; esac
-[ "${#max}" -le 4 ] && [ "$max" -gt 0 ] || die 'Use a positive sandbox limit.'
+[ "${#max}" -le 10 ] && [ "$max" -gt 0 ] && [ "$max" -le 4294967295 ] || die 'Use a positive sandbox limit.'
 case $backend in auto|podman|direct) ;; *) die 'Choose auto, podman or direct.' ;; esac
 printf 'Download the machine program for %s from %s.\n' "$platform" "$server"
 printf 'Verify its signed release using the pinned Calternal key before running it.\n'

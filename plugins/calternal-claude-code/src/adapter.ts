@@ -84,7 +84,7 @@ export class Adapter {
   private emitTail: Promise<void> = Promise.resolve();
   /** Select the installed official executable and an ordered, back-pressured event sink. */
   constructor(private readonly binary: string, private readonly write: (line: string) => Promise<void>,
-      private readonly shared = false) {}
+      private readonly shared = false, private readonly brokered = false) {}
 
   private emit(event: ProviderEventKind): Promise<void> {
     const next = async () => {
@@ -132,6 +132,12 @@ export class Adapter {
     // Do not inherit API keys, OAuth environment overrides, or the machine role's login.
     const env: NodeJS.ProcessEnv = {};
     for (const k of ['PATH','HOME','TMPDIR','LANG','CALTERNAL_URL','CALTERNAL_AGENT_TOKEN']) if (process.env[k]) env[k] = process.env[k];
+    if (this.brokered) {
+      env.ANTHROPIC_BASE_URL = process.env.CALTERNAL_GATEWAY_URL;
+      env.ANTHROPIC_AUTH_TOKEN = process.env.CALTERNAL_GATEWAY_TOKEN;
+      env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+      env.ENABLE_TOOL_SEARCH = 'false';
+    }
     return env;
   }
 
@@ -201,9 +207,14 @@ export class Adapter {
       const c = this.config!;
       const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
         '--model', c.model, '--append-system-prompt', c.instructions, '--system-prompt-snapshot', 'off',
-        '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'];
+        '--strict-mcp-config', '--mcp-config',
+        this.brokered ? '/home/agent/broker-mcp.json' : '{"mcpServers":{}}'];
       if (this.shared) {
-        args.push('--safe-mode', '--disable-slash-commands', '--tools', '', '--no-session-persistence', '--include-hook-events');
+        args.push('--disable-slash-commands', '--tools', '', '--no-session-persistence', '--include-hook-events');
+        if (this.brokered) {
+          args.push('--setting-sources', '', '--permission-mode', 'dontAsk', '--allowedTools',
+            'mcp__workspace__workspace_command');
+        } else args.push('--safe-mode');
       } else {
         args.push('--disallowedTools', 'AskUserQuestion,Agent,Task',
           '--allowedTools', 'Read,Edit,Write,Bash,Glob,Grep,WebFetch,WebSearch,NotebookEdit');
@@ -225,14 +236,18 @@ export class Adapter {
         if (this.shared) {
           if (m.type === 'system' && m.subtype === 'init') {
             initialized = ['tools', 'skills', 'mcp_servers', 'slash_commands']
-              .every(key => Array.isArray(m[key]) && m[key].length === 0);
+              .every(key => Array.isArray(m[key])) && m.skills.length === 0
+              && m.slash_commands.length === 0 && m.tools.every((name: string) =>
+                this.brokered && name === 'mcp__workspace__workspace_command')
+              && m.mcp_servers.every((server: {name: string}) => this.brokered && server.name === 'workspace');
             if (!initialized) throw new Error('shared adapter reported executable tools');
           }
           const block = m.event?.content_block;
           if ((m.type === 'system' && m.subtype?.startsWith('hook_')) ||
-              block?.type === 'tool_use' || block?.type === 'tool_result' ||
-              m.message?.content?.some((content: { type: string }) =>
-                content.type === 'tool_use' || content.type === 'tool_result')) {
+              (block?.type === 'tool_use' && (!this.brokered || block.name !== 'mcp__workspace__workspace_command')) ||
+              m.message?.content?.some((content: { type: string, name?: string }) =>
+                (content.type === 'tool_use' && (!this.brokered || content.name !== 'mcp__workspace__workspace_command')) ||
+                (content.type === 'tool_result' && !this.brokered))) {
             throw new Error('unexpected shared adapter tool event');
           }
           if (!initialized) continue;
@@ -339,10 +354,10 @@ export class Adapter {
 }
 
 /** Run one adapter over stdio; stderr contains no provider output or input. */
-export async function main(binary = process.env.CALTERNAL_CLAUDE_BINARY ?? 'claude', shared = false): Promise<void> {
+export async function main(binary = process.env.CALTERNAL_CLAUDE_BINARY ?? 'claude', shared = false, brokered = false): Promise<void> {
   const adapter = new Adapter(binary, async line => {
     if (!process.stdout.write(line)) await once(process.stdout, 'drain');
-  }, shared);
+  }, shared, brokered);
   process.once('SIGTERM', () => { void adapter.stop(); });
   process.once('SIGINT', () => { void adapter.stop(); });
   try {

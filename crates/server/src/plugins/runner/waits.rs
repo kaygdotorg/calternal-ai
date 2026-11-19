@@ -46,7 +46,7 @@ pub(super) async fn park<D: Directory>(
                         "question answer schema operation is undeclared",
                     ));
                 }
-                let label = crate::requests::question_label(form)?;
+                let label = crate::question_form::label(form)?;
                 Some(RequestDetail::Question {
                     label,
                     form: form.clone(),

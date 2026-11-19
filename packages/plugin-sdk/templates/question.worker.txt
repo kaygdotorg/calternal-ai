@@ -1,0 +1,37 @@
+import { parkJob, serveWorker, startJob, typedHandlers, validateGenUiView } from "@calternal/plugin-sdk";
+import manifest from "./manifest.generated.js";
+import question from "./question.form.json" with { type: "json" };
+
+const form = validateGenUiView(question);
+
+const handlers = typedHandlers(manifest, {
+  "__PLUGIN__.start": async (_, context) =>
+    startJob(context, { operation: "__PLUGIN__.run", input: {} }),
+
+  "__PLUGIN__.run": async ({ signal }) => {
+    if (signal?.kind === "answer") {
+      return { status: "done", result: { answer: signal.value.text } };
+    }
+    if (signal?.kind === "deadline") {
+      return { status: "done", result: { timed_out: true } };
+    }
+    return parkJob({
+      checkpoint: { phase: "asked" },
+      reason: "Waiting for a text answer",
+      deadline_ms: Date.now() + 20_000,
+      source: { kind: "question", form, schema_operation: "__PLUGIN__.answer" },
+    });
+  },
+
+  // The host validates submitted fields against this operation's input schema.
+  "__PLUGIN__.answer": async () => ({}),
+});
+
+serveWorker(manifest, handlers, process.stdin, line =>
+  new Promise<void>((resolve, reject) =>
+    process.stdout.write(line, error => error ? reject(error) : resolve())),
+).catch(() => {
+  process.stderr.write("Worker protocol error. Check that the host speaks worker-v2.\n");
+  process.exitCode = 1;
+  process.stdin.destroy();
+});

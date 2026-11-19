@@ -80,9 +80,11 @@ const SPACE_EXECUTION: &str = "
 CREATE TABLE space_execution (
     space TEXT PRIMARY KEY,
     sponsor TEXT NOT NULL,
-    machine TEXT NOT NULL
+    machine TEXT NOT NULL,
+    tools_enabled INTEGER NOT NULL DEFAULT 0 CHECK (tools_enabled IN (0, 1))
 ) STRICT, WITHOUT ROWID;
 ALTER TABLE leases ADD COLUMN shared_sponsor TEXT;
+ALTER TABLE leases ADD COLUMN shared_tools TEXT CHECK (shared_tools IS NULL OR json_valid(shared_tools));
 ";
 
 pub(crate) use calternal_types::now_ms;
@@ -204,6 +206,8 @@ pub struct LeaseRow {
     pub account: AccountId,
     /// Space Owner sponsoring a shared lease. The actor remains in account.
     pub shared_sponsor: Option<AccountId>,
+    /// Fenced tool scope for an opted-in shared lease.
+    pub shared_tools: Option<calternal_machine::protocol::SharedTools>,
     /// Thread.
     pub thread: Uuid,
     /// Ephemeral plugin worker; ended on server restart rather than adopted as an agent.
@@ -241,8 +245,8 @@ pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
         .transpose()
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     c.execute(
-        "INSERT INTO leases (id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, updated_ms, worker, pinned_machine, harness, shared_sponsor)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)
+        "INSERT INTO leases (id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, updated_ms, worker, pinned_machine, harness, shared_sponsor, shared_tools)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
          ON CONFLICT(id) DO UPDATE SET machine=excluded.machine, last_machine=excluded.last_machine,
            fence=excluded.fence, state=excluded.state, reason=excluded.reason, updated_ms=excluded.updated_ms",
         params![
@@ -263,6 +267,8 @@ pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
             l.pinned_machine.map(|machine| machine.to_string()),
             harness,
             l.shared_sponsor.map(|sponsor| sponsor.to_string()),
+            l.shared_tools.map(|tools| serde_json::to_string(&tools)).transpose()
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?,
         ],
     )?;
     Ok(())
@@ -344,10 +350,21 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
             .get::<_, Option<String>>(15)?
             .map(|id| typed(15, id))
             .transpose()?,
+        shared_tools: r
+            .get::<_, Option<String>>(16)?
+            .map(|value| serde_json::from_str(&value))
+            .transpose()
+            .map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    16,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?,
     })
 }
 
-const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, worker, pinned_machine, EXISTS(SELECT 1 FROM title_leases WHERE lease=leases.id), harness, shared_sponsor";
+const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, worker, pinned_machine, EXISTS(SELECT 1 FROM title_leases WHERE lease=leases.id), harness, shared_sponsor, shared_tools";
 
 /// Leases that have not ended, oldest first.
 pub fn active_leases(c: &Connection) -> rusqlite::Result<Vec<LeaseRow>> {
@@ -552,6 +569,7 @@ mod tests {
             space: SpaceId::new(),
             account: AccountId::new(),
             shared_sponsor: None,
+            shared_tools: None,
             thread: Uuid::new_v4(),
             worker: false,
             background_title: false,

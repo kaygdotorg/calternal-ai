@@ -39,6 +39,14 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
     "space_id": {
       "description": "Shared space UUID.",
       "type": "string"
+    },
+    "tools_enabled": {
+      "default": null,
+      "description": "Enable isolated tools on this machine. Only the space Owner may enable them.",
+      "type": [
+        "boolean",
+        "null"
+      ]
     }
   },
   "required": [
@@ -71,11 +79,16 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
     "notice": {
       "description": "Notice for the person configuring the provider account.",
       "type": "string"
+    },
+    "tools_enabled": {
+      "description": "Whether the Owner enabled isolated tools for this binding.",
+      "type": "boolean"
     }
   },
   "required": [
     "configured",
-    "notice"
+    "notice",
+    "tools_enabled"
   ],
   "title": "SpaceMachineResult",
   "type": "object"

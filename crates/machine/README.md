@@ -16,7 +16,7 @@ curl --disable --proto '=https' --tlsv1.2 -fsS https://calternal.com/install |
   sh -s -- --server https://cal.example.org
 # which runs, in order:
 calternal machine enroll --server https://cal.example.org --code CODE
-calternal machine run                    # --backend auto|podman|direct; default auto follows owner setting, --max-sandboxes 10
+calternal machine run                    # --backend auto|podman|direct; default auto follows owner setting
 calternal machine status
 # From a signed-in client:
 calternal machine verify MACHINE_UUID --space-id SPACE_UUID --token-file PERSON_TOKEN
@@ -51,7 +51,14 @@ the structured outcome.
   (streamed output), freeze, resume, stop, release and resource limits. The Podman
   backend runs one rootless container per active thread or worker slot, with a disposable
   writable layer, work mounted at `/work`, and `--memory`/`--cpus`/`--pids-limit`.
-  The role enforces `--max-sandboxes` across turns and workers, 10 by default. A
+  The role reports physical and available memory with each heartbeat. Linux reads
+  `/proc/meminfo` once and macOS queries free pages with `vm_stat`, on a blocking
+  worker. The server checks the cached sample and counts reservations under the
+  existing placement lock, with zero additional storage reads per placement.
+  Hosts reserve 2 GiB for a standard sandbox and 2, 4, or 8 GiB per turn on the
+  selected account guest profile. The guest also budgets its own turn limits
+  against usable guest RAM. A missing or stale sample cannot admit new work.
+  Operators can optionally set `--max-sandboxes` for turns and workers. A
   successful poll parks provider containers idle for a lease TTL, 90 seconds by default.
   Startup sweeps orphan containers scoped to the locked sandbox directory. The direct
   backend runs as the machine user with no isolation, only after the

@@ -23,8 +23,12 @@ pub(super) struct Live {
     pub direct: bool,
     pub harness_protocol: bool,
     pub shared_provider: bool,
+    pub shared_tools: bool,
     pub kvm_fallback: bool,
-    pub thread_limit: Option<usize>,
+    pub guest_size: Option<calternal_machine::protocol::GuestSize>,
+    /// Reservations against the current memory sample, including releases
+    /// whose memory has not yet been observed as free in another heartbeat.
+    pub memory_reservations: usize,
     pub outbox: VecDeque<Envelope>,
     pub next_seq: u64,
     pub polls: u32,
@@ -232,7 +236,9 @@ impl State {
                 .machines
                 .get(&machine)
                 .and_then(|m| m.live.as_ref())
-                .is_some_and(|live| live.shared_provider)
+                .is_some_and(|live| {
+                    live.shared_provider && (l.row.shared_tools.is_none() || live.shared_tools)
+                })
         {
             return;
         }
@@ -240,16 +246,27 @@ impl State {
         let fence = l.row.fence;
         let space_id = l.row.space;
         let account_id = l.row.account;
+        let mut limits = settings.limits;
+        if let Some(size) = self
+            .machines
+            .get(&machine)
+            .and_then(|m| m.live.as_ref())
+            .and_then(|l| l.guest_size)
+        {
+            limits.memory_bytes =
+                Some(size.turn_memory_bytes(limits.memory_bytes.unwrap_or(1 << 30)));
+        }
         let spec = SandboxSpec {
             space_id: Some(space_id),
             provider_login: l.provider_login,
             shared_provider_sponsor: l.row.shared_sponsor,
+            shared_tools: l.row.shared_tools,
             code_directory: None,
             worker: self.workers.get(&lease).cloned(),
             account_id: account_id.as_uuid(),
             thread_id: l.row.thread,
             image: l.row.image.clone(),
-            limits: settings.limits,
+            limits,
         };
         let msg = match &l.row.harness {
             Some(harness) => {
@@ -479,7 +496,7 @@ impl State {
             .map(|l| (l.row.background_title, l.order, l.row.id))
             .collect();
         waiting.sort_unstable();
-        for (background, _, lease) in waiting {
+        for (_, _, lease) in waiting {
             let l = &self.leases[&lease];
             let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
             let shared =
@@ -490,6 +507,7 @@ impl State {
                         |(sponsor, machine)| super::space_execution::SpaceExecution {
                             sponsor,
                             machine,
+                            tools_enabled: l.row.shared_tools.is_some(),
                         },
                     );
             if let Some(target) = shared
@@ -498,6 +516,7 @@ impl State {
                 self.end_for_placement(lease, "shared space machine changed", false);
                 continue;
             }
+            let mut memory_blocked = false;
             let best = self
                 .machines
                 .values()
@@ -508,11 +527,11 @@ impl State {
                 .filter(|m| {
                     self.may_use(m, sponsor) || (l.pool_diagnostic && m.row.owner == Owner::Pool)
                 })
+                .filter(|m| super::readiness::connected(m, settings))
                 .map(|m| {
-                    (
-                        m,
-                        self.free_for(m, l.row.shared_sponsor.unwrap_or(l.row.account)),
-                    )
+                    let free = self.free_for(m, sponsor, settings);
+                    memory_blocked |= free == 0 && self.free_slots(m) > 0;
+                    (m, free)
                 })
                 .filter(|(_, free)| *free > 0)
                 .max_by_key(|(m, free)| {
@@ -523,35 +542,11 @@ impl State {
                     )
                 })
                 .map(|(m, _)| m.row.id);
-            let preempt = if best.is_none() && !background && !l.row.worker {
-                self.leases
-                    .values()
-                    .filter(|title| title.row.background_title)
-                    .find_map(|title| {
-                        let id = title.assigned_machine()?;
-                        let m = self.machines.get(&id)?;
-                        (l.row.pinned_machine.is_none_or(|pin| pin == id)
-                            && self.may_use(m, sponsor)
-                            && m.live.as_ref().is_some_and(|live| {
-                                !live.draining && live.capacity.max_sandboxes as usize >= m.assigned
-                            })
-                            && !m.row.draining
-                            && !m.row.revoked)
-                            .then_some((title.row.id, id))
-                    })
-            } else {
-                None
-            };
-            let best = if let Some((title, machine)) = preempt {
-                // The machine receives Stop before Assign. Foreground placement
-                // never waits for completion of a title or consumes its result.
-                self.end_for_placement(title, "foreground work took title capacity", false);
-                Some(machine)
-            } else {
-                best
-            };
             if let Some(machine) = best {
                 self.assign(lease, machine, settings);
+            } else if let Some(l) = self.leases.get_mut(&lease) {
+                // A wait explanation is derived from the latest live report.
+                l.row.reason = memory_blocked.then(|| super::MEMORY_WAIT.into());
             }
         }
     }
@@ -561,11 +556,10 @@ impl State {
         let Some(l) = self.leases.get(&lease) else {
             return;
         };
-        if self
-            .machines
-            .get(&machine)
-            .is_none_or(|m| self.free_for(m, l.row.shared_sponsor.unwrap_or(l.row.account)) == 0)
-        {
+        let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
+        if self.machines.get(&machine).is_none_or(|m| {
+            !super::readiness::connected(m, settings) || self.free_for(m, sponsor, settings) == 0
+        }) {
             return;
         }
         let Ok(_steps) = self.lease_steps(&l.row) else {
@@ -625,7 +619,7 @@ impl State {
                 .get_mut(&r.lease_id)
                 .expect("existing lease under registry lock");
             let keep_files = !l.row.worker && !l.row.background_title;
-            let account = l.row.account;
+            let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
             let current = l.row.machine == Some(machine)
                 && l.row.fence == r.fence
                 && !matches!(l.state, LeaseState::Ended | LeaseState::Stopping);
@@ -651,7 +645,7 @@ impl State {
                 && self
                     .machines
                     .get(&machine)
-                    .is_some_and(|m| self.free_for(m, account) > 0)
+                    .is_some_and(|m| self.free_for(m, sponsor, settings) > 0)
             {
                 self.assign(r.lease_id, machine, settings);
             } else {

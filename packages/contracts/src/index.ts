@@ -327,6 +327,10 @@ space_id: string, };
 
 export type SpaceMachineSet = {
 /**
+ * Enable isolated tools on this machine. Only the space Owner may enable them.
+ */
+tools_enabled: boolean | null,
+/**
  * Shared space UUID.
  */
 space_id: string,
@@ -339,6 +343,10 @@ machine_id: string | null, };
  */
 
 export type SpaceMachineResult = {
+/**
+ * Whether the Owner enabled isolated tools for this binding.
+ */
+tools_enabled: boolean,
 /**
  * Whether a shared machine is configured.
  */

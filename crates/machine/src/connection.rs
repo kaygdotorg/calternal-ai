@@ -148,9 +148,13 @@ async fn session_loop(
                     Err(error) => tracing::warn!(%error, "machine update task ended"),
                 }
             }
+            let machine = runner.clone();
+            let capacity = tokio::task::spawn_blocking(move || machine.capacity())
+                .await
+                .map_err(|error| Error::Protocol(error.to_string()))?;
             let req = SyncRequest {
                 ack,
-                capacity: runner.capacity(),
+                capacity,
                 draining: staged.is_some(),
                 leases: runner.reports(),
                 discards: runner.discard_reports(),
