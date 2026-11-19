@@ -5,6 +5,8 @@ case "$(hostname)" in
   calternal-dev-01-compute02) ;;
   *) echo 'Run this gate on calternal-dev-01-compute02 inside nix develop.' >&2; exit 1 ;;
 esac
+: "${CALTERNAL_UPGRADE_PREVIOUS_IMAGE:?Set the exact previous release image tag or ID}"
+: "${CALTERNAL_UPGRADE_CANDIDATE_IMAGE:?Set the exact candidate release image tag or ID}"
 npm run build:plugins
 cargo test --locked -p calternal-server --lib real_distribution_registers_every_bundled_package_and_operation -- --ignored
 cargo fmt --all -- --check
@@ -26,3 +28,7 @@ cargo run --locked -j6 -p calternal-core --bin export-contract -- --check
 cargo build --locked -p calternal-cli -j6
 python3 contract/verify-cli.py
 CARGO_TARGET_DIR="$PWD/target" scripts/check-docs.sh
+# Use the exact production-style builds on both sides of the upgrade.
+CARGO_TARGET_DIR="$PWD/target" ./scripts/verify-additive-upgrade.sh \
+  "$CALTERNAL_UPGRADE_PREVIOUS_IMAGE" "$CALTERNAL_UPGRADE_CANDIDATE_IMAGE" \
+  "$PWD/target/installer-upgrade-proof.json"

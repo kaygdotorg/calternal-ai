@@ -81,6 +81,90 @@ fn installed_package_v2_opts_in_only_the_original_seed_and_preserves_rollback() 
 }
 
 #[test]
+fn package_schema_v3_opens_and_accepts_an_install_without_backfilling() {
+    use calternal_store::migrations::{Schema, inspect, migrate};
+
+    let appdata = tempfile::tempdir().unwrap();
+    let root = appdata.path();
+    let path = root.join("installed-plugins.sqlite3");
+    let previous = Schema::new(
+        "installed-plugins.sqlite3",
+        1,
+        &[PACKAGE_SCHEMA],
+        &[(2, bundled_notes::LIVE_EDITING), (3, provider_runtime::V3)],
+    );
+    let db = Connection::open(&path).unwrap();
+    migrate(&db, previous).unwrap();
+    assert_eq!(inspect(&db, previous).unwrap(), 3);
+    assert!(
+        db.prepare("SELECT install_order FROM installed_plugins")
+            .is_err()
+    );
+
+    let old = Package {
+        manifest: host::parse_manifest(include_bytes!(
+            "../../../../../plugins/calternal-notes/manifest.json"
+        ))
+        .unwrap(),
+        worker: None,
+    };
+    let id = old.manifest.id.clone();
+    let archive = old.archive().unwrap();
+    let checksum = old.checksum().unwrap();
+    db.execute(
+        "INSERT INTO installed_plugins
+         (revision, id, archive, checksum, default_enabled, approval)
+         VALUES (7, ?1, ?2, ?3, 1, 4)",
+        params![id, archive, checksum],
+    )
+    .unwrap();
+    db.execute("INSERT INTO plugin_seed VALUES (1)", [])
+        .unwrap();
+    drop(db);
+
+    let catalog = load(root, None, None, false).unwrap().snapshot();
+    let existing = catalog.get(&id).unwrap();
+    assert_eq!((existing.revision, existing.activation_approval), (7, 4));
+    assert!(existing.entry.default_enabled);
+
+    let new = Package {
+        manifest: host::parse_manifest(include_bytes!(
+            "../../../../../plugins/calternal-notes-insights/manifest.json"
+        ))
+        .unwrap(),
+        worker: Some("export default {};".into()),
+    };
+    let new_id = new.manifest.id.clone();
+    let approved = new.checksum().unwrap();
+    let candidate = prepare(root, new, approved, false).unwrap().unwrap();
+    commit(root, candidate).unwrap();
+    let catalog = load(root, None, None, false).unwrap().snapshot();
+    assert_eq!(catalog.get(&id).unwrap().revision, 7);
+    assert_eq!(catalog.get(&new_id).unwrap().revision, 8);
+
+    let db = Connection::open(path).unwrap();
+    assert_eq!(inspect(&db, UPGRADE_SCHEMA).unwrap(), 4);
+    let unchanged = db
+        .query_row(
+            "SELECT revision, archive, checksum, default_enabled, approval, install_order
+             FROM installed_plugins WHERE id = ?1",
+            [&id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(unchanged, (7, archive, checksum, true, 4, None::<u32>));
+}
+
+#[test]
 fn startup_reuses_verified_current_and_retained_workers_and_prunes_stale_files() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
@@ -238,7 +322,7 @@ fn upgrading_registers_the_provider_without_changing_its_archive() {
     assert_eq!(installed, (7, archive, checksum, true, 4));
     assert_eq!(
         calternal_store::migrations::inspect(&db, baseline).unwrap(),
-        3
+        4
     );
 }
 

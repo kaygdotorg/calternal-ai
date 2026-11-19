@@ -149,8 +149,7 @@ const PACKAGE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS installed_plugins (
             revision INTEGER PRIMARY KEY AUTOINCREMENT CHECK (revision <= 2147483647),
             id TEXT NOT NULL UNIQUE, archive BLOB NOT NULL, checksum TEXT NOT NULL,
             default_enabled INTEGER NOT NULL CHECK (default_enabled IN (0, 1)),
-            approval INTEGER NOT NULL DEFAULT 0,
-            install_order INTEGER
+            approval INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS retained_plugins (
             revision INTEGER PRIMARY KEY, id TEXT NOT NULL, archive BLOB NOT NULL,
@@ -526,7 +525,15 @@ pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
         "installed-plugins.sqlite3",
         1,
         &[PACKAGE_SCHEMA],
-        &[(2, bundled_notes::LIVE_EDITING), (3, provider_runtime::V3)],
+        &[
+            (2, bundled_notes::LIVE_EDITING),
+            (3, provider_runtime::V3),
+            // NULL keeps existing packages ordered by revision without touching their rows.
+            (
+                4,
+                "ALTER TABLE installed_plugins ADD COLUMN install_order INTEGER;",
+            ),
+        ],
     );
 
 #[cfg(test)]
