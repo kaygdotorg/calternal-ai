@@ -308,7 +308,7 @@
             "item",
             "search"
           ],
-          "description": "list: an index window over a kind's items (optionally one collection); item: exactly one item by reference; search: items matching text under the author’s required mode."
+          "description": "list: an index window over a kind's items (optionally one collection); item: exactly one item by reference; search: Notes or Threads matching text under the author’s required mode and the catalogue’s query.search qualification."
         },
         "kind": {
           "$ref": "#/$defs/Id"
@@ -646,7 +646,7 @@
             },
             "refine_query": {
               "$ref": "#/$defs/State",
-              "description": "Shown with the bounded provisional rows of a search whose result is not complete (the host answered `state: refine_query`): the message asks the person to refine the query. Display only: no count, no scroll extent that implies a total, no End. A refined query is a normal new search. Limits are the catalogue's (`query.search`, `live_limits`); distinct from `loading` and `error`."
+              "description": "Shown with the bounded provisional rows of a search whose result is not complete (the host answered `state: refine_query`): the message asks the person to refine the query. Display only: no count, no scroll extent that implies a total, no End. A refined query is a normal new search. The catalogue’s query.search and query.live_limits define when posting, row work or prefix expansion limits trigger this state. Loading and error are separate states."
             }
           },
           "additionalProperties": false

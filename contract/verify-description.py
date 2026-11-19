@@ -372,9 +372,9 @@ def semantic(doc, errors, catalogue, manifest):
         kind_id = source.get("kind")
         path = f"$.binds[{index}].source"
         if not isinstance(kind_id, str): continue
-        search_kind = catalogue.get("query", {}).get("search", {}).get("kind")
-        if source.get("type") == "search" and search_kind is not None and kind_id != search_kind:
-            errors.append(f"{path}: search is qualified only for {search_kind!r}")
+        search_kinds = catalogue.get("query", {}).get("search", {}).get("kinds", {})
+        if source.get("type") == "search" and kind_id not in search_kinds:
+            errors.append(f"{path}: search is unqualified for {kind_id!r}")
         kind = cat_kinds.get(kind_id) if catalogue is not None else None
         plugin = man_kinds.get(kind_id) if manifest is not None else None
         if catalogue is not None and kind is None and plugin is None:

@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 11.5
+# Plugin API v2 · revision 11.6
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -492,18 +492,17 @@ The first contract qualifies these plan families.
 | Ordered or filtered kind lists, including Inbox, Trash and self-only rows | Ordered indexes scoped to the authorized kind or viewer projection, with the supported filter and sort keys. |
 | Manual collection + mutable ACL + sort, including the main Notes list | The scoped covering membership index, with current ACL applied before windowing and a maintained count per scope. Reading and sorting all members is disallowed even at offset zero. |
 | Child and section windows | Parent-scoped ordered indexes for authorized child rows and personal section placements. |
-| Notes search | Ready, authority-versioned space or manual-collection index. The [catalogue](../contract/host-catalogue-v2.json) defines qualified terms, prefixes and depth in `query.search`. |
+| Notes and Threads search | Ready, authority-versioned indexes for the scopes, shapes and depth in the [catalogue’s `query.search`](../contract/host-catalogue-v2.json). |
 | Filtered counts | Non-search lists use a maintained count for the supported authorized scope or an audience-certified member estimate. Search counts qualified matches under `query.search.count`. |
 
-The first contract qualifies search only for the measured `notes` kind.
-Threads title and message search over the existing message index stays
-open pending Step 0 measurements. The author declares the Bind’s
-`SearchMode`. The renderer supplies text, and the host applies that mode
-under the published generation’s tokenizer. The catalogue’s
-`query.search` defines the qualified modes and tokenizer options. Changing the tokenizer requires a rebuilt generation
-with matching term statistics. Apply the scoped input posting budget independently of the materialized-row
-budget in `query.live_limits`.
-If an otherwise qualified query exceeds the posting budget, return a
+The author declares the Bind’s `SearchMode`. The renderer supplies text,
+and the host applies the mode under the published generation’s tokenizer.
+The catalogue’s `query.search` specifies the Notes tokenizer and the
+Threads message index. Threads AND terms match within one authorized
+message, and message results return distinct threads. The shared search
+depth is in `query.search.qualified_depth`. Serve later windows while
+both scoped-posting and row budgets in `query.live_limits` hold.
+If an otherwise qualified query exhausts either budget, return a
 `refine_query` window containing only bounded authorized partial rows
 available for the same query and published generation. Omit count and
 action contexts. A broad prefix starts no expansion. It can retain only
@@ -550,10 +549,10 @@ per open view, 16 subscriptions per actor and 128 per space. Bound queued
 bytes and query starts at all three levels. Per window cap materialized
 rows at 4,096. Separately cap entries skipped by an index-only jump from
 the nearer end at 250,000. Non-search lists read maintained counts
-for the authorized scope. Search counts qualified matches within the
-separate count-work budget, and only with exact-count authority.
-Otherwise search returns count mode `none`. The catalogue’s
-`query.live_limits` governs count work and starts.
+for the authorized scope. Notes can count qualified matches with exact-count
+authority within the separate count-work budget. Threads search uses count
+mode `none`. See `query.search.count` for qualified counts and
+`query.live_limits` for count work and starts.
 It emits up to four coalesced pushes/sec per bind. Authorize before spending work,
 coalesce invalidations before evaluating and share a plan only within an
 identical audience/authority scope. Supersede obsolete requests, return a
@@ -846,11 +845,11 @@ policy, general viewer operands except person, index-based row sources,
 sidebar cards, appearance/scheme/accent/title image and manifest commands.
 Use host policy for trusted operations and results.
 
-Search in the first contract is qualified only for the measured `notes`
-kind. Threads title and message search over the existing message index
-stays open pending Step 0 measurements.
+The first contract qualifies the Notes and Threads search plans in
+`query.search`. Combined title and message relevance and exact
+distinct-thread search counts remain unqualified.
 
-**Known limit for CJK search.** The first contract supports whole unspaced
+**Known limit for Notes CJK search.** The first contract supports whole unspaced
 runs and their leading prefixes. Implicit word segmentation and interior
 substring matching return `unsupported_query_plan`. A later search
 generation can qualify a segmenting or trigram tokenizer.
@@ -932,8 +931,8 @@ and zero-effect assertions must hold on every repetition.
 | Spike | Injections and pass condition |
 | --- | --- |
 | **One enrolled channel** | Two real package processes on one enrolled channel in Space A, plus Space B. Block A’s carrier receiver until its actual writer stalls mid-frame. Hold a slow callback for two seconds. With a writable carrier, control and the other callback complete p95 ≤500 ms. While stalled, local fencing p95 ≤500 ms, close p95 ≤2 s and Space B progress p95 ≤2 s. No old-lease effect after local fencing. Remote stops within 5 s of its last authenticated renewal on every run. Reconnect rejects the old epoch and authorized replay commits once. |
-| **Cold indexed page** | 100,000 mixed-visibility rows. During grant/content churn test manual collection + ACL + sort from offset 0 through its last full authorized range and last visible row (at most 10,000 members, so the last full 200-row range starts at most at offset 9,800). Use a dense dynamic collection for offsets 10,000 and 90,000. Exercise search under the scoped Notes search gate. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms. Seed enough authorized rows for every requested range and assert the exact authorized rows in order. Empty or refused replies fail. Meter materialized rows and skipped covering-index entries separately against their bounds. In a larger authorized scope, also request a range whose nearer-end jump exceeds the skip cap. Assert `skip_limit` followed by paging that returns the same authorized rows. Test End on a scope beyond the absolute offset ceiling using `anchor:"end"` and assert the last authorized rows. For stable-ID lookup assert one bounded indexed lookup and scoped authority check for a present, missing and unauthorized ID. For standalone exact counts assert one maintained-count lookup and the exact authorized total after grant churn. Exercise saves at the 32-effective-scope cap and assert at most two covering-index keys touched per scope. Refuse a grant or membership that would create scope 33 with the typed limit error. Measure the existing write and index maintenance together on the save path and require p95 ≤40 ms. The measured two-collection sort change adds about 9 ms p95 in isolation. Reject table scans and full candidate sorts, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
-| **Scoped Notes search** | On locked perf-01 exercise each qualified shape and depth from the catalogue’s `query.search` in both authorized scopes. Check the qualified Unicode cases, refusal before the mark-aware Devanagari rebuild, and CJK segmentation and substring refusal. Separately meter input postings, materialized rows and count work against `query.live_limits`. Assert bounded provisional rows and absent counts for `refine_query`. A broad prefix must start no expansion. During publication lag and stale authority, assert `loading` with no rows, counts or activation contexts. Race revoke against delivery and assert zero stale results. For a reader with a ready search, edit a hidden row and a hidden field. Check before, during and after publication that the visible state, rows, ranks, count and result version stay unchanged. Measure foreground save and save-to-search lag separately. Keep maintenance out of the save transaction and meet the append gate. |
+| **Cold indexed page** | 100,000 mixed-visibility rows. During grant/content churn test manual collection + ACL + sort from offset 0 through its last full authorized range and last visible row (at most 10,000 members, so the last full 200-row range starts at most at offset 9,800). Use a dense dynamic collection for offsets 10,000 and 90,000. Exercise search under the scoped search gate. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms. Seed enough authorized rows for every requested range and assert the exact authorized rows in order. Empty or refused replies fail. Meter materialized rows and skipped covering-index entries separately against their bounds. In a larger authorized scope, also request a range whose nearer-end jump exceeds the skip cap. Assert `skip_limit` followed by paging that returns the same authorized rows. Test End on a scope beyond the absolute offset ceiling using `anchor:"end"` and assert the last authorized rows. For stable-ID lookup assert one bounded indexed lookup and scoped authority check for a present, missing and unauthorized ID. For standalone exact counts assert one maintained-count lookup and the exact authorized total after grant churn. Exercise saves at the 32-effective-scope cap and assert at most two covering-index keys touched per scope. Refuse a grant or membership that would create scope 33 with the typed limit error. Measure the existing write and index maintenance together on the save path and require p95 ≤40 ms. The measured two-collection sort change adds about 9 ms p95 in isolation. Reject table scans and full candidate sorts, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
+| **Scoped search** | On locked perf-01 exercise each Notes and Threads shape in its qualified scopes through the depth in `query.search`. Beyond that depth, assert ready windows with the exact authorized rows and order while both budgets hold. Exhaust each budget separately and assert a `refine_query` window with bounded provisional rows and no count. For Notes check the qualified Unicode cases, refusal before the mark-aware Devanagari rebuild, and CJK segmentation and substring refusal. Meter postings, materialized-row work and count work separately against `query.live_limits`. A broad prefix must start no expansion. During publication lag and stale authority, assert `loading` with no rows, counts or activation contexts. Race revoke against delivery and assert zero stale results. For a reader with a ready search, edit a hidden row and a hidden field. Check before, during and after publication that the visible state, rows, ranks, count and result version stay unchanged. Measure foreground save and save-to-search lag separately. Keep maintenance out of the save transaction and meet the append gate. |
 | **Atomic large save** | Stage an escape-heavy 2 MiB body and reconstruct it by revision-pinned ranges after the head moves, p95 ≤5 s. The 60 s range pin is invalidated by purge or revoke. Race duplicate begin, lost chunk ACK, conflicting bytes, cancel and orphan cleanup. Race revoke, epoch loss, enrollment removal and run replacement on both sides of commit and inject crashes before publication and before reply. No partial edit or success receipt before commit. After commit recover one revision and receipt. |
 | **Durable transcript** | Stall the reader, cut after commit before ACK and restart. First screenful drawn p95 ≤150 ms on a warm authorized reconnect, with the durable cursor, stable event and receipt sequences unchanged. Revoked reconnect reveals neither rows nor bookmarks. An independent control request completes p95 ≤500 ms with the transcript reader stalled. |
 | **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. For each §4.4 atomic-Undo case, crash before and after the named commit and during publication: recover neither effect nor Undo before commit, and both after it. Concurrently edit a dependency, then require Undo to refuse without another effect. Exercise ineligible variants and prove the shortcut and full swipe cannot bypass their checks. Delay or spoof lease replies and verify only current, exact retained windows repaint. |
@@ -956,6 +955,11 @@ competing saves. [Scoped search measurements](https://git.kayg.org/kayg/calterna
 
 All qualified windows in the Unicode probe measured below 1.9 ms p95.
 [Unicode qualification measurements](https://git.kayg.org/kayg/calternal-ai/src/commit/eac3eecf571c85811c1f6724e257ad19fb40aa00/docs/measurements/plugin-api-v2-step0.md#unicode-qualification).
+
+At the shared qualified depth the worst search window measured 5.893 ms
+p95 for Notes and 1.414 ms p95 for Threads. The Threads probe measured
+append-to-scoped-publication lag at 46.847 ms p95 idle and 468.095 ms p95
+under 1,916 competing appends. [Threads search and shared depth measurements](https://git.kayg.org/kayg/calternal-ai/src/commit/9a78a43b1cda6a2074df9d1471752f3db5a2a0bb/docs/measurements/plugin-api-v2-step0.md#follow-up--threads-title-and-message-search).
 
 If a gate misses, record the measured failure and change the mechanism or
 reduce the first surface before freeze. A fixture using separate per-package

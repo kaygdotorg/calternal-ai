@@ -1,0 +1,9 @@
+{
+  "type": "window",
+  "request": {
+    "bind": "thread-search",
+    "from": 400,
+    "to": 600,
+    "anchor": "start"
+  }
+}
