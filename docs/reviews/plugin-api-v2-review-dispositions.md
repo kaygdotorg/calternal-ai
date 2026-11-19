@@ -87,3 +87,26 @@ requirements, with evidence to be collected in Step 0.
 | 22 | API §6 and both schemas cut unused surfaces, use one Bind registry and move review dispositions into docs/reviews. |
 | 23 | API §4 authorizes bounded Choice-from-Bind and Move to collection. Q11 leaves nested child rows and user-made sections/drag open. |
 | 24 | API §8 puts executable fixture manifests at entry and names the renderer, locked perf VM, run count, percentiles, phone exchanges and keyboard gates. |
+
+## Sol final review and Owner decisions (revision 6)
+
+| Item | Resolution |
+| --- | --- |
+| 1 · F16, atomic Undo | API §§4.3–4.4 and the catalogue limit the one-exchange shortcut to eligible catalogue operations. Worker operations resolve and dispatch separately. The §8 spike requires crash recovery of effect and Undo together and stale-Undo refusal. |
+| 2 · F16, draw-to-context match | API §4.3 and Part B §3.2 require the host context for the row drawn at activation. The catalogue scopes `SelectionContextResult` to lease, partition, Bind and row. |
+| 3 · F17, Send | API §4.3 and the catalogue restrict `final_text` to message content. A parser-derived material change invalidates the prepared proof and requires a fresh preview. |
+| 4 · F19, renewal | API §4.2 and Part B §6 accept only authenticated current-lease and partition replies for the outstanding `renewal_id`. Retain exact `window_ref` and result version pairs. Keep live rows hidden on timeout or refusal. |
+| 5 · Window envelope | Both schemas reference the catalogue `WindowRequest`. Its payload accepts an optional parent. |
+| 6 · Q10, own-space rows | API §4.2 and Part B §6 allow eligible encrypted display-only rows on an unlocked device, capped at 14 days. Sol would require fresh authority before first paint. The Owner accepted the interval before an unknown revocation is learned, with a fresh host context required for every action. |
+| 7 · Q11, nested rows and sections | API §§4.1, 4.4 and Part B §2.7 include per-parent windows, depth three, `layout_sections` and the six host layout operations. Drag waits. The SDK supplies the package’s own `reads` entries. |
+
+The atomic-Undo contract uses the existing FULL content transaction where
+it can cover the complete effect. Thread archive, Notes rename with deferred
+link rewrites, Trash with separate lifecycle cleanup and moves across two
+collections cannot use the shortcut on their current commit paths.
+
+On dev-01, `nix develop -c` passed the catalogue-backed description verifier,
+the seven complete v2 manifest fixtures, and offline JSON Schema checks for
+both window references, activation, selection and renewal. The atomic-Undo
+crash cases and the kernel plus process reseed conformance case are Step 0
+runtime gates.
