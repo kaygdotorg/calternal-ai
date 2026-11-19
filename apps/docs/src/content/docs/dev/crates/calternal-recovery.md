@@ -37,9 +37,15 @@ The existing transactional dirty-owner triggers and indexed capture remain.
 Account records contain credentials, enrollment-token hashes, installations and
 revocations, server roles, group membership and retry receipts.
 Space records contain only space metadata and memberships. Groups, invites and
-owner erasure markers have separate records; global policy holds the closed schema/role inventory and unbound
-enrollment tokens. Unknown auth tables refuse configuration. AccountId and SpaceId
-remain distinct; a snapshot refuses accounts and spaces sharing a UUID.
+owner erasure markers have separate records. Global policy holds the schema and
+role inventory and unbound enrollment tokens. An additive auth SQL step can
+register a new table in `security_recovery_inventory` using an existing owner
+namespace. The registry itself is captured as global policy. Old writers read
+the registry and capture the live table and column shape, so they also carry
+future data through compaction. Unregistered tables refuse configuration.
+Owner-scoped additions require a cascading foreign key to the canonical owner
+UUID. AccountId and SpaceId remain distinct. A snapshot refuses accounts and
+spaces sharing a UUID.
 
 Last-used/last-seen telemetry, rolling session-expiry touches and rate limits do
 not publish. Recovered expiry is the last protected capture's absolute value;
@@ -47,13 +53,11 @@ rebuilding must enforce wall-clock expiry, preserve revocation and force all
 devices to resync under current authority. Stored schema text is descriptive, never SQL to execute blindly.
 The write audit and regression inventory are in the dated review.
 
-Protected writers implement insert-or-update with a plain `UPDATE` followed
-by a plain `INSERT` when no row matched, inside one protected transaction.
-The update branch of an outer SQLite UPSERT can override the dirty trigger's
-`INSERT OR IGNORE`. A repeated owner key can then abort the write even though
-the authority row itself is valid. The
-account recovery test exercises this conflict, then
-publishes the plain update and validates it against the database witness.
+Protected writers publish through the existing prepare/commit/complete
+barrier. Dirty-key triggers use an explicit `ON CONFLICT(key) DO NOTHING`
+clause, including when an outer SQLite UPSERT updates an already dirty owner.
+The account recovery tests cover the repeated key,
+additive table and column capture, witness replay, compaction and erasure.
 
 Publication and proof
 ---------------------

@@ -1,11 +1,14 @@
 # Data-preserving upgrades
 
-The production schema baseline is dev `c98705d74bcf9f9cb2a1292b849b9b44c64b2714`,
-installed fresh as image tag `c98705d74bcf`. The markers below describe that
-release. Production now runs `e16143f44f93`, a web-only update from
-`4735733eeb09` shipped with a passing proof for that image pair. The next
-proof uses the exact running `e16143f44f93` image and the gated candidate.
-[Deployment runbook](deploy.md#ordinary-update-from-production-revision-e16143f44f93)
+The original production schema baseline was dev
+`c98705d74bcf9f9cb2a1292b849b9b44c64b2714`. The inventory markers below
+describe that release. Production was then installed fresh at
+`da32f88750a6` and the owner approved a final fresh installation on
+November 20, 2026, before signup. The final gated revision and exact
+running image ID are recorded at activation. Future proofs bind that
+installation's running image to the chosen candidate.
+[Deployment runbook](deploy.md#final-fresh-installation-on-november-20-2026)
+
 Preserve the earlier steps in the migration registry. Unsupported preview
 data is refused.
 
@@ -114,7 +117,9 @@ The lease migration adds nullable harness confinement and login-scope metadata; 
    in the same immediate transaction as the batch. Leave transaction control
    and version writes to the runner. Include any required deterministic backfill and
    preserve ownership, references, and receipt replay. A new store starts
-   with an explicit baseline and an inventory row.
+   with an explicit baseline and a unique literal descriptor name. Register
+   its descriptor in the server's release inventory. Declare a rebuildable
+   projection in the inventory test so it has an explicit release policy.
 3. Keep the preceding release's reads and writes valid for unattended
    updates. Review its inserts and updates as well as its queries. Classify a
    change that breaks that contract as incompatible and obtain the owner's
@@ -140,11 +145,25 @@ on your branch. The number becomes fixed when the migration merges into
 renumber your pending step to the next free number when merging. The shared
 descriptor rejects duplicate numbers and gaps.
 
-**Protected auth writes.** Use a plain `UPDATE` and, if no row matched, a
-plain `INSERT` inside the same protected transaction. The `DO UPDATE`
-branch of a SQLite UPSERT can override the dirty-key trigger's
-`INSERT OR IGNORE` and fail on an already queued owner key. Keep the
-recovery trigger and witness publication in the write path.
+**Adding protected auth tables.** In the same numbered SQL step as the
+table, register its name, owner namespace and column in
+`security_recovery_inventory`. Use `0` and an empty column for
+installation-wide state. The other namespaces are account (`1`), space (`2`),
+group (`3`), invite (`4`) and erasure record (`5`). Each owner table must
+reference its canonical parent UUID with `ON DELETE CASCADE`. Require a
+non-null owner unless the table intentionally supports installation-wide
+rows. Recovery rejects unregistered tables and records the live column
+shape, owner rows and registry in its existing witness and compaction
+protocol. The locked auth migration republishes the affected inventory
+before serving. Preserve the meaning of existing columns, owner keys and
+recovery records. Use explicit insert column lists so old writers can
+leave new optional columns alone.
+
+**Protected auth writes.** Always publish through the protected
+transaction and witness. Dirty-key triggers use
+`ON CONFLICT(key) DO NOTHING` so an UPSERT can safely revisit a dirty
+owner. Test the exact old writer on the new schema, including old writes,
+compaction, erasure and witness replay.
 [Recovery protocol](../crates/recovery/PROTOCOL.md)
 
 The jobs.db 2 → 3 change preserves existing rows and the original
@@ -219,7 +238,7 @@ starts on those roots. Each release reads a write acknowledged by the other.
 The proof file binds those image digests and is published only after the test
 passes. Review each change for compatibility with the previous writer as well.
 
-The version range belongs to each store. In `e16143f44f93` the ranges are
+The version range belongs to each store. In the historical `e16143f44f93` image the ranges were
 auth 11–14, machines 6–7, space content 3–5, journal/jobs/account input 2,
 and content routing/account content/secrets/agent settings/onboarding/
 installed plugins 1. The two search projections start at 2 and 1 and have
