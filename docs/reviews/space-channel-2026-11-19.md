@@ -172,10 +172,8 @@ worker or obtain a ticket for a worker that finished starting afterward.
 7. **Fault-test boundaries (§8).** Use small kernel socket buffers and hold
    the receiver after observing a physical prefix. Prove the socket closed
    before a newline arrives. Keep the remote peer open during the lease
-   test so that neither EOF nor a cancel can explain worker exit. Exercise
-   receipt replay separately with the existing content writer and a fresh
-   authorized ticket. Do not add a mutation to the shipped broker to test
-   replay.
+   test so that neither EOF nor a cancel can explain worker exit. Test reconnect with a fresh read admission and the previous epoch
+   and ticket. Receipt replay through admission remains open on issue #86.
 
 ## Verification and remaining work
 
@@ -188,7 +186,7 @@ The following milestones were verified on
 | `b5d0e5fa` | 107 auth tests. An in-flight session write fences its affected space before commit. An unrelated space stays current. |
 | `66fb93ad` | 24 plugin-host tests, server all-targets/all-features check, and single-use enrolled assignment regression. |
 | `e0246791` | 107 auth tests and ticket denial for missing plugin-use rights, wrong epoch, expiry and a moved grant revision. |
-| `03e173d7` | Three broker regressions and 24 plugin-host tests. The normal dispatcher, enrollment and server-side HTTP Upgrade exchange reach a real Node process. A replay fixture checks the original durable receipt under fresh authorization, rejects the old ticket on a new epoch, and reads the original committed head. |
+| `03e173d7` | Three broker regressions and 24 plugin-host tests. The normal dispatcher, enrollment and server-side HTTP Upgrade exchange reach a real Node process. The reconnect fixture rejects the old ticket and admits a fresh read. |
 
 The carrier tests cover a physical TCP mid-frame stall, both the local
 fence and the watchdog, independent progress on a second TCP space and

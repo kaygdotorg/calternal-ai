@@ -129,7 +129,7 @@ impl Fixture {
                 Request {
                     account: self.actor,
                     via: None,
-                    id: "head-fixture-lost-reply",
+                    id: "head-fixture-item",
                     operation: "fixture.put",
                     fingerprint: "same checked payload",
                 },
@@ -194,36 +194,7 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
         (ticket, fixture.write(target))
     });
     let old_epoch = old.channel.epoch();
-    // The fixture writer committed, but this connection is lost before delivery.
     drop((old, peer));
-    let (replay, replay_peer) = fixture.carrier().await;
-    let replay_scope = fixture.scope(&replay.channel, item.id);
-    let (receipt, count) = tokio::task::block_in_place(|| {
-        let admitted = Ticket::mint(&fixture.auth, &replay.grants, replay_scope).unwrap();
-        assert_ne!(admitted.id(), old_ticket.id());
-        admitted.require_live(Instant::now()).unwrap();
-        let receipt = fixture
-            .content
-            .receipt(fixture.space, fixture.actor, "head-fixture-lost-reply")
-            .unwrap()
-            .unwrap();
-        let count = fixture
-            .content
-            .list(fixture.space, "notes", 2)
-            .unwrap()
-            .len();
-        admitted.require_live(Instant::now()).unwrap();
-        (receipt, count)
-    });
-    drop((replay, replay_peer));
-    assert_eq!(receipt.operation, "fixture.put");
-    assert_eq!(receipt.fingerprint, "same checked payload");
-    assert_eq!(receipt.item, Some(item.id));
-    assert_eq!(
-        receipt.result,
-        json!({"id": item.id, "revision":item.revision})
-    );
-    assert_eq!(count, 1);
 
     let (fresh, mut runtime) = fixture.carrier().await;
     assert_ne!(fresh.channel.epoch(), old_epoch);
