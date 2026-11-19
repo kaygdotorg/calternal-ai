@@ -41,20 +41,18 @@ impl Drop for Reservation {
 
 impl State {
     fn require_channel_capacity(&mut self, space: SpaceId) -> Result<(), Error> {
-            self.space_channels.retain(|_, reservation| {
-                !*reservation.closing.borrow()
-                    && reservation
-                        .reply
-                        .as_ref()
-                        .is_none_or(|reply| !reply.is_closed())
-            });
-            if self.space_channels.contains_key(&space)
-                || self.space_channels.len() >= MAX_CHANNELS
-            {
-                return Err(Error::unavailable(
-                    "space already has a carrier or carrier capacity is full",
-                ));
-            }
+        self.space_channels.retain(|_, reservation| {
+            !*reservation.closing.borrow()
+                && reservation
+                    .reply
+                    .as_ref()
+                    .is_none_or(|reply| !reply.is_closed())
+        });
+        if self.space_channels.contains_key(&space) || self.space_channels.len() >= MAX_CHANNELS {
+            return Err(Error::unavailable(
+                "space already has a carrier or carrier capacity is full",
+            ));
+        }
         Ok(())
     }
 

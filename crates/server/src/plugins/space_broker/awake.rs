@@ -46,10 +46,13 @@ impl Awake {
         if connected.grants.space() != connected.space {
             return Err(unavailable());
         }
-        let ready = tokio::time::timeout(crate::plugins::worker::WORKER_START_TIMEOUT, connected.channel.receive())
-            .await
-            .map_err(|_| unavailable())?
-            .ok_or_else(unavailable)?;
+        let ready = tokio::time::timeout(
+            crate::plugins::worker::WORKER_START_TIMEOUT,
+            connected.channel.receive(),
+        )
+        .await
+        .map_err(|_| unavailable())?
+        .ok_or_else(unavailable)?;
         let frame = ready.frame();
         if !matches!(&frame.message, SpaceMessage::Ready {})
             || frame.package.as_deref() != Some(pin.package.as_str())

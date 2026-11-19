@@ -233,7 +233,8 @@ async fn wake_space<D: Directory>(
     let content = state.store.shared_content();
     let space = approval.space;
     let reader = crate::blocking::spawn(move || content.item_head_reader(space))
-        .await.map_err(|_| unavailable())??;
+        .await
+        .map_err(|_| unavailable())??;
     let authority = state
         .directory
         .protected_spaces()

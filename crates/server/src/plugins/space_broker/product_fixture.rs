@@ -1,7 +1,9 @@
 use calternal_machine::{
     link::Link,
     protocol::SandboxSpec,
-    sandbox::{Backend, BoxFuture, Sandbox, SandboxResult, direct::DirectBackend},
+    sandbox::{
+        Backend, BoxFuture, Exec, ExecRequest, Sandbox, SandboxResult, direct::DirectBackend,
+    },
 };
 use std::{
     net::SocketAddr,
@@ -17,11 +19,17 @@ use uuid::Uuid;
 
 // Keep production's direct-placement restriction intact. Only this fixture
 // delegates an isolated test assignment to the direct backend.
-pub(super) struct FixtureBackend(DirectBackend);
+pub(super) struct FixtureBackend {
+    direct: DirectBackend,
+    node: String,
+}
 
 impl FixtureBackend {
-    pub(super) fn new(root: &Path) -> Self {
-        Self(DirectBackend::new(root))
+    pub(super) fn new(root: &Path, node: String) -> Self {
+        Self {
+            direct: DirectBackend::new(root),
+            node,
+        }
     }
 }
 
@@ -31,18 +39,51 @@ impl Backend for FixtureBackend {
     }
 
     fn discard(&self, account: Uuid, thread: Uuid) -> BoxFuture<'_, SandboxResult<()>> {
-        self.0.discard(account, thread)
+        self.direct.discard(account, thread)
     }
 
     fn erase(&self, account: Uuid, thread: Option<Uuid>) -> BoxFuture<'_, SandboxResult<()>> {
-        self.0.erase(account, thread)
+        self.direct.erase(account, thread)
     }
 
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        self.0.start(spec)
+        Box::pin(async move {
+            Ok(Arc::new(FixtureSandbox {
+                direct: self.direct.start(spec).await?,
+                node: self.node.clone(),
+            }) as Arc<dyn Sandbox>)
+        })
+    }
+}
+
+// The worker clears PATH. Supply the shell's pinned absolute Node program,
+// then let DirectSandbox start, stream and reap the process normally.
+struct FixtureSandbox {
+    direct: Arc<dyn Sandbox>,
+    node: String,
+}
+
+impl Sandbox for FixtureSandbox {
+    fn exec(&self, mut request: ExecRequest) -> BoxFuture<'_, SandboxResult<Exec>> {
+        assert_eq!(request.argv[0], "node");
+        request.argv[0] = self.node.clone();
+        self.direct.exec(request)
+    }
+
+    fn freeze(&self) -> BoxFuture<'_, SandboxResult<()>> {
+        self.direct.freeze()
+    }
+    fn resume(&self) -> BoxFuture<'_, SandboxResult<()>> {
+        self.direct.resume()
+    }
+    fn stop(&self) -> BoxFuture<'_, SandboxResult<()>> {
+        self.direct.stop()
+    }
+    fn release(&self) -> BoxFuture<'_, SandboxResult<()>> {
+        self.direct.release()
     }
 }
 
@@ -81,12 +122,13 @@ const server = tls.createServer({
     source.on('error', () => { if (!blocked()) target.destroy(); });
   }
 });
-server.listen(0, '127.0.0.1', () => console.log(server.address().port));
+server.listen(0, '127.0.0.1', () => console.log(server.address().port + ' ' + process.execPath));
 "#;
 
 pub(super) struct TlsRelay {
     pub(super) link: Link,
     pub(super) port: u16,
+    pub(super) node: String,
     pub(super) stall: PathBuf,
     _process: Child,
 }
@@ -181,7 +223,8 @@ impl TlsRelay {
             .read_line(&mut port)
             .await
             .unwrap();
-        let port: u16 = port.trim().parse().unwrap();
+        let (port, node) = port.trim().split_once(' ').unwrap();
+        let port: u16 = port.parse().unwrap();
         let ca = tokio::fs::read(root.join("ca.pem")).await.unwrap();
         let link = Link::with_space_test_ca(
             &format!("https://127.0.0.1:{port}"),
@@ -191,6 +234,7 @@ impl TlsRelay {
         Self {
             link,
             port,
+            node: node.to_owned(),
             stall: root.join("stall"),
             _process: process,
         }

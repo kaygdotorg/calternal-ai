@@ -80,10 +80,16 @@ async fn explicit_fence_closes_an_unstalled_carrier() {
     let started = Instant::now();
     host.fence_handle().close();
     assert!(!host.is_live());
-    assert!(host.send(&package, Uuid::new_v4(), invoke(json!({}))).is_err());
+    assert!(
+        host.send(&package, Uuid::new_v4(), invoke(json!({})))
+            .is_err()
+    );
     assert!(started.elapsed() < Duration::from_millis(500));
     let mut tail = Vec::new();
-    timeout(WRITE_LIMIT, peer.read_to_end(&mut tail)).await.unwrap().unwrap();
+    timeout(WRITE_LIMIT, peer.read_to_end(&mut tail))
+        .await
+        .unwrap()
+        .unwrap();
     assert!(tail.is_empty());
 }
 
@@ -96,17 +102,29 @@ async fn physical_midframe_stall_closes_on_the_write_watchdog() {
         .unwrap();
     let mut prefix = [0_u8; 512];
     timeout(Duration::from_millis(200), peer.read_exact(&mut prefix))
-        .await.unwrap().unwrap();
+        .await
+        .unwrap()
+        .unwrap();
     assert!(!prefix.contains(&b'\n'));
     assert!(host.is_live());
-    timeout(Duration::from_millis(500), host.lifetime().wait_for(|live| !*live))
-        .await.unwrap().unwrap();
+    timeout(
+        Duration::from_millis(500),
+        host.lifetime().wait_for(|live| !*live),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert!(started.elapsed() < Duration::from_millis(500));
     let mut remainder = Vec::new();
     timeout(Duration::from_secs(2), peer.read_to_end(&mut remainder))
-        .await.unwrap().unwrap();
+        .await
+        .unwrap()
+        .unwrap();
     assert!(started.elapsed() < Duration::from_secs(2));
-    assert!(remainder.len() + prefix.len() < length, "the TCP writer must stall mid-frame");
+    assert!(
+        remainder.len() + prefix.len() < length,
+        "the TCP writer must stall mid-frame"
+    );
     assert!(!remainder.contains(&b'\n'));
 }
 

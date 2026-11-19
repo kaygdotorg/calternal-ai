@@ -70,14 +70,12 @@ same opaque error.
    separate authenticated listener, which needs its own deployment and
    peer-verification configuration. Review the exact grammar before a
    second implementation starts depending on it.
-2. **Receipt replay evidence for a read-only first method (§8).** Keep
-   `item_head` read-only and exercise its fresh admission and stale-ticket
-   rejection after reconnect. Use an existing content receipt writer in the
-   carrier integration fixture for a separate lost-reply assertion. A
-   repeatable item-head lookup has no durable effect to count. Adding a
-   mutation to the first shipped broker surface would expand the
-   commit-fencing and recovery scope. Keep that surface at one read and
-   require the fixture to demonstrate one durable effect on replay.
+2. **Receipt replay for a read-only first method (§8).** Keep
+   `item_head` read-only and cover fresh admission and stale-ticket refusal on
+   reconnect. A proven receipt replay must send the same request ID through
+   carrier admission with a new ticket and observe one durable effect. Issue
+   #86 tracks that work. The direct fixture query into the receipt store was
+   removed because it would pass without a carrier.
 
 3. **Delivery grant revisions (§3).** Track awake space assignments in the
    shared auth writer, bound to the enrolled machine UUID. Connection-local
@@ -85,8 +83,9 @@ same opaque error.
    Publish a new clean revision after the write job returns to autocommit,
    including after a rollback. Close the handle when its machine changes
    enrollment, its assignment moves, or the auth worker exits. Session
-   changes invalidate the account's direct, group, item-share and delegated
-   spaces. The first carrier deployment uses the installation's one
+   deletion and updates to revocation, expiration or ownership invalidate
+   the relevant spaces. New sign-ins and token rotation preserve existing
+   tickets. The first carrier deployment uses the installation's one
    root-locked authority writer. This adds no on-disk authority copy.
    Tickets bind the handle and runtime epoch as well as the revision.
    Revisions may restart with a new handle. The carrier must separately
@@ -117,8 +116,8 @@ in-memory operations on the write and assignment paths.
    frame slots. The control window is 4 KiB, including one coalesced credit
    return. The writer owns the one direction-local sequence. It reserves the
    largest sequence encoding at admission, then refunds the unused bytes at
-   write time. The receiver reads into one bounded line buffer before
-   decoding and checks package credit before handing off the frame.
+   write time. The receiver charges the bounded line to the space receive
+   budget before decoding and settles credit against the package window.
    Socket write and flush share a 300 ms deadline. Local fencing and the
    remote four-second lease run independently of application callbacks and
    physical writes.
@@ -139,19 +138,22 @@ can allocate distinct windows for up to eight pinned packages.
    Lifetime is 60 seconds from mint, shortened to the remaining installation
    lifetime when needed. Thread delegation and item-only sharing stay outside
    this first scope. Authorization compares the saved handle revision and
-   expiry on callbacks and delivery. A resumed invocation takes fresh rights
-   and receives a new ticket even when it uses the same durable request ID.
+   expiry on callbacks and delivery. Each invocation after reconnect takes
+   fresh rights and receives a new ticket.
 
-Live admission uses one authority-worker job, one capability query and
-one installation primary-key query for a revocable sign-in. Callback
-authorization uses one atomic grant load, one monotonic time sample and
-local comparisons. It performs zero storage reads or flushes.
+After the caller's identity is verified, warm admission takes one capability
+query and, for an installation session, one primary-key query on the space's
+retained read-only WAL connection. Both queries share a snapshot. Admission
+checks the grant revision before and after the snapshot. Each delivery check
+uses one atomic grant load, one monotonic time sample and local comparisons.
+Warm admission and delivery incur zero storage flushes and use neither the
+machine registry nor the auth worker.
 
 6. **First item-head operation (§4).** Register a trusted, space-specific
    operation and verified no-egress worker source through the host's startup
    registry. The normal operation dispatcher can select it. Existing registry
-   operations keep priority. The first profile admits one package operation
-   per placement, with one item callback and a terminal result which echoes
+   operations keep priority. The first profile admits one pinned package
+   per placement and one item callback per ticket. The terminal result echoes
    the checked head. Its callback only accepts the ticket's exact kind and
    item. The machine starts the package with the existing worker sandbox
    and relays it on a capability-free child pipe. The child sees its own
@@ -162,18 +164,29 @@ local comparisons. It performs zero storage reads or flushes.
    The normal manifest installer remains on the
    existing path until it can supply validated v2 approvals.
 
-A warm item-head callback binds to a per-space read pool and performs one
+A warm item-head callback reuses Content’s per-space visibility pool and performs one
 indexed metadata/revision read, zero catalog or shared authority reads,
-and zero storage flushes. No item body is loaded. A cold callback opens a
-read-only SQLite connection for only that space. Preflight and ticket mint
-are separate authorization snapshots so a revoked actor cannot wake a
-worker or obtain a ticket for a worker that finished starting afterward.
+and zero storage flushes. The callback loads metadata and revision only.
+Cold wake pins the recovered space and its cache entry. The first pool
+checkout may open a read-only content connection. Cold preflight uses
+the authority worker before placement. The enrolled upgrade uses it once
+more to bind the verified assignment to a grant revision. Ticket mint checks
+authority again after package startup.
 
-7. **Fault-test boundaries (§8).** Use small kernel socket buffers and hold
-   the receiver after observing a physical prefix. Prove the socket closed
-   before a newline arrives. Keep the remote peer open during the lease
-   test so that neither EOF nor a cancel can explain worker exit. Test reconnect with a fresh read admission and the previous epoch
-   and ticket. Receipt replay through admission remains open on issue #86.
+7. **Fault-test boundaries (§8).** Limit kernel buffers and hold the receiver
+   after observing a physical prefix. Require the watchdog to close before
+   delivering the newline. Exercise explicit fencing on an unstalled
+   carrier. Keep the TLS peer open during the lease test so EOF and cancellation
+   cannot explain the process exit. Exercise a fresh read after reconnect
+   and refuse a ticket that was valid on the previous epoch.
+
+8. **Awake reuse (§§2–3).** The initial profile places one pinned package per
+   space, holds one enrolled channel and multiplexes up to eight tickets.
+   A space-local wake gate coalesces placement and waits up to the existing
+   ten-second worker startup limit for Ready. Reclaim the placement after
+   60 seconds without an application frame. This keeps the placement bounded
+   and preserves worker and machine capacity. A longer idle period would
+   reduce cold starts at the cost of reserving a machine slot longer.
 
 ## Verification and remaining work
 
@@ -188,26 +201,30 @@ The following milestones were verified on
 | `e0246791` | 107 auth tests and ticket denial for missing plugin-use rights, wrong epoch, expiry and a moved grant revision. |
 | `03e173d7` | Three broker regressions and 24 plugin-host tests. The normal dispatcher, enrollment and server-side HTTP Upgrade exchange reach a real Node process. The reconnect fixture rejects the old ticket and admits a fresh read. |
 
-The carrier tests cover a physical TCP mid-frame stall, both the local
-fence and the watchdog, independent progress on a second TCP space and
-an old-epoch frame carrying the expected next sequence. A two-package
-transport fixture holds one callback for two seconds and checks control
-priority and second-package progress within 500 ms. A separate test
-verifies that a stale queued reply consumes neither delivery nor sequence.
-A second physical fault revokes a grant after a guarded reply writes a
-prefix. Resuming the receiver must not expose the completed stale frame.
-The real-process expiry test keeps the peer open for the whole fault and
-requires the package to be reaped within five seconds of the last
-renewal. These are development regression bounds.
+The physical carrier tests cover an explicit fence without a stalled write,
+a mid-frame stall with the write watchdog, and an old-epoch frame carrying
+the expected next sequence. A two-package transport fixture holds one callback
+and checks control priority and the second package. Another test checks that
+a stale queued reply consumes neither delivery nor sequence, including a
+physical interruption after a guarded write puts out a prefix.
 
-The approved item-head profile uses one package process per placement.
-The two-package independence regression exercises the product transport
-with two pinned lanes. A combined full gate with two sandboxed packages
-sharing an enrolled placement, the machine's TLS origin and proxy
-forwarding remains to run. The SDK and package integration lane
-([#84](https://git.kayg.org/kayg/calternal-ai/issues/84)) can supply v2
-installation approvals to the new registry. The bundled v1 worker and
-manifest paths remain in use.
+The Linux integration fixture uses the normal dispatcher and server router,
+one scheduler and enrollment, the machine runner and TLS Link upgrade,
+and the direct sandbox's process startup and teardown. It uses an isolated
+loopback TLS relay and supplies the absolute Node executable to the direct
+sandbox fixture because worker execution clears PATH. It exercises two
+concurrent tickets on one placement, a second space sharing the same
+components, and reaping the first package after its assignment is re-fenced
+and its carrier stops delivering renewals. The bounds are regression
+assertions on development infrastructure.
+
+Open on issue #86 are receipt replay through carrier admission and
+ticket fencing on package disable or uninstall. The approved v2 read route
+has no production caller. The SDK and package integration lane
+([#84](https://git.kayg.org/kayg/calternal-ai/issues/84)) can supply validated
+v2 approvals. The first product profile has one package per awake space.
+Distinct package windows have transport coverage. A placement serving
+multiple package processes remains future work.
 
 ## Simplification opportunities
 
