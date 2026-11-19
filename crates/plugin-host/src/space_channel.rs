@@ -19,7 +19,7 @@ use std::{
 };
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
-    sync::{mpsc, watch},
+    sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch},
     time::{Instant, timeout},
 };
 use uuid::Uuid;
@@ -119,6 +119,7 @@ impl SpaceChannel {
         host: bool,
     ) -> Self {
         let queue = PER_PACKAGE * credits.len();
+        let parsing = Semaphore::new(DATA * credits.len() + CONTROL);
         let (data, outbound) = mpsc::channel(queue);
         let (control, controls) = mpsc::channel(32);
         let (inbound, received) = mpsc::channel(queue + 32);
@@ -139,7 +140,7 @@ impl SpaceChannel {
             tokio::select! {
                 biased;
                 _ = life.wait_for(|live| !*live) => {}
-                _ = read_loop(reader, &connection, inbound, renew) => {}
+                _ = read_loop(reader, &connection, inbound, renew, Arc::new(parsing)) => {}
                 _ = write_loop(writer, &connection, outbound, controls) => {}
                 _ = maintain_lease(&connection, expiry) => {}
             }
@@ -288,6 +289,7 @@ impl SpaceFence {
 pub struct SpaceDelivery {
     frame: SpaceFrame,
     bytes: usize,
+    parsing: Option<OwnedSemaphorePermit>,
     shared: Arc<Shared>,
 }
 
@@ -300,6 +302,7 @@ impl SpaceDelivery {
 
 impl Drop for SpaceDelivery {
     fn drop(&mut self) {
+        drop(self.parsing.take());
         if self.bytes != 0 && self.shared.release(&self.frame, self.bytes).is_err() {
             self.shared.live.send_replace(false);
         }
@@ -422,11 +425,18 @@ async fn read_loop(
     shared: &Arc<Shared>,
     inbound: mpsc::Sender<SpaceDelivery>,
     renew: watch::Sender<Instant>,
+    parsing: Arc<Semaphore>,
 ) -> Result<(), Error> {
     let mut tail = 0_u64;
     let mut line = Vec::new();
     loop {
         read_line(&mut reader, &mut line, MAX_LINE).await?;
+        // Charge before decoding. This allowance covers all package windows
+        // and a control reserve while the envelope's route is still unknown.
+        let permit = parsing
+            .clone()
+            .try_acquire_many_owned(line.len() as u32)
+            .map_err(|_| Error::BackPressure)?;
         let frame: SpaceFrame = parse(&line)?;
         if frame.v != V
             || frame.epoch != shared.epoch
@@ -447,6 +457,7 @@ async fn read_loop(
                 .try_send(SpaceDelivery {
                     frame,
                     bytes,
+                    parsing: Some(permit),
                     shared: shared.clone(),
                 })
                 .map_err(|_| Error::BackPressure)?,
