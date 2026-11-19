@@ -29,7 +29,8 @@
               "walkthrough",
               "skill",
               "jobs",
-              "waits"
+              "waits",
+              "network"
             ]
           }
         },
