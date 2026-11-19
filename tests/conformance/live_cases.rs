@@ -192,3 +192,6 @@ async fn sigterm_finishes_with_open_streams_and_keeps_the_resume_bookmark() {
     );
     f.op(1, "notes.get", json!({"id":saved["id"]})).await.ok();
 }
+
+#[path = "live_cases/rooms.rs"]
+mod rooms;
