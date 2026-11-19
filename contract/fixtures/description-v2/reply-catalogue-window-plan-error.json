@@ -1,4 +1,5 @@
 {
   "status": 422,
-  "code": "unsupported_query_plan"
+  "code": "unsupported_query_plan",
+  "reason": "skip_limit"
 }
