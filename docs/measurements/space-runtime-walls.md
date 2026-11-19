@@ -302,6 +302,8 @@ Wake below is a fresh launch with existing images and uncontrolled cache residen
 
 ## What this means for the design
 
+These conclusions describe the initial wall experiments. The later XFS tests use the owner’s separate plugin and agent VMs.
+
 1. **Wake budget.** With a 300 ms allowance, a single cached 256 MiB space met the budget in all 100 settings wakes (p95 269 ms, max 280 ms). With the backing files evicted, p95 was 489 ms and max 863 ms. Twenty simultaneous settings wakes raised p95 to 922 ms cached and 2,519 ms evicted. These timings end at the fixture's validated reply and precede any explicit reseed.
 2. **Space capacity.** An exited VMM consumes 0 MiB of process PSS. Its snapshot can occupy reclaimable page cache. Disk below counts the state and memory image plus any private idle data drive when sleeping. Awake disk assumes the old snapshot is discarded. Keeping the old snapshot adds its full allocation to awake disk. Larger guests with agents used 10–21 MiB of private data blocks when idle, growing to roughly 1.33–1.38 GiB after one build or 4.02–4.11 GiB after three where the build completed.
 
@@ -318,6 +320,100 @@ Wake below is a fresh launch with existing images and uncontrolled cache residen
 3. **Agents in the space microVM.** Use 2 GiB as the smallest tested candidate for this workload. All 120 idle restore trials passed the cohort check. At 2 GiB the one- and three-agent builds completed, idle full saves took 4.62–6.44 s, and restore p95 ranged from 358–1,954 ms cached and 619–1,438 ms evicted. At 4 GiB all builds completed, with 8.50–22.50 s idle saves. At 8 GiB one-agent builds completed and idle saves took 18.03–59.04 s. Three-agent build completion at 8 GiB is unverified. Three-agent settings p95 improved with the reservation in every measured pair (including 17.94 → 8.91 ms and 32.53 → 2.01 ms at 2 GiB). The agents received about half the CPU time per window, and the one-agent p95 sometimes worsened. The experiment applied CPU pinning and memory protection together, so it gives no separate effect for either control.
 4. **Self-host isolation.** Label native rootless Podman siblings **weaker isolation** than Firecracker. Siblings separate PID, mount and network namespaces but share the host kernel and, in this fixture, the same user namespace. Nested native Podman would also share the host kernel, and the tested configurations failed to start. gVisor adds a userspace kernel that handles workload syscalls before they reach the Linux host. Its measured deployment used a shared cohort resource cap. With idle cohorts, the median for both timed stages combined was 1.04 s for one agent and 2.04 s for three, and PSS was 735 and 848 MiB. Native siblings took 1.08 and 2.18 s, with 215 and 242 MiB PSS. [gVisor architecture](https://gvisor.dev/docs/)
 5. **Randomness on restore.** Synchronous Node crypto emitted the same 32 bytes in all 20 default restores, despite 20 distinct kernel draws. Kernel-only reseeding still returned one distinct Node result. Kernel plus Node/OpenSSL reseeding gave 20 distinct draws from each, with broker p50/p95/max of 219/316/341 ms versus 89/115/119 ms by default. The difference between broker medians was 130 ms. The Node stage including both draws measured 6.07 ms p50 with both reseeds versus 4.27 ms with kernel-only seeding. The result supports a wake gate that refreshes each resumed long-lived RNG before it serves requests. The probe covered one Node process.
+
+## Follow-up on XFS snapshots
+
+The owner split the runtime after the first wall tests. Each space has a small plugin VM, a larger plugin VM on demand, and a separate on-demand agent VM. The combined plugin and agent guest above is historical. The follow-up used the five-worker fixture in a 256 MiB guest and three idle rootless Podman containers in a separate 2 GiB guest. The agent guest used a private ext4 scratch disk for container state. No VM mounted userdata. [Runtime decisions](../open-questions.md)
+
+Both snapshot guests had two vCPUs. All timed runs used the perf lock on `calternal-perf-01-backup01`. Snapshots were written on the perf VM’s existing 100 GiB XFS filesystem at `/srv/homes` on `/dev/sdb1`, in the disposable `/srv/homes/calternal-space-runtime-xfs-77` directory. The filesystem used 4 KiB blocks, reflinks enabled and `noatime`. Firecracker and `snapshot-editor` were version 1.16.1. The guests used Node 24.21.0. The agent guest used Podman 6.1.4 and crun. Starting with a disposable template, each plugin session issued 50 broker calls across the runtime with all five workers resident and set an in-memory marker. Each agent session set a marker in the live Node process in each of its three containers and then synced its scratch disk.
+
+- **Diff.** Save dirty guest pages and the matching device state. At wake, create a temporary XFS reflink of the template memory file and apply the delta with `snapshot-editor`.
+- **Merged dirty reflink.** Apply the Firecracker delta to a template reflink before sleep, and retain the merged inode and matching device state. XFS FIEMAP counts the private extents. The inode’s `st_blocks` also includes shared extents.
+- **Full-scan reflink.** Save full memory, compare it against the template in 4 KiB pages and rewrite only differing pages into a new reflink. Retain the merged inode and the state from the full save.
+- **Reporting and hole punch.** Enable free-page reporting at boot, save a full memory file, then use `fallocate --dig-holes` to deallocate zero blocks.
+- **Balloon and hole punch.** Use the reporting configuration and request a 64 MiB or 1,024 MiB balloon before saving. Punch zero blocks and request deflation on wake.
+
+The save timer covers pause, snapshot writes and fsync. The reflink arm includes merging and syncing the final inode, and the hole-punch arms include scanning, punching and syncing. Balloon settle and scratch-disk sync are outside the save timer. The harness compares the first Firecracker diff at each size with two full snapshots taken during the same pause. It checks all 64-byte blocks where the two full saves agree. The full-scan reflink and hole-punch controls require byte-for-byte agreement with their input. Firecracker describes diff snapshots as a developer preview. [Firecracker snapshot support](https://github.com/firecracker-microvm/firecracker/blob/v1.16.1/docs/snapshotting/snapshot-support.md)
+
+The wake timer starts at release of the request and ends after reseeding and checking a restored session marker. For plugins it also checks five live worker PIDs and a successful settings call. For agents it requires the expected three running containers and a reply from each saved Node process. Every restore creates a fresh VMM. Agent restores use a fresh private copy of the saved scratch-disk generation. The raw diff includes its per-wake merge.
+
+Evicted runs used file-specific `POSIX_FADV_DONTNEED` on the memory inputs, state and backing drives. The table reports `mincore` residency of the first snapshot memory input per batch. For a raw diff, the materialized memory inode is created inside the timer. Cached runs either read the files in advance or replayed the wake working set on each inode. The 2 GiB raw diff, merged dirty and hole-punch runs replayed the working set for singles as well. The residency column shows the cache that remained at launch. The 20-way batches release 20 independent VMM launches together, with independent memory inodes and private agent scratch disks. Wake attempts within a batch are correlated. Cleanup after a successful wake can overlap the other wakes.
+
+Sizes count private filesystem extents for the memory and state files. Add the separate private scratch allocation for the agent guest. Shared template memory and shared OS/tool images are charged once per generation. The punched and full-scan arms measured five independently prepared sessions per size and made additional independent files for the 20-way batches. A punched copy keeps holes and a reflink copy shares the template extents.
+
+| Guest MiB | Arm | Saves | Private memory + state bytes p50 / p95 / max | Private scratch bytes p50 / p95 / max | Save ms p50 / p95 / max | Balloon wait ms p50 / p95 / max |
+| --- | --- | --- | --- | --- | --- | --- |
+| 256 | Raw diff | 20 | 16,201,728 / 16,302,080 / 16,371,712 | — | 96.90 / 107.43 / 148.41 | — |
+| 256 | Merged dirty reflink | 20 | 76,484,608 / 76,877,824 / 76,877,824 | — | 255.96 / 277.09 / 331.20 | — |
+| 256 | Full-scan reflink | 5 | 71,892,992 / 72,024,064 / 72,024,064 | — | 734.69 / 1,153.73 / 1,153.73 | — |
+| 256 | Reporting + punch | 5 | 173,547,520 / 173,576,192 / 173,576,192 | — | 716.72 / 2,065.46 / 2,065.46 | — |
+| 256 | Balloon + punch | 5 | 173,252,608 / 173,531,136 / 173,531,136 | — | 787.91 / 840.33 / 840.33 | 101.90 / 129.56 / 129.56 |
+| 2048 | Raw diff | 20 | 49,508,352 / 55,541,760 / 55,648,256 | 2,629,632 / 2,662,400 / 2,670,592 | 228.38 / 269.19 / 273.05 | — |
+| 2048 | Merged dirty reflink | 20 | 138,803,200 / 215,633,920 / 217,993,216 | 2,629,632 / 2,662,400 / 2,670,592 | 591.61 / 665.18 / 670.59 | — |
+| 2048 | Full-scan reflink | 5 | 117,293,056 / 124,641,280 / 124,641,280 | 2,613,248 / 2,723,840 / 2,723,840 | 17,373.26 / 24,378.04 / 24,378.04 | — |
+| 2048 | Reporting + punch | 5 | 279,212,032 / 284,860,416 / 284,860,416 | 2,695,168 / 2,703,360 / 2,703,360 | 23,910.60 / 27,647.30 / 27,647.30 | — |
+| 2048 | Balloon + punch | 5 | 264,962,048 / 275,648,512 / 275,648,512 | 2,629,632 / 2,650,112 / 2,650,112 | 22,848.69 / 24,987.03 / 24,987.03 | 1,162.54 / 1,552.22 / 1,552.22 |
+
+| Guest MiB | Arm | Parallel | Cache | Attempts | Failed | Wake ms p50 / p95 / max | First memory input resident % |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 256 | Raw diff | 1 | warm | 5 | 0 | 757.50 / 1,913.87 / 1,913.87 | 100.0–100.0 |
+| 256 | Raw diff | 1 | cold | 5 | 0 | 1,061.13 / 1,238.98 / 1,238.98 | 0.0–0.0 |
+| 256 | Raw diff | 20 | warm | 60 | 0 | 4,247.43 / 4,386.98 / 4,418.88 | 100.0–100.0 |
+| 256 | Raw diff | 20 | cold | 60 | 0 | 4,877.44 / 5,489.25 / 5,527.96 | 0.0–0.0 |
+| 256 | Merged dirty reflink | 1 | warm | 5 | 0 | 391.47 / 468.95 / 468.95 | 100.0–100.0 |
+| 256 | Merged dirty reflink | 1 | cold | 5 | 0 | 965.77 / 993.48 / 993.48 | 0.0–0.0 |
+| 256 | Merged dirty reflink | 20 | warm | 60 | 0 | 1,838.03 / 2,556.71 / 2,702.06 | 31.3–100.0 |
+| 256 | Merged dirty reflink | 20 | cold | 60 | 0 | 6,226.71 / 6,465.62 / 6,520.57 | 0.0–0.0 |
+| 256 | Full-scan reflink | 1 | warm | 5 | 0 | 489.03 / 512.97 / 512.97 | 100.0–100.0 |
+| 256 | Full-scan reflink | 1 | cold | 5 | 0 | 1,355.22 / 1,624.43 / 1,624.43 | 0.0–0.0 |
+| 256 | Full-scan reflink | 20 | warm | 60 | 0 | 1,944.34 / 1,994.48 / 2,009.16 | 100.0–100.0 |
+| 256 | Full-scan reflink | 20 | cold | 60 | 0 | 6,119.17 / 6,825.75 / 6,900.58 | 0.0–0.0 |
+| 256 | Reporting + punch | 1 | warm | 5 | 0 | 264.85 / 314.16 / 314.16 | 100.0–100.0 |
+| 256 | Reporting + punch | 1 | cold | 5 | 0 | 2,845.73 / 2,994.40 / 2,994.40 | 0.0–0.0 |
+| 256 | Reporting + punch | 20 | warm | 60 | 0 | 1,659.21 / 1,825.30 / 1,846.18 | 100.0–100.0 |
+| 256 | Reporting + punch | 20 | cold | 60 | 0 | 19,186.46 / 20,580.65 / 20,705.22 | 0.0–0.0 |
+| 256 | Balloon + punch | 1 | warm | 5 | 0 | 513.82 / 594.11 / 594.11 | 100.0–100.0 |
+| 256 | Balloon + punch | 1 | cold | 5 | 0 | 2,988.88 / 3,124.82 / 3,124.82 | 0.0–0.0 |
+| 256 | Balloon + punch | 20 | warm | 60 | 0 | 2,183.43 / 2,324.51 / 2,344.75 | 100.0–100.0 |
+| 256 | Balloon + punch | 20 | cold | 60 | 0 | 18,274.96 / 20,120.93 / 20,264.55 | 0.0–0.0 |
+| 2048 | Raw diff | 1 | warm | 5 | 0 | 4,541.76 / 6,230.12 / 6,230.12 | 1.9–4.1 |
+| 2048 | Raw diff | 1 | cold | 5 | 0 | 5,851.41 / 9,017.74 / 9,017.74 | 0.0–0.0 |
+| 2048 | Raw diff | 20 | warm | 40 | 0 | 21,321.76 / 22,417.94 / 22,838.80 | 3.8–4.1 |
+| 2048 | Raw diff | 20 | cold | 40 | 0 | 24,830.90 / 26,019.98 / 26,123.49 | 0.0–0.0 |
+| 2048 | Merged dirty reflink | 1 | warm | 5 | 0 | 5,271.74 / 5,903.22 / 5,903.22 | 10.7–13.8 |
+| 2048 | Merged dirty reflink | 1 | cold | 5 | 0 | 5,154.70 / 6,241.16 / 6,241.16 | 0.0–0.0 |
+| 2048 | Merged dirty reflink | 20 | warm | 40 | 0 | 12,680.39 / 13,186.51 / 13,248.01 | 11.1–13.9 |
+| 2048 | Merged dirty reflink | 20 | cold | 40 | 0 | 29,361.08 / 30,309.95 / 30,482.83 | 0.0–0.0 |
+| 2048 | Full-scan reflink | 1 | warm | 5 | 0 | 6,026.33 / 7,117.24 / 7,117.24 | 31.6–100.0 |
+| 2048 | Full-scan reflink | 1 | cold | 5 | 0 | 4,671.82 / 5,755.72 / 5,755.72 | 0.0–0.0 |
+| 2048 | Full-scan reflink | 20 | warm | 40 | 0 | 13,468.63 / 13,962.25 / 13,986.91 | 10.0–29.5 |
+| 2048 | Full-scan reflink | 20 | cold | 40 | 0 | 24,743.75 / 26,001.27 / 26,023.67 | 0.0–0.0 |
+| 2048 | Reporting + punch | 1 | warm | 5 | 0 | 2,208.35 / 2,741.92 / 2,741.92 | 13.6–13.9 |
+| 2048 | Reporting + punch | 1 | cold | 5 | 0 | 6,999.27 / 7,940.06 / 7,940.06 | 0.0–0.0 |
+| 2048 | Reporting + punch | 20 | warm | 40 | 0 | 11,890.19 / 12,861.09 / 13,123.59 | 10.5–11.9 |
+| 2048 | Reporting + punch | 20 | cold | 40 | 0 | 38,251.26 / 42,377.27 / 42,729.09 | 0.0–0.0 |
+| 2048 | Balloon + punch | 1 | warm | 5 | 0 | 8,359.35 / 9,400.86 / 9,400.86 | 14.1–15.4 |
+| 2048 | Balloon + punch | 1 | cold | 5 | 0 | 7,991.47 / 8,628.97 / 8,628.97 | 0.0–0.0 |
+| 2048 | Balloon + punch | 20 | warm | 40 | 0 | 20,125.54 / 20,957.98 / 20,999.77 | 13.3–14.6 |
+| 2048 | Balloon + punch | 20 | cold | 40 | 0 | 47,177.49 / 49,767.21 / 50,519.80 | 0.0–0.0 |
+
+The first raw diff comparison was discarded because the control assumed byte-for-byte stability across two save operations. The corrected native XFS control found one changing 64-byte block in each guest size. The merged memory agreed with the full snapshots everywhere the full controls agreed. The first 2 GiB reporting and balloon attempts stopped before saving when the agent state check returned no JSON reply. The retry extended the reply window and verified the template cohort before saving. The wake tables contain 1,100 measured attempts with 0 failures. In 10 of 10 same-snapshot entropy controls, the Node stream repeated before reseeding and all three draws differed after reseeding. The plugin entropy check covered its long-lived broker process. The agent check covered each of the three fixture Node processes. Reseed long-lived RNGs before either a template clone or a sleeping guest serves requests.
+
+### What this means for snapshot design
+
+Use a materialized reflink for the sleeping format. The byte-exact full-scan implementation stored 68.6 MiB for plugins and 114.3 MiB for agents, including state and the measured private scratch. Those allocations are 26.8% and 5.6% of the original dense memory sizes. Median save was 0.73 s and 17.4 s. The full-scan save needs temporary space for a dense snapshot. The agent scratch numbers cover the idle fixture. A job that writes files adds its own disk allocation.
+
+The measured dirty-merge path published the same restore format in 0.26 s for plugins and 0.59 s for agents at the median. It occupied 72.9 MiB and 134.9 MiB at the median. Treat it as a faster save path to qualify on a pinned Firecracker release because diff snapshots are still in developer preview. Persisting a raw delta moves work into wake. Its plugin cached single p95 was 1.91 s and cached 20-way p95 was 4.39 s. Merging at save gave 0.47 s cached and 0.99 s evicted for one plugin wake. Start with the full-scan writer as the correctness reference and fallback. Keep the 500 ms gate scoped to a separately qualified warm wake. The native XFS evicted and 20-way measurements exceed it.
+
+Free-page reporting plus punching cost 165.5 MiB per plugin sleeper. Adding the balloon changed that to 165.2 MiB and raised the plugin cached single p95 from 0.31 s to 0.59 s. Zero punching requires a full write before reclaiming disk blocks. The XFS allocation figures include additional inode blocks reported after sync. The changed-page extents alone undercounted space, so the report uses allocated inode blocks minus the shared mappings. In the agent guest, reporting plus punching kept 268.8 MiB, and adding the balloon kept 255.2 MiB. Both figures include private scratch.
+
+### Restore after a restart or image upgrade
+
+Keep a versioned manifest with the exact state, memory, and scratch-disk generation for each sleeping VM. Persist the snapshot files and their parent directory before publishing the manifest. Restore the pinned Firecracker snapshot format and CPU configuration with the same immutable guest OS and tool images. Reopen the agent scratch disk saved with that state. The restore can use a new vsock socket path.
+
+A raw diff also needs the exact base memory file and any prior layers in order. A materialized reflink holds the referenced blocks through its own inode, so the template memory inode can be removed once no raw diffs depend on it. A hole-punched memory file is also self-contained. Preserve old immutable drive images until their sleepers have resumed or been retired. A new base image starts a new template generation. Resume the old generation or cold-start from authoritative broker state when retiring it. The benchmark used fresh VMM processes and the original images. Host reboot, torn writes and substitution of an upgraded image were outside the test. [Firecracker snapshot versioning](https://github.com/firecracker-microvm/firecracker/blob/v1.16.1/docs/snapshotting/versioning.md)
+
+Raw follow-up logs, source harnesses and filesystem metadata are retained under `~/space-runtime-measure/xfs-followup/` on perf-01. The JSON companion records numeric results and file hashes.
 
 ## Whole-file read over the space channel
 
@@ -346,4 +442,4 @@ The wire should open a whole-file read with an item and requested revision, pin 
 
 The guest relay and stdio adapter share a newline-delimited frame format, so one driver can validate the operation and timing boundary for all three walls.
 
-Keep one current snapshot generation per space and VM role. Reuse the broker’s stream flow control for large files, and gate readiness on reseeding and the workload check.
+Keep one current snapshot generation per space and VM role. Reuse one broker flow-control mechanism for large files. Combine agent reseeding and the cohort check into a readiness exchange.
