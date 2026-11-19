@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.7 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.8 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.
@@ -334,7 +334,7 @@ plugin code). A description can run a named **invoke** on a component's event on
 | --- | --- | --- | --- |
 | `item-editor` | `item` (route or selection, never a literal id), `mode` edit/read, `showTitle`, `onTitleChange` | `title-change` (the host saves through `host.item.rename`), `link-open`, `presence` (live rooms: an attribute of the item's KIND) | A text view over the item's document (a note's Markdown file directly: no second representation between the editor and the file, an owner rule). A metadata-only save must not rewrite the body. |
 | `conversation-transcript` | `conversation` (checked ItemRef from route or selection), `follow` end/none, `window`, `quote` (boolean: the host's Quote control) | `transcript.page` (the host route: `TranscriptPageRequest` -> `TranscriptPage`, catalogue), `quote` (a host-issued quote reference into a draft), `scrolled-away`, `rendered` | A host-owned windowed list: the screenful at the end is read first and drawn, the rest follows in steps; rows are appended and updated by the host; heavy parts are the host's. |
-| `composer` | `conversation` (checked ItemRef), `controls` (which host controls appear: `attachments`, `mentions`, `provider`, `model`, `reasoning`, `permission`, `machine`, `stop`), `placeholder` | `draft` (device only), `send` and `stop` (the host's), `attach`, `mention`, `composer.options` (`ComposerOptionRequest` -> `ComposerOptionPage`, catalogue) | The draft is held on the device. The host owns the send: it dispatches the kind’s configured Send with a checked item, draft and options in one prepared exchange; a native composer is a text field with the system keyboard and system pickers. |
+| `composer` | `conversation` (checked ItemRef), `controls` (which host controls appear: `attachments`, `mentions`, `provider`, `model`, `reasoning`, `permission`, `machine`, `stop`), `placeholder` | `draft` (device only), `send`, `stop` and `resume` (the host's), `attach`, `mention`, `composer.options` (`ComposerOptionRequest` -> `ComposerOptionPage`, catalogue) | The draft is held on the device. The host owns the send: it dispatches the kind’s configured Send with a checked item, draft and options in one prepared exchange; a native composer is a text field with the system keyboard and system pickers. |
 | `request-card` | `request` (typed request ref), `compact` | `resolve` (host.approval.resolve, from the host's own buttons) | One protected record and resolver for a job, a Turn and a host action; the card shows the material arguments (the trusted preview) and cannot be reordered, relabelled or covered by a plugin layout. |
 | `sealed-html-frame` | `frame` (a frame id), `minHeight`, `maxHeight` | `sealed_frame.open`, `sealed_frame.resize` (inside the caps), `sealed_frame.open_link` (a host link id; the host re-authorises), all catalogue routes | A web view with no network and no top navigation; its message channel and sandbox are fixed by the host. |
 
@@ -349,7 +349,12 @@ plugin code). A description can run a named **invoke** on a component's event on
 * **Refs are typed.** `thread`, `item` and `request` take a value source that resolves to a reference of that type or the host refuses the description; the host
   authorises the viewer for the ref (a guest's grant included) before anything is read. The description holds no viewer data.
 * **Drafts and options.** The composer's text stays on the device. It reuses the existing host routes for attachment upload and mention lookup. Attachments are held as host-owned `AttachmentRef`s, mentions are account references, a quoted passage is a host-issued quote reference (the catalogue's `Draft`), and the chosen provider, model, reasoning level, permission and machine are opaque option references the host returned (`Interaction.options`). The description names none of them: it says which controls appear. The host checks everything (lengths, counts, that every attachment is the viewer's own, that every option is one it offered for this thread) and composes the send; it never trusts the client. The one-exchange Send treats the final text **solely as message content**: anything the host parses out of it that changes recipients, routing, permissions or other prepared material (a mention, a slash command) needs a fresh preview before it takes effect (3.2). The draft clears only after `ok`; `error` keeps it.
-* **Transcript reads** use the paging, record order, limits and reconnect rules in the [`transcript.page` catalogue entry](../contract/host-catalogue-v2.json#/component_routes/transcript.page). Follow the existing view subscription, replacing records by stable UUID and applying the returned committed cursor. Cancel on selection or authority change. The renderer never invents a cursor.
+* **Transcript reads** use the paging, record order, limits and reconnect rules in the [`transcript.page` catalogue entry](../contract/host-catalogue-v2.json#/component_routes/transcript.page). Follow the existing view subscription, replacing records by stable UUID and applying the returned committed cursor. Cancel on selection or authority change. The renderer never invents a cursor. Replace a committed record's entire
+  attachment list when the host upserts it. Draw only the checked
+  `attachments` descriptors received on page or follow. Omission clears the
+  list. Use the same lease and `transcript.attachment` to download. On lease
+  or attachment invalidation, remove stale descriptors and cancel any
+  fetch before drawing again. The record text supplies no attachment refs.
 * **Prepared composer Send** uses the action ID and context issued for the active composer in `view.open` as described below. The manifest’s reserved Send operation cannot appear in an authored Invoke. Resolve that action with checked draft/option material, then confirm with `final_text`. The reply is the committed `ActionOutcome`, with a status ref while Starting. Retry the exact activation and text. The host supplies a Stop action ID only with current execution-control authority.
 * **Composer choices** follow the control dependencies in the [`composer.options` catalogue entry](../contract/host-catalogue-v2.json#/component_routes/composer.options). Send the selected refs under the same keys in `interaction.options`.
 * **Streaming** is the host's: the transcript's rows grow and change without a description revision; the host caps the update rate, commits a final message at the
@@ -391,7 +396,7 @@ It never carries the raw route values again. After an `ok` outcome,
 `created` leaves the route unchanged.
 
 **Composer.** In `view.open`, `composer_actions[component_id]` names the
-eligible host-issued `send` and `stop` action IDs. Their tokens come from
+eligible host-issued `send`, `stop` and `resume` action IDs. Their tokens come from
 `activation_contexts` in the same reply. An accepted `view.renew` supplies
 the complete replacement map and contexts, with omission meaning empty.
 On every renewal send the lease and grant revision from the latest
@@ -414,7 +419,12 @@ The host commits and returns the `ActionOutcome` directly, without a
 separate dispatch. Retry precisely the same activation and final text until
 the receipt is known. Change either material or text after a committed
 intent only with a new activation. Stop uses the host's action context and
-the exact pending intent or admitted attempt it resolves.
+the exact pending intent or admitted attempt it resolves. Resume has a separate context on the same composer.
+Resolve it with no interaction values. Show the checked challenge and confirm
+without `final_text`. The Starting reply has a status ref and no Undo. Keep
+the local draft unchanged. Show the host's refusal message for an unavailable
+historical session and leave Send available for a separately approved fresh
+session.
 
 Follow the [`composer.options` catalogue entry](../contract/host-catalogue-v2.json#/component_routes/composer.options) for the checked option requests.
 `selected` is the host's current choice, `default` its suggested choice.

@@ -1,0 +1,9 @@
+{
+  "definition": "ResumeOutcome",
+  "value": {
+    "activation_id": "activation-resume",
+    "state": "stale",
+    "code": "stale_context",
+    "message": "Resume changed. Review it again."
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "definition": "ResumeOutcome",
+  "value": {
+    "activation_id": "activation-resume",
+    "state": "pending",
+    "status_ref": "starting-resume"
+  }
+}

@@ -524,7 +524,7 @@
       "properties": {
         "id": { "$ref": "#/definitions/localId" },
         "run_operation": { "$ref": "#/definitions/operationId" },
-        "execution_intent": { "const": true, "description": "Only the owning composer may admit this job. The host injects ExecutionJobContext at claim and replay; caller input cannot set it." },
+        "execution_intent": { "const": true, "description": "Only the owning host composer may admit this job through prepared Send or protected Resume. The host injects ExecutionJobContext at claim and replay; caller input cannot set it." },
         "placement": { "const": "heavy", "description": "Run this job in the on-demand larger plugin VM under the same isolation rules. Omission uses the small plugin VM." },
         "replayable": { "type": "boolean" },
         "waits": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/wait" } }

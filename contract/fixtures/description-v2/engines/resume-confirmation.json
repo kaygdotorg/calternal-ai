@@ -1,0 +1,9 @@
+{
+  "definition": "ResumeConfirmation",
+  "value": {
+    "type": "invoke_confirm",
+    "activation_id": "activation-resume",
+    "resolution_ref": "resolved-resume",
+    "confirmation_challenge": "resume-challenge"
+  }
+}

@@ -917,11 +917,12 @@
               "host.trash.purge",
               "host.item.share",
               "host.execution.stop",
+              "host.execution.resume",
               "composer.send",
               "composer.stop"
             ]
           },
-          "description": "A plugin operation id as the package's manifest declares it, or a host built-in the host catalogue marks `generic_invoke` (contract/host-catalogue-v2.json: host.item.trash, host.item.rename, host.item.restore, host.item.patch-metadata, ...). Operations that belong to a designated host component, outcome, sheet or shell control are NOT nameable here: the catalogue says which, and the verifier rejects them (approval, undo, status, panel.ask, route, session, trash purge, share, composer Send, host.execution.stop). Effect class, idempotency, confirmation (`none` or `challenge`) and retry come from the catalogue and the manifest, never from the description."
+          "description": "A plugin operation id as the package's manifest declares it, or a host built-in the host catalogue marks `generic_invoke` (contract/host-catalogue-v2.json: host.item.trash, host.item.rename, host.item.restore, host.item.patch-metadata, ...). Operations that belong to a designated host component, outcome, sheet or shell control are NOT nameable here: the catalogue says which, and the verifier rejects them (approval, undo, status, panel.ask, route, session, trash purge, share, composer Send, host.execution.stop, host.execution.resume). Effect class, idempotency, confirmation (`none` or `challenge`) and retry come from the catalogue and the manifest, never from the description."
         },
         "inputs": {
           "type": "object",
@@ -1630,7 +1631,7 @@
           "properties": {
             "conversation": {
               "$ref": "#/$defs/ValueSource",
-              "description": "A checked conversation ItemRef from route or selection. The host prepares and invokes this kind’s declared Send."
+              "description": "A checked conversation ItemRef from route or selection. The host prepares and invokes this kind’s declared Send and issues protected Resume when eligible."
             },
             "controls": {
               "type": "array",
@@ -2495,6 +2496,7 @@
             "transcript.follow",
             "transcript.quote",
             "transcript.body",
+            "transcript.attachment",
             "request-card.read",
             "editor.open",
             "row_images.prepare",

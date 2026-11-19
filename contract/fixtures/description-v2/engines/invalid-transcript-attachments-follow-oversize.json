@@ -1,0 +1,22 @@
+{
+  "definition": "TranscriptUpdate",
+  "value": {
+    "committed_cursor": "record-cursor",
+    "conversation": "thread-1",
+    "upserts": [
+      {
+        "record_id": "record-1",
+        "role": "person",
+        "text": "Please review the report.",
+        "attachments": [
+          {
+            "ref": "checked-image",
+            "media_type": "image/png",
+            "bytes": 16777217
+          }
+        ]
+      }
+    ]
+  },
+  "error": "$.upserts[0].attachments[0].bytes:"
+}

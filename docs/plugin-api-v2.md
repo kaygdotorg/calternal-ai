@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.7 draft
+# Plugin API v2 · revision 14.8 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic conversation and execution engines. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -464,7 +464,9 @@ open, pinned ranges, revision material and export, checks live
 message-corpus authority at read and egress. A title-only viewer learns
 neither body bytes nor body-dependent revision data or bookmarks. The item engine exposes an indexed, host-maintained `trashed` boolean for lifecycle
 views. Plugins cannot set it as metadata or claim host-owned kinds. The [host catalogue](../contract/host-catalogue-v2.json) registers typed
-direct engine dispatch. Its built-ins never start a plugin worker.
+direct engine dispatch. Direct built-ins do not wake a worker in the
+activation exchange. Protected Resume schedules the owning composer
+job after the durable commit.
 `host.item.patch-metadata` uses the same room-checked save path.
 Rename status and protected Undo are host-owned. A renderer gets only authorized status and a
 host-minted Undo action reference.
@@ -479,7 +481,7 @@ names the replayable job to enqueue. The job declares
 accepts exactly its required target `ItemRef` in a closed input object.
 At install, resolve these declarations and reject aliases from generic
 dispatch, scheduling, or create follow-up into the prepared Send path.
-Only that composer may admit the job. At claim and replay the host injects
+Only that host composer may admit the job through prepared Send or protected Resume. At claim and replay the host injects
 `message.job_context.intent` outside operation input, bound to the exact
 durable intent and owning job receipt. `execution_start` accepts only
 `request_id`. Under the lifecycle fence the host resolves the intent and
@@ -499,6 +501,38 @@ right. Stop durably refuses a pending intent, or fences an admitted
 attempt before remote dispatch. A stale control cannot stop its replacement.
 Confirmation for archive pins the same exact target and rechecks both rights
 under the lifecycle fence (§4.4).
+
+**Resume after interruption or cutover.** Follow the sealed proposal
+§§A.3, A.5 and C.1. A proved saved provider session may be continued by
+explicit person action. Restart reattachment still requires proof of
+the same live execution. The host composer issues the catalogue's
+`host.execution.resume` action with a view context and accepts no
+interaction inputs. Resolve shows the checked conversation, provider,
+machine, original profile and current permission material. Confirm the
+challenge with `ResumeConfirmation`. The host checks live membership,
+edit, corpus and execution-start rights and the saved binding's exact
+account, contribution, conversation, enrolled machine, profile and
+generation. The current login cannot substitute for the historical
+profile. Keep native session data off the wire. Recheck current
+placement, credential qualification and effect ceilings, and require
+reconciliation of uncertain effects before admission.
+
+Under the lifecycle fence allow at most one unresolved intent or active
+attempt in the conversation for Resume, subject to normal admission
+quotas. Commit Starting, a fresh continuation intent, its activation
+receipt and the owning composer job together. Use the existing
+`ExecutionJobContext` and `execution_start` path. Append no message,
+replay no old effect or approval, and return `pending` with the Starting
+status ref. An exact authorized replay returns the original receipt.
+Resume has no Undo. The eligible person can Stop the exact intent or
+attempt. On stale proof or changed material, require a new preview.
+Use the catalogue's typed refusal for busy, unreconciled, over-limit
+and unavailable sessions. For a retired historical binding retain only
+a protected retirement marker for a proved owner. Show that owner
+“Previous session unavailable. Start a new session.” through the same
+protected action's refusal. An unproved owner gets no context or notice.
+Authority loss and foreign targets return opaque not-found with no
+effect. Send can start a separately approved fresh session.
 
 A replayable job may park on `execution` under the owning job and attempt.
 Check the durable transition cursor and install the wait atomically.
@@ -545,7 +579,20 @@ with the consumed checkpoint and keep private protocol frames, sessions
 and credentials out of public records. Machine ingestion ACK follows
 contiguous spool commit. Publication ACK follows the canonical file
 boundary and receipt. Rebuild pages and search from the plain length-framed
-Markdown records. Use one audience for persisted content. Token events are
+Markdown records. The canonical file envelope keeps a host-owned
+`transcript_attachment_bindings` frontmatter map from stable record
+UUID to ordered checked attachment identities and immutable revisions.
+Charge the map against the existing conversation file cap and retain
+attachment revisions under ordinary content retention. Commit it with the record and the receipt. Use the existing frontmatter
+and length-framed message format. Attachments add no message frame
+type and do not alter the message bytes. Only the checked writer can
+populate this key. Rebuild the projection from the committed envelope.
+Strip the internal map from raw body reads and public exports. Ordinary
+backups retain checked bindings and content under normal item custody.
+A rollback reader must understand the binding map or refuse downgrade
+before switching writers. Only commit bindings eligible for the entire
+transcript audience at publication, and recheck current corpus and
+attachment authority independently at delivery. Use one audience for persisted content. Token events are
 transient. Apply the sealed proposal’s spool and foreground budgets.
 
 A protected Inbox answer is bound to the live process, exact request and
@@ -927,7 +974,23 @@ revision and next UTF-8 offset. Each page returns at most 16 KiB of whole
 characters from that pin and an optional next ref. Recheck live corpus and
 field authority at read and egress, including quotes and continuations.
 An absent, expired, purged or revoked ref returns the same opaque 404,
-with zero bytes and no continuation. The composer uses `composer.options` for checked installed
+with zero bytes and no continuation. Page and follow share
+`CommittedTranscriptRecord.attachments`. The catalogue bounds this
+projection to 16 distinct checked attachments per record and 16 MiB
+of retained bytes per attachment. A reply carries an opaque ref,
+checked media type and byte length only. The metadata counts toward
+the 128 KiB reply cap. Refuse over-limit material before committing it.
+An attachment its viewer can no longer read has no descriptor,
+placeholder or count. Follow replaces the record's entire attachment
+list and fences stale output when authority changes. Invalidate the
+view lease if it cannot refresh the checked record on that subscription. A title-only or
+revoked corpus viewer receives no records or cursor. Fetch a projected
+ref with `transcript.attachment` under the same view and lease. Recheck
+the exact immutable revision and both grants before emitting headers
+or bytes and fence the transfer on revocation. These attachments are
+a structured record field, separate from rendered Markdown.
+
+The composer uses `composer.options` for checked installed
 choices. Templates do not submit a second target or the protected Send
 operation. See §4.3 for the cold prepared exchange.
 
@@ -1483,11 +1546,16 @@ fixtures, with final revisions, visible authority and durable outcomes equal.
 - **Threads.** Ship only after Notes, both Step 2 writer gates and the
   sealed proposal’s [custody and cutover gates][generic-engines] pass.
   Halt new old-engine admissions and wait for zero live attempts before
-  switching writers. Migrate a legacy session into protected bindings
+  switching writers. See the [cutover wire audit](reviews/plugin-api-v2-14.8-cutover-wire.md)
+  for the renderer fields and remaining implementation blockers. Migrate a legacy session into protected bindings
   only with authenticated historical proof of its exact account, provider,
   conversation, machine and profile. Retire Resume for an unproved binding
-  and show “Previous session unavailable. Start a new session.” Keep its
-  thread readable. Remove private session copies from ordinary files,
+  and show “Previous session unavailable. Start a new session.” to its
+  authorized owner. Keep its thread readable. For proved bindings, resolve
+  and confirm protected Resume. Assert a fresh intent on the saved profile,
+  no appended message, one execution on replay and zero effects after
+  revocation, stale proof or a competing Send or Resume. Exercise busy,
+  over-limit and unreconciled refusals. Remove private session copies from ordinary files,
   metadata, history and journal, and quarantine unsanitized inputs under
   protected retention. Prove an ordinary backup restores complete public
   history with stable IDs and rendering and no private session records in
@@ -1497,7 +1565,12 @@ fixtures, with final revisions, visible authority and durable outcomes equal.
   reconnect at a committed transcript cursor, queue a follow-up, act on
   a protected approval, archive and unarchive, snooze, and stop. Require exactly one submission per
   receipt, correct machine/login attribution, no lost committed transcript,
-  and equivalent rollback/reopen behavior. Exercise host-owned
+  and equivalent rollback/reopen behavior. On the original and rebuilt
+  page and follow, assert equal attachment order, media types and lengths
+  under equal authority. Reject an over-bound record. Revoke only one
+  attachment before delivery while keeping corpus access. Require the
+  same record and cursor with no descriptor or placeholder for that
+  attachment, and opaque 404 on the old download ref. Exercise host-owned
   provider/model/reasoning/permission/machine controls and authorized
   options, checked attachments and snooze presets plus the shipped custom
   date/time picker unless the Owner approves a parity exception.
@@ -1558,7 +1631,7 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   qualifies. Scratch activation and Photos-scale I/O and metadata stay
   outside this revision.
 
-### Revision 14.7 draft questions and implementation seams
+### Revision 14.8 draft questions and implementation seams
 
 - Discovery rights, canonical writer and who owns a cross-runner list are
   separate owner questions in [the sealed proposal’s §C][generic-engines].

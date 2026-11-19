@@ -1103,6 +1103,73 @@
       },
       "atomic_undo": true,
       "atomic_undo_when": "One per-person layout revision transaction retires the section and its placement generation and commits Undo for that generation. Until Undo expires, retain the generation and exclude it from reads. Undo rechecks live membership and the post-effect layout revision and reactivates the exact generation atomically. Reactivation grants no item access. Reclaim expired retired generations in bounded background batches. Removal and Undo perform no per-placement work."
+    },
+    "host.execution.resume": {
+      "engine": "admit a fresh continuation intent under the conversation lifecycle fence",
+      "effect": "irreversible",
+      "idempotency": "request_id",
+      "kind_capability": "conversation",
+      "authority": "Host composer only. Issue an action only to a live member with edit, corpus and execution-start authority who owns the protected binding or its retirement marker. A marker yields only the unavailable refusal. Admission checks authenticated historical account, exact provider contribution, conversation, enrolled machine and original profile, with a qualified credential path and current placement and effects. Withhold the action from guests and non-owners. Refuse forged or revoked invocations opaquely.",
+      "surfaces": [
+        "host_composer"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "after_commit",
+      "target_inputs": [
+        "conversation"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "conversation"
+        ],
+        "properties": {
+          "conversation": {
+            "$ref": "#/$defs/ItemRef"
+          }
+        }
+      },
+      "confirmation_when": "Always challenge. Show the checked conversation, provider, machine, profile and permissions. Pin the binding generation and lifecycle state. Resolve receives no interaction values, and ConfirmActivation carries no final_text. Confirm rechecks the proof and dispatches in that exchange.",
+      "confirmation_schema": {
+        "$ref": "#/$defs/ResumeConfirmation"
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ResumeOutcome"
+      },
+      "atomic_undo": false,
+      "rules": "Under the lifecycle fence, require no active attempt or pending intent for the conversation. Reconcile uncertain effects first. Atomically commit one fresh continuation intent, Starting, the activation receipt and the owning composer job without appending a message. The job uses authenticated ExecutionJobContext and execution_start. Do not replay old messages, approvals or the previous execution. Exact authorized replay returns the same receipt. Do not disclose or let the client select session IDs.",
+      "refusals": {
+        "previous_session_unavailable": {
+          "state": "refused",
+          "message": "Previous session unavailable. Start a new session.",
+          "rule": "Return only to an authorized owner of the historical record, including the retired-binding marker, when the original binding is unavailable or unproved. Do not start a fresh session automatically."
+        },
+        "execution_busy": {
+          "state": "refused",
+          "message": "An execution is already starting or running.",
+          "rule": "Require an idle conversation under the lifecycle fence."
+        },
+        "reconciliation_required": {
+          "state": "refused",
+          "message": "The previous execution still needs reconciliation.",
+          "rule": "An uncertain effect must be reconciled before admitting a continuation."
+        },
+        "stale_context": {
+          "state": "stale",
+          "message": "Resume changed. Review it again.",
+          "rule": "Changed checked material or a stale proof requires a new resolve and challenge. A loss of authority returns opaque not-found."
+        },
+        "admission_limit": {
+          "state": "refused",
+          "message": "An execution limit was reached.",
+          "rule": "Use existing admission quotas and reserve capacity before committing."
+        }
+      },
+      "resolution_schema": {
+        "$ref": "#/$defs/ResumeResolution"
+      }
     }
   },
   "planned_operation_replacements": {},
@@ -2508,6 +2575,16 @@
         },
         "body": {
           "$ref": "#/$defs/TranscriptBodyRef"
+        },
+        "attachments": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/TranscriptAttachment"
+          },
+          "description": "Authorized attachments of this record in committed order. Omit inaccessible entries, and omit the field when none remain. Count toward the page or update byte cap."
         }
       }
     },
@@ -2951,7 +3028,7 @@
           "additionalProperties": {
             "$ref": "#/$defs/ComposerActionIds"
           },
-          "description": "Current complete per-component Send/Stop ID map. Omission means empty. Every listed ID has an exact context in activation_contexts in the same accepted reply."
+          "description": "Complete per-component Send, Stop and Resume ID map. Omission means empty. Every listed ID has its exact context in activation_contexts in the same reply."
         },
         "kind_icons": {
           "type": "object",
@@ -3135,7 +3212,7 @@
           "additionalProperties": {
             "$ref": "#/$defs/ComposerActionIds"
           },
-          "description": "Current complete per-component Send/Stop ID map. Omission means empty. Every listed ID has an exact context in activation_contexts in the same accepted reply."
+          "description": "Complete per-component Send, Stop and Resume ID map. Omission means empty. Every listed ID has its exact context in activation_contexts in the same reply."
         }
       },
       "description": "Accept only an authenticated host reply matching the outstanding renewal_id, current request_lease_ref and cache_partition. Retain only exact window_ref and result_version pairs authorized and previously issued to that lease. Ignore superseded replies and keep live rows hidden on timeout or refusal. At each renewal use the lease and grant from the latest accepted reply. Replace the composer ID map and contexts together, including on subsequent renewals and when a map is omitted. A changed lease or grant needs fresh composer contexts. A composer context is immutable for its exact component, purpose and action ID within the issued lease and grant. Reuse is allowed only for the same binding."
@@ -3905,6 +3982,9 @@
         },
         "stop": {
           "$ref": "#/$defs/ActionId"
+        },
+        "resume": {
+          "$ref": "#/$defs/ActionId"
         }
       },
       "minProperties": 1
@@ -4308,7 +4388,7 @@
     },
     "ExecutionIntentRef": {
       "$ref": "#/$defs/Ref",
-      "description": "Opaque exact durable prepared Send intent. Valid only in its owning job context or host-issued execution control."
+      "description": "Opaque exact durable intent from prepared Send or protected Resume. Valid only in its owning job context or host-issued execution control."
     },
     "ExecutionJobContext": {
       "type": "object",
@@ -4602,6 +4682,141 @@
           "$ref": "#/$defs/ExecutionAttemptChildRefusal"
         }
       ]
+    },
+    "ResumeConfirmation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ConfirmActivation"
+        },
+        {
+          "properties": {
+            "final_text": false
+          }
+        }
+      ]
+    },
+    "ResumeOutcome": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ActionOutcome"
+        },
+        {
+          "properties": {
+            "state": {
+              "enum": [
+                "pending",
+                "refused",
+                "stale"
+              ]
+            },
+            "undo": false,
+            "created": false
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "state": {
+                    "const": "refused"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "previous_session_unavailable",
+                      "execution_busy",
+                      "reconciliation_required",
+                      "admission_limit"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "state": {
+                    "const": "stale"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "stale_context"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "TranscriptAttachmentRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque view-bound reference to the checked attachment of an exact committed transcript record."
+    },
+    "TranscriptAttachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "media_type",
+        "bytes"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/TranscriptAttachmentRef"
+        },
+        "media_type": {
+          "type": "string",
+          "maxLength": 127,
+          "pattern": "^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        }
+      }
+    },
+    "TranscriptAttachmentRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conversation",
+        "attachment"
+      ],
+      "properties": {
+        "conversation": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "attachment": {
+          "$ref": "#/$defs/TranscriptAttachmentRef"
+        }
+      }
+    },
+    "ResumeResolution": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ActivationResolution"
+        },
+        {
+          "required": [
+            "confirm"
+          ],
+          "properties": {
+            "confirm": {
+              "const": "challenge"
+            },
+            "selection_ref": false
+          }
+        }
+      ]
     }
   },
   "activation_limits": {
@@ -4707,7 +4922,8 @@
       "output_schema": {
         "$ref": "#/$defs/TranscriptUpdate"
       },
-      "scope": "Same authenticated view subscription. Upsert committed records by record_id. Replace the single optional provisional preview on every update. Only the committed_cursor is resumable. Cancel on route, lease or audience change."
+      "scope": "Same authenticated view subscription. Upsert committed records by record_id. Replace the single optional provisional preview on every update. Only the committed_cursor is resumable. Cancel on route, lease or audience change. Recheck live corpus and each attachment grant at read and egress. An inaccessible attachment has no returned ref, media type, size or placeholder. Replace the entire attachment projection on an upsert. If an attachment grant changes, fence affected cached deliveries and refresh the affected record for a still-authorized viewer before drawing it again.",
+      "encoded_update_bytes": 131072
     },
     "transcript.page": {
       "input_schema": {
@@ -4717,7 +4933,7 @@
         "$ref": "#/$defs/TranscriptPage"
       },
       "encoded_page_bytes": 131072,
-      "scope": "An authorized conversation and viewer. No cursor selects the newest page. before pages older and after resumes, refreshing the boundary record and notices. Records are ordered oldest to newest."
+      "scope": "An authorized conversation and viewer. No cursor selects the newest page. before pages older and after resumes, refreshing the boundary record and notices. Records are ordered oldest to newest. Recheck live corpus and each attachment grant at read and egress. An inaccessible attachment has no returned ref, media type, size or placeholder."
     },
     "sealed_frame.open": {
       "input_schema": {
@@ -4808,7 +5024,7 @@
       "output_schema": {
         "$ref": "#/$defs/ViewOpenResult"
       },
-      "scope": "Authenticated view session, including data-free render and its sources Composer Send and Stop resolve through composer_actions[component_id] and activation_contexts[action_id] from this view. Guest and public receive no viewer or account identity. Resolve declared route consumers from all chrome and content, including sidebar shortcuts and section actions and footer actions. Missing optional host.item.create collection operands mean no placement.",
+      "scope": "Authenticated view session, including data-free render and its sources. Composer Send, Stop and Resume resolve through composer_actions[component_id] and activation_contexts[action_id] from this view. Guest and public receive no viewer or account identity. Resolve declared route consumers from all chrome and content, including sidebar shortcuts and section actions and footer actions. Missing optional host.item.create collection operands mean no placement.",
       "input_schema": {
         "$ref": "#/$defs/ViewOpenRequest"
       }
@@ -4820,7 +5036,7 @@
       "output_schema": {
         "$ref": "#/$defs/LeaseRenewResult"
       },
-      "scope": "Original authenticated view session and cache partition, with fresh authority for the requested lease and its issued window versions Replace the composer action map and its contexts together after accepting the correlated renewal. Recompute eligibility and retire omitted IDs or replaced contexts. A newly eligible Stop may target a pending intent."
+      "scope": "Original authenticated view session and cache partition, with fresh authority for the requested lease and its issued window versions Replace the composer action map and its contexts together after accepting the correlated renewal. Recompute eligibility and retire omitted IDs or replaced contexts. A newly eligible Stop may target a pending intent. Recompute Resume eligibility and require a fresh context if the binding or material changes."
     },
     "choice.options": {
       "output_schema": {
@@ -4886,6 +5102,13 @@
       },
       "max_utf8_bytes": 16384,
       "scope": "Return the next whole UTF-8 segment of that pinned record only. Check live viewer, lease, corpus, exact record and offset at read and egress. Absent, expired, purged or unauthorized refs return opaque 404 without bytes or a continuation. A final page omits next."
+    },
+    "transcript.attachment": {
+      "input_schema": {
+        "$ref": "#/$defs/TranscriptAttachmentRequest"
+      },
+      "response": "Authenticated binary download of exactly the projected bytes with the checked Content-Type, Content-Length and Content-Disposition: attachment. Enforce nosniff and no-store. No inline HTML, redirects, public URLs, conditional or range responses.",
+      "scope": "Same conversation-transcript component and active view lease. Resolve the opaque ref to the exact conversation, record and immutable attachment revision. Check live corpus, attachment grant and retained bytes at read and egress, and fence a revoked stream. An absent, mismatched, expired, purged or unauthorized ref returns opaque 404 before any metadata or bytes are sent."
     }
   },
   "conversation_capability": {
@@ -5002,7 +5225,7 @@
     "invoke_schema": {
       "$ref": "#/$defs/HostWorkerInvokeFrame"
     },
-    "invoke_scope": "The host dispatches to the exact admitted package, digest, epoch and ticket. For composer job claims and replays include the pinned ExecutionJobContext. For all other invocations omit it. Refuse a worker-origin invoke or any worker-supplied job context."
+    "invoke_scope": "The host dispatches to the exact admitted package, digest, epoch and ticket. For composer jobs admitted by Send or Resume, include on claim and replay the pinned ExecutionJobContext. For all other invocations omit it. Refuse a worker-origin invoke or any worker-supplied job context."
   },
   "offline_member_display": {
     "field_audiences": [

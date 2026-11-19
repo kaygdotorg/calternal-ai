@@ -10,6 +10,7 @@ TYPED_ROUTES = {
     "request-card.read": "request-card",
     "transcript.quote": "conversation-transcript",
     "transcript.body": "conversation-transcript",
+    "transcript.attachment": "conversation-transcript",
     "editor.open": "item-editor",
     "row_images.prepare": "item-editor",
     "transcript.follow": "conversation-transcript",
@@ -176,13 +177,15 @@ class EventBindings:
         return bind
 
 
-def check_composer_actions(bindings, reply, errors):
+def check_composer_actions(bindings, reply, audience, errors):
     """Check the complete composer action map in one accepted host reply."""
     issued = {}
     for component, actions in errors.each(reply.get("composer_actions", {}).items()):
         if bindings.components.get(component, {}).get("type") != "composer":
             errors.append(f"$.authority_reply.composer_actions: {component!r} is not a composer in the active description")
         for purpose, action_id in errors.each(actions.items()):
+            if purpose == "resume" and audience not in ("own_space_member", "member"):
+                errors.append("$.authority_reply.composer_actions: Resume requires a member view")
             if action_id in issued or action_id in bindings.actions or action_id in bindings.shell_actions:
                 errors.append(f"$.authority_reply.composer_actions: duplicate action ID {action_id!r}")
             if action_id not in reply["activation_contexts"]:
@@ -200,12 +203,15 @@ def check_composer_invoke(event, reply, issued, errors):
     if reply["activation_contexts"].get(action_id) != event["activation_context"]:
         errors.append("$.activation_context: must match the issued composer action context")
     interaction = event.get("interaction", {})
-    if issued[action_id][1] == "send":
+    purpose = issued[action_id][1]
+    if purpose == "send":
         allowed = {"draft", "options"}
         if "dispatch" in event:
             errors.append("$.dispatch: prepared Send requires confirmation")
     else:
         allowed = set()
+        if purpose == "resume" and "dispatch" in event:
+            errors.append("$.dispatch: Resume requires protected confirmation")
     if interaction.keys() - allowed:
         errors.append("$.interaction: unexpected values for this host composer action")
 

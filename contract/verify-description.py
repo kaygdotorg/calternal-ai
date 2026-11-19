@@ -489,9 +489,10 @@ def validate_composer_capture(capture, bindings, errors):
     if errors:
         return
     contexts = {}
+    audience = capture["view_open"]["audience"]
 
     def issued_actions(reply, path):
-        issued = check_composer_actions(origin, reply, errors)
+        issued = check_composer_actions(origin, reply, audience, errors)
         if errors:
             return issued
         lease = reply["lease"]
@@ -659,6 +660,14 @@ def run_fixtures():
         case = read_json(file, errors)
         if not errors:
             check({"$ref": f"#/$defs/{case['definition']}"}, case["value"], "$", errors, verification.CATALOGUE)
+        if not errors and case["definition"] in ("TranscriptPage", "TranscriptUpdate"):
+            records_key = "records" if case["definition"] == "TranscriptPage" else "upserts"
+            for record in errors.each(case["value"][records_key]):
+                refs = [attachment["ref"] for attachment in errors.each(record.get("attachments", []))]
+                if len(set(refs)) != len(refs):
+                    errors.append(f"$.{records_key}: attachment refs must be distinct within the record")
+                if "attachment_projection" in case and refs != case["attachment_projection"].get(record["record_id"], []):
+                    errors.append(f"$.{records_key}: attachment projection differs from checked record authority")
         if not errors and case["definition"] == "HostWorkerInvokeFrame":
             manifest = verification.load_checked_manifest(manifests_dir / case["manifest"], errors)
             verification.check_worker_invocation(case["value"], manifest, case.get("job"), errors)

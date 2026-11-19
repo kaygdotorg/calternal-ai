@@ -583,7 +583,7 @@ def check_manifest_install(manifest, kind_schema_links, errors):
         operation_id = after.get("operation")
         if "job" in after:
             if jobs.get(after["job"], {}).get("execution_intent") is True:
-                errors.append(f"{path}.host_create.after: a composer intent job can only be admitted by prepared Send")
+                errors.append(f"{path}.host_create.after: a composer intent job can only be admitted by the host composer")
             operation_id = jobs.get(after["job"], {}).get("run_operation")
         if operation_id in send_operations:
             errors.append(f"{path}.host_create.after: prepared Send is reserved for the host composer")

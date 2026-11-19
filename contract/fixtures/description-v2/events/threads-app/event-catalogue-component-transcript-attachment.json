@@ -1,0 +1,9 @@
+{
+  "type": "component",
+  "component": "transcript",
+  "route": "transcript.attachment",
+  "request": {
+    "conversation": "thread-1",
+    "attachment": "checked-attachment"
+  }
+}
