@@ -211,11 +211,21 @@ async fn media_is_ingested_anonymously_and_ask_requires_explicit_load() {
     assert_eq!(first.headers()["Cache-Control"], "no-store");
     assert_eq!(first.bytes().await.unwrap().as_ref(), PNG);
     assert_eq!(f.asset(&assets[0]).await.status(), 200);
-    let diagnostics = f.server.op(WHO, "plugins.diagnostics", json!({
-        "space_id": f.server.spaces[0], "plugin_id": "content-fetch-demo"
-    })).await;
+    let diagnostics = f
+        .server
+        .op(
+            WHO,
+            "plugins.diagnostics",
+            json!({
+                "space_id": f.server.spaces[0], "plugin_id": "content-fetch-demo"
+            }),
+        )
+        .await;
     diagnostics.ok();
-    assert_eq!(diagnostics.body["data"]["fetch_hosts"], json!(["content-fetch.test"]));
+    assert_eq!(
+        diagnostics.body["data"]["fetch_hosts"],
+        json!(["content-fetch.test"])
+    );
     let hits = f.hits();
     assert_eq!(hits.len(), 2);
     for request in hits {
@@ -310,8 +320,12 @@ async fn media_type_size_and_time_refusals_never_enter_the_cache() {
 #[tokio::test]
 async fn queue_capacity_has_a_distinct_asset_failure() {
     let f = ProxyFixture::new().await;
-    let urls: Vec<_> = (0..9).map(|n| format!("{SYNTHETIC}/slow?slot={n}")).collect();
-    let (_, assets) = f.write(&urls.iter().map(String::as_str).collect::<Vec<_>>()).await;
+    let urls: Vec<_> = (0..9)
+        .map(|n| format!("{SYNTHETIC}/slow?slot={n}"))
+        .collect();
+    let (_, assets) = f
+        .write(&urls.iter().map(String::as_str).collect::<Vec<_>>())
+        .await;
     assert_eq!(assets.len(), 9);
     let dropped = f.asset(&assets[8]).await;
     assert_eq!(dropped.status(), 503);
