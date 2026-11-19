@@ -139,3 +139,84 @@ async fn live_replays_after_server_and_client_restart_and_stops_on_logout() {
         "revoked session must close while idle"
     );
 }
+
+#[tokio::test]
+async fn live_room_joins_with_real_owner_and_item_grantee_sessions() {
+    let f = Fixture::new().await;
+    // A common group makes the guest discoverable without granting space access.
+    let group = f
+        .op(0, "groups.create", json!({"name":"Room recipients"}))
+        .await;
+    group.ok();
+    for account in [&f.ids[1], &f.ids[2]] {
+        f.op(
+            0,
+            "groups.add_member",
+            json!({"group_id":group.body["data"]["group_id"],"account_id":account}),
+        )
+        .await
+        .ok();
+    }
+    let space = &f.spaces[0];
+    let note = f
+        .op(
+            1,
+            "notes.create",
+            json!({"space_id":space,"title":"Plan","markdown":"# Plan\n\nStart here.\n"}),
+        )
+        .await;
+    note.ok();
+    let id = note.body["data"]["note"]["id"].as_str().unwrap();
+    f.op(
+        1,
+        "sharing.grant",
+        json!({"item":{"kind":"notes","id":id},"audience":{"account_id":f.ids[2]},"permission":"edit"}),
+    )
+    .await
+    .ok();
+
+    let room = format!("{space}/notes/{id}");
+    let endpoint = format!("{}/api/v1/live", f.base.replacen("http://", "ws://", 1));
+    let cookies = [f.cookies[1].clone(), f.cookies[2].clone()];
+    tokio::task::spawn_blocking(move || {
+        use tungstenite::{Message, client::IntoClientRequest, stream::MaybeTlsStream};
+        let mut peers = Vec::new();
+        for cookie in cookies {
+            let mut request = endpoint.as_str().into_client_request().unwrap();
+            let headers = request.headers_mut();
+            for (name, value) in [
+                ("host", "localhost:18080"),
+                ("origin", ORIGIN),
+                ("cookie", cookie.as_str()),
+                ("sec-websocket-protocol", "calternal-live-rooms.v1"),
+            ] {
+                headers.insert(name, value.parse().unwrap());
+            }
+            let (mut socket, response) = tungstenite::connect(request).unwrap();
+            assert_eq!(
+                response.headers()["sec-websocket-protocol"],
+                "calternal-live-rooms.v1"
+            );
+            let MaybeTlsStream::Plain(stream) = socket.get_mut() else {
+                panic!("the fixture uses loopback HTTP");
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            socket
+                .send(Message::text(
+                    json!({"type":"join","room":room,"membership":1}).to_string(),
+                ))
+                .unwrap();
+            let frame = socket.read().unwrap();
+            let reply: Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
+            assert_eq!(reply["type"], "joined", "{reply}");
+            assert_eq!(reply["room"], room);
+            assert_eq!(reply["info"]["text"], "md");
+            assert!(reply["info"]["lineage"].as_str().is_some());
+            peers.push(socket);
+        }
+    })
+    .await
+    .unwrap();
+}
