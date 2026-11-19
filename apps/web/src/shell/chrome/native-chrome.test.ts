@@ -22,6 +22,8 @@ describe("native chrome: the Threads provider", () => {
     const b = threadsChrome.describe("");
     expect(b.selectors[0]!.options.map((o) => o.id)).toEqual(["inbox", "all"]);
     expect(b.sections[0]!.id).toBe("top");
+    expect(b.sections[0]!.rowKind).toBe("navigation"); // the shortcuts are places (they keep an icon); the thread sections are items (none)
+    expect(b.sections.slice(1).every((s) => s.rowKind === undefined)).toBe(true);
     const rows = b.sections.flatMap((s) => s.rows).filter((r) => store.get(r.id));
     expect(rows.length).toBeGreaterThan(0);
     expect(["claude", "codex"]).toContain(rows[0]!.icon); // the provider mark by its CalternalUI icon name

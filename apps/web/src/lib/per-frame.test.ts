@@ -24,13 +24,13 @@ describe("perFrame under a navigation hold", () => {
     vi.useFakeTimers();
     const raf = vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((f) => { setTimeout(() => f(0), 16); return 1; });
     navHold.begin();
-    for (let i = 0; i < 20; i++) perFrame(() => {})(i); // each space switch makes a new feed
+    for (let i = 0; i < 20; i++) perFrame((_n: number) => {})(i); // each space switch makes a new feed
     expect(navHold.subscribers).toBe(20);
     navHold.release();
     vi.advanceTimersByTime(300);
     expect(navHold.subscribers).toBe(0);
     // and a feed that is never held never subscribes
-    const quiet = perFrame(() => {}); quiet(1);
+    const quiet = perFrame((_n: number) => {}); quiet(1);
     expect(navHold.subscribers).toBe(0);
     raf.mockRestore();
   });
