@@ -18,6 +18,7 @@ use webauthn_authenticator_rs::{WebauthnAuthenticator, softpasskey::SoftPasskey}
 use webauthn_rs::prelude::{CreationChallengeResponse, RequestChallengeResponse};
 
 mod agent_cases;
+mod automation_cases;
 /// Plugin job cases: streams, restart, cancellation, sign-out and space isolation.
 #[path = "jobs_cases.rs"]
 mod jobs_cases;
@@ -728,6 +729,7 @@ async fn all_operations_hide_foreign_ids() {
         ),
     ];
     cases.extend(notes_cases::foreign_cases(&f.spaces[0], &n, &missing));
+    cases.extend(automation_cases::foreign_cases(&f.spaces[0], &missing));
     let catalog = f
         .req(
             "GET",
@@ -2802,6 +2804,15 @@ const MACHINE_ROUTES: &[(&str, &str)] = &[
 impl Fixture {
     /// Machine-protocol request with an optional machine bearer and no cookie.
     async fn machine(&self, path: &str, bearer: Option<&str>, body: Value) -> Answer {
+        self.try_machine(path, bearer, body).await.unwrap()
+    }
+
+    async fn try_machine(
+        &self,
+        path: &str,
+        bearer: Option<&str>,
+        body: Value,
+    ) -> Result<Answer, reqwest::Error> {
         let mut r = self
             .client
             .post(format!("{}{path}", self.base))
@@ -2810,15 +2821,15 @@ impl Fixture {
         if let Some(b) = bearer {
             r = r.bearer_auth(b);
         }
-        let r = r.send().await.unwrap();
+        let r = r.send().await?;
         let status = r.status().as_u16();
-        let text = r.text().await.unwrap();
-        Answer {
+        let text = r.text().await?;
+        Ok(Answer {
             status,
             body: serde_json::from_str(&text).unwrap_or(json!({"raw":text})),
             headers: BTreeMap::new(),
             micros: 0,
-        }
+        })
     }
 }
 

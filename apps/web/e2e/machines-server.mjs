@@ -1,29 +1,19 @@
-import { signUp } from "./lib.mjs";
+import { launch, openRealServerPage, signUpRealServerOwner, startRealServer } from "./lib.mjs";
 // Machines and provider readiness against a real server (this tree's build) with a real enrolled machine: make a code in the page, enroll and run `calternal machine` (direct execution), then the Machines page shows the machine
 // and the providers' readiness from `agent.readiness`; Check again runs `agent.check` and the account feed keeps the page current. Env: CAL_BIN, CAL_DIST, CAL_MACH_PORT.
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { chromium } from "playwright";
 
 const PORT = Number(process.env.CAL_MACH_PORT ?? 3399);
-const BIN = process.env.CAL_BIN ?? `${process.env.HOME}/Developer/lanes/ui-shell/target/debug/calternal`;
-const data = mkdtempSync(join(tmpdir(), "cal-mach-"));
-const srv = spawn(BIN, ["serve", "--create", "--installation-id", crypto.randomUUID(), "--appdata", join(data, "appdata"), "--userdata-ssd", join(data, "ssd"), "--userdata-hdd", join(data, "hdd"), "--port", String(PORT), "--web-dir", process.env.CAL_DIST ?? "dist", "--plugin-root", process.env.CAL_PLUGINS ?? "../../plugins"], { stdio: "ignore" });
-const url = `http://localhost:${PORT}`;
+let server, browser;
 let bad = 0, machine = null;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 try {
-  for (let i = 0; i < 80; i++) { try { if ((await fetch(`${url}/api/v1/auth/status`)).ok) break; } catch {} await new Promise((r) => setTimeout(r, 250)); }
-  const token = readFileSync(join(data, "appdata", "setup.token"), "utf8").trim();
-  const b = await chromium.launch();
-  const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
-  const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
-  await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
-  await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
-  await signUp(p, token, "Mach Owner");
-  await p.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 }); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
+  server = await startRealServer(PORT);
+  const { bin: BIN, data, url } = server;
+  browser = await launch();
+  const p = await openRealServerPage(browser);
+  await signUpRealServerOwner(p, server, "Mach Owner");
   const go = async (path) => { await p.evaluate((x) => { history.pushState(null, "", x); dispatchEvent(new PopStateEvent("popstate")); }, path); await p.waitForTimeout(600); };
   await go("/settings/machines");
   await p.getByRole("button", { name: "Make a code" }).click();
@@ -59,7 +49,9 @@ try {
     console.log("   after Check again:", text.replace(/\n+/g, " | ").slice(0, 300));
     ok(/Signed in|Not signed in|Not installed|Not checked|Not ready|Off in this space/.test(text), "the provider's state is said in words after Check again");
   }
-  await b.close();
 } catch (e) { console.error(e); bad++; }
-machine?.kill(); srv.kill(); rmSync(data, { recursive: true, force: true });
+finally {
+  machine?.kill();
+  try { await browser?.close(); } finally { await server?.stop(); }
+}
 process.exit(bad ? 1 : 0);

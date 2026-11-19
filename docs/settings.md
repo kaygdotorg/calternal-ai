@@ -63,6 +63,8 @@ One model everywhere, nothing more complex:
 - Motion follows the system's reduce-motion setting, plus an off switch.
 - The accent is inferred from the wallpaper; the wordmark and its font are set here.
 
+The [Skills and Automations operations](automations.md) cover portable skill bundles and scheduled turn admission.
+
 ## Agents
 
 - A new thread starts in Approve for me; the default is changeable here and per thread.

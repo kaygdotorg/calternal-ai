@@ -1,30 +1,18 @@
-import { signUp } from "./lib.mjs";
+import { openRealServerPage, signUpRealServerOwner, startRealServer } from "./lib.mjs";
 // A plugin job's durable wait against a real server of this tree (docs/plugin-api.md, "Durable job waits"): the test-only `jobs-demo` plugin parks a job on a question and on an approval; the Inbox lists each as a row of its own (no thread), pressing it opens the prompt in a sheet, answering it
 // resumes the job (it ends `done`) and the row leaves. Needs a server built with the `test-plugins` feature (the default debug build) and `node` on the PATH for the direct worker. Env: CAL_BIN, CAL_DIST, CAL_PLUGINS, CAL_TEST_PLUGINS (tests/plugins), CAL_JOB_PORT.
-import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { chromium } from "playwright";
 
 const PORT = Number(process.env.CAL_JOB_PORT ?? 3415);
-const BIN = process.env.CAL_BIN ?? `${process.env.HOME}/Developer/lanes/ui-threads/target/debug/calternal`;
-const data = mkdtempSync(join(tmpdir(), "cal-jobprompts-"));
-const url = `http://localhost:${PORT}`;
-let bad = 0;
+let bad = 0, server, url;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
-const srv = spawn(BIN, ["serve", "--create", "--installation-id", crypto.randomUUID(), "--appdata", join(data, "appdata"), "--userdata-ssd", join(data, "ssd"), "--userdata-hdd", join(data, "hdd"), "--port", String(PORT), "--web-dir", process.env.CAL_DIST ?? "dist", "--plugin-root", process.env.CAL_PLUGINS ?? "../../plugins", "--test-plugin-root", process.env.CAL_TEST_PLUGINS ?? resolve("../../tests/plugins")], { stdio: "ignore", env: { ...process.env, CALTERNAL_WORKER_TEST_BACKEND: "direct" } });
 const op = (p, name, input) => p.evaluate(async ([name, input]) => { const r = await fetch("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: crypto.randomUUID(), operation: name, input }) }); return r.json(); }, [name, input]);
 try {
-  for (let i = 0; i < 120; i++) { try { if ((await fetch(`${url}/api/v1/auth/status`)).ok) break; } catch {} await new Promise((r) => setTimeout(r, 250)); }
-  const token = readFileSync(join(data, "appdata", "setup.token"), "utf8").trim();
+  server = await startRealServer(PORT, { args: ["--test-plugin-root", process.env.CAL_TEST_PLUGINS ?? resolve("../../tests/plugins")], env: { CALTERNAL_WORKER_TEST_BACKEND: "direct" } }); url = server.url;
   const b = await chromium.launch();
-  const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
-  const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
-  await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
-  await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
-  await signUp(p, token, "Prompt Owner");
-  await p.waitForTimeout(2500); await p.evaluate(() => localStorage.removeItem("cal.onboarding")); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
+  const p = await openRealServerPage(b);
+  await signUpRealServerOwner(p, server, "Prompt Owner");
   const space = (await op(p, "spaces.list", {})).data.spaces.find((s) => s.personal).id;
   const en = await op(p, "plugins.enable", { space_id: space, plugin_id: "jobs-demo" });
   console.log("   plugins.enable:", JSON.stringify(en).slice(0, 160));
@@ -61,5 +49,5 @@ try {
   ok((await rows.count()) === 0, "denying it takes the last row away");
   await b.close();
 } catch (err) { console.log("FAIL  " + err.message); bad++; }
-finally { srv.kill(); rmSync(data, { recursive: true, force: true }); }
+finally { await server?.stop(); }
 process.exit(bad ? 1 : 0);
