@@ -39,6 +39,7 @@ pub(crate) struct Service {
     queue: Arc<Semaphore>,
     running: Semaphore,
     limits: Mutex<Limits>,
+    own: netguard::OriginAddresses,
     ranges: std::ffi::OsString,
     nat64: Option<std::ffi::OsString>,
     #[cfg(all(feature = "test-plugins", debug_assertions))]
@@ -56,12 +57,50 @@ impl Default for Service {
                 plugins: HashMap::new(),
                 hosts: HashMap::new(),
             }),
+            own: Arc::new(arc_swap::ArcSwapOption::from_pointee(Vec::new())),
             ranges: std::env::var_os("CALTERNAL_CONTENT_FETCH_DENY_CIDRS").unwrap_or_default(),
             nat64: std::env::var_os("CALTERNAL_CONTENT_FETCH_NAT64_PREFIX"),
             #[cfg(all(feature = "test-plugins", debug_assertions))]
             fixture: Fixture::configured(),
         }
     }
+}
+
+/// Resolve the public origin at startup, then refresh once a minute. Keep the
+/// last confirmed set on lookup failure. Initial failure holds Class B closed.
+pub(crate) async fn configure<D: Directory>(state: &Shared<D>, origin: &str) {
+    let service = &state.store.plugin_fetch;
+    if service.ranges.is_empty() {
+        tracing::warn!("CALTERNAL_CONTENT_FETCH_DENY_CIDRS is empty; configure any additional NAT or hairpin server ranges");
+    }
+    let Ok(origin) = Url::parse(origin) else { return; };
+    let Some(host) = origin.host_str() else { return; };
+    let host = host.to_owned();
+    service.own.store(None);
+    async fn refresh(host: &str, own: &netguard::OriginAddresses) {
+        let raw = host.trim_matches(['[', ']']);
+        let values = if let Ok(ip) = raw.parse::<std::net::IpAddr>() {
+            vec![ip]
+        } else {
+            let name = if host.contains('.') && !host.ends_with('.') { format!("{host}.") } else { host.to_owned() };
+            match tokio::time::timeout(Duration::from_secs(3), tokio::net::lookup_host((name.as_str(), 0))).await {
+                Ok(Ok(addresses)) => addresses.map(|address| address.ip()).collect(),
+                _ => return,
+            }
+        };
+        if !values.is_empty() {
+            own.store(Some(Arc::new(values)));
+        }
+    }
+    refresh(&host, &service.own).await;
+    let state = Arc::downgrade(state);
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            let Some(state) = state.upgrade() else { break; };
+            refresh(&host, &state.store.plugin_fetch.own).await;
+        }
+    });
 }
 
 impl Service {
@@ -272,11 +311,11 @@ async fn finish_audit<D: Directory>(
 
 /// Build the checked transport on a blocking worker. One interface enumeration
 /// and one TLS client construction per fetch. No socket or DNS work here.
-async fn build_client(ranges: std::ffi::OsString, nat64: Option<std::ffi::OsString>, fixture: bool) -> io::Result<Client> {
+async fn build_client(ranges: std::ffi::OsString, nat64: Option<std::ffi::OsString>, fixture: bool, own: netguard::OriginAddresses) -> io::Result<Client> {
     crate::blocking::spawn(move || {
         let ranges = ranges.to_str().ok_or_else(refused)?;
         let nat64 = nat64.as_ref().map(|value| value.to_str().ok_or_else(refused)).transpose()?;
-        netguard::content_client(ranges, nat64, TIMEOUT, fixture)
+        netguard::content_client(ranges, nat64, TIMEOUT, fixture, own)
     })
         .await
         .map_err(io::Error::other)?
@@ -293,7 +332,7 @@ async fn retrieve<D: Directory>(
     let fixture = service.fixture.is_some();
     #[cfg(not(all(feature = "test-plugins", debug_assertions)))]
     let fixture = false;
-    let client = build_client(service.ranges.clone(), service.nat64.clone(), fixture).await.ok()?;
+    let client = build_client(service.ranges.clone(), service.nat64.clone(), fixture, service.own.clone()).await.ok()?;
     let own_host = state
         .directory
         .http_auth()
@@ -432,7 +471,7 @@ mod client_tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn background_client_reports_configuration_errors() {
-        assert!(build_client("not-a-cidr".into(), None, false).await.is_err());
-        assert!(build_client(Default::default(), None, false).await.is_ok());
+        assert!(build_client("not-a-cidr".into(), None, false, Default::default()).await.is_err());
+        assert!(build_client(Default::default(), None, false, Default::default()).await.is_ok());
     }
 }

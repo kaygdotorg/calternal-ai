@@ -542,6 +542,7 @@ async fn serve(
         calternal_server::api::configure_search(&state)
             .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?,
     );
+    calternal_server::api::configure_content_fetch(&state, &public_origin).await;
     calternal_server::api::configure_web_push(&state)
         .await
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;

@@ -7,7 +7,10 @@ mod local;
 pub(crate) use fetch::{check_url, checked_url, get_with_redirects, read_bounded, redirect_target};
 
 use reqwest::dns::{Name, Resolve, Resolving};
-use std::{io, sync::Arc, time::Duration};
+use std::{io, net::IpAddr, sync::Arc, time::Duration};
+
+/// Atomically replaced set of the configured origin’s resolved addresses.
+pub(crate) type OriginAddresses = Arc<arc_swap::ArcSwapOption<Vec<IpAddr>>>;
 
 /// Creates an HTTPS-only client with no proxy, redirects or automatic retries.
 /// DNS answers are rejected as a set if any address is disallowed. Reqwest
@@ -25,7 +28,7 @@ pub(crate) fn client_for(
     hosts: Option<&'static [&'static str]>,
     timeout: Duration,
 ) -> Result<reqwest::Client, reqwest::Error> {
-    build(hosts, timeout, Arc::new(local::Local::default()), false)
+    build(hosts, timeout, Arc::new(local::Local::default()), false, None)
 }
 
 /// Direct anonymous HTTPS with attached and operator-configured networks
@@ -35,12 +38,14 @@ pub(crate) fn content_client(
     nat64: Option<&str>,
     timeout: Duration,
     fixture: bool,
+    own: OriginAddresses,
 ) -> io::Result<reqwest::Client> {
     build(
         None,
         timeout,
         Arc::new(local::Local::load(ranges, nat64)?),
         fixture,
+        Some(own),
     )
     .map_err(io::Error::other)
 }
@@ -50,6 +55,7 @@ fn build(
     timeout: Duration,
     local: Arc<local::Local>,
     fixture: bool,
+    own: Option<OriginAddresses>,
 ) -> Result<reqwest::Client, reqwest::Error> {
     let mut builder = reqwest::Client::builder()
         .https_only(true)
@@ -60,6 +66,7 @@ fn build(
             hosts,
             local,
             fixture,
+            own,
         }))
         .connect_timeout(Duration::from_secs(5))
         .timeout(timeout)
@@ -71,6 +78,7 @@ fn build(
 }
 
 struct PublicDns {
+    own: Option<OriginAddresses>,
     fixture: bool,
     local: Arc<local::Local>,
     hosts: Option<&'static [&'static str]>,
@@ -81,6 +89,7 @@ impl Resolve for PublicDns {
         let hosts = self.hosts;
         let local = self.local.clone();
         let fixture = self.fixture;
+        let own = self.own.clone();
         Box::pin(async move {
             if hosts.is_some_and(|hosts| !hosts.contains(&name.as_str())) {
                 return Err(refused().into());
@@ -96,12 +105,35 @@ impl Resolve for PublicDns {
             if addresses.is_empty()
                 || addresses
                     .iter()
-                    .any(|a| deny::is_denied(a.ip()) || local.denies(a.ip()))
+                    .any(|a| deny::is_denied(a.ip()) || local.denies(a.ip()) || own_denies(own.as_ref(), a.ip()))
             {
                 return Err(refused().into());
             }
             Ok(Box::new(addresses.into_iter()) as reqwest::dns::Addrs)
         })
+    }
+}
+
+fn own_denies(own: Option<&OriginAddresses>, ip: IpAddr) -> bool {
+    own.is_some_and(|own| own.load().as_ref().is_none_or(|addresses| addresses.contains(&ip)))
+}
+
+#[cfg(test)]
+mod origin_tests {
+    use super::*;
+
+    #[test]
+    fn origin_refresh_changes_the_ip_policy_even_for_aliases() {
+        let own = OriginAddresses::default();
+        let old = "93.184.215.17".parse().unwrap();
+        let new = "93.184.215.18".parse().unwrap();
+        assert!(own_denies(Some(&own), old));
+        own.store(Some(Arc::new(vec![old])));
+        assert!(own_denies(Some(&own), old));
+        assert!(!own_denies(Some(&own), new));
+        own.store(Some(Arc::new(vec![new])));
+        assert!(own_denies(Some(&own), new));
+        assert!(!own_denies(Some(&own), old));
     }
 }
 

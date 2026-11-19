@@ -290,7 +290,10 @@ The server fetches image and font bytes off the request path. HTTPS GET on
 referrers, retries, or environment proxies. The guard checks every DNS
 answer, connects using those results, and repeats its checks on redirects.
 It refuses IP literals, nonpublic addresses, attached interface networks
-and the configured public origin hostname. Set
+and the configured public origin hostname and its resolved addresses. The
+server resolves its origin at startup and refreshes that set every minute,
+retaining the last confirmed addresses after a failed refresh. Startup logs
+a warning when the additional deny-range setting is empty. Set
 `CALTERNAL_CONTENT_FETCH_DENY_CIDRS` to comma-separated CIDRs for additional
 internal or hairpin public ranges. An invalid configured CIDR disables
 outbound media. On DNS64/NAT64 networks, set
