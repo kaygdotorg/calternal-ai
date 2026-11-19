@@ -40,6 +40,8 @@ pub struct Store {
     machines: std::sync::OnceLock<std::sync::Weak<crate::machines::MachineService>>,
     /// Bounded viewer-scoped references for sealed plugin content.
     pub(crate) plugin_frames: crate::plugins::network::frames::Frames,
+    /// Bounded background Class B proxy and viewer-scoped media cache.
+    pub(crate) plugin_fetch: crate::plugins::network::fetch::Service,
     /// Process-lifetime key for authenticated, stateless list cursors.
     pub(crate) cursor_key: ring::hmac::Key,
     // Dropped last: every database and file handle above closes first.
@@ -263,6 +265,7 @@ impl Store {
         Ok(Self {
             cursor_key,
             plugin_frames: Default::default(),
+            plugin_fetch: Default::default(),
             appearance,
             content: std::sync::Arc::new(content),
             live_rooms: crate::live_rooms::Hub::default(),

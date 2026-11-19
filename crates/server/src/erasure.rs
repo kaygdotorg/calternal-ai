@@ -53,6 +53,7 @@ pub(crate) fn finish(
     for owner in &owners {
         store.content().lifecycle().drain(owner.uuid());
         store.plugin_frames.erase(*owner);
+        store.plugin_fetch.erase(*owner);
         if let Some(machines) = store.machines() {
             machines.retire_owner(*owner)?;
         }

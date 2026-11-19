@@ -948,6 +948,10 @@ reason: string | null,
  */
 recent_errors: Array<PluginRuntimeFailure>,
 /**
+ * Latest 32 distinct Class B hostnames attempted in this space over seven days.
+ */
+fetch_hosts: Array<string>,
+/**
  * Up to 4 KiB from the last failed worker's own stderr in this space.
  */
 stderr_tail: string | null, };

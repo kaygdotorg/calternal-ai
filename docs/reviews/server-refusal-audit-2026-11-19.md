@@ -23,8 +23,8 @@ The locations below are relative to `crates/server/src/`.
 | [api/wallpapers/mod.rs:77](../../crates/server/src/api/wallpapers/mod.rs#L77) | 429 | wallpaper service is busy |
 | [api/wallpapers/upstream.rs:121](../../crates/server/src/api/wallpapers/upstream.rs#L121) | 429 | wallpaper fetch limit reached |
 | [live.rs:144](../../crates/server/src/live.rs#L144) | 429 | space live subscriber limit reached |
-| [live_rooms.rs:94](../../crates/server/src/live_rooms.rs#L94) | 429 | live socket capacity is busy |
-| [live_rooms.rs:259](../../crates/server/src/live_rooms.rs#L259) | 429 | socket room limit reached |
+| [live_rooms.rs:95](../../crates/server/src/live_rooms.rs#L95) | 429 | live socket capacity is busy |
+| [live_rooms.rs:282](../../crates/server/src/live_rooms.rs#L282) | 429 | socket room limit reached |
 | [live_rooms/hub.rs:268](../../crates/server/src/live_rooms/hub.rs#L268) | 429 | live room capacity is busy. Retry shortly |
 | [live_rooms/hub.rs:381](../../crates/server/src/live_rooms/hub.rs#L381) | 429 | live room initial state capacity is busy |
 | [live_rooms/hub.rs:522](../../crates/server/src/live_rooms/hub.rs#L522) | 429 | live room output capacity is busy |

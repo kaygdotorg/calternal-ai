@@ -115,6 +115,24 @@ pub(super) fn finish(
     Ok(())
 }
 
+/// List the latest 32 distinct hostnames attempted by this package in this
+/// space. The bounded activity table limits one query to at most 10,000 rows.
+pub(super) fn hosts(appdata: &Path, space: SpaceId, plugin: &str) -> Result<Vec<String>, Error> {
+    let Some(db) = db::open(&path(appdata, space), false)? else {
+        return Ok(Vec::new());
+    };
+    let mut query = db
+        .prepare(
+            "SELECT host FROM activity WHERE package = ?1 AND class = 'content_fetch'
+         AND started >= ?2 GROUP BY host ORDER BY MAX(id) DESC LIMIT 32",
+        )
+        .map_err(db::storage)?;
+    let rows = query
+        .query_map(params![plugin, epoch() - DAYS], |row| row.get(0))
+        .map_err(db::storage)?;
+    rows.collect::<Result<_, _>>().map_err(db::storage)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,5 +170,40 @@ mod tests {
             )
             .unwrap();
         assert_eq!(row, ("example.com".into(), "ready".into(), 21, 7));
+    }
+    #[test]
+    fn host_diagnostics_are_space_and_package_scoped_and_deduplicated() {
+        let root = tempfile::tempdir().unwrap();
+        let space = SpaceId::new();
+        let account = AccountId::new();
+        for (package, host) in [
+            ("mail", "a.example"),
+            ("other", "private.example"),
+            ("mail", "b.example"),
+            ("mail", "a.example"),
+        ] {
+            begin(
+                root.path(),
+                space,
+                Attempt {
+                    account,
+                    package,
+                    revision: 1,
+                    approval: 1,
+                    host,
+                    port: 443,
+                },
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            hosts(root.path(), space, "mail").unwrap(),
+            ["a.example", "b.example"]
+        );
+        assert!(
+            hosts(root.path(), SpaceId::new(), "mail")
+                .unwrap()
+                .is_empty()
+        );
     }
 }

@@ -28,14 +28,14 @@ HealthTimeout=3s
 HealthStartPeriod=5s
 HealthRetries=3
 HealthOnFailure=stop
-StopTimeout=90
+StopTimeout=2
 
 [Service]
 ExecStartPre=/usr/bin/bash @ROOT@/releases/current/recover-start.sh @ROOT@ @HDD_ROOT@
 UnsetEnvironment=CONTAINER_HOST CONTAINER_CONNECTION DOCKER_HOST
 Restart=always
 RestartSec=3s
-TimeoutStopSec=105s
+TimeoutStopSec=4s
 
 [Install]
 WantedBy=default.target
