@@ -35,7 +35,8 @@ export class ActionUi implements InvokerHooks {
   }
   outcome(action: Invoke, o: ActionOutcome): void {
     if (o.state === "ok") this.onok?.();
-    if (o.state === "ok" && o.undo) { const ref = o.undo.ref; undoable(action.operation, action.id, o.undo.label, () => this.invoker.undo(ref)); }
+    if (o.state === "ok" && o.undo) { const ref = o.undo.ref; undoable(action.operation, action.id, o.undo.label, async () => { const done = await this.invoker.undo(ref); if (done) this.onok?.(); return done; }); }
+    // (an Undo changes the row too: what is drawn is read again, so the next gesture has fresh contexts)
     else if (o.state === "error" || o.state === "refused" || o.state === "stale" || o.state === "unknown") failed(o.message ?? "That did not happen.");
   }
   route(name: string, created: string): void { this.onroute?.(name, created); }

@@ -46,6 +46,7 @@ for (let i = 1; i <= 4; i++) await cdp.send("Input.dispatchTouchEvent", { type: 
 await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
 await p.waitForTimeout(600);
 ok(wire.length === n0, "a short swipe sends nothing");
+await p.waitForTimeout(1800); // the lists re-read after the Undo: the next gesture needs the host's fresh context (an action advances the row's revision)
 
 // ---- Move to collection: choice, then (if the host challenges) the protected confirmation
 const openMenu = async (name) => {
@@ -54,7 +55,7 @@ const openMenu = async (name) => {
 };
 wire.length = 0; replies.length = 0;
 await openMenu(/move to collection/i);
-await p.waitForSelector("[data-dialog=choose]", { timeout: 8000 });
+await p.waitForSelector("[data-dialog=choose]", { timeout: 8000 }).catch(async (e) => { console.log("DEBUG wire", JSON.stringify(wire.slice(-3).map((w) => [w.route, w.body?.action_id ?? w.body?.slot]))); await p.screenshot({ path: "/tmp/act-fail.png" }); throw e; });
 const labels = await p.locator("[data-dialog=choose] [role=option]").allTextContents();
 ok(labels.length > 0, "the picker shows the host's option labels", labels.join(" | "));
 if (shot) await p.screenshot({ path: `${shot}-choose.png` });
