@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./worker": "./dist/worker.js",
+    "./views": "./src/views.ts",
     "./manifest.json": "./manifest.json"
   },
   "scripts": {

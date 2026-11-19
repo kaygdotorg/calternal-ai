@@ -14,6 +14,8 @@ import { store as threads } from "./threads/store.svelte";
 import Notes from "./notes/NotesMain.svelte";
 import NotesPanels from "./notes/NotesPanels.svelte";
 import NotesSidebar from "./notes/NotesSidebar.svelte";
+import MailMain from "./mail/MailMain.svelte";
+import MailSidebar from "./mail/MailSidebar.svelte";
 import "./settings/registry"; // registers a palette command for every setting: the palette finds settings before the Settings app has ever been opened
 import SettingsMain from "./settings/SettingsMain.svelte";
 import SettingsSidebar from "./settings/SettingsSidebar.svelte";
@@ -91,6 +93,18 @@ export const APPS: AppDef[] = [
     refresh: () => import("./notes/store.svelte").then((m) => m.notes.refresh()),
   },
 ];
+
+/** Mail: folders and headers in the sidebar, the open message in the middle card, both drawn from the Mail plugin's GenUI views. Side chat only, until Mail has panels of its own. */
+APPS.push({
+  kind: "mail",
+  name: "Mail",
+  icon: "mail",
+  Sidebar: MailSidebar,
+  Main: MailMain,
+  panels: [{ id: "chat", label: "Side chat", tab: "Chat", icon: "threads", component: SideChat, props: { about: "mail" } }],
+  start: () => import("./mail/store.svelte").then((m) => m.mail.start()),
+  refresh: () => import("./mail/store.svelte").then((m) => m.mail.refresh()),
+});
 
 /** Settings is an app like the others: sections in the sidebar, the page in the middle card, no right panels. */
 APPS.push({ kind: "settings", name: "Settings", icon: "settings", Sidebar: SettingsSidebar, Main: SettingsMain, panels: [] });

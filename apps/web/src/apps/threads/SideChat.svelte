@@ -5,7 +5,7 @@
   import { IconButton, InlineEditor } from "@calternal/ui";
   import Md from "../../lib/Md.svelte";
   import { bridge } from "./compose.svelte";
-  let { id, about = "thread" }: { id?: string; about?: "thread" | "note" } = $props();
+  let { id, about = "thread" }: { id?: string; about?: "thread" | "note" | "mail" } = $props();
   type Msg = { role: "user" | "agent"; text: string };
   let messages = $state<Msg[]>([]);
   let draft = $state("");
@@ -32,7 +32,7 @@
 
 <div class="side">
   <div class="log" role="log" aria-label="Side chat" aria-live="polite">
-    {#if !messages.length}<p class="empty">{about === "thread" ? "Select text in the thread and choose “Ask in Side Chat”, or type a question about " + (id ? "this thread" : "a thread") + "." : "Ask a question about " + (id ? "this note" : "a note") + "."}</p>{/if}
+    {#if !messages.length}<p class="empty">{about === "thread" ? "Select text in the thread and choose “Ask in Side Chat”, or type a question about " + (id ? "this thread" : "a thread") + "." : "Ask a question about " + (id ? `this ${about}` : `a ${about}`) + "."}</p>{/if}
     {#each messages as m}<div class="m {m.role} selectable"><Md text={m.text} /></div>{/each}
   </div>
   <div class="in">
