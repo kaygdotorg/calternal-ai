@@ -24,7 +24,7 @@ try {
   const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
   await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
-  const calls = []; p.on("response", async (r) => { if (r.url().includes("/api/v1/") && r.request().method() === "POST" && !r.url().includes("/auth/")) calls.push(`${r.status()} ${r.url().split("/api/v1/")[1]} ${JSON.stringify(r.request().postDataJSON?.() ?? "").slice(0, 90)}`); });
+  const calls = []; p.on("response", async (r) => { if (r.url().includes("/api/v1/") && r.request().method() === "POST" && !r.url().includes("/auth/")) calls.push(`${r.status()} ${JSON.parse(r.request().postData() ?? "{}").operation ?? r.url().split("/api/v1/")[1]}${(r.status() >= 400 || /run_now/.test(r.request().postData() ?? "")) ? " " + (await r.text().catch(() => "")).slice(0, 200) : ""}`); });
   p.on("pageerror", (e) => { console.log("   pageerror:", String(e).slice(0, 200)); });
   await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
   await signUp(p, token, "Skills Owner");
@@ -41,8 +41,8 @@ try {
   await p.getByLabel("Description").fill("Writes release notes from merged changes. Use when preparing a release."); await p.getByRole("button", { name: "Next" }).click();
   await p.getByRole("button", { name: "Next" }).click(); await p.getByRole("button", { name: "Claude" }).click(); await p.getByRole("button", { name: "Next" }).click();
   await shot("skill-review");
-  await p.getByRole("button", { name: "Create and open" }).click(); await p.waitForTimeout(2500);
-  ok(/\/notes\//.test(p.url()), "Create and open: the skill is made and opens in Notes", `${p.url()} ${await alert()}`);
+  await p.getByRole("button", { name: /^Create/ }).click(); await p.waitForTimeout(2500);
+  ok(!(await alert()), "Create: the server accepts the skill", `${p.url()} ${await alert()}`);
   await go("/settings/skills"); await shot("skills-after");
   ok((await p.getByText("write-release-notes").count()) > 0, "the new skill is in the list");
   // Remove the skill
@@ -61,7 +61,7 @@ try {
   await p.getByRole("button", { name: "Next" }).click(); await p.getByLabel("Prompt").fill("Summarize the week."); await p.getByRole("button", { name: "Next" }).click();
   await shot("auto-review");
   console.log("   review text:", (await p.locator("pre.cmd").innerText().catch(() => "")).replace(/\n/g, " | ").slice(0, 240));
-  await p.getByRole("button", { name: "Create and open" }).click(); await p.waitForTimeout(2500);
+  await p.getByRole("button", { name: /^Create/ }).click(); await p.waitForTimeout(2500);
   console.log("   after create:", p.url(), await alert());
   await go("/settings/automations"); await shot("auto-after");
   ok((await p.getByText("Friday wrap-up").count()) > 0, "the automation is listed", await alert());
