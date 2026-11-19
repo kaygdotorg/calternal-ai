@@ -19,7 +19,7 @@
     "build:plugins": "npm run build --workspace @calternal/plugin-sdk && npm run build --workspace @calternal/notes-insights && npm run build --workspace @calternal/claude-code && npm run build --workspace @calternal/codex && npm run build --workspace @calternal/plugin-guide && npm run build --workspace @calternal/reading-list && npm run build --workspace @calternal/plugin-submission-guide && npm run build --workspace composer-settings",
     "pin:plugins": "node scripts/pin-bundled-plugins.mjs",
     "build": "npm run build:plugins",
-    "test:plugins": "npm test --workspace @calternal/plugin-sdk && npm test --workspace @calternal/notes-insights && npm test --workspace @calternal/claude-code && npm test --workspace @calternal/codex && npm test --workspace @calternal/plugin-guide && npm test --workspace @calternal/reading-list && npm test --workspace @calternal/plugin-submission-guide && npm test --workspace composer-settings",
+    "test:plugins": "npm test --workspace @calternal/plugin-sdk && npm test --workspace @calternal/notes-insights && npm test --workspace @calternal/claude-code && npm test --workspace @calternal/codex && npm test --workspace @calternal/plugin-guide && npm test --workspace @calternal/reading-list && npm test --workspace @calternal/plugin-submission-guide && npm test --workspace composer-settings && npm run pin:plugins -- --check",
     "test:integration": "node --test tests/integration/*.test.mjs",
     "web:dev": "npm run dev --workspace @calternal/web",
     "web:build": "npm run build --workspace @calternal/web",
