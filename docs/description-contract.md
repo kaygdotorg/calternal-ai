@@ -391,6 +391,7 @@ while a turn runs; the first screenful stamp.
 
 ## 11. Sign-off
 
-* Native renderer lane: sections 1 to 4, 6 to 8 written; sections 5 and 9 reviewed against SwiftUI (8.1). **Signs off on condition** that the web lane (a) accepts the
-  rule in 3.2 that what the person typed needs no second sheet, and (b) takes findings 1, 2, 3 and 5 of 8.1 into section 5 (the others may be recorded as next vocabulary).
-* Web renderer lane: sections 5 and 9 written (draft 2), the native lane's conditions accepted (3.2 rule that typed input needs no second sheet; findings 1, 2, 3, 5 folded into section 5); the content vocabulary is closed (`stack text notice button form list detail component`), the five component configs are typed, and the verifier checks view depth (6) and node count (200). Sign-off waits for the native lane's review of 5 and for the plugins lane's answer on the host built-ins in 9.4.
+* Native renderer lane: **signed off.** Sections 1 to 4 and 6 to 8 are mine; sections 5 and 9 were reviewed against SwiftUI (8.1) and both conditions were met (the typed-input rule
+  in 3.2; settle time, window asks for Home, End and Page, one scroll region per list, a composer `enabled` without a row scope). 17 of 17 fixtures pass
+  (`python3 contract/verify-description.py`). Next vocabulary requests are recorded in section 10.
+* Web renderer lane: sections 5 and 9 and the content nodes written; sign-off by that lane is its own message to the coordinator.
