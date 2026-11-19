@@ -1,0 +1,8 @@
+# Build products, the local signing values and the share-page secret never enter the repository (GitHub is public).
+build/
+build-sim/
+.env.speedflight
+Local.xcconfig
+xcuserdata/
+*.xcuserstate
+DerivedData/

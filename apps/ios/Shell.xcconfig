@@ -1,0 +1,4 @@
+// Project-wide build settings that are not in the project file. Local.xcconfig (untracked: see
+// Local.xcconfig.example) supplies the developer team and the phone to install on; without it the
+// app still builds for the Simulator, which needs no signing.
+#include? "Local.xcconfig"
