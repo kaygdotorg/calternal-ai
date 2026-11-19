@@ -681,6 +681,29 @@
               "$ref": "#/$defs/Predicate"
             }
           ]
+        },
+        "then": {
+          "type": "object",
+          "properties": {
+            "route": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "route"
+          ],
+          "description": "After an `ok` outcome that carries `created`, set this route parameter to the created item's reference (open the new note or thread). The reference is host-minted; a description never supplies one."
         }
       },
       "additionalProperties": false,
@@ -1064,7 +1087,7 @@
       "description": "What the device may keep. Only data-free templates persist. Rows the host filled are session-only (memory, partitioned by session, space and audience, cleared on revocation, link closure, sign-out and account switch, never written to storage) and are never painted before the host has authorised the viewer now. Activation contexts, resolution references, confirmation challenges and proofs are never stored (docs/description-contract.md 6)."
     },
     "Event": {
-      "description": "Shell to host. In a page-hosted shell the page relays; in a native app without a page the shell sends the same typed request to the host directly. Each variant has its own required fields. The three activation events are the host catalogue's (ResolveActivation, ConfirmActivation, DispatchActivation: action_id, activation_id, activation_context, interaction; the shell sends no resolved row, route or bind value, and the host reconstructs every server-owned source).",
+      "description": "Shell to host. In a page-hosted shell the page relays; in a native app without a page the shell sends the same typed request to the host directly. Each variant has its own required fields. The three activation events are the host catalogue's (ResolveActivation, ConfirmActivation, DispatchActivation: action_id, activation_id, activation_context, interaction; the shell sends no resolved row, route or bind value, and the host reconstructs every server-owned source). Also the catalogue's view_open, lease_renew, choice_options, undo and action_status requests (each cited, none redefined).",
       "oneOf": [
         {
           "$ref": "#/$defs/EventWindow"
@@ -1107,6 +1130,21 @@
         },
         {
           "$ref": "host-catalogue-v2.json#/$defs/DispatchActivation"
+        },
+        {
+          "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/ViewOpenRequest"
+        },
+        {
+          "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/LeaseRenewRequest"
+        },
+        {
+          "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/ChoiceOptionsRequest"
+        },
+        {
+          "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/UndoRequest"
+        },
+        {
+          "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/StatusRequest"
         }
       ]
     },

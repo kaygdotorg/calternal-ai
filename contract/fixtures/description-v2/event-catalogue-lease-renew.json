@@ -1,0 +1,8 @@
+{
+  "type": "lease_renew",
+  "lease_ref": "l-1",
+  "grant_revision": "g-9",
+  "result_versions": {
+    "notes": "rv-41"
+  }
+}
