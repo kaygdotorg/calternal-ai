@@ -77,7 +77,7 @@ export const smoothCaret: Extension = (() => {
   });
   const theme = EditorView.baseTheme({
     // The browser-drawn caret steps aside (this person's primary one only).
-    "&[data-smooth] .cm-cursor-primary": { display: "none" },
+    "&[data-smooth] .cm-cursor-primary": { display: "none !important" },
     "&[data-smooth].cm-picking .cm-smooth-caret, &[data-smooth].cm-blocks-shown .cm-smooth-caret": { display: "none" },
     ".cm-smooth-caret": {
       position: "absolute", left: "0", top: "0", width: "2px", borderRadius: "1px", background: "var(--accent)", pointerEvents: "none", willChange: "transform",
