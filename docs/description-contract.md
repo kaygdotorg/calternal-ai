@@ -189,7 +189,7 @@ host  -> shell { activation_id, state: ok | pending | error | stale | refused | 
   refuses the field and the host ignores it.** There is no single revision number: the context names the versions it depends on, so a row that merely scrolled out of the window or moved
   because of unrelated changes is **still actionable**; only a change to the target, its scope or a dependency makes the activation `stale` (nothing ran).
 * **Confirmation is derived from the catalogue, never from the description** (`confirm: none | challenge`). **A sheet-free, one-exchange mutation (`confirm: none`) exists only for
-  catalogue entries whose engine commits the complete effect and its Undo together** (the catalogue's `atomic_undo: true`, worker-free: pin, mark-read, Trash, Restore, rename). A manifest's
+  catalogue entries whose engine commits the complete effect and its Undo together** (the catalogue's `atomic_undo: true`, worker-free). **The catalogue's flag decides, not this document or the description:** an operation is sheet-free only where the catalogue sets `atomic_undo`, and Trash, Restore and rename are not until the catalogue establishes complete effect plus Undo at one commit for them. A manifest's
   `risk` or `reversible` declaration grants **no** eligibility. For these the shell sends the resolve with `dispatch: true` and the host answers with the outcome, **one exchange**.
   **A plugin (worker-backed) operation always takes the ordinary path:** a resolve, then a separate dispatch: **two exchanges**, and **no sheet** unless the host says material requires a
   challenge (a destination, recipient, audience or permission, a bulk set, an irreversible, external or access-widening effect, or an input the manifest declares material): then the host
@@ -203,8 +203,7 @@ host  -> shell { activation_id, state: ok | pending | error | stale | refused | 
   prepared material** (an @-mention, a slash command, a destination typed in the text) **invalidates the proof and requires a fresh resolve and preview**. A description names no send operation.
 * **Retry and idempotency are the host's.** A description cannot declare an action retry-safe or waive a check: effect class and idempotency come from the catalogue and the manifest, and
   the host de-duplicates by `activation_id` (a retry after a dropped connection repeats no effect).
-* **Full swipe.** A swipe action may set `fullSwipe` only on the first action of its set **and** only if the catalogue marks its operation `full_swipe: true` (a reversible host built-in that
-  returns an Undo and needs no confirmation: pin and mark-read toggles, Restore once marked); the verifier rejects it on any plugin operation. A full swipe never opens a confirmation.
+* **Full swipe.** A swipe action may set `fullSwipe` only on the first action of its set **and** only if the catalogue marks its operation `full_swipe: true` (a catalogue entry that commits its effect and Undo together and needs no confirmation: only the entries the catalogue marks); the verifier rejects it on any plugin operation. A full swipe never opens a confirmation.
 * **The context must match the selection DRAWN.** A selection held by the settle window is sent before an activation that uses it, and the action's `activation_context` must be the one the host
   issued for the stable row actually drawn as selected when the person activates (the host issues a `SelectionContextResult` after each settled selection event, bound to the lease, cache partition,
   bind and row). The renderer uses a context only if it matches the currently drawn row; if it is missing, **it waits for the host-issued context** and sends nothing. The host never resolves an
