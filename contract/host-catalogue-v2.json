@@ -1,0 +1,1490 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
+  "description": "Review contract for host kinds, operations, query limits and the activation exchange. A reference shape conveys no authority. The host semantic loader still validates scope, profiles, contracts and dependencies.",
+  "reserved_operation_prefixes": [
+    "host.",
+    "turns."
+  ],
+  "audiences": {
+    "member_item": "Live item authority and field policy on the member path.",
+    "shared_projection": "Member authority or a host-approved explicit projection for this guest's home root/children. Counts require a separate projection flag.",
+    "viewer_self": "Member may address only their own value. In filters only eq with viewer.person. No general readback, sort, aggregation or access to another person's value.",
+    "designated_request_actor": "Host-private request addressed to the designated viewer. Covers only the referenced eligible request. No guest list or count. A row id resolves only to a checked RequestRef."
+  },
+  "kinds": {
+    "notes": {
+      "owner": "content",
+      "row_ref": "ItemRef",
+      "audience": "member_item",
+      "fields": {
+        "id": {
+          "type": "ItemRef",
+          "index_owner": "content",
+          "audience": "shared_projection",
+          "nullable": false
+        },
+        "title": {
+          "type": "Text",
+          "index_owner": "content",
+          "audience": "shared_projection",
+          "nullable": false
+        },
+        "updated": {
+          "type": "Timestamp",
+          "index_owner": "content",
+          "audience": "shared_projection",
+          "nullable": false
+        },
+        "pinned": {
+          "type": "Boolean",
+          "index_owner": "content",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "trashed": {
+          "type": "Boolean",
+          "index_owner": "content",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "trashed_at": {
+          "type": "Timestamp",
+          "index_owner": "content",
+          "audience": "member_item",
+          "nullable": true
+        }
+      },
+      "search_corpora": [
+        "member_title",
+        "member_body",
+        "shared_titles"
+      ]
+    },
+    "collections": {
+      "owner": "content",
+      "row_ref": "CollectionRef",
+      "audience": "member_item",
+      "fields": {
+        "id": {
+          "type": "CollectionRef",
+          "index_owner": "content",
+          "audience": "shared_projection",
+          "nullable": false
+        },
+        "title": {
+          "type": "Text",
+          "index_owner": "content",
+          "audience": "shared_projection",
+          "nullable": false
+        },
+        "updated": {
+          "type": "Timestamp",
+          "index_owner": "content",
+          "audience": "shared_projection",
+          "nullable": false
+        },
+        "trashed": {
+          "type": "Boolean",
+          "index_owner": "content",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "trashed_at": {
+          "type": "Timestamp",
+          "index_owner": "content",
+          "audience": "member_item",
+          "nullable": true
+        }
+      },
+      "search_corpora": [
+        "member_title",
+        "shared_titles"
+      ]
+    },
+    "threads": {
+      "owner": "turns",
+      "row_ref": "ThreadRef",
+      "audience": "member_item",
+      "fields": {
+        "id": {
+          "type": "ThreadRef",
+          "index_owner": "turns",
+          "audience": "shared_projection",
+          "nullable": false
+        },
+        "title": {
+          "type": "Text",
+          "index_owner": "turns",
+          "audience": "shared_projection",
+          "nullable": false
+        },
+        "updated": {
+          "type": "Timestamp",
+          "index_owner": "turns",
+          "audience": "shared_projection",
+          "nullable": false
+        },
+        "provider": {
+          "type": "Ref",
+          "index_owner": "turns",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "state": {
+          "type": "Text",
+          "index_owner": "turns",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "waiting_on": {
+          "type": "AccountRef",
+          "index_owner": "turns",
+          "audience": "viewer_self",
+          "nullable": true
+        },
+        "active_turn": {
+          "type": "TurnRef",
+          "index_owner": null,
+          "audience": "viewer_self",
+          "nullable": true
+        },
+        "trashed": {
+          "type": "Boolean",
+          "index_owner": "content",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "trashed_at": {
+          "type": "Timestamp",
+          "index_owner": "content",
+          "audience": "member_item",
+          "nullable": true
+        }
+      },
+      "search_corpora": [
+        "member_title",
+        "member_body",
+        "shared_titles"
+      ]
+    },
+    "requests": {
+      "owner": "requests",
+      "row_ref": "RequestRef",
+      "audience": "designated_request_actor",
+      "fields": {
+        "id": {
+          "type": "RequestRef",
+          "index_owner": "requests",
+          "audience": "designated_request_actor",
+          "nullable": false
+        },
+        "title": {
+          "type": "Text",
+          "index_owner": null,
+          "audience": "designated_request_actor",
+          "nullable": false
+        },
+        "thread_ref": {
+          "type": "ThreadRef",
+          "index_owner": "requests",
+          "audience": "designated_request_actor",
+          "nullable": true
+        },
+        "pending_for": {
+          "type": "AccountRef",
+          "index_owner": "requests",
+          "audience": "viewer_self",
+          "nullable": true
+        }
+      },
+      "search_corpora": []
+    }
+  },
+  "operations": {
+    "host.item.rename": {
+      "engine": "item_rename",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Editor on target",
+      "surfaces": [
+        "authorized_template_action",
+        "host_item_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item",
+          "title"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/$defs/ItemRef"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "pending",
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    },
+    "host.item.trash": {
+      "engine": "item_trash",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Editor on every target",
+      "surfaces": [
+        "authorized_template_action",
+        "host_item_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item",
+        "selection_ref"
+      ],
+      "input_schema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "item"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/$defs/ItemRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "selection_ref"
+            ],
+            "properties": {
+              "selection_ref": {
+                "$ref": "#/$defs/Ref"
+              }
+            }
+          }
+        ],
+        "$comment": "The host supplies Undo when the committed lifecycle result is eligible."
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "pending",
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    },
+    "host.item.restore": {
+      "engine": "item_restore",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Editor on target",
+      "surfaces": [
+        "authorized_template_action",
+        "host_item_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item",
+        "source_revision"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/$defs/ItemRef"
+          },
+          "source_revision": {
+            "$ref": "#/$defs/RevisionRef"
+          }
+        },
+        "$comment": "Source revision selects history restore. Absent selects a current Trash head. Host pins expected revision from the activation context."
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "pending",
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    },
+    "host.undo": {
+      "engine": "item_rename_undo / protected eligible inverse",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Original authorized actor or permitted current editor with a live eligible reference",
+      "surfaces": [
+        "host_outcome"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "ref"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ref"
+        ],
+        "properties": {
+          "ref": {
+            "$ref": "#/$defs/UndoRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "pending",
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    },
+    "host.trash.purge": {
+      "engine": "item_purge / empty_trash",
+      "effect": "irreversible",
+      "idempotency": "request_id",
+      "authority": "Manager or Owner, with confirmation of the pinned selection and authority at every batch",
+      "surfaces": [
+        "host_trash_sheet"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "selection_ref"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "selection_ref"
+        ],
+        "properties": {
+          "selection_ref": {
+            "$ref": "#/$defs/TrashSelectionRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "pending",
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    },
+    "host.approval.resolve": {
+      "engine": "protected Inbox resolver",
+      "effect": "widens_access",
+      "idempotency": "request_id",
+      "authority": "Designated approver with current grant",
+      "surfaces": [
+        "protected_request_card"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "request"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "request",
+          "decision"
+        ],
+        "properties": {
+          "request": {
+            "$ref": "#/$defs/RequestRef"
+          },
+          "decision": {
+            "enum": [
+              "approve",
+              "deny"
+            ]
+          },
+          "lifetime": {
+            "enum": [
+              "once",
+              "this_thread"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "decision": {
+                  "const": "approve"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "lifetime"
+              ]
+            },
+            "else": {
+              "properties": {
+                "lifetime": false
+              }
+            }
+          }
+        ]
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    },
+    "host.panel.ask": {
+      "engine": "authorized host panel turn admission",
+      "effect": "external",
+      "idempotency": "request_id",
+      "authority": "Person authorized to use the panel and its item/draft; guest Prompt disabled",
+      "surfaces": [
+        "host_panel"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "$ref": "#/$defs/Text"
+          },
+          "item": {
+            "$ref": "#/$defs/ItemRef"
+          },
+          "draft": {
+            "$ref": "#/$defs/Draft"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "pending",
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    },
+    "host.turn.stop": {
+      "engine": "turn_cancel",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Actor authorized to stop the referenced turn",
+      "surfaces": [
+        "host_composer",
+        "host_turn_control"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "turn"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "turn"
+        ],
+        "properties": {
+          "turn": {
+            "$ref": "#/$defs/TurnRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "pending",
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    },
+    "host.route.set": {
+      "engine": "host shell route state",
+      "effect": "read",
+      "idempotency": "read_only",
+      "authority": "Viewer with live access to the target route",
+      "surfaces": [
+        "host_shell"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "route",
+        "target"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "route"
+        ],
+        "properties": {
+          "route": {
+            "$ref": "#/$defs/Ref"
+          },
+          "target": {
+            "$ref": "#/$defs/Ref"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    },
+    "host.session.end": {
+      "engine": "host session revocation",
+      "effect": "irreversible",
+      "idempotency": "request_id",
+      "authority": "Signed-in actor's own session only",
+      "surfaces": [
+        "host_account_menu"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {}
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    },
+    "host.item.share": {
+      "engine": "host sharing service",
+      "effect": "widens_access",
+      "idempotency": "request_id",
+      "authority": "Actor allowed to manage sharing for the exact selected items",
+      "surfaces": [
+        "host_audience_sheet"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item",
+        "selection_ref"
+      ],
+      "input_schema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "item"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/$defs/ItemRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "selection_ref"
+            ],
+            "properties": {
+              "selection_ref": {
+                "$ref": "#/$defs/Ref"
+              }
+            }
+          }
+        ]
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "pending",
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    },
+    "host.item.patch-metadata": {
+      "engine": "item_save metadata arm",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Editor with the current room-backed item head",
+      "surfaces": [
+        "authorized_template_action",
+        "host_item_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item",
+        "expected_revision"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item",
+          "expected_revision",
+          "patch"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/$defs/ItemRef"
+          },
+          "expected_revision": {
+            "$ref": "#/$defs/RevisionRef"
+          },
+          "patch": {
+            "type": "object",
+            "minProperties": 1,
+            "maxProperties": 32
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    },
+    "host.action.status": {
+      "engine": "protected action / rename / Trash job status",
+      "effect": "read",
+      "idempotency": "read_only",
+      "authority": "Live authorized audience of the originating host outcome",
+      "surfaces": [
+        "host_outcome"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "status_ref"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status_ref"
+        ],
+        "properties": {
+          "status_ref": {
+            "$ref": "#/$defs/StatusRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "pending",
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    },
+    "turns.start": {
+      "engine": "turn_start",
+      "effect": "external",
+      "idempotency": "request_id",
+      "authority": "Actor with live turn, draft, provider and machine authority; guest Prompt disabled",
+      "surfaces": [
+        "host_composer"
+      ],
+      "generic_invoke": false,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "thread",
+        "attachments",
+        "mentions",
+        "quote"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "thread"
+        ],
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadRef"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "attachments": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/$defs/AttachmentRef"
+            }
+          },
+          "mentions": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "$ref": "#/$defs/AccountRef"
+            }
+          },
+          "quote": {
+            "$ref": "#/$defs/Quote"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "outcomes": [
+        "pending",
+        "ok",
+        "stale",
+        "refused",
+        "error",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ]
+    }
+  },
+  "query": {
+    "operators": {
+      "eq": "Same scalar type or an explicitly nullable field compared to null.",
+      "ne": "Same scalar type; available only for a bounded indexed complement.",
+      "in": "One to 32 homogeneous scalars of the field type; no coercion or nested list.",
+      "lt": "Ordered indexed number, timestamp or approved collation key.",
+      "lte": "Same as lt.",
+      "gt": "Same as lt.",
+      "gte": "Same as lt.",
+      "exists": "Boolean operand; true means an indexed non-null value exists.",
+      "prefix": "Nonempty text normalized with the field's indexed collation; up to 128 UTF-8 bytes."
+    },
+    "filter_groups": [
+      "all",
+      "any"
+    ],
+    "max_predicates": 16,
+    "max_sort_fields": 2,
+    "tie_breaker": "id",
+    "count_modes": {
+      "exact": "Count of the authorized projection at its checked result version; guest requires explicit count permission.",
+      "estimate": "Audience-certified member estimate only; refuse when unavailable.",
+      "none": "Omit count."
+    },
+    "window": {
+      "request_schema": {
+        "$ref": "#/$defs/WindowRequest"
+      },
+      "result_schema": {
+        "$ref": "#/$defs/WindowResult"
+      },
+      "max_rows": 200,
+      "default_rows": 60,
+      "max_offset": 100000,
+      "max_encoded_bytes": 131072
+    },
+    "unsupported_plan": {
+      "status": 422,
+      "code": "unsupported_query_plan"
+    },
+    "live_limits": {
+      "binds_per_view": 16,
+      "subscriptions_per_view": 8,
+      "subscriptions_per_actor": 16,
+      "subscriptions_per_space": 128,
+      "pending_windows_per_view": 2,
+      "queued_bytes_per_view": 262144,
+      "queued_bytes_per_actor": 524288,
+      "queued_bytes_per_space": 8388608,
+      "query_starts_per_view_per_second": 8,
+      "query_starts_per_actor_per_second": 16,
+      "query_starts_per_space_per_second": 64,
+      "live_updates_per_bind_per_second": 4
+    }
+  },
+  "$defs": {
+    "Ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "ActionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "ActivationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "ContextRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "ProofRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "Text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "Boolean": {
+      "type": "boolean"
+    },
+    "Number": {
+      "type": "number"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 40
+    },
+    "KindId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "CollectionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized CollectionRef reference. A compatible string shape does not grant authority."
+    },
+    "ThreadRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized ThreadRef reference. A compatible string shape does not grant authority."
+    },
+    "TurnRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized TurnRef reference. A compatible string shape does not grant authority."
+    },
+    "RequestRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized RequestRef reference. A compatible string shape does not grant authority."
+    },
+    "AccountRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized AccountRef reference. A compatible string shape does not grant authority."
+    },
+    "AttachmentRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized AttachmentRef reference. A compatible string shape does not grant authority."
+    },
+    "StatusRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized StatusRef reference. A compatible string shape does not grant authority."
+    },
+    "UndoRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized UndoRef reference. A compatible string shape does not grant authority."
+    },
+    "TrashSelectionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized TrashSelectionRef reference. A compatible string shape does not grant authority."
+    },
+    "DestinationFrameRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized DestinationFrameRef reference. A compatible string shape does not grant authority."
+    },
+    "RevisionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized RevisionRef reference. A compatible string shape does not grant authority."
+    },
+    "QuoteRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-authorized QuoteRef reference. A compatible string shape does not grant authority."
+    },
+    "ItemRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Typed host reference for the declared kind and target. A scoped row may carry it; client markup cannot create it."
+    },
+    "Quote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thread",
+        "quote_ref"
+      ],
+      "properties": {
+        "thread": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "quote_ref": {
+          "$ref": "#/$defs/QuoteRef"
+        }
+      }
+    },
+    "Draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "attachments": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/AttachmentRef"
+          }
+        },
+        "mentions": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/AccountRef"
+          }
+        },
+        "quote": {
+          "$ref": "#/$defs/Quote"
+        }
+      }
+    },
+    "Interaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "form": {
+          "type": "object",
+          "maxProperties": 32
+        },
+        "prompt": {
+          "type": "object",
+          "maxProperties": 8
+        },
+        "draft": {
+          "$ref": "#/$defs/Draft"
+        },
+        "selection_ref": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ResolveActivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "action_id",
+        "activation_id",
+        "activation_context"
+      ],
+      "properties": {
+        "type": {
+          "const": "invoke"
+        },
+        "action_id": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
+        },
+        "activation_context": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "interaction": {
+          "$ref": "#/$defs/Interaction"
+        }
+      }
+    },
+    "ConfirmActivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "activation_id",
+        "resolution_ref",
+        "confirmation_challenge"
+      ],
+      "properties": {
+        "type": {
+          "const": "invoke_confirm"
+        },
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
+        },
+        "resolution_ref": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "confirmation_challenge": {
+          "$ref": "#/$defs/ProofRef"
+        }
+      }
+    },
+    "DispatchActivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "activation_id",
+        "resolution_ref"
+      ],
+      "properties": {
+        "type": {
+          "const": "invoke_dispatch"
+        },
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
+        },
+        "resolution_ref": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "confirmation_proof": {
+          "$ref": "#/$defs/ProofRef"
+        }
+      }
+    },
+    "ConfirmationMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "label",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/Text"
+        },
+        "label": {
+          "$ref": "#/$defs/Text"
+        },
+        "value": {}
+      }
+    },
+    "ActivationResolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "activation_id",
+        "resolution_ref"
+      ],
+      "properties": {
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
+        },
+        "resolution_ref": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "confirmation_challenge": {
+          "$ref": "#/$defs/ProofRef"
+        },
+        "material": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/ConfirmationMaterial"
+          }
+        }
+      },
+      "dependentRequired": {
+        "confirmation_challenge": [
+          "material"
+        ],
+        "material": [
+          "confirmation_challenge"
+        ]
+      }
+    },
+    "UndoResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "label",
+        "expires_at"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/UndoRef"
+        },
+        "label": {
+          "$ref": "#/$defs/Text"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      }
+    },
+    "ActionOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "activation_id",
+        "state"
+      ],
+      "properties": {
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
+        },
+        "state": {
+          "enum": [
+            "ok",
+            "pending",
+            "error",
+            "stale",
+            "refused",
+            "unknown"
+          ]
+        },
+        "status_ref": {
+          "$ref": "#/$defs/StatusRef"
+        },
+        "undo": {
+          "$ref": "#/$defs/UndoResult"
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "pending"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "status_ref"
+            ]
+          },
+          "else": {
+            "properties": {
+              "status_ref": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "ok"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "undo": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "error",
+                  "refused",
+                  "stale",
+                  "unknown"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "code",
+              "message"
+            ]
+          },
+          "else": {
+            "properties": {
+              "code": false,
+              "message": false
+            }
+          }
+        }
+      ]
+    },
+    "WindowRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "to": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100200
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        }
+      }
+    },
+    "WindowRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "fields"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "fields": {
+          "type": "object",
+          "maxProperties": 32
+        }
+      }
+    },
+    "WindowResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result_version",
+        "offset",
+        "rows"
+      ],
+      "properties": {
+        "result_version": {
+          "$ref": "#/$defs/Ref"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/WindowRow"
+          }
+        },
+        "count": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "value"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "exact",
+                "estimate"
+              ]
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}
