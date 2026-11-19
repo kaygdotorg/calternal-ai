@@ -272,8 +272,8 @@ engine exposes an indexed, host-maintained `trashed` boolean for lifecycle
 views. Plugins cannot set it as metadata or claim host-owned kinds. An
 authorized built-in lifecycle action (Trash, Rename, Restore or Undo) runs
 directly against the host operation catalogue and keeps the runtime asleep.
-Rename status and protected Undo are host-owned, including when initiated
-through an interface action. A renderer gets only authorized status and a
+`host.item.patch-metadata` uses the same room-checked save path.
+Rename status and protected Undo are host-owned. A renderer gets only authorized status and a
 host-minted Undo action reference.
 
 **Staged save.** Begin reserves total decoded bytes against the existing
@@ -312,9 +312,11 @@ crash. Committed effects replay by receipt.
 
 The native and web renderer lanes own `contract/description-v2.schema.json`
 and `docs/description-contract.md` on `lane/description-contract`. Integrate
-that shared schema before freezing descriptions in either format. Until it
-lands, the manifest’s command-input reference points to the revision 2
-draft for validation only. Retarget that reference at integration. The
+that shared schema before freezing either format. Retarget the manifest’s
+draft command-input reference at integration. See the renderer lanes’
+[shared schema draft](https://git.kayg.org/kayg/calternal-ai/src/commit/b88868691f51e0d3611374f1d0ee729670c7e2c4/contract/description-v2.schema.json)
+and [design notes](https://git.kayg.org/kayg/calternal-ai/src/commit/b88868691f51e0d3611374f1d0ee729670c7e2c4/docs/description-contract.md).
+The
 [chrome baseline](https://git.kayg.org/kayg/calternal-ai/src/commit/05aac6a4f173b336eb556fa3e6b7db9d31f4fba1/contract/chrome-v1.schema.json)
 and [catalogue](../packages/genui/src/catalog-data.json) are renderer inputs.
 
@@ -336,8 +338,13 @@ and [catalogue](../packages/genui/src/catalog-data.json) are renderer inputs.
   changes after confirmation. For mutations or disclosures require the
   host’s trusted preview of material arguments, including target, fields
   disclosing data and destination. Bind confirmation and request ID to
-  the exact normalized input. Reauthorize at execution. Built-in item
-  actions stay on the host and share the exact engine fences.
+  the exact normalized input. The renderer event ID keys the receipt within
+  actor/space and is distinct from the ephemeral channel ticket. Compute
+  the preview requirement from declared risk and the host’s effect
+  classification, including outbound disclosure by an otherwise read-only
+  action. Include checked manifest `material_inputs` and host-required
+  values. An interface cannot remove either. Reauthorize at execution.
+  Built-in item actions stay on the host and share the engine fences.
 - Resolve protected component routes and check their refs under the same
   audience and action policy. Transcript delivery is client-to-host.
   Use byte-bounded durable pages and committed cursors instead of the

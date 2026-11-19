@@ -148,6 +148,11 @@
         "risk": { "$ref": "plugin-manifest-v1.schema.json#/definitions/OperationRisk" },
         "idempotency": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestIdempotency" },
         "target": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestTarget" },
+        "material_inputs": {
+          "description": "Additional top-level input keys the host must show in a trusted preview. The host also determines mandatory fields from the effect and target.",
+          "type": "array", "maxItems": 32, "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        },
         "methods": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/definitions/hostMethod" } },
         "credential_routes": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/localId" } }
       },
