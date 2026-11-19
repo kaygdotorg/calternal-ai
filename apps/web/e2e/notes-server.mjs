@@ -27,7 +27,9 @@ try {
   await page.goto(`${url}/?server=1`); await page.waitForSelector("html[data-ready]");
   await signUp(page, token, "Tester");
   await page.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 });
-  const api = (op, input) => page.evaluate(async ([op, input]) => (await (await fetch("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: crypto.randomUUID(), operation: op, input }) })).json()), [op, input]);
+  // Sign-up ends in a navigation; a call made while it is still going has its page context destroyed under it, so wait for the page to settle and repeat once if that still happens.
+  await page.waitForLoadState("load"); await page.waitForSelector("html[data-ready]");
+  const api = async (op, input) => { for (let i = 0; ; i++) { try { return await page.evaluate(async ([op, input]) => (await (await fetch("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: crypto.randomUUID(), operation: op, input }) })).json()), [op, input]); } catch (e) { if (i > 3 || !/context was destroyed/.test(String(e))) throw e; await page.waitForLoadState("load"); } } };
   const space = (await api("spaces.list", {})).data.spaces[0].id;
 
   // Empty state, then the first note.

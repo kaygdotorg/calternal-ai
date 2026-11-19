@@ -6,6 +6,9 @@ describe("say: failures in plain words with the next step", () => {
   test("a refusal for lack of a capability says who can help", () => {
     expect(say(new ServerError("forbidden", "x", 403))).toMatch(/owner or a manager/);
   });
+  test("a cooldown is worded, with no server text", () => {
+    expect(say(new ServerError("rate_limited", "Register this browser or wait a minute before testing again."))).toBe("Too many tries. Wait a minute and try again.");
+  });
   test("a network failure says it keeps trying", () => {
     expect(say(new TypeError("Failed to fetch"))).toMatch(/Can't reach the server/);
     expect(say(new ServerError("unavailable", "x"))).toMatch(/keeps trying/);

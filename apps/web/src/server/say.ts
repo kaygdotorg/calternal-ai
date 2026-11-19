@@ -22,6 +22,7 @@ const BY_CODE: Record<string, string> = {
   setup_token_invalid: FIRST_OWNER,
   invite_invalid: "That invitation is wrong, expired or already used. Ask whoever invited you for a new link and paste its code.",
   too_many_requests: "Too many tries. Wait a minute and try again.",
+  rate_limited: "Too many tries. Wait a minute and try again.",
   last_passkey: "Keep at least one passkey, or you could not sign in again. Add another first.",
   passkey_reverification_required: "Confirm with your passkey, then try again.",
 };
