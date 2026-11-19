@@ -119,6 +119,25 @@ async fn worker_pid(work: &Path) -> String {
     panic!("package must be running before removing its lease renewals");
 }
 
+async fn kill_firecracker(pid: &str) {
+    assert!(
+        tokio::process::Command::new("kill")
+            .args(["-KILL", pid])
+            .status()
+            .await
+            .unwrap()
+            .success()
+    );
+}
+
+async fn launched_cold(pid: &str) -> bool {
+    tokio::fs::read(format!("/proc/{pid}/cmdline"))
+        .await
+        .unwrap()
+        .split(|byte| *byte == 0)
+        .any(|arg| arg == b"--config-file")
+}
+
 async fn firecracker_pid(run: &Path) -> String {
     let mut entries = tokio::fs::read_dir("/proc").await.unwrap();
     let run = run.as_os_str().as_encoded_bytes();

@@ -27,6 +27,8 @@ pub(crate) struct Connected {
     pub(crate) space: SpaceId,
     pub(crate) channel: SpaceChannel,
     pub(crate) grants: GrantRevision,
+    /// Readiness for first invocation after any checkpoint proof is spent.
+    pub(crate) restore_consumed: watch::Receiver<bool>,
 }
 
 pub(super) struct Reservation {
@@ -35,6 +37,7 @@ pub(super) struct Reservation {
     account: AccountId,
     session: [u8; 32],
     closing: watch::Sender<bool>,
+    restore_consumed: watch::Sender<bool>,
     reply: Option<oneshot::Sender<Connected>>,
 }
 
@@ -59,6 +62,38 @@ impl State {
             ));
         }
         Ok(())
+    }
+
+    /// Persist consumption for the exact running carrier before admitting calls.
+    /// The sync worker holds the scheduler lock across this one conditional write
+    /// so a concurrent wake cannot reuse the proof before admission opens.
+    pub(super) fn consume_restore(
+        &self,
+        space: SpaceId,
+        machine: Uuid,
+        lease: Uuid,
+    ) -> Result<(), Error> {
+        if let Some(reservation) = self.space_channels.get(&space)
+            && reservation.binding.lease_id == lease
+            && reservation.machine == machine
+            && let Some(counter) = reservation.binding.checkpoint
+        {
+            if *reservation.restore_consumed.borrow() {
+                return Ok(());
+            }
+            super::checkpoint::consume(&self.db, space, machine, counter)?;
+            reservation.restore_consumed.send_replace(true);
+        }
+        Ok(())
+    }
+
+    /// Recheck machine inventory promptly while its restored guest awaits admission.
+    pub(super) fn awaiting_restore_report(&self, machine: Uuid) -> bool {
+        self.space_channels.values().any(|reservation| {
+            reservation.machine == machine
+                && !*reservation.closing.borrow()
+                && !*reservation.restore_consumed.borrow()
+        })
     }
 
     pub(super) fn close_space_lease(&mut self, lease: Uuid) {
@@ -158,6 +193,7 @@ impl MachineService {
                     account,
                     session,
                     closing: watch::channel(false).0,
+                    restore_consumed: watch::channel(binding.checkpoint.is_none()).0,
                     reply: Some(reply),
                 },
             );
@@ -184,6 +220,7 @@ impl MachineService {
             Uuid,
             SpaceChannelAssignment,
             watch::Sender<bool>,
+            watch::Receiver<bool>,
             oneshot::Sender<Connected>,
         ),
         Error,
@@ -227,6 +264,7 @@ impl MachineService {
             machine,
             reservation.binding.clone(),
             reservation.closing.clone(),
+            reservation.restore_consumed.subscribe(),
             reply,
         ))
     }
@@ -271,8 +309,8 @@ pub(super) async fn upgrade<D: Directory>(
             .protected_spaces()
             .cloned()
             .ok_or_else(no_assignment)?;
-        let (binding, grants, closing, reply) = blocking(move || {
-            let (machine, binding, closing, reply) =
+        let (binding, grants, closing, restore_consumed, reply) = blocking(move || {
+            let (machine, binding, closing, restore_consumed, reply) =
                 service.claim_channel(&token, space, assignment)?;
             let grants = match authority.grant_revision(space, machine) {
                 Ok(grants) => grants,
@@ -281,7 +319,7 @@ pub(super) async fn upgrade<D: Directory>(
                     return Err(super::authority_error(error));
                 }
             };
-            Ok((binding, grants, closing, reply))
+            Ok((binding, grants, closing, restore_consumed, reply))
         })
         .await?;
         let upgraded = hyper::upgrade::on(&mut request);
@@ -310,6 +348,7 @@ pub(super) async fn upgrade<D: Directory>(
                         space,
                         channel,
                         grants,
+                        restore_consumed,
                     })
                     .ok()?;
                 tokio::select! {

@@ -161,3 +161,25 @@ pub(super) fn acknowledge(
         params![space.to_string(), lease.to_string(), counter, machine.to_string()],
     ).map(|_| ()).map_err(sql)
 }
+
+/// Revoke reuse of a checkpoint once its restored carrier reports Running.
+pub(super) fn consume(
+    conn: &Connection,
+    space: SpaceId,
+    machine: Uuid,
+    counter: u64,
+) -> Result<(), Error> {
+    let removed = conn
+        .execute(
+            "UPDATE space_runtime_checkpoints SET acknowledged=NULL,lease=''
+         WHERE space=?1 AND acknowledged=?2 AND counter=?3",
+            params![space.to_string(), machine.to_string(), counter as i64],
+        )
+        .map_err(sql)?;
+    if removed == 0 {
+        return Err(Error::unavailable(
+            "checkpoint restore authorization changed",
+        ));
+    }
+    Ok(())
+}

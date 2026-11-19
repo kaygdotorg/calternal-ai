@@ -175,6 +175,7 @@ impl Fixture {
                 space: self.space,
                 channel: host.unwrap(),
                 grants: self.grants.clone(),
+                restore_consumed: tokio::sync::watch::channel(true).1,
             },
             runtime.unwrap(),
         )

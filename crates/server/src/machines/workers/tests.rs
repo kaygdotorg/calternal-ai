@@ -151,7 +151,7 @@ async fn space_channel_is_single_use_and_bound_to_the_enrolled_assignee() {
                 .claim_channel(&token, SpaceId::new(), binding.assignment)
                 .is_err()
         );
-        let (_, _, closing, reply) = service2
+        let (_, _, closing, _, reply) = service2
             .claim_channel(&token, binding.space, binding.assignment)
             .unwrap();
         assert!(

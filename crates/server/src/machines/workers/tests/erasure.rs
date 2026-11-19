@@ -391,6 +391,62 @@ fn checkpoint_order_survives_restart_and_stale_erasure_retries_are_bounded() {
         .max()
         .unwrap_or(seq);
     assert_eq!(proof(&service, a), Some(1));
+    let failed = wake(&service).unwrap();
+    assert_eq!(failed.machine_id, Some(a));
+    let service2 = service.clone();
+    let binding = runtime.block_on(async {
+        let opening = tokio::spawn(async move {
+            service2
+                .open_space_channel(
+                    account,
+                    failed.lease_id,
+                    calternal_plugin_host::space_channel::PackagePin {
+                        package: "calternal-fixture".into(),
+                        digest: "0".repeat(64),
+                    },
+                )
+                .await
+        });
+        let binding = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                for envelope in service
+                    .sync(a, &atoken, space_report(ack, 1, false))
+                    .await
+                    .unwrap()
+                {
+                    if let Down::OpenSpaceChannel { channel } = envelope.message {
+                        return (envelope.seq, channel);
+                    }
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let mut report = space_report(binding.0, 1, false);
+        report.leases.push(LeaseReport {
+            lease_id: binding.1.lease_id,
+            fence: binding.1.fence,
+            sandbox: SandboxState::Failed {
+                reason: "restore failed before Running".into(),
+            },
+        });
+        let commands = service.sync(a, &atoken, report).await.unwrap();
+        let seq = commands.iter().map(|m| m.seq).max().unwrap();
+        service
+            .sync(a, &atoken, space_report(seq, 1, false))
+            .await
+            .unwrap();
+        assert!(opening.await.unwrap().is_err());
+        (seq, binding.1)
+    });
+    assert_eq!(binding.1.checkpoint, Some(1));
+    assert_eq!(
+        proof(&service, a),
+        Some(1),
+        "a failed restore keeps its second try"
+    );
+    let ack = binding.0;
     sync(&service, b, &btoken, space_report(0, 8, false));
     let prior = wake(&service).unwrap();
     assert_eq!(prior.machine_id, Some(a));

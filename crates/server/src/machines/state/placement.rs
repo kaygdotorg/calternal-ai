@@ -140,7 +140,12 @@ impl State {
     /// Compare a machine's report with the registry: confirm running sandboxes,
     /// end failed ones, hand a waiting lease back to the machine that still has
     /// its sandbox, and stop everything else.
-    pub fn reconcile(&mut self, machine: Uuid, reports: &[LeaseReport], settings: &Settings) {
+    pub fn reconcile(
+        &mut self,
+        machine: Uuid,
+        reports: &[LeaseReport],
+        settings: &Settings,
+    ) -> Result<(), Error> {
         for r in reports {
             let Some(l) = self.leases.get(&r.lease_id) else {
                 self.push(
@@ -176,10 +181,18 @@ impl State {
             if current {
                 match &r.sandbox {
                     SandboxState::Running | SandboxState::Frozen
-                        if l.state == LeaseState::Assigned =>
+                        if l.state == LeaseState::Assigned
+                            || r.sandbox == SandboxState::Running =>
                     {
-                        l.state = LeaseState::Running;
-                        self.persist(r.lease_id);
+                        let space = l.row.space;
+                        if r.sandbox == SandboxState::Running {
+                            self.consume_restore(space, machine, r.lease_id)?;
+                        }
+                        let lease = self.leases.get_mut(&r.lease_id).expect("current lease");
+                        if lease.state == LeaseState::Assigned {
+                            lease.state = LeaseState::Running;
+                            self.persist(r.lease_id);
+                        }
                     }
                     SandboxState::Lost => {
                         registry::microvm::lost(self, machine, r.lease_id, settings, keep_files)
@@ -221,5 +234,6 @@ impl State {
                 );
             }
         }
+        Ok(())
     }
 }

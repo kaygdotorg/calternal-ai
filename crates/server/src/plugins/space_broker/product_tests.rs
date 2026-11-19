@@ -215,7 +215,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
     };
     let runner = Arc::new(Runner::new(backend, link, 2));
     let sync_runner = runner.clone();
-    let (assignments, mut assigned) = tokio::sync::mpsc::channel(2);
+    let (assignments, mut assigned) = tokio::sync::mpsc::channel(3);
     let routes = tokio::task::block_in_place(|| {
         product_http::CarrierIsolation::new(
             &state.directory,
@@ -253,11 +253,13 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                     if opened == 1 {
                         let unavailable = before_claim.check(&service, channel, &token).await;
                         claimed.try_send((channel.clone(), unavailable)).unwrap();
-                    } else if wait_sleep {
+                    } else if wait_sleep && opened == 2 {
                         assert_eq!(
                             channel.checkpoint, checkpoint,
                             "carrier must authorize the saved checkpoint"
                         );
+                    } else if wait_sleep {
+                        assert_eq!(channel.checkpoint, None, "crash must consume the proof");
                     }
                 }
                 if wait_sleep && let Down::SleepSpace { counter, .. } = &message {
@@ -266,7 +268,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                     drain_gate.acquire().await.unwrap().forget();
                 }
                 sync_runner.handle(message).await;
-                if opened == 2 {
+                if opened == (if wait_sleep { 3 } else { 2 }) {
                     return;
                 }
             }
@@ -358,6 +360,9 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                 assert!(awake.drain_waiter().is_some());
                 awake.epoch
             };
+            let after_crash_requests: Vec<_> = (0..MAX_ACTIVE_TICKETS)
+                .map(|i| format!("after-crash-{i}"))
+                .collect();
             let requests: Vec<_> = (0..10).map(|i| format!("wake-{i}")).collect();
             let calls =
                 futures_util::future::join_all(requests.iter().map(|request| {
@@ -426,27 +431,42 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
             assert!(successes >= MAX_ACTIVE_TICKETS);
             let restore_pid = firecracker_pid(&run).await;
             assert_ne!(restore_pid, pid);
-            let command = tokio::fs::read(format!("/proc/{restore_pid}/cmdline"))
+            assert!(
+                !launched_cold(&restore_pid).await,
+                "the VMM must load the saved checkpoint"
+            );
+            kill_firecracker(&restore_pid).await;
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if runner.reports().is_empty() && approval.wake.awake.lock().await.is_none() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("the enrolled role and broker must reap the crashed placement");
+            assert!(current.exists(), "the previous checkpoint is still present");
+            let reads =
+                futures_util::future::join_all(after_crash_requests.iter().map(|request| {
+                    dispatch_read(request, ids.personal, items[0].id, "fixture.head")
+                }));
+            for answer in tokio::time::timeout(Duration::from_secs(15), reads)
                 .await
-                .unwrap();
-            assert!(
-                !command
-                    .split(|byte| *byte == 0)
-                    .any(|arg| arg == b"--config-file"),
-                "restored VMM must have loaded a snapshot rather than booted an image"
-            );
-            supervisor.await.unwrap();
-            assert!(
-                matches!(assigned.recv().await.unwrap(), Down::Assign { space_id, .. } if space_id == ids.personal)
-            );
-            assert!(
-                matches!(assigned.recv().await.unwrap(), Down::Assign { space_id, .. } if space_id == ids.personal)
-            );
-            assert!(assigned.recv().await.is_none());
-            state
-                .registry
-                .space_item_head(ids.personal, "fixture.head")
                 .unwrap()
+            {
+                assert_eq!(answer.unwrap(), expected(&items[0]));
+            }
+            let cold_pid = firecracker_pid(&run).await;
+            assert!(launched_cold(&cold_pid).await);
+            supervisor.await.unwrap();
+            for _ in 0..3 {
+                assert!(
+                    matches!(assigned.recv().await.unwrap(), Down::Assign { space_id, .. } if space_id == ids.personal)
+                );
+            }
+            assert!(assigned.recv().await.is_none());
+            approval
                 .wake
                 .awake
                 .lock()
@@ -456,7 +476,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                 .fence
                 .close();
             tokio::time::timeout(Duration::from_secs(2), async {
-                while tokio::fs::try_exists(format!("/proc/{restore_pid}"))
+                while tokio::fs::try_exists(format!("/proc/{cold_pid}"))
                     .await
                     .unwrap()
                 {

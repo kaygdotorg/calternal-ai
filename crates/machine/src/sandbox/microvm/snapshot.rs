@@ -226,34 +226,34 @@ pub(super) fn saved_counter(root: &Path) -> io::Result<Option<u64>> {
     }))
 }
 
-/// Record at most two consecutive failures for the authorized generation.
-/// The sidecar is scoped to the server number and survives a role restart.
-pub(super) fn failed_restore(root: &Path, counter: u64) -> io::Result<bool> {
-    let path = root.join("current.failures");
+/// Read the restore failure budget for the exact checkpoint number.
+pub(super) fn restore_failures(root: &Path, counter: u64) -> io::Result<u8> {
     let mut text = String::new();
-    match File::open(&path) {
+    match File::open(root.join("current.failures")) {
         Ok(file) => {
             file.take(64).read_to_string(&mut text)?;
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
-    let exhausted = text.trim() == format!("{counter} 1") || text.trim() == format!("{counter} 2");
-    calternal_fsio::write_atomic_mode(
-        &path,
-        format!("{counter} {}\n", if exhausted { 2 } else { 1 }).as_bytes(),
-        0o600,
-    )?;
-    Ok(exhausted)
+    Ok(if text.trim() == format!("{counter} 2") {
+        2
+    } else if text.trim() == format!("{counter} 1") {
+        1
+    } else {
+        0
+    })
 }
 
-/// Reset the failure budget after successful restored package admission.
-pub(super) fn reset_failures(root: &Path) -> io::Result<()> {
-    match fs::remove_file(root.join("current.failures")) {
-        Ok(()) => calternal_fsio::sync_dir(root),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error),
-    }
+/// Record at most two failures for the authorized generation across role restarts.
+pub(super) fn failed_restore(root: &Path, counter: u64) -> io::Result<bool> {
+    let failures = (restore_failures(root, counter)? + 1).min(2);
+    calternal_fsio::write_atomic_mode(
+        &root.join("current.failures"),
+        format!("{counter} {failures}\n").as_bytes(),
+        0o600,
+    )?;
+    Ok(failures == 2)
 }
 
 fn read_manifest(root: &Path) -> io::Result<Option<String>> {

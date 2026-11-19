@@ -5,7 +5,7 @@ use crate::sandbox::{Exec, OutputEvent};
 use calternal_plugin_host::{
     Error as ProtocolError, MAX_FRAME_BYTES,
     space_channel::{
-        MAX_ACTIVE_TICKETS, PackagePin, SpaceChannel, SpaceMessage,
+        MAX_ACTIVE_TICKETS, PackagePin, SpaceChannel, SpaceDelivery, SpaceMessage,
         child::{ChildFrame, ChildMessage},
     },
 };
@@ -64,6 +64,20 @@ impl Runner {
                 .sandbox(slot, &guard)
                 .await
                 .map_err(|_| ProtocolError::Invocation)?;
+            // A restored guest can report Running once its sandbox exists.
+            // Wait for the host's first admitted request before executing Node.
+            let first = if binding.checkpoint.is_some() {
+                channel.ready(&binding.package)?;
+                let Some(first) = channel.receive().await else {
+                    return Ok(());
+                };
+                if !matches!(first.frame().message, SpaceMessage::Invoke { .. }) {
+                    return Err(ProtocolError::Invalid);
+                }
+                Some(first)
+            } else {
+                None
+            };
             let argv = [
                 "node",
                 "--permission",
@@ -82,7 +96,7 @@ impl Runner {
                 })
                 .await
                 .map_err(|_| ProtocolError::Invocation)?;
-            relay_package(&mut channel, &binding.package, exec).await
+            relay_package(&mut channel, &binding.package, exec, first).await
         };
         tokio::select! {
             _ = session.changed() => {
@@ -106,15 +120,20 @@ async fn relay_package(
     channel: &mut SpaceChannel,
     pin: &PackagePin,
     mut exec: Exec,
+    mut first: Option<SpaceDelivery>,
 ) -> Result<(), ProtocolError> {
     let input = exec.input.take().ok_or(ProtocolError::Invocation)?;
     let mut active = HashMap::<Uuid, Uuid>::new();
     let mut line = Vec::new();
-    channel.ready(pin)?;
+    if first.is_none() {
+        channel.ready(pin)?;
+    }
     let sender = channel.sender();
     loop {
         tokio::select! {
-            item = channel.receive() => {
+            item = async {
+                if first.is_some() { first.take() } else { channel.receive().await }
+            } => {
                 let Some(item) = item else { return Ok(()) };
                 let frame = item.frame();
                 if frame.package.as_deref() != Some(pin.package.as_str())
@@ -221,6 +240,7 @@ mod tests {
                     input: Some(input),
                     events,
                 },
+                None,
             )
             .await
         });

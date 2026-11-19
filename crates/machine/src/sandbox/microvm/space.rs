@@ -130,20 +130,29 @@ impl SmallRuntime {
             let generation = async {
                 if super::snapshot::expired(&saved, RETENTION).await? {
                     erase_saved(saved.clone(), gate.clone()).await?;
-                    return Ok(None);
+                    return Ok((None, false));
                 }
                 let path = saved.clone();
                 let binding = binding.clone();
-                tokio::task::spawn_blocking(move || Generation::current(&path, &binding))
-                    .await
-                    .map_err(SandboxError::new)?
-                    .map(|generation| generation.filter(|generation| generation.counter == counter))
-                    .map_err(SandboxError::new)
+                tokio::task::spawn_blocking(move || {
+                    let generation = Generation::current(&path, &binding)?
+                        .filter(|generation| generation.counter == counter);
+                    let exhausted = generation.is_some()
+                        && super::snapshot::restore_failures(&path, counter)? == 2;
+                    Ok::<_, io::Error>((generation, exhausted))
+                })
+                .await
+                .map_err(SandboxError::new)?
+                .map_err(SandboxError::new)
             }
             .await;
             let mut restored = None;
             let failure = match generation {
-                Ok(Some(generation)) => {
+                Ok((_, true)) => {
+                    discard_after_start = true;
+                    None
+                }
+                Ok((Some(generation), false)) => {
                     match self
                         .restore(&run, &generation, owned.clone(), permit.clone(), &gate)
                         .await
@@ -159,31 +168,14 @@ impl SmallRuntime {
                             Err(SandboxError("Restored plugin Start timed out".into()).into())
                         }) {
                             Ok(()) => {
-                                let path = saved.clone();
-                                if let Err(error) = tokio::task::spawn_blocking(move || {
-                                    super::snapshot::reset_failures(&path)
-                                })
-                                .await
-                                .map_err(SandboxError::new)?
-                                .map_err(SandboxError::new)
-                                {
-                                    vm.stop().await?;
-                                    disk.clear().await?;
-                                    return Err(error);
-                                }
                                 restored = Some((vm, disk));
                                 None
                             }
                             Err(error) => {
                                 vm.stop().await?;
                                 clear_restore_scratch(&run, &generation, gate.clone()).await?;
-                                match error {
-                                    AttemptError::Refused(_) => {
-                                        discard_after_start = true;
-                                        None
-                                    }
-                                    AttemptError::Unavailable(error) => Some(error),
-                                }
+                                discard_after_start = matches!(error, AttemptError::Refused(_));
+                                Some(error.into())
                             }
                         },
                         Err(error) => {
@@ -196,7 +188,7 @@ impl SmallRuntime {
                         }
                     }
                 }
-                Ok(None) => None,
+                Ok((None, false)) => None,
                 Err(error) => Some(error),
             };
             if let Some(error) = failure {
@@ -207,11 +199,13 @@ impl SmallRuntime {
                 .await
                 .map_err(SandboxError::new)?
                 .map_err(SandboxError::new)?;
-                if !exhausted {
-                    return Err(error);
+                if !discard_after_start {
+                    if !exhausted {
+                        return Err(error);
+                    }
+                    tracing::warn!(%space, %error, "small VM checkpoint exhausted its restore attempts");
+                    erase_saved(saved.clone(), gate.clone()).await?;
                 }
-                tracing::warn!(%space, %error, "small VM checkpoint exhausted its restore attempts");
-                erase_saved(saved.clone(), gate.clone()).await?;
             }
             restored
         } else {
