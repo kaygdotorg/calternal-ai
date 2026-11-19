@@ -2145,10 +2145,18 @@
             "sealed_frame.open",
             "sealed_frame.resize",
             "sealed_frame.open_link",
+            "selection.set",
             "composer.options",
-            "selection.set"
+            "undo",
+            "status",
+            "request_resolve",
+            "share_sheet",
+            "trash_sheet",
+            "view.open",
+            "view.renew",
+            "choice.options"
           ],
-          "description": "The host route the component call uses; the request and reply shapes are the catalogue's component_routes (TranscriptPageRequest, TranscriptPage, SealedFrame*), not defined here."
+          "description": "The host route the call uses. The route names are the catalogue's `component_routes` keys; the request and reply shapes are the catalogue's (TranscriptPageRequest, ComposerOptionRequest, ChoiceOptionsRequest, ViewOpenRequest, ShareSheetRequest, ...), cited, never defined here."
         },
         "request": {
           "type": "object"
