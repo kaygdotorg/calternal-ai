@@ -28,15 +28,17 @@
   const items = $derived<MenuItem[]>(menu.map((a) => ({ id: a.id, label: a.title ?? a.id, danger: a.role === "destructive", disabled: off(a) })));
   async function pick(id: string) { menuOpen = false; const a = menu.find((m) => m.id === id); if (a && "operation" in a) await ui.invoker.run(a, { context: ctx(a) }); }
 
-  // Swipe (touch only): drag the row left; past 45% of its width the first trailing action runs if it is a catalogue-approved full swipe.
-  let dx = $state(0), x0 = 0, w = 1, drag = false;
-  const swipe = $derived(trail[0] && "operation" in trail[0] && trail[0].fullSwipe === true && fullSwipeAllowed(trail[0].operation) ? trail[0] : null);
-  function down(e: PointerEvent) { if (e.pointerType !== "touch" || !swipe) return; x0 = e.clientX; w = (e.currentTarget as HTMLElement).clientWidth || 1; drag = true; }
-  function move(e: PointerEvent) { if (drag) dx = Math.min(0, e.clientX - x0); }
+  // Swipe (touch only): dragging a row right shows its leading actions, left its trailing ones; past 45% of the row's width the FIRST action of that side runs, but only if it is a full swipe the catalogue allows for its
+  // operation (`full_swipe`). The same actions are buttons and menu items, so a swipe is never the only way, and a swipe never opens a confirmation or runs a plugin operation.
+  let dx = $state(0), x0 = 0, y0 = 0, w = 1, drag = false;
+  const fullOf = (a: Action | undefined) => (a && "operation" in a && a.fullSwipe === true && fullSwipeAllowed(a.operation) ? a : null);
+  const swipeRight = $derived(fullOf(lead[0])), swipeLeft = $derived(fullOf(trail[0]));
+  function down(e: PointerEvent) { if (e.pointerType !== "touch" || (!swipeRight && !swipeLeft)) return; x0 = e.clientX; y0 = e.clientY; w = (e.currentTarget as HTMLElement).clientWidth || 1; drag = true; }
+  function move(e: PointerEvent) { if (!drag) return; const d = e.clientX - x0; if (Math.abs(e.clientY - y0) > Math.abs(d) * 1.5 && Math.abs(d) < 12) return; dx = d > 0 ? (swipeRight ? d : 0) : swipeLeft ? d : 0; }
   async function up() {
     if (!drag) return; drag = false;
-    const full = swipe && -dx > w * 0.45; dx = 0;
-    if (full && swipe) await ui.invoker.run(swipe, { context: ctx(swipe) });
+    const act = dx > w * 0.45 ? swipeRight : -dx > w * 0.45 ? swipeLeft : null; dx = 0;
+    if (act) await ui.invoker.run(act, { context: ctx(act) });
   }
 </script>
 

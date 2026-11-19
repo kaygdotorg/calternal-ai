@@ -6,7 +6,7 @@
 /** One route of the exchange; the names are the catalogue's event families. */
 export type Route =
   | "view.open" | "view.renew" | "window" | "selection.settled" | "selection.set"
-  | "search" | "activation.resolve" | "activation.confirm" | "activation.dispatch" | "choice.options" | "undo" | "status";
+  | "search" | "transcript.page" | "composer.options" | "request.resolve" | "request.card" | "activation.resolve" | "activation.confirm" | "activation.dispatch" | "choice.options" | "undo" | "status";
 
 /** A host answer that is not a sealed reply: the HTTP status and, when the body said so, the host's own code and message. */
 export class HostError extends Error {

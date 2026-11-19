@@ -5,6 +5,7 @@ import "@calternal/ui/styles";
 import { initInputModality, initScheme } from "@calternal/ui";
 import { AppView, HostSession, HttpTransport, ProductTransport, type AppDescription } from "../src";
 import { MockHost } from "../testing/mock-host";
+import { SyntheticSource } from "../testing/synthetic-source";
 // every sealed description fixture, by file name without the extension
 const all = import.meta.glob("../../../contract/fixtures/description-v2/*.json", { eager: true, import: "default" }) as Record<string, unknown>;
 
@@ -29,9 +30,11 @@ const parentBinds = (description.binds ?? []).filter((b) => (b.source as { paren
 const transport = rows > 0 && !product
   ? new MockHost({ rows, parentBinds, rowsFor: (b) => ((description.binds ?? []).find((x) => x.id === b)?.source.type === "item" ? 1 : rows), count: (q.get("count") as "exact" | "none") ?? "exact", latencyMs: Number(q.get("latency") ?? 0), skipLimit: q.has("skip") ? Number(q.get("skip")) : undefined, endUnavailable: q.get("noend") === "1", fields: (i, bind) => ({ title: `${bind} ${i}`, added: 1_700_000_000 - i, read: i % 7 === 0, updated: 1_700_000_000 - i, pinned: i % 11 === 0, snippet: `Snippet of ${bind} ${i}`, thumbnail: `thumb-${i}-aaaaaaaaaaaaaaaaaaaaaaaa`, due: "Fri", unread: i % 3 === 0 }) })
   : product ?? new HttpTransport({ base: q.get("host")!, bearer });
-const session = new HostSession({ transport });
+// `?synthetic=1`: the routes the host has no answer for (transcript, composer options and send, request card) come from the stand-in; everything else passes through.
+const source = q.get("synthetic") === "1" ? new SyntheticSource({ inner: transport }) : transport;
+const session = new HostSession({ transport: source });
 const w = window as unknown as Record<string, unknown>;
-w.__session = session; w.__t0 = performance.now(); w.__transport = transport;
+w.__session = session; w.__t0 = performance.now(); w.__transport = transport; w.__source = source;
 const t0 = performance.now();
 await session.open(viewRef);
 w.__opened = performance.now() - t0;

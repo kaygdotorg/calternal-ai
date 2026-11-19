@@ -3,7 +3,7 @@
   // place that draws the bind, holds the route parameters (selectors and row `open` set them; binds that read a route parameter start over when it changes), and refuses a description it cannot draw. It holds no app-specific
   // code: what is drawn is only what the description declares; the page supplies the host components and the shell's own controls.
   import { onDestroy, setContext, untrack, type Component } from "svelte";
-  import { Glass } from "@calternal/ui";
+  import { Glass, Toasts } from "@calternal/ui";
   import type { AppDescription, Bind } from "../model";
   import type { HostSession } from "../wire/session";
   import { refusalOf } from "../check";
@@ -15,6 +15,7 @@
   import Sidebar from "./Sidebar.svelte";
   import Node from "./Node.svelte";
   import HostComponent from "./HostComponent.svelte";
+  import { hostComponents } from "../components/registry";
   import ActionButton from "./ActionButton.svelte";
 
   // `description` and `session` are fixed for the life of one AppView (a new description or session is a new mount): they are read once.
@@ -68,7 +69,7 @@
   const selections = new Map<string, Selection>();
   const selectionFor = (id: string): Selection => { let x = selections.get(id); if (!x) { x = new Selection(id, session); selections.set(id, x); } return x; };
   const kindIconFor = (id: string): string | undefined => { const k = binds.get(id)?.source.kind; return k ? props.kindIcons?.[k] : undefined; };
-  const app: AppContext = { storeFor, selectionFor, kindIconFor, route, setRoute, get components() { return props.components ?? {}; }, onshell: (a) => props.onshell?.(a), openApp: (id) => props.openApp?.(id) };
+  const app: AppContext = { storeFor, selectionFor, kindIconFor, route, setRoute, get components() { return { ...hostComponents, ...(props.components ?? {}) } as AppContext["components"]; }, onshell: (a) => props.onshell?.(a), openApp: (id) => props.openApp?.(id) };
   setContext(APP_KEY, app);
   session.held = () => Object.fromEntries([...stores.values()].filter((s) => s.windowRef && s.resultVersion).map((s) => [s.windowRef!, s.resultVersion!]));
   onDestroy(() => { for (const s of stores.values()) s.destroy(); session.close(); });
@@ -103,6 +104,7 @@
   </div>
 {/if}
 <ActionHost {ui} />
+<Toasts />
 
 <style>
   /* The shell look of packages/ui: floating glass panes (sidebar, card, panel) over the page's own ground, one pane radius. */

@@ -18,3 +18,5 @@ export { ActionUi } from "./invoke/actions.svelte";
 export { ACTIONS_KEY, type ActionContext } from "./invoke/context";
 export { default as HostComponent } from "./render/HostComponent.svelte";
 export { APP_KEY, useApp, type AppContext } from "./invoke/context";
+export { hostComponents } from "./components/registry";
+export { resolveRef } from "./components/ref";
