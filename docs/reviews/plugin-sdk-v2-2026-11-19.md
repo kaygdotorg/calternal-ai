@@ -152,6 +152,30 @@ schedule to deliver once. Revoke access before a later invocation and
 confirm the host refuses the effect. Record worker cleanup and the author's
 uncertainties alongside the first-attempt outcome.
 
+## Trusted worker pins
+
+The lane adds authoring re-exports to the SDK entry point. The affected
+workers import that entry point. A rebuild of both trees on dev02 used the
+same esbuild 0.25.12 installation. All shared lockfile entries retained
+their version, resolved archive and integrity hash.
+
+| Worker | Change in the bundle |
+| --- | --- |
+| Notes Insights | SDK re-exports changed minified identifier names. The unminified and identifier-preserving builds were byte-for-byte equal to `dev`. |
+| Plugin Guide | `reference.md`, `walkthrough.md`, and the authoring skill's `SKILL.md` are embedded in the worker. Their new text changes those three string constants. The SDK re-exports also changed minified identifiers. |
+| Plugin Submission Guide | SDK re-exports changed minified identifier names. The unminified and identifier-preserving builds were byte-for-byte equal to `dev`. |
+
+A controlled build with only the SDK change reproduced the new Notes
+Insights and Submission Guide digests. A build with only the revised guide
+text matched the complete Plugin Guide bundle when identifier minification
+was disabled. The three pins were refreshed from the production build.
+
+The previous gate built the bundles and exercised workspace tests, but it
+never compared the built bytes with the trusted distribution seed.
+`npm run test:plugins` now runs the existing SHA-256 pin check as its last
+step. The gate failed with the old seed and passed after the pins were
+refreshed.
+
 ## Simplification opportunities
 
 A future verifier could return its checked JSON projection so authoring
