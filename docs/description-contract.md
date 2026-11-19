@@ -350,6 +350,98 @@ plugin code). A description can run a named **invoke** on a component's event on
 * **Reduced motion and keyboard** follow `docs/native-feel.md` for everything a component draws.
 * **Events never carry worker payload.** A component event reaches a named invoke only as typed inputs (an id, a selected passage the person chose).
 
+### 5.1 Host surfaces and navigation on the wire
+
+A route-dependent Bind uses the same `route` operands on its window, settled
+selection and explicit selection set. View-open accepts operands for
+view-level actions and components. The shell supplies at most eight declared
+names and opaque refs. The host verifies declaration, kind, space, live
+viewer authority and the specific Bind or component before issuing results.
+Reject undeclared names or a missing required value. A change of relevant
+route drops the old selection and opens new view scope for view actions and
+components. Activation carries only its issued context and device material.
+It never carries the raw route values again. After an `ok` outcome,
+`then.route.name` takes the host-issued `created` value if present. A missing
+`created` leaves the route unchanged.
+
+**Composer.** In `view.open`, `composer_actions[component_id]` names the
+host-issued `send` and optional `stop` action IDs. Their tokens come from
+`activation_contexts`, refreshed by renewal. The component ID is the lookup
+key. Omit an action when authority or a current target is missing. Resolve
+Send with the checked draft refs and opaque options when prepared material
+changes. The host returns a prepared resolution and challenge bound to that
+material. Submit `invoke_confirm` with `final_text` and the prepared IDs.
+The host commits and returns the `ActionOutcome` directly, without a
+separate dispatch. Retry precisely the same activation and final text until
+the receipt is known. Change either material or text after a committed
+intent only with a new activation. Stop uses the host's action context and
+the execution it resolves.
+
+Ask for `provider` first, then `model` for that provider, then `reasoning`
+for both. `permission` and `machine` are independently requested, with all
+preceding choices supplied in `options` for eligibility checks. Pass the
+opaque refs under the same control names in `Interaction.options`.
+`selected` is the host's current choice, `default` its suggested choice.
+Either may be null. A changed upstream option discards dependent choices and
+their pages. A cursor stays bound to this actor, conversation, control and
+options. No control guesses a choice the host did not offer.
+
+An authorised renderer calls `request-card.read` for the bound request and
+component within the current view lease. Draw the host record and only its
+offered decisions and approval lifetimes. Use the same record's
+`card_context` with `RequestCardResolve`; Approve and Deny are host decisions
+with no author-defined action ID. Keep a closed card read-only. Limit each
+delivery to 16 KiB including material. A refusal discloses no card contents.
+
+**Transcript.** The canonical record has a stable `record_id`, a `role`
+(person, agent, automation), bounded text and an optional authorised pinned
+body. Notice and request-card records use their own typed shapes. A provider
+delta or tool frame is a producer input. The host scrubs and folds it into
+the common record. `TranscriptUpdate` on the same subscription upserts
+committed records and replaces the one optional provisional text preview.
+A later commit with that ID replaces the preview. The preview has no durable
+cursor. Apply updates only for the matching conversation and lease, skip
+superseded previews, and catch up with the last committed cursor. Coalesce
+to at most 10 updates a second per open transcript under the byte cap.
+Quote from a committed record via `transcript.quote`, using a UTF-8 byte
+range. Use the resulting typed quote and show its host-produced preview.
+Attachments and mention lookup controls require a host implementation of
+their existing upload or lookup authority. The base renderer omits those
+controls until their portable request/reply shapes qualify. Checked refs
+already present in a draft retain the catalogue shape.
+
+**Editor and frame.** `editor.open` returns an authorised head, revision and
+byte length. The shell reads pinned byte pages and saves with the existing
+range and staged-save engine contracts in the Plugin API. The portable first
+path is a revision-checked whole-document save. A conflict returns the
+current head and keeps the local draft. Live rooms remain a separate
+negotiated transport with edit authorization. `sealed_frame.open` returns a
+short-lived same-host content URL, enforced CSP and byte ceiling. Load in an
+isolated, non-persistent sandbox with network denied except for the pinned
+content delivery. Recheck the audience and lease before serving the bytes.
+External navigation uses the existing checked open-link request.
+
+**Host decoration.** A member view can receive `kind_icons`, an opaque
+`viewer.person` and a space `viewer.role`, and the account name and initial
+from view-open. Use a stock symbol if a kind has no supplied icon. Evaluate a
+row's `disabled` from its projected row fields. Compare a `viewer` predicate
+only with the authenticated account ref supplied for that projection. An
+absent required field or viewer value disables the action. `showWhen.minRole`
+uses the current member role and hides the control if none is available. The
+account menu is the host shell's existing space, settings and sign-out
+surface. Guest and public views receive none of these identity fields.
+
+**Search and counts.** The shell posts settled text and optional `match` to
+`search.settled`. Acknowledgement names the Bind. Clear previous result
+versions and open a new start-anchored window at offset zero. The declared
+`field_filter` stays in the Bind. If a newer settle superseded this one,
+ignore its acknowledgement and results. Exact counts draw as numbers.
+Estimates draw as “about N”. Omit an unavailable count or badge. Exact empty
+has zero. Explicit selection sets remain limited to 50 stable issued rows.
+The generic renderer omits Select All when more than 50 eligible rows are
+required. Large set actions need an operation-specific protected host selection
+such as Empty Trash.
+
 ## 6. What may be cached on the device
 
 `cache.templates` is `keep` (default) or `none`; `cache.memberRows` is `keep` (default) or `none`; `maxAgeDays` bounds what is kept (1 to 90, default 30; persisted member rows are capped at 14).
@@ -363,6 +455,15 @@ plugin code). A description can run a named **invoke** on a component's event on
   On write and load check the schema, host proof, scope, opt-ins and expiry (§4.2 of the Plugin API). Load only into the matching own-space root display.
   Encrypt with account- and space-bound keys. On an unlocked device paint at launch as unconfirmed, then confirm or correct the rows with the first host answer.
   Keep for at most 14 days or `maxAgeDays` if shorter. Erase on sign-out, account switch or known revocation. Every action needs a fresh host context.
+  Validate the Ed25519 proof against the host's public key received on an
+  authenticated connection, pinned with the expected host and account before
+  offline use. The catalogue fixes the domain-separated canonical input and
+  wire format. The proof is invalid if its key is unknown or withdrawn. On
+  rotation replace proofs or drop cached rows. Discard superseded renewal
+  replies. A changed grant invalidates old rows, selections, contexts, image
+  refs and page results. If the lease lapses, hide live rows and show loading
+  for still-authorised Binds after reopening. Only the opted-in own-space
+  display record can paint unconfirmed.
   *Sol's recorded objection:* protected rows should be revalidated by the host before they are painted, because a revocation the device has not yet learned of leaves titles visible for the
   moment before the first answer; the owner accepted that cost knowingly in exchange for an instant first paint. The mitigations are the conditions above (short retention, device lock, key
   binding, erase on a known revocation).

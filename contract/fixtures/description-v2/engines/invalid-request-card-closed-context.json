@@ -1,0 +1,12 @@
+{
+  "definition": "RequestCardRecord",
+  "value": {
+    "request_ref": "request-ref",
+    "title": "Approve edit",
+    "state": "approved",
+    "material": [],
+    "actions": [],
+    "card_context": "stale-context"
+  },
+  "error": "not allowed here"
+}

@@ -5,6 +5,14 @@ generic conversation and execution engines. Freeze after the §8 spikes. Fixture
 [Owner’s interface, runtime and sharing decisions](open-questions.md#recently-decided-2026-11-17-now-in-the-decision-records).
 
 This draft is a first-release delta on revision 13.18 at `0466f80c`.
+The draft also works through the renderer findings against the sealed revision 13.
+[Description §5.1](description-contract.md#51-host-surfaces-and-navigation-on-the-wire)
+and its catalogue entries define the host wire for rendered components.
+A route operand is a checked navigation hint. Only a fresh host context
+confers activation authority. Row-image reads go to the originating view
+host using its bearer and current view lease. A refused or expired image
+is absent and uses the existing fallback. The renderer formats RFC 3339
+timestamps locally using the device time zone and locale.
 See the [sealed generic engines proposal][generic-engines] and
 [independent runner walkthrough][runner-walk]. Owner decisions and
 qualification remain open. Existing provider behavior stays in the
@@ -80,6 +88,13 @@ and launches the adapter inside the agent sandbox, outside the plugin wall
 and without machine-control authority. Provider-only and static packages
 can omit a broker worker. Operations, jobs, schedule eligibility and
 credential routes require one.
+
+The bundled Claude Code and Codex provider contributions each ship their
+signed gallery entry with their distribution package. Verify the entry
+through the same gallery publisher key and package digest checks used for
+community contributions. Use the verified entry when showing the provider
+mark. A bad signature, different publisher or mismatched package digest
+drops the verified mark.
 
 A kind with `claimed_text: true` may declare `searchable: true` to opt into
 the host’s background search projection and the claimed-text plans in
@@ -1386,3 +1401,24 @@ for the revision 4 through 6 finding maps.
 [runner-walk]: https://git.kayg.org/kayg/calternal-ai/src/commit/ad6fc02e/docs/proposals/independent-runner-walk-2026-11-20.md
 [provider-probe]: https://git.kayg.org/kayg/calternal-ai/src/commit/b3964ef3/docs/measurements/provider-credential-brokering-2026-11-20.md
 [renderer-gaps]: https://git.kayg.org/kayg/calternal-ai/src/commit/880f524b918e2bb2850cafaaa58c66a40f3a208a/docs/reviews/v2-renderer-contract-gaps-2026-11-20.md
+
+### Owner question · Which sidebar sections feed an iPad list column?
+
+A three-column iPad layout needs a rule for turning the plugin description's
+sidebar into the list to browse. For example, Threads can show Inbox, All
+and two personal sections. The rule determines whether those are four
+separate destinations or sections in one scrollable list.
+
+- **One selected section.** The middle column renders the current section
+  and its Bind. This preserves per-section selection, windows and counts
+  and avoids loading unrelated sections. Moving from Inbox to a personal
+  section requires switching sections.
+- **A list of eligible sections.** The middle column composes whichever
+  sidebar sections the owner designates as list content. This can show
+  Inbox and personal placements together. It adds simultaneous window and
+  context budgets and needs a rule for repeated items and selection. No
+  section may inherit another section's authority.
+
+Recommendation for review is one selected section because it uses the
+existing navigation and Bind scopes. The first iPad list-column contract
+waits for the owner to decide.

@@ -2390,7 +2390,9 @@
           ]
         },
         "text": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 65536,
+          "description": "Canonical transcript record text. Use the host’s restricted Markdown renderer or show it as plain text. Embedded HTML is text."
         },
         "body": {
           "$ref": "#/$defs/Ref"
@@ -2527,6 +2529,9 @@
         "sentAt": {
           "type": "number",
           "description": "Optional renderer telemetry. Never used for authorization, ordering or expiry."
+        },
+        "route": {
+          "$ref": "#/$defs/RouteOperands"
         }
       }
     },
@@ -2671,7 +2676,7 @@
         "Timestamp",
         "ItemRef",
         "CollectionRef",
-            "ExecutionRef",
+        "ExecutionRef",
         "RequestRef",
         "AccountRef",
         "ProviderId",
@@ -2791,6 +2796,82 @@
         },
         "audience": {
           "$ref": "#/$defs/WindowAudience"
+        },
+        "composer_actions": {
+          "type": "object",
+          "maxProperties": 8,
+          "additionalProperties": {
+            "$ref": "#/$defs/ComposerActionIds"
+          }
+        },
+        "kind_icons": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "viewer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "person",
+            "role"
+          ],
+          "properties": {
+            "person": {
+              "$ref": "#/$defs/AccountRef"
+            },
+            "role": {
+              "enum": [
+                "reader",
+                "editor",
+                "manager",
+                "owner"
+              ]
+            }
+          }
+        },
+        "account": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "initial"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "initial": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8
+            }
+          }
+        },
+        "cache_proof_key": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "key_id",
+            "public_key"
+          ],
+          "properties": {
+            "key_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "public_key": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          }
         }
       }
     },
@@ -3118,6 +3199,9 @@
         },
         "view_ref": {
           "$ref": "#/$defs/Ref"
+        },
+        "route": {
+          "$ref": "#/$defs/RouteOperands"
         }
       }
     },
@@ -3228,6 +3312,9 @@
         },
         "anchor": {
           "$ref": "#/$defs/WindowAnchor"
+        },
+        "route": {
+          "$ref": "#/$defs/RouteOperands"
         }
       },
       "allOf": [
@@ -3333,6 +3420,9 @@
         "sentAt": {
           "type": "number",
           "description": "Optional telemetry. Never used for authorization or ordering."
+        },
+        "route": {
+          "$ref": "#/$defs/RouteOperands"
         }
       },
       "description": "Settled single selection in the current authorized view. The host validates the drawn row under the Bind and returns its SelectionContextResult."
@@ -3425,12 +3515,17 @@
                 "description": "Authorized timestamp of the first declared date part, if approved for offline display. Use the format of that part from the pinned row template on the device. For Notes this is the date from its secondary line."
               }
             },
-            "not": { "required": ["subtitle", "subtitle_timestamp"] }
+            "not": {
+              "required": [
+                "subtitle",
+                "subtitle_timestamp"
+              ]
+            }
           }
         },
         "proof": {
           "$ref": "#/$defs/ProofRef",
-          "description": "Host authentication of the complete record excluding this proof, verified against the expected host on disk write and load. Conveys no action or renewal authority."
+          "description": "Proof wire form ed25519.<key_id>.<base64url signature>, over the domain string calternal-member-row-cache-v2 followed by LF and RFC 8785 canonical JSON of this record without proof."
         }
       },
       "description": "The only persistable viewer projection. Issue only on an opted-in, ready or empty start-anchored root window for a live own-space member whose Bind has invariant query inputs. A list may name a literal collection. No reference, search text, route, form, selection or parent operand in its source, filter or sort. Authenticate the account, space, template, Bind, window and offset. The host builds the display record from the authoritative title and host-allowlisted non-body display fields approved for offline use. Exclude body excerpts and any field marked body_derived from every display part, regardless of its template position. Omit the record if any required title is ineligible. Body-derived parts appear only from a fresh authorized window. Never include row IDs, contexts, action material or credentials."
@@ -3533,7 +3628,7 @@
         "prefix"
       ],
       "default": "terms",
-      "description": "Terms combines compiled literal tokens with AND within query.search.max_literal_and_terms. Prefix explicitly requests one literal token prefix within query.search.max_token_prefix_expansions. Punctuation never chooses the match shape. Raw Boolean, phrase and fuzzy syntax and mixtures of terms and prefixes are unqualified."
+      "description": "Terms combines compiled literal tokens with AND within query.search.max_literal_and_terms. Prefix explicitly requests one literal token prefix within query.search.max_token_prefix_expansions. Punctuation never chooses the match shape. Raw Boolean, phrase and fuzzy syntax and mixtures of terms and prefixes are unqualified. The active search uses this input independently of the Bind field filter."
     },
     "RowImageRef": {
       "type": "string",
@@ -3584,6 +3679,370 @@
         }
       },
       "description": "The shared window envelope validated after resolving its Bind as a search. A missing anchor defaults to start. Refuse an end anchor with end_unavailable."
+    },
+    "RouteOperands": {
+      "type": "object",
+      "maxProperties": 8,
+      "propertyNames": {
+        "$ref": "#/$defs/ActionId"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/Ref"
+      },
+      "description": "Device navigation supplies opaque references. Reject an undeclared name or inaccessible reference. This object conveys no activation authority."
+    },
+    "ComposerActionIds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "send"
+      ],
+      "properties": {
+        "send": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "stop": {
+          "$ref": "#/$defs/ActionId"
+        }
+      }
+    },
+    "TranscriptUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conversation",
+        "committed_cursor",
+        "upserts"
+      ],
+      "properties": {
+        "conversation": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "committed_cursor": {
+          "$ref": "#/$defs/TranscriptCursor"
+        },
+        "notices": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "label",
+              "at",
+              "state"
+            ],
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "at": {
+                "$ref": "#/$defs/Timestamp"
+              },
+              "state": {
+                "enum": [
+                  "attempted",
+                  "done"
+                ]
+              }
+            }
+          }
+        },
+        "upserts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CommittedTranscriptRecord"
+          },
+          "maxItems": 128
+        },
+        "preview": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "record_id",
+            "text"
+          ],
+          "properties": {
+            "record_id": {
+              "$ref": "#/$defs/Ref"
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 65536
+            }
+          }
+        }
+      }
+    },
+    "QuoteRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conversation",
+        "record_id",
+        "from_utf8",
+        "to_utf8"
+      ],
+      "properties": {
+        "conversation": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "record_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "from_utf8": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "to_utf8": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        }
+      }
+    },
+    "QuotePreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quote",
+        "preview"
+      ],
+      "properties": {
+        "quote": {
+          "$ref": "#/$defs/Quote"
+        },
+        "preview": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    },
+    "RequestCardRead": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component",
+        "request_ref"
+      ],
+      "properties": {
+        "component": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "request_ref": {
+          "$ref": "#/$defs/RequestRef"
+        }
+      }
+    },
+    "RequestCardRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_ref",
+        "title",
+        "material",
+        "state",
+        "actions"
+      ],
+      "properties": {
+        "request_ref": {
+          "$ref": "#/$defs/RequestRef"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "material": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfirmationMaterial"
+          },
+          "maxItems": 32
+        },
+        "state": {
+          "enum": [
+            "open",
+            "approved",
+            "denied",
+            "expired"
+          ]
+        },
+        "card_context": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "decision"
+            ],
+            "properties": {
+              "decision": {
+                "enum": [
+                  "approve",
+                  "deny"
+                ]
+              },
+              "lifetimes": {
+                "type": "array",
+                "maxItems": 2,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "once",
+                    "this_thread"
+                  ]
+                }
+              }
+            }
+          },
+          "maxItems": 2
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "open"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "card_context"
+            ],
+            "properties": {
+              "actions": {
+                "minItems": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "card_context": false,
+              "actions": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "EditorOpenRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component",
+        "item"
+      ],
+      "properties": {
+        "component": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        }
+      }
+    },
+    "EditorHead": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item",
+        "revision",
+        "bytes"
+      ],
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "revision": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2097152
+        }
+      }
+    },
+    "SealedFrameContent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "content_url",
+        "csp",
+        "max_bytes"
+      ],
+      "properties": {
+        "content_url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "csp": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 262144
+        }
+      }
+    },
+    "SettledSearchResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bind"
+      ],
+      "properties": {
+        "type": {
+          "const": "search_settled"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        }
+      }
+    },
+    "SettledSearchRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "text"
+      ],
+      "properties": {
+        "type": {
+          "const": "search"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "match": {
+          "$ref": "#/$defs/SearchMatchShape"
+        }
+      }
     }
   },
   "activation_limits": {
@@ -3668,9 +4127,9 @@
         "$ref": "#/$defs/TranscriptPageRequest"
       },
       "output_schema": {
-        "$ref": "#/$defs/TranscriptPage"
+        "$ref": "#/$defs/TranscriptUpdate"
       },
-      "scope": "Use the existing authenticated view subscription for one active conversation. Start with the same checked after cursor (no before). Deliver committed record-page upserts by record UUID with the committed cursor. Cancel on route, lease or audience change. Coalesce under the existing transcript rate and byte bounds."
+      "scope": "Same authenticated view subscription. Upsert committed records by record_id. Replace the single optional provisional preview on every update. Only the committed_cursor is resumable. Cancel on route, lease or audience change."
     },
     "transcript.page": {
       "input_schema": {
@@ -3687,7 +4146,10 @@
         "$ref": "#/$defs/SealedFrameOpen"
       },
       "scope": "Authorized committed revision and current audience",
-      "max_ref_seconds": 300
+      "max_ref_seconds": 300,
+      "output_schema": {
+        "$ref": "#/$defs/SealedFrameContent"
+      }
     },
     "sealed_frame.resize": {
       "input_schema": {
@@ -3800,6 +4262,42 @@
       },
       "scope": "Current authorized Bind and lease. Reconstruct the exact stable row named by the settled selection before issuing contexts.",
       "surface": "direct_shell"
+    },
+    "transcript.quote": {
+      "input_schema": {
+        "$ref": "#/$defs/QuoteRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/QuotePreview"
+      },
+      "scope": "For one authorized committed record, verify ordered range on UTF-8 character boundaries and bound excerpt bytes. Bind the token to actor, conversation and the pinned record."
+    },
+    "request-card.read": {
+      "input_schema": {
+        "$ref": "#/$defs/RequestCardRead"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/RequestCardRecord"
+      },
+      "scope": "Current member lease, declared component, exact reconstructed request and designated actor. Recheck authority before rendering and resolution. Reply with opaque not-found on any mismatch."
+    },
+    "editor.open": {
+      "input_schema": {
+        "$ref": "#/$defs/EditorOpenRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/EditorHead"
+      },
+      "scope": "Current view lease and exact checked item bound to the declared editor component. Returns only the authorized committed head pinned for the range route."
+    },
+    "search.settled": {
+      "input_schema": {
+        "$ref": "#/$defs/SettledSearchRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/SettledSearchResult"
+      },
+      "scope": "Settle text and optional match for one authorized search Bind. Use only the Bind’s field filter. Clear its previous results before issuing a new offset-zero window."
     }
   },
   "conversation_capability": {

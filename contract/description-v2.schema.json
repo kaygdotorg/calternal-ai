@@ -2369,28 +2369,7 @@
       "description": "A route parameter changed (a row opened, a selector option chosen)."
     },
     "EventSearch": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "const": "search"
-        },
-        "bind": {
-          "$ref": "#/$defs/Id"
-        },
-        "match": {
-          "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SearchMatchShape"
-        },
-        "text": {
-          "type": "string",
-          "maxLength": 200
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "text"
-      ],
-      "description": "Send the settled text for the named search Bind, or for the active footer search Bind when bind is omitted. The authenticated Bind supplies the optional field filter. The event supplies text and may request a match shape independently."
+      "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SettledSearchRequest"
     },
     "EventSection": {
       "type": "object",

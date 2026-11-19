@@ -1,0 +1,22 @@
+{
+  "definition": "ViewOpenResult",
+  "value": {
+    "lease": {
+      "lease_ref": "lease",
+      "lease_seconds": 15,
+      "grant_revision": "current",
+      "cache_partition": "personal"
+    },
+    "activation_contexts": {
+      "composer.17": "context-send",
+      "composer.18": "context-stop"
+    },
+    "composer_actions": {
+      "embedded-composer": {
+        "send": "composer.17",
+        "stop": "composer.18"
+      }
+    },
+    "audience": "own_space_member"
+  }
+}
