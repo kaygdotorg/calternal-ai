@@ -33,9 +33,10 @@ Recorded test fixture:
 ```text
 exit: 0
 --- stdout ---
-PLUGIN                    WORKER                                   SHA-256  STATE
-calternal-notes-insights  calternal-notes-insights/dist/worker.js  -        unreadable: worker: No such file or directory (os error 2)
-calternal-plugin-guide    calternal-plugin-guide/dist/worker.js    -        unreadable: worker: No such file or directory (os error 2)
+PLUGIN                             WORKER                                            SHA-256  STATE
+calternal-notes-insights           calternal-notes-insights/dist/worker.js           -        unreadable: worker: No such file or directory (os error 2)
+calternal-plugin-guide             calternal-plugin-guide/dist/worker.js             -        unreadable: worker: No such file or directory (os error 2)
+calternal-plugin-submission-guide  calternal-plugin-submission-guide/dist/worker.js  -        unreadable: worker: No such file or directory (os error 2)
 --- stderr ---
 ```
 
@@ -62,6 +63,13 @@ exit: 0
         "sha256": null,
         "state": "unreadable: worker: No such file or directory (os error 2)",
         "worker": "calternal-plugin-guide/dist/worker.js"
+      },
+      {
+        "id": "calternal-plugin-submission-guide",
+        "pinned": false,
+        "sha256": null,
+        "state": "unreadable: worker: No such file or directory (os error 2)",
+        "worker": "calternal-plugin-submission-guide/dist/worker.js"
       }
     ]
   },
