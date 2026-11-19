@@ -1,0 +1,183 @@
+{
+  "measured_commit": "bbc10beb8c842d0b2e4ba7842bb3895f424103bb",
+  "host": "calternal-perf-01-backup01",
+  "lock": "/usr/local/bin/perf-lock.sh",
+  "build_host": "calternal-dev-01-compute02",
+  "append_p95_budget_ms": 40,
+  "http_large": {
+    "commit": "bbc10beb8c842d0b2e4ba7842bb3895f424103bb",
+    "physical_bytes_before_append": 16727978,
+    "measurements": [
+      {
+        "metric": "threads.16mib.append",
+        "p50": 51.80448,
+        "p95": 68.005928,
+        "p99": 79.880165,
+        "max": 79.880165,
+        "samples": 30,
+        "breached": true
+      },
+      {
+        "metric": "threads.16mib.tail",
+        "p50": 4.702205,
+        "p95": 13.196112,
+        "p99": 13.715935,
+        "max": 13.715935,
+        "samples": 30,
+        "breached": false
+      },
+      {
+        "metric": "threads.16mib.exact",
+        "p50": 3.984873,
+        "p95": 10.124077999999999,
+        "p99": 12.653635999999999,
+        "max": 12.653635999999999,
+        "samples": 30,
+        "breached": false
+      },
+      {
+        "metric": "threads.16mib.message_index_rebuild",
+        "p50": 895.569025,
+        "p95": 895.569025,
+        "p99": 895.569025,
+        "max": 895.569025,
+        "samples": 1,
+        "breached": false
+      }
+    ],
+    "breached": true
+  },
+  "http_small": {
+    "commit": "bbc10beb8c842d0b2e4ba7842bb3895f424103bb",
+    "physical_bytes_before_append": 2612,
+    "measurements": [
+      {
+        "metric": "threads.small.append",
+        "p50": 51.482538,
+        "p95": 55.587194,
+        "p99": 57.837448,
+        "max": 57.837448,
+        "samples": 30,
+        "breached": false
+      }
+    ],
+    "breached": false
+  },
+  "traced_large": {
+    "commit": "bbc10beb8c842d0b2e4ba7842bb3895f424103bb",
+    "physical_bytes_before_append": 16727978,
+    "measurements": [
+      {
+        "metric": "threads.16mib.append",
+        "p50": 51.847744,
+        "p95": 62.56263800000001,
+        "p99": 63.497598,
+        "max": 63.497598,
+        "samples": 20,
+        "breached": true
+      },
+      {
+        "metric": "threads.16mib.tail",
+        "p50": 188.922369,
+        "p95": 208.95913099999999,
+        "p99": 212.940887,
+        "max": 212.940887,
+        "samples": 20,
+        "breached": true
+      },
+      {
+        "metric": "threads.16mib.exact",
+        "p50": 164.553925,
+        "p95": 189.707028,
+        "p99": 193.02291799999998,
+        "max": 193.02291799999998,
+        "samples": 20,
+        "breached": true
+      },
+      {
+        "metric": "threads.16mib.message_index_rebuild",
+        "p50": 3996.377801,
+        "p95": 3996.377801,
+        "p99": 3996.377801,
+        "max": 3996.377801,
+        "samples": 1,
+        "breached": false
+      }
+    ],
+    "breached": true
+  },
+  "trace": {
+    "physical_append_writes": 21,
+    "matched_warm_windows": 20,
+    "matched_four_sync_windows": 20,
+    "counts": [
+      {
+        "count": 20,
+        "signature": {
+          "Long thread.md": 1,
+          "content.db-wal": 1,
+          "index.db-wal": 1,
+          "jobs.db-wal": 1
+        }
+      }
+    ],
+    "milliseconds": {
+      "content.db-wal": {
+        "n": 20,
+        "p50": 7.023,
+        "p95": 7.47,
+        "max": 9.304
+      },
+      "Long thread.md": {
+        "n": 20,
+        "p50": 6.66,
+        "p95": 8.564,
+        "max": 9.018999999999998
+      },
+      "index.db-wal": {
+        "n": 20,
+        "p50": 6.849,
+        "p95": 7.061999999999999,
+        "max": 8.89
+      },
+      "request_to_message_journal": {
+        "n": 20,
+        "p50": 34.13820266723633,
+        "p95": 46.64897918701172,
+        "max": 47.128915786743164
+      },
+      "jobs.db-wal": {
+        "n": 20,
+        "p50": 6.944,
+        "p95": 7.868,
+        "max": 9.296000000000001
+      },
+      "sum_of_three_message_syncs": {
+        "n": 20,
+        "p50": 20.61,
+        "p95": 22.368,
+        "max": 26.758000000000003
+      }
+    }
+  },
+  "forced_4k_append_and_fsync": {
+    "bytes": 4096,
+    "samples": 100,
+    "p50": 6.769257,
+    "p95": 8.485511,
+    "max": 11.237404
+  },
+  "dev_01_checks": {
+    "content_unit_passed": 37,
+    "thread_conformance_passed": 14,
+    "crash_filter_conformance_passed": 6,
+    "grouped_file_syncs_for_two_records": 1,
+    "tested": [
+      "torn single-record restart at six cut points",
+      "torn group restart at six cuts spanning either record",
+      "receipt recovery after loss of the placement mark",
+      "durable receipt pins through grouped retirement",
+      "send crash and retry into one admitted turn"
+    ]
+  }
+}
