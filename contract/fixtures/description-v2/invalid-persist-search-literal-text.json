@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "b",
+      "source": {
+        "type": "search",
+        "kind": "threads",
+        "text": {
+          "literal": "storage"
+        }
+      },
+      "fields": [
+        "title"
+      ],
+      "persist": true
+    }
+  ]
+}
