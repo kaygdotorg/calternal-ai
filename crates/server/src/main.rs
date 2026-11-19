@@ -252,6 +252,8 @@ async fn serve(
     machine_settings: calternal_server::machines::Settings,
     out: &Output,
 ) -> Result<(), CliError> {
+    let apple_app_site =
+        api::AppleAppSite::from_env().map_err(|e| CliError::new("invalid_input", e.message))?;
     let mut timings = StartupTimings::new();
     let probing = upgrade_probe.is_some();
     if probing && !bind.ip().is_loopback() {
@@ -621,7 +623,8 @@ async fn serve(
     let shutdown = calternal_server::shutdown::Shutdown::default();
     let app = api::router(state.clone(), web_dir.clone())
         .layer(axum::Extension(machines.clone()))
-        .layer(axum::Extension(wallpapers));
+        .layer(axum::Extension(wallpapers))
+        .layer(axum::Extension(apple_app_site));
     timings.mark("router_setup");
 
     let base_url = if development {

@@ -94,6 +94,19 @@ The backend serves the guest document directly and responds to requests with
 both representations and HEAD. Revoke it and repeat the requests. Each should
 then return 404.
 
+## Enable passkeys in an iOS web view
+
+Set `CALTERNAL_APPLE_APP_IDS=EXAMPLE123.com.example.app` in the target's
+operator-owned `server.env` and restart the server. Use up to eight
+comma-separated app IDs without spaces. Each ID starts with a 10-character
+uppercase alphanumeric Team ID followed by a dot and the reverse-DNS bundle ID.
+Invalid values prevent startup. Remove the variable to disable the endpoint.
+
+The server serves the public JSON document at
+`/.well-known/apple-app-site-association` with a five-minute cache lifetime.
+The iOS app needs the matching `webcredentials:<site-hostname>` Associated
+Domains entitlement. [Apple's deployment instructions](https://developer.apple.com/documentation/xcode/supporting-associated-domains)
+
 ## Enable account email
 
 Run these steps as the deployment's `calternal` user. Use the SMTP

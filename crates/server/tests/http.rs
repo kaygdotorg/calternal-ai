@@ -80,14 +80,22 @@ fn start_full(
     web: Option<&Path>,
     plugins: Option<&Path>,
 ) -> Server {
-    let startup = data.join("appdata/startup.json");
-    let _ = std::fs::remove_file(&startup);
+    start_server(data, server_command(data, fault, web, plugins))
+}
+
+fn server_command(
+    data: &Path,
+    fault: Option<&str>,
+    web: Option<&Path>,
+    plugins: Option<&Path>,
+) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_calternal"));
     cmd.args(["serve", "--development", "--port", "0"])
         .args(roots(data))
         .arg("--plugin-root")
         .arg(plugins.unwrap_or(Path::new("/nonexistent-test-plugins")))
         .env("RUST_LOG", "warn")
+        .env_remove("CALTERNAL_APPLE_APP_IDS")
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     if let Some(w) = web {
@@ -97,6 +105,12 @@ fn start_full(
         Some(f) => cmd.env("CALTERNAL_FAULT", f),
         None => cmd.env_remove("CALTERNAL_FAULT"),
     };
+    cmd
+}
+
+fn start_server(data: &Path, mut cmd: Command) -> Server {
+    let startup = data.join("appdata/startup.json");
+    let _ = std::fs::remove_file(&startup);
     let mut child = cmd.spawn().unwrap();
     let t0 = Instant::now();
     loop {
@@ -766,6 +780,75 @@ fn host_origin_and_bearer_checks() {
         .permissions()
         .mode();
     assert_eq!(mode & 0o777, 0o600);
+}
+
+const APPLE_APP_SITE_PATH: &str = "/.well-known/apple-app-site-association";
+
+#[test]
+fn apple_app_site_unset_returns_404() {
+    let d = TempDir::new("apple-app-site-unset");
+    let web = d.0.join("web");
+    std::fs::create_dir_all(web.join(".well-known")).unwrap();
+    std::fs::write(web.join("index.html"), "shell").unwrap();
+    std::fs::write(web.join(".well-known/apple-app-site-association"), "decoy").unwrap();
+    std::fs::write(web.join(".well-known/other"), "other").unwrap();
+    let srv = start_with(&d.0.join("data"), None, Some(&web));
+    let get = |path| raw(srv.port, "GET", path, &[], None).unwrap();
+    assert_eq!(get(APPLE_APP_SITE_PATH).status, 404);
+    assert_eq!(get("/.well-known/other").status, 200);
+}
+
+#[test]
+fn apple_app_site_configured_returns_public_json() {
+    let d = TempDir::new("apple-app-site-configured");
+    let data = d.0.join("data");
+    let apps = [
+        "EXAMPLE123.com.example.app",
+        "EXAMPLE123.com.example.second-app",
+    ];
+    let mut cmd = server_command(&data, None, None, None);
+    cmd.env("CALTERNAL_APPLE_APP_IDS", apps.join(","));
+    let srv = start_server(&data, cmd);
+    let response = raw(srv.port, "GET", APPLE_APP_SITE_PATH, &[], None).unwrap();
+    assert_eq!(response.status, 200);
+    assert!(
+        response
+            .headers
+            .lines()
+            .any(|line| line == "content-type: application/json")
+    );
+    assert!(
+        response
+            .headers
+            .contains("cache-control: public, max-age=300")
+    );
+    assert_eq!(response.body, json!({"webcredentials": {"apps": apps}}));
+}
+
+#[test]
+fn apple_app_site_malformed_setting_refuses_startup() {
+    let d = TempDir::new("apple-app-site-invalid");
+    let data = d.0.join("data");
+    let too_many = ["EXAMPLE123.com.example.app"; 9].join(",");
+    for invalid in [
+        "",
+        "EXAMPLE12.com.example.app",
+        "Example123.com.example.app",
+        "EXAMPLE123.com.example_bad.app",
+        "EXAMPLE123.com..app",
+        "EXAMPLE123.com.example.app,",
+        &too_many,
+    ] {
+        let output = server_command(&data, None, None, None)
+            .env("CALTERNAL_APPLE_APP_IDS", invalid)
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("CALTERNAL_APPLE_APP_IDS"), "{stderr}");
+        assert!(!data.exists());
+    }
 }
 
 #[test]

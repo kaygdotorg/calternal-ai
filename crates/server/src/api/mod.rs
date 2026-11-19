@@ -34,6 +34,7 @@ use crate::plugins::{
 use crate::store::{Store, sha256_hex};
 use calternal_types::{AccountId, Error, SpaceId};
 
+mod apple_app_site;
 pub(crate) mod authorization;
 pub(crate) mod cursors;
 mod dispatch;
@@ -54,6 +55,7 @@ mod request_action;
 mod spaces;
 pub mod wallpapers;
 mod web;
+pub use apple_app_site::AppleAppSite;
 pub use dispatch::dispatch;
 pub(crate) use dispatch::fingerprint;
 use dispatch::*;
@@ -135,7 +137,7 @@ pub fn allowed_hosts(port: u16) -> Vec<String> {
     ]
 }
 
-/// Build the authenticated API and optional static asset routes.
+/// Build the authenticated API, public site association, and optional static asset routes.
 pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Router {
     let content = state.store.shared_content();
     let api = Router::new()
@@ -175,7 +177,9 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         .route("/api/{*rest}", any(api_not_found))
         .layer(axum::Extension(content));
     let http_auth = state.directory.http_auth().cloned();
-    let mut app = Router::new().merge(api);
+    let mut app = Router::new()
+        .route(apple_app_site::PATH, get(apple_app_site::get))
+        .merge(api);
     if let Some(service) = &http_auth {
         app = app.merge(crate::account_http::routes(service.clone()));
         app = app.merge(sharing::routes::<D>());
