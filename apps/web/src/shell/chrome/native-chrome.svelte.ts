@@ -162,7 +162,7 @@ export function startNativeChrome(appKind: () => string): () => void {
 }
 
 /** The most rows sent for a section that is not windowed, and the margin kept around the window the shell shows. */
-const WHOLE = 80, MARGIN = 20;
+const WHOLE = 80, MARGIN = 20, MAX_WINDOW = 60;
 /**
  * A long section as a window of its rows: all of them when the list is short, else the rows the shell asked for (`window` event) plus a margin, with `count` and `offset` (the shell then draws a list of one fixed row height and
  * keeps spacers for the rest). Reads `nativeChrome.windows`, so a new window republishes.
@@ -175,6 +175,10 @@ export function windowedOf<T, R>(sectionId: string, items: T[], build: (t: T) =>
   const all = items;
   if (all.length <= WHOLE) return { rows: all.map(build) };
   const [from, to] = nativeChrome.windows[sectionId] ?? [0, WHOLE / 2];
-  const a = Math.max(0, from - MARGIN), b = Math.min(all.length, to + MARGIN);
+  let a = Math.max(0, from - MARGIN), b = Math.min(all.length, to + MARGIN);
+  if (b - a > MAX_WINDOW) { // never more than about 60 rows (the shell lays out every row it is sent): centred on what it asked for
+    const mid = Math.floor((from + to) / 2);
+    a = Math.max(0, Math.min(all.length - MAX_WINDOW, mid - MAX_WINDOW / 2)); b = a + MAX_WINDOW;
+  }
   return { rows: all.slice(a, b).map(build), count: all.length, offset: a };
 }

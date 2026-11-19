@@ -24,7 +24,7 @@ export interface ChromeRow {
 
 /** A titled (or untitled: `title` null) group of rows that can fold. */
 /** `count` and `offset` make `rows` a window of a longer list (rows are then one fixed height): the shell asks for the part it shows with a `window` event. */
-export interface ChromeSection { id: string; title: string | null; /** `navigation` for a section of places (shortcuts, Settings pages: their rows keep an icon), `items` (or absent) for rows that are things (threads, notes: no leading icon). */ rowKind?: "navigation" | "items"; collapsed?: boolean; menu?: ChromeItem[]; actions?: ChromeItem[]; rows: ChromeRow[]; count?: number; offset?: number }
+export interface ChromeSection { id: string; title: string | null; collapsed?: boolean; menu?: ChromeItem[]; actions?: ChromeItem[]; rows: ChromeRow[]; count?: number; offset?: number }
 
 /** A segmented choice above the lists (Inbox, All Threads). */
 export interface ChromeSelector { id: string; selected: string; options: { id: string; title: string; badge?: ChromeBadge }[] }

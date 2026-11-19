@@ -22,8 +22,6 @@ describe("native chrome: the Threads provider", () => {
     const b = threadsChrome.describe("");
     expect(b.selectors[0]!.options.map((o) => o.id)).toEqual(["inbox", "all"]);
     expect(b.sections[0]!.id).toBe("top");
-    expect(b.sections[0]!.rowKind).toBe("navigation"); // the shortcuts are places (they keep an icon); the thread sections are items (none)
-    expect(b.sections.slice(1).every((s) => s.rowKind === undefined)).toBe(true);
     const rows = b.sections.flatMap((s) => s.rows).filter((r) => store.get(r.id));
     expect(rows.length).toBeGreaterThan(0);
     expect(["claude", "codex"]).toContain(rows[0]!.icon); // the provider mark by its CalternalUI icon name
@@ -147,6 +145,10 @@ describe("native chrome: the appearance and the schema form", () => {
     const all = Array.from({ length: 953 }, (_, i) => i);
     const w = windowedOf("inbox", all, (i) => { built++; return { id: String(i) }; });
     expect(w.count).toBe(953); expect(w.offset).toBe(0); expect(built).toBe(w.rows.length); expect(built).toBeLessThan(100);
+    nativeChrome.windows = { inbox: [761, 909] }; // the shell asked for 148 rows at 761
+    const big = windowedOf("inbox", all, (i) => ({ id: String(i) }));
+    expect(big.rows.length).toBeLessThanOrEqual(60); expect(big.offset!).toBeGreaterThan(740); expect(big.offset! + big.rows.length).toBeGreaterThan(830);
+    nativeChrome.windows = {};
   });
 });
 

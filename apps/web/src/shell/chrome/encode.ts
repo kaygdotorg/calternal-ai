@@ -16,7 +16,7 @@ const row = (r: ChromeRow): Record<string, unknown> => ({
   ...(r.leadingActions?.length ? { leadingActions: r.leadingActions.map(item) } : {}), ...(r.trailingActions?.length ? { trailingActions: r.trailingActions.map(item) } : {}), ...(r.menu?.length ? { menu: r.menu.map(item) } : {}),
 });
 const section = (s: ChromeSection): Record<string, unknown> => ({
-  id: s.id, ...(s.rowKind ? { rowKind: s.rowKind } : {}), ...(s.title ? { title: s.title } : {}), ...(s.collapsed ? { collapsed: true } : {}), ...(s.menu?.length ? { menu: s.menu.map(item) } : {}), ...(s.actions?.length ? { actions: s.actions.map(item) } : {}),
+  id: s.id, ...(s.title ? { title: s.title } : {}), ...(s.collapsed ? { collapsed: true } : {}), ...(s.menu?.length ? { menu: s.menu.map(item) } : {}), ...(s.actions?.length ? { actions: s.actions.map(item) } : {}),
   rows: s.rows.map(row), ...(s.count !== undefined ? { count: s.count, offset: s.offset ?? 0 } : {}),
 });
 
