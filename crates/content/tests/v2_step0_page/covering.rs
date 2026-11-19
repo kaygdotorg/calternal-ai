@@ -5,7 +5,7 @@ use rusqlite::{Connection, OpenFlags, StatementStatus, params};
 use std::path::Path;
 use std::time::Instant;
 
-const COUNTS: &str = "
+pub(super) const COUNTS: &str = "
     CREATE TABLE scoped_counts(
         collection INTEGER NOT NULL,audience INTEGER NOT NULL,n INTEGER NOT NULL CHECK(n>=0),
         PRIMARY KEY(collection,audience)

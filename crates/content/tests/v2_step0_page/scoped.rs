@@ -8,7 +8,7 @@ pub(super) const AUDIENCE: i64 = 1;
 pub(super) const DYNAMIC: i64 = 1;
 pub(super) const MANUAL: i64 = 2;
 
-const SCHEMA: &str = "
+pub(super) const SCHEMA: &str = "
     CREATE TABLE scoped_membership(
         collection INTEGER NOT NULL,
         audience INTEGER NOT NULL,
@@ -66,29 +66,35 @@ pub(super) fn seed_membership(
     conn.execute("ATTACH DATABASE ?1 AS source", [source.to_str().unwrap()])
         .unwrap();
     let tx = conn.transaction().unwrap();
-    // ACL is part of the maintained projection. No post-seek row is filtered;
-    // an audience can only seek and count inside its own sorted keys.
-    tx.execute(
-        "INSERT INTO scoped_membership
-         SELECT ?1,?2,-CAST(i.updated_at AS INTEGER),i.id FROM source.items i
-         JOIN source.acl a ON a.id=i.id AND a.visible
-         JOIN source.item_terms t ON t.item=i.id AND t.kind='notes'
-            AND t.category='label' AND t.name='target'",
-        params![DYNAMIC, AUDIENCE],
-    )
-    .unwrap();
-    tx.execute(
-        "INSERT INTO scoped_membership
-         SELECT ?1,?2,-CAST(i.updated_at AS INTEGER),i.id FROM source.items i
-         JOIN source.acl a ON a.id=i.id AND a.visible
-         JOIN source.note_collection_members m ON m.note_id=i.id AND m.collection_id='collection'",
-        params![MANUAL, AUDIENCE],
-    )
-    .unwrap();
+    populate_membership(&tx, "source");
     complete(&tx);
     tx.commit().unwrap();
     conn.execute_batch("DETACH DATABASE source; PRAGMA wal_checkpoint(TRUNCATE);")
         .unwrap();
+}
+
+pub(super) fn populate_membership(conn: &Connection, source: &str) {
+    // ACL is part of the maintained projection. No post-seek row is filtered;
+    // an audience can only seek and count inside its own sorted keys.
+    conn.execute(
+        &format!(
+            "INSERT INTO scoped_membership
+         SELECT ?1,?2,-CAST(i.updated_at AS INTEGER),i.id FROM {source}.items i
+         JOIN {source}.acl a ON a.id=i.id AND a.visible
+         JOIN {source}.item_terms t ON t.item=i.id AND t.kind='notes'
+            AND t.category='label' AND t.name='target'"
+        ),
+        params![DYNAMIC, AUDIENCE],
+    )
+    .unwrap();
+    conn.execute(
+        &format!("INSERT INTO scoped_membership
+         SELECT ?1,?2,-CAST(i.updated_at AS INTEGER),i.id FROM {source}.items i
+         JOIN {source}.acl a ON a.id=i.id AND a.visible
+         JOIN {source}.note_collection_members m ON m.note_id=i.id AND m.collection_id='collection'"),
+        params![MANUAL, AUDIENCE],
+    )
+    .unwrap();
 }
 
 fn version(conn: &Connection) -> (i64, i64) {

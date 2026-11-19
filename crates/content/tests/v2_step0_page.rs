@@ -1,4 +1,6 @@
 //! Disposable measurements of candidate window plans over the real SQLite schemas.
+#[path = "v2_step0_page/combined_save.rs"]
+mod combined_save;
 #[path = "v2_step0_page/covering.rs"]
 mod covering;
 #[path = "v2_step0_page/scoped.rs"]
@@ -111,7 +113,7 @@ fn fixture(root: &std::path::Path) -> (Content, SpaceId, std::path::PathBuf) {
     let content = Content::open(
         roots,
         root.join("secrets"),
-        Duration::ZERO,
+        Duration::from_secs(120),
         calternal_content::DEFAULT_RECEIPT_RETENTION,
         |_| {},
     )
@@ -126,9 +128,29 @@ fn fixture(root: &std::path::Path) -> (Content, SpaceId, std::path::PathBuf) {
             FileFormat::Markdown,
         )
         .unwrap();
+    content
+        .register_kind(
+            space,
+            "collections",
+            Placement::Hidden {
+                plugin_id: "collections".into(),
+            },
+            FileFormat::Opaque {
+                extension: "json".into(),
+            },
+        )
+        .unwrap();
     let mut writer = Connection::open(&db).unwrap();
     seed(&mut writer);
     (content, space, db)
+}
+
+#[test]
+#[ignore = "disposable perf fixture; see step 0 measurements"]
+fn covering_combined_save() {
+    let root = tempfile::tempdir().unwrap();
+    let (content, space, db) = fixture(root.path());
+    combined_save::exercise(&content, space, &db);
 }
 
 #[test]
