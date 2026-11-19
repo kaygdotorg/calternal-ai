@@ -343,9 +343,27 @@ and the tab did not show the reconnect banner.
 | Old container removal to new container creation | 644 ms | 997 ms | 5,630 ms |
 | Podman startup, creation to start | 205 ms | 371 ms | 968 ms |
 
-The interval between containers includes locked migration preparation,
-commit and unit activation. The longest gap in this series was dominated
-by the interval between containers.
+The longest gap in that series was dominated by the interval between
+containers. A separate ten-run series with the same images added
+timestamps around preparation, commit and activation. The gaps were
+1.433, 1.540, 1.707, 1.263, 2.651, 2.104, 1.018, 1.104, 1.081 and 1.166
+seconds. All ten met the five-second budget and preserved the acknowledged
+candidate write through rollback. The host load average at the start was
+10.90 over one minute, compared with 19.49 in the previous series.
+
+| Measurement | Minimum | Median | Maximum |
+| --- | ---: | ---: | ---: |
+| Write acknowledgement gap | 1.018 s | 1.348 s | 2.651 s |
+| Podman teardown, exit to removal | 165 ms | 243 ms | 745 ms |
+| Old container removal to new container creation | 507 ms | 636 ms | 997 ms |
+| Podman startup, creation to start | 170 ms | 213 ms | 405 ms |
+
+Locked preparation took 104–325 ms and commit 67–181 ms. Activation
+through enqueueing the server start took 114–251 ms. The driver reused
+the installed units in all ten timed handoffs. The tab stayed signed in
+without a reconnect banner in every run. Both series used a local TLS
+proxy and disposable data. Allow headroom for shared-host load and larger
+installations.
 
 The browser can treat proxy 502, 503 and 504 as temporary unavailability,
 show the reconnect state and retry with the original request IDs.

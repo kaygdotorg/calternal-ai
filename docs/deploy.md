@@ -585,7 +585,8 @@ new installation UUID on the same public origin.
    ```bash
    count=$("${up[@]}" account-count)
    printf '%s\n' "$count"
-   grep -Eq '"accounts"[[:space:]]*:[[:space:]]*0[[:space:]]*[},]' <<<"$count"
+   zero_accounts='"accounts"[[:space:]]*:[[:space:]]*0[[:space:]]*[},]'
+   [[ $count =~ $zero_accounts ]]
    ```
 
 2. **Create unused roots with a fresh installation ID.** Enter the same
