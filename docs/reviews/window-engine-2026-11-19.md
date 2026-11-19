@@ -322,6 +322,121 @@ tests and the existing collection membership integration test. The broader
 54 content and 30 HTTP tests, contract verification and documentation gate
 passed on the Reading List predecessor `bdc29d76`.
 
+### Save gate fixture
+
+The inherited 40 ms p95 budget is the editor `sync.save_ack` target.
+The product Notes scenario measures the real HTTP `notes.update` with its
+short, changing `seed … save …` body and warm Notes corpus. It keeps the
+base revision current. The original product qualification used 100,000
+Notes in one space as one of its fixtures and reports the warm arm
+separately. The Step 0 projection experiment applies the same 40 ms target
+to engine acknowledgment, using the real `Content::write` on one warm
+note in its 100,000-head corpus, a short changing body and deferred file
+placement. Its 8 KiB search experiment also applied the original gate,
+with a warm cache and separately described search overhead.
+[Product qualification](../performance.md#notes-acknowledgment-and-guest-storage)
+· [Product harness](../../crates/perf/src/notes_scenario.rs)
+· [Step 0 matched saves](../measurements/plugin-api-v2-step0.md#combined-content-save).
+
+The 16 MiB thread append comparison studies foreground durability barriers
+for a different operation. Its required power-cut evidence and append
+path do not define the Notes save latency fixture.
+[Thread append durability](../thread-append-durability.md).
+
+## Review gate
+
+The series was replayed onto `origin/dev` at `f41c3429`. The replay had
+no conflicts and the measured candidate's crate sources, Cargo inputs and
+sealed contract bytes match the rebased runtime files.
+
+1. **Shared types.** Reuses `SpaceId`, `AccountId`, `Page`, the shared
+   `ErrorCode` and the directory's capability set. The window envelopes
+   are the first Rust types for these sealed message shapes. Public routes
+   reuse them directly.
+2. **Dependency direction.** No new crate. Server resolves authority and
+   Bind declarations, content owns SQL and durability, and existing lower
+   crates supply shared types and filesystem/journal services. SQLite is
+   accessed through rusqlite.
+3. **Request isolation.** Reads use the content lane's per-space SQLite
+   readers. Server lease mutexes are sharded and only protect bounded
+   in-memory bookkeeping. No mutex introduced by this lane spans I/O or
+   an async yield. Rate and permit shards are conservative shared quotas
+   for IDs that hash to the same shard. The existing process-wide authority
+   revision is atomic and can retire unrelated leases. This costs an
+   unnecessary reopen in those cases. No thread or global SQLite connection
+   is introduced.
+4. **Async safety.** Server uses its existing blocking adapter for
+   synchronous directory and SQLite work, including the live session and
+   authority checks inside the content callback. Start-up installs fixture
+   rows through the same blocking boundary. The async route performs typed
+   decoding, in-memory admission, and bounded response encoding.
+5. **Hot path.** Native Notes parses a cursor once and executes one covering
+   range with up to 101 head probes. The v2 engine takes two indexed scope
+   probes, a covering range, and one head lookup and metadata parse per
+   returned row. Registered kinds add one order lookup. A child adds
+   parent-live checks before and after the snapshot. Both routes use
+   existing authority checks and zero write flushes. A save retains the
+   existing head, placement, receipt and publication reads and three FULL
+   boundaries. Projection maintenance adds bounded index work in the
+   content transaction.
+6. **Constant work.** The sealed catalogue is decoded once per owning
+   layer with `OnceLock`. SQLite statements use the connection's prepared
+   cache. The fixture checks the pinned package and compiles its Bind at
+   initialization. The route serializes the approved description on
+   discovery.
+7. **Bounds and retention.** Per item, the engine admits at most 32 window
+   scopes. Scope counts disappear when empty, and projection rows follow
+   live membership and the content lifecycle. Each query is capped by the
+   sealed 4,096 materialized-row and 250,000 skip budgets, with the request
+   size further bounded by the catalogue. Leases expire after 15 seconds,
+   with at most 128 retained entries per shard and one preceding result
+   per lease. Expiration is pruned on admission and saturation. The lane
+   uses existing content retention, including the configured receipt
+   retention and its seven-day default.
+8. **Compatibility.** Existing native cursor and response contracts stay
+   stable. The v2 routes are additive. The feature-gated Reading List
+   fixture explicitly fails when the old installer starts accepting the
+   pinned v2 manifest. There is no fallback in the ordinary installer.
+9. **Space identity.** Use typed UUIDs at the route and content boundaries.
+   Index keys are local to a space. Notes and Reading List are kind and
+   app identities.
+10. **Single declarations.** The sealed catalogue supplies query caps. Its
+    32-scope ceiling is enforced in SQLite triggers so concurrent and
+    indirect writes receive the same atomic refusal. The SQL literal is a
+    second representation of that limit, covered by the scope boundary
+    test. Resolve package field and Bind policy against the pinned
+    description and manifest before building a trusted projection.
+11. **Callers.** Native Notes and the leased Notes and Reading List routes
+    use the engine. The **v2 scoped collection and nested host route lane**
+    must wire explicit collections, Trash, parent scopes, public/guest
+    variants, and collection-order provisioning. The **v2 host activation
+    and authority lane** must call `WindowResult::item_for_row` when
+    resolving checked row selectors. Estimated counts require an issuer in
+    the **v2 host count policy lane**. These engine surfaces have tests.
+    Until the coordinator assigns those callers, their integration remains
+    open. Issue #85 names the follow-up lanes. The registry lane (#87)
+    owns checked manifest admission. The host follow-up can use its
+    `Registry::snapshot` and `Catalog::v2_kind` plus `ManifestV2::reads`
+    to qualify package declarations. Those lookups confer no activation
+    or viewer authority.
+12. **Reuse.** Uses the existing per-space content index, reverse collection
+    membership, item commit/outbox and journal/receipt path, and existing
+    directory/session authority. SQLite triggers extend that transaction
+    and reuse its rollback. The host uses its existing signing key and
+    blocking adapter. There is no rank table, per-plugin store or separate
+    projection writer.
+13. **Documentation.** Public items carry API comments. The Reading List
+    predecessor passed the Rust and TypeScript docs gate. The exact
+    rebased verification is tracked in the lane report and issue.
+14. **Code and report.** The crate README and storage reference describe
+    the scoped projection. This dated report records measurement and
+    product-route limitations. The sealed source contracts remain
+    unchanged by this lane.
+15. **Formatting and file size.** The measured candidate passed
+    `cargo fmt --all -- --check`. Content SQL, registration, query and
+    tests live in separate files. The server route module is 601 lines.
+    Its package fixture has its own module.
+
 ## Simplification opportunities
 
 - Generalize the existing collection membership relation before qualifying
