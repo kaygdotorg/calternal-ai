@@ -9,6 +9,7 @@ from itertools import chain
 from urllib.parse import unquote, urldefrag, urljoin, urlsplit
 
 from description_input import DuplicateKey, VisitLimit, check_unique_ids, load_strict, read_bytes, read_json, resolved_path
+from description_title import declared_title_text
 
 
 root = pathlib.Path(__file__).resolve().parent
@@ -325,7 +326,7 @@ def schema_uri(base, ref):
 
 
 def compile_embedded(document, path, errors):
-    """Validate Draft 7 schema shape and link only to registered schema paths."""
+    """Validate Draft 7 shape and retain its resolved schema links."""
     if errors.full:
         return
     before = len(errors)
@@ -353,7 +354,7 @@ def compile_embedded(document, path, errors):
             else:
                 resources[scope] = position
         if "$ref" in node:
-            references.append((scope, node["$ref"]))
+            references.append((id(node), scope, node["$ref"]))
         for pattern in errors.each(chain((node.get("pattern"),), node.get("patternProperties", {}))):
             if pattern is not None:
                 try:
@@ -374,25 +375,35 @@ def compile_embedded(document, path, errors):
                     continue
             pending.append((position + parts, child, scope))
 
-    for scope, ref in errors.each(references):
+    links = {}
+    for node_id, scope, ref in errors.each(references):
         try:
             address = schema_uri(scope, ref)
             document_id, fragment = urldefrag(address)
             if address in resources:
-                local[resources[address]]
+                target, context = local[resources[address]], document
             elif document_id in pinned:
-                pinned[document_id][pointer_tokens(fragment, errors)]
+                target = pinned[document_id][pointer_tokens(fragment, errors)]
+                context = SCHEMA_DOCUMENTS.get(document_id, draft7_meta)
             else:
-                local[resources[document_id] + pointer_tokens(fragment, errors)]
+                target = local[resources[document_id] + pointer_tokens(fragment, errors)]
+                context = document
+            links[node_id] = (target, context)
         except VisitLimit:
             raise
         except (KeyError, ValueError):
             errors.append(f"{path}: unresolvable embedded schema reference {ref[:256]!r}")
+    return links
 
 
 def parse_manifest(text, errors):
     """Validate pinned manifest shape, ID namespaces and schema links before indexing."""
     return validate_manifest(load_strict(text, errors), errors)
+
+
+def reserved_operation(operation, catalogue):
+    """Match reserved operation namespaces from the effective pinned catalogue."""
+    return operation.startswith(tuple((catalogue or {}).get("reserved_operation_prefixes", ())))
 
 
 def validate_manifest(manifest, errors):
@@ -406,10 +417,11 @@ def validate_manifest(manifest, errors):
         keys={"$.settings": "key", "$.secrets": "name"},
     )
     for index, operation in enumerate(errors.each(manifest["operations"])):
-        if operation["id"].startswith(("host.", "turns.")):
+        if reserved_operation(operation["id"], CATALOGUE):
             errors.append(f"$.operations[{index}].id: reserved host operation namespace")
     if errors:
         return None
+    kind_schema_links = {}
     for collection, keys in (
         ("kinds", ("schema",)), ("operations", ("input_schema", "output_schema")),
         ("settings", ("value_schema",)), ("credential_routes", ("input_schema", "output_schema")),
@@ -417,11 +429,13 @@ def validate_manifest(manifest, errors):
         for index, entry in enumerate(errors.each(manifest.get(collection, []))):
             for key in errors.each(keys):
                 if key in entry:
-                    compile_embedded(entry[key], f"$.{collection}[{index}].{key}", errors)
+                    links = compile_embedded(entry[key], f"$.{collection}[{index}].{key}", errors)
+                    if collection == "kinds":
+                        kind_schema_links[entry["id"]] = links
     if errors:
         return None
     checked = normalize_manifest(manifest, errors)
-    check_manifest_install(checked, errors)
+    check_manifest_install(checked, kind_schema_links, errors)
     return None if errors else checked
 
 
@@ -486,24 +500,7 @@ def check_worker_invocation(frame, manifest, job_id, errors):
         errors.append("$.message.job_context: allowed only for an admitted composer intent job")
 
 
-def declared_title_text(kind, title, errors):
-    """Resolve a declared metadata title through local definitions to a string."""
-    metadata = kind["schema"]
-    node = metadata.get("properties", {}).get(title) if isinstance(metadata, dict) else None
-    seen = set()
-    while not errors.full and isinstance(node, dict) and id(node) not in seen:
-        errors.visit()
-        if "$ref" not in node:
-            return node.get("type") == "string"
-        ref = node["$ref"]
-        if not ref.startswith("#/"):
-            return False
-        seen.add(id(node))
-        node, _ = resolve(ref, metadata, errors)
-    return False
-
-
-def check_manifest_install(manifest, errors):
+def check_manifest_install(manifest, kind_schema_links, errors):
     """Check reserved indexed fields and host_create follow-ups at install."""
     if CATALOGUE is None:
         return
@@ -569,7 +566,7 @@ def check_manifest_install(manifest, errors):
                   title_meta.get("type") != "Text" or title_meta.get("audience") != generic["title"]["audience"]
               ))):
             errors.append(f"{path}.title_field: generic title requires an unrestricted metadata source")
-        elif not declared_title_text(kind, title, errors):
+        elif not declared_title_text(kind["schema"], title, kind_schema_links[kind_id], resolve, errors):
             errors.append(f"{path}.title_field: generic title requires declared string metadata")
         host_create = kind.get("host_create") or {}
         for field in errors.each(host_create.get("defaults", {})):

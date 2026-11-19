@@ -3646,7 +3646,7 @@
           ]
         }
       },
-      "description": "Author operand resolved by the host from the checked row action context. item is the underlying kind reference, ItemRef for threads. placement is a LayoutEntryRef and exists only for a row from Section.repeat.rows. Neither value is supplied by the renderer."
+      "description": "Available only inside a Bind row template. Use item for the row item and placement for a Section.repeat row’s LayoutEntryRef. No view or Bind state can supply these targets."
     },
     "MemberRowCacheRecord": {
       "type": "object",
@@ -5014,6 +5014,6 @@
     "excluded_fields": [
       "provider_icon"
     ],
-    "scope": "Check live own-space membership, the paired window and the host offline allowlist. Cache only a prefix of those rows in the same order. Take the title from the row title field. For the secondary line take only eligible plain text parts or the first eligible declared date part. Drop body-backed parts and restricted fields regardless of the display slot. Omit the record if any required title is ineligible."
+    "scope": "Check live own-space membership, the paired window and the host offline allowlist. Cache only a prefix of those rows in the same order. Take the title from the row title field. For the secondary line take only eligible plain text parts or the first eligible declared date part. Drop body-backed parts and restricted fields regardless of the display slot. Omit the record if any required title is ineligible. A provider label is ordinary eligible Text metadata from the paired row. The provider icon and provider authority are separate."
   }
 }

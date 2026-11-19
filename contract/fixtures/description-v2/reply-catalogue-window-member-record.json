@@ -9,7 +9,8 @@
     {
       "id": "t-1",
       "fields": {
-        "title": "Split store.rs by concern"
+        "title": "Split store.rs by concern",
+        "provider_label": "Claude Code"
       }
     },
     {
@@ -35,7 +36,8 @@
     "expires_at": "2026-11-26T12:00:00Z",
     "rows": [
       {
-        "title": "Split store.rs by concern"
+        "title": "Split store.rs by concern",
+        "subtitle": "Claude Code"
       },
       {
         "title": "Review the storage change"

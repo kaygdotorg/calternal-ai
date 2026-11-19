@@ -601,7 +601,7 @@
       "required": [
         "title"
       ],
-      "description": "A Bind message state. The title and detail are literals or host-written text. A state action may use an eligible view context, but cannot consume any route operand."
+      "description": "A Bind message state. The title and detail are literals or host-written text. A state action may use an eligible view context. Route inputs and row-only context operands are unavailable here."
     },
     "NonParentPredicate": {
       "properties": { "value": { "not": { "required": ["parent"] } } }

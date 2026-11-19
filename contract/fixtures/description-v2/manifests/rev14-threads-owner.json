@@ -26,6 +26,9 @@
         "properties": {
           "title": {
             "type": "string"
+          },
+          "provider_label": {
+            "type": "string"
           }
         }
       },
@@ -38,6 +41,10 @@
         "state": {
           "type": "Text",
           "audience": "member_item"
+        },
+        "provider_label": {
+          "type": "Text",
+          "audience": "shared_projection"
         }
       }
     }

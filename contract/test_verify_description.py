@@ -15,6 +15,7 @@ import unittest
 from description_events import EventBindings, check_event_binding, walk
 from description_projection_cases import ProjectionCases
 from description_scope_cases import ScopeCases
+from description_review_cases import ReviewCases
 from description_input import MAX_ARTIFACT_BYTES, PackageInput, Validation, VisitLimit, check_unique_ids, load_strict
 from description_verification import CATALOGUE, check, check_window_rows, compile_embedded, load_reply_origins, manifest_schema, parse_manifest, schema
 
@@ -38,7 +39,7 @@ def verifier_cli():
     return verifier
 
 
-class PackageTests(ProjectionCases, ScopeCases, unittest.TestCase):
+class PackageTests(ReviewCases, ProjectionCases, ScopeCases, unittest.TestCase):
     fixtures = FIXTURES
 
     def setUp(self):

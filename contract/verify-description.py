@@ -78,10 +78,10 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                  for name, kind in errors.each(man_kinds.items())}
     children_edges = {b_id: ((b.get("row") or {}).get("children") or {}).get("bind") for b_id, b in errors.each(binds.items()) if ((b.get("row") or {}).get("children") or {}).get("bind")}
     repeat_rows = {n_["repeat"]["rows"] for _, n_ in walk(doc, errors) if isinstance(n_, dict) and isinstance(n_.get("repeat"), dict) and "id" in n_ and "rows" in n_["repeat"]}
-    for path, node in walk(doc, errors):
+    for path, node in walk(doc, errors, skip_literals=True):
         if isinstance(node, dict) and node.get("type") == "form" and "id" in node: forms[node["id"]] = (path, {field.get("id") for field in errors.each(node.get("fields", [])) if isinstance(field, dict)})
         if isinstance(node, dict) and node.get("type") == "composer" and "id" in node: composers[node["id"]] = path
-    for path, node in walk(doc, errors):
+    for path, node in walk(doc, errors, skip_literals=True):
         if not isinstance(node, dict): continue
         if "operation" in node and "id" in node and isinstance(node.get("operation"), str):
             op = node["operation"]
@@ -104,7 +104,7 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                 if catalogue is not None and not (entry and entry.get("full_swipe", False)):
                     errors.append(f"{path}: fullSwipe is rejected on {op}: the catalogue does not allow it (plugin operations never may)")
             if catalogue is not None:
-                host_like = op.startswith("host.") or op in cat_ops
+                host_like = verification.reserved_operation(op, catalogue) or op in cat_ops
                 if host_like:
                     if entry is None: errors.append(f"{path}: {op} is not in the host catalogue")
                     else:
@@ -131,7 +131,7 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                         for name in errors.each(required):
                             if name not in given: errors.append(f"{path}: {op} needs input {name!r}")
                         owner_bind = None
-                        m_owner = re.match(r"^\$\.binds\[(\d+)\]", path)
+                        m_owner = re.match(r"^\$\.binds\[(\d+)\]\.row\.", path)
                         if m_owner: owner_bind = binds_list[int(m_owner.group(1))]
                         owner_kind = ((owner_bind or {}).get("source") or {}).get("kind")
                         owner_in_repeat = (owner_bind or {}).get("id") in repeat_rows
@@ -214,8 +214,15 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
             errors.append(f"{path}: bind {node['bind']!r} is not declared in `binds`")
         if "bind" in node and "field" in node and node.keys() == {"bind", "field"} and ".config" not in path and ".header.title" not in path and ".row" not in path:
             errors.append(f"{path}: a {{bind, field}} source is legal only in a host component's config (and a header title)")
-        if "row" in node and node.keys() <= {"row", "field"} and ".row" not in path:
+        row_owner = re.match(r"^\$\.binds\[(\d+)\]\.row\.", path)
+        if "row" in node and node.keys() <= {"row", "field"} and not row_owner:
             errors.append(f"{path}: a {{row}} source is only valid inside a bind's row template")
+        if node.keys() == {"context"}:
+            if node["context"] == "placement":
+                if not row_owner or binds_list[int(row_owner.group(1))]["id"] not in repeat_rows:
+                    errors.append(f"{path}: {{context: placement}} is legal only inside the rows of a Section.repeat")
+            elif node["context"] == "item" and not row_owner:
+                errors.append(f"{path}: {{context: item}} is legal only inside a bind's row template")
         if "form" in node and node.keys() == {"form", "field"}:
             owner = forms.get(node["form"])
             if owner is None: errors.append(f"{path}: form {node['form']!r} does not exist")
@@ -271,11 +278,6 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                 errors.append(f"{path_}: the per-parent bind {node_['bind']!r} is consumed only through its declared edge (children or repeat.rows), not by an ordinary section, list, count or header")
     for bind_id in errors.each(sorted(parent_binds - referenced)):
         errors.append(f"$.binds {bind_id}: a bind with `source.parent: true` needs a declared edge (a RowTemplate.children or a Section.repeat that references it)")
-    for path, node in walk(doc, errors):
-        if isinstance(node, dict) and node.get("context") == "placement" and node.keys() == {"context"}:
-            m = re.match(r"^\$\.binds\[(\d+)\]", path)
-            owner = binds_list[int(m.group(1))].get("id") if m else None
-            if owner not in repeat_rows: errors.append(f"{path}: {{context: placement}} is legal only inside the rows of a Section.repeat")
     for bind_id in errors.each(sorted(repeat_rows & set(children_edges.values()))):
         errors.append(f"$.binds {bind_id}: a bind is a section's rows OR a children target, never both (its row ref would be a placement in one and the kind's own ref in the other)")
     def depth(bind_id, seen=()):

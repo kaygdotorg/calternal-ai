@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "threads-app.json",
-          "sha256": "a211dd810516d00d4e1e84335c112dd0e6c91c1375fa1b08a0f67cfa67cc72cf"
+          "sha256": "d7f01a3bb628cf5b12dd6195246b5e26cf752fb597d72c8f7bfaa7ec4c542cc9"
         }
       }
     }
@@ -39,6 +39,9 @@
         "properties": {
           "title": {
             "type": "string"
+          },
+          "provider_label": {
+            "type": "string"
           }
         }
       },
@@ -56,6 +59,10 @@
         "state": {
           "type": "Text",
           "audience": "member_item"
+        },
+        "provider_label": {
+          "type": "Text",
+          "audience": "shared_projection"
         }
       }
     }

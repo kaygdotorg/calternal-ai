@@ -104,7 +104,8 @@
         "title",
         "provider_icon",
         "state",
-        "updated"
+        "updated",
+        "provider_label"
       ],
       "sort": [
         {
@@ -166,7 +167,13 @@
         "icon": {
           "field": "provider_icon",
           "name": "threads"
-        }
+        },
+        "secondary": [
+          {
+            "field": "provider_label",
+            "format": "text"
+          }
+        ]
       }
     },
     {

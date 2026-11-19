@@ -146,5 +146,6 @@
   "invalid-reply-catalogue-window-stale-non-image.json": "must name a delivered RowImageRef in a ready row",
   "invalid-reply-catalogue-guest-image-attribution.json": ".image_attribution: not allowed here",
   "invalid-reply-catalogue-public-image-attribution.json": ".image_attribution: not allowed here",
-  "invalid-reply-catalogue-attribution-without-image-field.json": "image_attribution: must name a delivered RowImageRef"
+  "invalid-reply-catalogue-attribution-without-image-field.json": "image_attribution: must name a delivered RowImageRef",
+  "invalid-catalogue-selection-ref-mismatch.json": "the ItemRef input 'item' of host.item.rename takes only a source of that ref type"
 }
