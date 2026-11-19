@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "@testing-library/svelte";
 import { navHold } from "@calternal/ui";
 import { MockHost } from "../testing/mock-host";
-import { ContentList, HostSession, Selection, WindowStore } from "../src";
+import { ACTIONS_KEY, ActionUi, ContentList, HostSession, Selection, WindowStore } from "../src";
 import type { Bind } from "../src";
 
 const base: Bind = {
@@ -14,7 +14,7 @@ const flush = async () => { for (let i = 0; i < 30; i++) await vi.advanceTimersB
 async function draw(host: MockHost, bind: Bind = base) {
   const session = new HostSession({ transport: host }); await session.open("v");
   const store = new WindowStore({ bind, source: session });
-  const view = render(ContentList, { store, selection: new Selection(bind.id, session), kindIcon: "notes", label: "Items" });
+  const view = render(ContentList, { props: { store, selection: new Selection(bind.id, session), kindIcon: "notes", label: "Items" }, context: new Map([[ACTIONS_KEY, { ui: new ActionUi(session), session }]]) });
   return { store, view, session };
 }
 beforeEach(() => { vi.useFakeTimers(); });

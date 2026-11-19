@@ -27,7 +27,11 @@ function structural(node) {
   if (Array.isArray(node)) return node.map(structural);
   if (node && typeof node === "object") {
     const o = {};
-    for (const [k, v] of Object.entries(node)) if (!["allOf", "if", "then", "else", "not", "dependentRequired"].includes(k)) o[k] = structural(v);
+    for (const [k, v] of Object.entries(node)) {
+      if (["allOf", "if", "then", "else", "not", "dependentRequired"].includes(k)) continue;
+      // inside `properties` the keys are property NAMES (an invoke has a `then`), so only their values are filtered
+      o[k] = k === "properties" && v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).map(([n, d]) => [n, structural(d)])) : structural(v);
+    }
     return o;
   }
   return node;

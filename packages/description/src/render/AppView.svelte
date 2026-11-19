@@ -9,6 +9,10 @@
   import { Selection } from "../windows/selection.svelte";
   import Sidebar from "./Sidebar.svelte";
   import Node from "./Node.svelte";
+  import ActionHost from "../invoke/ActionHost.svelte";
+  import { ActionUi } from "../invoke/actions.svelte";
+  import { provideActions } from "../invoke/context";
+  import ActionButton from "./ActionButton.svelte";
 
   // `description` and `session` are fixed for the life of one AppView (a new description or session is a new mount): they are read once.
   let props: {
@@ -16,11 +20,19 @@
     /** The icon each kind declares (the host catalogue's for host kinds, a manifest's for a plugin's), for rows whose icon is `kindIcon`. */
     kindIcons?: Record<string, string>; route?: Record<string, string>; role?: "viewer" | "editor" | "manager" | "owner";
     onopen?: (bind: string, id: string, index: number) => void;
+    /** `then: {route}` after an action created an item: set the route parameter `name` to the host-issued `created` ref. */
+    onroute?: (name: string, created: string) => void;
+    /** A shell action (route, reload, sign out, sheet): the shell's own controls. */
+    onshell?: (action: unknown) => void;
   } = $props();
   const { description, session } = untrack(() => ({ description: props.description, session: props.session }));
   const kindIcons = $derived(props.kindIcons ?? {}), route = $derived(props.route ?? {}), role = $derived(props.role);
   const onopen = (b: string, id: string, i: number) => props.onopen?.(b, id, i);
 
+  const ui = new ActionUi(session);
+  ui.onok = () => { for (const st of stores.values()) st.refresh(); };
+  ui.onroute = (name, created) => props.onroute?.(name, created);
+  provideActions({ ui, session, onshell: (a) => props.onshell?.(a) });
   const refusal = refusalOf(description);
   const binds = new Map<string, Bind>((description.binds ?? []).map((b) => [b.id, b]));
   const stores = new Map<string, WindowStore>();
@@ -53,16 +65,19 @@
       </aside>
     {/if}
     <main class="main">
-      {#if title}<h1 class="h1">{title}</h1>{/if}
+      <div class="head">{#if title}<h1 class="h1">{title}</h1>{/if}
+        {#each [...(description.chrome?.header?.leading ?? []), ...(description.chrome?.header?.trailing ?? [])] as a (a.id)}<ActionButton action={a} context={session.viewContexts[a.id]} />{/each}</div>
       {#if description.view}<Node node={description.view.root} {storeFor} {selectionFor} {kindIconFor} {onopen} />{/if}
     </main>
   </div>
 {/if}
+<ActionHost {ui} />
 
 <style>
   .app { display: flex; height: 100%; min-height: 0; }
   .side { flex: none; min-height: 0; border-inline-end: 1px solid color-mix(in oklab, var(--ink) 10%, transparent); }
   .main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--s-4); padding: var(--s-5); }
+  .head { display: flex; align-items: center; gap: var(--s-3); }
   .h1 { margin: 0; font-size: var(--text-title, 28px); }
   .refused { padding: var(--s-6); color: var(--danger); }
 </style>

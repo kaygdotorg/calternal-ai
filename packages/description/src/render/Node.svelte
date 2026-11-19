@@ -1,11 +1,15 @@
 <script lang="ts">
-  // The content nodes of a view (docs/description-contract.md 5.0): stack, text, notice and the bound list. Form, button, detail and component nodes arrive with the invoke step; until then they are drawn as an
+  // The content nodes of a view (docs/description-contract.md 5.0): stack, text, notice and the bound list. Detail and component nodes arrive later; until then they are drawn as an
   // explicit "not drawn yet" block (never silently dropped), so a fixture that uses them shows what is missing.
   import type { ContentNode } from "../model";
   import type { WindowStore } from "../windows/window-store.svelte";
   import type { Selection } from "../windows/selection.svelte";
   import ContentList from "./ContentList.svelte";
   import Node from "./Node.svelte";
+  import ActionButton from "./ActionButton.svelte";
+  import FormNode from "./FormNode.svelte";
+  import { useActions } from "../invoke/context";
+  const { session } = useActions();
 
   let { node, storeFor, selectionFor, kindIconFor, onopen }: {
     node: ContentNode; storeFor: (bindId: string) => WindowStore | undefined; selectionFor: (bindId: string) => Selection; kindIconFor: (bindId: string) => string | undefined;
@@ -21,7 +25,11 @@
 {:else if node.type === "text"}
   <p class="text {node.style ?? 'body'} {node.tone ?? ''}" data-node="text">{node.text}</p>
 {:else if node.type === "notice"}
-  <div class="notice {node.tone ?? 'warn'}" role="status" data-node="notice"><strong>{node.title}</strong>{#if node.detail}<span>{node.detail}</span>{/if}</div>
+  <div class="notice {node.tone ?? 'warn'}" role="status" data-node="notice"><strong>{node.title}</strong>{#if node.detail}<span>{node.detail}</span>{/if}{#if node.action}<ActionButton action={node.action} context={session.viewContexts[node.action.id]} />{/if}</div>
+{:else if node.type === "button"}
+  <div data-node="button"><ActionButton action={node.invoke} context={session.viewContexts[node.invoke.id]} style={node.style ?? "quiet"} /></div>
+{:else if node.type === "form"}
+  <FormNode {node} />
 {:else if node.type === "list"}
   {@const store = storeFor(node.bind)}
   {#if store}

@@ -67,6 +67,8 @@ export class WindowStore {
   /** Rows loaded contiguously from the end (distance), for an end walk. */
   #tailCover = 0;
   #endUnavailable = false;
+  /** Chunks to ask for again although loaded (after a mutation): the reply replaces them in place, so nothing flickers. */
+  readonly #stale = new Set<number>();
   /** Requests sent so far (tests and the harness read it). */
   requests = 0;
 
@@ -125,7 +127,7 @@ export class WindowStore {
       for (let c = Math.floor(a / this.size); c * this.size < b; c++) want.add(c);
     }
     const mid = centre.length ? centre[0]![0] : 0;
-    return [...want].filter((c) => !this.#inflight.has(c) && !this.#refused.has(c) && this.#firstMissing(c, limit) >= 0).sort((x, y) => Math.abs(x * this.size - mid) - Math.abs(y * this.size - mid));
+    return [...want].filter((c) => !this.#inflight.has(c) && !this.#refused.has(c) && (this.#stale.has(c) || this.#firstMissing(c, limit) >= 0)).sort((x, y) => Math.abs(x * this.size - mid) - Math.abs(y * this.size - mid));
   }
 
   /** The first index in chunk `c` that is not loaded, or -1 when the chunk is whole (or beyond the end). */
@@ -163,7 +165,8 @@ export class WindowStore {
     const s = c * this.size, e = Math.min(s + this.size, limit);
     let req: WindowRequestPayload;
     if (this.#endChunk(c)) req = { bind: this.bind.id, from: limit - e, to: limit - s, anchor: "end" };
-    else { const from = Math.max(s, this.#firstMissing(c, limit)); req = { bind: this.bind.id, from, to: (c + 1) * this.size }; }
+    else { const from = this.#stale.has(c) ? s : Math.max(s, this.#firstMissing(c, limit)); req = { bind: this.bind.id, from, to: (c + 1) * this.size }; }
+    this.#stale.delete(c);
     this.#dispatch(req, c, false);
   }
 
@@ -187,6 +190,14 @@ export class WindowStore {
     const key = -1 - this.requests; // walk requests are not chunks
     if (w.kind === "end") this.#dispatch({ bind: this.bind.id, from: this.#tailCover, to: this.#tailCover + this.size, anchor: "end" }, key, true);
     else this.#dispatch({ bind: this.bind.id, from: this.#loadedEnd, to: this.#loadedEnd + this.size }, key, true);
+  }
+
+  /** After an action succeeded the host's lists may have changed: ask again for what is drawn (a new `result_version` replaces the window, the same one only merges). */
+  refresh(): void {
+    if (this.#dead) return;
+    for (const [f, l] of this.#visible.values()) for (let c = Math.floor(f / this.size); c * this.size < Math.max(l, f + 1); c++) this.#stale.add(c);
+    if (!this.#visible.size) this.#stale.add(0);
+    this.#pump();
   }
 
   /** The goal row of a refusal recovery in progress, or null. */

@@ -121,3 +121,16 @@ describe("WindowStore", () => {
     expect(store.row(0)).toBeUndefined();
   });
 });
+
+describe("refresh after an action", () => {
+  it("asks again for what is drawn and replaces it in place when the version changed", async () => {
+    const host = new MockHost({ rows: 100 });
+    const { store } = await open(host);
+    store.ensure("a", 0, 30); await settle();
+    const before = host.windowCalls;
+    host.version = "rv-2"; host.rows = 101; (host as { fields: unknown }).fields = (i: number) => ({ title: `New ${i}` });
+    store.refresh(); await vi.advanceTimersByTimeAsync(1100); await settle();
+    expect(host.windowCalls).toBeGreaterThan(before);
+    expect(store.resultVersion).toBe("rv-2"); expect(store.length).toBe(101); expect(store.row(0)?.fields.title).toBe("New 0");
+  });
+});

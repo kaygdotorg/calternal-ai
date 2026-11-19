@@ -21,6 +21,8 @@ export interface MockOptions {
   /** Lets a test refuse or replace a window reply; return undefined for the normal answer. */
   intercept?: (req: WindowRequestPayload, n: number) => WindowReply | undefined | Promise<WindowReply | undefined>;
   audience?: WindowAudience;
+  /** Answers any route the mock does not (activation, choice, status, undo): return the reply, or throw to simulate a dropped connection. */
+  handle?: (route: Route, body: unknown) => unknown | Promise<unknown>;
   /** Refuse with `skip_limit` a start-anchored request whose `from`, or an end-anchored one whose distance, is beyond this (contiguous continuations from the last row stay allowed). */
   skipLimit?: number;
   /** Refuse every end anchor with `end_unavailable`. */
@@ -79,6 +81,7 @@ export class MockHost implements Transport {
       const over = await this.opts.intercept?.(req, n);
       return (over ?? this.answer(req)) as T;
     }
+    if (this.opts.handle) return (await this.opts.handle(route, body)) as T;
     throw new Error(`The mock host has no ${route}.`);
   }
 }

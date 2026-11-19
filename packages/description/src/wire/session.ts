@@ -4,7 +4,7 @@
  * (docs/description-contract.md section 6). Activation contexts and refs are held in memory only.
  */
 import type { ActionContexts, SelectionContextResult, SettledSelectionRequest, SubscriptionLease, ViewOpenResult, WindowAudience, WindowReply, WindowRequestPayload, LeaseRenewRequest, LeaseRenewResult } from "../model";
-import type { Transport } from "./transport";
+import type { Route, Transport } from "./transport";
 
 /** What a session needs from outside: the transport, a clock and a timer (replaceable for tests). */
 export interface SessionOptions {
@@ -60,6 +60,12 @@ export class HostSession {
     if (!this.#lease) return Promise.reject(new Error("The view is not open."));
     const body: SettledSelectionRequest = { type: "selection", bind, row };
     return this.transport.post<SelectionContextResult>("selection.settled", body, { lease: this.#lease.lease_ref, signal });
+  }
+
+  /** Any other sealed event under the lease (activation, choice options, status, undo, selection set). */
+  exchange<T>(route: Route, body: unknown, signal?: AbortSignal): Promise<T> {
+    if (!this.#lease) return Promise.reject(new Error("The view is not open."));
+    return this.transport.post<T>(route, body, { lease: this.#lease.lease_ref, signal });
   }
 
   #take(l: SubscriptionLease) { this.#lease = l; this.#leasedAt = this.#now(); }

@@ -801,6 +801,14 @@ fullSwipe?: boolean
  * Greyed out when the predicate holds on the row or bind scope, or always.
  */
 disabled?: (boolean | Predicate)
+/**
+ * After an `ok` outcome that carries `created`, set this route parameter to the created item's reference (open the new note or thread). The reference is host-minted; a description never supplies one.
+ */
+then?: {
+route: {
+name: string
+}
+}
 }
 /**
  * A control the SHELL performs without a generic operation: navigate (host.route.set), reload, sign out (host.session.end), or open a host-owned protected sheet (Trash set / purge, share audience). No generic Invoke can reach them.
@@ -1031,6 +1039,14 @@ fullSwipe?: boolean
  * Greyed out when the predicate holds on the row or bind scope, or always.
  */
 disabled?: (boolean | Predicate)
+/**
+ * After an `ok` outcome that carries `created`, set this route parameter to the created item's reference (open the new note or thread). The reference is host-minted; a description never supplies one.
+ */
+then?: {
+route: {
+name: string
+}
+}
 }
 /**
  * The conversation of one thread: a host-owned windowed list with its own streaming (the host appends and updates rows; the description never receives message text), scroll anchoring and loading in steps. Heavy parts (code, pictures, steps, cards) are the host's. The host stamps `calternal:thread-rendered` when the first screenful is drawn, and drops a load when the viewer moves to another thread.
@@ -1581,6 +1597,14 @@ fullSwipe?: boolean
  * Greyed out when the predicate holds on the row or bind scope, or always.
  */
 disabled?: (boolean | Predicate)
+/**
+ * After an `ok` outcome that carries `created`, set this route parameter to the created item's reference (open the new note or thread). The reference is host-minted; a description never supplies one.
+ */
+then?: {
+route: {
+name: string
+}
+}
 }
 /**
  * A bound list. Windows, counts, live updates, empty/loading/error states and row actions come from the bind (sections 2 and 3).

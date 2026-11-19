@@ -2,11 +2,12 @@
   // A bound list: the windowed rows of one bind drawn with its row template, and its states. It reuses the design system's VirtualList (the only windowed list; one primitive, not forked) and Row, and the store
   // keeps the host's windows. While loading it draws skeleton rows of the real row height; `empty`, `error` and `refine_query` show the bind's own message (the renderer's plain default only for `error` and
   // `refine_query`, which a description may leave unsaid). The list takes the height of its container and scrolls itself, or with `inside` follows the nearest scrolling ancestor (a sidebar).
+  import { untrack } from "svelte";
   import { VirtualList, cssPx } from "@calternal/ui";
   import type { Bind, State } from "../model";
   import type { WindowStore } from "../windows/window-store.svelte";
   import type { Selection } from "../windows/selection.svelte";
-  import RowView from "./RowView.svelte";
+  import RowActions from "./RowActions.svelte";
   import SkeletonRow from "./SkeletonRow.svelte";
   import StateMessage from "./StateMessage.svelte";
 
@@ -24,7 +25,8 @@
   const bind: Bind = $derived(store.bind);
   const template = $derived(bind.row ?? { title: { field: "title" } });
   const consumer = {};
-  $effect(() => { const s = store; s.ensure(consumer, 0, 0); return () => s.ensure(consumer, 0, 0); });
+  // (untracked: the store's own state must not re-run this, or each reply would forget what the list draws)
+  $effect(() => { const s = store; untrack(() => s.ensure(consumer, 0, 0)); return () => untrack(() => s.ensure(consumer, 0, 0)); });
 
   const states = $derived((bind.states ?? {}) as { empty?: State; loading?: State; error?: State; refine_query?: State });
   const errorMessage: State = $derived(states.error ?? { title: "This list could not be loaded." });
@@ -60,7 +62,7 @@
       >
         {#snippet row(i)}
           {@const r = store.row(i)}
-          {#if r}<RowView {template} row={r} {kindIcon} selected={r.id === selection.drawn} onclick={() => choose(r.id, i)} />
+          {#if r}<RowActions {template} row={r} {store} {kindIcon} selected={r.id === selection.drawn} onclick={() => choose(r.id, i)} />
           {:else}<SkeletonRow icon={template.icon !== undefined} width={40 + ((i * 17) % 40)} />{/if}
         {/snippet}
       </VirtualList>
