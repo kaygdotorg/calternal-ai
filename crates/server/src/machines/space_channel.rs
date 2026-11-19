@@ -40,6 +40,24 @@ impl Drop for Reservation {
 }
 
 impl State {
+    fn require_channel_capacity(&mut self, space: SpaceId) -> Result<(), Error> {
+            self.space_channels.retain(|_, reservation| {
+                !*reservation.closing.borrow()
+                    && reservation
+                        .reply
+                        .as_ref()
+                        .is_none_or(|reply| !reply.is_closed())
+            });
+            if self.space_channels.contains_key(&space)
+                || self.space_channels.len() >= MAX_CHANNELS
+            {
+                return Err(Error::unavailable(
+                    "space already has a carrier or carrier capacity is full",
+                ));
+            }
+        Ok(())
+    }
+
     pub(super) fn close_space_lease(&mut self, lease: Uuid) {
         if let Some(space) = self.leases.get(&lease).map(|row| row.row.space)
             && self
@@ -61,6 +79,12 @@ impl State {
 }
 
 impl MachineService {
+    /// Cold wake preflight. One scheduler lock for memory-only reservation
+    /// cleanup and capacity checking before placement can start a sandbox.
+    pub(crate) fn check_space_channel_available(&self, space: SpaceId) -> Result<(), Error> {
+        self.lock()?.require_channel_capacity(space)
+    }
+
     /// Reserve the v2 data channel on an enrolled worker placement. Uses two
     /// control-plane memory lookups plus an outbox message. No frame uses this lock.
     pub(crate) async fn open_space_channel(
@@ -91,20 +115,7 @@ impl MachineService {
                 .and_then(|record| record.live.as_ref())
                 .map(|live| live.session)
                 .ok_or_else(no_assignment)?;
-            st.space_channels.retain(|_, reservation| {
-                !*reservation.closing.borrow()
-                    && reservation
-                        .reply
-                        .as_ref()
-                        .is_none_or(|reply| !reply.is_closed())
-            });
-            if st.space_channels.contains_key(&binding.space)
-                || st.space_channels.len() >= MAX_CHANNELS
-            {
-                return Err(Error::unavailable(
-                    "space already has a carrier or carrier capacity is full",
-                ));
-            }
+            st.require_channel_capacity(binding.space)?;
             let (reply, receive) = oneshot::channel();
             st.space_channels.insert(
                 binding.space,

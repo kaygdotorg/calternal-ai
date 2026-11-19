@@ -74,79 +74,40 @@ async fn raw_peer() -> (SpaceChannel, BufReader<TcpStream>, PackagePin) {
     (host.unwrap(), peer, pin)
 }
 
-async fn independent_space() -> (SpaceChannel, SpaceChannel, PackagePin) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let (host, runtime) = connect(&listener, TcpSocket::new_v4().unwrap()).await;
-    let pin = pin("fixture-b");
-    let space = SpaceId::new();
-    let assignment = Uuid::new_v4();
-    let (host, runtime) = tokio::join!(
-        SpaceChannel::host(host, space, assignment, vec![pin.clone()]),
-        SpaceChannel::runtime(runtime, space, assignment),
-    );
-    (host.unwrap(), runtime.unwrap(), pin)
+#[tokio::test]
+async fn explicit_fence_closes_an_unstalled_carrier() {
+    let (host, mut peer, package) = raw_peer().await;
+    let started = Instant::now();
+    host.fence_handle().close();
+    assert!(!host.is_live());
+    assert!(host.send(&package, Uuid::new_v4(), invoke(json!({}))).is_err());
+    assert!(started.elapsed() < Duration::from_millis(500));
+    let mut tail = Vec::new();
+    timeout(WRITE_LIMIT, peer.read_to_end(&mut tail)).await.unwrap().unwrap();
+    assert!(tail.is_empty());
 }
 
 #[tokio::test]
-async fn physical_midframe_stall_fences_locally_and_preserves_space_b() {
-    for explicit_fence in [false, true] {
-        let (host, mut peer, package) = raw_peer().await;
-        let (mut second_host, second_runtime, second_pin) = independent_space().await;
-        let length = 245_000;
-        let started = Instant::now();
-        host.send(&package, Uuid::new_v4(), invoke(json!("w".repeat(length))))
-            .unwrap();
-        let mut prefix = [0_u8; 512];
-        timeout(Duration::from_millis(200), peer.read_exact(&mut prefix))
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(!prefix.contains(&b'\n'));
-        assert!(host.is_live());
-        let now = Instant::now();
-        second_runtime
-            .send(&second_pin, Uuid::new_v4(), callback())
-            .unwrap();
-        let delivered = timeout(Duration::from_secs(2), second_host.receive())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(delivered.frame().package.as_deref(), Some("fixture-b"));
-        assert!(now.elapsed() < Duration::from_secs(2));
-        assert!(
-            host.is_live(),
-            "B must finish while A's physical write is stalled"
-        );
-        if explicit_fence {
-            let local = Instant::now();
-            host.fence_handle().close();
-            assert!(!host.is_live());
-            assert!(
-                host.send(&package, Uuid::new_v4(), invoke(json!({})))
-                    .is_err()
-            );
-            assert!(local.elapsed() < Duration::from_millis(500));
-        }
-        timeout(
-            Duration::from_secs(2),
-            host.lifetime().wait_for(|live| !*live),
-        )
-        .await
-        .unwrap()
+async fn physical_midframe_stall_closes_on_the_write_watchdog() {
+    let (host, mut peer, package) = raw_peer().await;
+    let length = 245_000;
+    let started = Instant::now();
+    host.send(&package, Uuid::new_v4(), invoke(json!("w".repeat(length))))
         .unwrap();
-        assert!(started.elapsed() < Duration::from_secs(2));
-        let mut remainder = Vec::new();
-        timeout(Duration::from_secs(2), peer.read_to_end(&mut remainder))
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(
-            remainder.len() + prefix.len() < length,
-            "the TCP writer must stall mid-frame"
-        );
-        assert!(!remainder.contains(&b'\n'));
-        assert!(second_host.is_live() && second_runtime.is_live());
-    }
+    let mut prefix = [0_u8; 512];
+    timeout(Duration::from_millis(200), peer.read_exact(&mut prefix))
+        .await.unwrap().unwrap();
+    assert!(!prefix.contains(&b'\n'));
+    assert!(host.is_live());
+    timeout(Duration::from_millis(500), host.lifetime().wait_for(|live| !*live))
+        .await.unwrap().unwrap();
+    assert!(started.elapsed() < Duration::from_millis(500));
+    let mut remainder = Vec::new();
+    timeout(Duration::from_secs(2), peer.read_to_end(&mut remainder))
+        .await.unwrap().unwrap();
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(remainder.len() + prefix.len() < length, "the TCP writer must stall mid-frame");
+    assert!(!remainder.contains(&b'\n'));
 }
 
 #[tokio::test]

@@ -68,11 +68,13 @@ const fs = require('node:fs');
 const net = require('node:net');
 const tls = require('node:tls');
 const port = Number(process.argv[1]);
+let next = 0;
 const server = tls.createServer({
   key: fs.readFileSync('server.key'), cert: fs.readFileSync('server.pem')
 }, downstream => {
   const upstream = net.connect(port, '127.0.0.1');
-  const blocked = () => fs.existsSync('stall');
+  const first = next++ === 0;
+  const blocked = () => first && fs.existsSync('stall');
   for (const [source, target] of [[upstream, downstream], [downstream, upstream]]) {
     source.on('data', bytes => { if (!blocked()) target.write(bytes); });
     source.on('end', () => { if (!blocked()) target.end(); });
@@ -84,6 +86,7 @@ server.listen(0, '127.0.0.1', () => console.log(server.address().port));
 
 pub(super) struct TlsRelay {
     pub(super) link: Link,
+    pub(super) port: u16,
     pub(super) stall: PathBuf,
     _process: Child,
 }
@@ -187,6 +190,7 @@ impl TlsRelay {
         .unwrap();
         Self {
             link,
+            port,
             stall: root.join("stall"),
             _process: process,
         }

@@ -209,6 +209,7 @@ async fn wake_space<D: Directory>(
     let pinned = approval.clone();
     let runtime = tokio::runtime::Handle::current();
     let placement = crate::blocking::spawn(move || {
+        scheduler.check_space_channel_available(pinned.space)?;
         let run = scheduler.request_worker(
             account,
             Uuid::new_v4(),
@@ -241,9 +242,9 @@ async fn wake_space<D: Directory>(
     Awake::attach(
         connected,
         authority,
-        reader,
+        Arc::new(reader),
         &approval.package,
-        Some(placement),
+        Some((Arc::downgrade(&approval.wake), placement)),
     )
     .await
 }

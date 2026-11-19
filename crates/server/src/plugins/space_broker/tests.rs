@@ -195,10 +195,30 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
         (ticket, fixture.write(target))
     });
     let old_epoch = old.channel.epoch();
+    let prior_callback = calternal_plugin_host::space_channel::SpaceFrame {
+        v: 1,
+        epoch: old_epoch,
+        seq: 1,
+        package: Some(fixture.pin.package.clone()),
+        digest: Some(fixture.pin.digest.clone()),
+        ticket: Some(old_ticket.id()),
+        message: SpaceMessage::Call {
+            callback_id: Uuid::new_v4(),
+            method: SpaceMethod::ItemHead,
+            input: json!({"kind":"notes","item_id":item.id}),
+        },
+    };
+    old_ticket.authorize_at(&prior_callback, Instant::now()).unwrap();
     drop((old, peer));
 
     let (fresh, mut runtime) = fixture.carrier().await;
     assert_ne!(fresh.channel.epoch(), old_epoch);
+    assert!(old_ticket.authorize_at(
+        &calternal_plugin_host::space_channel::SpaceFrame {
+            epoch: fresh.channel.epoch(),
+            ..prior_callback
+        }, Instant::now()
+    ).is_err());
     let scope = fixture.scope(&fresh.channel, item.id);
     let old_pin = fixture.pin.clone();
     let forged = tokio::spawn(async move {
@@ -277,8 +297,9 @@ async fn enrolled_runner_multiplexes_and_stops_its_refenced_package_on_lease_los
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let (root, state, service, ids, item, machine, token) = tokio::task::block_in_place(|| {
-        let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let relay = TlsRelay::start(root.path(), address).await;
+    let (state, service, ids, items, machine, token) = tokio::task::block_in_place(|| {
         let roots = calternal_roots::Roots {
             appdata: root.path().join("appdata"),
             userdata_ssd: root.path().join("ssd"),
@@ -294,34 +315,22 @@ async fn enrolled_runner_multiplexes_and_stops_its_refenced_package_on_lease_los
         let directory = StoredDirectory::load_or_create(&roots.appdata).unwrap();
         let ids = directory.spaces.seed_development().unwrap();
         let content = store.shared_content();
-        content
-            .register_kind(
-                ids.personal,
-                "notes",
-                Placement::Visible {
-                    folder: "Notes".into(),
-                },
+        let items = [ids.personal, ids.shared].map(|space| {
+            content.register_kind(
+                space, "notes",
+                Placement::Visible { folder: "Notes".into() },
                 FileFormat::Markdown,
-            )
-            .unwrap();
-        let item = content
-            .write(
-                ids.personal,
-                None,
-                "notes",
-                None,
-                json!({"title":"Enrolled"}),
+            ).unwrap();
+            content.write(
+                space, None, "notes", None, json!({"title":"Enrolled"}),
                 b"# Fixture\n",
                 Request {
-                    account: ids.owner,
-                    via: None,
-                    id: "install-fixture",
-                    operation: "fixture.put",
-                    fingerprint: "fixture",
+                    account: ids.owner, via: None, id: "install-fixture",
+                    operation: "fixture.put", fingerprint: "fixture",
                 },
                 |_| json!({}),
-            )
-            .unwrap();
+            ).unwrap()
+        });
         let service = MachineService::open(
             &roots.appdata,
             directory.spaces.machines(),
@@ -333,20 +342,20 @@ async fn enrolled_runner_multiplexes_and_stops_its_refenced_package_on_lease_los
         .unwrap();
         store.bind_machines(&service);
         service.set_pool_grant(ids.owner, true).unwrap();
-        let approval = ApprovedItemHead::new(
-            ids.personal,
-            PackagePin {
-                package: "calternal-head-fixture".into(),
-                digest: sha256_hex(CHILD.as_bytes()),
-            },
-            "fixture.head".into(),
-            "notes".into(),
-            CHILD.into(),
-        )
-        .unwrap();
+        let approvals = [ids.personal, ids.shared].map(|space| {
+            ApprovedItemHead::new(
+                space,
+                PackagePin {
+                    package: "calternal-head-fixture".into(),
+                    digest: sha256_hex(CHILD.as_bytes()),
+                },
+                "fixture.head".into(),
+                "notes".into(),
+                CHILD.into(),
+            ).unwrap()
+        });
         let registry = Registry::empty()
-            .with_space_item_heads(vec![approval])
-            .unwrap();
+            .with_space_item_heads(Vec::from(approvals)).unwrap();
         let state = Arc::new(AppState {
             inputs: store.account_inputs(),
             store,
@@ -355,7 +364,7 @@ async fn enrolled_runner_multiplexes_and_stops_its_refenced_package_on_lease_los
             blocking: crate::blocking::RequestWorkers::new().unwrap(),
             workers: WorkerPool::with_local_root(None, 1, root.path().join("workers")),
             jobs: Jobs::disabled(),
-            allowed_hosts: allowed_hosts(address.port()),
+            allowed_hosts: allowed_hosts(relay.port),
         });
         let (code, _) = service.issue_code(Owner::Pool).unwrap();
         let key = MachineKey::generate().unwrap();
@@ -383,7 +392,7 @@ async fn enrolled_runner_multiplexes_and_stops_its_refenced_package_on_lease_los
             })
             .unwrap()
             .token;
-        (root, state, service, ids, item, machine, token)
+        (state, service, ids, items, machine, token)
     });
     let api = router(state.clone(), None).layer(axum::Extension(service.clone()));
     let server = tokio::spawn(async move { axum::serve(listener, api).await.unwrap() });
@@ -400,7 +409,6 @@ async fn enrolled_runner_multiplexes_and_stops_its_refenced_package_on_lease_los
         },
     };
     service.sync(machine, &token, request(0)).await.unwrap();
-    let relay = TlsRelay::start(root.path(), address).await;
     let link = Arc::new(relay.link);
     link.set_token(Some(Arc::from(token.as_str())));
     let placement_root = root.path().join("placements");
@@ -410,44 +418,50 @@ async fn enrolled_runner_multiplexes_and_stops_its_refenced_package_on_lease_los
         2,
     ));
     let sync_runner = runner.clone();
+    let (assignments, mut assigned) = tokio::sync::mpsc::channel(2);
     let supervisor = tokio::spawn(async move {
         let mut ack = 0;
-        let mut assigned = None;
+        let mut opened = 0;
         loop {
             for envelope in service.sync(machine, &token, request(ack)).await.unwrap() {
                 ack = ack.max(envelope.seq);
                 let message = envelope.message;
                 if matches!(message, Down::Assign { .. }) {
-                    assigned = Some(message.clone());
+                    assignments.try_send(message.clone()).unwrap();
                 }
-                let opens = matches!(message, Down::OpenSpaceChannel { .. });
+                if matches!(message, Down::OpenSpaceChannel { .. }) {
+                    opened += 1;
+                }
                 sync_runner.handle(message).await;
-                if opens {
-                    return assigned.unwrap();
+                if opened == 2 {
+                    return;
                 }
             }
         }
     });
-    let dispatch_read = |request| {
+    let dispatch_read = |request, space, item| {
         dispatch(
             state.clone(),
             Identity { id: ids.owner },
             Session::Static,
             request,
             "fixture.head",
-            serde_json::from_value(json!({"space_id":ids.personal,"item_id":item.id})).unwrap(),
+            serde_json::from_value(json!({"space_id":space,"item_id":item})).unwrap(),
         )
     };
-    let (first, second) = tokio::join!(dispatch_read("fixture-one"), dispatch_read("fixture-two"));
-    let expected = json!({"metadata":{"title":"Enrolled"}, "revision":item.revision});
-    assert_eq!(first.unwrap(), expected);
-    assert_eq!(second.unwrap(), expected);
-    let mut assigned = supervisor.await.unwrap();
+    let (first, second) = tokio::join!(
+        dispatch_read("fixture-one", ids.personal, items[0].id),
+        dispatch_read("fixture-two", ids.personal, items[0].id),
+    );
+    let expected = |item: &Item| json!({"metadata":{"title":"Enrolled"}, "revision":item.revision});
+    assert_eq!(first.unwrap(), expected(&items[0]));
+    assert_eq!(second.unwrap(), expected(&items[0]));
+    let mut first_assignment = assigned.recv().await.unwrap();
     let Down::Assign {
         ref mut fence,
         ref spec,
         ..
-    } = assigned
+    } = first_assignment
     else {
         unreachable!();
     };
@@ -459,11 +473,21 @@ async fn enrolled_runner_multiplexes_and_stops_its_refenced_package_on_lease_los
     )
     .await;
     *fence += 1;
-    runner.handle(assigned).await;
+    runner.handle(first_assignment).await;
     // Stop forwarding without sending EOF, cancellation or Stop to the runner.
     tokio::fs::write(&relay.stall, []).await.unwrap();
     let lost = Instant::now();
-    tokio::time::timeout(Duration::from_secs(5), async {
+    // B shares the same API, scheduler, enrollment and runner while A's
+    // actual enrolled TCP stream still has a live process and forwards nothing.
+    let answer_b = tokio::time::timeout(Duration::from_secs(3),
+        dispatch_read("fixture-three", ids.shared, items[1].id),
+    ).await.unwrap().unwrap();
+    assert_eq!(answer_b, expected(&items[1]));
+    assert!(tokio::fs::try_exists(format!("/proc/{pid}")).await.unwrap());
+    let second_assignment = assigned.recv().await.unwrap();
+    assert!(matches!(second_assignment, Down::Assign { space_id, .. } if space_id == ids.shared));
+    supervisor.await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5).saturating_sub(lost.elapsed()), async {
         while tokio::fs::try_exists(format!("/proc/{pid}")).await.unwrap() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -471,6 +495,15 @@ async fn enrolled_runner_multiplexes_and_stops_its_refenced_package_on_lease_los
     .await
     .expect("product supervisor must stop and reap the package");
     assert!(lost.elapsed() >= Duration::from_secs(3));
+    state.registry.space_item_head(ids.shared, "fixture.head").unwrap()
+        .wake.awake.lock().await.as_ref().unwrap().fence.close();
+    let Down::Assign { spec, .. } = second_assignment else { unreachable!() };
+    let work = placement_root.join("workers").join(spec.thread_id.to_string()).join("work");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while tokio::fs::try_exists(&work).await.unwrap() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.unwrap();
     server.abort();
     let _ = server.await;
     drop(root);

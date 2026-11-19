@@ -5,7 +5,7 @@ use calternal_plugin_host::space_channel::{SpaceDelivery, SpaceFence};
 use std::{
     collections::HashMap,
     sync::{
-        Mutex,
+        Mutex, Weak,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -41,7 +41,7 @@ impl Awake {
         authority: Spaces,
         reader: Arc<ItemHeadReader>,
         pin: &PackagePin,
-        placement: Option<(Arc<Wake>, HeldPlacement)>,
+        placement: Option<(Weak<Wake>, HeldPlacement)>,
     ) -> Result<Arc<Self>, Error> {
         if connected.grants.space() != connected.space {
             return Err(unavailable());
@@ -93,11 +93,18 @@ impl Awake {
             }
             // Close the socket while the placement guard is still held.
             connected.channel.fence();
+            if let Some(awake) = owner.upgrade()
+                && let Ok(mut inboxes) = awake.inboxes.lock()
+            {
+                inboxes.clear();
+            }
             if let Some((wake, placement)) = placement {
                 drop(placement);
-                let mut current = wake.awake.lock().await;
-                if current.as_ref().is_some_and(|awake| awake.epoch == epoch) {
-                    current.take();
+                if let Some(wake) = wake.upgrade() {
+                    let mut current = wake.awake.lock().await;
+                    if current.as_ref().is_some_and(|awake| awake.epoch == epoch) {
+                        current.take();
+                    }
                 }
             }
         });
