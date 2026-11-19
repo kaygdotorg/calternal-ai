@@ -1,228 +1,354 @@
 # Plugin API v2 generic engines
 
-Proposal for sequential review, based on the decisions recorded on `dev` at
-`85add29a`. The host owns cold reads, security boundaries and durable commits.
-Packages own application behavior, including Notes previews and agent
-orchestration. Use the same engine methods, approval paths and quota rules for
-official and community packages. This proposal extends the next numbered
-revision of the [sealed plan](../plugin-api-v2.md#engine-surface). Its existing
-authority, activation, sharing and ticket rules apply. [Owner decisions](https://git.kayg.org/kayg/calternal-ai/src/commit/85add29af840b225dd9a83cae2e5cd4ce3aecfc9/docs/open-questions.md)
+Proposal for sequential review. The host owns cold reads, security and
+durability. Official and community packages compose the same engines.
+The changes below require a numbered revision of the sealed contract.
+[Owner decisions][owners] · [Sealed plan][sealed] · [Step 0 measurements][measurements]
 
 ## A. Execution without a server Turns engine
 
-The composer stays a host component. It validates the active view, draft and
-attachment refs and invokes the package's declared send action. The orchestrator
-owns the `threads` kind, defaults and transition rules. It writes the message
-and a replayable enqueue intent with the expected item head, then composes
-the engines below. Cold transcript and status reads use committed host
-projections. Generic stop takes effect while the plugin sleeps. Move the
-Turns-specific routes and kind ownership in sealed §§3–4 to this model.
+### A.1 Admission, Send and lifecycle
 
-| Engine and proposed operations | Authority and effect | Restart and sleep |
-| --- | --- | --- |
-| **Admission and jobs** · Existing start, claim, checkpoint, park, status and cancel. Add a declared enqueue intent to an item commit and an optional exclusive job key. | A declared operation needs the live actor's rights, package approval and a resolved target. The host checks the expected live head when committing the intent. It reserves queue, memory, storage and execution budget before admitting the corresponding work. The exclusive key is scoped to space, package and resource. The orchestrator uses the thread as its key. | The host publishes the intent by receipt into one job and retires it after publication. Recover jobs, timers, reservations and park outcomes from durable records. Issue fresh run authority at claim and resume. A queued or parked job uses no worker. A due or winning signal can wake one bounded continuation. |
-| **Container execution** · Discover eligible placements, start from an approved image digest and entry point, get status, send bounded control, stop and reconcile. | Bind a lease to the actor or schedule creator, package generation, job attempt, space, admitted image, target and a host-checked subset of item, tool and network rights. The actor supplies authority. The sponsor supplies capacity. A person can choose their own eligible enrolled machine where existing policy permits. A package can request an approved target class. The host selects and checks the target, provider-home binding and resource limits. | Persist placement intent, IDs, last durable output position and stop/cleanup state. An enrolled machine can reattach only to its exact still-current execution. On expiry, replacement or uncertain execution, fence the old attempt and expose interruption. Only an authorized person can resume it. An active run has a lease independent of plugin-process residency. |
-| **Durable streams** · Declare, append, page, follow and checkpoint a stable stream. | Tie a stream to a checked item or job and a registered bounded event schema. Only a current authorized producer can append. Page, resume and egress check live authority and the stream's display audience. Use a separate private machine-output channel for opaque frames. The plugin normalizes that output into transcript events. Logs, token material and provider session IDs stay off display routes. | Append the batch, producer sequence, receipt and consumed-input checkpoint together. ACK that checkpoint only after commit. Persist the scoped cursor, stable event IDs and retention boundary. Wake a bounded continuation on committed work if processing is needed. A stalled subscriber releases the DB read before waiting on transport and can reload from its committed cursor. |
-| **Protected requests** · Create, inspect, answer, approve, deny and cancel through the existing Inbox model. | Only the current run may create a request for a checked action. Pin the actor, allowed decision maker, exact action/material digest, target and lifetime. A live eligible person resolves it through the protected surface. Consume the grant under the action fence. An answer may narrow or authorize one action within the allowed execution policy. | Persist requests, winning decisions and receipts. Resolution can wake a parked job exactly once. Cancel, expiry, revocation and stale run attempts cannot revive it. A second app can park for review of a document or a tool invocation through the same engine. |
-| **Secrets and sign-in** · Use the existing opaque handles and typed credential calls. Bind machine-local provider profiles as approved lease inputs. | Resolve the handle against actor, package, purpose, approved destination and active attempt. A trusted broker redeems the credential and returns only the allowed projection. CLI sign-in stays private on its authorized machine. The agent's tools get neither a login mount nor the broker's secret channel. | Retain protected configuration and machine-local profiles under existing ownership and erasure rules. Revalidate and issue fresh handles on reattach or resume. An expired login exchange can be restarted by the person. |
+The host keeps the sealed composer preflight, including attachments, quotes,
+destination and execution material. The final-text receipt covers the exact
+text and prepared inputs. Text parsed as a change to recipients, routing or
+permissions needs a fresh preview. The package owns the send policy and
+declares a bounded job intent. The host commits the message and intent with
+the expected live head, reserves quota, and admits by receipt under the same
+lifecycle fence. A scoped exclusive key lets the orchestrator serialize runs
+per thread. Cold Stop fences the intent or the exact admitted attempt.
+An unresolved intent blocks sheet-free archive. Confirmed archive durably
+refuses that intent, including on replay after unarchive.
+Preserve archive and Undo ordering without a plugin callback. Claim, park,
+checkpoint and cancel reuse generic jobs. Reservations, parked decisions and
+durable timers survive restart and use no worker while parked. Issue fresh
+invocation authority at claim or resume. [Sealed §§4.3–4.4 and §8][sealed] ·
+[Current admission][admission]
 
-The host owns the launch/stop receipt and sequence fences. Commit private
-machine output before acknowledging the machine. A plugin may acknowledge
-consumption only when the public append and input cursor commit together,
-including a cursor-only checkpoint for input that produces no display event.
-Reclaim the private spool through that checkpoint in bounded batches.
-Apply backpressure at the spool and machine credit limits. On reattach,
-resend the unacknowledged range. After server restart, automatically
-reattach only on authenticated proof that the original execution is still
-running under the current lease. Otherwise preserve the committed prefix,
-fence the old attempt and show Resume to an authorized person. Reconcile
-uncertain external effects before retry. Automatic provider retry through a
-durable timer remains available when the prior effect is known safe.
+### A.2 Placement, agent authority and credentials
 
-Each space has a small plugin VM for interactive and light work, an on-demand
-larger plugin VM for heavy jobs, and an on-demand agent VM with rootless
-containers. Plugins and agents run in separate VMs. Honor the decided weaker
-self-hosted boundary when KVM is unavailable. No target mounts a userdata
-tree. A brokered agent call reaches only checked item refs or an explicitly
-delegated scope. An agent cannot enumerate the space's files. A run workspace
-or private provider profile is distinct from userdata. A community package can
-supply its own adapter, approved image, transcript schema and retry controller
-through these same engines. It never needs a server registration for an
-application-specific run type.
+The host starts, inspects, controls, stops and reconciles executions using an
+approved image digest, entry point and eligible placement. The actor supplies
+authority and the sponsor supplies capacity. Admission reserves execution,
+memory, spool and workspace budgets. The package can request an eligible
+machine or placement class. The host binds the exact placement to the attempt.
+The space has a small plugin VM, an on-demand heavy plugin VM and an on-demand
+agent VM for rootless containers. Use the decided self-hosted wall where KVM
+is unavailable. Userdata stays behind the broker in every placement.
 
-### Current code and migration
+Replace the operation-prefix scope in `turns/access.rs` with a distinct agent
+principal per attempt. Grant only host-issued item refs, purpose-specific
+operations and bounded effects. Even Full Access cannot list, search, count,
+enumerate or bulk-read this space. Agent principals cannot enqueue or delegate
+work that obtains discovery rights. Only independently admitted plugin jobs
+can acquire indexer capabilities. A scratch disk or provider profile is never
+a route to userdata. [Current Turns access][access]
 
-| Today | Engine seam and package ownership |
+Execution leases are separate from sealed 60-second invocation tickets.
+Renew only against the live session or scheduled principal, grants, package
+generation, eligible placement and exact attempt. Recheck authority at broker
+effects and output egress. Revocation fences both immediately and stops
+renewal. Use a machine-local monotonic deadline, provisionally at most 5 s
+after the last authenticated renewal, that kills the container and its tools
+even when control is stalled or the link partitions. Discard only under the
+exact workspace lease. Retain an explicitly preserved workspace under its
+quota and normal cleanup policy.
+
+Pin a provider profile to its authorized account or space and a qualified
+harness digest. Existing personal provider homes stay private to that harness.
+Shared credential-isolated runs use the dedicated harness and separate tool
+sandbox. A workload image gets neither provider-home mounts nor credentials.
+The secret broker redeems opaque handles under current principal, intent,
+attempt and destination. The pinned harness owns any machine-local login,
+provider session or brokered provider connection. Enforce the installed
+network declaration at the container and broker boundaries, including
+`network: "none"`. Provider transport requires an eligible declared route.
+An unqualified profile, harness or isolation combination remains disabled.
+[Manual turns][turns] · [Provider protocol][provider] ·
+[Claude Code][claude] · [Codex][codex]
+
+### A.3 Durable streams and same-execution reattach
+
+Persist machine, boot, execution and attempt identifiers and the fence before
+dispatch. Replace the in-memory ACK and unknown-exec adoption in
+`machines/sessions.rs::output`. ACK only a contiguous private spool position
+after durable commit. Accept restart reattachment only with fresh authenticated
+proof of the same machine boot, running container, execution, attempt and
+current fence, plus continuity from the committed position. Otherwise fence
+the old attempt, preserve the committed transcript, and require explicit
+Resume by a currently authorized person. A saved provider session is useful
+for Resume and provides no live-execution proof. Reconcile an uncertain
+external effect before retry. The package can use durable timers to retry
+a provider failure whose effect is known safe. [Machine output path][output]
+
+The package normalizes private input into a common bounded display envelope.
+Commit public events, stable sequence IDs, the receipt and the consumed-input
+cursor together. Cursor-only commits cover input with no display event.
+Reclaim private spool pages through that cursor. Bind opaque frames, native
+session IDs and checkpoints to the private attempt. Exclude raw data from
+display routes, shared logs, search, exports and ordinary backups. The
+qualified display path validates quote and attachment refs, accepts only
+designated display fields and scrubs issued credentials across chunks before
+publication. A schema cannot prove arbitrary text safe. Keep adapters without
+qualified display separation private.
+
+Cold page, follow and resume check the current audience at egress and release
+the reader before waiting on transport. Measure first with a 16 MiB or 4,096
+record private cap per attempt and 128 MiB per space. Apply credit backpressure and stop as interrupted after 30 s of stalled input or drain. Retire
+unconsumed private frames after a 10-minute recovery window. Bound display
+retention independently by age, events and bytes under the item retention
+policy. Reject admission without a finite configured allowance. [Transcript spike][measurements]
+
+### A.4 Protected requests
+
+Use the host Inbox. A live eligible person resolves a checked request bound
+to its actor, current attempt, target, expiry and verified action digest.
+Recheck these at decision and at one-time consumption. A durable broker action
+can wake one parked job via receipt. A native request is tied to the exact
+live process and native request ID. Exit, replacement or revocation invalidates
+it. Codex's current `can_approve: false` requests and Claude denial summaries
+allow dismissal only. An actionable approval requires executable material the
+host can verify. Guest Prompt stays disabled pending the sealed proof.
+[Provider protocol][provider] · [Sealed §5][sealed]
+
+### A.5 Ownership and cutover
+
+| Current paths | Transfer |
 | --- | --- |
-| Turns `admission`, `thread_admission`, `launch`, `lease` | Extract receipt-backed item-to-job admission, same-attempt placement and cleanup. Move prompt construction, provider command encoding, session selection and one-turn-per-thread policy into the orchestrator. Preserve the existing two-barrier send and archive ordering. |
-| `run`, `progress`, `control` | Keep machine output sequencing, bounded transport, cancellation and fenced commits. Move parsing provider frames, assembling messages, choosing checkpoint boundaries and mapping steer/stop to adapter commands into the plugin. Expose checkpoints as generic durable data and render committed pages through the existing host component. |
-| `access`, `redact`, `verify`, `readiness` | Keep capability and effect checks, secret-safe routing, private diagnostic delivery and verification of enrolled targets in the host. Remove bearer exposure to workloads where a brokered call suffices. Retain issued-credential filtering on legacy channels through cutover. The plugin owns the provider probe, login UX and readiness interpretation. |
-| `phases`, `retry`, `tool_steps`, `instructions`, server thread presentation | Move phase labels, retry intervals and reset policy, provider/model selection, tool summaries, title generation and instruction assembly into the orchestrator and adapters. The host supplies timers, bounded progress and shared rendering primitives. |
+| Turns admission, launch, lease, control and progress | Host retains lifecycle and receipt fences, admission, stop, cleanup, paging, egress authority and durable machine/stream transport. Packages own prompt construction, adapter calls, phase labels and retry policy. |
+| Turns phases, retry, tool steps, instructions and thread presentation | The orchestrator owns provider/model option policy, title and instruction assembly, message/Markdown decoding, tool-step presentation and thread automation inputs. Use declared inputs and committed projections. |
+| Notes tags, links and live saves | Notes owns frontmatter tag extraction and link-rewrite policy. The host keeps room concurrency, save and lifecycle/Undo commits and checked index publication. Cold views use committed projections. |
+| Turns access, redact, verify and readiness | Host keeps principal and effect enforcement, placement verification and confidential custody. Adapters own provider-specific probes, login behavior and readiness interpretation. |
 
-Current Claude Code maps its CLI's print stream and resume into provider-v1
-frames. Codex maps App Server stdio, saved native sessions, steer and interrupt.
-Reuse those adapters behind the package boundary. The host can validate a
-declared frame and pass bytes without understanding either provider. [Manual turns](../agent-turns.md) · [Provider protocol](../provider-protocol.md) · [Claude Code](../../plugins/calternal-claude-code/README.md) · [Codex](../../plugins/calternal-codex/README.md)
-
-1. Qualify the stream, machine broker and protected wait using both adapters
-   and a minimal independent runner. Reuse the existing auth, jobs, machine
-   lease, journal and content engines.
-2. Move the Notes rewrite onto generic items and derived output first. In
-   parallel with that integration, prove the orchestrator against disposable
-   data through the same declared interfaces.
-3. For the Threads cutover, stop new old-engine admissions and drain or fence
-   active runs. Convert and verify committed thread heads, stream positions
-   and retained session bindings once. Reauthorize new runs and preserve
-   provider-local profiles. Verify archive/stop, automations and receipts
-   against the converted state before switching the single writer. Remove
-   native Turns routing and provider-specific server policy in that cutover.
-   Use a verified restore point for rollback.
+First qualify the shared engines with both shipped adapters and a minimal
+independent runner. Integrate Notes on the generic item and derived-file
+surfaces first. Then stop old Turns admissions, drain or fence active
+attempts, and convert thread heads, stream positions, pending intents and
+receipts once. Preserve native session bindings by account, provider, thread,
+machine and eligible profile, plus preserved workspaces and their quotas.
+Verify converted heads, grants, archive/Undo, exact-lease discard and recovery
+against the original data before switching the single writer. Remove old
+Turns routes in that cutover. Exercise the release pair with an attempted
+downgrade after new commits. Refuse downgrade unless the old release reads
+those commits exactly once. A restore point can help before cutover.
+[Sealed §8][sealed]
 
 ## B. Derived files and private scratch
 
-The host serves every list, count, search result and shared view from items
-and their authorized projections while the space sleeps. Each package may
-keep rebuildable private scratch in appdata. The first release drops the
-host table store proposed in sealed §6.
+The host serves lists, counts, search and sharing from authorized items while
+the space sleeps. A manifest may opt into cold empty-item creation from
+declared defaults. Further initialization consumes its committed change.
+Private per-package scratch replaces the proposed first-release host table
+store.
 
-Any manifest can opt into cold creation from declared defaults. The host
-publishes the empty item and its change record using the ordinary item commit.
-The package uses the committed change for any further initialization.
+### B.1 Device snapshots and cold previews
 
-### Derived files and note previews
+Declare the output name, kind, producer, media type and quota. Bind the
+device upload grant to the authenticated save session, editor, save receipt,
+exact committed revision and output slot. Capture asynchronously from the
+editor state corresponding to the saved revision. If the local state has
+advanced or a merge yields a different revision, skip the upload and use
+the fallback. After save ACK, stage bounded still-image bytes, validate
+type and dimensions, re-encode, strip metadata and make the file durable.
+Under the publication fence, recheck the upload grant, live edit authority
+and head. Commit the pointer and attribution with a one-use receipt. The
+same digest can replay that receipt under current authority. Different bytes
+or a different session are refused, even for another editor.
 
-A package declares each derived output's applicable kind, name, media type,
-producer and quota. The host keys a publication by space, package, item,
-source revision and output name. Include checked dependency revisions and
-producer version where relevant. An output inherits the authority of its
-source and any additional inputs. Only inputs visible to the entire output
-audience may contribute to a shared output. Personal outputs belong in the
-person's space.
+An editor can upload a misleading picture of a note they may edit. The
+host verifies attribution and revision binding. The editor supplies the
+pixels. Confine the image to that note and revision, attribute it to the
+uploader, and supersede it on the next save. The next editor's upload
+replaces it. Host or plugin rendering can qualify later.
 
-On save, the editing device takes a small snapshot of the note and uploads
-it after the save ACK. The host issues an upload grant tied to that editor,
-save receipt, exact note revision, output name and current edit authority.
-Validate and re-encode a still image within declared host-capped type,
-dimension and byte limits. Strip metadata and reserve staged bytes before
-accepting the upload. Under the publication fence, recheck the grant,
-current head and live authority, then publish the pointer with the
-author and save revision. Expire unused grants and reclaim interrupted
-staging. A member who can edit a shared note can submit misleading pixels
-for that note and its revision. The image carries uploader attribution,
-grants no action or access, and is superseded on the next save. The host
-can verify image safety and provenance. The pixels are editor-supplied.
-The next editor's valid upload supplies the replacement.
+Extend `RowTemplate` in the numbered revision with an authorized
+revision-bound leading image and a bound second line. Notes uses a portrait
+preview and a second line with date and snippet. The manifest declares a
+first-block projection over the committed structured content, initially
+three typed blocks and 256 bytes of text total. The generic save/index
+path computes it in the same revision for room, device, agent and plugin
+saves. Cold create supplies
+the declared empty summary. The renderer uses the compact block summary for
+a miniature if the image is missing, stale, evicted or pending. An empty
+note or an older item without that projection gets a blank miniature.
+No client or worker reconstructs this by fetching an entire note at row read.
 
-The leading image uses an opaque, audience-bound reference to the current
-asset. Each request checks live item authority and version. When the image
-is missing, stale or evicted, the renderer draws a simple miniature from a
-bounded structured summary of the first blocks. The host supplies this
-declared row field from the current revision using the same field permissions.
-Keep the summary to simple block tags and short text with no external loads.
-An agent or plugin edit can populate the summary without producing an image.
-Device capture and image upload stay off the save path. The fallback and
-asset reads wake zero VMs. Host or plugin rendering can qualify later.
+Resolve an opaque image ref against current audience, head and all dependency
+grants and versions before sending bytes or returning a cache revalidation.
+A stale or revoked ref cannot yield a `304`. Use session-only guest/public
+media, with no persistent cache. Member caching follows sealed §4.2 and
+must drop revoked media at reconnect. Read and miss paths wake zero VMs.
+[Description contract][description] · [Sealed §§4.2 and 5][sealed]
 
-Other derived files, such as photo thumbnails, come from brokered jobs.
-A save records the existing change/outbox in its commit. The job subscriber
-advances its durable cursor by receipt and coalesces by item and output to
-the latest desired revision. Queue delivery and computation happen after
-the save. Recheck the source and dependency revisions and the producer's
-live rights before publishing. Keep the catalogue, pointers, indexes and
-bounded hot previews in SSD appdata. Put bulk media in a host-managed
-derived directory on the media tier. In a one-disk installation both roots
-can share a filesystem. Commit the staged bytes before publishing their
-pointer. Treat an absent file as a cache miss and evict in bounded batches.
-Back up canonical files and items using their ordinary policy. Derived media
-can be rebuilt or replaced by the fallback. [Storage ADR 0062 and tiering amendment](https://git.kayg.org/kayg/calternal/src/branch/dev/docs/adr/0062-user-files-on-hdd-app-data-on-ssd.md)
+### B.2 Other derived files and storage bounds
 
-### Private scratch disk
+Brokered jobs can produce files such as photo thumbnails. The existing
+change outbox drives a durable subscriber by receipt. Coalesce work to the
+latest desired revision and recheck dependencies and producer rights at
+publication. Save ACK waits for neither job delivery nor asset work.
+Keep pointers, indexes and bounded hot previews in SSD appdata, with bulk
+media under the host-managed HDD tier. Support the decided one-disk
+installation. Back up canonical files and items under their ordinary policy.
+Treat missing staged or evicted derivatives as misses and reclaim in bounded
+batches. Purge and revoke deny delivery before cleanup.
 
-Provision one size-capped virtual disk in appdata per installed package and
-space. A declared background job in either the small or heavy plugin VM may
-use it. The host attaches it to one VM at a time and mounts it only in
-the leased job sandbox. The lease also serializes disk users within the
-VM. The heavy VM is the default for indexing. Handoff requires quiescing
-the old job, unmounting and detaching before the next attachment. After a crash, prove the old attachment
-is fenced before reuse. The disk is outside VM snapshots and never attaches
-to agent VMs or enrolled machines. Interactive calls and item-share or
-guest activations receive no scratch handle. They continue while the heavy
-VM holds the disk. The package may use SQLite or another local format.
+For qualification, cap a device upload at 512 KiB encoded and 256 × 384
+decoded pixels. Allow at most two active decodes, 64 pending grants and 8 MiB
+aggregate staging per space. Reserve before ingest, expire grants and
+abandoned staging within five minutes, and refuse new staging at the cap.
+Other asset types also require finite declared and host-capped resource
+limits. Cross a crash cut only after durable bytes and a fenced pointer
+commit. Eviction switches off the pointer before reclaiming bytes.
 
-**Rebuildable custody.** The host enforces capacity on the disk, including
-auxiliary database files, and excludes it from backups. Uninstall fences
-jobs and wipes the volume. The package declares how to reconstruct it
-from the person's files and committed items, both accessed through the
-broker. Originals, user edits and durable job checkpoints use their normal
-host custody. Conformance deletes the volume mid-job and at rest and
-requires recovery of the same visible state and deterministic fixture
-index, with zero canonical loss. Disk exhaustion stalls or rebuilds the
-scratch index while canonical writes continue.
+### B.3 Private scratch isolation and custody
 
-**Host-only publication.** No disk access, reads or query endpoint is
-issued to a renderer, guest, item-share, other package or agent. A package
-publishes visible results by patching its declared indexed item fields
-through the broker. Keep the scratch generation scoped to the declared
-job's source authority. Reuse a generation only under the same checked
-source scope. Fence it on grant or permission loss and rebuild before
-reuse. The broker checks current write authority and source revisions on
-publication. A photo's recognized labels become ordinary fields. Filtering
-by label uses an ordinary Bind and item authority. An item share can expose only that
-item's allowed projection and derived media. Guests and item shares
-cannot enumerate the scratch index, other items or space-wide counts.
+Provision one size-capped appdata disk per package and space. Declared
+background jobs in either plugin VM can use it. Bind the exclusive mount
+lease to space UUID, installed package and producer generation, source scope
+and exact job attempt. Run each lease in a dedicated OS identity and mount
+namespace with no shared memory or handles with interactive workers. On
+handoff or revoke, fence the lease, terminate the old process and detach
+before reuse. After a crash or restore, prove the old attachment fenced.
+Scratch and scratch-job memory stay outside both backup and VM snapshots.
+Agent VMs and personally enrolled machines have no scratch mount. Guests or
+item-share activations cannot invoke or indirectly enqueue scratch work.
 
-An enrolled personal machine may index originals from a shared space only
-after an explicit space decision and the machine owner's agreement.
-Check both when assigning or renewing work. On withdrawal, fence the
-lease and stop further broker reads and publication. An enrolled machine
-operator can retain bytes already delivered. Under the first contract,
-“photos like this” runs in the on-demand heavy plugin VM as a background
-ML job. A visible result uses ordinary item publication and checks each
-target's read authority.
+Enforce the size quota at the volume, including auxiliary files. Fence jobs
+and wipe the disk on uninstall. Disk exhaustion stops scratch work without
+blocking canonical writes. Rebuild only from brokered files and committed
+items. Originals, user edits and durable job checkpoints stay in ordinary
+host custody. A package must recover when conformance deletes its disk.
+Reuse a generation only under the same live source scope and rebuild after
+a grant or package permission shrinks. Renderers, item shares, guests,
+other packages and agents have no disk, row or query access. They receive
+only ordinary authorized item fields and derived files.
 
-### Bulk item metadata writes
+### B.4 Publication audiences, machine consent and similarity
 
-Use the existing brokered item commit and indexed field path. Propose at
-most 128 item patches and 1 MiB encoded data per batch, with one outstanding
-batch per job. Each batch carries a replay receipt and an expected source
-revision per item. Before commit, check the producer generation, declared
-fields, current actor/item rights and source revision. Merge the authorized
-fields against the current head under the write fence. Report stale items separately for
-recomputation. A metadata-only patch keeps its source input revision and
-does not trigger its own producer.
+Publish source-local fields by default. A photo's recognized labels go onto
+that photo and are filtered by ordinary Binds. Multi-item outputs require
+host-checked source refs, expected revisions and a destination audience
+contained in every input audience. Apply that check to identifiers, scores,
+order, counts and even the existence of a result. Dependency change or
+revocation fences stale joins, indexes, versions and counts before delivery.
+For first release, publish viewer-specific similarity results only in the
+person's space with dependency-checked refs. Execute “photos like this” as
+a background ML job in the heavy plugin VM. Scope candidate matching to the
+viewer's authorized set before ranking. Bound the stored result refs and
+recheck their revisions and grants at delivery. Refuse the stale result
+as a whole if an input fence has changed. Sealed installed-package trust still
+applies to deliberate copying by a trusted package. Checked provenance
+protects the declared path and cannot prove the origin of arbitrary output.
+[Sealed §5][sealed]
 
-Commit accepted patches, index/count changes, the receipt and a bounded
-change record per batch together. Keep per-item revisions and authority
-checks while avoiding an independent flush or notification per item.
-Feed and search workers consume the committed range by cursor. Keep
-the latest pending revision per item. Notify each affected authorized
-Bind at most once per delivery interval, initially 100 ms for the spike.
-Replace or invalidate the affected window. Preserve the immediate delivery
-path for targeted revocations. Host admission meters bytes, item changes
-and index work per space.
-Yield between batches and return a retry delay when journal or projection
-backlog reaches its budget. Reserve foreground capacity for taps and saves.
-Validate the batch caps and delivery interval in the spike.
+The heavy plugin VM is the default for shared originals. A personal
+machine can index them after both the space's explicit decision and the
+machine owner's agreement to the named machine, package, purpose and
+source scope. Consent states that the operator may retain delivered bytes.
+Check both revisions at assignment, on each bounded broker delivery
+and at publication. Withdrawal fences streams and queued work immediately,
+including on an unexpired lease. Enable this placement only after it passes
+the consent-revocation spike.
 
-## C. Qualification
+### B.5 Bulk item metadata commits
 
-The owner resolved the execution, snapshot, machine consent, similarity
-and scratch decisions. Remaining limits are qualification parameters.
-Use sealed §8's machines, instrumentation and repetition rules. The new
-latency targets below are proposed spike gates.
+Extend the content engine with a real per-space batch transaction. A loop
+of today's single-item FULL commits cannot meet this contract. Stage files
+if needed using the current durability primitives. Check expected heads,
+source revisions, actor rights, producer generation and declared fields
+at the fence. Coordinate with live rooms and refuse or defer contended
+items. One FULL transaction commits the accepted heads, indexes, counts,
+bounded outbox range and receipt. The receipt fingerprints normalized
+input and records per-item committed, stale or refused outcomes. An exact
+replay rechecks delivery authority and returns those outcomes without writes.
+Recovery idempotently publishes the committed range, retires the outbox and
+reclaims unreferenced staging. An output-only patch never requeues its
+producer for the same source revision.
+
+Initial spike limits are at most 128 patches and 1 MiB per batch, one in
+flight per job, two batch admissions per second across each space, 8 MiB
+total queued or staged, and 8,192 index keys per batch within sealed scope
+limits. Reserve
+foreground writer capacity and yield between batches. Pause admission at a
+one-second oldest unpublished age or the byte/work cap. Resume as workers
+drain. Feed and search consume by commit cursor, retain the latest pending
+revision per item, and coalesce only authorized changes into one notice
+per affected Bind per 100 ms. Keep targeted revocations immediate. Bound
+each consumer queue and recover it from the committed range.
+[Sealed query and save gates][sealed]
+
+## C. Owner question and qualification
+
+**Who should see a photo similarity result?** A result can tell someone
+which other photos exist. For example, a member looking for photos of a
+trip might find a picture that other members cannot open. A personal result
+lets that member revisit their matches and costs a private result item per
+run. A shared result would
+let several members curate matches from the same collection, and costs
+dependency-indexed invalidation and audience checks for every source and
+reader. This determines which publication surface the first contract
+needs. Recommend personal results for the first release. The proposed
+spike uses that scope.
+
+Use sealed §8's machines, repetition and instrumentation. Numeric additions
+below and in §§A–B are proposed spike limits.
 
 | Spike | Pass condition that can falsify the proposal |
 | --- | --- |
-| Agent recovery | In real agent containers, cut after stream commit before ACK, restart the server, stall a reader and revoke during reattach. Reattach only to a provably identical live execution. Ordered event and receipt IDs survive. An uncertain attempt stays fenced until explicit Resume, with zero duplicate effects or revoked bytes. Keep the sealed 150 ms warm first-screen and 500 ms independent-control p95 gates. |
-| Agent isolation and parity | Use both shipped adapters and an independent runner. Assert zero foreign or revoked ref access, directory enumeration, credential exposure or unauthorized placement. Park an approval, restart and race decision against revoke. At most one eligible decision wins. |
-| Device snapshot | Save and upload with the space asleep. Race a delayed upload against an agent edit. Inject foreign item and revision refs, a stolen or revoked upload grant, and oversized or invalid image bytes. Assert zero unauthorized or stale published bytes, correct attribution, and zero runtime wakes for save, upload or cold read. An authorized misleading image is confined to its note and revision. Its successor's row uses the miniature until a valid replacement arrives. Require p95 ≤40 ms save ACK and ≤2 s from ACK to current preview for a successful ordinary device upload. |
-| Scratch deletion and fencing | Delete scratch at rest and during a job, fill the disk, and cut during small-to-heavy handoff. Recover from the same files and items, preserve canonical hashes and reconstruct the deterministic fixture index. Assert one live attachment at most, zero guest, share or cross-package reads, exclusion from backup and deletion on uninstall. |
-| 10,000-photo label run | Index 10,000 mixed-visibility photos on the heavy VM and publish labels in bounded batches while driving taps, saves and reads. On a consented enrolled-machine arm, revoke either consent during the run and verify zero further broker reads or writes. Verify ordinary label Binds, exact index reconciliation after a cut, no unauthorized writes or changes to hidden readers' rows or counts. Keep the sealed tap, cold-window and 40 ms save p95 gates. Saturate the publication queues and record backpressure, flushes, feed deliveries, search lag and foreground p95. Assert bounded backlog and coalesced delivery. |
-| Derived media eviction | Cut during staging and pointer publication and remove the derived root. Canonical hashes and authority survive. Assert bounded staging, no dangling asset delivery and an authorized miss until a valid current asset publishes. |
+| Agent recovery and live revoke | Cut before private spool commit, after commit before machine ACK, and after ACK before public append. Restart, stall the reader and partition the machine with control blocked. An exact still-running attempt resumes its committed sequence once. Missing proof or range requires explicit Resume. Zero broker effects or output deliveries after fencing, and the process and tools stop within 5 s of the last renewal in every run. Verify the spool bounds and terminal outcome. Keep the sealed 150 ms first-screen and 500 ms independent-control p95 bounds. |
+| Agent isolation, approvals and cutover | Use both shipped adapters with personal and shared profiles, plus an independent runner. Forge refs, delegate discovery, attempt credential access and network egress, and replay native approval across attempts. Zero unauthorized effects or bytes. Race decision against revoke and exit, with at most one eligible decision. Exercise Send/Stop/Archive/replay and downgrade after new writes. Preserve exact receipts, workspaces and committed state or refuse downgrade. |
+| Device snapshot and derived media | On a sleeping space, measure save intent to durable ACK p95 ≤40 ms and ACK to current painted preview p95 ≤2 s. Race unsynced local edits, room and agent changes, revoke and a copied grant in another editor's session. Try a changed-digest replay and invalid/oversized images. Cut before file durability, before/after pointer commit and during eviction. Enforce staging and cleanup caps, assert zero wakes on the preview path, zero stale/unauthorized bytes including through cache revalidation, correct attribution and clean authorized fallback. |
+| Scratch deletion and isolation | Delete scratch at rest and mid-job, fill it, and cut small-to-heavy handoff. Restore from a VM snapshot and try a guest activation after a warm privileged job. Assert one mount, no stale process data or scratch work from the guest, no cross-scope access, no scratch in backup/snapshot, deletion on uninstall, and exact reconstruction without canonical loss. |
+| 10,000-photo labels and similarity | Index mixed-visibility originals while concurrent writers drive taps, saves and reads. Compare labels and personal similarity IDs, order and counts to an independent authorized oracle. Changes to hidden sources cannot affect those results. Withdraw either consent mid-delivery on the personal-machine arm and verify zero further bytes or commits. Sustain the write limit and cut through batch commit, journal and outbox retirement. Require exact recovery, the sealed foreground gates, bounded staging and p95 publication lag ≤2 s under steady load with oldest unpublished age ≤5 s. Record reads, FULL commits, actual flushes, feed deliveries, search lag and per-arm queue depth. |
+
+### C.1 Numbered contract revision
+
+Revise the manifest, description schema, catalogue, verifier and fixtures
+together for three runtime roles, shared execution/stream engines, protected
+composer dispatch, generic cold create, scratch, derived images and row
+fields, and bulk item publication. Replace Turns-specific dispatch and the
+first-release table store. Carry forward all-field search by default with
+an optional field filter. Qualify every new route against the sealed
+authority matrix before enabling it. Qualify execution, approvals and
+streams with both adapters and the independent runner.
+[Sealed plan][sealed] · [Combined-search measurement][combined-search]
 
 ## Simplification opportunities
 
-Use one protected request store and one replayable job admission path.
-Share the cursor and receipt engine between transcripts and other durable
-streams. Use the same item commit and change cursor for
-bulk metadata and single edits.
+Reuse the protected Inbox, item lifecycle fence and change cursor. Keep
+ordinary labels source-local and keep similarity in personal space.
+
+## First review disposition
+
+| Finding | Where addressed |
+| --- | --- |
+| 1. Agent enumeration | §A.2 per-attempt principal and capabilities |
+| 2. Run lifetime | §§A.2, C machine deadline and partition gate |
+| 3. Credentials and network | §§A.2, C pinned harness and adapter matrix |
+| 4. Protected requests | §§A.4, C broker vs. live native requests |
+| 5. Durable machine ACK | §§A.3, C identity and spool cuts |
+| 6. Private spool and display | §§A.3, C custody, envelopes and bounds |
+| 7. Send, archive and Stop | §§A.1, C lifecycle fence and receipts |
+| 8. Cutover custody | §§A.5, C preserved bindings and release pair |
+| 9. Server ownership | §A.5 host and package mapping |
+| 10. Upload identity | §§B.1, C save-session grant and exact replay |
+| 11. Cold miniature and media | §§B.1, C.1 row schema and egress |
+| 12. Scratch isolation | §§B.3, C exclusive, isolated leases |
+| 13. Publication audiences | §§B.4, C source checks and owner question |
+| 14. Batch feasibility and flood | §§B.5, C transaction, caps and cuts |
+| 15. Machine consent | §§B.4, C per-delivery and publication fences |
+| 16. Bounds and qualification | §§B.2, C resource caps and observable gates |
+| 17. Contract revision | §C.1 coordinated schema and conformance changes |
+
+[owners]: https://git.kayg.org/kayg/calternal-ai/src/commit/85add29af840b225dd9a83cae2e5cd4ce3aecfc9/docs/open-questions.md
+[sealed]: ../plugin-api-v2.md
+[description]: ../description-contract.md
+[measurements]: ../measurements/plugin-api-v2-step0.md
+[combined-search]: ../measurements/plugin-api-v2-step0.md#follow-up--search-across-all-searchable-fields
+[admission]: https://git.kayg.org/kayg/calternal-ai/src/commit/85add29af840b225dd9a83cae2e5cd4ce3aecfc9/crates/server/src/turns/admission.rs
+[access]: ../../crates/server/src/turns/access.rs
+[output]: ../../crates/server/src/machines/sessions.rs
+[turns]: ../agent-turns.md
+[provider]: ../provider-protocol.md
+[claude]: ../../plugins/calternal-claude-code/README.md
+[codex]: ../../plugins/calternal-codex/README.md
