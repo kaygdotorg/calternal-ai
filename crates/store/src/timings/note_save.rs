@@ -36,9 +36,13 @@ struct Durations {
     file_guard_ns: u64,
     filename_ns: u64,
     content_commit_ns: u64,
+    content_commit_start_ns: u64,
+    content_commit_end_ns: u64,
     record_write_ns: u64,
     record_sync_ns: u64,
     job_commit_ns: u64,
+    job_commit_start_ns: u64,
+    job_commit_end_ns: u64,
     journal_ns: u64,
     retirement_ns: u64,
     commits: u32,
@@ -61,7 +65,8 @@ impl SaveSpan {
     /// Record a completed span without allocating, blocking or logging.
     pub fn finish(self) {
         let Some(started) = self.1 else { return };
-        let elapsed = now() - started;
+        let ended = now();
+        let elapsed = ended - started;
         TIMING.with(|timing| {
             let mut timing = timing.borrow_mut();
             let Some(d) = timing.as_mut() else { return };
@@ -71,11 +76,17 @@ impl SaveSpan {
                 SaveStage::Filename => d.filename_ns += elapsed,
                 SaveStage::ContentCommit => {
                     d.content_commit_ns += elapsed;
+                    d.content_commit_start_ns = started;
+                    d.content_commit_end_ns = ended;
                     d.commits += 1;
                 }
                 SaveStage::RecordWrite => d.record_write_ns += elapsed,
                 SaveStage::RecordSync => d.record_sync_ns += elapsed,
-                SaveStage::JobCommit => d.job_commit_ns += elapsed,
+                SaveStage::JobCommit => {
+                    d.job_commit_ns += elapsed;
+                    d.job_commit_start_ns = started;
+                    d.job_commit_end_ns = ended;
+                }
                 SaveStage::Journal => d.journal_ns += elapsed,
                 SaveStage::Retirement => d.retirement_ns += elapsed,
             }
