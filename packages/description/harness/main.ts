@@ -11,16 +11,24 @@ import notes from "../../../contract/fixtures/description-v2/notes-app.json";
 const q = new URLSearchParams(location.search);
 initInputModality(); initScheme();
 const fixtures: Record<string, unknown> = { "reading-list": reading, notes };
-const description = fixtures[q.get("fixture") ?? "reading-list"] as AppDescription;
 const rows = Number(q.get("mock") ?? 0);
+let description = fixtures[q.get("fixture") ?? "reading-list"] as AppDescription;
+let viewRef = q.get("view") ?? "v-mock";
+const bearer = q.get("bearer") ?? undefined;
+if (rows === 0) {
+  // A real host: its /fixture names the views it will open and carries each one's template.
+  const f = await (await fetch(`${q.get("host")!.replace(/\/$/, "")}/fixture`, { headers: bearer ? { authorization: `Bearer ${bearer}` } : {} })).json() as { views: Record<string, string>; templates: Record<string, AppDescription> };
+  const name = q.get("viewName") ?? "home";
+  viewRef = f.views[name]!; description = f.templates[name] ?? f.templates.shared!;
+}
 const transport = rows > 0
   ? new MockHost({ rows, count: (q.get("count") as "exact" | "none") ?? "exact", latencyMs: Number(q.get("latency") ?? 0), fields: (i) => ({ title: `Reading item ${i}`, added: 1_700_000_000 - i, read: i % 7 === 0, updated: 1_700_000_000 - i, pinned: i % 11 === 0 }) })
-  : new HttpTransport({ base: q.get("host")!, bearer: q.get("bearer") ?? undefined });
+  : new HttpTransport({ base: q.get("host")!, bearer });
 const session = new HostSession({ transport });
 const w = window as unknown as Record<string, unknown>;
 w.__session = session; w.__t0 = performance.now(); w.__transport = transport;
 const t0 = performance.now();
-await session.open(q.get("view") ?? "v-mock");
+await session.open(viewRef);
 w.__opened = performance.now() - t0;
 mount(AppView, { target: document.getElementById("app")!, props: { description, session, kindIcons: { "reading-item": "notes", "reading-reminder": "clock", notes: "notes", collections: "folder" } } });
 // First rows painted: the first skeleton-free row of the first list.

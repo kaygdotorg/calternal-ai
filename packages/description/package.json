@@ -6,17 +6,27 @@
   "description": "The web renderer of the plugin API v2 description contract (docs/description-contract.md): typed model generated from the sealed schemas, the wire client, windowed lists and the Svelte components that draw a description. No app-specific code.",
   "license": "AGPL-3.0-only",
   "exports": {
-    ".": { "svelte": "./src/index.ts", "default": "./src/index.ts" },
+    ".": {
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
     "./model": "./src/generated/model.ts"
   },
   "svelte": "./src/index.ts",
   "scripts": {
     "types": "node scripts/generate-types.mjs",
     "check": "node scripts/generate-types.mjs --check && svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "harness:build": "npm run tokens -w @calternal/ui && vite build -c vite.harness.config.ts",
+    "harness": "vite preview -c vite.harness.config.ts",
+    "e2e:perf": "node e2e/perf.mjs"
   },
-  "peerDependencies": { "svelte": "^5.57.1" },
-  "dependencies": { "@calternal/ui": "*" },
+  "peerDependencies": {
+    "svelte": "^5.57.1"
+  },
+  "dependencies": {
+    "@calternal/ui": "*"
+  },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@testing-library/svelte": "^5.4.2",
@@ -24,6 +34,7 @@
     "ajv-formats": "^3.0.1",
     "jsdom": "^31.0.1",
     "json-schema-to-typescript": "^15.0.4",
+    "playwright": "1.63.0",
     "svelte": "5.57.1",
     "svelte-check": "^4.3.0",
     "typescript": "^5.9.3",

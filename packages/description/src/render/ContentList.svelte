@@ -2,7 +2,7 @@
   // A bound list: the windowed rows of one bind drawn with its row template, and its states. It reuses the design system's VirtualList (the only windowed list; one primitive, not forked) and Row, and the store
   // keeps the host's windows. While loading it draws skeleton rows of the real row height; `empty`, `error` and `refine_query` show the bind's own message (the renderer's plain default only for `error` and
   // `refine_query`, which a description may leave unsaid). The list takes the height of its container and scrolls itself, or with `inside` follows the nearest scrolling ancestor (a sidebar).
-  import { VirtualList } from "@calternal/ui";
+  import { VirtualList, cssPx } from "@calternal/ui";
   import type { Bind, State } from "../model";
   import type { WindowStore } from "../windows/window-store.svelte";
   import RowView from "./RowView.svelte";
@@ -28,6 +28,8 @@
   const errorMessage: State = $derived(states.error ?? { title: "This list could not be loaded." });
   const refineMessage: State = $derived(states.refine_query ?? { title: "Refine your search." });
   const skeletons = [70, 52, 64, 44, 58];
+  /** The system row height (a token), so the scroll extent is right before any row is measured. */
+  const rowH = cssPx("--row-h", 44);
 </script>
 
 <div class="list" data-bind={bind.id} data-state={store.state} data-count={store.length}>
@@ -44,7 +46,7 @@
     {#if store.state === "refine_query"}<div class="refine"><StateMessage message={refineMessage} /></div>{/if}
     <div class="rows" class:inside>
       <VirtualList
-        count={store.length} estimate={48} startAtBottom={false} {inside} {label} rowRole="listitem"
+        count={store.length} estimate={rowH} startAtBottom={false} {inside} {label} rowRole="listitem"
         onrange={(first, end) => store.ensure(consumer, first, end)}
         nav={{ id: (i) => store.row(i)?.id ?? "", indexOf: (id) => store.indexOf(id), selected: () => (selectedId ? store.indexOf(selectedId) : -1), open: (i) => { const r = store.row(i); if (r) onsettle?.(r.id, i); } }}
       >
