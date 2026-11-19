@@ -125,6 +125,7 @@ private struct ChromeToolbar: ToolbarContent {
                     }.disabled(entry.disabled == true)
                 }
             } label: { Label(item.title, systemImage: symbol) }
+            .menuIndicator(.hidden)
         } else {
             Button { store.send(ChromeEvent(type: "header", id: item.id)) } label: { Label(item.title, systemImage: symbol) }
         }
@@ -178,6 +179,7 @@ private struct PhoneHeader: View {
             }
         }
         .controlSize(.large)
+        .tint(.primary)   // chrome controls are neutral glass with primary-colour symbols; the accent is for selection and primary actions only
         .padding(.horizontal, m.space(5)).frame(height: m.barHeight)
     }
 
@@ -191,7 +193,7 @@ private struct PhoneHeader: View {
                     }.disabled(entry.disabled == true)
                 }
             } label: { Image(systemName: symbol) }
-                .menuStyle(.button).buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel(item.title)
+                .menuStyle(.button).menuIndicator(.hidden).buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel(item.title)
         } else {
             Button { store.send(ChromeEvent(type: "header", id: item.id)) } label: { Image(systemName: symbol) }
                 .buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel(item.title)
@@ -220,14 +222,19 @@ private struct Phone<WebCard: View>: View {
                     .frame(width: size.width, height: size.height, alignment: .topLeading)
                     .accessibilityHidden(p < 0.5)
             }
-            // The card keeps the design's pane (the wallpaper's blurred copy under the card veil): there is no system equivalent of a wallpaper pane.
-            Card(label: store.description.header?.title ?? "Content", variant: .pane) {
-                ZStack(alignment: .top) {
-                    card.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    PhoneHeader(store: store).padding(.top, insets.top)
-                }
+            // The card keeps the design's pane (the wallpaper's blurred copy under the card veil): there is no system equivalent of a wallpaper pane. The pane is
+            // drawn at the full screen size explicitly: sized from its content it stopped below the status bar and left the wallpaper showing there as a band.
+            ZStack(alignment: .top) {
+                card.frame(maxWidth: .infinity, maxHeight: .infinity)
+                PhoneHeader(store: store).padding(.top, insets.top)
+            }
+            .frame(width: size.width, height: size.height)
+            .background(alignment: .topLeading) {
+                // Aligned with the window as the card slides: the copy is drawn at screen size and shifted back by the card's own offset.
+                PhonePane(context: model.context, size: size).offset(x: -p * (size.width - peek))
             }
             .clipShape(RoundedRectangle(cornerRadius: m.radiusPane * min(1, p * 5), style: .continuous))
+            .shadow(color: .black.opacity(Double(p) * 0.35), radius: 24)
             .frame(width: size.width, height: size.height)
             .offset(x: p * (size.width - peek))
             .accessibilityHidden(p > 0.5)
@@ -239,5 +246,30 @@ private struct Phone<WebCard: View>: View {
             }
         }
         .onAppear { store.setInsets(ChromeInsets(top: insets.top + m.barHeight, bottom: insets.bottom, leading: 0)) }
+    }
+}
+
+/// The phone card's material at screen size: the wallpaper's heavily blurred copy under the card veil (the design's pane), without a named coordinate space.
+/// `WallpaperBackdrop` finds its place through one, and under the status bar that space starts a safe-area inset lower than the screen: the copy then slid down
+/// and the wallpaper showed through above it as a band.
+private struct PhonePane: View {
+    let context: WallpaperContext
+    let size: CGSize
+    @Design private var d
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if d.materials.isOpaque || d.reduceTransparency {
+                d.theme.paper
+            } else {
+                if let w = context.wallpaper {
+                    Image(decorative: d.materials.blur ? w.cardCopy : w.sharp, scale: 1).resizable().interpolation(.medium).frame(width: size.width, height: size.height)
+                } else {
+                    Color(WallpaperBackdrop.mean(d.theme.colors.backdrop))
+                }
+                VeilLayers(veil: context.card ?? WallpaperBackdrop.floor(.card, d))
+            }
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading).clipped().accessibilityHidden(true)
     }
 }

@@ -153,7 +153,7 @@ struct ChromeSidebar: View {
                     .buttonStyle(.borderless)
             }
             if let items = section.menu, !items.isEmpty {
-                Menu { menu(items, owner: section.id) } label: { Label("More", systemImage: "ellipsis").labelStyle(.iconOnly) }.menuStyle(.borderlessButton).fixedSize()
+                Menu { menu(items, owner: section.id) } label: { Label("More", systemImage: "ellipsis").labelStyle(.iconOnly) }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             }
         }
     }
@@ -187,14 +187,14 @@ struct ChromeSidebar: View {
                     }
                 }
             }
-            .controlSize(phone ? .large : .regular).padding(.horizontal, 12).padding(.vertical, 8)
+            .controlSize(phone ? .large : .regular).tint(.primary).padding(.horizontal, 12).padding(.vertical, 8)
         }
     }
 
     @ViewBuilder private func accountButton(_ account: ChromeDescription.Account) -> some View {
         let face = Text(account.initial).font(.headline)
         if let items = account.menu, !items.isEmpty {
-            Menu { menu(items, owner: account.id) } label: { face }.menuStyle(.button).buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel(account.title ?? "Account")
+            Menu { menu(items, owner: account.id) } label: { face }.menuStyle(.button).menuIndicator(.hidden).buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel(account.title ?? "Account")
         } else {
             Button { store.send(ChromeEvent(type: "account", id: account.id)) } label: { face }.buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel(account.title ?? "Account")
         }
