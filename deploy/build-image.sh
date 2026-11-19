@@ -13,7 +13,7 @@ fi
 
 npm ci --ignore-scripts --no-audit --no-fund
 npm run build:plugins
-cargo build --locked --release --target "$target" -j6 -p calternal-server --bin calternal
+cargo build --locked --release --target "$target" -j"${CARGO_BUILD_JOBS:-6}" -p calternal-server --bin calternal
 # A shipped server serves its own web app: the bundle talks to that server by default
 # (fixtures stay reachable with ?server=0), at the site root.
 VITE_SERVER_DEFAULT=1 npm run web:build

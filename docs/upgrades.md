@@ -2,8 +2,10 @@
 
 The production schema baseline is dev `c98705d74bcf9f9cb2a1292b849b9b44c64b2714`,
 installed fresh as image tag `c98705d74bcf`. The markers below describe that
-release. The update proof uses the actual running image ID, which the operator
-captures in the [deployment runbook](deploy.md#first-ordinary-update-from-the-production-baseline).
+release. Production now runs `e16143f44f93`, a web-only update from
+`4735733eeb09` shipped with a passing proof for that image pair. The next
+proof uses the exact running `e16143f44f93` image and the gated candidate.
+[Deployment runbook](deploy.md#ordinary-update-from-production-revision-e16143f44f93)
 Preserve the earlier steps in the migration registry. Unsupported preview
 data is refused.
 
@@ -217,6 +219,33 @@ starts on those roots. Each release reads a write acknowledged by the other.
 The proof file binds those image digests and is published only after the test
 passes. Review each change for compatibility with the previous writer as well.
 
+The version range belongs to each store. In `e16143f44f93` the ranges are
+auth 11–14, machines 6–7, space content 3–5, journal/jobs/account input 2,
+and content routing/account content/secrets/agent settings/onboarding/
+installed plugins 1. The two search projections start at 2 and 1 and have
+their own rebuild rules. The shared reader accepts a newer version only with
+an exact marker for its store name, its own version, and the installed version.
+
+An existing store gets its marker in the locked additive migration. A lazy
+store did not exist when the inventory was scanned. In the failed proof,
+the candidate's first `threads.get` opened the jobs store directly at v3.
+For a proven additive change,
+declare the older writer with `Schema::with_compatible_creation`. The shared
+runner records the same marker atomically when it first creates the file.
+Ordinary open never adds evidence to an already versioned store. The release-pair
+test opens jobs both before cutover and in a space created after cutover,
+then exercises the old writer on the newer installation.
+
+Only declare creation compatibility if the old release can read and write
+safely after every enabled candidate write. A parked job can require the
+new waits runtime, and a new security record can affect compaction, erasure,
+or witness recovery. Keep those changes incompatible until their semantics
+pass the appropriate proof. A failed proof requires the owner's explicit
+approval and a full restore point, including on an installation without
+accounts. Link preservation protects pre-commit recovery. A committed
+incompatible update can require application-specific recovery from a
+separate operator backup.
+
 The [retained fixture](../tests/conformance/fixtures/upgrades/README.md) records
 the seed revision. Its debug upgrade exercises a forward schema change, nine
 crash points, and refusal of a downgrade without additive approval. The
@@ -263,10 +292,10 @@ before recording a complete handoff. Run seven and the remaining trials
 used the same images with a longer harness deadline.
 
 The proxy returned HTTP 502 during the write gaps. Some probes received no
-HTTP response. The page stayed signed in and the reconnect banner never
-appeared. The test sends its writes through the browser's API context. In
-Notes, a failed save can display **Not saved** because the client treats a
-non-JSON gateway response as a failed operation.
+HTTP response. The page stayed signed in. The rehearsal web bundles
+predated the client's gateway-outage handling, so the tab showed no
+reconnect banner. The probe sends writes through the browser's API
+context and measures when the server acknowledges them.
 
 Podman waited for the configured 90-second stop deadline with the signed-in
 tab open, then sent SIGKILL to the old server. The server's graceful
@@ -274,12 +303,73 @@ shutdown fences workers and machine leases, but does not end the live
 account, space and job event streams. Closing the tab before the untimed
 rollback let the server stop promptly.
 
-End those streams on SIGTERM, preserve their resume cursors, and let
-in-flight writes finish through their durable acknowledgement fences.
-Measure the remaining Podman, machine and proxy handoff with the same
-ten-run probe. During the outage, treat proxy 502, 503 and 504 responses as
-temporary unavailability so the interface can show the reconnect state and
-retry queued operations with their original request IDs.
+On SIGTERM the new server rejects new HTTP requests, closes the event
+streams, and lets admitted requests and room frames reach their normal
+durable acknowledgement fences. Clients can resume using the cursors they
+already hold. The machine reports that it is draining, stops admitting work,
+and releases its sandboxes while preserving persistent files. Both processes
+allow 1,750 ms and report an error if draining exceeds it. Podman allows two
+seconds for the server process and systemd allows four seconds for the
+container stop wrapper. The machine service has a two-second systemd stop
+timeout. A write whose reply is lost can replay using the same request ID.
+The first update from the old image still uses its own old stop path.
+
+In the repeat rehearsal, both images used the fixed shutdown from
+`ad137513`. The incoming lab image added a disposable machines schema
+9 table to exercise a real additive migration. The browser held
+authenticated account and space streams open in each run. The gaps in
+seconds were 4.911, 3.629, 4.670, 3.092, 6.164, 3.067, 1.910, 1.870,
+2.961 and 1.536. The minimum, median and maximum were 1.536, 3.080 and
+6.164 seconds. Nine of ten met the five-second budget. All ten rollbacks
+retained the candidate's acknowledged write.
+
+Neither service needed SIGKILL. The largest recorded in-process drain
+was 49 ms for each role, including the untimed rollbacks and teardown.
+In the slowest run, the old server drained in 2 ms, but its unit took
+another 2.1 seconds to finish stopping. The next container then took
+1.4 seconds to initialize after creation.
+
+The next rehearsal used `b01e8619` for both images, with the same additive
+machines fixture and the candidate image already staged. The driver reused
+the installed Quadlet and machine unit when their contents were unchanged.
+The ten write gaps were 7.480, 1.702, 1.961, 2.029, 2.694, 2.495, 1.599,
+1.785, 2.792 and 1.339 seconds. Nine met the budget. The exact image-pair
+proof passed, all ten rollbacks retained the candidate write, and all ten
+browser sessions stayed signed in. The proxy returned 502 during the gap.
+
+| Measurement | Minimum | Median | Maximum |
+| --- | ---: | ---: | ---: |
+| Write acknowledgement gap | 1.339 s | 1.995 s | 7.480 s |
+| Podman teardown, exit to removal | 215 ms | 289 ms | 977 ms |
+| Old container removal to new container creation | 644 ms | 997 ms | 5,630 ms |
+| Podman startup, creation to start | 205 ms | 371 ms | 968 ms |
+
+The longest gap in that series was dominated by the interval between
+containers. A separate ten-run series with the same images added
+timestamps around preparation, commit and activation. The gaps were
+1.433, 1.540, 1.707, 1.263, 2.651, 2.104, 1.018, 1.104, 1.081 and 1.166
+seconds. All ten met the five-second budget and preserved the acknowledged
+candidate write through rollback. The host load average at the start was
+10.90 over one minute, compared with 19.49 in the previous series.
+
+| Measurement | Minimum | Median | Maximum |
+| --- | ---: | ---: | ---: |
+| Write acknowledgement gap | 1.018 s | 1.348 s | 2.651 s |
+| Podman teardown, exit to removal | 165 ms | 243 ms | 745 ms |
+| Old container removal to new container creation | 507 ms | 636 ms | 997 ms |
+| Podman startup, creation to start | 170 ms | 213 ms | 405 ms |
+
+Locked preparation took 104–325 ms and commit 67–181 ms. Activation
+through enqueueing the server start took 114–251 ms. The driver reused
+the installed units in all ten timed handoffs. Both series used a local
+TLS proxy and disposable data. Allow headroom for shared-host load and
+larger installations.
+
+The web client in `e16143f44f93` treats a gateway's 502, 503 and 504 as
+temporary unavailability. It shows the reconnect state and retries
+operations with the original request IDs. Responses carrying the
+server's JSON envelope go straight to the caller. The measured series
+used earlier web bundles.
 
 ## Account onboarding and recovery
 
