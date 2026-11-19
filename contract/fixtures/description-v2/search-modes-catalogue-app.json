@@ -35,6 +35,20 @@
       "fields": [
         "title"
       ]
+    },
+    {
+      "id": "collection-terms",
+      "source": {
+        "type": "search",
+        "kind": "notes",
+        "mode": "terms",
+        "collection": {
+          "literal": "c8f6722d-7350-4c67-b395-17a84249b68c"
+        }
+      },
+      "fields": [
+        "title"
+      ]
     }
   ],
   "chrome": {

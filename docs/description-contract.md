@@ -55,7 +55,7 @@ One definition (`$defs/Bind`):
   UUID works; it is not a static pattern).
 * `item`: exactly one item by reference from the route or the selection. A literal row is never accepted.
 * `search`: a Notes or Threads search whose author declares a `mode` from the catalogue’s `SearchMode`. The footer sends settled text through `EventSearch`.
-  The renderer supplies no search mode. The host applies the mode declared by the addressed Bind in the active view.
+  The renderer supplies no search mode. The host applies the mode declared by the addressed Bind in the active view. For Notes search, `source.collection` selects the authorized manual-collection projection.
 
 Threads, trashed items and requests are kinds or indexed fields the host (or Turns) declares: `trashed`, `trashed_at`, `waiting_on`, `pending_for` are host-indexed
 fields, so the Notes Trash and the Threads Inbox are ordinary binds.
@@ -87,7 +87,7 @@ The catalogue defines one `WindowRequest` envelope and one `WindowReply` union o
 **Forward paging.** The host checks search windows against `EventSearchWindow`, the same window envelope restricted to the start anchor.
 For search Binds or with effective count mode `estimate` or `none`, the host refuses an end anchor with `end_unavailable` and sends no end distance. Search End pages forward. An explicit `anchor:"start"` can cross the 500,000 absolute jump ceiling only at the checked next row of a ready window for the same active view, Bind, parent and result version. Deep start replies omit count and the member cache record. In mode `none` show no scroll extent that implies a total.
 
-**Recovery rule.** After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. Forward paging ends on a short ready window or an empty reply. Every other reason shows the Bind error state.
+**Recovery rule.** After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. A short ready window or an empty reply signals the end of the rows. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state.
 Row ids are opaque and stable. No position is an authority reference.
 
 * A window is the half-open range `[from, to)` of at most 200 returned rows. The absolute jump ceiling is 500,000. The host may materialize up to 4,096 rows and,
@@ -113,10 +113,12 @@ Use the host-issued row reference for row identity in selection, events and scop
 ### 2.5 States
 
 `states.empty`, `loading`, `error` and `refine_query` are small messages (`title`, `detail`, `icon`, an optional action). The description or host provides their text.
-Show `loading` until the first window arrives, `empty` when `count` is 0, and `error` on `state: "error"` or a `WindowPlanError` without an available paging recovery (§2.3).
+Show `loading` until the first window arrives and `error` on `state: "error"` or a `WindowPlanError` without an available paging recovery (§2.3).
+Show the empty message when `state` is `empty`, including count-free replies.
 
 **`refine_query`.** A qualified search that exhausts its posting or row budget returns the catalogue’s `WindowResult` in this state. See `query.search` and `query.live_limits` for limits.
-Show the provisional rows with the Bind’s message or “Refine your search.” Treat the rows as display only and show no total-implying scroll extent or End.
+On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window.
+Show provisional rows on an initial refinement reply with the Bind’s message or “Refine your search.” Treat provisional rows as display only and show no total-implying scroll extent or End.
 A broad prefix starts no expansion and may reuse only an already-issued window for the same authorized query and generation. A changed query starts a new search.
 While the authorized row-and-field projection is behind or stale after revocation, show `loading` with no rows, count or activation contexts.
 
