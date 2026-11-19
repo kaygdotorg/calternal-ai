@@ -105,7 +105,9 @@ edits across reconnect. A join refusal with error.code "conflict" and
 error.details.reason "lineage_changed" calls for recovering only the
 local diff from the last confirmed base. Retain the
 recovery intent when it cannot be applied safely. A transport rejoin
-or editor state alone must never clear the pending marker.
+or editor state alone must never clear the pending marker. Each reconnect
+checks current access. If the account lost View while disconnected, the
+new join returns `join_failed` with `error.code: "not_found"`.
 
 When an established membership loses View, the server sends a JSON text
 control with `type: "left"`, the `room` and `membership`, and
@@ -126,7 +128,8 @@ even value it observed before and after a successful check. An odd value
 pauses delivery. The next packet on that membership revalidates View
 after an epoch change, with no eager scan of other memberships. Join
 checks View and writes check Edit. The post-commit eviction hook cuts
-off queued frames for recipients who lost their last grant.
+off queued frames for recipients who lost View. A surviving grant or
+space role can still authorize the account.
 
 On a stable epoch a production peer frame uses one current session
 statement, zero item or grant statements, and zero plugin activation

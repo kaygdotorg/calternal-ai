@@ -25,6 +25,7 @@ url = "2.5.8"
 uuid = { version = "1", features = ["v7"] }
 webauthn-authenticator-rs = { version = "0.5.5", features = ["softpasskey"] }
 webauthn-rs = { version = "0.5.5", features = ["conditional-ui"] }
+yrs = { version = "0.28", features = ["sync"] }
 
 [[test]]
 name = "isolation"
