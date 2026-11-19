@@ -603,6 +603,60 @@ Copy it to perf-01 and set `LD_PRELOAD` to its absolute path inside the
 perf lock. The probe counts `fsync` and `fdatasync` calls separately from
 the timing statistic.
 
+## Durable transcript
+
+The disposable loopback service uses the real Turns create/get engine,
+stored space membership and content item authority. It writes transcript
+events and the request receipt through `SpaceStore::commit(durable=true)`
+on the real content journal. The fixture adds a partial (thread, sequence)
+index and uses the existing signed journal cursor inside a thread- and
+viewer-bound proof. The append source is scripted. Provider execution
+and drawing by a renderer are outside this backend measurement.
+
+Each repetition stalls a real TCP writer mid-page with the old reader
+still connected. While stalled, a second connection gets the thread
+through the existing Turns engine. The writer then commits the next
+batch and exits before returning any append ACK. The test restarts the
+server on the same roots, resumes from the old cursor and compares the
+whole page, cursor and receipt on replay. It removes the reader's live
+space membership before trying a revoked reconnect.
+
+| Injection | Pass condition | Measured | Verdict |
+| --- | --- | --- | --- |
+| Warm authorized reconnect after process restart | Committed first screenful p95 ≤150 ms | 32 events, at most 34,781 B. Dial through full scripted-client parse was 1.749 / 2.019 ms p50 / p95 and 2.426 ms max. | Backend pass. Renderer paint remains to be measured. |
+| Old transcript reader stalls mid-frame | Independent control p95 ≤500 ms | 100 partial-write stalls confirmed both before and after the independent `threads.get` request. Control was 7.102 / 8.238 ms p50 / p95 and 55.905 ms max. The stalled 96-event page was at most 104,157 B. | Pass |
+| Cut after FULL commit before ACK, then restart and replay | Stable committed cursor, ordered events and receipt sequence. One durable batch per action. | 100 abrupt exits, zero ACK bytes, 9,600 recovered events. All 100 retries matched the committed receipt and exact 96-event sequence. The next committed position advanced by exactly 96 on each run. | Pass |
+| Reconnect with a revoked membership and previously valid cursor | Zero returned rows and bookmarks | 100 refusals. Each was a fixed 22-byte error with no protected data or bookmark. | Pass |
+
+All 100 samples ran on `calternal-perf-01-backup01` under
+`/usr/local/bin/perf-lock.sh`, using the release executable built on
+dev-01. Each authorized page performs two current item authority checks
+(one live head and one membership/permission lookup each), a scoped
+ordered journal read, and validates and issues the cursor with at most
+two indexed sequence lookups on cache misses. A read has zero commits
+or flushes. The append hot path has one receipt lookup and one FULL WAL
+transaction with its sync. The witness work is separate from the request.
+Replay uses the receipt read only. The control request is an ordinary
+Turns read. The page writer releases SQLite before beginning socket
+delivery, so backpressure cannot carry a database lock into the control
+path.
+
+### What the specification must change
+
+The backend measurements fit both latency bounds. Keep the
+`transcript.page` budget and require a physical thread-and-sequence seek
+within the durable log. Preserve the independent control path and the
+post-commit cursor and receipt. Close the paint measurement with the
+renderer fixture.
+
+Build on dev-01 with `nix develop -c cargo test --locked --release
+-p calternal-server --test v2_step0_transcript --no-run`. Copy the
+executable and the same plugin manifests used for nested rows. Use a
+disposable ext4 directory and set `TMPDIR` and `STEP0_PLUGINS` inside
+the perf lock. Run with `--ignored --exact transcript_recovery_and_control
+--nocapture --test-threads=1`. Keep the executable in place until its
+restart helpers have exited.
+
 ## Reproducing the measurements
 
 Build in the existing lane copy on `calternal-dev-01-compute02`.
