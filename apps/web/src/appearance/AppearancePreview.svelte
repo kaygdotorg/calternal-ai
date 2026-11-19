@@ -7,6 +7,19 @@
   import { canvasPrefs } from "../canvas/prefs.svelte";
   const W = 1280, H = 800;
   const variant = $derived(canvasPrefs.look === "card" ? "pane" : canvasPrefs.look === "clear" ? "clear" : "solid");
+  // The veil values the shell sets on the root for every step of Clear to tinted (`--l-tint`, `--c-dim-a`, `--veil-r`, …). If the preview simply inherited them, each step would restyle the whole scaled copy in
+  // the same frame as the step itself. Instead the preview wears its own copy of them (an inline style on its root, so the root's change finds the same values here and stops), brought up to date in a frame
+  // of its own after the movement settles, at most about eight times a second while a slider is being dragged. Measured by e2e/clarity-perf.mjs.
+  const VEIL = /^--(?:[lcr]-(?:tint|dim|ink2|ink3)(?:-a)?|veil-[lcr])$/;
+  const worn = (): string => { const st = document.documentElement.style; let out = ""; for (let i = 0; i < st.length; i++) { const n = st[i]!; if (VEIL.test(n)) out += `${n}:${st.getPropertyValue(n)};`; } return out; };
+  let pinned = $state(worn());
+  $effect(() => {
+    let timer = 0, frame = 0;
+    const apply = () => { timer = 0; frame = requestAnimationFrame(() => { frame = 0; const w = worn(); if (w !== pinned) pinned = w; }); };
+    const mo = new MutationObserver(() => { if (!timer && !frame) timer = window.setTimeout(apply, 120); });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
+    return () => { mo.disconnect(); if (timer) clearTimeout(timer); if (frame) cancelAnimationFrame(frame); };
+  });
   let box = $state<HTMLElement>();
   let k = $state(0.3);
   $effect(() => {
@@ -17,7 +30,7 @@
   });
 </script>
 
-<div class="stage pv" aria-hidden="true" inert>
+<div class="stage pv" aria-hidden="true" inert style={pinned}>
   <div class="frame" bind:this={box} style="aspect-ratio: {W} / {H}">
     <div class="device" style="width: {W}px; height: {H}px; scale: {k}">
       <div class="art"></div><div class="wash"></div>

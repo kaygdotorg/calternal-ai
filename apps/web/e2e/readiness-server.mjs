@@ -2,7 +2,7 @@ import { signUp } from "./lib.mjs";
 // Turn readiness against a real server of this tree, each state made true in turn: no machine enrolled, a machine that is stopped, a provider signed out (stand-in `claude`
 // reports it), then Check again after signing in; also what `agent.readiness` says against what the thread shows. Same setup as requests-server.mjs. Env: CAL_BIN, CAL_DIST, CAL_READY_PORT.
 import { spawn } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright";
@@ -47,6 +47,8 @@ try {
   const code = /--code\s+(\S+)/.exec((await p.locator("code.cmd").first().innerText()).trim())?.[1];
   const home = join(data, "machine"); const bin = join(data, "bin"); mkdirSync(bin); symlinkSync(BIN, join(bin, "calternal")); // the direct backend knows the host binary by its name: the fake provider runs `calternal --help`, so the binary under test (whatever it is called) is `calternal` on the fixture's PATH
   const launcher = resolve(process.env.CAL_PLUGINS ?? "../../plugins", "calternal-claude-code/bin/calternal-provider-claude-code");
+  // The launcher runs the built adapter (plugins/calternal-claude-code/dist): without it the machine's check job ends in an error, no check result is ever recorded and the page rightly shows no notice, so say so instead of failing mysteriously.
+  if (!existsSync(resolve(launcher, "../../dist/main.js"))) { ok(false, "setup: the Claude Code adapter is not built (run `npx tsc -p plugins/calternal-claude-code/tsconfig.json`), so no provider check can be answered"); throw new Error("adapter not built"); }
   writeFileSync(join(bin, "calternal-provider-claude-code"), `#!/bin/sh\nexec ${launcher} "$@"\n`); chmodSync(join(bin, "calternal-provider-claude-code"), 0o755);
   writeFileSync(join(bin, "claude"), `#!/bin/sh\nFAKE_SIGNED_IN=${signed} FAKE_SPACE=${space} exec node ${fake} "$@"\n`); chmodSync(join(bin, "claude"), 0o755);
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, HOME: home, CALTERNAL_ENROLL_CODE: code };
