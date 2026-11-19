@@ -451,10 +451,23 @@ by audience and plan. The chrome/content pair shares one Bind list.
 `viewer_self` permits counts over the actor’s own authorized projection
 only. Turn controls require current turn-specific authority. The host projects
 `snoozed_until` as null after expiry and invalidates the actor’s Inbox Bind
-without waking the runtime. Stable window/rank locators
-belong to the checked query and result version. Missing indexes, unbounded
-ACL intersections, unavailable authorized counts and linear offset scans
-return `422 unsupported_query_plan`. Never silently fall back to a scan.
+without waking the runtime. Stable window and rank locators belong to the
+checked query and result version. The first contract qualifies these plan
+families with their backing indexes.
+
+| Plan family | Required index |
+| --- | --- |
+| Stable item lookup | Kind and stable item ID, with a scoped authority lookup. |
+| Ordered or filtered kind lists, including Inbox, Trash and self-only rows | Ordered indexes scoped to the authorized kind or viewer projection, with the supported filter and sort keys. |
+| Manual collection + mutable ACL + sort, including the main Notes list | Scoped collection membership indexed with the sort key and stable ID, with mutable ACL applied before windowing. Reading and sorting all members is disallowed even at offset zero. |
+| Child and section windows | Parent-scoped ordered indexes for authorized child rows and personal section placements. |
+| Search | Authorized member or shared corpus index with bounded rank and pagination. |
+| Filtered counts | Authorized filter indexes for bounded exact counts, or an audience-certified member estimate. |
+
+Return `422 unsupported_query_plan` for any other plan or if its index
+cannot satisfy the requested scope, filters, sort, window or count within
+the work budget. Never serve the request by scanning or sorting the full
+candidate set.
 
 The first contract includes nested child rows and user-made sections (Q11).
 `children: {bind}` uses a `source.parent: true` Bind windowed per expanded
@@ -664,7 +677,12 @@ revisions of all affected resources and refuses if any dependency moved.
 | `host.item.rename` | The FULL content transaction records the new head, placement and Undo for a single-item rename without deferred link rewrites. The current Notes job commits inbound-link changes in later transactions, so that path remains ineligible. |
 | `host.collection.move` | A single-collection membership edit and Undo fit in one FULL content transaction. A two-collection move is ineligible because the existing membership writer commits one collection at a time. Destination and bulk previews still apply. |
 | `host.layout.move_to`, `host.layout.move_up`, `host.layout.move_down` | The per-person layout revision transaction records the complete placement or ordering edit and Undo for the actor, space and app. Move to still previews its destination. |
-| `turns.archive`, `turns.unarchive` | For unarchive, the FULL thread content transaction records the new head and Undo. A full swipe may unarchive an eligible thread. Archive stays ineligible: it can cancel an active turn and retire saved authority after the content commit, outside that transaction. |
+| `host.layout.section.create` | The per-person layout revision transaction creates the section and commits Undo that removes it. |
+| `host.layout.section.rename` | The same layout transaction commits the title change and its prior title for Undo. |
+| `host.layout.section.remove` | The same layout transaction commits removal and retains the section, placements and order for Undo. |
+| `turns.archive` | The current writer commits the thread head without Undo, then checks for and cancels a non-final turn, runs a separate protected transaction to cancel pending approvals and remove saved authority, and invalidates affected feeds. An idle full swipe requires proving under the commit fence that there is no active turn or authority or approval to retire, skipping cleanup and committing the archived head and unarchive Undo in one FULL thread content transaction. Until then the shortcut is ineligible. For an active turn the host challenge says “The running turn will be stopped.” Authority or approval cleanup also requires a challenge. |
+| `turns.unarchive` | The FULL thread content transaction records the new head and Undo. A full swipe may unarchive an eligible thread. |
+| `turns.snooze` | The FULL thread content transaction commits the indexed manual deadline and its previous value for Undo. Subscription retry state is unaffected. |
 | `host.item.patch-metadata` | The room-checked FULL content transaction records the changed head and Undo for a single boolean toggle. Full swipe covers this case. |
 
 On success, Invoke `then:{route}` may navigate using a

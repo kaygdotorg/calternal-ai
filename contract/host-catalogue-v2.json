@@ -762,7 +762,8 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": false,
-      "atomic_undo_unavailable": "The thread revision commits separately from turn cancellation and saved authority retirement. The complete effect has no atomic inverse."
+      "atomic_undo_unavailable": "The existing writer commits the archived revision without Undo, then always enters a separate protected authority transaction. To enable idle archive, prove under the commit fence that there is no active turn or saved authority or approval to retire, skip post-commit cleanup on that path and commit the archived revision and unarchive Undo together in the FULL thread content transaction.",
+      "confirmation_when": "Archive with an active turn requires a challenge. Host-written material says: The running turn will be stopped. Archive requiring saved authority or approval cleanup also requires a challenge."
     },
     "turns.unarchive": {
       "engine": "thread unarchive",
@@ -839,7 +840,8 @@
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
       },
-      "atomic_undo": false
+      "atomic_undo": true,
+      "atomic_undo_when": "Manual snooze or clear commits the indexed deadline and Undo carrying the previous manual deadline in one FULL thread content transaction. Subscription retry state is unaffected."
     },
     "turns.follow_up": {
       "engine": "turn_follow_up",
@@ -1075,7 +1077,8 @@
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
       },
-      "atomic_undo": false
+      "atomic_undo": true,
+      "atomic_undo_when": "Commit the new section and Undo that removes it in one per-person layout revision transaction."
     },
     "host.layout.section.rename": {
       "engine": "personal layout rename section",
@@ -1113,7 +1116,8 @@
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
       },
-      "atomic_undo": false
+      "atomic_undo": true,
+      "atomic_undo_when": "Commit the new title and Undo carrying the prior title in one per-person layout revision transaction."
     },
     "host.layout.section.remove": {
       "engine": "personal layout remove section without changing item content or access",
@@ -1145,7 +1149,8 @@
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
       },
-      "atomic_undo": false
+      "atomic_undo": true,
+      "atomic_undo_when": "Commit the removal and Undo carrying the section and its original placements and order in one per-person layout revision transaction."
     }
   },
   "query": {
