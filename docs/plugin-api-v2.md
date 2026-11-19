@@ -1047,10 +1047,20 @@ Pass these end-to-end flows on the selected wall before app migration.
 - **Idle-archive atomic writer with Undo.** In one FULL thread content
   transaction, check the idle condition under the commit fence and record
   archive and its unarchive Undo together. Crash on both sides of commit
-  and require both effect and Undo or neither. Pause between the send
-  intent commit and job admission and race idle archive in both orders.
-  A committed unresolved intent blocks the idle path. If archive wins,
-  fresh job admission to the archived head fails under the same fence.
+  and require both effect and Undo or neither. Exercise these orderings:
+
+  1. Commit the send intent before attempting idle archive. Then repeat
+     with the idle archive attempt started first and paused before its
+     fenced check until the intent commits. In both cases the committed,
+     unresolved intent blocks sheet-free archive.
+  2. Commit a send intent and pause before job admission. Commit a
+     confirmed archive through the challenged path with that matching
+     saved intent. Fresh job admission rejects the archived head under
+     the fence, resolves the intent as refused with a plain outcome
+     the composer can show, and starts no turn.
+  3. Commit archive first, then attempt Send. The send is refused at
+     intent commit.
+
   Replay of a committed admission cannot start a new job. Race a newly
   active turn, saved authority or pending approval against dispatch and
   require the protected path if cleanup is needed. Fix the existing dev
