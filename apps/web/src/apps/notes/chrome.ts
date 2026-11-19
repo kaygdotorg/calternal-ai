@@ -5,7 +5,7 @@
  */
 import { toast } from "@calternal/ui";
 import { navigate, route, segments } from "../../lib/route.svelte";
-import { windowed } from "../../shell/chrome/native-chrome.svelte";
+import { windowed, windowedOf } from "../../shell/chrome/native-chrome.svelte";
 import type { ChromeBadge, ChromeBody, ChromeEvent, ChromeItem, ChromeProvider, ChromeRow, ChromeSection } from "../../shell/chrome/types";
 import { collectionList } from "./share/collections-list.svelte";
 import { incoming, incomingCollections } from "./share/incoming.svelte";
@@ -23,13 +23,13 @@ export const notesChrome: ChromeProvider = {
     const current = segments()[0] === "notes" ? segments()[1] : undefined;
     const noteRow = (id: string, title: string, over: Partial<ChromeRow> = {}): ChromeRow => ({ id, title, icon: "notes", selected: current === id, ...over });
     const sections: ChromeSection[] = [
-      { id: "top", title: null, rows: [{ id: "new", title: "New note", icon: "plus" }, { id: "trash", title: "Trash", icon: "trash", selected: route.path.startsWith("/notes") && route.query.get("view") === "trash" }] },
+      { id: "top", title: null, rowKind: "navigation", rows: [{ id: "new", title: "New note", icon: "plus" }, { id: "trash", title: "Trash", icon: "trash", selected: route.path.startsWith("/notes") && route.query.get("view") === "trash" }] },
       { id: "notes", title: notes.space?.name ?? "Notes", ...windowed("notes", notes.list.filter((n) => match(n.title)).map((n) => noteRow(n.id, n.title, { trailingActions: [{ id: "trash", title: "Move to Trash", icon: "trash", role: "destructive" }], menu: noteMenu(n.title) }))) },
     ];
     const cols = collectionList.items.filter((c) => match(c.title));
-    if (cols.length) sections.push({ id: "collections", title: "Collections", rows: cols.map((c) => ({ id: `c:${c.id}`, title: c.title, icon: "folder", selected: route.path === `/collections/${c.id}` })) });
+    if (cols.length) sections.push({ id: "collections", title: "Collections", ...windowedOf("collections", cols, (c) => ({ id: `c:${c.id}`, title: c.title, icon: "folder", selected: route.path === `/collections/${c.id}` })) });
     const shared = [...incoming.items.filter((s) => match(s.title)).map((s) => noteRow(s.item.id, s.title, { trailing: s.unread ? DOT : [], hint: "Shared with you" })), ...incomingCollections.items.filter((s) => match(s.title)).map((s) => ({ id: `c:${s.item.id}`, title: s.title, icon: "folder", selected: route.path === `/collections/${s.item.id}`, trailing: s.unread ? DOT : [] }))];
-    if (shared.length) sections.push({ id: "shared", title: "Shared with me", rows: shared });
+    if (shared.length) sections.push({ id: "shared", title: "Shared with me", ...windowed("shared", shared) });
     const open = notes.note && current === notes.note.id ? notes.note : undefined;
     return { header: { title: current ? notes.list.find((n) => n.id === current)?.title ?? incoming.of(current)?.title ?? "Notes" : "Notes", trailing: open ? [{ id: "share", title: "Share", icon: "share" }] : [] }, selectors: [], sections, search: { placeholder: "Find a note" } };
   },

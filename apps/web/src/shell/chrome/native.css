@@ -11,4 +11,11 @@ html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pen
 html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) .shell.narrow .mid { transform: none !important; transition: none !important; }
 html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) .shell .mid-card { background: transparent !important; box-shadow: none !important; backdrop-filter: none !important; border-radius: 0 !important; }
 /* An app's own header line (the pills at the top of a thread, a note, a page) is the shell's header now. */
-html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) [data-chrome-header] { display: none !important; }
+/* The header keeps its space (a note's article starts below the header region the shell reserves, never level with the native title) but draws nothing and takes no input. */
+html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) [data-chrome-header] { visibility: hidden !important; pointer-events: none !important; }
+/* The page lays out as if it had no sidebar: no reserved column, no gutter (the shell draws the sidebar). The side panel's column stays while the page draws the side chat. */
+html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) .shell { --sw: 0px !important; column-gap: 0 !important; }
+/* ONE surface: the card's own wallpaper copy and veil (its pseudo elements) are not drawn, so the content has no background of its own (the shell's card is the surface, under the reading column and the composer too). */
+html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) .shell .mid-card::before, html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) .shell .mid-card::after { display: none !important; }
+/* The side panel (until the shell draws one) shares the card's surface: no background of its own, a hairline between the card and the panel as the web app draws it. */
+html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) .shell .right { background: transparent !important; border-left: 1px solid rgb(var(--ink-rgb) / 0.14); }

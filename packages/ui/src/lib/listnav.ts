@@ -41,16 +41,40 @@ export function wantsKey(e: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "
   return true;
 }
 
+/**
+ * While a navigation key repeats, incoming list changes that are not the answer to a window request the cursor needs are HELD (docs/description-contract.md 2.3, docs/native-feel.md section 20): `navHold.held` is true from the first key of a
+ * burst until the cursor settles, or for at most `HOLD_MAX_MS` (so a held key shares a frame with a list refresh at most twice a second). The change feeds (`perFrame`, apps/web/src/lib/per-frame.ts) ask it and apply what they held, coalesced
+ * to the latest, once it lets go.
+ */
+export const HOLD_MAX_MS = 500;
+export const navHold = (() => {
+  let held = false, timer = 0;
+  const subs = new Set<() => void>();
+  const release = () => { if (timer) { clearTimeout(timer); timer = 0; } if (!held) return; held = false; for (const f of [...subs]) f(); };
+  return {
+    get held() { return held; },
+    /** A key of a navigation burst: hold (once; the maximum runs from the first key). */
+    begin() { if (held) return; held = true; timer = window.setTimeout(() => { timer = 0; release(); }, HOLD_MAX_MS); },
+    release,
+    /** Calls `f` each time a hold ends; returns the way to stop. */
+    subscribe(f: () => void) { subs.add(f); return () => { subs.delete(f); }; },
+    /** How many are subscribed (the tests check that none are left behind). */
+    get subscribers() { return subs.size; },
+  };
+})();
+
 /** The one place the settle rule lives (both the `listNav` action and `VirtualList`'s `nav` use it): `rest(fn, ms)` runs `fn` after `ms` without another call, and `cancel()` drops it. */
 export function settler(): { rest(fn: () => void, ms?: number): void; cancel(): void } {
   let t = 0, raf = 0, painted = true, lastKey = 0, burstGap = 0;
-  const cancel = () => { if (t) { clearTimeout(t); t = 0; } if (raf) { cancelAnimationFrame(raf); raf = 0; } };
+  const clear = () => { if (t) { clearTimeout(t); t = 0; } if (raf) { cancelAnimationFrame(raf); raf = 0; } };
+  const cancel = () => { clear(); navHold.release(); };
   // A busy page can run the timer before it has read the keys that came in meanwhile (each of them would have moved the timer): when input is waiting, the rest has not begun, so wait again.
   const pending = (): boolean => { try { return !!(navigator as Navigator & { scheduling?: { isInputPending?: (o?: { includeContinuous?: boolean }) => boolean } }).scheduling?.isInputPending?.({ includeContinuous: true }); } catch { return false; } };
   return {
     cancel,
     rest(fn, ms) {
-      cancel();
+      clear();
+      navHold.begin();
       // The rest must be longer than any gap between two repeats of a held key (whatever the system's rate, and a slow page delivers them unevenly): 1.6 times the longest gap seen in this burst of keys (45 to 120 ms); a first or single key rests the base. A load must never start while keys are still repeating.
       const now = performance.now(), gap = now - lastKey;
       lastKey = now;
@@ -59,7 +83,7 @@ export function settler(): { rest(fn: () => void, ms?: number): void; cancel(): 
       // The selection's last paint must commit before the pane's work starts: a frame is asked for with each key, and when the rest is over the open runs at once if that frame has been drawn (it has, unless the page is busy), else after it. The open is a task of its own. A key in between cancels all of it.
       painted = false;
       requestAnimationFrame(() => { painted = true; });
-      const arm = () => { t = window.setTimeout(() => { t = 0; if (pending()) { arm(); return; } if (painted) fn(); else raf = requestAnimationFrame(() => { raf = 0; t = window.setTimeout(() => { t = 0; fn(); }, 0); }); }, ms); };
+      const arm = () => { t = window.setTimeout(() => { t = 0; if (pending()) { arm(); return; } navHold.release(); if (painted) fn(); else raf = requestAnimationFrame(() => { raf = 0; t = window.setTimeout(() => { t = 0; fn(); }, 0); }); }, ms); };
       arm();
     },
   };
