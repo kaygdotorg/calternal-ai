@@ -37,7 +37,15 @@
       "version": "0.1.0",
       "manifest": "calternal-plugin-guide/manifest.json",
       "worker": "calternal-plugin-guide/dist/worker.js",
-      "worker_sha256": "c9aabcd054bc80f055f93aab8a0f3da4f9d9ba867f0ec60b63290ffd67702d38",
+      "worker_sha256": "224cad43ac0634dc7f93010bc10cebe54afa46a8fa64f711e1a5a13c0211ffd1",
+      "default_enabled": false
+    },
+    {
+      "id": "calternal-plugin-submission-guide",
+      "version": "0.1.0",
+      "manifest": "calternal-plugin-submission-guide/manifest.json",
+      "worker": "calternal-plugin-submission-guide/dist/worker.js",
+      "worker_sha256": "f61282c6293823ec0ff12ef14d7ec62985a9fe4dc91bb6cd81a4cb14e52ee49b",
       "default_enabled": false
     }
   ]

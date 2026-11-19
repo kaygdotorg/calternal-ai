@@ -107,6 +107,8 @@ title: "Command reference"
 - [calternal-plugin-bench](./calternal-plugin-bench/)
 - [calternal-plugin-review](./calternal-plugin-review/)
 - [calternal-plugin-pack](./calternal-plugin-pack/)
+- [calternal-plugin-package](./calternal-plugin-package/)
+- [calternal-plugin-verify-package](./calternal-plugin-verify-package/)
 - [calternal-plugin-install](./calternal-plugin-install/)
 - [calternal-plugin-update](./calternal-plugin-update/)
 - [calternal-plugin-remove](./calternal-plugin-remove/)

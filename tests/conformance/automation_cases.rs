@@ -323,3 +323,137 @@ async fn a_replayed_manual_run_has_one_thread_and_lost_access_stops_it() {
     .await;
     assert!(matches!(status, 401 | 403 | 404));
 }
+
+#[tokio::test]
+async fn manual_run_without_a_machine_replays_its_refusal_after_restart() {
+    let mut f = Fixture::new().await;
+    let space = f.spaces[0].clone();
+    let preview = data(
+        f.op(
+            1,
+            "automations.preview_schedule",
+            json!({
+                "space_id":space,"schedule_text":"daily at 9"
+            }),
+        )
+        .await,
+    );
+    let create = |name| {
+        json!({
+            "space_id":space,"name":name,"prompt":"Review the draft.",
+            "schedule_text":preview["schedule_text"],"schedule":preview["schedule"],
+            "timezone":preview["timezone"],
+        })
+    };
+    let first = data(f.op(1, "automations.create", create("First review")).await);
+    let second = data(f.op(1, "automations.create", create("Second review")).await);
+    let input = json!({"space_id":space,"id":first["automation"]["id"]});
+    let request = "run-before-enrollment";
+    let refused = f
+        .op_id(1, "automations.run_now", input.clone(), request)
+        .await;
+    assert_eq!(refused.status, 409, "{}", refused.body);
+    let expected = refused.body["error"].clone();
+    assert_eq!(expected["code"], "conflict");
+    assert_eq!(expected["details"]["reason"], "no_machine_available");
+    assert!(
+        expected["message"]
+            .as_str()
+            .unwrap()
+            .contains("Connect a machine")
+    );
+
+    f.stop();
+    f.start().await;
+    let replay = f
+        .op_id(1, "automations.run_now", input.clone(), request)
+        .await;
+    assert_eq!(replay.status, 409);
+    assert_eq!(replay.body["error"], expected);
+    let last = data(f.op(1, "automations.last_run", input.clone()).await);
+    assert!(last["last"].is_null());
+    let conn = Connection::open(f.appdata().join("system/automations.db")).unwrap();
+    let queued: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM runs WHERE manual_key IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(queued, 0);
+    drop(conn);
+
+    let changed = f
+        .op_id(
+            1,
+            "automations.run_now",
+            json!({
+                "space_id":space,"id":second["automation"]["id"]
+            }),
+            request,
+        )
+        .await;
+    assert_eq!(changed.status, 409);
+    assert_eq!(
+        changed.body["error"]["details"]["reason"],
+        "request_id_reused"
+    );
+    let mut machine = crate::requests_cases::Machine::enroll(&f).await;
+    f.op(1, "automations.update", json!({
+        "space_id":space,"id":first["automation"]["id"],"base_revision":first["automation"]["revision"],
+        "machine_id":machine.id,
+    })).await.ok();
+    let start = async {
+        tokio::time::timeout(Duration::from_secs(4), async {
+            loop {
+                let ready = data(f.op(1, "agent.readiness", json!({"space_id":space})).await);
+                if ready["machines"][0]["available"] == true {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(30)).await;
+            }
+        })
+        .await
+        .expect("the selected machine should be available");
+        let replay = f
+            .op_id(1, "automations.run_now", input.clone(), request)
+            .await;
+        assert_eq!(replay.status, 409);
+        assert_eq!(replay.body["error"], expected);
+        let new_run = data(
+            f.op_id(1, "automations.run_now", input, "run-after-enrollment")
+                .await,
+        );
+        assert!(new_run["thread_id"].is_string());
+    };
+    tokio::join!(start, machine.sync(&f, json!([])));
+}
+
+#[tokio::test]
+async fn oversized_external_skill_returns_a_conflict() {
+    let f = Fixture::new().await;
+    let space = &f.spaces[0];
+    let directory = f
+        .dir
+        .path()
+        .join("userdata-ssd/spaces")
+        .join(space)
+        .join("AI/Skills/large-skill");
+    std::fs::create_dir_all(&directory).unwrap();
+    let header = "---\nname: large-skill\ndescription: An oversized skill.\n---\n";
+    let mut file = header.as_bytes().to_vec();
+    file.resize(256 * 1024 + 1, b'a');
+    std::fs::write(directory.join("SKILL.md"), file).unwrap();
+    let response = f
+        .op(
+            1,
+            "skills.read",
+            json!({"space_id":space,"name":"large-skill"}),
+        )
+        .await;
+    assert_eq!(response.status, 409, "{}", response.body);
+    assert_eq!(
+        response.body["error"]["details"]["reason"],
+        "document_too_large"
+    );
+}

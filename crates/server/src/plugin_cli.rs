@@ -18,6 +18,7 @@ use std::{
 mod dev;
 mod question;
 mod scaffold;
+mod submission;
 
 #[derive(Subcommand)]
 pub(super) enum PluginCommand {
@@ -34,6 +35,18 @@ pub(super) enum PluginCommand {
         /// Built plugin directory.
         source: PathBuf,
         /// New archive path, usually ending in .calplugin.
+        archive: PathBuf,
+    },
+    /// Create an offline gallery submission from a checked plugin directory.
+    Package {
+        /// Built plugin directory containing gallery.json and screenshots.
+        source: PathBuf,
+        /// New gallery submission archive path.
+        archive: PathBuf,
+    },
+    /// Check a gallery submission without running its worker or contacting any service.
+    VerifyPackage {
+        /// Gallery submission archive to validate.
         archive: PathBuf,
     },
     /// Install the exact reviewed package on the running server.
@@ -171,6 +184,8 @@ fn run(command: PluginCommand) -> Result<Reply, CliError> {
                 .fields([("Package archive", archive.display().to_string())])
                 .hint("Run `calternal plugin review` on the archive to get its approval checksum."))
         }
+        PluginCommand::Package { source, archive } => submission::create(&source, &archive),
+        PluginCommand::VerifyPackage { archive } => submission::verify(&archive),
         PluginCommand::Install { args } => install(args, false),
         PluginCommand::Update { args } => install(args, true),
         PluginCommand::Remove { id, appdata } => {

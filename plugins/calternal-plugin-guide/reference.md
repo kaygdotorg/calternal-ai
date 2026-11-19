@@ -48,6 +48,75 @@ Hooks and context contributions are scoped to the enabling space. Context is
 labelled evidence bounded by a deadline. It cannot rewrite the person's prompt.
 The plugin and host apply the operation, risk and scope rules at every boundary.
 
+## Network permissions
+
+The network design distinguishes four classes by how the plugin chooses a
+destination and who approves it. A worker makes requests through the host
+broker. Its own network sockets and ambient credentials are unavailable.
+
+### A. Named connections
+
+**Example: a portfolio balance reader.** The package declares the brokerage's
+HTTPS service and requests a read-only credential. The space manager reviews
+that destination, the balance operation and the data sent to it. The person
+adds their credential in the host. On a balance read, the host attaches the
+credential for that service and returns the response to the worker. A redirect
+to another service or a trade request is outside that approval. Named outbound
+connections are designed into the contract. This preview has no named
+connection manifest field or callable broker method.
+
+### B. Content fetch
+
+**Example: a stored mail message.** Register a package-owned text kind named
+`mail-message`. Declare `content_prepare_v1` in `host_calls` and add this
+manifest field.
+
+```json
+{
+  "content_fetch": {
+    "profile": "images_fonts",
+    "sources": [{ "kind": "mail-message", "field": "text" }]
+  }
+}
+```
+
+This is the value of `network`. On review, explain that the message can
+reference remote images and fonts. Enable the reviewed package in the space.
+Store the HTML in a `mail-message` item and use the saved item ID and revision
+to call the SDK's `prepareContent(context, { kind: "mail-message", item_id,
+revision, field: "text" })` from a declared operation. Return its `frame_id`.
+The client calls `plugins.network.content.get` with the space ID and frame ID,
+then mounts the returned `frame_url` with an empty iframe sandbox. The host
+sanitizes the HTML and checks the viewer, package activation and item revision
+on delivery. Preparing another kind or revision is refused.
+
+The preview implements sealed frames and records the viewer's remote-content
+preference. The `images_fonts` profile is for anonymous HTTPS media retrieval
+by host-issued asset reference. Outbound asset delivery is pending in this
+preview. The profile does not accept arbitrary page URLs or retrieve page titles.
+
+### C. Open internet
+
+**Example: an RSS reader with user-added feeds.** The author discloses that the
+worker can choose public destinations from subscriptions at runtime. The space
+Owner or Manager approves the broad public scope. On refresh, the proposed
+broker checks the addresses resolved for each feed and redirect, performs
+bounded public HTTP retrieval, and returns the result. A private target remains
+refused under the public grant. Public arbitrary HTTP is a design example.
+This preview has no callable open-internet broker method.
+
+### D. Private network and execution origin
+
+**Example: a read-only home automation dashboard.** The package requests
+HTTPS access to the controller on a chosen enrolled machine's network.
+Approval names the origin, destination, protocol, port, package and space.
+The machine owner approves a personal machine, or an operator approves a pool
+machine. When the dashboard refreshes, the host checks the invocation and the
+selected origin, and that machine's broker dials the approved controller.
+Removing the machine revokes that origin, and the request cannot fall back to
+the server. Private outbound access is a design example. This preview has no
+callable private-network broker method.
+
 ## Interface and addresses
 
 Return `view: { genui_version: 2, source: "..." }` for a portable generated view.
