@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "t",
+      "source": {
+        "type": "list",
+        "kind": "threads"
+      },
+      "fields": [
+        "title"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "menu": [
+          {
+            "id": "mv",
+            "title": "Move to",
+            "operation": "host.layout.move_to",
+            "inputs": {
+              "thread": {
+                "context": "item"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

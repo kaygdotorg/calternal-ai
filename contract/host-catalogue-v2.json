@@ -12,7 +12,7 @@
     "viewer_self": "The actor may access only their own projected value. AccountRef predicates are limited to eq viewer.person; only counts over that actor’s already authorized projection are allowed. Other typed personal fields use the actor’s index only.",
     "designated_request_actor": "Host-private request addressed to the designated viewer. Covers only the referenced eligible request. No guest list or count. A row id resolves only to a checked RequestRef.",
     "eligible_turn_actor": "The current turn actor or an actor with live authority to inspect/control that turn under the Turns engine. A thread grant alone does not confer Stop.",
-    "personal_layout": "Only the actor’s own layout for this space and app; viewer does not gain item access through section membership."
+    "personal_layout": "Only a live space member may read or mutate their own layout for this space and app. Check membership and actor on every read and write. Layout membership grants no item access."
   },
   "kinds": {
     "collections": {
@@ -87,7 +87,8 @@
         "shared_titles"
       ],
       "icon": "threads",
-      "includes_generic_item_fields": true
+      "includes_generic_item_fields": true,
+      "description": "For row action targets, context:item resolves to the checked underlying ThreadRef. In a repeated section, context:placement resolves to that LayoutEntryRef."
     },
     "requests": {
       "owner": "requests",
@@ -150,7 +151,7 @@
       "search_corpora": [],
       "includes_generic_item_fields": false,
       "icon": "folder",
-      "description": "Section repeater source from the viewer’s layout scoped to space and app. Each section row scopes its repeated item window. Within a section, the host issues LayoutEntryRef row ids for placements and reconstructs the underlying item from context."
+      "description": "Section repeater source for the live member’s own layout scoped to space and app. Section.repeat.over must read layout_sections. In repeated item windows the host binds a placement reference and an underlying item reference separately in the action context."
     }
   },
   "operations": {
@@ -800,7 +801,7 @@
       "full_swipe_when": "First swipe action, effective confirm:none and this operation’s atomic_undo_when condition."
     },
     "turns.snooze": {
-      "engine": "thread snooze",
+      "engine": "actor-scoped thread snooze",
       "effect": "reversible",
       "idempotency": "request_id",
       "authority": "Member changing their own thread snooze",
@@ -840,8 +841,8 @@
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
       },
-      "atomic_undo": true,
-      "atomic_undo_when": "Manual snooze or clear commits the indexed deadline and Undo carrying the previous manual deadline in one FULL thread content transaction. Subscription retry state is unaffected."
+      "atomic_undo": false,
+      "atomic_undo_unavailable": "The current thread writer stores one shared manual deadline and cannot implement this actor-scoped operation. Enable only after the actor-keyed deadline, its index entry and Undo commit together. Subscription retry state is unaffected."
     },
     "turns.follow_up": {
       "engine": "turn_follow_up",
@@ -949,7 +950,7 @@
       "engine": "personal layout placement with complete effect and Undo committed together",
       "effect": "reversible",
       "idempotency": "request_id",
-      "authority": "Current actor’s own space/app layout, with live item/parent access for placements and context-pinned layout revision",
+      "authority": "Live space membership and the actor’s own space/app layout, with context-pinned layout revision and live item and parent access for placements.",
       "surfaces": [
         "authorized_template_action",
         "host_layout_control"
@@ -958,25 +959,48 @@
       "full_swipe": false,
       "worker_wake": "never",
       "target_inputs": [
+        "thread",
         "entry",
         "section"
       ],
       "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "entry",
-          "section"
-        ],
-        "properties": {
-          "entry": {
-            "$ref": "#/$defs/LayoutEntryRef"
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "thread",
+              "section"
+            ],
+            "properties": {
+              "thread": {
+                "$ref": "#/$defs/ThreadRef",
+                "description": "Adds the underlying thread if it has no placement in this layout. Refuse if a placement already exists."
+              },
+              "section": {
+                "$ref": "#/$defs/LayoutSectionRef"
+              }
+            }
           },
-          "section": {
-            "$ref": "#/$defs/LayoutSectionRef",
-            "description": "Destination reconstructed by the host, including from a scoped ChoiceRef. Requires a protected preview."
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "entry",
+              "section"
+            ],
+            "properties": {
+              "entry": {
+                "$ref": "#/$defs/LayoutEntryRef",
+                "description": "Moves the existing placement. Check its underlying item authority."
+              },
+              "section": {
+                "$ref": "#/$defs/LayoutSectionRef"
+              }
+            }
           }
-        }
+        ],
+        "description": "The destination comes from the scoped ChoiceRef and requires a protected preview. Host reconstructs the thread or entry from the checked action context."
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
@@ -987,7 +1011,7 @@
       "engine": "personal layout order with complete effect and Undo committed together",
       "effect": "reversible",
       "idempotency": "request_id",
-      "authority": "Current actor’s own space/app layout, with live item/parent access for placements and context-pinned layout revision",
+      "authority": "Live space membership and the actor’s own space/app layout, with context-pinned layout revision and live item and parent access for placements.",
       "surfaces": [
         "authorized_template_action",
         "host_layout_control"
@@ -1019,7 +1043,7 @@
       "engine": "personal layout order with complete effect and Undo committed together",
       "effect": "reversible",
       "idempotency": "request_id",
-      "authority": "Current actor’s own space/app layout, with live item/parent access for placements and context-pinned layout revision",
+      "authority": "Live space membership and the actor’s own space/app layout, with context-pinned layout revision and live item and parent access for placements.",
       "surfaces": [
         "authorized_template_action",
         "host_layout_control"
@@ -1051,7 +1075,7 @@
       "engine": "personal layout create section",
       "effect": "reversible",
       "idempotency": "request_id",
-      "authority": "Current actor’s own space/app layout, with live item/parent access for placements and context-pinned layout revision",
+      "authority": "Live space membership and the actor’s own space/app layout, with context-pinned layout revision and live item and parent access for placements.",
       "surfaces": [
         "authorized_template_action",
         "host_layout_control"
@@ -1084,7 +1108,7 @@
       "engine": "personal layout rename section",
       "effect": "reversible",
       "idempotency": "request_id",
-      "authority": "Current actor’s own space/app layout, with live item/parent access for placements and context-pinned layout revision",
+      "authority": "Live space membership and the actor’s own space/app layout, with context-pinned layout revision and live item and parent access for placements.",
       "surfaces": [
         "authorized_template_action",
         "host_layout_control"
@@ -1123,7 +1147,7 @@
       "engine": "personal layout remove section without changing item content or access",
       "effect": "reversible",
       "idempotency": "request_id",
-      "authority": "Current actor’s own space/app layout, with live item/parent access for placements and context-pinned layout revision",
+      "authority": "Live space membership and the actor’s own space/app layout, with context-pinned layout revision and live item and parent access for placements.",
       "surfaces": [
         "authorized_template_action",
         "host_layout_control"
@@ -1174,15 +1198,15 @@
     "tie_breaker": "id",
     "count_modes": {
       "exact": "Count of the authorized projection at its checked result version; guest requires explicit count permission.",
-      "estimate": "Audience-certified member estimate only; refuse when unavailable.",
-      "none": "Omit count."
+      "estimate": "Audience-certified member estimate only. A guest never gets an estimate.",
+      "none": "Omit count. This is always the guest fallback, including nested windows, unless the authorized projection allows an exact count."
     },
     "window": {
       "request_schema": {
         "$ref": "#/$defs/WindowRequest"
       },
       "result_schema": {
-        "$ref": "#/$defs/WindowResult"
+        "$ref": "#/$defs/WindowReply"
       },
       "max_rows": 200,
       "default_rows": 60,
@@ -1192,12 +1216,11 @@
       "row_reference_schema": {
         "$ref": "#/$defs/Ref"
       },
-      "description": "A nested window uses the same envelope with the authorized parent row. The host reconstructs the parent in the declared Bind edge and authorizes both the parent and returned rows. The window_ref identifies the Bind, stable parent and issued range within the current lease and partition.",
+      "description": "The declared parent edge constrains the nested lookup and any count before filtering or pagination. Authorize the entire parent ancestry and each returned row. A parent operand is an optional extra predicate. The window_ref identifies the Bind, stable parent and issued range within the current lease and partition.",
       "max_nested_row_depth": 3
     },
     "unsupported_plan": {
-      "status": 422,
-      "code": "unsupported_query_plan"
+      "$ref": "#/$defs/WindowPlanError"
     },
     "live_limits": {
       "binds_per_view": 16,
@@ -1726,6 +1749,17 @@
         "fields": {
           "type": "object",
           "maxProperties": 32
+        },
+        "parent_refs": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "$ref": "#/$defs/ActionId"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/WindowParentRef"
+          },
+          "description": "Host-issued parent row reference for each authorized child Bind reached through a declared edge. Omit when the row has no eligible edge."
         }
       }
     },
@@ -1815,8 +1849,10 @@
           ]
         },
         "parent": {
-          "$ref": "#/$defs/Ref",
-          "description": "Host-validated stable parent for this window, omitted at the root."
+          "$ref": "#/$defs/WindowParentRef"
+        },
+        "member_cache_record": {
+          "$ref": "#/$defs/MemberRowCacheRecord"
         }
       },
       "allOf": [
@@ -1853,7 +1889,8 @@
               },
               "window_ref": {
                 "type": "null"
-              }
+              },
+              "member_cache_record": false
             }
           }
         },
@@ -2619,7 +2656,8 @@
         "slot": {
           "$ref": "#/$defs/ActionId"
         }
-      }
+      },
+      "description": "Fetch scoped options before displaying the prompt. The host reconstructs the option Bind from the activation context and slot. Show the returned labels, then submit only the picked ref under that slot in interaction.choices."
     },
     "ShareSheetResult": {
       "type": "object",
@@ -2702,8 +2740,8 @@
           "$ref": "#/$defs/ActionId"
         },
         "parent": {
-          "$ref": "#/$defs/Ref",
-          "description": "Stable parent thread or section row from the scoped host Bind. Absent for a root window."
+          "$ref": "#/$defs/WindowParentRef",
+          "description": "Required for source.parent:true and absent at the root. Use the ref issued for this child Bind in the actual parent row."
         }
       }
     },
@@ -2767,6 +2805,163 @@
     "LayoutSectionRef": {
       "$ref": "#/$defs/Ref",
       "description": "Host-issued ref for a section in the current actor’s personal layout."
+    },
+    "SettledSelectionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bind",
+        "row"
+      ],
+      "properties": {
+        "type": {
+          "const": "selection"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "row": {
+          "$ref": "#/$defs/Ref"
+        },
+        "sentAt": {
+          "type": "number",
+          "description": "Optional telemetry. Never used for authorization or ordering."
+        }
+      },
+      "description": "Settled single selection in the current authorized view. The host validates the drawn row under the Bind and returns its SelectionContextResult."
+    },
+    "WindowParentRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Host-issued row reference bound to the declared parent edge, child Bind, full parent ancestry and current authorized view and audience. Validate every request, including counts. Invalid, foreign or stale references confer no scope."
+    },
+    "RowActionTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context"
+      ],
+      "properties": {
+        "context": {
+          "enum": [
+            "item",
+            "placement"
+          ]
+        }
+      },
+      "description": "Author operand resolved by the host from the checked row action context. item is the underlying kind reference, ThreadRef for threads. placement is a LayoutEntryRef and exists only for a row from Section.repeat.rows. Neither value is supplied by the renderer."
+    },
+    "MemberRowCacheRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "audience",
+        "account",
+        "space",
+        "template_digest",
+        "bind",
+        "window_ref",
+        "offset",
+        "issued_at",
+        "expires_at",
+        "rows",
+        "proof"
+      ],
+      "properties": {
+        "audience": {
+          "const": "own_space_member"
+        },
+        "account": {
+          "$ref": "#/$defs/AccountRef"
+        },
+        "space": {
+          "$ref": "#/$defs/Ref"
+        },
+        "template_digest": {
+          "$ref": "#/$defs/Ref"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "window_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "issued_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "title"
+            ],
+            "properties": {
+              "title": {
+                "$ref": "#/$defs/Text"
+              },
+              "subtitle": {
+                "$ref": "#/$defs/Text"
+              }
+            }
+          }
+        },
+        "proof": {
+          "$ref": "#/$defs/ProofRef",
+          "description": "Host authentication of the complete record excluding this proof, verified against the expected host on disk write and load. Conveys no action or renewal authority."
+        }
+      },
+      "description": "The only persistable viewer projection. Issued by the host for an eligible ready or empty window of a live own-space member on an opted-in Bind. Bind issuance to the account, space, template and window. Contains only issued display text, never row IDs, contexts, action material or credentials."
+    },
+    "WindowPlanError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "code"
+      ],
+      "properties": {
+        "status": {
+          "const": 422
+        },
+        "code": {
+          "const": "unsupported_query_plan"
+        }
+      },
+      "description": "Typed response to the corresponding window request when no qualified bounded plan is available."
+    },
+    "WindowReply": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/WindowResult"
+        },
+        {
+          "$ref": "#/$defs/WindowPlanError"
+        }
+      ]
+    },
+    "NoNetworkBadgeManifest": {
+      "type": "object",
+      "required": [
+        "network"
+      ],
+      "properties": {
+        "network": {
+          "const": "none"
+        },
+        "content_fetch": false
+      },
+      "description": "Install and gallery badge and filter predicate for an already validated manifest. Worker egress denial separately follows network:none."
     }
   },
   "activation_limits": {
@@ -2809,16 +3004,9 @@
         "$ref": "#/$defs/SelectionSetRequest"
       },
       "output_schema": {
-        "oneOf": [
-          {
-            "$ref": "#/$defs/SelectionSetResult"
-          },
-          {
-            "$ref": "#/$defs/SelectionContextResult"
-          }
-        ]
+        "$ref": "#/$defs/SelectionSetResult"
       },
-      "scope": "Current authorized Bind and lease. Issue SelectionContextResult for the settled single row, and SelectionSetResult for multiple-selection lists or a clear."
+      "scope": "Current authorized Bind and lease, for a checked set of selected rows or a clear."
     },
     "composer.options": {
       "input_schema": {
@@ -2900,6 +3088,15 @@
       "input_schema": {
         "$ref": "#/$defs/ChoiceOptionsRequest"
       }
+    },
+    "selection.settled": {
+      "input_schema": {
+        "$ref": "#/$defs/SettledSelectionRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/SelectionContextResult"
+      },
+      "scope": "Current authorized Bind and lease. Reconstruct the exact stable row named by the settled selection before issuing contexts."
     }
   },
   "generic_item_fields": {
@@ -2947,7 +3144,10 @@
   },
   "cache_policy": {
     "member_rows_max_age_seconds": 1209600,
-    "persistent_row_scope": "Previously authorized member list rows for own spaces only. Bind.persist opts in and cache.memberRows may opt out. cache.maxAgeDays may shorten retention.",
-    "persistent_row_authority": "Display on unlocked devices as unconfirmed until the host confirms or corrects the rows. Encrypt with account- and space-bound keys. Never persist guest or public rows, action credentials or contexts. Erase on sign-out, account switch or known revocation. Every action requires a fresh host context."
+    "persistent_row_scope": "Only the host-authenticated own-space member record may go to disk. Validate shape, proof, account, space, member audience, view identity, lifetime and current opt-ins on write and load. Never serialize a WindowResult.",
+    "persistent_row_authority": "Display on unlocked devices as unconfirmed until the host confirms or corrects the rows. Encrypt with account- and space-bound keys. Never persist guest or public rows, action credentials or contexts. Erase on sign-out, account switch or known revocation. Every action requires a fresh host context.",
+    "record_schema": {
+      "$ref": "#/$defs/MemberRowCacheRecord"
+    }
   }
 }

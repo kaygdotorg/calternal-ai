@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 6 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 7 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -28,10 +28,10 @@
     "settings": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/setting" } },
     "secrets": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/secret" } },
     "credential_routes": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/credentialRoute" } },
-    "content_fetch": { "const": true, "description": "Render remote images through the host's anonymous image proxy. Grants no worker network access." },
+    "content_fetch": { "const": true, "description": "Render remote images through the host's anonymous image proxy. Grants no worker network access and excludes the package from noNetworkBadge." },
     "network": {
       "oneOf": [
-        { "const": "none", "description": "No network access. Show the install and gallery badge and deny every worker egress route." },
+        { "const": "none", "description": "Deny every worker egress route. Derive badge and filter eligibility using noNetworkBadge." },
         {
           "type": "object", "additionalProperties": false, "minProperties": 1, "maxProperties": 3,
           "properties": {
@@ -80,6 +80,7 @@
     }
   ],
   "definitions": {
+    "noNetworkBadge": { "$ref": "host-catalogue-v2.json#/$defs/NoNetworkBadgeManifest" },
     "windowRequest": { "$ref": "host-catalogue-v2.json#/$defs/WindowRequest" },
     "localId": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$", "maxLength": 64 },
     "operationId": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$", "maxLength": 128 },

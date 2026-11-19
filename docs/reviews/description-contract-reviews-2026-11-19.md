@@ -68,3 +68,17 @@ Part B's own findings are fixed here (`FIXED`); findings about the runtime are t
 | 5 | One window envelope | FIXED: the catalogue's WindowRequest `{type:"window", request}` is the only envelope; the schema cites it (with optional `parent`) |
 | Q10 | Member own-space rows persist | RECORDED in 6 with Sol's objection and the conditions (unlocked device, account+space keys, 14-day retention, never guest/public, never contexts or credentials, erase on sign-out/switch/known revocation, display only); `Cache.memberRows`, `Bind.persist` |
 | Q11 | Nested child rows and user-made sections in the first contract; drag an exception | FIXED: `BindSource.parent`, `RowTemplate.children`, `{parent}` operand, `Section.repeat`, host layout operations; drag recorded as a parity exception |
+
+## Round 6 (Sol, review of 99f7a66e) and revision 7: the renderer side
+
+| # | Finding | Status |
+| --- | --- | --- |
+| 1 | One catalogue request for a settled selection | FIXED: `EventSelection` cites the catalogue's `SettledSelectionRequest` ({type: selection}, route `selection.settled`), distinct from `selection_set`; 3.2 |
+| 3 | Mandatory parent edge | FIXED: the declared children/repeat edge is mandatory, `request.parent` is a host-issued `WindowParentRef` scoped to the edge and ancestry; the verifier rejects a parent bind with no edge; `{parent:true}` is an optional predicate (2.7, schema) |
+| 4 | Guest count fallback | FIXED in 2.6: `none`, nested windows included |
+| 5 | Layout over | FIXED: the verifier rejects `Section.repeat.over` unless its bind reads `layout_sections` (live-membership rule is the plugins lane's) |
+| 6 | Layout operand types | FIXED: `{context: item}` and `{context: placement}` (catalogue `RowActionTarget`), placement only inside repeat rows, `move_to` takes thread or entry, verifier checks the operand types against `input_schema` |
+| 7 | Persisted rows record | FIXED: the schema cites the catalogue's `MemberRowCacheRecord` (own-space member only, display payload, host proof) as the only disk record; section 6 states the exemption; guest and public cannot carry one |
+| 8 | Choice prompt order | web lane (5.0) |
+| 9 | Typed query refusal | FIXED: 2.3/2.5 cite `WindowReply` and `WindowPlanError` |
+| 2, 10, 11, 12 | Snooze, indexed-page gate, snapshot wake, badge predicate | plugins lane |

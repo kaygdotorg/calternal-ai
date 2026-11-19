@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 6
+# Plugin API v2 · revision 7
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -91,10 +91,10 @@ digests. Restore cannot reuse inherited tickets, handles, descriptors,
 credits or random state. On every wake, before any plugin code runs,
 initialize the guest kernel and in-process random generators from fresh host
 entropy. On snapshot wake explicitly reseed both layers, including every
-restored process’s crypto RNG. Reinitialize a process that cannot reseed or
-fence its retained authority and identifier state. Fail closed if either
-layer is unready. Count all of this inside the wake allowance. The wall
-probe observed the same Node crypto bytes after independent restores even
+restored process’s crypto RNG. Reinitialize a process with fresh entropy
+if it cannot reseed. Refuse admission unless kernel and process randomness
+are fresh before plugin code runs. Count all of this inside the wake
+allowance. The wall probe observed the same Node crypto bytes after independent restores even
 with a kernel reseed. With both layers reseeded, its guest stage including
 the sampling draws measured about 180 ms at p50 and 267 ms at p95.
 [Snapshot randomness measurement](https://git.kayg.org/kayg/calternal-ai/src/commit/2562b95e8de9ce6749adeae4afd8cb7dc08353c2/docs/measurements/space-runtime-walls.md#snapshot-randomness).
@@ -271,14 +271,14 @@ Direct sockets and private-network access stay disabled. TCP comes later
 as “Servers you add” with a port.
 
 Declare `network: "none"` for the explicit **No network access** worker tier.
-Install and gallery derive its badge and filter from the checked manifest
-only when `content_fetch` is absent. With content fetch, say “No plugin
+Install and gallery use the manifest schema’s `noNetworkBadge` predicate:
+`network == "none"` and `content_fetch` absent. With content fetch, say “No plugin
 network access. Loads remote images anonymously.” Adding a network line
 removes the badge and asks for approval. Every package process has no ambient
 socket route and has only its own supervisor endpoint. The host checks
 that endpoint’s package identity/digest and current installed policy on
 every broker egress entry, including delegated jobs and credential
-routes. A No network package cannot obtain a worker proxy or credential
+routes. A package with `network: "none"` cannot obtain a worker proxy or credential
 route, even in a space with a network-enabled package. Refuse before DNS,
 connection or proxy-cache lookup. Cross-package IPC cannot borrow egress.
 
@@ -430,9 +430,9 @@ cannot turn an unreadable field into a predicate, sort key, string prefix,
 search term, order, count or error observable. Do not evaluate a disallowed
 plan. Search in the explicitly authorized member or shared corpus **before**
 rank or pagination. Never search a private body for a guest with title-only
-access. Count only the authorized projection. For guests, count defaults
-to `none`. `exact` requires an explicit count-enabled shared root/child
-projection. Guest estimates are refused.
+access. Count only the authorized projection. Guest count fallback is
+always `none`, including in nested windows. `exact` requires an explicit
+count-enabled shared root or child projection.
 
 The catalogue defines typed predicates, count modes and window ceilings.
 Equality operands use the field’s scalar type without coercion.
@@ -443,39 +443,48 @@ Ordering and `prefix` require the field’s declared type and index collation.
 `all` and `any` have a combined 16-predicate cap and no nesting.
 Two sort keys maximum plus stable ID as a tiebreaker. Use half-open
 `[from,to)`. The host may prefetch within the row and byte cap and returns
-one catalogue `WindowResult` with bind, state, `window_ref`, result
-version, actual offset and stable rows. Both schemas cite the catalogue’s
-only request envelope, `{type:"window", request: WindowRequestPayload}`.
-The payload’s optional `parent` scopes a window to one stable parent row. Count is an exact/estimate object or omitted, as allowed
+one catalogue `WindowReply`. Its `WindowResult` arm gives the Bind, state,
+`window_ref`, result version, actual offset and stable rows. Both schemas
+cite the catalogue’s only request envelope,
+`{type:"window", request: WindowRequestPayload}`. For a per-parent Bind,
+the payload must carry its edge-scoped `parent` ref. Omit it at the root.
+Count is an exact/estimate object or omitted, as allowed
 by audience and plan. The chrome/content pair shares one Bind list.
 `viewer_self` permits counts over the actor’s own authorized projection
 only. Turn controls require current turn-specific authority. The host projects
 `snoozed_until` as null after expiry and invalidates the actor’s Inbox Bind
-without waking the runtime. Stable window and rank locators belong to the
-checked query and result version. The first contract qualifies these plan
-families with their backing indexes.
+without waking the runtime. Window locators belong to the checked query
+and result version. Ordered collection windows use a scoped covering
+index over collection, audience, sort key and stable ID, with a maintained
+count per scope. Step 0 selects the jump strategy, such as keyset traversal from the
+nearer end or offset traversal over the covering index. The contract
+requires no maintained exact ranks. These are the qualified plan families.
 
 | Plan family | Required index |
 | --- | --- |
 | Stable item lookup | Kind and stable item ID, with a scoped authority lookup. |
 | Ordered or filtered kind lists, including Inbox, Trash and self-only rows | Ordered indexes scoped to the authorized kind or viewer projection, with the supported filter and sort keys. |
-| Manual collection + mutable ACL + sort, including the main Notes list | Scoped collection membership indexed with the sort key and stable ID, with mutable ACL applied before windowing. Reading and sorting all members is disallowed even at offset zero. |
+| Manual collection + mutable ACL + sort, including the main Notes list | The scoped covering membership index, with current ACL applied before windowing and a maintained count per scope. Reading and sorting all members is disallowed even at offset zero. |
 | Child and section windows | Parent-scoped ordered indexes for authorized child rows and personal section placements. |
 | Search | Authorized member or shared corpus index with bounded rank and pagination. |
 | Filtered counts | Authorized filter indexes for bounded exact counts, or an audience-certified member estimate. |
 
-Return `422 unsupported_query_plan` for any other plan or if its index
-cannot satisfy the requested scope, filters, sort, window or count within
-the work budget. Never serve the request by scanning or sorting the full
-candidate set.
+Return `422 unsupported_query_plan` if the plan or index cannot satisfy
+the requested scope, filters, sort, window or count within the work
+budget. For a window request this is the typed `WindowPlanError` reply.
+Never serve the request with a table scan or a sort of the full candidate set.
 
 The first contract includes nested child rows and user-made sections (Q11).
 `children: {bind}` uses a `source.parent: true` Bind windowed per expanded
-parent, with depth at most three and no cycles. The host reauthorizes the
-parent and each returned child, and reconstructs any `{parent: true}` operand.
-`Section.repeat: {over, rows}` repeats over `layout_sections` (`id`, `title`,
-`position`) from the host’s per-person layout scoped to space and app.
-Each section uses a per-parent window. Layout membership grants no item access.
+parent, with depth at most three and no cycles. The declared edge is the
+mandatory constraint. On each window request the host validates the
+`WindowParentRef` issued for that child Bind in the parent row, reauthorizes
+its entire ancestry and scopes rows and counts to that edge. A
+`{parent: true}` operand is an optional extra predicate.
+`Section.repeat: {over, rows}` requires `over` to read `layout_sections`
+(`id`, `title`, `position`) and `rows` to use the declared per-parent edge.
+The loader checks both. Only live space members may read their own layout,
+scoped to space and app. Layout membership grants no item access.
 
 ### 4.2 Live work, cache and host components
 
@@ -507,15 +516,21 @@ require fresh authorized windows. Ignore superseded replies and keep rows
 hidden on timeout or refusal. Clear live rows on revocation, sign-out,
 account or audience switch, session end or guest link closure.
 
-Data-free templates may persist. For a member’s own space, previously
-authorized display rows of Binds with `persist: true` may also persist
-between launches unless `cache.memberRows` is `none` (Q10). On an unlocked
-device, paint them at launch as unconfirmed, then confirm or correct them
-with the host’s first window answer. Encrypt with account- and space-bound
-keys. Retain for at most 14 days or `cache.maxAgeDays` if shorter. Never
-persist guest or public rows, action credentials or activation contexts.
-Erase on sign-out, account switch or known revocation. Persisted rows
-are display only. Every action requires a fresh host context.
+Data-free templates may persist. The only persistable viewer projection is
+the catalogue’s `MemberRowCacheRecord` (Q10). The host issues it only for
+an eligible live own-space member on a Bind with `persist: true` and
+`cache.memberRows` enabled. On write and load verify the schema, host
+proof, account, space, own-space-member audience, template and window
+scope, current opt-ins, and `issued_at ≤ now < expires_at`. Reject any
+lifetime past the allowed retention. Persist only its allowlisted display
+payload and authenticated metadata. Never serialize live windows, guest or
+public rows, action credentials or activation contexts.
+
+On an unlocked device paint eligible records at launch as unconfirmed,
+then confirm or correct them with the host’s first window answer. Encrypt
+with account- and space-bound keys and retain for at most 14 days or
+`cache.maxAgeDays` if shorter. Erase on sign-out, account switch or known
+revocation. Every action requires a fresh host context.
 
 The catalogue gives typed host component routes. `transcript.page`
 accepts a checked Thread ref, a durable committed cursor
@@ -572,8 +587,9 @@ never retargets or stales a still-valid action. Bound context count (256 per
 viewer and 4,096 per space) and encoded WindowResult bytes. Withhold actions
 until their context is available. A selection-dependent action must use the
 context for the stable row drawn at activation. Send any pending selection
-first and wait for a matching `SelectionContextResult`, scoped to the lease,
-cache partition, Bind and row. Ignore superseded contexts. The host resolves
+as a `SettledSelectionRequest` on `selection.settled` and wait for a
+matching `SelectionContextResult`, scoped to the lease, cache partition,
+Bind and row. Ignore superseded contexts. The host resolves
 only against the issued context, never its current selection.
 
 1. **Resolve.** Accept action/activation IDs, the context and declared
@@ -583,8 +599,10 @@ only against the issued context, never its current selection.
    up to 50 stable IDs from the context-bound Bind. Reauthorize every ID
    against that snapshot and return a scoped `selection_ref` inside the
    resolution. A separate `selection.set` call is unnecessary for bulk
-   activation. For a Choice prompt, resolve the host-issued ChoiceRef,
-   never a client-supplied collection or item value.
+   activation. For a Choice prompt, fetch `ChoiceOptionsRequest` for the
+   context and slot before showing the returned labels. Submit the picked
+   ref in `interaction.choices`. Resolve that host-issued ChoiceRef against
+   the checked prompt and Bind versions.
 2. **Derive confirmation.** `confirm:none` permits the shortcut for host
    catalogue reads and for catalogue mutations with `atomic_undo: true`
    whose engine commits the complete effect and its Undo in one
@@ -662,9 +680,13 @@ memberships intact. Personal layout uses `host.layout.move_to`,
 `host.layout.move_up`, `host.layout.move_down` and
 `host.layout.section.create`, `host.layout.section.rename`,
 `host.layout.section.remove`. Resolve the entry and section in the actor’s
-own layout against its context-pinned revision and check live access to any
-item and parent. Move to uses a host-issued ChoiceRef and previews the
-destination. Removing a section changes only the personal layout.
+own layout against its context-pinned revision and check live space
+membership and item and parent access. For Threads row actions
+`{context:"item"}` yields the underlying ThreadRef.
+`{context:"placement"}` yields the LayoutEntryRef in a repeated section.
+Move to accepts the thread to add an unplaced item or the placement to move
+it. It resolves the destination ChoiceRef for the protected preview.
+Removing a section changes only the personal layout.
 
 For every eligible case below, commit the complete effect and the protected
 Undo ref with its inverse data in the named transaction. Publish the ref
@@ -682,7 +704,7 @@ revisions of all affected resources and refuses if any dependency moved.
 | `host.layout.section.remove` | The same layout transaction commits removal and retains the section, placements and order for Undo. |
 | `turns.archive` | The current writer commits the thread head without Undo, then checks for and cancels a non-final turn, runs a separate protected transaction to cancel pending approvals and remove saved authority, and invalidates affected feeds. An idle full swipe requires proving under the commit fence that there is no active turn or authority or approval to retire, skipping cleanup and committing the archived head and unarchive Undo in one FULL thread content transaction. Until then the shortcut is ineligible. For an active turn the host challenge says “The running turn will be stopped.” Authority or approval cleanup also requires a challenge. |
 | `turns.unarchive` | The FULL thread content transaction records the new head and Undo. A full swipe may unarchive an eligible thread. |
-| `turns.snooze` | The FULL thread content transaction commits the indexed manual deadline and its previous value for Undo. Subscription retry state is unaffected. |
+| `turns.snooze` | Ineligible. Today’s writer stores one shared manual deadline. Expose the actor-scoped operation only once the actor-keyed deadline, its index entry and Undo commit together. Subscription retry state is unaffected. |
 | `host.item.patch-metadata` | The room-checked FULL content transaction records the changed head and Undo for a single boolean toggle. Full swipe covers this case. |
 
 On success, Invoke `then:{route}` may navigate using a
@@ -697,7 +719,8 @@ engine query results, and the installed-plugin trust rule still applies to
 what a worker knew or previously wrote. Run all guest logic in the home
 space charging its quota. Guest outputs and public links are host-rendered
 and grant-checked, with free-form worker output excluded. A public
-link serves a saved host view and never wakes.
+link serves a saved host view and never wakes. Item grants confer no
+personal-layout access. Layout reads and writes require live membership.
 
 Guest tickets cover the home item and its host-recorded children. Only a
 host engine can create a child edge while committing a typed parent–child
@@ -731,7 +754,8 @@ No package owns a database. Build a host-owned table engine, open to every
 plugin through the broker, when an app needs bulk records or aggregates.
 Mail is the expected first consumer.
 
-Description patches, persisted viewer projections and worker-published feeds, room hook acknowledgments, standalone
+Description patches, persisted viewer projections except `MemberRowCacheRecord`
+under §4.2, worker-published feeds, room hook acknowledgments, standalone
 inbound dispatch, direct sockets, brokered TCP and private-network access,
 guest Prompt execution, snapshots, and gallery listing fields are outside
 the first contract. Live room sync is an engine facility. Gallery listing
@@ -780,8 +804,8 @@ package, capture screenshots from fixtures and check completeness.
 Before enabling submissions, a public-guide-only author must produce a
 package and complete listing from the scaffold. The validator must accept
 it, reject an omitted required field and flag a stale connection statement
-or missing screenshot. It derives the No network access badge from the
-pinned manifest and drops it on a newly approved line. This preparation and check require no publishing.
+or missing screenshot. It derives the No network access badge using
+`noNetworkBadge` on the pinned manifest (§3). This preparation and check require no publishing.
 
 | Case | Assertion |
 | --- | --- |
@@ -818,13 +842,13 @@ and zero-effect assertions must hold on every repetition.
 | Spike | Injections and pass condition |
 | --- | --- |
 | **One enrolled channel** | Two real package processes on one enrolled channel in Space A, plus Space B. Block A’s carrier receiver until its actual writer stalls mid-frame. Hold a slow callback for two seconds. With a writable carrier, control and the other callback complete p95 ≤500 ms. While stalled, local fencing p95 ≤500 ms, close p95 ≤2 s and Space B progress p95 ≤2 s. No old-lease effect after local fencing. Remote stops within 5 s of its last authenticated renewal on every run. Reconnect rejects the old epoch and authorized replay commits once. |
-| **Cold indexed page** | 100,000 mixed-visibility rows. Test offsets 0, 10,000 and 90,000 for each qualified plan family including collection + ACL + sort, search and filtered counts during grant/content churn. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms, work independent of offset, counts separately metered. Reject scans, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
+| **Cold indexed page** | 100,000 mixed-visibility rows. Test offsets 0, 10,000 and 90,000 for windowed plans including collection + ACL + sort and search during grant/content churn. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms. Measure covering-index entries visited at each offset and keep work within the window budget. For stable-ID lookup assert one bounded indexed lookup and scoped authority check for a present, missing and unauthorized ID. For standalone exact counts assert separately metered indexed work within the count ceiling and count only the authorized set after grant churn. Under the same workload, a save touches a bounded number of index entries and stays within the 40 ms append gate. Reject table scans and full candidate sorts, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
 | **Atomic large save** | Stage an escape-heavy 2 MiB body and reconstruct it by revision-pinned ranges after the head moves, p95 ≤5 s. The 60 s range pin is invalidated by purge or revoke. Race duplicate begin, lost chunk ACK, conflicting bytes, cancel and orphan cleanup. Race revoke, epoch loss, enrollment removal and run replacement on both sides of commit and inject crashes before publication and before reply. No partial edit or success receipt before commit. After commit recover one revision and receipt. |
 | **Durable transcript** | Stall the reader, cut after commit before ACK and restart. First screenful drawn p95 ≤150 ms on a warm authorized reconnect, with the durable cursor, stable event and receipt sequences unchanged. Revoked reconnect reveals neither rows nor bookmarks. An independent control request completes p95 ≤500 ms with the transcript reader stalled. |
 | **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. For each §4.4 atomic-Undo case, crash before and after the named commit and during publication: recover neither effect nor Undo before commit, and both after it. Concurrently edit a dependency, then require Undo to refuse without another effect. Exercise ineligible variants and prove the shortcut and full swipe cannot bypass their checks. Delay or spoof lease replies and verify only current, exact retained windows repaint. |
 | **Phone activation exchanges** | In the same Chromium phone link fixture, from action intent to host outcome, an eligible swipe and prepared Send each use one exchange. An ordinary plugin operation without a challenge uses two. Require the bounds on every run and report p95 exchange counts and elapsed time. Alter prepared material, including via parsed final text, or drop the Send reply. Require a fresh preview for changed material and replay the exact final text once. |
 | **Keyboard windowing** | 5,000 rows with 30 keys/sec on the phone fixture. At most four window requests in any second and zero selection/navigation events during repeat on every run. Report p95 request rate. No skeleton while continuous scrolling is steady. Same-version prefetch applies while keys repeat; an activation waits for the context of its drawn target. Delay a context for A until B is drawn and verify the activation cannot use A. |
-| **Snapshot randomness** | Independently restore the same snapshot twice and sample the guest kernel and each restored process’s crypto RNG, including Node. Require different bytes for both restores at both layers and require reseed completion before any plugin code. Refuse admission if reseed fails. Include reseed time in measured wake. |
+| **Snapshot randomness** | Independently restore the same snapshot twice and sample the guest kernel and each restored process’s crypto RNG, including Node. Require different bytes for both restores at both layers and require fresh kernel and process randomness before any plugin code. Refuse admission if reseed or fresh process reinitialization cannot establish that. Include reseed time in measured wake. |
 | **Interactive pending** | Force work past three plugin seconds, including a cold wake with the separate measured/fixture allowance. Check caller-visible pending p95 ≤3 s from admission, one diagnostic and one status ref. Poll while it finishes and retry after a lost reply. Never launch again or allow effects after ticket expiry. |
 
 If a gate misses, record the measured failure and change the mechanism or
