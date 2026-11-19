@@ -1,4 +1,4 @@
-# Revision 14 renderer gap disposition
+# Revision 14.1 renderer gap disposition
 
 This draft follows the native lane's
 [23 findings](https://git.kayg.org/kayg/calternal-ai/src/branch/lane/v2-renderer-apple/docs/reviews/v2-renderer-contract-gaps-2026-11-20.md)
@@ -31,3 +31,11 @@ and the [catalogue](../../contract/host-catalogue-v2.json). The draft is based o
 | 21. Account footer | Host identity from view-open. Reuse the shell account menu. |
 | 22. Search | Typed settle acknowledgment and fresh offset-zero window. Query match is independent of Bind field filter. |
 | 23. Counts | Exact as a number, estimates as “about N”, unavailable omitted. |
+
+
+## Web renderer selection follow-up
+
+| Finding | Disposition |
+| --- | --- |
+| Notes sidebar has no tick controls | Confirmed contract limit. Multiple selection is declared by a content `ListNode` with `selectionMode: "multiple"`. A sidebar `Section` only consuming the Bind does not supply the selection set. Use the existing content list for ticked bulk actions. In the fixture, Home demonstrates that path. The Notes toolbar's grafted action supports scripted selection tests. |
+| `selection.set` returned 404 on Home and 200 on Notes | Fixture routing bug. Home already declares the multiple-selection list and bulk action. Both views use the same typed route. The host checks the current lease and editor capability, then resolves only rows previously issued for that Bind and view. An empty set clears its prior ref. |
