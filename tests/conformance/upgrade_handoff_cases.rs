@@ -271,7 +271,10 @@ async fn upgrade_account_count_checks_stopped_auth_without_disclosing_records() 
     fresh.start().await;
     assert!(!upgrade(&fresh, &["account-count"]).status.success());
     fresh.stop();
-    assert_eq!(ok(upgrade(&fresh, &["account-count"])), json!({"accounts":0}));
+    assert_eq!(
+        ok(upgrade(&fresh, &["account-count"])),
+        json!({"accounts":0})
+    );
 
     let mut enrolled = Fixture::new().await;
     enrolled.stop();

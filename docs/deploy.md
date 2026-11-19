@@ -474,6 +474,9 @@ Traefik and the existing provider sandbox image in place.
    read -r -p 'Mounted encrypted backup directory: ' backup_dir
    [[ $backup_dir = /* && -d $backup_dir && -w $backup_dir ]]
    mountpoint -q -- "$backup_dir"
+   backup_device=$(stat -c %d -- "$backup_dir")
+   test "$backup_device" != "$(stat -c %d -- "$root")"
+   test "$backup_device" != "$(stat -c %d -- "$hdd")"
    backup=$(mktemp "$backup_dir/calternal-ai-state.XXXXXXXX.tar")
    previous_oci=$(mktemp "$backup_dir/calternal-ai-image.XXXXXXXX.oci")
    members=(srv/calternal-ai mnt/hdd/calternal-ai/userdata-hdd
