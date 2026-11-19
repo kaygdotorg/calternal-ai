@@ -1,4 +1,5 @@
 {
+  "audience": "member",
   "bind": "notes",
   "state": "loading",
   "result_version": null,

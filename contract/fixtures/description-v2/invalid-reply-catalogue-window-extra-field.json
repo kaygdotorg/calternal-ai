@@ -1,4 +1,5 @@
 {
+  "audience": "member",
   "bind": "notes",
   "state": "ready",
   "result_version": "rv-1",
