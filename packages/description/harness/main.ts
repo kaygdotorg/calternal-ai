@@ -26,6 +26,9 @@ else if (rows === 0) {
   const name = q.get("viewName") ?? "home";
   viewRef = f.views[name]!; description = f.templates[name] ?? f.templates.shared!;
 }
+// `?extend=multi:<bind>`: the page adds a multiple-selection list of a bind the template already declares to the view (a valid description node), so a template whose lists sit in the sidebar can be ticked in a suite.
+const ext = /^multi:(.+)$/.exec(q.get("extend") ?? "");
+if (ext && description.view?.root.type === "stack") description = { ...description, view: { ...description.view, root: { ...description.view.root, children: [...description.view.root.children, { type: "list", bind: ext[1]!, selectionMode: "multiple", title: "Pick notes" }] } } };
 const parentBinds = (description.binds ?? []).filter((b) => (b.source as { parent?: boolean }).parent).map((b) => b.id);
 const actionIds = [...new Set((description.binds ?? []).flatMap((b) => [...(b.row?.leadingActions ?? []), ...(b.row?.trailingActions ?? []), ...(b.row?.menu ?? [])].map((a) => a.id)))];
 // `?challenge=1`: the mock host answers every activation with a confirmation challenge and the material it wrote (to see the protected sheet), a choice with two options, Undo and status.

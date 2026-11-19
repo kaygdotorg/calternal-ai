@@ -4,7 +4,7 @@
   // code: what is drawn is only what the description declares; the page supplies the host components and the shell's own controls.
   import { onDestroy, setContext, untrack, type Component } from "svelte";
   import { Glass, Toasts } from "@calternal/ui";
-  import type { AppDescription, Bind } from "../model";
+  import type { Action, AppDescription, Bind } from "../model";
   import type { HostSession } from "../wire/session";
   import { refusalOf } from "../check";
   import { WindowStore } from "../windows/window-store.svelte";
@@ -74,6 +74,8 @@
   session.held = () => Object.fromEntries([...stores.values()].filter((s) => s.windowRef && s.resultVersion).map((s) => [s.windowRef!, s.resultVersion!]));
   onDestroy(() => { for (const s of stores.values()) s.destroy(); session.close(); });
 
+  /** The bind whose ticked rows a header action takes as a host-issued selection reference, if its inputs name one. */
+  const setBind = (a: Action): string | undefined => { for (const v of Object.values(("inputs" in a ? a.inputs : undefined) ?? {})) { const x = v as { selection?: string; set?: boolean }; if (x.selection && x.set) return x.selection; } return undefined; };
   const header = description.chrome?.header;
   const title = typeof header?.title === "string" ? header.title : description.view?.title;
   // A header title taken from an item bind's field: the open item's, never a list's first row.
@@ -92,7 +94,7 @@
     {/if}
     <main class="main"><Glass />
       <div class="head">{#if itemTitle ?? title}<h1 class="h1">{itemTitle ?? title}</h1>{/if}
-        {#each [...(header?.leading ?? []), ...(header?.trailing ?? [])] as a (a.id)}<ActionButton action={a} context={session.viewContexts[a.id]} />{/each}</div>
+        {#each [...(header?.leading ?? []), ...(header?.trailing ?? [])] as a (a.id)}{@const sb = setBind(a)}<ActionButton action={a} context={session.viewContexts[a.id]} selection={sb ? selectionFor(sb) : undefined} setOf={sb} />{/each}</div>
       {#if description.view}<Node node={description.view.root} />{/if}
     </main>
     {#if panel && panel.open !== false}

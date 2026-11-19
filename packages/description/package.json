@@ -25,7 +25,8 @@
     "e2e": "npm run e2e:keys && npm run e2e:fixtures && npm run e2e:components && npm run e2e:perf",
     "demo": "node demo/server.mjs",
     "e2e:actions": "node e2e/actions.mjs",
-    "e2e:components": "node e2e/components.mjs"
+    "e2e:components": "node e2e/components.mjs",
+    "e2e:bulk": "node e2e/bulk.mjs"
   },
   "peerDependencies": {
     "svelte": "^5.57.1"
