@@ -236,7 +236,12 @@ pub fn main(cmd: Command, out: &Output) -> i32 {
             );
         }
     };
-    out.finish(rt.block_on(run(cmd)))
+    let machine_role = matches!(&cmd, Command::Run { .. });
+    let result = rt.block_on(run(cmd));
+    if machine_role {
+        rt.shutdown_background();
+    }
+    out.finish(result)
 }
 
 /// The error for a machine-role failure, with the next step chosen from its kind.
