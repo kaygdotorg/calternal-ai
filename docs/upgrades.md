@@ -2,8 +2,10 @@
 
 The production schema baseline is dev `c98705d74bcf9f9cb2a1292b849b9b44c64b2714`,
 installed fresh as image tag `c98705d74bcf`. The markers below describe that
-release. The update proof uses the actual running image ID, which the operator
-captures in the [deployment runbook](deploy.md#first-ordinary-update-from-the-production-baseline).
+release. Production now runs `e16143f44f93`, a web-only update from
+`4735733eeb09` shipped with a passing proof for that image pair. The next
+proof uses the exact running `e16143f44f93` image and the gated candidate.
+[Deployment runbook](deploy.md#ordinary-update-from-production-revision-e16143f44f93)
 Preserve the earlier steps in the migration registry. Unsupported preview
 data is refused.
 
@@ -217,7 +219,7 @@ starts on those roots. Each release reads a write acknowledged by the other.
 The proof file binds those image digests and is published only after the test
 passes. Review each change for compatibility with the previous writer as well.
 
-The version range belongs to each store. In `4735733eeb09` the ranges are
+The version range belongs to each store. In `e16143f44f93` the ranges are
 auth 11–14, machines 6–7, space content 3–5, journal/jobs/account input 2,
 and content routing/account content/secrets/agent settings/onboarding/
 installed plugins 1. The two search projections start at 2 and 1 and have
@@ -290,10 +292,10 @@ before recording a complete handoff. Run seven and the remaining trials
 used the same images with a longer harness deadline.
 
 The proxy returned HTTP 502 during the write gaps. Some probes received no
-HTTP response. The page stayed signed in and the reconnect banner never
-appeared. The test sends its writes through the browser's API context. In
-Notes, a failed save can display **Not saved** because the client treats a
-non-JSON gateway response as a failed operation.
+HTTP response. The page stayed signed in. The rehearsal web bundles
+predated the client's gateway-outage handling, so the tab showed no
+reconnect banner. The probe sends writes through the browser's API
+context and measures when the server acknowledges them.
 
 Podman waited for the configured 90-second stop deadline with the signed-in
 tab open, then sent SIGKILL to the old server. The server's graceful
@@ -333,8 +335,7 @@ the installed Quadlet and machine unit when their contents were unchanged.
 The ten write gaps were 7.480, 1.702, 1.961, 2.029, 2.694, 2.495, 1.599,
 1.785, 2.792 and 1.339 seconds. Nine met the budget. The exact image-pair
 proof passed, all ten rollbacks retained the candidate write, and all ten
-browser sessions stayed signed in. The proxy returned 502 during the gap
-and the tab did not show the reconnect banner.
+browser sessions stayed signed in. The proxy returned 502 during the gap.
 
 | Measurement | Minimum | Median | Maximum |
 | --- | ---: | ---: | ---: |
@@ -360,13 +361,15 @@ candidate write through rollback. The host load average at the start was
 
 Locked preparation took 104–325 ms and commit 67–181 ms. Activation
 through enqueueing the server start took 114–251 ms. The driver reused
-the installed units in all ten timed handoffs. The tab stayed signed in
-without a reconnect banner in every run. Both series used a local TLS
-proxy and disposable data. Allow headroom for shared-host load and larger
-installations.
+the installed units in all ten timed handoffs. Both series used a local
+TLS proxy and disposable data. Allow headroom for shared-host load and
+larger installations.
 
-The browser can treat proxy 502, 503 and 504 as temporary unavailability,
-show the reconnect state and retry with the original request IDs.
+The web client in `e16143f44f93` treats a gateway's 502, 503 and 504 as
+temporary unavailability. It shows the reconnect state and retries
+operations with the original request IDs. Responses carrying the
+server's JSON envelope go straight to the caller. The measured series
+used earlier web bundles.
 
 ## Account onboarding and recovery
 

@@ -354,12 +354,16 @@ startup. A deployment retry, rollback, or the server unit's recovery hook can
 restore the staged bytes before either release starts. After the cutover marker,
 rollback keeps live data and the older build must pass its version check.
 
-### Supervised update from production revision `4735733eeb09`
+### Supervised update from production revision `e16143f44f93`
 
-The release-pair proof to `86306143` refused rollback on `jobs.db` version
-3. Take the supervised path below for an update from `4735733eeb09`.
-The selected candidate must be a gated `dev` commit with the v2 restore
-point and its matching deployment scripts. `86306143` itself has v1.
+The historical pair `4735733eeb09` to `86306143` refused rollback on
+`jobs.db` version 3. Production now runs `e16143f44f93`, a web-only
+update with the same backend as `4735733eeb09`. Check the exact new
+[release pair](#ordinary-update-from-production-revision-e16143f44f93)
+first. If it exposes a storage incompatibility and the owner approves
+the incompatible path, use the steps below. The selected candidate
+must be a gated `dev` commit with the v2 restore point and its matching
+deployment scripts. `86306143` itself has v1.
 
 Approve and run each numbered step before proceeding. Use a private Bash
 session on dev-01 for steps 1–3 and 6, and a separate private Bash session
@@ -404,7 +408,7 @@ Traefik and the existing provider sandbox image in place.
    test "$previous" = "${current#sha256:}"
    observed=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
      "podman image inspect --format '{{ index .Labels \"org.opencontainers.image.revision\" }}' $previous")
-   test "$observed" = 4735733eeb09f084aeac8ac28cb9bd668ed4b760
+   test "$observed" = e16143f44f93ec31a14d7b7a8dbe7859a0c23a92
    ```
 
 3. **Build, stage and preview.** Check free space and memory before starting
@@ -655,29 +659,21 @@ new installation UUID on the same public origin.
    podman healthcheck run calternal-ai
    ```
 
-### First ordinary update from the production baseline
+### Ordinary update from production revision `e16143f44f93`
 
-Run the build and gate on x86_64 dev-01 from the clean, approved candidate
-checkout. Run the commands in one Bash session using the existing
-`calternal` SSH deployment account. Confirm the current backup includes appdata, SSD, HDD and machine
-state. Keep the proof and both image IDs with the deployment record.
+Run the build and proof on x86_64 dev-01 from the clean, gated candidate
+checkout. Use one Bash session with access to the existing `calternal` SSH
+deployment account. Confirm the backup includes appdata, SSD, HDD and
+machine state. Keep the proof and both image IDs with the deployment record.
 
-Allow a maintenance window for an update from the production baseline.
-It contains the old graceful-stop behavior. With an authenticated event
-stream open it can wait 90 seconds, including when updating to `4735733eeb09`.
-The running image owns its own shutdown. See the
-[deployment rehearsal](upgrades.md#deployment-rehearsal-on-dev-01).
+Allow a maintenance window. Production `e16143f44f93` still has
+`4735733eeb09`'s shutdown behavior. The outgoing server can wait 90 seconds
+with an authenticated event stream open. [Deployment rehearsal](upgrades.md#deployment-rehearsal-on-dev-01)
 
-The intended first candidate combines automations and interface changes. The
-automations scheduler introduces `system/automations.db` at SQLite 1. Its
-writer initializes that store through the shared runner. Build the final
-approved revision containing both changes and generate a proof for its image
-before using the commands below.
-
-1. Read the exact image ID from the running production container. Check the
-   deployed revision for baseline tag `c98705d74bcf` and confirm the running
-   container and `:current` resolve to the same image. Copy that exact image
-   to dev-01 for the proof.
+1. Read the exact production image ID. Confirm the running container and
+   `:current` agree and the OCI revision is `e16143f44f93`. Import that
+   exact image to dev-01 for the proof. The passing proof for the previous
+   web-only deployment covers its own two image IDs.
 
    ```bash
    set -euo pipefail
@@ -688,15 +684,18 @@ before using the commands below.
      podman container inspect --format '{{.Image}}' calternal-ai)
    current=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
      podman image inspect --format '{{.Id}}' localhost/calternal-ai:current)
-   [[ $previous =~ ^(sha256:)?[a-f0-9]{64}$ ]]
+   previous=${previous#sha256:}
+   [[ $previous =~ ^[a-f0-9]{64}$ ]]
+   test "$previous" = "${current#sha256:}"
    deployed_revision=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
      "podman image inspect --format '{{ index .Labels \"org.opencontainers.image.revision\" }}' $previous")
-   test "${previous#sha256:}" = "${current#sha256:}"
-   test "$deployed_revision" = c98705d74bcf9f9cb2a1292b849b9b44c64b2714
-   ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
-     podman save --format oci-archive "$previous" | podman load --quiet
+   test "$deployed_revision" = e16143f44f93ec31a14d7b7a8dbe7859a0c23a92
+   if ! podman image exists "$previous"; then
+     ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+       podman save --format oci-archive "$previous" | podman load --quiet
+   fi
    imported=$(podman image inspect --format '{{.Id}}' "$previous")
-   test "${imported#sha256:}" = "${current#sha256:}"
+   test "${imported#sha256:}" = "$previous"
    ```
 
 2. Build the approved candidate once and run the signed-in compatibility
@@ -704,13 +703,21 @@ before using the commands below.
    an ordinary server update. A provider image change has its own staging
    and verification steps. Run `df -h ~` and `free -h` on dev-01 before
    building. Stop if free disk is below 15 GB or available memory is below
-   8 GB. Use gate slot 2 for this run.
+   8 GB. Use gate slot 2 for this run. If the proof command fails, leave
+   production serving and inspect the failure. A storage incompatibility
+   requires the owner's approval for the
+   [supervised path](#supervised-update-from-production-revision-e16143f44f93).
 
    ```bash
+   read -r -p 'Full gated dev commit: ' gated
+   [[ $gated =~ ^[a-f0-9]{40}$ ]]
+   git fetch origin dev
+   git merge-base --is-ancestor "$gated" origin/dev
+   test "$(git rev-parse HEAD)" = "$gated"
    test -z "$(git status --porcelain)"
-   export RELEASE_REVISION=$(git rev-parse HEAD)
-   export SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
-   revision=$(git rev-parse --short=12 HEAD)
+   export RELEASE_REVISION=$gated
+   export SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$gated")
+   revision=$(git rev-parse --short=12 "$gated")
    candidate=localhost/calternal-ai:$revision
    proof_dir=$(mktemp -d)
    proof=$proof_dir/upgrade-proof.json
@@ -725,10 +732,14 @@ before using the commands below.
      }
      trap cleanup_target EXIT
      nix develop .#deploy -c deploy/build-image.sh "$1"
-     nix develop -c scripts/verify-additive-upgrade.sh "$2" "$1" "$3"
+     built=$(podman image inspect --format "{{.Id}}" "$1")
+     nix develop -c scripts/verify-additive-upgrade.sh "$2" "${built#sha256:}" "$3"
    ' -- "$candidate" "$previous" "$proof" "$proof_dir"
    candidate_id=$(podman image inspect --format '{{.Id}}' "$candidate")
-   test -s "$proof"
+   candidate_id=${candidate_id#sha256:}
+   jq -e --arg previous "$previous" --arg candidate "$candidate_id" \
+     '.format == "calternal-upgrade-proof/v1" and .previous == $previous and .candidate == $candidate' \
+     "$proof" >/dev/null
    ```
 
 3. Preview the target and deploy the image already tested by the gate. The
@@ -750,8 +761,6 @@ before using the commands below.
    note or thread in a signed-in tab, save a small edit in an operator-owned
    test note, and reload to verify the edit persisted. Confirm the pool
    machine is online and can complete a disposable turn.
-   For the automations release, list definitions in an operator-owned space
-   and preview a schedule in the account's time zone without saving it.
 
    ```bash
    deployed=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
