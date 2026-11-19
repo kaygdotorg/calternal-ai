@@ -8,6 +8,7 @@ import { toast } from "@calternal/ui";
 import { navigate, segments } from "../../lib/route.svelte";
 import { spaces } from "../../shell/spaces.svelte";
 import type { ChromeBadge, ChromeBody, ChromeEvent, ChromeItem, ChromeProvider, ChromeRow, ChromeSection } from "../../shell/chrome/types";
+import { windowedOf } from "../../shell/chrome/native-chrome.svelte";
 import { layout } from "./layout.svelte";
 import type { ThreadSummary } from "./model";
 import { client, startThread, store } from "./store.svelte";
@@ -56,12 +57,12 @@ export const threadsChrome: ChromeProvider = {
     };
     const sections: ChromeSection[] = [shortcuts];
     if (tab === "inbox") {
-      sections.push({ id: "inbox", title: null, rows: inbox.filter((i) => match(i.thread)).map((i) => rowOf(i.thread, current, i.reasons)) });
+      sections.push({ id: "inbox", title: null, ...windowedOf("inbox", inbox.filter((i) => match(i.thread)), (i) => rowOf(i.thread, current, i.reasons)) });
     } else {
       const top0 = topLevelIds();
-      const rowsIn = (ids: string[]) => ids.map((id) => byId.get(id)).filter((t): t is ThreadSummary => !!t && match(t)).map((t) => rowOf(t, current));
-      sections.push({ id: "loose", title: layout.looseName, collapsed: layout.looseCollapsed, rows: rowsIn(layout.idsOf(null, top0)) });
-      for (const s of layout.sections) sections.push({ id: s.id, title: s.name, collapsed: s.collapsed, rows: rowsIn(layout.idsOf(s.id, top0)) });
+      const rowsIn = (sectionId: string, ids: string[]) => windowedOf(sectionId, ids.map((id) => byId.get(id)).filter((t): t is ThreadSummary => !!t && match(t)), (t) => rowOf(t, current));
+      sections.push({ id: "loose", title: layout.looseName, collapsed: layout.looseCollapsed, ...rowsIn("loose", layout.idsOf(null, top0)) });
+      for (const s of layout.sections) sections.push({ id: s.id, title: s.name, collapsed: s.collapsed, ...rowsIn(s.id, layout.idsOf(s.id, top0)) });
     }
     return {
       header: { title: open?.title ?? "Threads", trailing: open ? [{ id: "more", title: "More", icon: "more", menu: menuOf(open) }] : [] },

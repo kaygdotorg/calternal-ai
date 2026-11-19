@@ -139,6 +139,13 @@ describe("native chrome: the appearance and the schema form", () => {
     expect(windowed("short", all.slice(0, 10)).count).toBeUndefined();
     nativeChrome.windows = {};
   });
+  test("rows are built only for the window (a thousand threads cost a window of rows)", async () => {
+    const { windowedOf } = await import("./native-chrome.svelte");
+    let built = 0;
+    const all = Array.from({ length: 953 }, (_, i) => i);
+    const w = windowedOf("inbox", all, (i) => { built++; return { id: String(i) }; });
+    expect(w.count).toBe(953); expect(w.offset).toBe(0); expect(built).toBe(w.rows.length); expect(built).toBeLessThan(100);
+  });
 });
 
 describe("native chrome: the compatibility rule", () => {

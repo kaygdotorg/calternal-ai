@@ -118,13 +118,17 @@ const PENDING_MS = 5000;
 export function startNativeChrome(appKind: () => string): () => void {
   const b = bridge();
   if (!b || !chromeCompatible(b)) return () => {}; // no call, or a contract the shell cannot draw: the page keeps its own chrome
-  let frame = 0, latest: ChromeDescription | null = null;
+  let frame = 0, latest: ChromeDescription | null = null, lastSent = "";
   const send = async () => {
     frame = 0;
     const d = latest; if (!d) return;
     const t0 = performance.now();
     try {
-      const r = await b.chrome!(toSchema(d) as ChromeDescription);
+      const wire = toSchema(d) as ChromeDescription;
+      const same = JSON.stringify({ ...wire, revision: 0 });
+      if (same === lastSent) return; // nothing in the description changed (a republish for a store that moved something not published): send nothing
+      lastSent = same;
+      const r = await b.chrome!(wire);
       const ms = performance.now() - t0;
       nativeChrome.lat.push(ms); if (nativeChrome.lat.length > 200) nativeChrome.lat.shift();
       (window as unknown as { __chromeStats?: unknown }).__chromeStats = { published: d.revision, last: Math.round(ms * 10) / 10, avg: Math.round((nativeChrome.lat.reduce((x, y) => x + y, 0) / nativeChrome.lat.length) * 10) / 10 };
@@ -164,8 +168,13 @@ const WHOLE = 80, MARGIN = 20;
  * keeps spacers for the rest). Reads `nativeChrome.windows`, so a new window republishes.
  */
 export function windowed<T>(sectionId: string, all: T[]): { rows: T[]; count?: number; offset?: number } {
-  if (all.length <= WHOLE) return { rows: all };
+  return windowedOf(sectionId, all, (x) => x);
+}
+/** As `windowed`, but the rows are built from `items` only for the window (a thousand threads cost a window of rows, not a thousand). */
+export function windowedOf<T, R>(sectionId: string, items: T[], build: (t: T) => R): { rows: R[]; count?: number; offset?: number } {
+  const all = items;
+  if (all.length <= WHOLE) return { rows: all.map(build) };
   const [from, to] = nativeChrome.windows[sectionId] ?? [0, WHOLE / 2];
   const a = Math.max(0, from - MARGIN), b = Math.min(all.length, to + MARGIN);
-  return { rows: all.slice(a, b), count: all.length, offset: a };
+  return { rows: all.slice(a, b).map(build), count: all.length, offset: a };
 }
