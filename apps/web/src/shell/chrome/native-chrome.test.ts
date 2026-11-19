@@ -3,7 +3,7 @@ import { flushSync } from "svelte";
 import { threadsChrome } from "../../apps/threads/chrome";
 import { view } from "../../apps/threads/view.svelte";
 import { navigate, segments } from "../../lib/route.svelte";
-import { nativeChrome, registerChrome, routeEvent, startNativeChrome } from "./native-chrome.svelte";
+import { answerIsNative, chromeCompatible, nativeChrome, PAGE_CONTRACT, registerChrome, routeEvent, startNativeChrome } from "./native-chrome.svelte";
 import { store } from "../../apps/threads/store.svelte";
 import { notesChrome } from "../../apps/notes/chrome";
 import { settingsChrome } from "../../apps/settings/chrome";
@@ -136,5 +136,47 @@ describe("native chrome: the appearance and the schema form", () => {
     expect(w.count).toBe(300); expect(w.offset).toBe(80); expect(w.rows[0]).toBe(80); expect(w.rows.length).toBe(70);
     expect(windowed("short", all.slice(0, 10)).count).toBeUndefined();
     nativeChrome.windows = {};
+  });
+});
+
+describe("native chrome: the compatibility rule", () => {
+  const call = () => Promise.resolve({ native: true });
+  test("no call, or a shell that advertises contract versions without ours: native chrome stays off", () => {
+    expect(chromeCompatible(undefined)).toBe(false);
+    expect(chromeCompatible({})).toBe(false);
+    expect(chromeCompatible({ chrome: call, chromeContract: 2 })).toBe(false);
+    expect(chromeCompatible({ chrome: call, chromeContract: [2, 3] })).toBe(false);
+  });
+  test("a shell that advertises ours, or none (one from before the negotiation), is tried", () => {
+    expect(chromeCompatible({ chrome: call, chromeContract: PAGE_CONTRACT })).toBe(true);
+    expect(chromeCompatible({ chrome: call, chromeContract: [1, 2] })).toBe(true);
+    expect(chromeCompatible({ chrome: call })).toBe(true);
+  });
+  test("an answer counts as native only when it says so, for our contract", () => {
+    expect(answerIsNative({ native: true })).toBe(true);
+    expect(answerIsNative({ native: true, contract: PAGE_CONTRACT })).toBe(true);
+    expect(answerIsNative({ native: true, contract: 2 })).toBe(false);
+    expect(answerIsNative({ native: false })).toBe(false);
+    expect(answerIsNative({} as never)).toBe(false);
+    expect(answerIsNative(null)).toBe(false);
+  });
+  test("a shell that draws a contract we do not speak is withdrawn and the page keeps its own chrome", async () => {
+    const chrome = vi.fn().mockResolvedValue({ native: true, contract: 2 });
+    w.calternalNative = { chrome, log: vi.fn() };
+    registerChrome("threads", threadsChrome);
+    const stop = startNativeChrome(() => "threads");
+    flushSync();
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    await Promise.resolve(); await Promise.resolve();
+    expect(nativeChrome.native).toBe(false);
+    expect(chrome).toHaveBeenLastCalledWith(null);
+    stop(); delete w.calternalNative;
+  });
+  test("a shell that advertises only another contract is never published to", () => {
+    const chrome = vi.fn();
+    w.calternalNative = { chrome, chromeContract: 9 } as never;
+    const stop = startNativeChrome(() => "threads");
+    expect(chrome).not.toHaveBeenCalled();
+    stop(); delete w.calternalNative;
   });
 });

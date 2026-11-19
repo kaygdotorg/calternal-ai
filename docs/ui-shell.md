@@ -332,3 +332,15 @@ Owner feedback from a native shell on an iPhone 16 Pro Max, built as asked (feat
 Interruptible: nothing waits on a timer except the beat between leaving and arriving content (`--dur-fast`), which a newer move replaces. Checked for fluidity on the Simulator (frames on issue #15) and by the quiet list.
 
 **The stray mark after the wordmark.** See the report on issue #15; the cause and the fix are written there and in `docs/ui-shell-status.md`.
+
+## Native chrome: the page's side, and the compatibility rule (2026-11-19)
+
+**What it is.** Inside the iPhone shell (and the Mac app) the page can hand its navigation chrome to the shell: it publishes a *description* (the header, the sidebar's selectors, sections and rows, the apps, the account menu, the search field, and the person's look) with `calternalNative.chrome(description)`, and answers the shell's `calternal:chrome` events by doing what its own sidebar would do. The shell draws the wallpaper, the sidebar, the header and the card's frame natively; the page is a transparent content card inside, padded by `--chrome-top` and `--chrome-bottom` (`apps/web/src/shell/chrome/`: the store and publisher `native-chrome.svelte.ts`, the schema-exact encoder `encode.ts`, the appearance `appearance.ts`, the providers in `apps/*/chrome.ts`, the rules under `data-native-chrome` in `native.css`). The schema is the shell lane's (`contract/chrome-v1.schema.json`).
+
+**The compatibility rule.** The phone's shell and the server's page are not always updated together, so the two **negotiate the contract version over the bridge, and on any mismatch native chrome stays off and the page draws its own: never a half-drawn shell.** Concretely, in code (`chromeCompatible`, `answerIsNative`, `PAGE_CONTRACT` in `native-chrome.svelte.ts`):
+
+1. The page speaks contract `PAGE_CONTRACT` (1; `version` in the description). It publishes nothing unless `calternalNative.chrome` is a function.
+2. A shell that can draw several versions advertises them as `calternalNative.chromeContract` (a number or a list). If it advertises versions and ours is not one, the page does not publish (nothing is drawn natively).
+3. A shell from before the negotiation advertises nothing: the page tries it. An answer is native only when it says `native: true` and, if it names a `contract`, that is ours; an error, a missing `native` or another `contract` is treated as off, and if the shell did draw (`native: true` for a contract we do not speak) the page **withdraws** it with `chrome(null)` at once.
+4. Native is also off in a browser, with the shell's switch off, and when the shell replies `native: false`: the page's own sidebar and header are drawn exactly as before (every page rule is under `html[data-native-chrome]`, which only the shell sets).
+5. When the contract changes incompatibly, `PAGE_CONTRACT` and the encoder change together; the old page keeps working against a new shell because the new shell advertises the versions it still draws (and the new page against an old shell is off by rule 2 or by rule 3).

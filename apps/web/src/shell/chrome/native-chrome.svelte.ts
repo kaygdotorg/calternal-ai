@@ -13,15 +13,33 @@ import { accountItems, pickAccountItem } from "../accountMenu";
 import { self } from "../self.svelte";
 import { switcherApps } from "../switcherApps.svelte";
 import { toSchema } from "./encode";
-import { imageSent } from "./appearance";
 import type { ChromeBody, ChromeDescription, ChromeEvent, ChromeItem, ChromeProvider } from "./types";
 
 
-interface Bridge { chrome?: (d: ChromeDescription | null) => Promise<{ native: boolean }>; log?: (s: string) => unknown }
+interface Bridge { chrome?: (d: ChromeDescription | null) => Promise<{ native: boolean; contract?: number }>; log?: (s: string) => unknown; chromeContract?: number | number[] }
 const bridge = (): Bridge | undefined => (typeof window === "undefined" ? undefined : (window as unknown as { calternalNative?: Bridge }).calternalNative);
 
-/** Whether the page can publish chrome at all: the bridge has the call (only the iPhone shell, and only a build that has the experiment). */
-export const chromeAvailable = (): boolean => typeof bridge()?.chrome === "function";
+/** The version of the chrome contract this page publishes (`version` in the description; contract/chrome-v1.schema.json). */
+export const PAGE_CONTRACT = 1;
+
+/**
+ * The compatibility rule (docs/ui-shell.md, "Native chrome compatibility"): the page and the shell negotiate the chrome contract over the bridge, and on ANY mismatch native chrome stays off and the page draws its own, never a half-drawn
+ * shell (the phone's shell and the server's page are not always updated together). The shell advertises the contract versions it can draw as `calternalNative.chromeContract` (a number or a list) and answers a publication with
+ * `{native, contract}`. The page publishes only when it has the call and, if the shell advertises versions, ours is one of them; a shell that advertises nothing is one from before the negotiation: it is tried, and an answer
+ * that is not clear (an error, no `native`, a different `contract`) is treated as off and withdrawn.
+ */
+export function chromeCompatible(b: Pick<Bridge, "chrome" | "chromeContract"> | undefined = bridge()): boolean {
+  if (typeof b?.chrome !== "function") return false;
+  const c = b.chromeContract;
+  if (c === undefined) return true;
+  return (Array.isArray(c) ? c : [c]).includes(PAGE_CONTRACT);
+}
+
+/** Whether the shell's answer to a publication means native chrome is on for this contract: `native` true, and a `contract` (when it names one) that is ours. */
+export const answerIsNative = (r: { native?: boolean; contract?: number } | null | undefined): boolean => !!r && r.native === true && (r.contract === undefined || r.contract === PAGE_CONTRACT);
+
+/** Whether the page can publish chrome at all (the call exists and the contract versions agree). */
+export const chromeAvailable = (): boolean => chromeCompatible();
 
 class NativeChrome {
   /** The shell drew the chrome for the last publication (it said `native: true`). */
@@ -85,7 +103,7 @@ export function routeEvent(kind: string, ev: ChromeEvent): boolean {
  */
 export function startNativeChrome(appKind: () => string): () => void {
   const b = bridge();
-  if (!b?.chrome) return () => {};
+  if (!b || !chromeCompatible(b)) return () => {}; // no call, or a contract the shell cannot draw: the page keeps its own chrome
   let frame = 0, latest: ChromeDescription | null = null;
   const send = async () => {
     frame = 0;
@@ -93,12 +111,13 @@ export function startNativeChrome(appKind: () => string): () => void {
     const t0 = performance.now();
     try {
       const r = await b.chrome!(toSchema(d) as ChromeDescription);
-      if (d.appearance?.image) imageSent(d.appearance.wallpaper);
       const ms = performance.now() - t0;
       nativeChrome.lat.push(ms); if (nativeChrome.lat.length > 200) nativeChrome.lat.shift();
       (window as unknown as { __chromeStats?: unknown }).__chromeStats = { published: d.revision, last: Math.round(ms * 10) / 10, avg: Math.round((nativeChrome.lat.reduce((x, y) => x + y, 0) / nativeChrome.lat.length) * 10) / 10 };
       if ([1, 3, 10, 30].includes(nativeChrome.lat.length)) { try { b.log?.(`chrome publish round trip: last ${ms.toFixed(1)} ms, avg ${(nativeChrome.lat.reduce((x, y) => x + y, 0) / nativeChrome.lat.length).toFixed(1)} ms over ${nativeChrome.lat.length}`); } catch { /* ignored */ } }
-      if (r.native !== nativeChrome.native) { nativeChrome.native = r.native; document.documentElement.toggleAttribute("data-native-chrome-page", r.native); }
+      const on = answerIsNative(r);
+      if (r.native === true && !on) void b.chrome!(null).catch(() => {}); // the shell drew it for a contract we do not speak: withdraw it, never leave it half drawn
+      if (on !== nativeChrome.native) { nativeChrome.native = on; document.documentElement.toggleAttribute("data-native-chrome-page", on); }
     } catch (e) { try { b.log?.(`chrome publish failed: ${String((e as Error)?.message ?? e).slice(0, 300)}`); } catch { /* ignored */ } /* the shell did not answer: keep drawing our own */ }
   };
   const stop = $effect.root(() => {
