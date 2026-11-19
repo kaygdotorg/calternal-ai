@@ -13,13 +13,22 @@ export function perFrame<A extends unknown[]>(fn: (...a: A) => void): (...a: A) 
   const pending = (): boolean => { try { return !!(navigator as Navigator & { scheduling?: { isInputPending?: (o?: { includeContinuous?: boolean }) => boolean } }).scheduling?.isInputPending?.({ includeContinuous: true }); } catch { return false; } };
   const run = () => {
     raf = 0;
-    if (navHold.held) return; // held: applied by the release below
+    if (navHold.held) { afterHold(); return; } // held: applied after the release
     if (pending() && waited++ < 4) { raf = requestAnimationFrame(run); return; }
     waited = 0;
     const a = last; last = null;
     if (a) fn(...a);
   };
   // When the cursor settles the pane's own load starts: the held update lands a moment after it (not in the same frames), unless more keys arrive first.
-  navHold.subscribe(() => { if (last) setTimeout(() => { if (last && !raf && !navHold.held) raf = requestAnimationFrame(run); }, AFTER_SETTLE_MS); });
-  return (...a: A) => { last = a; if (!raf && !navHold.held) raf = requestAnimationFrame(run); };
+  // Subscribed only while a call is held (and dropped when the hold ends), so a long-lived page that makes many of these (a store per space) accumulates no subscribers or closures.
+  let unsub: (() => void) | null = null;
+  const afterHold = () => {
+    if (unsub) return;
+    unsub = navHold.subscribe(() => {
+      unsub?.(); unsub = null;
+      // When the cursor settles the pane's own load starts: the held update lands a moment after it (not in the same frames), unless more keys arrive first.
+      if (last) setTimeout(() => { if (!last) return; if (navHold.held) afterHold(); else if (!raf) raf = requestAnimationFrame(run); }, AFTER_SETTLE_MS);
+    });
+  };
+  return (...a: A) => { last = a; if (navHold.held) { afterHold(); return; } if (!raf) raf = requestAnimationFrame(run); };
 }

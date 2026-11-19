@@ -57,7 +57,9 @@ export const navHold = (() => {
     begin() { if (held) return; held = true; timer = window.setTimeout(() => { timer = 0; release(); }, HOLD_MAX_MS); },
     release,
     /** Calls `f` each time a hold ends; returns the way to stop. */
-    subscribe(f: () => void) { subs.add(f); return () => subs.delete(f); },
+    subscribe(f: () => void) { subs.add(f); return () => { subs.delete(f); }; },
+    /** How many are subscribed (the tests check that none are left behind). */
+    get subscribers() { return subs.size; },
   };
 })();
 
