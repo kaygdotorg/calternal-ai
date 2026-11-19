@@ -620,6 +620,10 @@
             },
             "error": {
               "$ref": "#/$defs/State"
+            },
+            "refine_query": {
+              "$ref": "#/$defs/State",
+              "description": "Shown with the bounded provisional rows of a search whose result is not complete (the host answered `state: refine_query`): the message asks the person to refine the query. Display only: no count, no scroll extent that implies a total, no End. A refined query is a normal new search. Limits are the catalogue's (`query.search`, `live_limits`); distinct from `loading` and `error`."
             }
           },
           "additionalProperties": false

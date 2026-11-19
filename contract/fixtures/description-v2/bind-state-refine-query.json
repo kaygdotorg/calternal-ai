@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "found",
+      "source": {
+        "type": "search",
+        "kind": "threads"
+      },
+      "fields": [
+        "title"
+      ],
+      "states": {
+        "refine_query": {
+          "title": "Refine your search",
+          "detail": "Showing the first results only."
+        }
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        }
+      }
+    }
+  ],
+  "chrome": {
+    "footer": {
+      "search": {
+        "placeholder": "Search",
+        "bind": "found"
+      }
+    }
+  }
+}

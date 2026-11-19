@@ -107,8 +107,10 @@ Rows are identified by the item id everywhere: selection, events, scope.
 
 ### 2.5 States
 
-`states.empty`, `loading` and `error` (also the answer to a `WindowPlanError`) are small messages (`title`, `detail`, `icon`, an optional action). Their text is the description's or host-written; never worker
+`states.empty`, `loading`, `error` (also the answer to a `WindowPlanError`) and `refine_query` are small messages (`title`, `detail`, `icon`, an optional action). Their text is the description's or host-written; never worker
 output. A renderer shows `loading` until the first window arrives, `empty` when `count` is 0, `error` when the host answers `state: "error"`.
+
+**`refine_query`.** When a search is broader than the host will complete, the host answers `state: refine_query` (the catalogue's `WindowResult`; limits are the catalogue's `query.search` and `live_limits`): bounded provisional rows for the same query, or no rows for a broad prefix, with no count, no activation contexts, no cache record and null `result_version` and `window_ref`. The renderer shows **the rows it got and a plain "refine your search" message** (the bind's `states.refine_query`, else the shell's own words), shows **no scroll extent that implies a total and no End**, treats the rows as display only, and takes a refined query as an ordinary new search. It is distinct from `loading` (the search projection is behind: no rows, no count, no contexts), from `empty` and from the errors.
 
 ### 2.6 What the schema needs from the host (authorization is the host's job)
 
