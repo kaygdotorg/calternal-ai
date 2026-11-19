@@ -2,11 +2,12 @@
 
 from description_verification import check
 
-COMPONENT_TYPES = {"item-editor", "turn-transcript", "composer", "request-card", "sealed-html-frame"}
+COMPONENT_TYPES = {"item-editor", "conversation-transcript", "composer", "request-card", "sealed-html-frame"}
 TYPED_ROUTES = {
-    "transcript.page": "turn-transcript",
+    "transcript.page": "conversation-transcript",
     "composer.options": "composer",
     "request_resolve": "request-card",
+    "transcript.follow": "conversation-transcript",
     "sealed_frame.open": "sealed-html-frame",
     "sealed_frame.resize": "sealed-html-frame",
     "sealed_frame.open_link": "sealed-html-frame",

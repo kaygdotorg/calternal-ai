@@ -1,0 +1,10 @@
+{
+  "definition": "ComposerOptionRequest",
+  "value": {
+    "conversation": "item-1",
+    "control": "model",
+    "options": {
+      "provider": "provider-ref-1"
+    }
+  }
+}

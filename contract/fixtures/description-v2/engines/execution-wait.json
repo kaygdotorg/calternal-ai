@@ -1,0 +1,8 @@
+{
+  "definition": "ExecutionWait",
+  "value": {
+    "kind": "execution",
+    "execution": "exec-1",
+    "after": "transition-1"
+  }
+}

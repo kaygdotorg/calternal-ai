@@ -1,0 +1,12 @@
+{
+  "definition": "ExecutionChild",
+  "value": {
+    "parent": "exec-parent",
+    "request_id": "receipt-1",
+    "kind": "lantern-conversation",
+    "refs": [
+      "item-1"
+    ],
+    "request": "checked-child"
+  }
+}

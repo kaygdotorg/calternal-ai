@@ -1,0 +1,104 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "conversations",
+      "source": {
+        "type": "list",
+        "kind": "lantern-conversation"
+      },
+      "fields": [
+        "title",
+        "state"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "menu": [
+          {
+            "id": "archive",
+            "title": "Archive",
+            "operation": "host.item.archive",
+            "inputs": {
+              "item": {
+                "context": "item"
+              }
+            }
+          },
+          {
+            "id": "snooze",
+            "title": "Clear snooze",
+            "operation": "host.item.snooze",
+            "inputs": {
+              "item": {
+                "context": "item"
+              },
+              "until": {
+                "literal": null
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "chrome": {
+    "header": {
+      "title": "Lantern",
+      "trailing": [
+        {
+          "id": "new",
+          "title": "New conversation",
+          "operation": "host.item.create",
+          "inputs": {
+            "kind": {
+              "literal": "lantern-conversation"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "view": {
+    "root": {
+      "type": "stack",
+      "children": [
+        {
+          "type": "component",
+          "component": {
+            "type": "conversation-transcript",
+            "id": "messages",
+            "config": {
+              "conversation": {
+                "route": "item"
+              },
+              "follow": "end",
+              "quote": true
+            }
+          }
+        },
+        {
+          "type": "component",
+          "component": {
+            "type": "composer",
+            "id": "message",
+            "config": {
+              "conversation": {
+                "route": "item"
+              },
+              "controls": [
+                "provider",
+                "model",
+                "machine",
+                "stop"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

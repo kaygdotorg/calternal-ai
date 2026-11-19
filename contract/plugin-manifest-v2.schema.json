@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 13.7 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 14 draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -115,7 +115,6 @@
         "id": { "$ref": "#/definitions/localId" },
         "name": { "$ref": "#/definitions/label" },
         "icon": { "$ref": "#/definitions/icon" },
-        "engine": { "const": "turns" },
         "description": { "$ref": "#/definitions/description" }
       }
     },
@@ -152,6 +151,192 @@
             "then": { "properties": { "type": { "const": "Text" } } }
           }
         },
+        "extractors": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "selector",
+                  "output",
+                  "key"
+                ],
+                "properties": {
+                  "selector": {
+                    "const": "frontmatter"
+                  },
+                  "output": {
+                    "$ref": "#/definitions/localId"
+                  },
+                  "key": {
+                    "$ref": "#/definitions/localId"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "selector",
+                  "output",
+                  "blocks",
+                  "max_utf8_bytes"
+                ],
+                "properties": {
+                  "selector": {
+                    "const": "first_blocks"
+                  },
+                  "output": {
+                    "$ref": "#/definitions/localId"
+                  },
+                  "blocks": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3
+                  },
+                  "max_utf8_bytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 256
+                  },
+                  "skip_title": {
+                    "const": true
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "selector",
+                  "output",
+                  "marker",
+                  "separator",
+                  "exclude"
+                ],
+                "properties": {
+                  "selector": {
+                    "const": "inline_tags"
+                  },
+                  "output": {
+                    "$ref": "#/definitions/localId"
+                  },
+                  "marker": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1
+                  },
+                  "separator": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "maxItems": 5,
+                    "items": {
+                      "enum": [
+                        "code",
+                        "links",
+                        "addresses",
+                        "escapes",
+                        "frontmatter"
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "conversation": {
+          "const": true,
+          "description": "Opt this package-owned kind into the checked conversation capability. Grants no authority."
+        },
+        "composer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "send",
+            "job"
+          ],
+          "properties": {
+            "send": {
+              "$ref": "#/definitions/operationId"
+            },
+            "steer_live": {
+              "const": true
+            },
+            "commands": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "option"
+                ],
+                "properties": {
+                  "name": {
+                    "$ref": "#/definitions/localId"
+                  },
+                  "option": {
+                    "enum": [
+                      "provider",
+                      "model",
+                      "reasoning",
+                      "machine"
+                    ]
+                  }
+                }
+              }
+            },
+            "mentions": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "kind"
+                ],
+                "properties": {
+                  "name": {
+                    "$ref": "#/definitions/localId"
+                  },
+                  "kind": {
+                    "$ref": "host-catalogue-v2.json#/$defs/KindId"
+                  }
+                }
+              }
+            },
+            "job": {
+              "$ref": "#/definitions/localId",
+              "description": "Replayable job to enqueue with the cold Send receipt. Its entry targets this conversation kind."
+            }
+          }
+        },
+        "device_row_images": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/localId"
+          },
+          "description": "Declared RowImageRef slots eligible for a checked editing-device snapshot."
+        },
+        "trash_retention_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
         "live_room": { "enum": ["yjs-v1"] },
         "host_create": {
           "description": "Opt in to generic host.item.create. Supply schema-valid initial metadata for an empty item. Optional after runs a same-package operation or job after the host commit. At install, resolve a job to run_operation and require the entry operation to target this kind with target.field and accept exactly that one required property in a closed input object. Resolve the property reference to ItemRef through the host registry and ignore schema annotations. The host binds the created ref to target.field as the only input.",
@@ -170,6 +355,8 @@
         }
       },
       "allOf": [
+        { "if": { "required": ["composer"] }, "then": { "required": ["conversation"] } },
+        { "if": { "required": ["conversation"] }, "then": { "properties": { "claimed_text": { "const": true } } } },
         { "if": { "properties": { "claimed_text": { "const": false } } },
           "then": { "required": ["extension"], "properties": {
             "indexed_fields": { "additionalProperties": { "not": { "required": ["source"] } } }
@@ -187,18 +374,76 @@
         "item_rename_status", "item_rename_undo", "item_purge", "empty_trash",
         "collection_create", "collection_membership", "items_list", "items_search", "sharing_check",
         "start_job", "checkpoint_job", "job_status", "cancel_job", "read_setting", "set_setting",
-        "request_secret_handle", "proxy_request", "credential_call", "turn_start", "turn_status", "turn_cancel",
-        "turn_follow_up", "turn_answer", "schedule_create", "schedule_remove"
+        "request_secret_handle", "proxy_request", "credential_call", "execution_start", "execution_status", "execution_stop",
+        "execution_input", "execution_spawn_child", "execution_wait", "schedule_create", "schedule_remove"
       ]
     },
     "provider": {
-      "type": "object", "additionalProperties": false, "required": ["id", "name", "engine", "adapter"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "adapter",
+        "image",
+        "models"
+      ],
       "properties": {
-        "id": { "$ref": "#/definitions/localId" },
-        "name": { "$ref": "#/definitions/label" },
-        "engine": { "const": "turns" },
-        "icon": { "$ref": "#/definitions/localId", "description": "Optional catalogue symbol. The host exposes a distinctive mark in provider_icon only when its provider_marks rule verifies publisher identity and ownership." },
-        "adapter": { "$ref": "#/definitions/asset", "description": "Pinned executable descriptor for the host's existing provider loader and handshake." }
+        "id": {
+          "$ref": "#/definitions/localId"
+        },
+        "name": {
+          "$ref": "#/definitions/label"
+        },
+        "icon": {
+          "$ref": "#/definitions/localId",
+          "description": "Optional catalogue symbol. The host exposes a distinctive mark in provider_icon only when its provider_marks rule verifies publisher identity and ownership."
+        },
+        "adapter": {
+          "$ref": "#/definitions/asset",
+          "description": "Pinned contribution entry point with digest and common display envelope qualification."
+        },
+        "image": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "models": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "label"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "reasoning": {
+                "type": "array",
+                "maxItems": 8,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                }
+              }
+            }
+          }
+        },
+        "credential_route": {
+          "$ref": "#/definitions/localId"
+        }
       }
     },
     "operation": {
@@ -259,7 +504,7 @@
     "wait": {
       "type": "object", "additionalProperties": false, "required": ["kind"],
       "properties": {
-        "kind": { "enum": ["question", "approval", "webhook", "deadline"] },
+        "kind": { "enum": ["question", "approval", "webhook", "deadline", "execution"] },
         "schema_operation": { "$ref": "#/definitions/operationId" },
         "route": { "$ref": "#/definitions/localId" }
       },

@@ -3,15 +3,14 @@
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
   "description": "Review contract for host kinds, operations, query limits and the activation exchange. A reference shape conveys no authority. The host semantic loader still validates scope, profiles, contracts and dependencies. A description, manifest, event or reply conforms only if it passes contract/verify-description.py at the pinned revision. The JSON Schemas define necessary structural rules and are insufficient on their own. A schema validator used alone must assert formats, including calendar validity for date-time. Differences in verifier-only rule classes are by design.",
   "reserved_operation_prefixes": [
-    "host.",
-    "turns."
+    "host."
   ],
   "audiences": {
     "member_item": "Live item authority and field policy on the member path.",
     "shared_projection": "Member authority or a host-approved explicit projection for this guest's home root/children. Counts require a separate projection flag.",
     "viewer_self": "The actor may access only their own projected value. AccountRef predicates are limited to eq viewer.person; only counts over that actor’s already authorized projection are allowed. Other typed personal fields use the actor’s index only.",
     "designated_request_actor": "Host-private request addressed to the designated viewer. Covers only the referenced eligible request. No guest list or count. A row id resolves only to a checked RequestRef.",
-    "eligible_turn_actor": "The current turn actor or an actor with live authority to inspect/control that turn under the Turns engine. A thread grant alone does not confer Stop.",
+    "eligible_execution_actor": "The current execution starter or a viewer with live PluginsManage and item authority. An item grant alone confers no execution control.",
     "personal_layout": "Only a live space member may read or mutate their own layout for this space and app. Check membership and actor on every read and write. Layout membership grants no item access."
   },
   "kinds": {
@@ -26,72 +25,6 @@
       ],
       "icon": "folder",
       "includes_generic_item_fields": true
-    },
-    "threads": {
-      "owner": "turns",
-      "row_ref": "ThreadRef",
-      "audience": "member_item",
-      "fields": {
-        "provider": {
-          "type": "ProviderId",
-          "index_owner": "turns",
-          "audience": "member_item",
-          "nullable": false
-        },
-        "provider_icon": {
-          "type": "Text",
-          "index_owner": null,
-          "audience": "member_item",
-          "nullable": true,
-          "description": "Host-projected catalogue symbol for the installed provider contribution identified by the thread's provider. Emit it only after the provider_marks binding check. On a missing or conflicting binding, omit the field so the row template uses its generic fallback symbol."
-        },
-        "state": {
-          "type": "Text",
-          "index_owner": "turns",
-          "audience": "member_item",
-          "nullable": false
-        },
-        "waiting_on": {
-          "type": "AccountRef",
-          "index_owner": "turns",
-          "audience": "viewer_self",
-          "nullable": true
-        },
-        "active_turn": {
-          "type": "TurnRef",
-          "index_owner": null,
-          "audience": "eligible_turn_actor",
-          "nullable": true
-        },
-        "snoozed_until": {
-          "type": "Timestamp",
-          "index_owner": "turns",
-          "audience": "viewer_self",
-          "nullable": true,
-          "description": "Actor-scoped active snooze deadline. Null once the deadline passes; host invalidates affected Bind results at expiry."
-        },
-        "archived": {
-          "type": "Boolean",
-          "index_owner": "turns",
-          "audience": "member_item",
-          "nullable": false
-        },
-        "parent": {
-          "type": "ThreadRef",
-          "nullable": true,
-          "index_owner": "turns",
-          "audience": "member_item",
-          "description": "Host-owned parent relation. Authorize both the parent and child before reporting the relation or filling a nested window."
-        }
-      },
-      "search_corpora": [
-        "member_title",
-        "member_body",
-        "shared_titles"
-      ],
-      "icon": "threads",
-      "includes_generic_item_fields": true,
-      "description": "For row action targets, context:item resolves to the checked underlying ThreadRef. In a repeated section, context:placement resolves to that LayoutEntryRef."
     },
     "requests": {
       "owner": "requests",
@@ -110,8 +43,8 @@
           "audience": "designated_request_actor",
           "nullable": false
         },
-        "thread_ref": {
-          "type": "ThreadRef",
+        "conversation_ref": {
+          "type": "ItemRef",
           "index_owner": "requests",
           "audience": "designated_request_actor",
           "nullable": true
@@ -496,30 +429,30 @@
       },
       "atomic_undo": false
     },
-    "host.turn.stop": {
-      "engine": "turn_cancel",
+    "host.execution.stop": {
+      "engine": "execution_stop",
       "effect": "irreversible",
       "idempotency": "request_id",
-      "authority": "Actor authorized to stop the referenced turn",
+      "authority": "The starter or live PluginsManage with item authority. Recheck under the attempt fence.",
       "surfaces": [
         "host_composer",
-        "host_turn_control"
+        "host_execution_control"
       ],
       "generic_invoke": false,
       "full_swipe": false,
       "worker_wake": "never",
       "target_inputs": [
-        "turn"
+        "execution"
       ],
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "turn"
+          "execution"
         ],
         "properties": {
-          "turn": {
-            "$ref": "#/$defs/TurnRef"
+          "execution": {
+            "$ref": "#/$defs/ExecutionRef"
           }
         }
       },
@@ -707,79 +640,11 @@
       },
       "atomic_undo": false
     },
-    "turns.start": {
-      "engine": "turn_start",
-      "effect": "external",
-      "idempotency": "request_id",
-      "authority": "Actor with live turn, draft, provider and machine authority; guest Prompt disabled",
-      "surfaces": [
-        "host_composer"
-      ],
-      "generic_invoke": false,
-      "full_swipe": false,
-      "worker_wake": "never",
-      "target_inputs": [
-        "thread",
-        "options"
-      ],
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "thread",
-          "draft",
-          "options"
-        ],
-        "properties": {
-          "thread": {
-            "$ref": "#/$defs/ThreadRef"
-          },
-          "draft": {
-            "$ref": "#/$defs/Draft"
-          },
-          "options": {
-            "$ref": "#/$defs/ComposerOptions"
-          }
-        }
-      },
-      "outcome_schema": {
-        "$ref": "#/$defs/ActionOutcome"
-      },
-      "atomic_undo": false
-    },
-    "turns.create": {
-      "engine": "thread create",
+    "host.item.archive": {
+      "engine": "item lifecycle archive",
       "effect": "reversible",
       "idempotency": "request_id",
-      "authority": "Actor with thread creation authority",
-      "surfaces": [
-        "authorized_template_action",
-        "host_thread_control"
-      ],
-      "generic_invoke": true,
-      "full_swipe": false,
-      "worker_wake": "never",
-      "target_inputs": [],
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [],
-        "properties": {
-          "title": {
-            "$ref": "#/$defs/Text"
-          }
-        }
-      },
-      "outcome_schema": {
-        "$ref": "#/$defs/ActionOutcome"
-      },
-      "atomic_undo": false
-    },
-    "turns.archive": {
-      "engine": "thread archive",
-      "effect": "reversible",
-      "idempotency": "request_id",
-      "authority": "Actor with live thread lifecycle authority",
+      "authority": "Actor with live item lifecycle authority",
       "surfaces": [
         "authorized_template_action",
         "host_thread_control"
@@ -788,17 +653,17 @@
       "full_swipe": false,
       "worker_wake": "never",
       "target_inputs": [
-        "thread"
+        "item"
       ],
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "thread"
+          "item"
         ],
         "properties": {
-          "thread": {
-            "$ref": "#/$defs/ThreadRef"
+          "item": {
+            "$ref": "#/$defs/ItemRef"
           }
         }
       },
@@ -807,15 +672,16 @@
       },
       "atomic_undo": false,
       "atomic_undo_unavailable": "The current writer commits the archived head without Undo, then enters a separate protected authority transaction. Keep both flags false and the challenge in place until the Step 2 idle-archive writer gate passes.",
-      "confirmation_when": "Before the writer gate passes, require a challenge. After it passes, an eligible idle archive resolves and dispatches in one exchange without a sheet. Challenge archive outside atomic_undo_when. Retiring grants with head-only Undo requires a challenge. For an active turn the host-written material says: The running turn will be stopped.",
-      "atomic_undo_when": "Idle archive requires no active turn, unresolved send intent or pending approval to retire. Saved authority requires a challenge unless it consists only of thread grants that the Step 2 writer retires in the same FULL thread content transaction as archive and that Undo restores together with the thread head. Retiring grants with head-only Undo requires a challenge. Check idle eligibility under the commit fence. Turn admission rejects a fresh admission to an archived head under the same fence. Commit the archived head and its unarchive Undo in one FULL thread content transaction, with no separate cleanup.",
-      "full_swipe_when": "After the Step 2 idle-archive atomic writer with Undo passes, enable atomic_undo and full_swipe for the first swipe action with effective confirm:none and the idle condition."
+      "confirmation_when": "Before the writer gate passes, require a challenge. After it passes, an eligible idle archive resolves and dispatches in one exchange without a sheet. Challenge archive outside atomic_undo_when. Retiring grants with head-only Undo requires a challenge. For an active execution the host-written material says: The running execution will be stopped. A pending intent or active execution requires confirmation bound to that exact target and the current starter or live PluginsManage authority.",
+      "atomic_undo_when": "Idle archive requires no active execution, unresolved send intent or pending approval to retire. Saved authority requires a challenge unless it consists only of item grants that the Step 2 writer retires in the same FULL item content transaction as archive and that Undo restores together with the item head. Retiring grants with head-only Undo requires a challenge. Check idle eligibility under the commit fence. Execution admission rejects a fresh admission to an archived head under the same fence. Commit the archived head and its unarchive Undo in one FULL item content transaction, with no separate cleanup.",
+      "full_swipe_when": "After the Step 2 idle-archive atomic writer with Undo passes, enable atomic_undo and full_swipe for the first swipe action with effective confirm:none and the idle condition.",
+      "kind_capability": "conversation"
     },
-    "turns.unarchive": {
-      "engine": "thread unarchive",
+    "host.item.unarchive": {
+      "engine": "item lifecycle unarchive",
       "effect": "reversible",
       "idempotency": "request_id",
-      "authority": "Actor with live thread lifecycle authority",
+      "authority": "Actor with live item lifecycle authority",
       "surfaces": [
         "authorized_template_action",
         "host_thread_control"
@@ -824,17 +690,17 @@
       "full_swipe": true,
       "worker_wake": "never",
       "target_inputs": [
-        "thread"
+        "item"
       ],
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "thread"
+          "item"
         ],
         "properties": {
-          "thread": {
-            "$ref": "#/$defs/ThreadRef"
+          "item": {
+            "$ref": "#/$defs/ItemRef"
           }
         }
       },
@@ -842,15 +708,16 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": true,
-      "atomic_undo_when": "Single-thread unarchive in the FULL content transaction with its Undo. Undo refuses if the thread revision or lifecycle dependencies changed.",
-      "full_swipe_when": "First swipe action, effective confirm:none and this operation’s atomic_undo_when condition."
+      "atomic_undo_when": "Single-item unarchive in the FULL content transaction with its Undo. Undo refuses if the item revision or lifecycle dependencies changed.",
+      "full_swipe_when": "First swipe action, effective confirm:none and this operation’s atomic_undo_when condition.",
+      "kind_capability": "conversation"
     },
-    "turns.snooze": {
-      "engine": "actor-scoped thread snooze",
+    "host.item.snooze": {
+      "engine": "item lifecycle snooze",
       "available": false,
       "effect": "reversible",
       "idempotency": "request_id",
-      "authority": "Member changing their own thread snooze",
+      "authority": "Member changing their own item snooze",
       "surfaces": [
         "authorized_template_action",
         "host_thread_control"
@@ -859,18 +726,18 @@
       "full_swipe": false,
       "worker_wake": "never",
       "target_inputs": [
-        "thread"
+        "item"
       ],
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "thread",
+          "item",
           "until"
         ],
         "properties": {
-          "thread": {
-            "$ref": "#/$defs/ThreadRef"
+          "item": {
+            "$ref": "#/$defs/ItemRef"
           },
           "until": {
             "oneOf": [
@@ -888,43 +755,8 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": false,
-      "atomic_undo_unavailable": "The current thread writer stores one shared manual deadline and cannot implement this actor-scoped operation. Set available to true only after the Step 2 actor-keyed snooze writer gate proves that the actor’s deadline, its index entry and Undo commit together. The host refuses snooze on every route while available is false. Subscription retry state is unaffected."
-    },
-    "turns.follow_up": {
-      "engine": "turn_follow_up",
-      "effect": "external",
-      "idempotency": "request_id",
-      "authority": "Actor allowed to queue against this turn on the selected provider/machine",
-      "surfaces": [
-        "host_composer",
-        "host_turn_control"
-      ],
-      "generic_invoke": false,
-      "full_swipe": false,
-      "worker_wake": "never",
-      "target_inputs": [
-        "turn"
-      ],
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "turn",
-          "draft"
-        ],
-        "properties": {
-          "turn": {
-            "$ref": "#/$defs/TurnRef"
-          },
-          "draft": {
-            "$ref": "#/$defs/Draft"
-          }
-        }
-      },
-      "outcome_schema": {
-        "$ref": "#/$defs/ActionOutcome"
-      },
-      "atomic_undo": false
+      "atomic_undo_unavailable": "The current item writer stores one shared manual deadline and cannot implement this actor-scoped operation. Set available to true only after the Step 2 actor-keyed snooze writer gate proves that the actor’s deadline, its index entry and Undo commit together. The host refuses snooze on every route while available is false. Subscription retry state is unaffected.",
+      "kind_capability": "conversation"
     },
     "host.collection.move": {
       "engine": "collection_membership",
@@ -1006,7 +838,7 @@
       "full_swipe": false,
       "worker_wake": "never",
       "target_inputs": [
-        "thread",
+        "conversation",
         "entry",
         "section"
       ],
@@ -1016,16 +848,16 @@
             "type": "object",
             "additionalProperties": false,
             "required": [
-              "thread",
+              "conversation",
               "section"
             ],
             "properties": {
-              "thread": {
-                "$ref": "#/$defs/ThreadRef",
-                "description": "Adds the underlying thread if it has no placement in this layout. Refuse if a placement already exists."
-              },
               "section": {
                 "$ref": "#/$defs/LayoutSectionRef"
+              },
+              "conversation": {
+                "$ref": "#/$defs/ItemRef",
+                "description": "Adds the underlying thread if it has no placement in this layout. Refuse if a placement already exists."
               }
             }
           },
@@ -1225,7 +1057,6 @@
     }
   },
   "planned_operation_replacements": {
-    "turns.*": "Replace these host operations with the orchestrator plugin composed from the generic durable stream, machine container execution under scoped rights, and approval request. The replacement remains open."
   },
   "query": {
     "operators": {
@@ -1296,6 +1127,15 @@
       "effective_scopes_per_item": 32,
       "search_input_postings_per_window": 160000
     },
+    "text_set": {
+      "predicate": "contains",
+      "operand": "one normalized Text element",
+      "max_elements": 64,
+      "max_utf8_bytes_per_element": 256,
+      "max_total_index_keys": 1152,
+      "refusal": "index_work_limit",
+      "rules": "Count all changed covering, membership and count keys across fields, items and scopes. Apply at the save, share, membership and Undo fence. Mandatory revoke fences first and defers excess cleanup. Counts include each authorized item once. TextSet is not sortable."
+    },
     "body_excerpt": {
       "max_utf8_bytes": 160,
       "description": "A claimed-text kind may declare an indexed Text field with source body_excerpt. The host index produces the first plain text after the title, collapses whitespace and truncates at a UTF-8 character boundary within max_utf8_bytes. Expose it only to a viewer authorized for the body and the declared field. Writers cannot supply the derived value."
@@ -1303,20 +1143,29 @@
     "row_images": {
       "read": "GET /api/v2/row-images/{ref}",
       "provenance": "The host marks an image body-derived from trusted provenance, including a device snapshot of the body or a job output produced from it. A manifest flag alone cannot determine provenance. Without established provenance, withhold the image.",
-      "retention": "Retain an image only while its source revision is retained. Purge it when that revision is erased, or with all its revisions when the item is purged. An old-revision image is not eligible for a current row.",
-      "ref_schema": { "$ref": "#/$defs/RowImageRef" },
-      "content_types": ["image/png", "image/jpeg"],
+      "retention": "Keep the last authorized asset marked stale across a head advance until replacement. Recheck current item, field, body and retained source revision at delivery. Purge, redaction and revoke fence delivery before cleanup.",
+      "ref_schema": {
+        "$ref": "#/$defs/RowImageRef"
+      },
+      "content_types": [
+        "image/png",
+        "image/jpeg"
+      ],
       "max_bytes": 65536,
       "max_pixel_edge": 128,
-      "authorization": "Only the host may mint a ref, in an authorized ready window. Bind it to the account, space, live view lease, row, item revision, field and exact asset. Resolve through the host origin with authentication and recheck the binding and live item and image-field authority before sending bytes. For a body-derived image also recheck live body authority at fetch, even when the item and image-field grants remain valid. Return the same opaque 404 for absent, expired, stale, oversized or unauthorized images. No redirects, worker wake or outbound fetch.",
+      "authorization": "Only the host may mint a ref in an authorized ready window. Bind it to the account, space, live view lease, row, retained source revision, field and exact asset. Use the view host origin, live session and lease to fetch it. Resolve through the host origin with authentication and recheck the binding and live item and image-field authority before sending bytes. For a body-derived image also recheck live body authority at fetch, even when the item and image-field grants remain valid. Return the same opaque 404 for absent, expired, stale, oversized or unauthorized images. No redirects, worker wake or outbound fetch.",
       "cache": "Use Cache-Control: no-store on the HTTP reply. Keep decoded images only in renderer memory keyed by ref for a currently authorized row. Drop them on row or ref replacement, revocation, lease loss or account switch. Omit refs and images from persisted member rows and refine_query replies.",
-      "draw": "Request the image asynchronously. While a navigation key repeats, defer new image reads and cancel reads in flight. Once the key settles, fetch only still-visible rows' current refs. While loading or unavailable, use the declared RowImageIcon fallback if present; otherwise leave the image slot blank."
+      "draw": "Request the image asynchronously. While a navigation key repeats, defer new image reads and cancel reads in flight. Once the key settles, fetch only still-visible rows' current refs. While loading or unavailable, use the declared RowImageIcon fallback if present; otherwise leave the image slot blank.",
+      "publish": "The editing device captures an exact committed revision. A session-bound grant permits a single bounded validated still-image upload. First valid digest wins the slot and exact replay returns its receipt. Keep private bytes and reservation until bounded cleanup.",
+      "prepare": "row_images.prepare",
+      "upload": "PUT /api/v2/row-images/uploads/{grant}",
+      "upload_result_schema": { "$ref": "#/$defs/RowImagePublishResult" }
     },
     "cross_bind_operands": "Forbidden in the first query slice. Action and component references to upstream fields still require one authorized projected row and a checked dependency edge.",
     "scope_limit_refusal": {
       "status": 422,
       "code": "effective_scope_limit_exceeded",
-      "description": "Check projected scope fan-out before committing a grant or other scope-expanding change. Count distinct effective (collection, audience) scopes per item after resolving direct and inherited ACL paths. Refuse the whole change if any item would exceed the cap. A save touches at most two index keys per effective scope.",
+      "description": "Check projected scope fan-out before committing a grant or other scope-expanding change. Count distinct effective (collection, audience) scopes per item after resolving direct and inherited ACL paths. Refuse the whole change if any item would exceed the cap. The scalar-order path touches at most two covering keys per effective scope. A TextSet also obeys query.text_set’s total key budget.",
       "message": "An item can belong to at most 32 effective scopes."
     },
     "search": {
@@ -1341,15 +1190,14 @@
           "$ref": "#/$defs/ClaimedTextSearchFilter"
         }
       },
-      "turns": {
-        "kind": "threads",
+      "conversation": {
         "scopes": [
           "space"
         ],
         "tokenizer": "Titles use the existing claimed-text FTS5 tokenizer. Messages use the existing message_terms tokenizer, which splits at non-alphanumeric characters and lowercases Unicode.",
-        "qualification": "For all, match the full query against an authorized title or within one authorized message. Emit distinct threads with title matches first, in stable thread ID order, followed by message-only matches ordered by the newest matching authorized message timestamp and message UUID. A thread matching both appears once in the title tier. Reuse the authority-versioned title and message indexes under one scope snapshot. Deduplicate token expansions across both sources and sum their posting bounds and row work under the existing shared budgets. Field filters restrict this same matching and delivery path.",
+        "qualification": "For all, match the full query against an authorized title or within one authorized message. Emit distinct conversations with title matches first, in stable conversation ID order, followed by message-only matches ordered by the newest matching authorized message timestamp and message UUID. A conversation matching both appears once in the title tier. Reuse the authority-versioned title and message indexes under one scope snapshot. Deduplicate token expansions across both sources and sum their posting bounds and row work under the existing shared budgets. Field filters restrict this same matching and delivery path.",
         "field_filter_schema": {
-          "$ref": "#/$defs/TurnsSearchFilter"
+          "$ref": "#/$defs/ConversationSearchFilter"
         }
       },
       "qualified_depth": 200,
@@ -1363,7 +1211,7 @@
       "request_schema": {
         "$ref": "#/$defs/SearchWindowRequest"
       },
-      "field_filter": "Optional on the Bind. Default all. Claimed-text kinds allow all, title or body. Turns allows all, title or messages. The request match shape is independent of the field filter and defaults to literal AND terms. A prefix is explicitly requested as one token prefix.",
+      "field_filter": "Optional on the Bind. Default all. Claimed-text kinds allow all, title or body. Conversation kinds allow all, title or messages. The request match shape is independent of the field filter and defaults to literal AND terms. A prefix is explicitly requested as one token prefix.",
       "match_schema": {
         "$ref": "#/$defs/SearchMatchShape"
       }
@@ -1421,13 +1269,9 @@
       "$ref": "#/$defs/Ref",
       "description": "Opaque host-authorized CollectionRef reference. A compatible string shape does not grant authority."
     },
-    "ThreadRef": {
+    "ExecutionRef": {
       "$ref": "#/$defs/Ref",
-      "description": "Opaque host-authorized ThreadRef reference. A compatible string shape does not grant authority."
-    },
-    "TurnRef": {
-      "$ref": "#/$defs/Ref",
-      "description": "Opaque host-authorized TurnRef reference. A compatible string shape does not grant authority."
+      "description": "Opaque host-authorized ExecutionRef reference. A compatible string shape does not grant authority."
     },
     "RequestRef": {
       "$ref": "#/$defs/Ref",
@@ -1473,12 +1317,12 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "thread",
+        "conversation",
         "quote_ref"
       ],
       "properties": {
-        "thread": {
-          "$ref": "#/$defs/ThreadRef"
+        "conversation": {
+          "$ref": "#/$defs/ItemRef"
         },
         "quote_ref": {
           "$ref": "#/$defs/QuoteRef"
@@ -1609,7 +1453,7 @@
         "final_text": {
           "type": "string",
           "maxLength": 65536,
-          "description": "Message content for the prepared host composer only. Any parser-derived change to recipients, routing, permissions or other prepared material requires a fresh resolve and preview."
+          "description": "Message content for a prepared composer.send only. The host returns ActionOutcome after committing the message/intent or forwarding checked steer. Retry with the same activation ID and final text. Any parser-derived change to recipients, routing, permissions or other prepared material requires a fresh resolve and preview."
         }
       }
     },
@@ -1887,6 +1731,15 @@
             "$ref": "#/$defs/WindowParentRef"
           },
           "description": "Host-issued parent row reference for each authorized child Bind reached through a declared edge. Omit when the row has no eligible edge."
+        },
+        "stale_images": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ActionId"
+          },
+          "description": "Field names of stale retained assets actually projected on this row. Recheck current authority. Never persist stale-image state or refs."
         }
       }
     },
@@ -2168,19 +2021,334 @@
       "maxLength": 96,
       "description": "Installed provider identifier. Known built-in IDs are icon-map seeds, not a closed allowlist."
     },
+    "RowImageUploadGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grant"
+      ],
+      "properties": {
+        "grant": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "RowImagePublishResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "receipt"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/Ref"
+        },
+        "receipt": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "RowImagePrepare": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item",
+        "revision",
+        "field",
+        "source_state_sha256",
+        "content_type",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "revision": {
+          "$ref": "#/$defs/Ref"
+        },
+        "field": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "source_state_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "content_type": {
+          "enum": [
+            "image/png",
+            "image/jpeg"
+          ]
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "ExecutionDisplayFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "text"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "text_delta",
+            "tool_summary"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "attachments": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/ItemRef"
+          }
+        }
+      }
+    },
+    "ExecutionWait": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "execution",
+        "after"
+      ],
+      "properties": {
+        "kind": {
+          "const": "execution"
+        },
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        },
+        "after": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ExecutionTransition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "phase"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "request"
+          ],
+          "properties": {
+            "kind": {
+              "const": "approval"
+            },
+            "request": {
+              "$ref": "#/$defs/RequestRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "request"
+          ],
+          "properties": {
+            "kind": {
+              "const": "child_requested"
+            },
+            "request": {
+              "$ref": "#/$defs/ExecutionChildRequestRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "terminal"
+            }
+          }
+        }
+      ]
+    },
+    "ExecutionStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution",
+        "phase",
+        "transition_cursor"
+      ],
+      "properties": {
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        },
+        "phase": {
+          "enum": [
+            "starting",
+            "running",
+            "waiting",
+            "frozen",
+            "interrupted",
+            "completed",
+            "stopped",
+            "failed"
+          ]
+        },
+        "transition_cursor": {
+          "$ref": "#/$defs/Ref"
+        },
+        "transition": {
+          "$ref": "#/$defs/ExecutionTransition"
+        }
+      }
+    },
+    "ExecutionChildRequestRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "Host-issued checked child request for the owning job, current parent attempt, authorized target and immutable requested material."
+    },
+    "ExecutionChild": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parent",
+        "request_id",
+        "kind",
+        "refs",
+        "request"
+      ],
+      "properties": {
+        "parent": {
+          "$ref": "#/$defs/ExecutionRef"
+        },
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "kind": {
+          "$ref": "#/$defs/KindId"
+        },
+        "refs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/ItemRef"
+          }
+        },
+        "request": {
+          "$ref": "#/$defs/ExecutionChildRequestRef"
+        }
+      }
+    },
+    "ExecutionInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution",
+        "request_id",
+        "text"
+      ],
+      "properties": {
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        },
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        }
+      }
+    },
+    "ExecutionStart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent",
+        "request_id"
+      ],
+      "properties": {
+        "intent": {
+          "$ref": "#/$defs/Ref"
+        },
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ExecutionEffectTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution",
+        "request_id"
+      ],
+      "properties": {
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        },
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ExecutionTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution"
+      ],
+      "properties": {
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        }
+      }
+    },
     "TranscriptCursor": {
       "$ref": "#/$defs/Ref",
-      "description": "Opaque, checked cursor for a thread and committed event position."
+      "description": "Opaque record-level cursor bound to the conversation and viewer."
     },
     "TranscriptPageRequest": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "thread"
+        "conversation"
       ],
       "properties": {
-        "thread": {
-          "$ref": "#/$defs/ThreadRef"
+        "conversation": {
+          "$ref": "#/$defs/ItemRef"
         },
         "after": {
           "$ref": "#/$defs/TranscriptCursor"
@@ -2188,28 +2356,44 @@
         "limit": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 128
+          "maximum": 128,
+          "default": 60
+        },
+        "before": {
+          "$ref": "#/$defs/TranscriptCursor"
         }
+      },
+      "not": {
+        "required": [
+          "before",
+          "after"
+        ]
       }
     },
-    "CommittedTranscriptEvent": {
+    "CommittedTranscriptRecord": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "event_id",
-        "kind",
-        "data"
+        "record_id",
+        "role",
+        "text"
       ],
       "properties": {
-        "event_id": {
+        "record_id": {
           "$ref": "#/$defs/Ref"
         },
-        "kind": {
-          "$ref": "#/$defs/Text"
+        "role": {
+          "enum": [
+            "person",
+            "agent",
+            "automation"
+          ]
         },
-        "data": {
-          "type": "object",
-          "description": "Host-owned typed event from the admitted Turns schema."
+        "text": {
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/Ref"
         }
       }
     },
@@ -2217,18 +2401,51 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "events",
+        "records",
+        "notices",
         "committed_cursor"
       ],
       "properties": {
-        "events": {
+        "records": {
           "type": "array",
           "maxItems": 128,
           "items": {
-            "$ref": "#/$defs/CommittedTranscriptEvent"
+            "$ref": "#/$defs/CommittedTranscriptRecord"
+          }
+        },
+        "notices": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "label",
+              "at",
+              "state"
+            ],
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "at": {
+                "$ref": "#/$defs/Timestamp"
+              },
+              "state": {
+                "enum": [
+                  "attempted",
+                  "done"
+                ]
+              }
+            }
           }
         },
         "committed_cursor": {
+          "$ref": "#/$defs/TranscriptCursor"
+        },
+        "older_cursor": {
           "$ref": "#/$defs/TranscriptCursor"
         }
       }
@@ -2350,18 +2567,21 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "thread",
+        "conversation",
         "control"
       ],
       "properties": {
-        "thread": {
-          "$ref": "#/$defs/ThreadRef"
+        "conversation": {
+          "$ref": "#/$defs/ItemRef"
         },
         "control": {
           "$ref": "#/$defs/ComposerControl"
         },
         "after": {
           "$ref": "#/$defs/Ref"
+        },
+        "options": {
+          "$ref": "#/$defs/ComposerOptions"
         }
       }
     },
@@ -2429,9 +2649,19 @@
         "shared_projection",
         "viewer_self",
         "designated_request_actor",
-        "eligible_turn_actor",
+        "eligible_execution_actor",
         "personal_layout"
       ]
+    },
+    "TextSet": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
     },
     "FieldType": {
       "enum": [
@@ -2441,11 +2671,11 @@
         "Timestamp",
         "ItemRef",
         "CollectionRef",
-        "ThreadRef",
-        "TurnRef",
+            "ExecutionRef",
         "RequestRef",
         "AccountRef",
         "ProviderId",
+        "TextSet",
         "LayoutSectionRef",
         "LayoutEntryRef",
         "RowImageRef"
@@ -2556,7 +2786,8 @@
           "description": "Starts the shared lease for current view, windows and authorized activation contexts."
         },
         "activation_contexts": {
-          "$ref": "#/$defs/ActionContexts"
+          "$ref": "#/$defs/ActionContexts",
+          "description": "Use composer.send and composer.stop keys for the active checked composer target when eligible. The keys are host-owned and the renderer echoes the issued context in ResolveActivation."
         },
         "audience": {
           "$ref": "#/$defs/WindowAudience"
@@ -3124,7 +3355,7 @@
           ]
         }
       },
-      "description": "Author operand resolved by the host from the checked row action context. item is the underlying kind reference, ThreadRef for threads. placement is a LayoutEntryRef and exists only for a row from Section.repeat.rows. Neither value is supplied by the renderer."
+      "description": "Author operand resolved by the host from the checked row action context. item is the underlying kind reference, ItemRef for threads. placement is a LayoutEntryRef and exists only for a row from Section.repeat.rows. Neither value is supplied by the renderer."
     },
     "MemberRowCacheRecord": {
       "type": "object",
@@ -3278,7 +3509,7 @@
         "body"
       ]
     },
-    "TurnsSearchFilter": {
+    "ConversationSearchFilter": {
       "enum": [
         "all",
         "title",
@@ -3291,7 +3522,7 @@
           "$ref": "#/$defs/ClaimedTextSearchFilter"
         },
         {
-          "$ref": "#/$defs/TurnsSearchFilter"
+          "$ref": "#/$defs/ConversationSearchFilter"
         }
       ],
       "default": "all"
@@ -3331,6 +3562,10 @@
               "type": "string",
               "pattern": "^[a-z][a-z0-9_]{0,47}$",
               "description": "Projected body_excerpt Text field. Draw a simple document miniature from the freshly authorized snippet when the image is missing or loading. When no snippet is available, draw the document miniature without text."
+            },
+            "aspect": {
+              "const": "portrait",
+              "description": "Portrait leading image for this row."
             }
           }
         }
@@ -3356,7 +3591,87 @@
     "per_space": 4096,
     "resolve_interaction_encoded_bytes": 131072
   },
+  "execution_engines": {
+    "execution_start": {
+      "input": {
+        "$ref": "#/$defs/ExecutionStart"
+      },
+      "output": {
+        "$ref": "#/$defs/ExecutionStatus"
+      },
+      "scope": "Active job grant, checked cold send intent, pinned contribution and placement. Reserve by receipt before dispatch."
+    },
+    "execution_status": {
+      "input": {
+        "$ref": "#/$defs/ExecutionTarget"
+      },
+      "output": {
+        "$ref": "#/$defs/ExecutionStatus"
+      },
+      "scope": "Eligible live execution actor and current attempt."
+    },
+    "execution_input": {
+      "input": {
+        "$ref": "#/$defs/ExecutionInput"
+      },
+      "output": {
+        "$ref": "#/$defs/ExecutionStatus"
+      },
+      "scope": "Exact attempt and live steer authority. Prepared active Send may forward directly."
+    },
+    "execution_spawn_child": {
+      "input": {
+        "$ref": "#/$defs/ExecutionChild"
+      },
+      "output": {
+        "$ref": "#/$defs/ExecutionStatus"
+      },
+      "scope": "Owning job and exact parent, live caller and eligible target. Reserve tree capacity and commit child create and edge atomically under admission."
+    },
+    "execution_stop": {
+      "input": {
+        "$ref": "#/$defs/ExecutionEffectTarget"
+      },
+      "output": {
+        "$ref": "#/$defs/ExecutionStatus"
+      },
+      "scope": "Starter or live PluginsManage, with item authority. Fence before remote Stop."
+    },
+    "execution_wait": {
+      "input": {
+        "$ref": "#/$defs/ExecutionWait"
+      },
+      "output": {
+        "$ref": "#/$defs/ExecutionStatus"
+      },
+      "scope": "Owning job. Compare durable cursor and deliver or park atomically. No token wakes."
+    },
+    "display_frame": {
+      "input": {
+        "$ref": "#/$defs/ExecutionDisplayFrame"
+      },
+      "scope": "Authenticated attempt transport. Host validates, scrubs and maintains canonical records. This format is not a renderer route."
+    }
+  },
   "component_routes": {
+    "row_images.prepare": {
+      "input_schema": {
+        "$ref": "#/$defs/RowImagePrepare"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/RowImageUploadGrant"
+      },
+      "scope": "Current editor session and exact committed source revision with a declared device snapshot slot."
+    },
+    "transcript.follow": {
+      "input_schema": {
+        "$ref": "#/$defs/TranscriptPageRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/TranscriptPage"
+      },
+      "scope": "Use the existing authenticated view subscription for one active conversation. Start with the same checked after cursor (no before). Deliver committed record-page upserts by record UUID with the committed cursor. Cancel on route, lease or audience change. Coalesce under the existing transcript rate and byte bounds."
+    },
     "transcript.page": {
       "input_schema": {
         "$ref": "#/$defs/TranscriptPageRequest"
@@ -3365,7 +3680,7 @@
         "$ref": "#/$defs/TranscriptPage"
       },
       "encoded_page_bytes": 131072,
-      "scope": "Authorized thread and current audience"
+      "scope": "An authorized conversation and viewer. No cursor selects the newest page. before pages older and after resumes, refreshing the boundary record and notices. Records are ordered oldest to newest."
     },
     "sealed_frame.open": {
       "input_schema": {
@@ -3402,7 +3717,7 @@
       "output_schema": {
         "$ref": "#/$defs/ComposerOptionPage"
       },
-      "scope": "Host-authorized thread, viewer, and provider/runtime option source"
+      "scope": "Checked conversation ItemRef, viewer and installed provider/runtime option source"
     },
     "undo": {
       "input_schema": {
@@ -3486,6 +3801,57 @@
       "scope": "Current authorized Bind and lease. Reconstruct the exact stable row named by the settled selection before issuing contexts.",
       "surface": "direct_shell"
     }
+  },
+  "conversation_capability": {
+    "declaration": "An installed package kind opts in with conversation: true. Only eligible package and viewer access qualify. The kind owner declares corpus and Send policy.",
+    "row_ref": "ItemRef",
+    "field_projections": {
+      "provider_icon": {
+        "type": "Text",
+        "index_owner": null,
+        "audience": "member_item",
+        "nullable": true,
+        "description": "Host-projected catalogue symbol for the installed provider contribution identified by the thread's provider. Emit it only after the provider_marks binding check. On a missing or conflicting binding, omit the field so the row template uses its generic fallback symbol."
+      },
+      "waiting_on": {
+        "type": "AccountRef",
+        "index_owner": "content",
+        "audience": "viewer_self",
+        "nullable": true,
+        "description": "From live checked Inbox requests addressed to the viewer. Another viewer’s requests change neither rows, count nor version."
+      },
+      "snoozed_until": {
+        "type": "Timestamp",
+        "index_owner": "content",
+        "audience": "viewer_self",
+        "nullable": true,
+        "description": "Actor-scoped active snooze deadline. Null once the deadline passes; host invalidates affected Bind results at expiry."
+      },
+      "archived": {
+        "type": "Boolean",
+        "index_owner": "content",
+        "audience": "member_item",
+        "nullable": false
+      },
+      "parent": {
+        "type": "ItemRef",
+        "nullable": true,
+        "index_owner": "content",
+        "audience": "member_item",
+        "description": "Host-owned conversation parent relation. Check both items and the declared scoped parent seek."
+      },
+      "active_execution": {
+        "type": "ExecutionRef",
+        "index_owner": null,
+        "audience": "eligible_execution_actor",
+        "nullable": true
+      }
+    },
+    "search_corpora": [
+      "member_title",
+      "member_body",
+      "shared_titles"
+    ]
   },
   "generic_item_fields": {
     "id": {

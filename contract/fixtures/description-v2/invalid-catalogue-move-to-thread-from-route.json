@@ -37,9 +37,6 @@
             "title": "Move to",
             "operation": "host.layout.move_to",
             "inputs": {
-              "thread": {
-                "route": "thread"
-              },
               "section": {
                 "prompt": {
                   "title": "Move to",
@@ -48,6 +45,9 @@
                     "bind": "layout"
                   }
                 }
+              },
+              "conversation": {
+                "route": "thread"
               }
             }
           }

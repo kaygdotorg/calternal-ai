@@ -216,7 +216,7 @@
         },
         {
           "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/RowActionTarget",
-          "description": "Context-derived operand of a row action: {context: \"item\"} is the underlying item ref of the row (a thread's ThreadRef), {context: \"placement\"} is the row's LayoutEntryRef (only inside a Section.repeat row). The host reconstructs both from the activation context; the renderer sends neither."
+          "description": "Context-derived operand of a row action: {context: \"item\"} is the underlying item ref of the row (a thread's ItemRef), {context: \"placement\"} is the row's LayoutEntryRef (only inside a Section.repeat row). The host reconstructs both from the activation context; the renderer sends neither."
         }
       ]
     },
@@ -241,7 +241,8 @@
             "gt",
             "gte",
             "exists",
-            "prefix"
+            "prefix",
+            "contains"
           ]
         },
         "value": {
@@ -913,11 +914,12 @@
               "host.session.end",
               "host.trash.purge",
               "host.item.share",
-              "turns.start",
-              "host.turn.stop"
+              "host.execution.stop",
+              "composer.send",
+              "composer.stop"
             ]
           },
-          "description": "A plugin operation id as the package's manifest declares it, or a host built-in the host catalogue marks `generic_invoke` (contract/host-catalogue-v2.json: host.item.trash, host.item.rename, host.item.restore, host.item.patch-metadata, ...). Operations that belong to a designated host component, outcome, sheet or shell control are NOT nameable here: the catalogue says which, and the verifier rejects them (approval, undo, status, panel.ask, route, session, trash purge, share, turns.start, turn.stop). Effect class, idempotency, confirmation (`none` or `challenge`) and retry come from the catalogue and the manifest, never from the description."
+          "description": "A plugin operation id as the package's manifest declares it, or a host built-in the host catalogue marks `generic_invoke` (contract/host-catalogue-v2.json: host.item.trash, host.item.rename, host.item.restore, host.item.patch-metadata, ...). Operations that belong to a designated host component, outcome, sheet or shell control are NOT nameable here: the catalogue says which, and the verifier rejects them (approval, undo, status, panel.ask, route, session, trash purge, share, composer Send, host.execution.stop). Effect class, idempotency, confirmation (`none` or `challenge`) and retry come from the catalogue and the manifest, never from the description."
         },
         "inputs": {
           "type": "object",
@@ -1223,7 +1225,7 @@
           "$ref": "#/$defs/ItemEditor"
         },
         {
-          "$ref": "#/$defs/TurnTranscript"
+          "$ref": "#/$defs/ConversationTranscript"
         },
         {
           "$ref": "#/$defs/Composer"
@@ -1402,7 +1404,7 @@
             "$ref": "#/$defs/Component"
           },
           "maxItems": 4,
-          "description": "Stacked top to bottom; the side chat is a turn-transcript above a composer."
+          "description": "Stacked top to bottom; the side chat is a conversation-transcript above a composer."
         }
       },
       "additionalProperties": false,
@@ -1561,11 +1563,11 @@
       ],
       "description": "The item's editor, drawn by the host over the item's document (a note's Markdown file directly: there is no second representation between editor and file). Live rooms are an attribute of the item's KIND, not of this component; a metadata-only save does not rewrite the body."
     },
-    "TurnTranscript": {
+    "ConversationTranscript": {
       "type": "object",
       "properties": {
         "type": {
-          "const": "turn-transcript"
+          "const": "conversation-transcript"
         },
         "id": {
           "$ref": "#/$defs/Id"
@@ -1573,7 +1575,7 @@
         "config": {
           "type": "object",
           "properties": {
-            "thread": {
+            "conversation": {
               "$ref": "#/$defs/ValueSource",
               "description": "The thread (a typed thread reference from the route or the selection)."
             },
@@ -1590,7 +1592,7 @@
               "minimum": 1,
               "maximum": 200,
               "default": 60,
-              "description": "Messages per read; the host reads the screenful first and the rest in steps."
+              "description": "Committed records per read; the host reads the screenful first and the rest in steps."
             },
             "quote": {
               "type": "boolean",
@@ -1600,7 +1602,7 @@
           },
           "additionalProperties": false,
           "required": [
-            "thread"
+            "conversation"
           ]
         }
       },
@@ -1610,7 +1612,7 @@
         "id",
         "config"
       ],
-      "description": "The conversation of one thread: a host-owned windowed list with its own streaming (the host appends and updates rows; the description never receives message text), scroll anchoring and loading in steps. Heavy parts (code, pictures, steps, cards) are the host's. The host stamps `calternal:thread-rendered` when the first screenful is drawn, and drops a load when the viewer moves to another thread."
+      "description": "The messages of one conversation: a host-owned windowed list with its own streaming (the host appends and updates rows; the description never receives message text), scroll anchoring and loading in steps. Heavy parts (code, pictures, steps, cards) are the host's. The host stamps `calternal:thread-rendered` when the first screenful is drawn, and drops a load when the viewer moves to another thread."
     },
     "Composer": {
       "type": "object",
@@ -1624,9 +1626,9 @@
         "config": {
           "type": "object",
           "properties": {
-            "thread": {
+            "conversation": {
               "$ref": "#/$defs/ValueSource",
-              "description": "The thread (a typed thread reference from the route or the selection). The host owns the send: it composes `turns.start` from this thread, the draft and the chosen options."
+              "description": "A checked conversation ItemRef from route or selection. The host prepares and invokes this kind’s declared Send."
             },
             "controls": {
               "type": "array",
@@ -1653,7 +1655,7 @@
           },
           "additionalProperties": false,
           "required": [
-            "thread"
+            "conversation"
           ],
           "description": "Composer configuration: the thread and which host controls appear. Send, Stop, the option lists, the draft and its checking are the host's."
         }

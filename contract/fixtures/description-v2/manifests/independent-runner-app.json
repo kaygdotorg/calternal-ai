@@ -1,0 +1,167 @@
+{
+  "api_version": 2,
+  "id": "lantern",
+  "name": "Lantern",
+  "version": "0.1.0",
+  "icon": "puzzle",
+  "worker": {
+    "path": "worker.mjs",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "apps": [
+    {
+      "id": "lantern",
+      "name": "Lantern",
+      "icon": "puzzle",
+      "description": {
+        "id": "main",
+        "template": {
+          "path": "independent-runner-app.json",
+          "sha256": "b6151b1b68423effea3f376e429e54c9df68d60b22c619948df50622aee9f8e4"
+        }
+      }
+    }
+  ],
+  "reads": [
+    "lantern-conversation"
+  ],
+  "network": {
+    "fixed_sites": [
+      "inference.lantern.example"
+    ]
+  },
+  "kinds": [
+    {
+      "id": "lantern-conversation",
+      "icon": "puzzle",
+      "title_field": "title",
+      "storage": {
+        "folder": "Lantern"
+      },
+      "claimed_text": true,
+      "searchable": true,
+      "conversation": true,
+      "schema": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "host_create": {
+        "defaults": {
+          "title": "New conversation"
+        }
+      },
+      "composer": {
+        "send": "lantern.send",
+        "steer_live": true,
+        "job": "run"
+      },
+      "indexed_fields": {
+        "state": {
+          "type": "Text",
+          "audience": "member_item"
+        }
+      }
+    }
+  ],
+  "operations": [
+    {
+      "id": "lantern.send",
+      "title": "Send",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "target": {
+        "kind": "lantern-conversation",
+        "field": "item"
+      },
+      "methods": [
+        "start_job"
+      ]
+    },
+    {
+      "id": "lantern.run",
+      "title": "Run",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "target": {
+        "kind": "lantern-conversation",
+        "field": "item"
+      },
+      "methods": [
+        "execution_start",
+        "execution_status",
+        "execution_spawn_child",
+        "checkpoint_job",
+        "execution_wait"
+      ]
+    }
+  ],
+  "providers": [
+    {
+      "id": "lantern-model",
+      "name": "Lantern Model",
+      "adapter": {
+        "path": "lantern-adapter",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "image": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "models": [
+        {
+          "id": "lantern-small",
+          "label": "Lantern Small"
+        }
+      ]
+    }
+  ],
+  "jobs": [
+    {
+      "id": "run",
+      "run_operation": "lantern.run",
+      "replayable": true,
+      "waits": [
+        {
+          "kind": "execution"
+        }
+      ]
+    }
+  ]
+}

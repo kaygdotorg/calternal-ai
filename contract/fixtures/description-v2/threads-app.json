@@ -75,9 +75,9 @@
             "id": "archive",
             "title": "Archive",
             "icon": "trash",
-            "operation": "turns.archive",
+            "operation": "host.item.archive",
             "inputs": {
-              "thread": {
+              "item": {
                 "row": "id"
               }
             },
@@ -153,7 +153,7 @@
       },
       "fields": [
         "title",
-        "thread_ref"
+        "conversation_ref"
       ],
       "filter": {
         "all": [
@@ -235,8 +235,12 @@
                 "invoke": {
                   "id": "create",
                   "title": "New thread",
-                  "operation": "turns.create",
-                  "inputs": {},
+                  "operation": "host.item.create",
+                  "inputs": {
+                    "kind": {
+                      "literal": "threads"
+                    }
+                  },
                   "then": {
                     "route": {
                       "name": "thread"
@@ -301,10 +305,10 @@
       "open": true,
       "components": [
         {
-          "type": "turn-transcript",
-          "id": "panel-transcript",
+          "type": "conversation-transcript",
+          "id": "transcript",
           "config": {
-            "thread": {
+            "conversation": {
               "route": "thread"
             }
           }
@@ -321,11 +325,8 @@
         },
         {
           "type": "composer",
-          "id": "panel-composer",
+          "id": "composer",
           "config": {
-            "thread": {
-              "route": "thread"
-            },
             "controls": [
               "attachments",
               "mentions",
@@ -336,7 +337,10 @@
               "machine",
               "stop"
             ],
-            "placeholder": "Ask about this thread"
+            "placeholder": "Ask about this thread",
+            "conversation": {
+              "route": "thread"
+            }
           }
         }
       ]
@@ -349,14 +353,14 @@
         {
           "type": "component",
           "component": {
-            "type": "turn-transcript",
+            "type": "conversation-transcript",
             "id": "transcript",
             "config": {
-              "thread": {
-                "route": "thread"
-              },
               "follow": "end",
-              "quote": true
+              "quote": true,
+              "conversation": {
+                "route": "thread"
+              }
             }
           }
         },
@@ -379,9 +383,6 @@
             "type": "composer",
             "id": "composer",
             "config": {
-              "thread": {
-                "route": "thread"
-              },
               "controls": [
                 "attachments",
                 "mentions",
@@ -392,7 +393,10 @@
                 "machine",
                 "stop"
               ],
-              "placeholder": "Message"
+              "placeholder": "Message",
+              "conversation": {
+                "route": "thread"
+              }
             }
           }
         }

@@ -1,0 +1,10 @@
+{
+  "definition": "ConfirmActivation",
+  "value": {
+    "type": "invoke_confirm",
+    "activation_id": "activation-1",
+    "resolution_ref": "resolution-1",
+    "confirmation_challenge": "challenge-1",
+    "final_text": "Please continue."
+  }
+}

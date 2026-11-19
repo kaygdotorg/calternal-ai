@@ -73,6 +73,12 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                 errors.append(f"$.binds: multiple installed owners for kind {kind_id!r}")
             else:
                 man_kinds[kind_id] = kind
+    projected = (catalogue or {}).get("conversation_capability", {}).get("field_projections", {})
+    man_kinds = {
+        name: {**kind, "fields": {**kind.get("fields", {}), **projected}}
+        if kind.get("conversation") is True else kind
+        for name, kind in errors.each(man_kinds.items())
+    }
     children_edges = {b_id: ((b.get("row") or {}).get("children") or {}).get("bind") for b_id, b in errors.each(binds.items()) if ((b.get("row") or {}).get("children") or {}).get("bind")}
     repeat_rows = {n_["repeat"]["rows"] for _, n_ in walk(doc, errors) if isinstance(n_, dict) and isinstance(n_.get("repeat"), dict) and "id" in n_ and "rows" in n_["repeat"]}
     for path, node in walk(doc, errors):
@@ -99,7 +105,7 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                 if catalogue is not None and not (entry and entry.get("full_swipe", False)):
                     errors.append(f"{path}: fullSwipe is rejected on {op}: the catalogue does not allow it (plugin operations never may)")
             if catalogue is not None:
-                host_like = op.startswith("host.") or op in ("turns.start",) or op in cat_ops
+                host_like = op.startswith("host.") or op in cat_ops
                 if host_like:
                     if entry is None: errors.append(f"{path}: {op} is not in the host catalogue")
                     else:
@@ -147,10 +153,12 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                             layout_selection = isinstance(source, dict) and "selection" in source and not source.get("set") and source["selection"] in repeat_rows
                             layout_bare = owner_in_repeat and isinstance(source, dict) and source == {"row": "id"}
                             if declared_type == "LayoutEntryRef" and ctx_kind != "placement" and not layout_selection and not layout_bare: errors.append(f"{path}: input {name!r} of {op} is a LayoutEntryRef: it takes {{context: placement}}")
-                            if declared_type == "ThreadRef":
-                                if ctx_kind == "placement": errors.append(f"{path}: input {name!r} of {op} is a ThreadRef: it cannot take {{context: placement}}")
-                                if owner_in_repeat and ctx_kind != "item": errors.append(f"{path}: in the rows of a Section.repeat the row id is a placement (LayoutEntryRef): the ThreadRef input {name!r} of {op} must be {{context: item}}, not the bare row id")
-                                if ctx_kind == "item" and owner_kind != "threads": errors.append(f"{path}: {{context: item}} fills a ThreadRef only from a row of kind `threads`, not {owner_kind!r}")
+                            conversation_input = (entry.get("kind_capability") == "conversation" and name == "item") or (op, name) == ("host.layout.move_to", "conversation")
+                            if conversation_input and owner_in_repeat and ctx_kind != "item":
+                                errors.append(f"{path}: in the rows of a Section.repeat the row id is a placement (LayoutEntryRef): the ItemRef input {name!r} of {op} must be {{context: item}}, not the bare row id")
+                            if conversation_input and owner_kind and (ctx_kind == "item" or source == {"row": "id"}):
+                                if not man_kinds.get(owner_kind, {}).get("conversation"):
+                                    errors.append(f"{path}: {{context: item}} requires a conversation kind, not {owner_kind!r}")
                             if ctx_kind == "placement" and declared_type not in ("LayoutEntryRef", ""): errors.append(f"{path}: {{context: placement}} fills a LayoutEntryRef, not {declared_type}")
                             if ctx_kind == "item" and declared_type == "LayoutEntryRef": errors.append(f"{path}: {{context: item}} cannot fill the LayoutEntryRef input {name!r}")
                             REF_TYPES = {k.get("row_ref") for k in errors.each(cat_kinds.values()) if k.get("row_ref")} | {"ItemRef", "LayoutEntryRef"}   # every ref a row can be or give
@@ -158,9 +166,9 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                             row_ref_of_owner = (cat_kinds.get(owner_kind) or {}).get("row_ref") if owner_kind in cat_kinds else ("ItemRef" if owner_kind else None)
                             if declared_type in REF_TYPES and ctx_kind == "item" and declared_type != row_ref_of_owner and not move_to_destination:
                                 errors.append(f"{path}: {{context: item}} gives the row's own {row_ref_of_owner} and cannot fill the {declared_type} input {name!r} of {op}")
-                            strict_thread = (op, name) == ("host.layout.move_to", "thread")
-                            if strict_thread and not (ctx_kind == "item" or (isinstance(source, dict) and source == {"row": "id"})):
-                                errors.append(f"{path}: the `thread` of host.layout.move_to takes only {{context: item}} or the bare id of a threads row, not {json.dumps(source, sort_keys=True)}")
+                            strict_conversation = (op, name) == ("host.layout.move_to", "conversation")
+                            if strict_conversation and not (ctx_kind == "item" or (isinstance(source, dict) and source == {"row": "id"})):
+                                errors.append(f"{path}: the `conversation` of host.layout.move_to takes only {{context: item}} or the bare id of a conversation row, not {json.dumps(source, sort_keys=True)}")
                             if declared_type in REF_TYPES and ctx_kind is None and not move_to_destination:
                                 bare_id = isinstance(source, dict) and source == {"row": "id"}
                                 from_route = isinstance(source, dict) and source.keys() == {"route"}
@@ -177,7 +185,7 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                                     sel_ref = (cat_kinds.get(sel_kind) or {}).get("row_ref") if sel_kind in cat_kinds else ("ItemRef" if sel_kind else None)
                                     if source["selection"] in repeat_rows: sel_ref = "LayoutEntryRef"   # a Section.repeat.rows bind presents the placement as its row id
                                     selection_ok = sel_ref == declared_type
-                                if strict_thread: from_route = choice_ok = selection_ok = False
+                                if strict_conversation: from_route = choice_ok = selection_ok = False
                                 bare_ok = bare_id and ((owner_in_repeat and declared_type == "LayoutEntryRef") or (not owner_in_repeat and row_ref == declared_type))
                                 if not (from_route or choice_ok or selection_ok or bare_ok):
                                     errors.append(f"{path}: the {declared_type} input {name!r} of {op} takes only a source of that ref type ({{context}}, a bare row id of a row of that type, or a route), not {json.dumps(source, sort_keys=True)}")
@@ -191,9 +199,6 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                                     want = "LayoutSectionRef" if (declared_type == "LayoutSectionRef" or name == "section") else None
                                     if want and (option_kind is None or option_kind.get("row_ref") != want):
                                         errors.append(f"{path}: the choice for {name!r} of {op} must range over a bind whose kind has row_ref {want} (layout_sections), not {((option_bind or {}).get('source') or {}).get('kind')!r}")
-                            if declared_type == "ThreadRef" and isinstance(source, dict) and source.get("row") == "id" and not owner_in_repeat:
-                                if (cat_kinds.get(owner_kind) or {}).get("row_ref") != "ThreadRef":
-                                    errors.append(f"{path}: the bare row id fills a ThreadRef only in a bind whose kind has row_ref ThreadRef (threads), not {owner_kind!r}")
                         for name in errors.each(entry.get("target_inputs", [])):
                             if isinstance(given.get(name), dict) and "literal" in given[name]: errors.append(f"{path}: target input {name!r} of {op} cannot be a literal")
                 elif manifest is not None and op not in man_ops:
@@ -298,14 +303,13 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
         kind = cat_kinds.get(kind_id)
         plugin = man_kinds.get(kind_id)
         if source.get("type") == "search":
-            turns_kind = catalogue.get("query", {}).get("search", {}).get("turns", {}).get("kind")
-            turns_search = kind_id == turns_kind and (kind or {}).get("owner") == "turns"
+            conversation_search = plugin and plugin.get("conversation") is True and plugin.get("searchable") is True
             claimed_text_search = kind is None and plugin and plugin.get("claimed_text") is True and plugin.get("searchable") is True
-            if not (turns_search or claimed_text_search):
+            if not (conversation_search or claimed_text_search):
                 errors.append(f"{path}: {kind_id!r} needs claimed_text and searchable in its kind manifest to support search")
             elif "field_filter" in source:
                 search = catalogue["query"]["search"]
-                profile = search["turns" if turns_search else "claimed_text"]
+                profile = search["conversation" if conversation_search else "claimed_text"]
                 check(profile["field_filter_schema"], source["field_filter"], f"{path}.field_filter", errors, catalogue)
         if catalogue is not None and kind is None and plugin is None:
             if manifest is not None or kind_id in ("notes", "threads", "collections", "requests"):
@@ -339,11 +343,18 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
         for f in errors.each(used):
             if f not in known: errors.append(f"{path}: field {f!r} is not a field of kind {kind_id!r}")
         for sort in errors.each(sorts):
-            if field_meta(entry, sort["field"]).get("type") == "RowImageRef":
-                errors.append(f"{path}: RowImageRef cannot be a sort key")
+            field_type = field_meta(entry, sort["field"]).get("type")
+            if field_type in ("RowImageRef", "TextSet"):
+                errors.append(f"{path}: {field_type} cannot be a sort key")
         for pred in errors.each(predicates):
-            if field_meta(entry, pred["field"]).get("type") == "RowImageRef":
+            field_type = field_meta(entry, pred["field"]).get("type")
+            operation, operand = pred.get("op"), pred.get("value", {})
+            if field_type == "RowImageRef":
                 errors.append(f"$.binds[{index}].filter: RowImageRef cannot be a predicate operand")
+            if operation == "contains" and (field_type != "TextSet" or not isinstance(operand, dict) or ("literal" in operand and not isinstance(operand["literal"], str))):
+                errors.append(f"$.binds[{index}].filter: contains requires a TextSet and one Text operand")
+            if field_type == "TextSet" and operation not in ("contains", "exists"):
+                errors.append(f"$.binds[{index}].filter: TextSet supports contains and exists")
         for relative_path, desc in walk(bind, errors):
             if not isinstance(desc, dict):
                 continue
@@ -484,6 +495,7 @@ def run_fixtures():
     expected = expected_errors(fixtures + install_fixtures)
     origins = fixture_origins(fixtures, fixtures_dir, manifests_dir)
     print("host catalogue: " + ("loaded" if verification.CATALOGUE is not None else "absent (catalogue cases are skipped)"))
+    engine_owner = verification.load_checked_manifest(manifests_dir / "rev14-threads-owner.json", Validation()) if verification.CATALOGUE is not None else None
     failed = False
     for file in fixtures:
         manifest_path = manifests_dir / file.name.removeprefix("invalid-")
@@ -508,6 +520,8 @@ def run_fixtures():
                     print(f"skip {file.name}  (search qualification needs the host catalogue)")
                     continue
                 manifest, installed = load_fixture_manifest(file, manifests_dir, errors)
+                if engine_owner and "threads" not in (manifest or {}).get("kinds", {}) and not any("threads" in owner.get("kinds", {}) for owner in installed):
+                    installed += (engine_owner,)
                 validate_description(doc, manifest, installed, errors)
         except (DuplicateKey, ValueError) as error:
             errors.append(str(error))
@@ -522,6 +536,17 @@ def run_fixtures():
         except (DuplicateKey, ValueError) as error:
             errors.append(str(error))
         failed |= not report_fixture(file, errors, expected)
+    for file in sorted((fixtures_dir / "engines").glob("*.json")):
+        if verification.CATALOGUE is None:
+            continue
+        errors = Validation()
+        case = read_json(file, errors)
+        if not errors:
+            check({"$ref": f"#/$defs/{case['definition']}"}, case["value"], "$", errors, verification.CATALOGUE)
+        want = case.get("error") if case else None
+        passed = any(want in error for error in errors) if want else not errors
+        print(("ok   " if passed else "FAIL ") + file.name + ("" if passed else f"  {list(errors)!r}"))
+        failed |= not passed
     threads = read_json(fixtures_dir / "threads-app.json")
     for file in sorted((fixtures_dir / "provider-marks").glob("*.json")):
         errors = Validation()

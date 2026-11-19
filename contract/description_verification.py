@@ -470,12 +470,34 @@ def check_manifest_install(manifest, errors):
     if CATALOGUE is None:
         return
     generic = CATALOGUE["generic_item_fields"]
+    projected = CATALOGUE["conversation_capability"]["field_projections"]
     operations = manifest.get("operations", {})
     jobs = manifest.get("jobs", {})
     for kind_id, kind in errors.each(manifest.get("kinds", {}).items()):
         path = f"$.kinds.{kind_id}"
         for field in errors.each(sorted(field_names(kind, errors) & generic.keys())):
             errors.append(f"{path}.indexed_fields.{field}: reserved host generic field")
+        if kind.get("conversation") is True:
+            for field in errors.each(sorted(field_names(kind, errors) & projected.keys())):
+                errors.append(f"{path}.indexed_fields.{field}: reserved host conversation field")
+        composer = kind.get("composer")
+        if composer:
+            send = operations.get(composer.get("send"), {})
+            run_job = jobs.get(composer.get("job"), {})
+            run = operations.get(run_job.get("run_operation"), {})
+            if kind.get("conversation") is not True or send.get("target", {}).get("kind") != kind_id:
+                errors.append(f"{path}.composer.send: must name a same-package operation targeting this conversation kind")
+            if run_job.get("replayable") is not True or run.get("target", {}).get("kind") != kind_id:
+                errors.append(f"{path}.composer.job: must name a replayable job targeting this conversation kind")
+        fields = kind.get("fields", {})
+        for extractor in errors.each(kind.get("extractors", [])):
+            output = fields.get(extractor.get("output"), {})
+            want = {"inline_tags": "TextSet", "first_blocks": "Text"}.get(extractor.get("selector"))
+            if not output or (want and (output.get("type") != want or output.get("body_derived") is not True)):
+                errors.append(f"{path}.extractors: output needs a declared field of the matching type and body authority")
+        for field in errors.each(kind.get("device_row_images", [])):
+            if fields.get(field, {}).get("type") != "RowImageRef":
+                errors.append(f"{path}.device_row_images: slot must be a declared RowImageRef")
         after = (kind.get("host_create") or {}).get("after")
         if not after:
             continue

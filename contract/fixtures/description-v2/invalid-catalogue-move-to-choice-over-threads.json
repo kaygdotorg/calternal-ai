@@ -48,9 +48,6 @@
             "title": "Move to",
             "operation": "host.layout.move_to",
             "inputs": {
-              "thread": {
-                "context": "item"
-              },
               "section": {
                 "prompt": {
                   "title": "Move to",
@@ -59,6 +56,9 @@
                     "bind": "others"
                   }
                 }
+              },
+              "conversation": {
+                "context": "item"
               }
             }
           }

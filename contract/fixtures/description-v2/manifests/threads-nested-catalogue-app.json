@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "threads-nested-catalogue-app.json",
-          "sha256": "f9e2ce087021194c6a618da1991ae8ee9ae1cf8ad7cfaf70d2a25dc371ae5675"
+          "sha256": "d2aef392ba1eea09fbb083593dd709a56f2f36d4b2f65893f31aff292d683b04"
         }
       }
     }
