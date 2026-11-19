@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 10
+# Plugin API v2 · revision 11
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -449,10 +449,10 @@ cite the catalogue’s only request envelope,
 `{type:"window", request: WindowRequestPayload}`. An absent `anchor` means
 `start`. With `anchor:"end"`, `[from,to)` counts backward from the last
 authorized row, with zero at the last row. Use this form for End and
-near-end jumps only when the effective authorized count mode is `exact`
-or `estimate`. Its reply includes the count and gives the end-relative
-offset of the returned row nearest the end. Return rows in the Bind’s normal
-order. When the effective count mode is `none`, refuse an end-relative
+near-end jumps only with effective `exact` count authority. Its reply
+carries `count.mode: exact` and gives the end-relative offset of the
+returned row nearest the end. Return rows in the Bind’s normal order.
+When effective count mode is `estimate` or `none`, refuse an end-relative
 request with `WindowPlanError.reason: end_unavailable` before computing
 or returning an end distance. Both forms require
 `0 < to - from ≤ 200`. For a per-parent Bind require its edge-scoped
@@ -494,14 +494,12 @@ The first contract qualifies these plan families.
 
 Return `422 unsupported_query_plan` if the plan or index cannot satisfy
 the requested scope, filters, sort, window or count within the work
-budget. The typed `WindowPlanError` gives the reason. For `skip_limit` on an otherwise qualified jump, page from the nearer
-known end. Use the start if the end is unknown or the effective count mode
-is `none`. The host
-can page by an adjacent window’s boundary key for the same view and result
-version. For `end_unavailable`, use count-free End paging (§4.2). For
-`unsupported_plan` or `materialization_limit`, or if paging is also
-refused, show the Bind error state. Never serve the request with a
-table scan or a sort of the full candidate set.
+budget. The typed `WindowPlanError` gives the reason. After `skip_limit`
+the renderer pages from the nearer known end. After `end_unavailable`
+it pages forward from the last loaded row. Forward paging ends on a short
+`ready` window or an `empty` reply. Every other reason shows the Bind
+error state. Never serve the request with a table scan or a sort of the
+full candidate set.
 
 The first contract includes nested child rows and user-made sections (Q11).
 `children: {bind}` uses a `source.parent: true` Bind windowed per expanded
@@ -512,8 +510,10 @@ its entire ancestry and scopes rows and counts to that edge. A
 `{parent: true}` operand is an optional extra predicate.
 `Section.repeat: {over, rows}` requires `over` to read `layout_sections`
 (`id`, `title`, `position`) and `rows` to use the declared per-parent edge.
-The loader checks both. Only live space members may read their own layout,
-scoped to space and app. Layout membership grants no item access.
+The loader checks both and rejects any Bind used for section rows and as
+a children target. Section rows present `LayoutEntryRef`. Child rows
+present their kind’s row reference. Only live space members may read
+their own layout, scoped to space and app. Layout membership grants no item access.
 
 ### 4.2 Live work, cache and host components
 
@@ -529,16 +529,15 @@ It emits up to four coalesced pushes/sec per bind. Authorize before spending wor
 coalesce invalidations before evaluating and share a plan only within an
 identical audience/authority scope. Supersede obsolete requests, return a
 safe throttled state on exhaustion and preserve fair space progress.
-In a count-free view End pages forward from the last loaded row, or from
-the start if none is loaded, until the host returns a short terminal
-window. Use an explicit `anchor:"start"` to continue past the absolute
-jump ceiling. The host checks that `from` is exactly after an issued ready
-start window for the same active view, Bind, parent and result version,
-and seeks from its boundary key. These continuations carry no cache record.
-A short window signals exhaustion only when no more authorized rows remain. Throttling or a work budget refusal does not signal End.
-The renderer shows no scroll extent that implies a total. Check effective
-count policy on every live delivery and never send an end distance to a
-count-free view.
+Without exact count authority, End pages forward from the last loaded
+row, or from the start if none is loaded, until a short ready window or
+an empty reply. Use explicit `anchor:"start"` to continue past the absolute
+jump ceiling. The host checks that `from` is exactly after an issued
+ready start window for the same active view, Bind, parent and result
+version, and seeks from its boundary key. These continuations carry no
+count or cache record. With mode `none`, show no scroll extent implying a
+total. Check effective count policy on every live delivery and send an end
+distance only with exact count authority.
 
 Keyboard viewport prefetch is bounded host I/O during repeated keys.
 Apply prefetch replies for the result version already drawn at once.
