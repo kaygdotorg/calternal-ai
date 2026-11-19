@@ -284,8 +284,7 @@ the web, SwiftUI natively); no plugin is written twice, and anything the vocabul
   the selection through ALL rows (drawn or not), the selection paints at once, and what the selection opens (a route change) happens when it settles, **about 100 ms after the last key** (or key up); **selection and navigation events wait while a key repeats** (one goes out about 100 ms after the last key), incoming windows are held and applied when the selection settles, and window **requests** for prefetch may still cross, coalesced to at most 4 a second (8.4)
   (section 8, item 4). The contract's figure is about 100 ms; the web renderer's rest is adaptive: 1.6 times the longest gap between repeats in the burst, at least 45 ms and at most 120 ms, which is the same rule measured on the web; a load
   never starts while keys are still repeating, and a new key cancels the previous load.
-* **Home, End and Page Up/Down** over rows that are not loaded are a renderer duty: it asks the host for the window around the target index (`0`, `count - 1`, the current
-  index plus a page) at once, moves the selection when the rows arrive, and the host only answers windows.
+* **Home, End and Page Up/Down** over rows that are not loaded are a renderer duty: it asks the host for the target window at once and moves the selection when the rows arrive, and the host only answers windows. **Home** asks for `[0, n)` from the start; **End** asks for an **end-relative** window (`anchor: end`, `from: 0`, the same envelope: the last rows, counted back from the last row), never an absolute offset computed from a count; **Page Up/Down** ask for the window around the current index, and near the known end (or for a drag there) use `anchor: end` with the distance to the end instead of an absolute offset past the skip cap.
 * **A `list` takes the remaining height of its stack and scrolls itself.** One `list` per scroll region: a `stack` that holds a list does not scroll, and nested scrolling
   regions are refused (a long list inside a scrolling column loses laziness, selection and windows on every platform). The selected row's id is the `selection` source for that bind.
 * **Selection is not state in the description.** A renderer reads "selected" from the list; a description never carries `selected`.
@@ -393,8 +392,7 @@ Everything in 5.0 and 5.1 is drawable with system controls. Findings, in order o
 
 1. **Settling time (resolved).** One rule everywhere: a selection opens its target about 100 ms after the last key (or key up); selection and navigation events wait while a key repeats,
    window requests and replies for the drawn result version do not (section 8, item 4).
-2. **Home, End and Page keys over rows that are not loaded.** "Through ALL rows (drawn or not)" needs the window protocol: the renderer asks for the window around the target
-   index (`0`, `count - 1`, current plus a page) at once and moves the selection when the rows arrive. State this as a renderer duty; the host only has to answer windows.
+2. **Home, End and Page keys over rows that are not loaded.** "Through ALL rows (drawn or not)" needs the window protocol: the renderer asks for the target window at once (Home from the start; End as an end-relative request from 0, `anchor: end`; Page Up/Down around the current index, `anchor: end` near the known end) and moves the selection when the rows arrive. State this as a renderer duty; the host only has to answer windows.
 3. **A `list` takes the remaining height of its stack and scrolls itself.** Nested scrolling regions are refused: one `list` per scroll region, and a `stack` that
    holds a list does not scroll. (A SwiftUI `List` inside a `ScrollView` loses its laziness and selection.)
 4. **Forms** map one to one: `text` TextField, `multiline` TextEditor, `url`/`email`/`number` TextField with the keyboard type, `date` DatePicker, `choice` a menu Picker,
