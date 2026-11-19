@@ -170,15 +170,25 @@ const WHOLE = 80, MARGIN = 20, MAX_WINDOW = 60;
 export function windowed<T>(sectionId: string, all: T[]): { rows: T[]; count?: number; offset?: number } {
   return windowedOf(sectionId, all, (x) => x);
 }
-/** As `windowed`, but the rows are built from `items` only for the window (a thousand threads cost a window of rows, not a thousand). */
+/** The window last published for each section (rows `[a, b)`): kept while the shell's request stays well inside it, so the published rows do not slide with every key press. */
+const published = new Map<string, [number, number]>();
+/** How close to a window's edge (rows) the request may come before the window moves, when the list continues beyond that edge. */
+const EDGE = 24;
+/**
+ * As `windowed`, but the rows are built from `items` only for the window (a thousand threads cost a window of rows, not a thousand). The window is STABLE: the last one stays while the shell's request lies inside it with
+ * up to `EDGE` rows (a quarter of what the request leaves free) to spare on any side the list continues past (or the request is wider than the window can leave room for and still lies within it); only then does it move, to one of `MAX_WINDOW` rows centred on the request.
+ * A held arrow key that scrolls the shell's list by a row at a time therefore republishes no rows until the cursor nears the edge (the shell lays out every row it is sent: a slid window cost 55 to 80 ms frames).
+ */
 export function windowedOf<T, R>(sectionId: string, items: T[], build: (t: T) => R): { rows: R[]; count?: number; offset?: number } {
   const all = items;
-  if (all.length <= WHOLE) return { rows: all.map(build) };
+  if (all.length <= WHOLE) { published.delete(sectionId); return { rows: all.map(build) }; }
   const [from, to] = nativeChrome.windows[sectionId] ?? [0, WHOLE / 2];
-  let a = Math.max(0, from - MARGIN), b = Math.min(all.length, to + MARGIN);
-  if (b - a > MAX_WINDOW) { // never more than about 60 rows (the shell lays out every row it is sent): centred on what it asked for
-    const mid = Math.floor((from + to) / 2);
-    a = Math.max(0, Math.min(all.length - MAX_WINDOW, mid - MAX_WINDOW / 2)); b = a + MAX_WINDOW;
-  }
+  const cur = published.get(sectionId);
+  const edge = Math.max(0, Math.min(EDGE, Math.floor((MAX_WINDOW - (to - from)) / 4)));
+  const inside = (w: [number, number]) => w[1] <= all.length && (w[0] === 0 ? from >= 0 : from - w[0] >= edge) && (w[1] === all.length ? to <= w[1] : w[1] - to >= edge) && to <= w[1];
+  if (cur && inside(cur)) return { rows: all.slice(cur[0], cur[1]).map(build), count: all.length, offset: cur[0] };
+  const mid = Math.floor((from + to) / 2);
+  const a = Math.max(0, Math.min(all.length - MAX_WINDOW, mid - MAX_WINDOW / 2)), b = Math.min(all.length, a + MAX_WINDOW);
+  published.set(sectionId, [a, b]);
   return { rows: all.slice(a, b).map(build), count: all.length, offset: a };
 }

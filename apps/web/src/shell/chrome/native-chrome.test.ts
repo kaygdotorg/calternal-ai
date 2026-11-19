@@ -150,7 +150,27 @@ describe("native chrome: the appearance and the schema form", () => {
     expect(big.rows.length).toBeLessThanOrEqual(60); expect(big.offset!).toBeGreaterThan(740); expect(big.offset! + big.rows.length).toBeGreaterThan(830);
     nativeChrome.windows = {};
   });
+  test("the window is stable: key presses that stay inside it publish no new rows, and it moves by a page only near its edge", async () => {
+    const { windowedOf } = await import("./native-chrome.svelte");
+    const all = Array.from({ length: 953 }, (_, i) => i);
+    nativeChrome.windows = { held: [800, 815] };
+    const first = windowedOf("held", all, (i) => i);
+    expect(first.rows.length).toBe(60);
+    // the shell's visible range creeps down a row per key press (an arrow held for 10 rows): the same window each time
+    for (let k = 1; k <= 10; k++) {
+      nativeChrome.windows = { held: [800 + k, 815 + k] };
+      const w = windowedOf("held", all, (i) => i);
+      expect([w.offset, w.rows.length, w.rows[0]]).toEqual([first.offset, first.rows.length, first.rows[0]]);
+    }
+    // near the edge (a few rows to spare) it moves, by a window of 60 rows centred on the request
+    nativeChrome.windows = { held: [self_edge(first), self_edge(first) + 15] };
+    const moved = windowedOf("held", all, (i) => i);
+    expect(moved.offset).not.toBe(first.offset); expect(moved.rows.length).toBe(60);
+    nativeChrome.windows = {};
+  });
 });
+
+const self_edge = (w: { offset?: number; rows: unknown[] }) => w.offset! + w.rows.length - 20;
 
 describe("native chrome: the compatibility rule", () => {
   const call = () => Promise.resolve({ native: true });

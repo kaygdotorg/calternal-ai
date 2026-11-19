@@ -41,7 +41,8 @@ try {
   // A wrong setup code is refused in plain words and the form stays.
   await fillWho(page, "not-the-code", "Test Owner");
   await page.getByRole("button", { name: "Create passkey" }).click();
-  await page.getByText(/wrong or has expired.*setup-code/).waitFor({ timeout: 8000 });
+  // the sentence is painted once (aria-hidden) and announced once (the Callout's live region, role alert): the test reads what a screen reader hears
+  await page.getByRole("alert").filter({ hasText: /wrong or has expired.*setup-code/ }).waitFor({ state: "attached", timeout: 8000 });
   check(true, "wrong setup code: plain words and the form stays");
   await page.reload(); await page.waitForSelector("html[data-ready]");
   await signUp(page, setupToken, "Test Owner");

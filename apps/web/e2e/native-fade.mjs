@@ -1,12 +1,12 @@
 // In native chrome mode nothing scrolls legibly under the shell's controls (owner, 2026-11-19: on the phone the thread's text showed between the sidebar toggle, the title and More). The page's card fades out under the header
-// region the shell reserves (`--chrome-top`: the status bar plus the native controls): fully transparent at the screen's top edge, fully opaque at the bottom of the region. Checked on the PIXELS of a transparent screenshot (the
-// alpha channel), at phone width, for a thread and a Notes list, with the text scrolled under the region; the alpha of every row inside the region must stay under the fade's ramp. Usage: node e2e/native-fade.mjs
+// region the shell reserves (`--chrome-top`: the status bar plus the native controls): fully transparent from the screen's top edge to the bottom of the region (the scroller's own edge fade, which multiplies with it, is off), then a short ramp to opaque (device numbers, 2026-11-19: --chrome-top 116 px, controls 62 to 106). Checked on the PIXELS of a transparent screenshot (the
+// alpha channel), at phone width, for a thread and a Notes list, with the text scrolled under the region; no pixel inside the region may be legible. Usage: node e2e/native-fade.mjs
 import { BASE, DEVICES, launch, serve } from "./lib.mjs";
 const stop = await serve(); const browser = await launch();
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 /** The values the shell sends on an iPhone Pro: the status bar (about 59 pt) plus the 44 pt controls and a gap; see docs/ios-shell.md. */
-const CHROME_TOP = 120;
+const CHROME_TOP = 116;
 /** The most opaque pixel of every row of a transparent screenshot's top `rows` rows (device pixels / scale already 1 at the phone preset's deviceScaleFactor of 1). */
 async function alphaRows(p, rows) {
   const png = (await p.screenshot({ omitBackground: true, clip: { x: 0, y: 0, width: DEVICES.phone.viewport.width, height: rows } })).toString("base64");
@@ -30,11 +30,11 @@ async function visit(label, path, scrollSel) {
   // put text under the region: scroll the page's scroller so its content passes through the top
   await p.evaluate((sel) => { const s = document.querySelector(sel); if (s) s.scrollTop = 400; }, scrollSel);
   await p.waitForTimeout(400);
-  const a = await alphaRows(p, CHROME_TOP + 30);
-  const over = a.map((v, y) => [y, v]).filter(([y, v]) => y < CHROME_TOP && v > (255 * (y + 1)) / CHROME_TOP + 14);
-  ok(over.length === 0, `${label}: inside the header region no row is more opaque than the fade's ramp`, over.slice(0, 3).map(([y, v]) => `y ${y}: ${v}`).join(", "));
-  ok(Math.max(...a.slice(0, Math.round(CHROME_TOP * 0.25))) <= 80, `${label}: the top quarter of the region is nearly transparent`, `max alpha ${Math.max(...a.slice(0, Math.round(CHROME_TOP * 0.25)))}`);
-  ok(Math.max(...a.slice(CHROME_TOP, CHROME_TOP + 30)) > 150, `${label}: just below the region the text is drawn (the test sees ink)`, `max alpha ${Math.max(...a.slice(CHROME_TOP, CHROME_TOP + 30))}`);
+  const a = await alphaRows(p, CHROME_TOP + 60);
+  const seen = Math.max(...a.slice(0, CHROME_TOP));
+  ok(seen <= 8, `${label}: nothing is legible anywhere inside the header region (the controls are over y 62 to 106): the most opaque pixel in rows 0 to ${CHROME_TOP}`, `max alpha ${seen} of 255`);
+  const below = Math.max(...a.slice(CHROME_TOP + 20, CHROME_TOP + 60));
+  ok(below > 150, `${label}: below the region (after the ramp) the text is drawn (the test sees ink)`, `max alpha ${below}`);
   await ctx.close();
 }
 try {
