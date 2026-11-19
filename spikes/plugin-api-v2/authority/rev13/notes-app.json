@@ -1,0 +1,581 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "collections",
+      "source": {
+        "type": "list",
+        "kind": "collections"
+      },
+      "fields": [
+        "title"
+      ],
+      "sort": [
+        {
+          "field": "title",
+          "direction": "asc"
+        }
+      ],
+      "window": {
+        "size": 100,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "open": {
+          "route": {
+            "name": "collection",
+            "value": "id"
+          }
+        },
+        "icon": {
+          "kindIcon": true
+        }
+      },
+      "states": {
+        "empty": {
+          "title": "No collections yet"
+        }
+      }
+    },
+    {
+      "id": "notes",
+      "source": {
+        "type": "list",
+        "kind": "notes",
+        "collection": {
+          "route": "collection"
+        }
+      },
+      "fields": [
+        "title",
+        "updated",
+        "pinned",
+        "snippet",
+        "thumbnail"
+      ],
+      "filter": {
+        "all": [
+          {
+            "field": "trashed",
+            "op": "eq",
+            "value": {
+              "literal": false
+            }
+          }
+        ]
+      },
+      "sort": [
+        {
+          "field": "updated",
+          "direction": "desc"
+        }
+      ],
+      "window": {
+        "size": 60,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title",
+          "fallback": "Untitled"
+        },
+        "secondary": [
+          {
+            "field": "updated",
+            "format": "relative_date"
+          },
+          {
+            "field": "snippet",
+            "format": "text"
+          }
+        ],
+        "marks": [
+          {
+            "kind": "icon",
+            "icon": "spark",
+            "when": {
+              "field": "pinned",
+              "op": "eq",
+              "value": {
+                "literal": true
+              }
+            }
+          }
+        ],
+        "open": {
+          "route": {
+            "name": "item",
+            "value": "id"
+          }
+        },
+        "leadingActions": [
+          {
+            "id": "pin",
+            "title": "Pin",
+            "icon": "spark",
+            "operation": "host.item.patch-metadata",
+            "inputs": {
+              "item": {
+                "row": "id"
+              },
+              "field": {
+                "literal": "pinned"
+              },
+              "value": {
+                "literal": true
+              }
+            },
+            "tone": "warn",
+            "fullSwipe": true
+          }
+        ],
+        "trailingActions": [
+          {
+            "id": "trash",
+            "title": "Trash",
+            "icon": "trash",
+            "operation": "host.item.trash",
+            "inputs": {
+              "item": {
+                "row": "id"
+              }
+            },
+            "role": "destructive"
+          }
+        ],
+        "menu": [
+          {
+            "id": "rename",
+            "title": "Rename",
+            "icon": "edit",
+            "operation": "host.item.rename",
+            "inputs": {
+              "item": {
+                "row": "id"
+              },
+              "title": {
+                "prompt": {
+                  "title": "Rename note",
+                  "initial": {
+                    "row": "field",
+                    "field": "title"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "move",
+            "title": "Move to collection",
+            "icon": "folder",
+            "operation": "host.collection.move",
+            "inputs": {
+              "item": {
+                "row": "id"
+              },
+              "collection": {
+                "prompt": {
+                  "title": "Move to",
+                  "kind": "choice",
+                  "options": {
+                    "bind": "collections"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "icon": {
+          "image": {
+            "field": "thumbnail",
+            "fallback": "snippet"
+          }
+        }
+      },
+      "states": {
+        "empty": {
+          "title": "No notes here",
+          "detail": "Create one to get started."
+        },
+        "error": {
+          "title": "Notes could not load",
+          "action": {
+            "id": "retry",
+            "title": "Try again",
+            "shell": {
+              "reload": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "trash",
+      "source": {
+        "type": "list",
+        "kind": "notes"
+      },
+      "fields": [
+        "title",
+        "trashed_at",
+        "updated",
+        "snippet",
+        "thumbnail"
+      ],
+      "filter": {
+        "all": [
+          {
+            "field": "trashed",
+            "op": "eq",
+            "value": {
+              "literal": true
+            }
+          }
+        ]
+      },
+      "sort": [
+        {
+          "field": "trashed_at",
+          "direction": "desc"
+        }
+      ],
+      "window": {
+        "size": 60,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title",
+          "fallback": "Untitled"
+        },
+        "secondary": [
+          {
+            "field": "updated",
+            "format": "relative_date"
+          },
+          {
+            "field": "snippet",
+            "format": "text"
+          }
+        ],
+        "selectable": true,
+        "trailingActions": [
+          {
+            "id": "restore",
+            "title": "Restore",
+            "icon": "check",
+            "operation": "host.item.restore",
+            "inputs": {
+              "item": {
+                "row": "id"
+              }
+            },
+            "tone": "good",
+            "fullSwipe": true
+          }
+        ],
+        "icon": {
+          "image": {
+            "field": "thumbnail",
+            "fallback": "snippet"
+          }
+        }
+      },
+      "states": {
+        "empty": {
+          "title": "Trash is empty"
+        }
+      }
+    },
+    {
+      "id": "trash-count",
+      "source": {
+        "type": "list",
+        "kind": "notes"
+      },
+      "fields": [],
+      "filter": {
+        "all": [
+          {
+            "field": "trashed",
+            "op": "eq",
+            "value": {
+              "literal": true
+            }
+          }
+        ]
+      },
+      "window": {
+        "size": 1,
+        "count": "exact"
+      }
+    },
+    {
+      "id": "note",
+      "source": {
+        "type": "item",
+        "kind": "notes",
+        "ref": {
+          "route": "item"
+        }
+      },
+      "fields": [
+        "title",
+        "updated",
+        "pinned"
+      ]
+    },
+    {
+      "id": "current",
+      "source": {
+        "type": "item",
+        "kind": "notes",
+        "ref": {
+          "route": "item"
+        }
+      },
+      "fields": [
+        "title"
+      ]
+    },
+    {
+      "id": "note-search",
+      "source": {
+        "type": "search",
+        "kind": "notes",
+        "collection": {
+          "route": "collection"
+        }
+      },
+      "fields": [
+        "title",
+        "updated",
+        "snippet",
+        "thumbnail"
+      ],
+      "window": {
+        "size": 30,
+        "count": "none"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "secondary": [
+          {
+            "field": "updated",
+            "format": "relative_date"
+          },
+          {
+            "field": "snippet",
+            "format": "text"
+          }
+        ],
+        "open": {
+          "route": {
+            "name": "item",
+            "value": "id"
+          }
+        },
+        "icon": {
+          "image": {
+            "field": "thumbnail",
+            "fallback": "snippet"
+          }
+        }
+      }
+    }
+  ],
+  "cache": {
+    "templates": "keep"
+  },
+  "chrome": {
+    "sidebar": {
+      "open": true,
+      "title": "Calternal",
+      "selectors": [
+        {
+          "id": "view",
+          "route": "view",
+          "selected": "notes",
+          "options": [
+            {
+              "id": "notes",
+              "title": "Notes"
+            },
+            {
+              "id": "trash",
+              "title": "Trash",
+              "count": {
+                "bind": "trash-count"
+              }
+            }
+          ]
+        }
+      ],
+      "sections": [
+        {
+          "id": "shortcuts",
+          "rows": [
+            {
+              "id": "new-note",
+              "title": "New note",
+              "icon": "plus",
+              "open": {
+                "invoke": {
+                  "id": "create",
+                  "title": "New note",
+                  "operation": "host.item.create",
+                  "inputs": {
+                    "kind": {
+                      "literal": "notes"
+                    },
+                    "collection": {
+                      "route": "collection"
+                    }
+                  },
+                  "then": {
+                    "route": {
+                      "name": "item"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "collections",
+          "title": "Collections",
+          "bind": "collections",
+          "showWhen": {
+            "route": "view",
+            "equals": "notes"
+          }
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "bind": "notes",
+          "showWhen": {
+            "route": "view",
+            "equals": "notes"
+          }
+        },
+        {
+          "id": "trash",
+          "title": "Trash",
+          "bind": "trash",
+          "showWhen": {
+            "route": "view",
+            "equals": "trash"
+          },
+          "actions": [
+            {
+              "id": "empty-trash",
+              "title": "Empty Trash",
+              "icon": "trash",
+              "role": "destructive",
+              "shell": {
+                "sheet": "trash"
+              }
+            }
+          ]
+        }
+      ],
+      "refresh": true
+    },
+    "header": {
+      "title": {
+        "bind": "current",
+        "field": "title"
+      },
+      "trailing": [
+        {
+          "id": "share",
+          "title": "Share",
+          "icon": "share",
+          "shell": {
+            "sheet": "share",
+            "item": {
+              "route": "item"
+            }
+          }
+        }
+      ]
+    },
+    "footer": {
+      "account": {
+        "id": "account",
+        "title": "Account",
+        "menu": [
+          {
+            "id": "signout",
+            "title": "Sign out",
+            "role": "destructive",
+            "shell": {
+              "signOut": true
+            }
+          }
+        ]
+      },
+      "apps": [
+        {
+          "id": "threads",
+          "title": "Threads",
+          "icon": "threads"
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "icon": "notes"
+        },
+        {
+          "id": "settings",
+          "title": "Settings",
+          "icon": "settings"
+        }
+      ],
+      "search": {
+        "placeholder": "Search notes",
+        "bind": "note-search"
+      }
+    }
+  },
+  "view": {
+    "root": {
+      "type": "stack",
+      "children": [
+        {
+          "type": "component",
+          "component": {
+            "type": "item-editor",
+            "id": "editor",
+            "config": {
+              "item": {
+                "route": "item"
+              },
+              "mode": "edit",
+              "showTitle": true
+            }
+          }
+        },
+        {
+          "type": "detail",
+          "bind": "note",
+          "fields": [
+            {
+              "label": "Updated",
+              "field": "updated"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

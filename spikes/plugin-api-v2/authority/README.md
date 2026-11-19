@@ -29,6 +29,9 @@ the same endpoint through its CORS preflight.
    `templates`. `views.notes`, `views.threads` and `views.reading` are the
    app views with chrome. Their manifests are under `manifests`. The
    existing `home` and `shared` views still exercise the authority matrix.
+   The app templates and manifests are exact [revision 13.5 snapshots](https://git.kayg.org/kayg/calternal-ai/src/commit/5f0d7df436a591c4c494dda3acfe1e2fc78ec248/contract/fixtures/description-v2).
+   Notes projects snippets for secondary text and the row-image fallback.
+   No preview asset refs are issued.
    The top-level `template` is the original small member template.
 2. `POST /view.open` takes `{"type":"view_open","view_ref":"…"}`. Keep its
    lease, grant revision and cache partition.
@@ -74,6 +77,9 @@ a member by default.
 nix develop -c cargo test --locked --release -p calternal-server \
   --test v2_step0_authority -- --ignored sealed_ --nocapture --test-threads=1
 ```
+
+The transcript, request-card and composer components in the Threads template
+are for drawing. The fixture has no transcript or composer backend routes.
 
 Routes, references and activation contexts belong to this fixture only.
 The listener binds to loopback and uses fresh sample Notes and collections.

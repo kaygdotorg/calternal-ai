@@ -1,0 +1,9 @@
+{
+  "description": "Fixture manifest for the nested Threads sidebar: Threads is the host's Turns engine; the layout is the host's per-person layout (host virtual kind layout_sections), so the package declares no kinds or operations and READS the host kinds it binds. The SDK fills a package's own kinds into reads automatically; an author writes reads only for another app's kinds.",
+  "reads": [
+    "threads",
+    "layout_sections"
+  ],
+  "kinds": {},
+  "operations": {}
+}

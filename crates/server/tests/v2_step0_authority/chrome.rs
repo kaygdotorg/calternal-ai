@@ -12,6 +12,31 @@ async fn sealed_chrome_catalogue() {
             assert!(bootstrap["templates"][key]["chrome"][region].is_object());
         }
     }
+    for key in ["notes", "threads", "reading"] {
+        assert!(
+            bootstrap["templates"][key]["binds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|bind| bind["source"].get("mode").is_none())
+        );
+    }
+    let note_bind = bootstrap["templates"]["notes"]["binds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|bind| bind["id"] == "notes")
+        .unwrap();
+    assert_eq!(
+        note_bind["row"]["secondary"],
+        json!([
+            {"field":"updated","format":"relative_date"},{"field":"snippet","format":"text"}
+        ])
+    );
+    assert_eq!(
+        note_bind["row"]["icon"]["image"],
+        json!({"field":"thumbnail","fallback":"snippet"})
+    );
     let win = |bind: &str, parent: Option<&Value>| {
         let mut request = json!({"bind":bind,"from":0,"to":20});
         if let Some(parent) = parent {
@@ -83,6 +108,14 @@ async fn sealed_chrome_catalogue() {
         .ok(&f.owner, "window", Some(lease), win("notes", None))
         .await;
     assert_eq!(page["count"]["value"], bootstrap["fixture"]["notes"]);
+    let fields = &page["rows"][0]["fields"];
+    assert!(fields["updated"].is_string());
+    assert!(
+        fields["snippet"]
+            .as_str()
+            .is_some_and(|text| !text.is_empty())
+    );
+    assert!(fields.get("thumbnail").is_none());
     let trash = f
         .ok(&f.owner, "window", Some(lease), win("trash-count", None))
         .await;

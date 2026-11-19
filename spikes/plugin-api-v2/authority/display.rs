@@ -18,12 +18,10 @@ impl App {
 
     pub(super) fn template(self) -> Value {
         let src = match self {
-            Self::Notes => include_str!("../../../contract/fixtures/description-v2/notes-app.json"),
-            Self::Threads => include_str!(
-                "../../../contract/fixtures/description-v2/threads-nested-catalogue-app.json"
-            ),
+            Self::Notes => include_str!("rev13/notes-app.json"),
+            Self::Threads => include_str!("rev13/threads-nested-catalogue-app.json"),
             Self::Reading => {
-                include_str!("../../../contract/fixtures/description-v2/reading-list-app.json")
+                include_str!("rev13/reading-list-app.json")
             }
         };
         serde_json::from_str(src).unwrap()
@@ -32,14 +30,10 @@ impl App {
     pub(super) fn manifest(self) -> Value {
         let src = match self {
             Self::Notes => {
-                include_str!("../../../contract/fixtures/description-v2/manifests/notes-app.json")
+                include_str!("rev13/manifests/notes-app.json")
             }
-            Self::Threads => include_str!(
-                "../../../contract/fixtures/description-v2/manifests/threads-nested-catalogue-app.json"
-            ),
-            Self::Reading => include_str!(
-                "../../../contract/fixtures/description-v2/manifests/reading-list-app.json"
-            ),
+            Self::Threads => include_str!("rev13/manifests/threads-nested-catalogue-app.json"),
+            Self::Reading => include_str!("rev13/manifests/reading-list-app.json"),
         };
         serde_json::from_str(src).unwrap()
     }
@@ -59,14 +53,22 @@ impl Row {
     fn wire(&self, bind: &str, actor: AccountId) -> Value {
         let fields = &self.fields;
         let fields = match bind {
-            "current" | "note-search" => json!({"title":fields["title"]}),
+            "current" => json!({"title":fields["title"]}),
+            "note" => {
+                json!({"title":fields["title"],"updated":fields["updated"],"pinned":fields["pinned"]})
+            }
+            "note-search" => {
+                json!({"title":fields["title"],"updated":fields["updated"],"snippet":fields["snippet"]})
+            }
             "trash-count" => json!({}),
-            "trash" => json!({"title":fields["title"],"trashed_at":fields["updated"]}),
+            "trash" => {
+                json!({"title":fields["title"],"trashed_at":fields["updated"],"updated":fields["updated"],"snippet":fields["snippet"]})
+            }
             "waiting" => {
-                json!({"title":fields["title"],"provider":fields["provider"],"state":"waiting","waiting_on":actor})
+                json!({"title":fields["title"],"state":"waiting","waiting_on":actor})
             }
             "children" | "in-section" => {
-                json!({"title":fields["title"],"provider":fields["provider"],"state":fields["state"]})
+                json!({"title":fields["title"],"state":fields["state"]})
             }
             "reading-search" => json!({"title":fields["title"],"read":fields["read"]}),
             "items" => {
@@ -193,9 +195,10 @@ impl Display {
     fn sample(app: App, i: usize, at: time::OffsetDateTime) -> Row {
         let at = calternal_content::format_rfc3339(at);
         Row::new(match app {
-            App::Notes => json!({"title":format!("Note {:05}",i+1),"updated":at,"pinned":i%17==0}),
+            App::Notes => json!({"title":format!("Note {:05}",i+1),"updated":at,"pinned":i%17==0,
+                "snippet":format!("Fixture note {} · A short excerpt for the leading preview and second line.",i+1)}),
             App::Threads => json!({"title":format!("Thread {:05}",i+1),"updated":at,
-                "provider":if i%2==0{"calternal-codex"}else{"calternal-claude-code"},"state":"idle"}),
+                "state":"idle"}),
             App::Reading => json!({"title":format!("Reading item {}",i+1),"added":at,"read":false}),
         })
     }
