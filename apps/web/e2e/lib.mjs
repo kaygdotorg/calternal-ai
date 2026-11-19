@@ -132,3 +132,22 @@ export async function signUp(p, token, name) {
  * headings), so a suite scopes `.composer`, `h1`, the header and the list to this, never to the page. (The composer's field keeps the id `composer-field` in the focused window alone.)
  */
 export const win = (page) => page.locator("[data-win][data-focused], .mid-card:not([data-win])").first();
+
+/** Cumulative [steal, total] jiffies of all CPUs (/proc/stat): steal is the time the host gave to another VM, which the guest's own load average cannot see. Null where /proc/stat has no steal column (not Linux). */
+function stealJiffies() { try { const f = readFileSync("/proc/stat", "utf8").split("\n")[0].trim().split(/\s+/).slice(1).map(Number); return f.length > 7 ? [f[7], f.slice(0, 8).reduce((a, b) => a + b, 0)] : null; } catch { return null; } }
+/** Starts watching steal time; `end()` gives the share of the window (0 to 1) the host spent elsewhere, or 0 when it cannot be read. A sample with more than 1 percent (`STEAL_LIMIT`) is not judged. */
+export function stealWindow() { const a = stealJiffies(); return { end: () => { const b = stealJiffies(); return a && b && b[1] > a[1] ? (b[0] - a[0]) / (b[1] - a[1]) : 0; } }; }
+export const STEAL_LIMIT = 0.01;
+/** The median of a list of numbers (the upper middle for an even count). */
+export const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : NaN; };
+/**
+ * Judges samples of one timing the statistical way: it passes when the MEDIAN is under `bound` and at most one sample is over `hard`; every sample is printed (a sample marked "not judged", steal time over 1 percent, is
+ * printed and left out). Returns `{ pass, judged, text }`. At least three judged samples are needed, or the result is "not judged" (`pass: null`).
+ */
+export function judgeSamples(label, samples, { bound, hard, unit = "ms" }) {
+  const used = samples.filter((x) => !x.notJudged), m = median(used.map((x) => x.value)), over = used.filter((x) => x.value > hard).length;
+  const list = samples.map((x) => (x.notJudged ? `[${x.value.toFixed(0)}: not judged, steal ${(x.steal * 100).toFixed(1)}%]` : x.value.toFixed(0))).join(" ");
+  const text = `${label}: ${list} ${unit}; median ${Number.isFinite(m) ? m.toFixed(0) : "?"} (bound ${bound}), ${over} over ${hard}`;
+  if (used.length < 3) return { pass: null, judged: used.length, text: `${text}; only ${used.length} judged samples` };
+  return { pass: m < bound && over <= 1, judged: used.length, text };
+}
