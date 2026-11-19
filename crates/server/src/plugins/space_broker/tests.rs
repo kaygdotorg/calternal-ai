@@ -42,18 +42,16 @@ use tokio::{
 const CHILD: &str = r#"
 const lines = require('node:readline').createInterface({input:process.stdin});
 const call = require('node:crypto').randomUUID();
-let invocation;
-const send = message => process.stdout.write(JSON.stringify({
+const send = (invocation, message) => process.stdout.write(JSON.stringify({
   protocol_version:2, invocation_id:invocation, message
 }) + '\n');
 lines.on('line', line => {
   const f = JSON.parse(line), m = f.message;
   if ('ticket' in f || 'epoch' in f || 'space_id' in (m.input || {})) process.exit(8);
   if (m.type === 'invoke') {
-    invocation = f.invocation_id;
-    send({type:'host_call',call_id:call,method:'item_head',input:m.input});
+    setTimeout(() => send(f.invocation_id, {type:'host_call',call_id:call,method:'item_head',input:m.input}), 75);
   } else if (m.type === 'host_reply' && m.call_id === call && m.result.Ok) {
-    send({type:'complete',data:m.result.Ok});
+    send(f.invocation_id, {type:'complete',data:m.result.Ok});
   }
 });
 "#;
@@ -294,28 +292,57 @@ async fn approved_item_head_reaches_a_real_package_after_reconnect() {
     let old_pin = fixture.pin.clone();
     let forged = tokio::spawn(async move {
         runtime.ready(&old_pin).unwrap();
-        assert_ne!(
-            runtime.receive().await.unwrap().frame().ticket,
-            Some(old_ticket.id())
-        );
+        let admitted = runtime.receive().await.unwrap().frame().ticket.unwrap();
+        assert_ne!(admitted, old_ticket.id());
+        let callback = Uuid::new_v4();
+        let input = json!({"kind":"notes","item_id":item.id});
         runtime
             .send(
                 &old_pin,
                 old_ticket.id(),
                 SpaceMessage::Call {
-                    callback_id: Uuid::new_v4(),
+                    callback_id: callback,
                     method: SpaceMethod::ItemHead,
-                    input: json!({"kind":"notes","item_id":item.id}),
+                    input: input.clone(),
+                },
+            )
+            .unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), runtime.receive())
+                .await
+                .is_err()
+        );
+        runtime
+            .send(
+                &old_pin,
+                admitted,
+                SpaceMessage::Call {
+                    callback_id: callback,
+                    method: SpaceMethod::ItemHead,
+                    input,
+                },
+            )
+            .unwrap();
+        let reply = runtime.receive().await.unwrap();
+        let SpaceMessage::Reply { result, .. } = &reply.frame().message else {
+            panic!("expected admitted reply")
+        };
+        assert_eq!(reply.frame().ticket, Some(admitted));
+        runtime
+            .send(
+                &old_pin,
+                admitted,
+                SpaceMessage::Complete {
+                    result: result.clone(),
                 },
             )
             .unwrap();
         assert!(runtime.receive().await.is_none());
     });
     let reader = Arc::new(fixture.content.item_head_reader(fixture.space));
-    let error = exchange(fresh, fixture.auth.clone(), reader.clone(), scope)
+    exchange(fresh, fixture.auth.clone(), reader.clone(), scope)
         .await
-        .unwrap_err();
-    assert_eq!(error.code, ErrorCode::Forbidden);
+        .unwrap();
     forged.await.unwrap();
 
     let (fresh, runtime) = fixture.carrier().await;
@@ -508,20 +535,32 @@ async fn approved_operation_dispatches_over_an_enrolled_http_upgrade() {
         .unwrap();
         real_package(runtime, binding.package).await.unwrap();
     });
-    let answer = dispatch(
-        state,
-        Identity { id: ids.owner },
-        Session::Static,
-        "fixture-invoke",
-        "fixture.head",
-        serde_json::from_value(json!({"space_id":ids.personal,"item_id":item.id})).unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        answer,
-        json!({"metadata":{"title":"Enrolled"}, "revision":item.revision})
-    );
+    let dispatch_read = |request| {
+        dispatch(
+            state.clone(),
+            Identity { id: ids.owner },
+            Session::Static,
+            request,
+            "fixture.head",
+            serde_json::from_value(json!({"space_id":ids.personal,"item_id":item.id})).unwrap(),
+        )
+    };
+    let (first, second) = tokio::join!(dispatch_read("fixture-one"), dispatch_read("fixture-two"));
+    let expected = json!({"metadata":{"title":"Enrolled"}, "revision":item.revision});
+    assert_eq!(first.unwrap(), expected);
+    assert_eq!(second.unwrap(), expected);
+    state
+        .registry
+        .space_item_head(ids.personal, "fixture.head")
+        .unwrap()
+        .wake
+        .awake
+        .lock()
+        .await
+        .as_ref()
+        .unwrap()
+        .fence
+        .close();
     supervisor.await.unwrap();
     server.abort();
     let _ = server.await;

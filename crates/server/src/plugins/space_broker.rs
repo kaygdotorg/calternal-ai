@@ -12,7 +12,7 @@ use crate::{
 use calternal_auth::spaces::Spaces;
 use calternal_content::{ItemHead, ItemHeadReader};
 use calternal_machine::{protocol::PluginWorker, sandbox::worker::MAX_SOURCE_BYTES};
-use calternal_plugin_host::space_channel::{PackagePin, SpaceMessage, SpaceMethod};
+use calternal_plugin_host::space_channel::{PackagePin, SpaceMessage, SpaceMethod, SpaceSender};
 use calternal_types::{AccountId, Capability, Error, ErrorCode, SpaceId};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -31,6 +31,7 @@ pub struct ApprovedItemHead {
     package: PackagePin,
     kind: String,
     worker_source: String,
+    wake: Arc<Wake>,
 }
 
 impl std::fmt::Debug for ApprovedItemHead {
@@ -83,7 +84,23 @@ impl ApprovedItemHead {
             package: pin,
             kind,
             worker_source,
+            wake: Arc::default(),
         })
+    }
+}
+
+mod awake;
+use awake::{Awake, Wake};
+
+impl ApprovedItemHead {
+    pub(super) fn share_wake(&mut self, first: &Self) -> Result<(), Error> {
+        if self.package != first.package {
+            return Err(Error::conflict(
+                "the item-head profile admits one package per space",
+            ));
+        }
+        self.wake = first.wake.clone();
+        Ok(())
     }
 }
 
@@ -140,26 +157,59 @@ pub(crate) async fn invoke<D: Directory>(
         } if *account == actor.id => Some(*installation),
         _ => return Err(Error::forbidden("item head requires a person session")),
     };
-    if !session.is_live(&state.directory).await
-        || authorization::capabilities(&state, actor.id, approval.space)
-            .await?
-            .is_none_or(|rights| {
-                !rights.contains(Capability::PluginsUse) || !rights.contains(Capability::SpaceRead)
-            })
-    {
-        return Err(missing());
-    }
-    let service = machines
-        .or_else(|| state.store.machines())
-        .ok_or_else(unavailable)?;
     let authority = state
         .directory
         .protected_spaces()
         .cloned()
         .ok_or_else(unavailable)?;
+    let mut wake = approval.wake.awake.lock().await;
+    let awake = match wake.as_ref().filter(|awake| awake.sender.is_live()) {
+        Some(awake) => awake.clone(),
+        None => {
+            if !session.is_live(&state.directory).await
+                || authorization::capabilities(&state, actor.id, approval.space)
+                    .await?
+                    .is_none_or(|rights| {
+                        !rights.contains(Capability::PluginsUse)
+                            || !rights.contains(Capability::SpaceRead)
+                    })
+            {
+                return Err(missing());
+            }
+            let service = machines
+                .or_else(|| state.store.machines())
+                .ok_or_else(unavailable)?;
+            let awake = wake_space(&state, &approval, actor.id, service).await?;
+            *wake = Some(awake.clone());
+            awake
+        }
+    };
+    drop(wake);
+    awake
+        .invoke(
+            authority,
+            Scope {
+                actor: actor.id,
+                installation,
+                package: approval.package.clone(),
+                epoch: awake.epoch,
+                operation: approval.operation.clone(),
+                kind: approval.kind.clone(),
+                item: input.item_id,
+            },
+        )
+        .await
+}
+
+// Cold control plane only. Serialize placement via this space's wake gate.
+async fn wake_space<D: Directory>(
+    state: &Shared<D>,
+    approval: &Arc<ApprovedItemHead>,
+    account: AccountId,
+    service: Arc<MachineService>,
+) -> Result<Arc<Awake>, Error> {
     let scheduler = service.clone();
     let pinned = approval.clone();
-    let account = actor.id;
     let runtime = tokio::runtime::Handle::current();
     let placement = crate::blocking::spawn(move || {
         let run = scheduler.request_worker(
@@ -188,59 +238,32 @@ pub(crate) async fn invoke<D: Directory>(
             .shared_content()
             .item_head_reader(approval.space),
     );
-    let input = Scope {
-        actor: account,
-        installation,
-        package: approval.package.clone(),
-        epoch: connected.channel.epoch(),
-        operation: approval.operation.clone(),
-        kind: approval.kind.clone(),
-        item: input.item_id,
-    };
-    exchange(connected, authority, reader, input).await
+    Awake::attach(connected, reader, &approval.package, Some(placement)).await
 }
 
+#[cfg(test)]
 async fn exchange(
-    mut connected: Connected,
+    connected: Connected,
     authority: Spaces,
     reader: Arc<ItemHeadReader>,
     scope: Scope,
 ) -> Result<Value, Error> {
-    if connected.grants.space() != connected.space || connected.channel.epoch() != scope.epoch {
-        return Err(unavailable());
-    }
-    let ready = tokio::time::timeout(Duration::from_secs(3), connected.channel.receive())
-        .await
-        .map_err(|_| unavailable())?
-        .ok_or_else(unavailable)?;
-    let frame = ready.frame();
-    if !matches!(&frame.message, SpaceMessage::Ready {})
-        || frame.package.as_deref() != Some(scope.package.package.as_str())
-        || frame.digest.as_deref() != Some(scope.package.digest.as_str())
-    {
-        return Err(unavailable());
-    }
-    drop(ready);
-    let grants = connected.grants.clone();
-    let ticket = Arc::new(
-        crate::blocking::spawn(move || Ticket::mint(&authority, &grants, scope))
-            .await
-            .map_err(|_| unavailable())??,
-    );
-    let deadline = tokio::time::Instant::from_std(ticket.deadline());
-    let work = run(&mut connected.channel, reader, ticket);
-    tokio::time::timeout_at(deadline, work)
-        .await
-        .map_err(|_| unavailable())?
+    let awake = Awake::attach(connected, reader, &scope.package, None).await?;
+    let result = awake.invoke(authority, scope).await;
+    awake.fence.close();
+    result
 }
 
 async fn run(
-    channel: &mut calternal_plugin_host::space_channel::SpaceChannel,
+    channel: &SpaceSender,
+    inbox: &mut awake::Inbox,
     reader: Arc<ItemHeadReader>,
     ticket: Arc<Ticket>,
+    cancel: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<Value, Error> {
     let pin = &ticket.scope.package;
     let pending = ticket.clone();
+    let canceled = cancel.clone();
     channel
         .send_checked(
             pin,
@@ -254,7 +277,10 @@ async fn run(
                     .as_millis()
                     .clamp(1, 60_000) as u32,
             },
-            move || pending.require_live(Instant::now()).is_ok(),
+            move || {
+                !canceled.load(std::sync::atomic::Ordering::Acquire)
+                    && pending.require_live(Instant::now()).is_ok()
+            },
         )
         .map_err(|_| unavailable())?;
     let mut answered: Option<Value> = None;
@@ -266,7 +292,7 @@ async fn run(
                 ticket.require_live(Instant::now())?;
                 continue;
             }
-            item = channel.receive() => item.ok_or_else(unavailable)?,
+            item = inbox.recv() => item.ok_or_else(unavailable)?,
         };
         let frame = delivery.frame();
         ticket.authorize_at(frame, Instant::now())?;
@@ -291,6 +317,7 @@ async fn run(
                 let result = serde_json::to_value(head).map_err(|_| unavailable())?;
                 answered = Some(result.clone());
                 let pending = ticket.clone();
+                let canceled = cancel.clone();
                 channel
                     .send_checked(
                         pin,
@@ -299,7 +326,10 @@ async fn run(
                             callback_id,
                             result: Ok(result),
                         },
-                        move || pending.require_live(Instant::now()).is_ok(),
+                        move || {
+                            !canceled.load(std::sync::atomic::Ordering::Acquire)
+                                && pending.require_live(Instant::now()).is_ok()
+                        },
                     )
                     .map_err(|_| unavailable())?;
             }
@@ -309,7 +339,6 @@ async fn run(
                     return Err(unavailable());
                 }
                 let value = answered.take().ok_or_else(unavailable)?;
-                let _ = channel.request_remote_stop();
                 return Ok(value);
             }
             SpaceMessage::Complete { result: Err(_) } => return Err(unavailable()),

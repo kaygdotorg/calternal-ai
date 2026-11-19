@@ -351,7 +351,7 @@ impl Registry {
             ));
         }
         let catalog = self.snapshot();
-        for head in approved {
+        for mut head in approved {
             if catalog.policy(&head.operation).is_some()
                 || calternal_core::is_known_operation(&head.operation)
             {
@@ -360,6 +360,9 @@ impl Registry {
                 ));
             }
             let operations = self.space_heads.entry(head.space).or_default();
+            if let Some(first) = operations.values().next() {
+                head.share_wake(first)?;
+            }
             if operations
                 .insert(head.operation.clone(), Arc::new(head))
                 .is_some()

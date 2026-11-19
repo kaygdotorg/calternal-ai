@@ -153,20 +153,22 @@ impl SpaceChannel {
         self.shared.epoch
     }
 
-    /// Queue a direction-checked invocation frame without waiting on a stalled writer.
-    /// Cost: bounded serialization, one package credit lookup and one nonblocking send.
+    /// Retain the send half for concurrent ticket owners. The receive owner controls lifetime.
+    pub fn sender(&self) -> SpaceSender {
+        SpaceSender(self.shared.clone())
+    }
+
+    /// Queue a direction-checked invocation frame.
     pub fn send(
         &self,
         package: &PackagePin,
         ticket: Uuid,
         message: SpaceMessage,
     ) -> Result<(), Error> {
-        self.shared.submit(Some(package), Some(ticket), message)
+        self.sender().send(package, ticket, message)
     }
 
-    /// Queue a frame with a local delivery guard. The writer checks the guard
-    /// again before assigning an ordinal and before every socket write or flush poll.
-    /// The guard must be nonblocking and may run after the submitting task ends.
+    /// Queue a frame which the writer will transmit only while its guard holds.
     pub fn send_checked(
         &self,
         package: &PackagePin,
@@ -174,17 +176,12 @@ impl SpaceChannel {
         message: SpaceMessage,
         check: impl Fn() -> bool + Send + Sync + 'static,
     ) -> Result<(), Error> {
-        let guard = Box::new(check);
-        if !guard() || message.control() {
-            return Err(Error::Refused);
-        }
-        self.shared
-            .submit_checked(Some(package), Some(ticket), message, Some(guard))
+        self.sender().send_checked(package, ticket, message, check)
     }
 
     /// Whether this channel has retained local authority. Cost: one space-local watch read.
     pub fn is_live(&self) -> bool {
-        *self.shared.live.borrow()
+        self.sender().is_live()
     }
 
     /// Queue readiness for one pinned package from the supervisor.
@@ -234,6 +231,46 @@ impl SpaceChannel {
 impl Drop for SpaceChannel {
     fn drop(&mut self) {
         self.fence();
+    }
+}
+
+/// Cloneable sending handle for the tickets on one channel epoch.
+#[derive(Clone)]
+pub struct SpaceSender(Arc<Shared>);
+
+impl SpaceSender {
+    /// Queue a direction-checked invocation frame without waiting on a stalled writer.
+    /// Cost: bounded serialization, one package credit lookup and one nonblocking send.
+    pub fn send(
+        &self,
+        package: &PackagePin,
+        ticket: Uuid,
+        message: SpaceMessage,
+    ) -> Result<(), Error> {
+        self.0.submit(Some(package), Some(ticket), message)
+    }
+
+    /// Queue a frame with a local delivery guard. The writer checks the guard
+    /// again before assigning an ordinal and before every socket write or flush poll.
+    /// The guard must be nonblocking and may run after the submitting task ends.
+    pub fn send_checked(
+        &self,
+        package: &PackagePin,
+        ticket: Uuid,
+        message: SpaceMessage,
+        check: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> Result<(), Error> {
+        let guard = Box::new(check);
+        if !guard() || message.control() {
+            return Err(Error::Refused);
+        }
+        self.0
+            .submit_checked(Some(package), Some(ticket), message, Some(guard))
+    }
+
+    /// Whether this channel has retained local authority. Cost: one space-local watch read.
+    pub fn is_live(&self) -> bool {
+        *self.0.live.borrow()
     }
 }
 

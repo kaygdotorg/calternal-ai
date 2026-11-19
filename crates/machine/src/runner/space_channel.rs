@@ -89,7 +89,7 @@ pub async fn relay_package(
     mut exec: Exec,
 ) -> Result<(), ProtocolError> {
     let input = exec.input.take().ok_or(ProtocolError::Invocation)?;
-    let mut active = None::<(Uuid, Uuid)>;
+    let mut active = HashMap::<Uuid, Uuid>::new();
     let mut line = Vec::new();
     channel.ready(pin)?;
     loop {
@@ -103,17 +103,17 @@ pub async fn relay_package(
                 }
                 let ticket = frame.ticket.ok_or(ProtocolError::Invalid)?;
                 let (alias, message) = match &frame.message {
-                    SpaceMessage::Invoke { operation, input, .. } if active.is_none() => {
+                    SpaceMessage::Invoke { operation, input, .. } if active.len() < 8 && !active.contains_key(&ticket) => {
                         let alias = Uuid::new_v4();
-                        active = Some((alias, ticket));
+                        active.insert(ticket, alias);
                         (alias, ChildMessage::Invoke { operation: operation.clone(), input: input.clone() })
                     }
                     SpaceMessage::Reply { callback_id, result } => {
-                        let (alias, _) = active.filter(|(_, bound)| *bound == ticket).ok_or(ProtocolError::Refused)?;
+                        let Some(&alias) = active.get(&ticket) else { continue };
                         (alias, ChildMessage::HostReply { call_id: *callback_id, result: result.clone() })
                     }
                     SpaceMessage::Cancel {} => {
-                        let (alias, _) = active.take().filter(|(_, bound)| *bound == ticket).ok_or(ProtocolError::Refused)?;
+                        let Some(alias) = active.remove(&ticket) else { continue };
                         (alias, ChildMessage::Cancel {})
                     }
                     _ => return Err(ProtocolError::Invalid),
@@ -132,17 +132,19 @@ pub async fn relay_package(
                         }
                         let frame = ChildFrame::decode(&line)?;
                         line.clear();
-                        let (_, ticket) = active.filter(|(alias, _)| *alias == frame.invocation_id)
-                            .ok_or(ProtocolError::Refused)?;
+                        let Some(ticket) = active.iter().find_map(|(ticket, alias)| (*alias == frame.invocation_id).then_some(*ticket)) else {
+                            // Late output for a canceled local invocation carries no authority.
+                            continue;
+                        };
                         let message = match frame.message {
                             ChildMessage::HostCall { call_id, method, input } =>
                                 SpaceMessage::Call { callback_id: call_id, method, input },
                             ChildMessage::Complete { data } => {
-                                active = None;
+                                active.remove(&ticket);
                                 SpaceMessage::Complete { result: Ok(data) }
                             }
                             ChildMessage::Failed {} => {
-                                active = None;
+                                active.remove(&ticket);
                                 SpaceMessage::Complete { result: Err(calternal_types::ErrorCode::Unavailable) }
                             }
                             _ => return Err(ProtocolError::Invalid),
