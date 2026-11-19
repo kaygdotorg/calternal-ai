@@ -145,7 +145,7 @@ impl Command {
                 mode,
                 parent_thread,
             } => {
-                let mut v = json!({"space_id":space_id,"title":title,"mode":mode});
+                let mut v = json!({"space_id":space_id,"mode":mode});
                 if let Some(provider) = provider {
                     v["provider"] = json!(provider);
                 }

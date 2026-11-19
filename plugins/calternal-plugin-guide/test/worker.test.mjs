@@ -37,6 +37,15 @@ test("scaffolds, checks and explains a plugin and publishes its documentation", 
       exactExample(markdown, "packages/plugin-sdk/templates/question.form.json", "json", "question-job");
       exactExample(markdown, "crates/server/plugin-template/question.test.mjs", "js", "question-job");
     }
+    const { markdown: network } = await invoke("explain", { topic: "network" });
+    for (const [kind, example] of [
+      ["A", "a portfolio balance reader"], ["B", "a stored mail message"],
+      ["C", "an RSS reader with user-added feeds"], ["D", "a read-only home automation dashboard"],
+    ]) {
+      assert.ok(network.includes(`### ${kind}.`));
+      assert.ok(network.includes(example));
+    }
+    assert.ok(network.includes('"profile": "images_fonts"'));
     const { markdown: walkthrough } = await invoke("explain", { topic: "walkthrough" });
     exactExample(walkthrough, "packages/plugin-sdk/templates/manifest.json", "json", "my-plugin");
     exactExample(walkthrough, "crates/server/plugin-template/worker.ts", "ts", "my-plugin");

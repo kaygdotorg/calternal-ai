@@ -94,3 +94,13 @@ packages is a separate integration.
 
 See the [plugin API decisions](plugin-api.md) and the
 [interface proposal](plugin-interface-proposal.md).
+
+
+## Gallery submission
+
+Enable `calternal-plugin-submission-guide` and invoke
+`calternal-plugin-submission-guide.explain` in your space for the listing
+format, screenshot requirements, permissions statement and review checklist.
+Run `calternal plugin package . NAME.calsubmission` after the package checks
+pass. The submissions repository can run `calternal plugin verify-package`
+on the same archive offline.
