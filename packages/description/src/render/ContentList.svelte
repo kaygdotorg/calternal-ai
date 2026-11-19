@@ -123,7 +123,6 @@
         count={store.length} estimate={rowH} startAtBottom={false} {inside} {label} rowRole="listitem"
         onrange={(first, end) => store.ensure(consumer, first, end)}
         nav={{
-          pageKeys: "scroll",
           id: (i) => store.row(i)?.id ?? "", indexOf: (id) => store.indexOf(id), selected: () => (selection.drawn ? store.indexOf(selection.drawn) : -1),
           onmove: (i) => { const r = store.row(i); if (r) selection.paint(r.id); },
           open: (i) => { const r = store.row(i); if (r) choose(r.id, i, false); },
