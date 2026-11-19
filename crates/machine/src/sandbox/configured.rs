@@ -139,7 +139,7 @@ impl Backend for ConfiguredBackend {
             if self.name() == "podman"
                 && let Some(vm) = &self.small_vm
             {
-                return vm.start(spec).await;
+                return Ok(vm.start(spec).await? as Arc<dyn Sandbox>);
             }
             let _ = spec;
             Err(SandboxError(

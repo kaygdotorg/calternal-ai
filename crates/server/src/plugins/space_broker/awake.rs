@@ -9,7 +9,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::{Semaphore, mpsc, watch};
 
 pub(super) const IDLE: Duration = Duration::from_secs(60);
 pub(super) type Inbox = mpsc::Receiver<SpaceDelivery>;
@@ -27,6 +27,7 @@ pub(super) struct Awake {
     reader: Arc<ItemHeadReader>,
     tickets: Semaphore,
     accepting: AtomicBool,
+    drained: watch::Sender<bool>,
     inboxes: Mutex<HashMap<Uuid, mpsc::Sender<SpaceDelivery>>>,
 }
 
@@ -77,12 +78,12 @@ impl Awake {
             reader,
             tickets: Semaphore::new(MAX_ACTIVE_TICKETS),
             accepting: AtomicBool::new(true),
+            drained: watch::channel(false).0,
             inboxes: Mutex::default(),
         });
         let owner = Arc::downgrade(&awake);
         let epoch = awake.epoch;
         tokio::spawn(async move {
-            let mut placement = placement;
             let mut drain = false;
             loop {
                 let next = tokio::time::timeout(idle, connected.channel.receive()).await;
@@ -118,9 +119,6 @@ impl Awake {
                 let _ =
                     tokio::time::timeout(Duration::from_millis(500), life.wait_for(|live| !*live))
                         .await;
-                if let Some((_, place)) = &mut placement {
-                    place.sleeping = true;
-                }
             }
             // Close the socket while the placement guard is still held.
             connected.channel.fence();
@@ -129,7 +127,13 @@ impl Awake {
             {
                 inboxes.clear();
             }
-            if let Some((wake, placement)) = placement {
+            let drained = owner.upgrade().map(|awake| awake.drained.clone());
+            if let Some((wake, mut placement)) = placement {
+                if drain {
+                    // The next wake joins this space's drain until the machine
+                    // confirms that the old VMM was reaped.
+                    let _ = placement.suspend().await;
+                }
                 drop(placement);
                 if let Some(wake) = wake.upgrade() {
                     let mut current = wake.awake.lock().await;
@@ -138,8 +142,15 @@ impl Awake {
                     }
                 }
             }
+            if let Some(drained) = drained {
+                drained.send_replace(true);
+            }
         });
         Ok(awake)
+    }
+
+    pub(super) fn drain_waiter(&self) -> Option<watch::Receiver<bool>> {
+        (!self.accepting.load(Ordering::Acquire)).then(|| self.drained.subscribe())
     }
 
     pub(super) async fn invoke(&self, scope: Scope) -> Result<Value, Error> {

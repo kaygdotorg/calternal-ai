@@ -136,22 +136,28 @@ struct HeldPlacement {
     lease: Uuid,
     runtime: tokio::runtime::Handle,
     sleepable: bool,
-    sleeping: bool,
+    settled: bool,
+}
+
+impl HeldPlacement {
+    async fn suspend(&mut self) -> Result<(), Error> {
+        let (service, account, lease) = (self.service.clone(), self.account, self.lease);
+        crate::blocking::spawn(move || service.sleep_space_run(account, lease))
+            .await
+            .map_err(|_| unavailable())??;
+        self.settled = true;
+        self.service.clone().wait_worker_stopped(lease).await
+    }
 }
 
 impl Drop for HeldPlacement {
     fn drop(&mut self) {
+        if self.settled {
+            return;
+        }
         let (service, account, lease) = (self.service.clone(), self.account, self.lease);
-        let sleeping = self.sleeping;
         self.runtime.spawn(async move {
-            let _ = crate::blocking::spawn(move || {
-                if sleeping {
-                    service.sleep_space_run(account, lease)
-                } else {
-                    service.stop_run(account, lease).map(|_| ())
-                }
-            })
-            .await;
+            let _ = crate::blocking::spawn(move || service.stop_run(account, lease)).await;
         });
     }
 }
@@ -177,10 +183,25 @@ pub(crate) async fn invoke<D: Directory>(
     };
     // Only cold wake enters the authority worker for preflight or the machine
     // registry for placement. Warm invocations use the pinned space reader.
-    let mut wake = approval.wake.awake.lock().await;
-    let awake = match wake.as_ref().filter(|awake| awake.sender.is_live()) {
-        Some(awake) => awake.clone(),
-        None => {
+    let awake = loop {
+        let mut wake = approval.wake.awake.lock().await;
+        if let Some(awake) = wake.as_ref() {
+            if let Some(mut drained) = awake.drain_waiter() {
+                drop(wake);
+                tokio::time::timeout(
+                    crate::plugins::worker::WORKER_START_TIMEOUT,
+                    drained.wait_for(|done| *done),
+                )
+                .await
+                .map_err(|_| unavailable())?
+                .map_err(|_| unavailable())?;
+                continue;
+            }
+            if awake.sender.is_live() {
+                break awake.clone();
+            }
+        }
+        {
             if !session.is_live(&state.directory).await
                 || authorization::capabilities(&state, actor.id, approval.space)
                     .await?
@@ -192,14 +213,14 @@ pub(crate) async fn invoke<D: Directory>(
                 return Err(missing());
             }
             let service = machines
+                .clone()
                 .or_else(|| state.store.machines())
                 .ok_or_else(unavailable)?;
             let awake = wake_space(&state, &approval, actor.id, service).await?;
             *wake = Some(awake.clone());
-            awake
+            break awake;
         }
     };
-    drop(wake);
     awake
         .invoke(Scope {
             actor: actor.id,
@@ -228,6 +249,7 @@ async fn wake_space<D: Directory>(
     let runtime = tokio::runtime::Handle::current();
     let placement = crate::blocking::spawn(move || {
         scheduler.check_space_channel_available(pinned.space)?;
+        #[cfg(not(test))]
         let sleepable = true;
         #[cfg(test)]
         let sleepable = !pinned.container_fixture;
@@ -253,7 +275,7 @@ async fn wake_space<D: Directory>(
             lease: run.lease_id,
             runtime,
             sleepable,
-            sleeping: false,
+            settled: false,
         })
     })
     .await

@@ -106,6 +106,28 @@ impl Agent {
                 Ok(())
             }
             Request::SmallReady => Err(SandboxError("small plugin kernel was not reseeded".into())),
+            Request::ReseedSmall(seed) => {
+                use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+                // The small guest snapshots only after the package and its
+                // exec pipes have been stopped. An active guest cannot reseed.
+                // Only this guest's startup can wait on the privileged
+                // helper. Keep the lock until acknowledgement so Start cannot
+                // observe an incomplete seed exchange.
+                let threads = self.threads.lock().await;
+                if !threads.is_empty() {
+                    return Err(SandboxError("small plugin guest was not drained".into()));
+                }
+                let mut control = UnixStream::connect("/run/calternal-reseed.sock")
+                    .await
+                    .map_err(SandboxError::new)?;
+                control.write_all(&seed).await.map_err(SandboxError::new)?;
+                if control.read_u8().await.map_err(SandboxError::new)? != b'1' {
+                    return Err(SandboxError(
+                        "small plugin guest reseed was not acknowledged".into(),
+                    ));
+                }
+                Ok(())
+            }
             Request::Start(space, mut spec) => {
                 spec.space_id = Some(space);
                 let sandbox = self.backend.start(&spec).await?;

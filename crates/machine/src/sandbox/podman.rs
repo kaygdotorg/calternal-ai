@@ -247,6 +247,12 @@ impl PodmanBackend {
                 })?;
                 if let Some(worker) = &spec.worker {
                     super::worker::prepare(&work, worker).await?;
+                    if self.guest && spec.image.as_deref() == Some(super::worker::SPACE_VM_IMAGE) {
+                        tokio::fs::write(
+                            work.join(super::worker::PRIME_RANDOM_FILE),
+                            b"require('node:crypto').randomBytes(32);\n",
+                        ).await.map_err(SandboxError::new)?;
+                    }
                 }
                 let Limits {
                     memory_bytes,

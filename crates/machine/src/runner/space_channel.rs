@@ -53,19 +53,25 @@ impl Runner {
                 .sandbox(slot, &guard)
                 .await
                 .map_err(|_| ProtocolError::Invocation)?;
+            let mut argv = [
+                "node",
+                "--permission",
+                "--allow-fs-read=.",
+                "--disallow-code-generation-from-strings",
+                "--max-old-space-size=128",
+            ]
+            .map(str::to_owned)
+            .to_vec();
+            if slot.spec.image.as_deref() == Some(crate::sandbox::worker::SPACE_VM_IMAGE) {
+                argv.extend([
+                    "--require".into(),
+                    format!("./{}", crate::sandbox::worker::PRIME_RANDOM_FILE),
+                ]);
+            }
+            argv.push("worker.js".into());
             let exec = sandbox
                 .exec(ExecRequest {
-                    argv: [
-                        "node",
-                        "--permission",
-                        "--allow-fs-read=.",
-                        "--disallow-code-generation-from-strings",
-                        "--max-old-space-size=128",
-                        "worker.js",
-                    ]
-                    .into_iter()
-                    .map(str::to_owned)
-                    .collect(),
+                    argv,
                     interactive: true,
                     ..ExecRequest::default()
                 })

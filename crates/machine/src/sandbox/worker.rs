@@ -12,6 +12,7 @@ pub const IMAGE: &str = "docker.io/library/node:24-alpine";
 /// Internal placement image selector for an offline small plugin microVM.
 /// Used only on v2 space leases. It is never passed to a container engine.
 pub const SPACE_VM_IMAGE: &str = "calternal:small-plugin-vm";
+pub(crate) const PRIME_RANDOM_FILE: &str = "prime-random.cjs";
 /// Fixed worker resource ceiling: 256 MiB, one CPU and 64 processes.
 pub const LIMITS: Limits = Limits {
     memory_bytes: Some(256 * 1024 * 1024),

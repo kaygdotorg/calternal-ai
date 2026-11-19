@@ -57,6 +57,12 @@ chown -R 1000:1000 /sys/fs/cgroup/agent
 mkdir -p /run/agent /run/user/1000 /data/home /data/sandboxes
 chown 1000:1000 /run/agent /run/user/1000 /data/home /data/sandboxes
 chmod 700 /run/agent /run/user/1000
+if [ -f /run/calternal-small-ready ]; then
+  # Root owns the kernel entropy update. Only the trusted guest agent can
+  # reach this socket. The package worker profile denies socket creation.
+  socat UNIX-LISTEN:/run/calternal-reseed.sock,user=agent,mode=0600,fork,max-children=1 \
+    EXEC:'/opt/calternal-microvm-agent --reseed-small-restore' &
+fi
 sh -ec '
   echo "$$" > /sys/fs/cgroup/agent/ctl/cgroup.procs
   exec chpst -u agent /sbin/agent-start

@@ -26,6 +26,7 @@ pub(super) struct Guest {
     child: Child,
     pub(super) api_socket: Option<PathBuf>,
     pub(super) control_disk: Option<PathBuf>,
+    pub(super) restored: Option<Uuid>,
     pub(super) key: Arc<hmac::Key>,
     _permit: OwnedSemaphorePermit,
     _network: Option<super::network::Lease>,
@@ -129,29 +130,8 @@ impl Guest {
         } else {
             command.arg("--no-api");
         }
-        command
-            .arg("--config-file")
-            .arg(&definition)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .kill_on_drop(true);
-        let parent = rustix::process::getpid();
-        // SAFETY: the child invokes only async-signal-safe system calls and
-        // compares the parent to close the race with a concurrent machine exit.
-        unsafe {
-            command.as_std_mut().pre_exec(move || {
-                rustix::io::fcntl_setfd(owned.as_ref(), rustix::io::FdFlags::empty())?;
-                rustix::process::set_parent_process_death_signal(Some(
-                    rustix::process::Signal::KILL,
-                ))?;
-                if rustix::process::getppid() != Some(parent) {
-                    return Err(io::Error::from(io::ErrorKind::Interrupted));
-                }
-                Ok(())
-            });
-        }
-        let child = match command.spawn() {
+        command.arg("--config-file").arg(&definition);
+        let child = match spawn_vm(command, owned) {
             Ok(child) => child,
             Err(error) => {
                 let _ = tokio::fs::remove_file(definition).await;
@@ -165,6 +145,7 @@ impl Guest {
             child,
             api_socket,
             control_disk: small.then(|| token_drive.clone()),
+            restored: None,
             key,
             _permit: permit,
             _network: network,
@@ -202,6 +183,89 @@ impl Guest {
                 })
             }
         }
+    }
+
+    pub(super) async fn restore_small(
+        config: &Config,
+        run: &Path,
+        generation: &super::snapshot::Generation,
+        disk: PathBuf,
+        control_disk: PathBuf,
+        owned: Arc<File>,
+        permit: OwnedSemaphorePermit,
+    ) -> SandboxResult<Self> {
+        use super::snapshot_api;
+        let socket = run.join(format!(
+            "{}.sock",
+            &Uuid::new_v4().simple().to_string()[..16]
+        ));
+        if socket.as_os_str().len() >= 100 {
+            return Err(SandboxError(
+                "microVM runtime directory path is too long".into(),
+            ));
+        }
+        let api_socket = socket.with_extension("api");
+        let token = tokio::fs::read(&control_disk)
+            .await
+            .map_err(SandboxError::new)?;
+        let token: &[u8] = token
+            .get(..32)
+            .ok_or_else(|| SandboxError("Invalid saved control drive".into()))?;
+        let key = Arc::new(hmac::Key::new(hmac::HMAC_SHA256, token));
+        let mut command = Command::new(&config.firecracker);
+        command.arg("--api-sock").arg(&api_socket);
+        let child = spawn_vm(command, owned).map_err(SandboxError::new)?;
+        let mut guest = Self {
+            disk,
+            socket,
+            child,
+            api_socket: Some(api_socket.clone()),
+            control_disk: Some(control_disk),
+            restored: Some(generation.id),
+            key,
+            _permit: permit,
+            _network: None,
+        };
+        let ready = async {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+            while !tokio::fs::try_exists(&api_socket)
+                .await
+                .map_err(SandboxError::new)?
+            {
+                if !guest.alive() || tokio::time::Instant::now() >= deadline {
+                    return Err(SandboxError(
+                        "Firecracker did not open the snapshot API".into(),
+                    ));
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            snapshot_api::load(
+                &api_socket,
+                &generation.path.join("state"),
+                &generation.path.join("memory"),
+                &guest.socket,
+            )
+            .await?;
+            snapshot_api::resume(&api_socket).await?;
+            let mut seed = [0; 32];
+            SystemRandom::new()
+                .fill(&mut seed)
+                .map_err(|_| SandboxError("Cannot get fresh small VM entropy".into()))?;
+            guest
+                .control(&Request::ReseedSmall(seed))
+                .await
+                .map_err(|_| SandboxError("Small plugin VM restore could not reseed".into()))?;
+            guest
+                .control(&Request::SmallReady)
+                .await
+                .map_err(|_| SandboxError("Small plugin VM did not acknowledge readiness".into()))
+        }
+        .await;
+        if let Err(error) = ready {
+            guest.stop().await?;
+            return Err(error);
+        }
+        Ok(guest)
     }
 
     #[cfg(test)]
@@ -253,6 +317,28 @@ impl Guest {
         }
         Ok(())
     }
+}
+
+fn spawn_vm(mut command: Command, owned: Arc<File>) -> io::Result<Child> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    let parent = rustix::process::getpid();
+    // SAFETY: the child invokes only async-signal-safe system calls and
+    // compares the parent to close the race with a concurrent machine exit.
+    unsafe {
+        command.as_std_mut().pre_exec(move || {
+            rustix::io::fcntl_setfd(owned.as_ref(), rustix::io::FdFlags::empty())?;
+            rustix::process::set_parent_process_death_signal(Some(rustix::process::Signal::KILL))?;
+            if rustix::process::getppid() != Some(parent) {
+                return Err(io::Error::from(io::ErrorKind::Interrupted));
+            }
+            Ok(())
+        });
+    }
+    command.spawn()
 }
 
 pub(super) async fn connect(socket: &Path) -> SandboxResult<BufReader<UnixStream>> {
