@@ -1,0 +1,85 @@
+{
+  "$comment": "A subset of the plugin manifest (contract/plugin-manifest-v2.schema.json) that the description verifier checks fixtures against: the plugin's own kinds with typed indexed fields and audiences, the operations with the inputs they take, and the host kinds it reads. The full manifest is validated by the plugins lane.",
+  "id": "reading-list",
+  "reads": [],
+  "kinds": {
+    "reading-items": {
+      "icon": "book",
+      "title_field": "title",
+      "indexed_fields": {
+        "title": {
+          "type": "Text",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "added": {
+          "type": "Timestamp",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "read": {
+          "type": "Boolean",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "trashed": {
+          "type": "Boolean",
+          "audience": "member_item",
+          "nullable": false
+        }
+      }
+    },
+    "reading-reminders": {
+      "icon": "clock",
+      "title_field": "title",
+      "indexed_fields": {
+        "title": {
+          "type": "Text",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "due": {
+          "type": "Timestamp",
+          "audience": "member_item",
+          "nullable": false
+        },
+        "person": {
+          "type": "AccountRef",
+          "audience": "viewer_self",
+          "nullable": false
+        }
+      }
+    }
+  },
+  "operations": {
+    "reading.add": {
+      "title": "Add a link",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "inputs": [
+        "title",
+        "url"
+      ],
+      "creates": "reading-items"
+    },
+    "reading.mark-read": {
+      "title": "Mark read",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "inputs": [
+        "item"
+      ]
+    },
+    "reading.remind": {
+      "title": "Set reminder",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "inputs": [
+        "item",
+        "when",
+        "note"
+      ],
+      "creates": "reading-reminders"
+    }
+  }
+}
