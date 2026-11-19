@@ -90,7 +90,10 @@ installation's UUIDs and opaque revisions, independently of display names.
 ## 2. The runtime belongs to the space
 
 One isolated runtime and one active package process per enabled plugin in a
-space. A plugin can operate on the whole space within its approved grants and
+space. The process and its state persist between calls while awake. Each
+interactive operation must answer within its deadline (3 seconds under
+provisional Q3). Work that needs longer runs as a durable job and is outside
+that interactive deadline. A plugin can operate on the whole space within its approved grants and
 the acting person's rights. The same wall, authority checks and limits apply
 to official and community packages. Each process has a separate OS identity,
 read-only pinned code and independent resource accounting. The trusted
@@ -116,7 +119,9 @@ space. A host or runtime crash invalidates the old epoch. Reconcile in-flight
 effects by receipt, resume only replayable work and reopen cleanly if snapshot
 verification fails. Return a safe retry/interruption result for other actions.
 
-**Q3** covers clocks, capacities and restart policy. Candidate fixtures use
+The Owner’s plan buys compute and apps and sets the space’s quotas. The exact
+mapping from plans to ceilings is pending. **Q3** covers fixture clocks,
+capacities and restart policy. Candidate fixtures use
 64 queued and 32 active calls per space, 8 active calls and 16 queued per
 plugin, 32 queued frames and 128 callbacks per invocation. Use fair admission.
 CPU, RSS (including snapshots), PIDs, storage, traffic and waits need both
@@ -188,12 +193,14 @@ grants no person authority. Guest tickets name the guest account and one
 `(home_space,kind,item_id)` plus the grant ID and allowed actions. Pointers to
 other items never extend the scope. Public links don't get an execution ticket.
 
-**Q13 is a release blocker.** Broker checks do not stop a program that kept
-an Owner's data from returning it to a Reader later. Require proof of
-isolation across authority scopes for memory, durable records, caches and
-output. Until then, mixed-authority views must bind host-filtered data.
-A worker-authored free-form result, stored value or outbound URL cannot
-cross scopes solely because it passes a schema check.
+Members of a shared space trust its installed plugins with data that an
+authorized person can access through the plugin. Members can see which plugins
+are installed, and broker calls are logged. A long-lived plugin can remember
+data from an earlier, more privileged call. By default, described lists and
+items bind to host queries filled with the viewer’s rights, including while
+the runtime sleeps. Showing free-form worker output to someone other than
+the ticket’s acting person is an exception gated on proof that memory, durable
+records, caches and outputs are isolated across authority scopes (Q13).
 
 ### Methods and bounded outcomes
 
@@ -283,7 +290,8 @@ major versions and supported component features at connect. Serve the last
 compatible revision from a host projection keyed by space, package revision,
 app, description ID, target, viewer and authority revision. An audience-neutral baseline may use a separate key only if it contains no scoped data. Bundle a baseline pair for
 cold install. Publish described data only from an authorized invocation. Keep the latest compatible head per key under package and space quotas. A
-cached read serves with live authority and no runtime wake. Clients subscribe
+cached read serves with live authority and no runtime wake. The host fills
+item and list bindings using the viewer’s rights on every read. Clients subscribe
 to a host journal invalidation. Revocation, package removal and stale bookmarks
 invalidate caches. A reconnect after a gap requests a fresh snapshot. An
 unsupported optional feature uses an authored fallback, and a required
@@ -389,16 +397,16 @@ independent authorization matrix and conformance inventory aligned.
 
 ## Open questions
 
-- **Q1 Manifest and gallery** — Start with the draft schema, current PNG listing limits and a gallery-reviewed age band (all/13+/16+/18+ or unrated). Gate visibility policy separately.
-- **Q2 Private DB** — Start with a brokered record store, 16 MiB per plugin and 64 MiB per space including sidecars, 64 changes and 16 KiB per value. Leave automatic expiry opt-in, with a maximum 30-day TTL for expiring records.
-- **Q3 Runtime budgets** — Start fixture idle/drain/wake deadlines at 60/10/10 seconds with 3-second interactive calls. Use measured plan ceilings, bounded backoff and per-package fairness for production.
-- **Q4 Transport** — Use bounded NDJSON multiplexing on the enrolled link and the proposed message and error envelopes. Confirm strict version negotiation before SDK freeze.
-- **Q5 Delegation** — Use live 60-second renewable tickets bound to durable principal references. Reconcile the older jobs record that permits sign-out with current installation-session fencing, and require explicit enrollment delegation for standalone inbound routes.
-- **Q6 Host surface** — Freeze the listed adapters and proposed bounds as fixtures, prioritize Notes methods, and decide hook, settings-write, large-value and patch extensions behind explicit negotiation.
-- **Q7 Retention** — Start audit at 10,000 records per space or seven days, whichever comes first, and preserve bounded recent-error/stderr views under their existing authority.
-- **Q8 Egress** — Review exact-host policies and any intentionally broad public envelope separately, show outbound disclosure at install, and start media at Ask and private routes disabled until approved.
-- **Q9 Descriptions** — Adopt whole publication first, 256 KiB per description, a 16 MiB cache per package/space and typed patches later. Decide renderer support windows and offline eviction under revocation.
-- **Q10 Copies and notifications** — Copy the selected live item and permitted attachments, excluding credentials, grants, old approvals and private run state. Confirm which minimal feed summaries can notify.
-- **Q11 Removal** — Retain and charge private data for 30 days, support export/reinstall and offer an Owner-confirmed purge. Confirm parked-job downgrade and existing shares' fallback behavior.
-- **Q12 Rollout** — Run an explicit v1-to-v2 package conversion and release-pair gate before swapping an existing app. Block incompatible upgrades pending approval and recovery proof.
-- **Q13 Confidentiality within a space** — Start with host-filtered bindings for mixed-authority views. Prove isolated invocation state and authorization-scoped records before arbitrary worker output can cross member or guest scopes.
+- **Q1 PROVISIONAL — Manifest and gallery** — Start with the draft schema, current PNG listing limits and a gallery-reviewed age band (all/13+/16+/18+ or unrated). Gate visibility policy separately.
+- **Q2 PROVISIONAL — Private DB** — Start with a brokered record store, 16 MiB per plugin and 64 MiB per space including sidecars, 64 changes and 16 KiB per value. Leave automatic expiry opt-in, with a maximum 30-day TTL for expiring records.
+- **Q3 PROVISIONAL — Runtime budgets** — Start fixture idle/drain/wake deadlines at 60/10/10 seconds with 3-second interactive calls. Use measured plan ceilings, bounded backoff and per-package fairness for production.
+- **Q4 PROVISIONAL — Transport** — Use bounded NDJSON multiplexing on the enrolled link and the proposed message and error envelopes. Confirm strict version negotiation before SDK freeze.
+- **Q5 PROVISIONAL — Delegation** — Use live 60-second renewable tickets bound to durable principal references. Reconcile the older jobs record that permits sign-out with current installation-session fencing, and require explicit enrollment delegation for standalone inbound routes.
+- **Q6 PROVISIONAL — Host surface** — Freeze the listed adapters and proposed bounds as fixtures, prioritize Notes methods, and decide hook, settings-write, large-value and patch extensions behind explicit negotiation.
+- **Q7 PROVISIONAL — Retention** — Start audit at 10,000 records per space or seven days, whichever comes first, and preserve bounded recent-error/stderr views under their existing authority.
+- **Q8 PROVISIONAL — Egress** — Review exact-host policies and any intentionally broad public envelope separately, show outbound disclosure at install, and start media at Ask and private routes disabled until approved.
+- **Q9 PROVISIONAL — Descriptions** — Adopt whole publication first, 256 KiB per description, a 16 MiB cache per package/space and typed patches later. Decide renderer support windows and offline eviction under revocation.
+- **Q10 PROVISIONAL — Copies and notifications** — Copy the selected live item and permitted attachments, excluding credentials, grants, old approvals and private run state. Confirm which minimal feed summaries can notify.
+- **Q11 PROVISIONAL — Removal** — Retain and charge private data for 30 days, support export/reinstall and offer an Owner-confirmed purge. Confirm parked-job downgrade and existing shares' fallback behavior.
+- **Q12 PROVISIONAL — Rollout** — Run an explicit v1-to-v2 package conversion and release-pair gate before swapping an existing app. Block incompatible upgrades pending approval and recovery proof.
+- **Q13 Confidentiality within a space** — Host-filtered bindings are the default. Showing free-form results to someone other than the ticket’s acting person is an exception gated on isolation proof.
