@@ -310,12 +310,44 @@ fn machines_list_empty_and_unusable_data_dir() {
 
 #[test]
 fn plugin_digest_lists_workers_and_reports_usage_errors() {
-    case(
+    let root = tempfile::tempdir().unwrap();
+    let args = [
         "plugin-digest",
-        &["plugin-digest", "--plugin-root", "/nonexistent-plugins"],
-        "calternal plugin-digest",
-        &|s| s.to_owned(),
-    );
+        "--plugin-root",
+        root.path().to_str().unwrap(),
+    ];
+    let human = run(&args);
+    assert_eq!(human.exit, Some(0));
+    assert!(human.stderr.is_empty());
+    let json = run(&[&args[..], &["--json"]].concat());
+    assert_eq!(json.exit, Some(0));
+    assert!(json.stderr.is_empty());
+    let report: Value = serde_json::from_str(&json.stdout).unwrap();
+    assert_shape("calternal plugin-digest", &report);
+    let seed: Value = serde_json::from_str(include_str!("../trusted-plugins.json")).unwrap();
+    let expected: Vec<_> = seed["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|entry| Some((entry["id"].as_str().unwrap(), entry["worker"].as_str()?)))
+        .collect();
+    let rows = report["data"]["workers"].as_array().unwrap();
+    assert_eq!(rows.len(), expected.len());
+    for (row, (id, worker)) in rows.iter().zip(expected) {
+        assert_eq!(row["id"], id);
+        assert_eq!(row["worker"], worker);
+        assert_eq!(row["pinned"], false);
+        assert!(row["sha256"].is_null());
+        assert!(row["state"].as_str().unwrap().starts_with("unreadable:"));
+        assert!(
+            human.stdout.lines().any(|line| {
+                line.strip_prefix(id).is_some_and(|rest| {
+                    rest.starts_with(' ') && rest.trim_start().starts_with(worker)
+                })
+            }),
+            "missing worker {id} in human output"
+        );
+    }
     case(
         "plugin-digest-usage",
         &["plugin-digest", "--plugin-root"],
