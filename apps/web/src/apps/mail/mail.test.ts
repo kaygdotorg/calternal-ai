@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { compile, evaluate } from "@calternal/genui";
 import { folderLabel, listView, lit, messageView, setupView } from "@calternal/mail/views";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import GenUi from "../../genui/GenUi.svelte";
 import { FixtureMailClient, FIXTURE_ACCOUNT } from "./fixtures";
 import { MailStore } from "./store.svelte";
@@ -124,6 +124,11 @@ describe("Mail store", () => {
 });
 
 describe("Mail screens in the shell", () => {
+  // jsdom has no IntersectionObserver or matchMedia; the header tracker (shared, tested in packages/ui) only needs them to exist.
+  beforeAll(() => {
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } });
+    if (!window.matchMedia) vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  });
   it("choosing a message in the sidebar opens it in the pane, marks it read and a typed form value survives a redraw", async () => {
     const { mail } = await import("./store.svelte");
     const Sidebar = (await import("./Sidebar.svelte")).default;
