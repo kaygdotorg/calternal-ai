@@ -17,8 +17,6 @@ import { textAttrs } from "../text/attrs";
 import { grouping } from "./grouping";
 import { textKeymap } from "./keys";
 import { blockChrome } from "./chrome";
-import { frontmatterReport } from "./report";
-import { caretFacts, convertChanges, toggleBold, type BlockType } from "./convert";
 import { allLoaded, loadedExtensions, missing, prepare } from "./features";
 import { ensureId } from "./ids";
 import { headingsOf, type Heading } from "./headings";
@@ -51,8 +49,6 @@ export interface BlockEditorOptions {
   readOnly?: boolean;
   /** Extra extensions from the host. */
   extensions?: Extension;
-  /** The note's frontmatter as `key: value` pairs: called when the editor is built and whenever a change touches the block, never for a change in the body. */
-  onFrontmatter?: (fm: Record<string, string>) => void;
 }
 
 /** The handle a host holds: read and replace the text, apply changes with an origin, ask about headings and blocks, run block actions as single undoable changes, scroll, focus, undo and redo, and destroy (the host must not call it after that). */
@@ -79,17 +75,6 @@ export interface BlockEditor {
   ensureBlockId(pos: number): string;
   /** Puts the caret in the editor. */
   focus(): void;
-  /** Turns the lines under the selection into another kind of block, as one undoable change. */
-  convert(type: BlockType): void;
-  /** Toggles bold on the selection, as one undoable change. */
-  toggleBold(): void;
-  /** The kind of the block under the caret and whether the selection is bold. Reads one line. */
-  caret(): { type: BlockType; bold: boolean };
-  /**
-   * Calls `cb` with the caret's facts now and after every selection or text change until the returned function is called. Nothing runs per key while nobody watches: the listener is added to the
-   * editor only for the duration of a watch (the Style sheet's block tab).
-   */
-  watchCaret(cb: (f: { type: BlockType; bold: boolean }) => void): () => void;
   /** Undoes the last step; returns false when there is nothing to undo. */
   undo(): boolean;
   /** Redoes the last undone step; returns false when there is nothing to redo. */
@@ -103,8 +88,6 @@ export function createBlockEditor(o: BlockEditorOptions): BlockEditor {
   const ime = new ImeGate();
   const own = (tr: Transaction): Origin => tr.annotation(origin) ?? "user";
   const lazy = new Compartment(); // the lazy pieces loaded so far (features.ts)
-  const watchers = new Compartment(); // empty unless someone watches the caret (watchCaret)
-  let active: Extension[] = []; // the caret watchers now, kept across a whole-text replacement
   const extensions = (): Extension[] => [
     new LanguageSupport(markdownLanguage),
     lazy.of(loadedExtensions()),
@@ -141,8 +124,6 @@ export function createBlockEditor(o: BlockEditorOptions): BlockEditor {
       const near = d.sliceString(d.line(first).from, Math.min(d.line(last).to, d.line(first).from + 4000));
       if (missing(near).length) void prepare(near).then((n) => { if (n) refresh(); });
     }),
-    ...(o.onFrontmatter ? [frontmatterReport.of(o.onFrontmatter)] : []),
-    watchers.of(active),
     o.extensions ?? [],
   ];
   const view = new EditorView({ state: EditorState.create({ doc: o.text, extensions: extensions() }), parent: o.parent });
@@ -175,33 +156,6 @@ export function createBlockEditor(o: BlockEditorOptions): BlockEditor {
     ensureBlockId(pos) { const r = ensureId(view.state, pos); if (r.change) apply(r.change); return r.id; },
     scrollTo(pos) { view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "start", yMargin: 8 }) }); },
     focus() { view.focus(); },
-    convert(type) { apply(convertChanges(view.state, type)); },
-    toggleBold() { view.dispatch({ ...toggleBold(view.state), annotations: [origin.of("command")] }); },
-    caret: () => caretFacts(view.state),
-    watchCaret(cb) {
-      const ext = EditorView.updateListener.of((u) => { if (u.selectionSet || u.docChanged) cb(caretFacts(u.state)); });
-      active = [...active, ext];
-      view.dispatch({ effects: watchers.reconfigure(active) });
-      cb(caretFacts(view.state));
-      return () => { active = active.filter((x) => x !== ext); if (view.dom.isConnected) view.dispatch({ effects: watchers.reconfigure(active) }); };
-    },
-    ensureBlockId(pos) { const r = ensureId(view.state, pos); if (r.change) apply(r.change); return r.id; },
-    scrollTo(pos) { view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "start", yMargin: 8 }) }); },
-    focus() { view.focus(); },
-    convert(type) { apply(convertChanges(view.state, type)); },
-    toggleBold() { view.dispatch({ ...toggleBold(view.state), annotations: [origin.of("command")] }); },
-    caret: () => caretFacts(view.state),
-    watchCaret(cb) {
-      const ext = EditorView.updateListener.of((u) => { if (u.selectionSet || u.docChanged) cb(caretFacts(u.state)); });
-      const all = (watching = [...watching, ext]) => view.dispatch({ effects: watchers.reconfigure(watching) });
-      let watching: Extension[] = [];
-      watching = [...(watchersOf.get(view) ?? []), ext];
-      watchersOf.set(view, watching);
-      view.dispatch({ effects: watchers.reconfigure(watching) });
-      cb(caretFacts(view.state));
-      void all;
-      return () => { const w = (watchersOf.get(view) ?? []).filter((x) => x !== ext); watchersOf.set(view, w); if (view.dom.isConnected) view.dispatch({ effects: watchers.reconfigure(w) }); };
-    },
     undo: () => undo(view),
     redo: () => redo(view),
     destroy() { stopProbe(); view.destroy(); },

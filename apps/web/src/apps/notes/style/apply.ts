@@ -41,4 +41,4 @@ export function pageVars(p: PageStyle): string {
 }
 
 /** Whether the page draws as a surface (a card) rather than as the bare column: any of opacity, blur, colour or a frame the note asked for. */
-export const hasSurface = (p: PageStyle, fm: Record<string, string>): boolean => p.opacity !== null || p.blur !== null || p.colour !== "default" || "calternal-frame" in fm || p.grain;
+export const hasSurface = (p: PageStyle, fm: Record<string, string>): boolean => p.opacity !== null || p.blur !== null || p.colour !== "default" || "calternal-frame" in fm || p.grain || p.theme !== "";
