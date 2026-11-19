@@ -1,4 +1,4 @@
-//! Wire protocol between the server role and the machine role, version 4.
+//! Wire protocol between the server and machine roles.
 //!
 //! The machine always connects out; the server never opens a connection to a
 //! machine. Everything is plain JSON over HTTP(S) requests the machine makes:
@@ -10,6 +10,7 @@
 //! | `POST /api/v1/machine/session/finish` | Sign it with the machine key ([`SessionFinish`] → [`SessionGranted`]). |
 //! | `POST /api/v1/machine/sync` | Long-poll: report state, receive work ([`SyncRequest`] → [`SyncResponse`]). |
 //! | `POST /api/v1/machine/output` | Upload exec output ([`OutputPost`] → [`OutputAck`]). |
+//! | `POST /api/v1/machine/preview-output` | Upload the same output frames for an active preview without creating a missing stream. |
 //!
 //! Why long-poll rather than a websocket or SSE: it needs no new dependency on
 //! either side, passes any HTTP proxy that already fronts the server, reuses the
@@ -27,7 +28,7 @@ use calternal_types::{AccountId, SpaceId};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Protocol version spoken by this build; the server refuses other versions.
+/// Highest protocol version supported by this build.
 pub const PROTOCOL_VERSION: u32 = 9;
 
 /// First machine protocol that supports a sandbox-local HTTP preview.

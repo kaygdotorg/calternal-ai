@@ -22,8 +22,8 @@ use uuid::Uuid;
 use crate::Error;
 use crate::link::Link;
 use crate::protocol::{
-    Capacity, Chunk, ChunkEvent, Down, ExitInfo, LeaseReport, OutputAck, OutputPost, SandboxSpec,
-    SandboxState,
+    Capacity, Chunk, ChunkEvent, Down, ExitInfo, LeaseReport, OutputAck, OutputPost,
+    PreviewRequest, SandboxSpec, SandboxState,
 };
 use crate::sandbox::{Backend, Exec, ExecRequest, OutputEvent, Sandbox, failed_exec};
 
@@ -35,6 +35,11 @@ const POST_BYTES: usize = 1024 * 1024;
 const COALESCE: Duration = Duration::from_millis(20);
 
 type SandboxCell = OnceCell<Result<Arc<dyn Sandbox>, String>>;
+
+enum ExecAction {
+    Command(ExecRequest),
+    Preview(PreviewRequest),
+}
 
 struct Slot {
     lease_id: Uuid,
@@ -271,11 +276,11 @@ impl Runner {
         lease_id: Uuid,
         fence: u64,
         exec_id: Uuid,
-        mut action: Result<ExecRequest, crate::protocol::PreviewRequest>,
+        mut action: ExecAction,
     ) {
-        let preview = action.is_err();
+        let preview = matches!(&action, ExecAction::Preview(_));
         let (ready, input) = tokio::sync::watch::channel(None);
-        if let Ok(request) = &mut action {
+        if let ExecAction::Command(request) = &mut action {
             request.env.retain(|(key, _)| key != "CALTERNAL_URL");
             request
                 .env
@@ -303,7 +308,7 @@ impl Runner {
                 (Some(s), Some(sandbox)) => {
                     // Preview messages are queued once and deduplicated by the
                     // session sequence. Only ordinary execs can get a new seq.
-                    if action.is_ok() && !s.execs.lock().expect("execs").insert(exec_id) {
+                    if !preview && !s.execs.lock().expect("execs").insert(exec_id) {
                         return;
                     }
                     match me.sandbox(s, sandbox).await {
@@ -362,7 +367,7 @@ impl Runner {
                     lease_id,
                     fence,
                     exec_id,
-                    Ok(ExecRequest {
+                    ExecAction::Command(ExecRequest {
                         argv,
                         stdin,
                         env,
@@ -376,7 +381,7 @@ impl Runner {
                 exec_id,
                 request,
             } => {
-                self.start_exec(lease_id, fence, exec_id, Err(request));
+                self.start_exec(lease_id, fence, exec_id, ExecAction::Preview(request));
             }
             Down::Input {
                 lease_id,
