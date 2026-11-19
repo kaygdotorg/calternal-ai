@@ -290,3 +290,57 @@ and never calls `chrome()`. The shell enforces the other direction: a descriptio
 `{native: false, reason: "unsupported-version", supported: [1]}` (a malformed one with `reason: "rejected"`), and if native chrome was on it is removed, so the
 page gets its own chrome back on any mismatch. Verified in the Simulator (version 2 refused with `supported: [1]`; a bad sidebar title rejected). Versions are
 additive within a number; a new number means the old one stays supported by the shell for as long as pages in the field publish it.
+
+## System primitives audit (2026-11-19)
+
+Rule (owner): use the platform's own primitives; a custom component needs a stated reason. The chrome renderer now draws with these; CalternalUI's `Pill`,
+`IconButton`, `ActionButton`, `SegmentedCapsule`, `BottomTabCapsule`, `ToolbarPill`, `Row`, `Badge`, `AttentionCard`, the press and bounce style and
+`AppSwitcherMenu` are no longer used by the chrome (they remain for the design-system preview).
+
+| Component | System primitive used | Stays custom, and why |
+| --- | --- | --- |
+| Mac window: columns, sidebar toggle | `NavigationSplitView`, `.toolbar`, `.toolbar(removing: .title)`, `.windowToolbarStyle(.unified)` | |
+| Title, centred at the top (Mac) | `ToolbarItem(placement: .principal)` with a `Button` | |
+| Title, centred at the top (phone) | `Button` with `.buttonStyle(.glass)` over a `ZStack` | the arrangement: a navigation bar's principal slot is not available over a sliding card |
+| Header buttons and menus | `Button` / `Menu` with `.buttonStyle(.glass)`, `.buttonBorderShape(.circle)`, `GlassEffectContainer`; Mac: `ToolbarItemGroup(.primaryAction)` | |
+| Phone sidebar drawer (card slides aside) | `withAnimation`/springs, system `scrollEdgeEffectStyle` | the slide: `NavigationSplitView` collapses to push navigation on an iPhone, no system container slides a card over a sidebar |
+| Sidebar list, selection, arrow keys, Home/End, type-to-select | `List(selection:)`, `.listStyle(.sidebar)` (Mac) / `.plain` (phone), `Label`, `Section(isExpanded:)` | |
+| Row swipe actions, context menu, refresh | `.swipeActions`, `.contextMenu`, `.refreshable` | |
+| Counts and marks | `Text`, `Image(systemName:)` | `.badge` takes one number or text; rows here carry several marks (dot, warning, count) |
+| Selector (Inbox / All) | `Picker` with `.pickerStyle(.segmented)` | |
+| Attention card | `GroupBox`, `.buttonStyle(.bordered)` / `.borderedProminent` | |
+| App switcher | `Picker` `.segmented` of icon-only `Label`s, in the sidebar footer | |
+| Account | `Menu` with `.buttonStyle(.glass)` | |
+| Search | Mac: `.searchable(placement: .sidebar)`; phone: `TextField` | phone: the drawer is not a navigation context, so `searchable` has nowhere to live |
+| Rename prompt | `.alert` with a `TextField` | |
+| Window base layer (Mac) | `.containerBackground(for: .window)`, `.glassEffect`, `.regularMaterial`, `.toolbarBackgroundVisibility(.hidden, for: .windowToolbar)` | the wallpaper picture and its solved veils: no system material knows the person's wallpaper |
+| Wallpaper pane behind the phone card | none | the design's pane (blurred copy under the veil) |
+| Windowed long list | `List`, `Color.clear` spacer rows | the system list has no virtual data source: spacer rows stand for the rows the page did not send |
+| Icons | `Image(systemName:)` through the catalogue `IconName` | page-supplied PNG icons (a 20 pt box) |
+| Press, hover, bounce | the system's | nothing: the custom press style was removed (it made the title pill balloon) |
+
+Not used yet and why: `NavigationStack` and sheets with detents (no screen in the chrome pushes or presents a sheet yet), `confirmationDialog` (destructive
+actions currently go to the page), `TabView` (the apps are a sidebar footer by decision, not a tab bar).
+
+## Mac window base layer: wallpaper or translucent with frost
+
+Following the owner's own app (kayg/hermternal-apple, read-only; approach taken, no code copied): the window is `containerBackground(.clear, for: .window)`
+over **Liquid Glass** (`glassEffect(.regular, in: .rect)`), with a **frost dial** laid over the glass as a regular material at opacity 0 to 1 plus a faint
+light tint (`white` at 8 % of the dial) so full frost does not read as a dark scrim. The glass is the blur, so no material goes under it. Sidebar and card
+sit on that one base layer, not on differently coloured panes. Default: **wallpaper**, the person's own background, the same as on the web and phone;
+translucent is opt-in. Settings shape proposed to the page lane (Appearance): a Mac-only control, shown when `calternalNative.capabilities` contains
+`window-material`: "Window background: Wallpaper | Translucent", and under Translucent a "Frost" slider 0 to 1 (default 0.2, live while dragging, saved when editing
+ends). Stored with the account as `appearance.material` (`wallpaper` | `translucent`) and `appearance.frost`, published in the description; ignored on iPhone and iPad.
+Until the page sends them, the Mac app's own Settings (Cmd-,) holds the same two values.
+
+## Keyboard navigation (measured on the Mac, real key events)
+
+The sidebar is a `List(selection:)`, so Up and Down, Home and End, Page Up and Down, type-to-select and the focus ring are the system's; the selection paints
+natively at once and the page hears `row` after 45 ms of quiet (a held key collapses into its last row), so the web card loads the settled item only.
+Measured with injected HID key events (autorepeat flag, the app frontmost), holding Down for 5 s through a real 5,000-row list: only about 10 key events a
+second were injected (the injector, not the system's fastest repeat of about 33 a second), 56 selection changes; paint delay after each change median
+12.7 ms, 95th percentile 124 ms, worst 187 ms; the first selection after launch 470 to 505 ms (building the list). **The budget (0 hitches, paint within one
+frame at the system's fastest repeat) is not met**: the median is about 1.5 frames at 120 Hz and the tail is long; the cause (SwiftUI list update and row
+realisation) is not yet traced (an Instruments export failed). A first version that read the selection in the list's body was 22 ms median: the selection is
+now read only by a tiny reporter view. Windowed lists cannot be walked past the window with the keys (spacer rows are not selectable): a sentinel row that
+requests the next window is the open item. The iPhone with a hardware keyboard uses the same list; not measured.

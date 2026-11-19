@@ -4,92 +4,529 @@
   "title": "Chrome description v1",
   "description": "DRAFT (2026-11-19, lane ios-shell). What a page or plugin publishes so each platform draws the app's navigation chrome natively. Generic: no Calternal-specific fields. Additive changes only within v1; readers ignore unknown fields. Types for TypeScript and Swift are to be generated from this file (today the Swift types are CalternalUI/Chrome/ChromeDescription.swift, hand-written to match).",
   "type": "object",
-  "required": ["version"],
+  "required": [
+    "version"
+  ],
   "properties": {
-    "version": { "const": 1 },
-    "revision": { "type": "integer", "minimum": 0, "description": "Rises with each publication; echoed in events." },
-    "scheme": { "enum": ["light", "dark"] },
-    "accent": { "$ref": "#/$defs/hex" },
-    "appearance": { "$ref": "#/$defs/appearance" },
-    "header": { "$ref": "#/$defs/header" },
-    "sidebar": { "$ref": "#/$defs/sidebar" }
+    "version": {
+      "const": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Rises with each publication; echoed in events."
+    },
+    "scheme": {
+      "enum": [
+        "light",
+        "dark"
+      ]
+    },
+    "accent": {
+      "$ref": "#/$defs/hex"
+    },
+    "appearance": {
+      "$ref": "#/$defs/appearance"
+    },
+    "header": {
+      "$ref": "#/$defs/header"
+    },
+    "sidebar": {
+      "$ref": "#/$defs/sidebar"
+    }
   },
   "$defs": {
-    "hex": { "type": "string", "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$" },
+    "hex": {
+      "type": "string",
+      "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+    },
     "icon": {
       "description": "A catalogue icon name (string shorthand) or an object. Catalogue names are CalternalUI IconName / the web's icon set; symbol is an SF Symbol escape; image is a PNG/JPEG data URL (no SVG).",
       "oneOf": [
-        { "type": "string" },
-        { "type": "object", "properties": { "name": { "type": "string" }, "symbol": { "type": "string" }, "image": { "type": "string", "pattern": "^data:image/(png|jpeg);base64," } }, "additionalProperties": true }
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "symbol": {
+              "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "pattern": "^data:image/(png|jpeg);base64,"
+            }
+          },
+          "additionalProperties": true
+        }
       ]
     },
     "item": {
-      "type": "object", "required": ["id", "title"],
+      "type": "object",
+      "required": [
+        "id",
+        "title"
+      ],
       "properties": {
-        "id": { "type": "string" }, "title": { "type": "string" }, "icon": { "$ref": "#/$defs/icon" },
-        "role": { "enum": ["destructive"] }, "disabled": { "type": "boolean" }, "checked": { "type": "boolean" }, "sub": { "type": "string" }, "hint": { "type": "string" },
-        "input": { "type": "object", "properties": { "placeholder": { "type": "string" }, "value": { "type": "string" } }, "description": "Ask for text first; returned as event.text." },
-        "menu": { "type": "array", "items": { "$ref": "#/$defs/item" } }
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "icon": {
+          "$ref": "#/$defs/icon"
+        },
+        "role": {
+          "enum": [
+            "destructive"
+          ]
+        },
+        "disabled": {
+          "type": "boolean"
+        },
+        "checked": {
+          "type": "boolean"
+        },
+        "sub": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "placeholder": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "description": "Ask for text first; returned as event.text."
+        },
+        "menu": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/item"
+          }
+        }
       }
     },
     "badge": {
-      "type": "object", "required": ["kind"],
-      "properties": { "kind": { "enum": ["dot", "count", "text", "icon", "symbol"] }, "value": { "type": "string" }, "tone": { "enum": ["info", "warn", "bad"] } }
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "dot",
+            "count",
+            "text",
+            "icon",
+            "symbol"
+          ]
+        },
+        "value": {
+          "type": "string"
+        },
+        "tone": {
+          "enum": [
+            "info",
+            "warn",
+            "bad"
+          ]
+        }
+      }
     },
     "appearance": {
       "type": "object",
       "properties": {
-        "wallpaper": { "type": ["string", "null"], "description": "auto, a built-in name or id, or null for none." },
-        "blur": { "type": "boolean" }, "dim": { "type": "boolean" }, "tint": { "type": "boolean" }, "uiSize": { "type": "number", "minimum": 0.5, "maximum": 2 }
+        "wallpaper": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "auto, a built-in name or id, or null for none."
+        },
+        "blur": {
+          "type": "boolean"
+        },
+        "dim": {
+          "type": "boolean"
+        },
+        "tint": {
+          "type": "boolean"
+        },
+        "uiSize": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 2
+        },
+        "material": {
+          "enum": [
+            "wallpaper",
+            "translucent"
+          ],
+          "description": "Mac only (shell capability window-material); ignored elsewhere. translucent = Liquid Glass with the desktop showing through, plus frost."
+        },
+        "frost": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "How frosted a translucent window is: 0 pure Liquid Glass, 1 fully frosted; default 0.2."
+        },
+        "image": {
+          "type": "string",
+          "pattern": "^data:image/",
+          "description": "One-time wallpaper picture for library or custom wallpapers the shell cannot fetch."
+        }
       }
     },
     "header": {
       "type": "object",
-      "properties": { "leading": { "type": "array", "items": { "$ref": "#/$defs/item" } }, "title": { "type": "string" }, "trailing": { "type": "array", "items": { "$ref": "#/$defs/item" } } }
+      "properties": {
+        "leading": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/item"
+          }
+        },
+        "title": {
+          "type": "string"
+        },
+        "trailing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/item"
+          }
+        }
+      }
     },
     "row": {
-      "type": "object", "required": ["id", "title"],
+      "type": "object",
+      "required": [
+        "id",
+        "title"
+      ],
       "properties": {
-        "id": { "type": "string" }, "title": { "type": "string" }, "detail": { "type": "string" }, "icon": { "$ref": "#/$defs/icon" },
-        "trailing": { "type": "array", "items": { "$ref": "#/$defs/badge" } }, "selected": { "type": "boolean" }, "label": { "type": "string" }, "hint": { "type": "string" },
-        "leadingActions": { "type": "array", "items": { "$ref": "#/$defs/item" } }, "trailingActions": { "type": "array", "items": { "$ref": "#/$defs/item" } }, "menu": { "type": "array", "items": { "$ref": "#/$defs/item" } }
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "icon": {
+          "$ref": "#/$defs/icon"
+        },
+        "trailing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/badge"
+          }
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "leadingActions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/item"
+          }
+        },
+        "trailingActions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/item"
+          }
+        },
+        "menu": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/item"
+          }
+        }
       }
     },
     "section": {
-      "type": "object", "required": ["id", "rows"],
+      "type": "object",
+      "required": [
+        "id",
+        "rows"
+      ],
       "properties": {
-        "id": { "type": "string" }, "title": { "type": "string" }, "collapsed": { "type": "boolean" }, "menu": { "type": "array", "items": { "$ref": "#/$defs/item" } }, "actions": { "type": "array", "items": { "$ref": "#/$defs/item" } },
-        "rows": { "type": "array", "items": { "$ref": "#/$defs/row" } },
-        "count": { "type": "integer", "minimum": 0, "description": "Total rows when rows is only a window; windowed rows are one fixed height." },
-        "offset": { "type": "integer", "minimum": 0, "description": "Index of rows[0] in the full list." }
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "collapsed": {
+          "type": "boolean"
+        },
+        "menu": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/item"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/item"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/row"
+          }
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total rows when rows is only a window; windowed rows are one fixed height."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index of rows[0] in the full list."
+        }
       }
     },
     "card": {
-      "type": "object", "required": ["id", "title"],
-      "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "detail": { "type": "string" }, "icon": { "$ref": "#/$defs/icon" }, "tone": { "enum": ["info", "warn", "bad"] }, "primary": { "$ref": "#/$defs/item" }, "secondary": { "$ref": "#/$defs/item" } }
+      "type": "object",
+      "required": [
+        "id",
+        "title"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "icon": {
+          "$ref": "#/$defs/icon"
+        },
+        "tone": {
+          "enum": [
+            "info",
+            "warn",
+            "bad"
+          ]
+        },
+        "primary": {
+          "$ref": "#/$defs/item"
+        },
+        "secondary": {
+          "$ref": "#/$defs/item"
+        }
+      }
     },
     "selector": {
-      "type": "object", "required": ["id", "options", "selected"],
-      "properties": { "id": { "type": "string" }, "selected": { "type": "string" }, "options": { "type": "array", "items": { "type": "object", "required": ["id", "title"], "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "badge": { "type": "string" } } } } }
+      "type": "object",
+      "required": [
+        "id",
+        "options",
+        "selected"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "selected": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "badge": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
     },
     "sidebar": {
       "type": "object",
       "properties": {
-        "open": { "type": "boolean", "description": "Page-controlled; followed when it changes." }, "refresh": { "type": "boolean" },
-        "title": { "type": "string" }, "titleImage": { "type": "string" }, "titleImageTemplate": { "type": "boolean" },
-        "cards": { "type": "array", "items": { "$ref": "#/$defs/card" } }, "selectors": { "type": "array", "items": { "$ref": "#/$defs/selector" } }, "sections": { "type": "array", "items": { "$ref": "#/$defs/section" } },
-        "apps": { "type": "array", "items": { "type": "object", "required": ["id", "title", "icon"], "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "icon": { "$ref": "#/$defs/icon" }, "selected": { "type": "boolean" } } } },
-        "account": { "type": "object", "required": ["id", "initial"], "properties": { "id": { "type": "string" }, "initial": { "type": "string" }, "title": { "type": "string" }, "menu": { "type": "array", "items": { "$ref": "#/$defs/item" } } } },
-        "search": { "type": "object", "properties": { "placeholder": { "type": "string" } } }
+        "open": {
+          "type": "boolean",
+          "description": "Page-controlled; followed when it changes."
+        },
+        "refresh": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        },
+        "titleImage": {
+          "type": "string"
+        },
+        "titleImageTemplate": {
+          "type": "boolean"
+        },
+        "cards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/card"
+          }
+        },
+        "selectors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/selector"
+          }
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/section"
+          }
+        },
+        "apps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "icon"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "icon": {
+                "$ref": "#/$defs/icon"
+              },
+              "selected": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "account": {
+          "type": "object",
+          "required": [
+            "id",
+            "initial"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "initial": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "menu": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/item"
+              }
+            }
+          }
+        },
+        "search": {
+          "type": "object",
+          "properties": {
+            "placeholder": {
+              "type": "string"
+            }
+          }
+        }
       }
     },
     "event": {
       "description": "Sent to the page as window event calternal:chrome with this detail.",
-      "type": "object", "required": ["type", "sentAt"],
+      "type": "object",
+      "required": [
+        "type",
+        "sentAt"
+      ],
       "properties": {
-        "type": { "enum": ["row", "action", "menu", "selector", "app", "header", "account", "search", "section", "sidebar", "refresh", "window"] },
-        "id": { "type": "string" }, "rowId": { "type": "string" }, "option": { "type": "string" }, "text": { "type": "string" }, "open": { "type": "boolean" }, "from": { "type": "integer" }, "to": { "type": "integer" },
-        "revision": { "type": "integer" }, "sentAt": { "type": "number", "description": "ms since 1970, for latency measurement" }
+        "type": {
+          "enum": [
+            "row",
+            "action",
+            "menu",
+            "selector",
+            "app",
+            "header",
+            "account",
+            "search",
+            "section",
+            "sidebar",
+            "refresh",
+            "window"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "option": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "open": {
+          "type": "boolean"
+        },
+        "from": {
+          "type": "integer"
+        },
+        "to": {
+          "type": "integer"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "sentAt": {
+          "type": "number",
+          "description": "ms since 1970, for latency measurement"
+        }
       }
     }
   }
