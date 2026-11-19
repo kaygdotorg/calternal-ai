@@ -81,7 +81,14 @@ manifest field.
 ```
 
 This is the value of `network`. On review, explain that the message can
-reference remote images and fonts. Enable the reviewed package in the space.
+reference remote images and fonts. A package that declares content fetch
+starts disabled, including a development draft once it reports Ready.
+As the space Manager, review the declaration and enable the package.
+
+```sh
+calternal invoke plugins.enable --input "{\"space_id\":\"$SPACE_ID\",\"plugin_id\":\"mail-preview\"}"
+```
+
 Declare `write_item` as well. Register a reversible operation with
 `required_capability: "content.write"`, `mutates: true` and
 `idempotency: "request_id"`. Its input takes a text kind and the HTML string.
