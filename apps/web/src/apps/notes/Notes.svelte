@@ -1,6 +1,7 @@
 <script lang="ts">
   // The note: the block editor in a narrow centred column with no inner card, and a thin rail at the card's left edge that expands into a small contents card (hover, focus or press;
   // Escape folds it). The document is the note's Markdown (the fixture's or the server's); every edit is kept as the note's private draft after a short pause and saved after a longer one.
+  import { titleOf as titleFrom } from "./title";
   import { getContext, untrack } from "svelte";
   import { Avatar, Button, IconButton, Menu, Panel, Pill, tip } from "@calternal/ui";
   import ShareHost from "./share/ShareHost.svelte";
@@ -54,7 +55,7 @@
   let editor = $state<NoteEditor>();
   let latest = "";
   let draftTimer = 0, saveTimer = 0;
-  const titleOf = (t: string) => /^# +(.+)$/m.exec(t)?.[1]?.trim() ?? notes.note?.title ?? "Untitled";
+  const titleOf = (t: string) => titleFrom(t, notes.note?.title ?? "Untitled");
   function edited(text: string) {
     latest = text;
     notes.touch();
