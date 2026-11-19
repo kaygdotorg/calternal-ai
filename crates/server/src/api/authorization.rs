@@ -33,6 +33,27 @@ pub(super) async fn authorize<D: Directory>(
     }
 }
 
+/// Check current delivery authority after the handler finishes. A sufficient
+/// space role needs one protected read. Item-grant fallback also reads current
+/// collection membership and propagates lookup failures before delivery.
+pub(super) async fn authorize_delivery<D: Directory>(
+    state: &Shared<D>,
+    account: AccountId,
+    policy: &authz::Policy,
+    space: SpaceId,
+    item: Option<uuid::Uuid>,
+) -> Result<(), Error> {
+    let direct = policy.check(capabilities(state, account, space).await?);
+    match (direct, item) {
+        (Err(_), Some(id)) => {
+            let (caps, _) =
+                crate::resolve::item_capabilities(state, account, space, "notes", id).await?;
+            policy.check(caps)
+        }
+        (result, _) => result,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,6 +147,151 @@ mod tests {
         assert!(
             completed,
             "a current capability read queued behind unrelated blocking work"
+        );
+    }
+
+    fn delivery_fixture() -> (
+        tempfile::TempDir,
+        Shared,
+        calternal_auth::spaces::DevelopmentIds,
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        let roots = calternal_roots::Roots {
+            appdata: root.path().join("appdata"),
+            userdata_ssd: root.path().join("ssd"),
+            userdata_hdd: root.path().join("hdd"),
+        };
+        let store = Store::open(
+            &roots,
+            uuid::Uuid::from_u128(1),
+            true,
+            calternal_content::DEFAULT_RECEIPT_RETENTION,
+        )
+        .unwrap();
+        let directory = StoredDirectory::load_or_create(&roots.appdata).unwrap();
+        let ids = directory.spaces.seed_development().unwrap();
+        let state = Arc::new(AppState {
+            blocking: crate::blocking::RequestWorkers::new().unwrap(),
+            inputs: store.account_inputs(),
+            store,
+            directory,
+            registry: Registry::empty(),
+            workers: WorkerPool::new(None),
+            jobs: Jobs::disabled(),
+            allowed_hosts: allowed_hosts(0),
+        });
+        (root, state, ids)
+    }
+
+    #[test]
+    fn owner_note_delivery_checks_current_authority_while_the_content_writer_is_held() {
+        let (_root, state, ids) = delivery_fixture();
+        let note = state
+            .store
+            .create(
+                ids.owner,
+                "create",
+                "notes.create",
+                "create",
+                ids.shared,
+                "Delivery fixture",
+                "body",
+            )
+            .unwrap();
+        let item = uuid::Uuid::parse_str(&note.id).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let (entered, ready) = tokio::sync::oneshot::channel();
+            let (release, blocked) = std::sync::mpsc::channel();
+            let holder_state = state.clone();
+            let holder = tokio::task::spawn_blocking(move || {
+                holder_state
+                    .store
+                    .content()
+                    .with_live_metadata(ids.shared, "notes", item, |_| {
+                        let _ = entered.send(());
+                        let _ = blocked.recv();
+                        Ok(())
+                    })
+                    .unwrap();
+            });
+            ready.await.unwrap();
+            let policy = authz::policy("notes.update").unwrap();
+            let delivered = tokio::time::timeout(
+                Duration::from_secs(1),
+                authorize_delivery(&state, ids.owner, policy, ids.shared, Some(item)),
+            )
+            .await;
+            release.send(()).unwrap();
+            holder.await.unwrap();
+            delivered
+                .expect("the current space role must be checked independently of placement")
+                .unwrap();
+        });
+    }
+
+    #[test]
+    fn item_only_note_delivery_refuses_a_revoked_edit_grant() {
+        let (_root, state, ids) = delivery_fixture();
+        let space = ids.personal;
+        let note = state
+            .store
+            .create(
+                ids.owner,
+                "create",
+                "notes.create",
+                "create",
+                space,
+                "Shared delivery fixture",
+                "body",
+            )
+            .unwrap();
+        let item = uuid::Uuid::parse_str(&note.id).unwrap();
+        let directory = &state.directory.spaces;
+        assert!(directory.capabilities(ids.guest, space).unwrap().is_none());
+        let grant = directory
+            .grant_item(
+                ids.owner,
+                space,
+                item,
+                "notes".into(),
+                calternal_auth::sharing::Audience::Account(ids.guest),
+                true,
+                ("grant", "sharing.grant", "grant"),
+            )
+            .unwrap();
+        let grant = uuid::Uuid::parse_str(grant["grant_id"].as_str().unwrap()).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let policy = authz::policy("notes.update").unwrap();
+        runtime
+            .block_on(authorize_delivery(
+                &state,
+                ids.guest,
+                policy,
+                space,
+                Some(item),
+            ))
+            .unwrap();
+
+        let delivery = authorize_delivery(&state, ids.guest, policy, space, Some(item));
+        directory
+            .revoke_item(
+                ids.owner,
+                space,
+                item,
+                grant,
+                ("revoke", "sharing.revoke", "revoke"),
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.block_on(delivery).unwrap_err().code,
+            calternal_core::ErrorCode::NotFound
         );
     }
 }
