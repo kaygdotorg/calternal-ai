@@ -75,7 +75,7 @@ root or use raw network sockets.
 | --- | --- |
 | Asleep | Serve authorized engine reads and saved templates. An admitted logic call, runnable job or due schedule can wake. A signed wait webhook wakes only via a winning signal that makes a job runnable. Cache misses, page reads, public links and rejected requests do not wake. |
 | Waking | Coalesce wakes into one placement lease. Reserve capacity first. Recheck queued authority before first dispatch. Late startup after cancellation discards the old work. |
-| Awake | Reuse processes between calls. Per-call execution begins after wake and has its own deadline (Q1). Work needing longer is a durable job outside the interactive budget. A package crash retires that process and its tickets. Other packages continue. |
+| Awake | Reuse processes between calls. A tap has three seconds of plugin execution after a separate short wake allowance. Slower work uses a durable job with progress. A package crash retires that process and its tickets. Other packages continue. |
 | Draining → going to sleep | Stop admissions to the current epoch, drain within the placement bound, cancel/fence the remainder and retain committed engine effects and checkpoints. Close I/O, stop with acknowledged teardown or durable placement revocation, then sleep. A racing wake coalesces after shutdown. |
 
 Nothing in memory is required to survive sleep. First release proves clean
@@ -295,6 +295,15 @@ its answer/approve/deny receipt rules. A job park and a Turn reference
 the same request type and resolver. Approvals bind the material action,
 target, grantee and lifetime. Irreversible lifecycle actions use one-use
 confirmation. A stored approval cannot substitute for a live grant.
+
+Background work has no single interactive deadline or persistent ticket.
+A schedule occurrence and each runnable job segment get fresh authority.
+A creator who loses the necessary rights or leaves the space immediately
+fences in-flight commits and future runs. Stop execution, including parked
+continuations, record a safe reason, and leave previously committed work
+intact. The scheduler or jobs engine emits the stopped status without
+waking a worker. Notification recipients and takeover are open (Q2).
+Until decided, no Manager can silently inherit the creator’s grant.
 
 Job admission persists operation, target and grant. Revalidate at claim,
 terminal park and resume, including any child and descendants. The runner
@@ -526,7 +535,10 @@ revoked entries and media from subsequent views.
 
 ## 6. Deliberate cuts
 
-Private package database, description patches and base revisions, viewer
+Data access stays brokered. If a real plugin needs bulk records or
+aggregates, consider a host-owned table store behind the broker.
+
+Description patches and base revisions, viewer
 projections, worker-published feeds, room hook acknowledgments, standalone
 inbound dispatch, direct sockets, brokered TCP pending Q9, private-network and open-internet proxy grants,
 guest Prompt execution, snapshots, and gallery listing fields are outside
@@ -563,6 +575,17 @@ get bounded development diagnostics with the actual reason and no foreign
 values. Ship a scaffold, check/test diagnostics and public-guide-only
 small-model trial for a bound view, a durable wait and refusal/retry.
 
+**Gallery submission gate.** The gallery listing requires an icon,
+description, screenshots, age rating, and a plain statement of what the
+plugin connects to and why. Keep listing metadata in the submissions
+repository. Private and agent-authored plugins need none of it. The
+plugin guide skill and SDK must generate the listing from a checked
+package, capture screenshots from fixtures and check completeness.
+Before enabling submissions, a public-guide-only author must produce a
+package and complete listing from the scaffold. The validator must accept
+it, reject an omitted required field and flag a stale connection statement
+or missing screenshot. This preparation and check require no publishing.
+
 | Case | Assertion |
 | --- | --- |
 | Wire, quotas and control | Invalid UTF-8, duplicates, deep or oversized JSON, unknown fields, forged package/epoch, frame replay and wrong direction have no effect. Saturate one package and one space while another makes progress and controls arrive or the stalled carrier fences by its watchdog. |
@@ -577,7 +600,8 @@ small-model trial for a bound view, a durable wait and refusal/retry.
 
 Exercise the real engines and enrolled carrier on disposable fixtures.
 The time limits below are spike gates measured after readiness on the
-documented fixture, separate from the product limits in Q1/Q8. Record
+documented fixture, separate from the three-second product deadline and
+plan limits (Q8). Record
 wall, payload, rows visited, reads, commits and flushes as applicable.
 Run timings that claim a performance result on the designated perf VM.
 
@@ -678,21 +702,28 @@ Rollback is a release-pair exercise. Show that a committed change remains
 readable exactly once after rollback or refuse the downgrade before it
 can discard the change. Mail still waits for a later engine contract.
 
-## Open questions for the Owner
+## Owner decisions and open questions
 
-- **Q1 Interactive deadline — OPEN.** Recommend a three-second execution budget after a distinct bounded wake allowance, subject to the carrier spike.
-- **Q2 Ticket lifetime — OPEN.** Recommend at most 60 seconds or until cancel, terminal or deadline, with renewal only through live durable job admission.
-- **Q3 Guest access to a future package store — OPEN.** Recommend granting none by default and revisiting only with an explicit item-bound profile.
-- **Q4 Gallery age ratings and screenshots — OPEN.** Recommend submissions-repo policy with optional age rating and one representative screenshot for visual apps.
-- **Q5 Private package database — OPEN for a later contract.** Keep the decided broker-only first release. Revisit only for a use case that existing engines cannot cover.
-- **Q6 Destination approver — OPEN where the decisions overlap.** Preserve the earlier Manager-approved named envelope with personal hosts inside it and the later Owner approval for plugin-wide changes. Recommend confirming the split and who can widen an envelope.
-- **Q7 Media default — OPEN (#80).** Recommend outbound disclosure at install and following #80’s recommended default on for a Manager-installed package once its destination policy is approved.
+See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/6e4bc237/docs/open-questions.md#recently-decided-2026-11-17-now-in-the-decision-records).
+
+- **Q1 Interactive deadline — DECIDED.** A tap has three seconds of plugin time after a separate short wake allowance. Slower work is a job with progress.
+- **Q2 Ticket lifetime and background ownership — OPEN.** Recommend a
+  maximum 60 seconds per live ticket. Stop scheduled/running/parked work
+  if its creator loses the required rights or leaves. Recommend notifying
+  the creator if still entitled, otherwise a space Manager/Owner with a
+  scoped stopped status and no private payload. Recommend any takeover be
+  a new, explicitly approved enrollment or job under the new actor’s
+  own rights, without replaying committed effects.
+- **Q3 Guest access to a future host-owned table store — OPEN.** Recommend granting none by default and revisiting only with an explicit item-bound profile.
+- **Q4 Gallery listings — DECIDED.** Icon, description, screenshots, age rating and plain connection disclosures are required for gallery submissions. The manifest stays small. See §7.
+- **Q5 Private package database — DECIDED.** Brokered data access only. If a real plugin needs bulk records or aggregates, consider a host-owned table store behind the broker.
+- **Q6 Destination approval — OPEN.** Await the Owner’s simplified network permission decision.
+- **Q7 Media default — OPEN (#80).** Await the simplified network permission decision.
 - **Q8 Plan mapping — OPEN pending measurement.** Recommend choosing plan ceilings from measured wake, memory and saturation rather than embedding tiers in the contract.
 
 - **Q9 Brokered TCP — OPEN for sequencing.** The Owner decided on generic TCP
-  to an approved host and port. Keep that decision on record. Recommend a
-  later dedicated broker profile with a pinned endpoint, byte and time limits,
-  and revocation proof. Direct runtime sockets remain forbidden.
+  to an approved host and port. The simplified network decision is pending.
+  Direct runtime sockets remain forbidden.
 
 ## Third-round review responses
 
