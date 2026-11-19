@@ -151,7 +151,17 @@ Activation sends the host a typed request (`$defs/Event`, `type: "invoke"`):
   repeat the effect) or `"never"` (the interface shows an unknown outcome instead of retrying). `pending: "disable"` (default) greys the action while it is in flight.
 * **Full swipe.** A full swipe performs the first action only when it sets `fullSwipe: true`, and never a confirmation.
 
-### 3.3 Outcomes
+### 3.3 Identifiers: invocation id, action id, ticket
+
+Three different things must not be confused:
+
+* **`invoke.id`**: the *action id*, chosen by the description's author, stable across revisions (`rename`, `trash`); it names the action in events and in pending state.
+* **`invocation`**: a fresh id **the renderer generates for each activation**. It is the host's idempotency key: the host maps it to its own durable *action request id*
+  and de-duplicates retries by it (`retry: keyed`), so it can be a receipt key on the host side. The renderer keeps it only to match the outcome and to retry.
+* **The space-channel ticket**: opaque, held by the host and the runtime, **never durable, never visible to a renderer, never used as a receipt or an idempotency key**.
+  Descriptions, events and outcomes never carry it.
+
+### 3.4 Outcomes
 
 The host answers (`$defs/InvokeOutcome`): `ok`, `pending` (with a host-owned **status** reference), `error` (a code and a plain message **the host writes**), `stale`,
 `refused`, plus an optional **undo** `{ref, label, expiresAt}`. `result.show` says which of toast, pending, error, undo and status the interface may show. Undo is
@@ -185,7 +195,7 @@ Each is `{type, id, config}` in `$defs/Component`; the host draws it and receive
 | `item-editor` | `item` (value source: a route or selection reference), `mode` (`edit`/`read`) | `title-change` (an invoke of `host.item.rename`), `link-open` (host handles) | A native editor is a text view over the item's document; **live rooms are an attribute of the kind**, not of the component. A metadata-only save that does not rewrite the body is required (see 10). |
 | `turn-transcript` | `thread` (value source), window as a bind | `quote` (ask in side chat), `open-item` | A long, streaming list: an index-window list with the latest turn growing; the renderer appends. |
 | `composer` | `placeholder`, `enabled`, `send` (an `invoke`) | `draft` (device only), `send` | The draft text is held on the device and becomes operation input through `{draft: composerId}`; it is cleared only after `ok`, kept on `error`. |
-| `request-card` | `request` (value source), `mechanism` (`turn-protected-request` or `job-wait-approval`) | `resolve` (an invoke of `host.approval.resolve`) | The card names which approval mechanism it serves; approve and deny show the material arguments (the trusted preview). |
+| `request-card` | `request` (value source naming the protected request record) | `resolve` (an invoke of `host.approval.resolve`) | There is **one** protected Inbox record and resolver for a job, a Turn and a host action, so the card needs no mechanism field; approve and deny show the material arguments (the trusted preview). |
 | `sealed-html-frame` | `content` (a digest, host-resolved), `height` policy | `resize`, `open-link` (host handles) | A web view without network, scripts only inside the frame; it cannot reach chrome. |
 
 ## 6. What may be cached on the device
@@ -234,12 +244,11 @@ All three are in `contract/fixtures/description-v2/` and validate against the sc
 
 Written: a bound list of `reading-item` with a read mark and a per-row "Mark read" swipe action (`fullSwipe`, safe); an empty state; the header's Add invoke
 whose inputs come from a form on the device (`{form: add, field: url}` and `title`), with `url` as a material input.
-**Cannot be written yet:**
+**Cannot be written yet (one item left):**
 * the **two-field add form itself**: a `form` content node with named fields (text, URL) that holds values on the device. The value source exists; the node is the
   web lane's content vocabulary.
-* the **per-person reminder**: nothing in a description can notify anyone. The need is a host-owned notification path (a schedule's missed-run rule, a reminder
-  kind whose due items the host turns into notifications to that person). That is the plugins lane's (feeds and schedules), not a description feature; the
-  description would only render the reminder list as another bind with a `due` mark.
+* the **per-person reminder** is not a description feature: the plugins lane maps it to `notify_creator` on the existing scheduler; the description only renders the
+  reminders as another bind with a `due` mark (the one remaining need is the content `form` node for entering it).
 
 ### 9.2 Notes: `notes-sidebar.json`
 
@@ -249,8 +258,8 @@ offers **Undo** (a host-owned reference, never worker payload); a Trash view (`t
 Trash** as a destructive confirmed `host.trash.purge`); the footer search; the header's Share with `item` and `audience` as material inputs.
 **Cannot be written yet:**
 * sections **generated per collection** (a repeater over a bind); Collections is a navigation section instead.
-* the **frontmatter style setting** and a metadata-only save under a live room: a content/editor matter (a `host.item.patch-metadata` built-in that is
-  revision-checked against the room's head is required from the plugins lane).
+* the **frontmatter style setting** is a content/editor matter; its save is `host.item.patch-metadata`, which the plugins lane maps to `item_save`'s metadata arm
+  (revision-checked against the room-backed head under the CRDT write fence).
 * the **search results** presentation: the footer search names a `bind` in the schema but the fixture leaves it out (a search bind per kind needs the host's
   search authorization).
 
@@ -261,16 +270,16 @@ with undo; a card shown while the `requests` bind has rows, whose action names t
 composer; a **composer that sends**: `turns.start` with `thread` from the route and `text` from `{draft: "composer"}`, keyed retry, pending and error shown; an approval
 **request-card** naming its mechanism (`turn-protected-request`).
 **Cannot be written yet:**
-* the **provider to icon** mapping: a row's icon read from the `provider` field needs the kind to declare an icon per value (kind metadata, not description).
-* **two approval models** (a job's `wait` of kind approval and Turns' protected request) are both reachable only through the `mechanism` field; the host must say
-  which one a given request is. Open question for the plugins lane.
+* the **provider to icon** mapping is now writable: `icon: {field, map}` is a static map owned by the renderer over an authorized typed field (it needs no engine
+  permission); an unmapped value draws the kind's icon.
+* **approval** is a single protected Inbox record and resolver for a job, a Turn and a host action (plugins lane, part A), so no mechanism field remains.
 * streaming turns need the transcript to receive appended rows; the window protocol covers replacement, so appending needs `live` windows with an `offset` that
   grows; fine, but a token-by-token update of the last row is not specified (the host republishes the row).
 
 ## 10. Open questions and what this contract does not decide
 
-1. A **metadata-only save** and the **purge** built-in must exist on the host side (plugins lane).
-2. **Notification path** for reminders (plugins lane).
+1. `host.item.patch-metadata` (maps to `item_save`'s metadata arm) and `host.trash.purge` (confirmed, Manager or Owner, as a job) are the plugins lane's, part A.
+2. Reminders notify through `notify_creator` on the existing scheduler (plugins lane, part A).
 3. **Content node types** (form, text, list, card layouts) and how they embed `bind` and `invoke` (web lane; this document reserves `$defs.contentNode`).
 4. **Generic TCP** is outside this contract; the owner's decision is recorded elsewhere and is not a description concern.
 5. **Section repeaters** (one section per item of a bind) are deferred; navigation sections cover the cases above.

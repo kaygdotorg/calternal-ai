@@ -365,13 +365,21 @@
             "field": {
               "$ref": "#/$defs/FieldName"
             },
+            "map": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Id"
+              },
+              "maxProperties": 32,
+              "description": "A static map from the value of `field` to an icon name, owned by the renderer (provider to its icon); an unmapped value draws the kind's icon."
+            },
             "kindIcon": {
               "type": "boolean",
               "description": "Use the icon the kind declares (a provider's, a note's)."
             }
           },
           "additionalProperties": false,
-          "description": "`field` reads the icon name from the row."
+          "description": "`field` reads the icon name from the row, or, with `map`, maps the field's value to one."
         }
       ]
     },

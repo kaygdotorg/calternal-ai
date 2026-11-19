@@ -45,7 +45,11 @@
           "field": "title"
         },
         "icon": {
-          "field": "provider"
+          "field": "provider",
+          "map": {
+            "claude": "claude",
+            "codex": "codex"
+          }
         },
         "marks": [
           {
@@ -132,7 +136,11 @@
           "field": "title"
         },
         "icon": {
-          "field": "provider"
+          "field": "provider",
+          "map": {
+            "claude": "claude",
+            "codex": "codex"
+          }
         },
         "marks": [
           {
@@ -328,8 +336,7 @@
           "request": {
             "bind": "requests",
             "field": "id"
-          },
-          "mechanism": "turn-protected-request"
+          }
         }
       },
       {
