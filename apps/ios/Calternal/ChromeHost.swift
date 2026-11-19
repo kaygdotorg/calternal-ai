@@ -59,12 +59,14 @@ final class ChromeHost: NSObject, UIGestureRecognizerDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(textSizeChanged), name: UIContentSizeCategory.didChangeNotification, object: nil)
         apply(description)
         textSizeChanged()
+        Measure.runScripts(store: store, wide: shell.view.bounds.width >= 760) { [weak self] in findScrollHandle(in: self?.hosting.view) }
     }
 
     /// A new description from the page.
     @MainActor
     func update(_ description: ChromeDescription) {
         store.update(description)
+        Measure.chromeApplied()
         apply(description)
     }
 

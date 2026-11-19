@@ -11,7 +11,9 @@ import os
 final class ShellViewController: UIViewController {
     /// The web view; created in `loadView`-time init so the bridge can reach it.
     let webView: WKWebView
-    private let bridge = NativeBridge()
+    private let bridge = BridgeCore()
+    /// The menu being shown, kept alive until it resolves.
+    var menuPresenter: MenuPresenter?
     private let cover = UIView()
     private let log = Logger(subsystem: "cloud.calternal.app", category: "shell")
     private var colourObservation: NSKeyValueObservation?
@@ -35,7 +37,7 @@ final class ShellViewController: UIViewController {
         webView = WKWebView(frame: .zero, configuration: config)
         pageColour = Self.rememberedColour ?? UIColor(named: "LaunchBackground") ?? .black
         super.init(nibName: nil, bundle: nil)
-        bridge.host = self
+        bridge.platform = self
         config.userContentController.addScriptMessageHandler(bridge, contentWorld: .page, name: "calternal")
     }
 
@@ -248,6 +250,7 @@ final class ShellViewController: UIViewController {
             chromeHost?.tearDown(); chromeHost = nil
             return reply(["native": false], nil)
         }
+        Measure.chromeArrived()
         do {
             let description = try ChromeDescription.decode(object)
             if let host = chromeHost { host.update(description) } else {

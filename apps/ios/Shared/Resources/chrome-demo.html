@@ -59,7 +59,7 @@
       selectors: [{ id: 'filter', options: [{ id: 'inbox', title: 'Inbox', badge: String(store.threads.filter(t => t.unread).length) }, { id: 'all', title: 'All Threads' }], selected: store.filter }],
       sections: [{ id: 'main', rows: [{ id: 'new', title: 'New thread', icon: { icon: 'plus' } }, { id: 'automations', title: 'Automations', icon: 'pulse' }, { id: 'skills', title: 'Skills', icon: 'terminal' }] },
         { id: 'threads', title: 'Threads', actions: [{ id: 'add', title: 'New thread', icon: 'plus' }], menu: [{ id: 'read-all', title: 'Mark all read', icon: 'check' }], rows: shown().map(row) },
-        { id: 'notes', title: 'Notes (5000)', count: 5000, offset: noteOffset(), rows: noteRows() }],
+        ...(location.hash === '#small' ? [] : [{ id: 'notes', title: 'Notes (5000)', count: 5000, offset: noteOffset(), rows: noteRows() }])],
       apps: [{ id: 'threads', title: 'Threads', icon: 'threads', selected: true }, { id: 'notes', title: 'Notes', icon: 'notes' }, { id: 'settings', title: 'Settings', icon: 'settings' }],
       account: { id: 'account', initial: 'K', title: 'Account', menu: [{ id: 'space-personal', title: 'Personal', checked: true, sub: 'kayg' }, { id: 'settings', title: 'Settings', icon: 'settings' }, { id: 'signout', title: 'Sign out', icon: 'back', role: 'destructive' }] }, search: { placeholder: 'Search threads' } },
   });

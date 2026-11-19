@@ -30,8 +30,9 @@ public struct ChromeShellView<WebCard: View>: View {
             let dark = store.description.scheme.map { $0 == "dark" } ?? (d.scheme == .dark)
             let chosen = Self.palette(look?.wallpaper, dark: dark)
             let sideWidth = wide && store.description.sidebar != nil ? m.sidebarWidth : 0
+            // The solver needs a non-empty region for every surface it solves (side, card, right), so a wide window always gives both columns a width here; only the left one is drawn.
             let input = WallpaperModel.Input(palette: chosen.name, dark: dark, blur: look?.blur ?? d.materials.blur, dim: look?.dim ?? d.materials.dim, tint: look?.tint ?? d.materials.tint,
-                                             width: Int(size.width), height: Int(size.height), sideWidth: Int(sideWidth), rightWidth: 0, inset: Int(m.inset), wide: wide)
+                                             width: Int(size.width), height: Int(size.height), sideWidth: Int(wide ? m.sidebarWidth : 0), rightWidth: Int(wide ? m.rightWidth : 0), inset: Int(m.inset), wide: wide)
             ZStack {
                 Backdrop(model: model, size: size, sideWidth: sideWidth, rightWidth: 0, wide: wide)
                 if wide { Desktop(store: store, card: card, model: model, size: size) }

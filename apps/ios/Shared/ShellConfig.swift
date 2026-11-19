@@ -19,7 +19,10 @@ enum ShellConfig {
         let raw = UserDefaults.standard.string(forKey: "CalternalStartURL")
             ?? ProcessInfo.processInfo.environment["CALTERNAL_START_URL"]
         guard let text = raw?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return productionURL }
-        if text == "chrome-demo" { return Bundle.main.url(forResource: "chrome-demo", withExtension: "html") ?? productionURL }
+        if text == "chrome-demo" || text.hasPrefix("chrome-demo#"), var parts = Bundle.main.url(forResource: "chrome-demo", withExtension: "html").flatMap({ URLComponents(url: $0, resolvingAgainstBaseURL: false) }) {
+            parts.fragment = text.contains("#") ? String(text.dropFirst("chrome-demo#".count)) : nil
+            return parts.url ?? productionURL
+        }
         if text == demoAddress { return demoURL }
         if text.hasPrefix(demoAddress + "#"), var parts = URLComponents(url: demoURL, resolvingAgainstBaseURL: false) { parts.fragment = String(text.dropFirst(demoAddress.count + 1)); return parts.url ?? demoURL }
         return URL(string: text) ?? productionURL
@@ -36,7 +39,13 @@ enum ShellConfig {
 
     /// Whether the page may hand its sidebar and header to the native chrome (launch argument
     /// `-CalternalNativeChrome YES`, or the switch in iOS Settings > Calternal). Off by default.
-    static var nativeChrome: Bool { UserDefaults.standard.bool(forKey: "CalternalNativeChrome") }
+    static var nativeChrome: Bool {
+        #if os(macOS)
+        UserDefaults.standard.object(forKey: "CalternalNativeChrome") as? Bool ?? true   // the Mac app is native chrome by default
+        #else
+        UserDefaults.standard.bool(forKey: "CalternalNativeChrome")
+        #endif
+    }
 
     /// True if `url` belongs to the web app and stays inside the shell; other sites open in Safari.
     /// The app's own hosts are the start address's host and `calternal.cloud` with its subdomains

@@ -11,6 +11,9 @@ import Foundation
 public struct ChromeDescription: Codable, Equatable, Sendable {
     /// Format version; 1 is the only one.
     public var version: Int
+
+    /// An empty description (nothing drawn).
+    public init(version: Int = 1) { self.version = version }
     /// Increases with each publication; echoed in events so the page can ignore stale ones.
     public var revision: Int?
     /// Colour scheme of the chrome: "light" or "dark" (the page's scheme).

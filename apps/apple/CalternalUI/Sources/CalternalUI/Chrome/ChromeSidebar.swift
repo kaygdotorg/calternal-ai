@@ -39,7 +39,11 @@ struct ChromeSidebar: View {
     @State private var prompt: Prompt?
     @State private var promptText = ""
     @State private var app = ""
+    @State private var height: CGFloat = 800
     @Design private var d
+
+    /// Name of the coordinate space of the list, for the windowed rows.
+    static let listSpace = "chrome.list"
 
     struct Prompt: Identifiable {
         let item: ChromeDescription.Item, owner: String, type: String
@@ -67,7 +71,7 @@ struct ChromeSidebar: View {
                     Section {
                         if section.collapsed != true {
                             if let total = section.count, total > section.rows.count {
-                                WindowedRows(section: section, total: total, store: store) { row($0) }
+                                WindowedRows(section: section, total: total, store: store, viewHeight: height) { row($0) }
                             } else {
                                 ForEach(section.rows) { row($0) }
                             }
@@ -75,6 +79,8 @@ struct ChromeSidebar: View {
                     } header: { sectionHeader(section) }
                 }
             }
+            .coordinateSpace(name: Self.listSpace)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
             .listStyle(.plain).scrollContentBackground(.hidden)
             .environment(\.defaultMinListRowHeight, m.rowHeight)
             .contentMargins(.top, topInset, for: .scrollContent).contentMargins(.bottom, bottomInset, for: .scrollContent)
@@ -273,30 +279,35 @@ private struct CardView: View {
     }
 }
 
-/// Rows of a long list of which the page sent only a window: loaded rows draw normally, the rest are placeholders, and the visible index range is
-/// reported (debounced) as a `window` event so the page can send the rows that are needed. Identity is positional here (the list is windowed).
+/// Rows of a long list of which the page sent only a window. The list holds only those rows plus two blank spacer rows whose heights stand for the rows
+/// before and after the window, so the list's cost depends on the window (tens of rows), not on `count` (thousands): a `ForEach` over the full count was
+/// measured at 75 % dropped frames with 5,000 rows on the Mac. Rows are therefore one fixed height (`rowHeight`). The first visible index is read from the
+/// top spacer's position and reported (debounced) as a `window` event so the page can send the rows that are needed.
 private struct WindowedRows<Content: View>: View {
     let section: ChromeDescription.Section
     let total: Int
     let store: ChromeStore
+    let viewHeight: CGFloat
     let row: (ChromeDescription.Row) -> Content
-    @State private var onScreen: Set<Int> = []
-    private var visible: ClosedRange<Int>? { onScreen.min().flatMap { low in onScreen.max().map { low...$0 } } }
+    @State private var firstVisible = 0
+    @Design private var d
 
     var body: some View {
-        let offset = section.offset ?? 0
-        ForEach(0..<total, id: \.self) { index in
-            if index >= offset, index - offset < section.rows.count {
-                row(section.rows[index - offset]).onAppear { onScreen.insert(index) }.onDisappear { onScreen.remove(index) }
-            } else {
-                Text("Loading").textRole(.ui).redacted(reason: .placeholder).listRowSeparator(.hidden).listRowBackground(Color.clear)
-                    .onAppear { onScreen.insert(index) }.onDisappear { onScreen.remove(index) }
+        let h = d.metrics.rowHeight
+        let offset = min(section.offset ?? 0, total), shown = section.rows.count
+        let after = max(0, total - offset - shown)
+        Color.clear.frame(height: CGFloat(offset) * h).listRowSeparator(.hidden).listRowBackground(Color.clear).listRowInsets(EdgeInsets())
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(ChromeSidebar.listSpace)).minY } action: { minY in
+                firstVisible = max(0, min(total - 1, Int((-minY / h).rounded(.down))))
             }
-        }
-        .task(id: onScreen) {
-            guard let visible else { return }
-            try? await Task.sleep(for: .milliseconds(120))
-            if !Task.isCancelled { store.send(ChromeEvent(type: "window", id: section.id, from: visible.lowerBound, to: visible.upperBound)) }
-        }
+            .accessibilityHidden(true)
+        ForEach(section.rows) { row($0).frame(height: h).clipped() }
+        Color.clear.frame(height: CGFloat(after) * h).listRowSeparator(.hidden).listRowBackground(Color.clear).listRowInsets(EdgeInsets()).accessibilityHidden(true)
+            .task(id: firstVisible) {
+                try? await Task.sleep(for: .milliseconds(120))
+                guard !Task.isCancelled else { return }
+                let last = min(total - 1, firstVisible + Int((viewHeight / h).rounded(.up)))
+                store.send(ChromeEvent(type: "window", id: section.id, from: firstVisible, to: last))
+            }
     }
 }
