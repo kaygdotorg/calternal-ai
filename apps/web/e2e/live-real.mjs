@@ -21,11 +21,13 @@ const stopServer = async () => { srv.kill("SIGTERM"); await new Promise((r) => {
 let bad = 0;
 const ok = (c, m, lane = "", note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${c || !lane ? "" : `   [lane: ${lane}]`}${note ? "  " + note : ""}`); if (!c) bad++; };
 const scenario = async (name, lane, f) => { try { await f(); } catch (e) { ok(false, `${name}: ${String(e.message).split("\n")[0]}`, lane); } };
-const op = (p, operation, input = {}) => p.evaluate(async ([operation, input]) => (await fetch("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: crypto.randomUUID(), operation, input }) })).json(), [operation, input]);
+const again = async (f) => { for (let i = 0; ; i++) { try { return await f(); } catch (e) { if (i >= 6 || !/Execution context was destroyed|navigation/.test(String(e.message))) throw e; await new Promise((r) => setTimeout(r, 700)); } } };
+const op = (p, operation, input = {}) => again(() => p.evaluate(async ([operation, input]) => (await fetch("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: crypto.randomUUID(), operation, input }) })).json(), [operation, input]));
 const text = (p) => p.locator(".cm-content").innerText();
 const until = async (f, ms = 12000) => { const t = Date.now(); for (;;) { try { const v = await f(); if (v) return v; } catch {} if (Date.now() - t > ms) return false; await new Promise((r) => setTimeout(r, 150)); } };
 const b = await chromium.launch();
-const mk = async (name) => { const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } }); await ctx.addInitScript(() => { localStorage.setItem("cal.firstrun", "1"); }); const p = await ctx.newPage(); p.on("dialog", (d) => void d.accept()); if (process.env.DEBUG) { p.on("console", (m) => { if (/live|room|socket|WebSocket/i.test(m.text())) console.log(`[${name}]`, m.text().slice(0, 160)); }); p.on("pageerror", (e) => console.log(`[${name}] pageerror`, e.message.slice(0, 200))); } const c = await ctx.newCDPSession(p); await c.send("WebAuthn.enable"); await c.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } }); return { ctx, p, name }; };
+const mk = async (name) => { const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } }); await ctx.addInitScript(() => { localStorage.setItem("cal.firstrun", "1"); }); const p = await ctx.newPage(); p.on("dialog", (d) => void d.accept()); if (process.env.DEBUG) { p.on("console", (m) => { if (/live|room|socket|WebSocket/i.test(m.text())) console.log(`[${name}]`, m.text().slice(0, 160)); }); p.on("pageerror", (e) => console.log(`[${name}] pageerror`, e.message.slice(0, 200))); } if (process.env.DEBUG) { p.on("websocket", (ws) => { console.log(`[${name}] ws open ${ws.url().slice(0, 60)}`); ws.on("framesent", (f) => { if (typeof f.payload === "string") console.log(`[${name}] ws> ${f.payload.slice(0, 160)}`); }); ws.on("framereceived", (f) => { if (typeof f.payload === "string") console.log(`[${name}] ws< ${f.payload.slice(0, 200)}`); }); ws.on("close", () => console.log(`[${name}] ws closed`)); }); p.on("console", (m) => { if (m.type() === "error") console.log(`[${name}] console.error`, m.text().slice(0, 200)); }); }
+  const c = await ctx.newCDPSession(p); await c.send("WebAuthn.enable"); await c.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } }); return { ctx, p, name }; };
 try {
   await start(true);
   const token = readFileSync(join(root, "appdata", "setup.token"), "utf8").trim();
@@ -39,7 +41,8 @@ try {
   const link = new URL((await A.p.locator("code.cmd").first().innerText()).trim());
   await G.p.goto(`${url}${link.pathname}`); await G.p.waitForSelector("html[data-ready]");
   await signUp(G.p, "", "Gus");
-  const me = async (P) => (await P.evaluate(async () => (await fetch("/api/v1/auth/me")).json())).user;
+  const me = async (P) => (await again(() => P.evaluate(async () => (await fetch("/api/v1/auth/me")).json()))).user;
+  await A.p.waitForSelector("html[data-ready]"); await G.p.waitForSelector("html[data-ready]"); await A.p.waitForTimeout(1500);
   const [olive, gus] = [await me(A.p), await me(G.p)];
   const spaceOf = async (P) => (await op(P, "spaces.list")).data.spaces[0].id;
   const space = await spaceOf(A.p), gusSpace = await spaceOf(G.p);
