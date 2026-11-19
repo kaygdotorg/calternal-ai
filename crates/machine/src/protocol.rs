@@ -54,7 +54,10 @@ impl PreviewRequest {
             && self.path.len() <= 2048
             && self.path.starts_with('/')
             && !self.path.starts_with("//")
-            && self.path.bytes().all(|b| (0x21..=0x7e).contains(&b) && b != b'#')
+            && self
+                .path
+                .bytes()
+                .all(|b| (0x21..=0x7e).contains(&b) && b != b'#')
     }
 }
 

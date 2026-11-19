@@ -209,7 +209,8 @@ impl MachineService {
             direct: backend == "direct",
             harness_protocol: f.protocol >= HARNESS_PROTOCOL_VERSION,
             preview: f.protocol >= calternal_machine::protocol::PREVIEW_PROTOCOL_VERSION
-                && backend == "podman" && !kvm_fallback,
+                && backend == "podman"
+                && !kvm_fallback,
             shared_tools: f.protocol >= calternal_machine::protocol::SHARED_TOOLS_PROTOCOL_VERSION
                 && backend == "podman",
             shared_provider: f.protocol
@@ -390,10 +391,16 @@ impl MachineService {
         let mut deliver = Vec::with_capacity(queued.len());
         let mut keep = VecDeque::new();
         for envelope in queued {
-            if let Down::Preview { lease_id, fence, exec_id, .. } = &envelope.message
-                && (!st.execs.contains_key(exec_id) || !st.leases.get(lease_id).is_some_and(|lease| {
-                    lease.assigned_machine() == Some(machine_id) && lease.row.fence == *fence
-                }))
+            if let Down::Preview {
+                lease_id,
+                fence,
+                exec_id,
+                ..
+            } = &envelope.message
+                && (!st.execs.contains_key(exec_id)
+                    || !st.leases.get(lease_id).is_some_and(|lease| {
+                        lease.assigned_machine() == Some(machine_id) && lease.row.fence == *fence
+                    }))
             {
                 continue;
             }
@@ -429,11 +436,20 @@ impl MachineService {
         self.accept_output(machine_id, post, false)
     }
 
-    pub(super) fn preview_output(&self, machine_id: Uuid, post: OutputPost) -> Result<OutputAck, Error> {
+    pub(super) fn preview_output(
+        &self,
+        machine_id: Uuid,
+        post: OutputPost,
+    ) -> Result<OutputAck, Error> {
         self.accept_output(machine_id, post, true)
     }
 
-    fn accept_output(&self, machine_id: Uuid, post: OutputPost, preview: bool) -> Result<OutputAck, Error> {
+    fn accept_output(
+        &self,
+        machine_id: Uuid,
+        post: OutputPost,
+        preview: bool,
+    ) -> Result<OutputAck, Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
         let fenced = || Error::conflict("lease fenced");

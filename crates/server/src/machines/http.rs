@@ -72,9 +72,18 @@ pub fn routes<D: Directory>() -> Router<Shared<D>> {
         .route("/api/v1/machines/{id}/drain", post(drain))
         .route("/api/v1/machines/runs", post(create_run::<D>))
         .route("/api/v1/machines/runs/{lease}", get(get_run::<D>))
-        .route("/api/v1/machines/runs/{lease}/previews", post(super::preview::publish::<D>))
-        .route("/api/v1/machine-previews/{preview}/", get(super::preview::view::<D>))
-        .route("/api/v1/machine-previews/{preview}/{*tail}", get(super::preview::view::<D>))
+        .route(
+            "/api/v1/machines/runs/{lease}/previews",
+            post(super::preview::publish::<D>),
+        )
+        .route(
+            "/api/v1/machine-previews/{preview}/",
+            get(super::preview::view::<D>),
+        )
+        .route(
+            "/api/v1/machine-previews/{preview}/{*tail}",
+            get(super::preview::view::<D>),
+        )
         .route("/api/v1/machines/runs/{lease}/stop", post(stop_run::<D>))
         .route("/api/v1/machines/runs/{lease}/execs", post(exec::<D>))
         .route(
@@ -187,7 +196,11 @@ async fn receive_output(svc: Svc, headers: HeaderMap, bytes: Bytes, preview: boo
             let post: OutputPost = body(&bytes)?;
             blocking(move || {
                 let machine = svc.authenticate(&token)?;
-                if preview { svc.preview_output(machine, post) } else { svc.output(machine, post) }
+                if preview {
+                    svc.preview_output(machine, post)
+                } else {
+                    svc.output(machine, post)
+                }
             })
             .await
         }

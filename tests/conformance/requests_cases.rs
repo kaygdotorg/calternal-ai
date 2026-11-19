@@ -113,7 +113,8 @@ impl Machine {
         discards: Value,
         slots: u32,
     ) -> Result<Vec<Value>, reqwest::Error> {
-        self.try_sync_with_memory(f, discards, slots, Some(64 << 30)).await
+        self.try_sync_with_memory(f, discards, slots, Some(64 << 30))
+            .await
     }
 
     pub(super) async fn try_sync_with_memory(

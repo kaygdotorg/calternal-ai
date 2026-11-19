@@ -402,7 +402,9 @@ async fn one_account_shares_claude_login_but_not_space_transcripts() {
 async fn preview_reads_only_its_podman_loopback_and_limits_bytes() {
     use calternal_machine::protocol::{PREVIEW_BODY_BYTES, PreviewMetadata, PreviewRequest};
     let root = tempfile::tempdir().unwrap();
-    let Some(backend) = backend(root.path()).await else { return; };
+    let Some(backend) = backend(root.path()).await else {
+        return;
+    };
     let _containers = PodmanGuard::new(root.path());
     let sb = backend.start(&spec(Limits::default())).await.unwrap();
     let mut service = sb.exec(ExecRequest {
@@ -418,28 +420,40 @@ http.createServer((req, res) => {{
         ..ExecRequest::default()
     }).await.unwrap();
     let startup = tokio::time::timeout(std::time::Duration::from_secs(8), service.events.recv())
-        .await.unwrap().unwrap();
+        .await
+        .unwrap()
+        .unwrap();
     assert!(matches!(startup, OutputEvent::Data(_, bytes) if bytes.starts_with(b"ready")));
 
     for (path, expected) in [("/hello?probe=1", 0), ("/redirect", 1), ("/oversize", 1)] {
-        let mut relay = sb.preview(PreviewRequest { port:35111, path:path.into() }).await.unwrap();
+        let mut relay = sb
+            .preview(PreviewRequest {
+                port: 35111,
+                path: path.into(),
+            })
+            .await
+            .unwrap();
         let (bytes, code) = tokio::time::timeout(std::time::Duration::from_secs(12), async {
             let mut bytes = Vec::new();
             loop {
                 match relay.events.recv().await.expect("preview exit") {
-                    OutputEvent::Data(calternal_machine::protocol::Stream::Stdout, chunk) => bytes.extend_from_slice(&chunk),
+                    OutputEvent::Data(calternal_machine::protocol::Stream::Stdout, chunk) => {
+                        bytes.extend_from_slice(&chunk)
+                    }
                     OutputEvent::Data(..) => (),
                     OutputEvent::Exit(exit) => break (bytes, exit.code),
                 }
             }
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
         assert_eq!(code, Some(expected), "unexpected result for {path}");
         assert!(bytes.len() <= PREVIEW_BODY_BYTES + 1024);
         if expected == 0 {
             let newline = bytes.iter().position(|b| *b == b'\n').unwrap();
             let meta: PreviewMetadata = serde_json::from_slice(&bytes[..newline]).unwrap();
             assert_eq!(meta.status, 200);
-            assert_eq!(&bytes[newline+1..], path.as_bytes());
+            assert_eq!(&bytes[newline + 1..], path.as_bytes());
         }
     }
     sb.release().await.unwrap();
