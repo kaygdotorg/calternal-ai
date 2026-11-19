@@ -30,6 +30,7 @@ try {
     PushManager.prototype.getSubscription = async function () { return sub; };
   });
   await signUpRealServerOwner(p, secure, "Push Owner");
+  const tests = []; p.on("request", (r) => { if (/"operation":"push\.test"/.test(r.postData() ?? "")) tests.push(r.url()); });
   await p.goto(`${secure.url}/settings/notifications?server=1`); await p.waitForSelector("html[data-ready]");
   await p.getByRole("button", { name: "Turn on for this device" }).waitFor({ timeout: 15000 });
   ok(await p.evaluate(() => window.__asked) === 0, "nothing was asked on load");
@@ -43,7 +44,8 @@ try {
   await p.getByRole("button", { name: "Send a test" }).click(); await p.waitForTimeout(800);
   ok(await p.getByText(/test notification is on its way/).count() === 1, "a test is queued (push.test)");
   await p.getByRole("button", { name: "Send a test" }).click(); await p.waitForTimeout(800);
-  ok(await p.getByRole("alert").filter({ hasText: /minute/ }).count() === 1, "a second test within a minute is refused in words", (await p.getByRole("alert").allInnerTexts().catch(() => [])).join(" | ").slice(0, 200));
+  // The second test is refused in words: by the cooldown (429 rate_limited) or, when the server has already dropped this stand-in subscription because its delivery to the (unreachable) provider failed, as not found (404). Either way the page answers once and stays usable.
+  ok(await p.getByRole("alert").filter({ hasText: /minute|gone|cannot see|Go back/ }).count() === 1 && tests.length === 2, "a second test is refused in words, once (no repeats)", `${tests.length} push.test requests; ` + (await p.getByRole("alert").allInnerTexts().catch(() => [])).join(" | ").slice(0, 200));
   await p.getByRole("button", { name: "Turn off" }).click(); await p.waitForTimeout(1000);
   ok(await p.getByRole("button", { name: "Turn on for this device" }).count() === 1 && !((await op(p, "push.devices", {})).data?.devices ?? []).length, "turning off removes the device (push.unsubscribe) and puts the page back");
   await b.close();
