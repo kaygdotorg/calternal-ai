@@ -87,7 +87,7 @@ The catalogue defines one `WindowRequest` envelope and one `WindowReply` union o
 **Forward paging.** The host checks search windows against `EventSearchWindow`, the same window envelope restricted to the start anchor.
 For search Binds or with effective count mode `estimate` or `none`, the host refuses an end anchor with `end_unavailable` and sends no end distance. Search End pages forward. An explicit `anchor:"start"` can cross the 500,000 absolute jump ceiling only at the checked next row of a ready window for the same active view, Bind, parent and result version. Deep start replies omit count and the member cache record. In mode `none` show no scroll extent that implies a total.
 
-**Recovery rule.** After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. A short ready window or an empty reply signals the end of the rows. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state.
+**Recovery rule.** After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: "empty"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state.
 Row ids are opaque and stable. No position is an authority reference.
 
 * A window is the half-open range `[from, to)` of at most 200 returned rows. The absolute jump ceiling is 500,000. The host may materialize up to 4,096 rows and,
@@ -114,7 +114,7 @@ Use the host-issued row reference for row identity in selection, events and scop
 
 `states.empty`, `loading`, `error` and `refine_query` are small messages (`title`, `detail`, `icon`, an optional action). The description or host provides their text.
 Show `loading` until the first window arrives and `error` on `state: "error"` or a `WindowPlanError` without an available paging recovery (§2.3).
-Show the empty message when `state` is `empty`, including count-free replies.
+For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: "empty"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero.
 
 **`refine_query`.** A qualified search that exhausts its posting or row budget returns the catalogue’s `WindowResult` in this state. See `query.search` and `query.live_limits` for limits.
 On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window.
@@ -486,6 +486,9 @@ multi-selection and bulk Trash through `selection_ref`; **Move to collection** a
 ### 9.3 Threads: Inbox of "waiting on me", search, composer, approval card
 
 The Threads footer uses a `terms` Bind over authorized messages. The search window fixtures cover the qualified depth and a later request for both Notes and Threads.
+For the count-free page-boundary scenario, pair `event-catalogue-search-page-boundary-first.json` with `reply-catalogue-search-page-boundary-first.json`
+to show one full page. Pair the `-next.json` request and reply to verify that its zero-row `ready` window ends forward paging and keeps the first page visible without the empty message.
+`invalid-reply-catalogue-search-page-boundary-empty.json` rejects an `empty` reply to that later request.
 
 **Written:** the Inbox as a bind (`waiting_on eq viewer.person`) with its count in the selector; All Threads; provider icons from the open `ProviderId` values; state marks; the
 transcript with the host's Quote and Stop; the composer as a thread and its controls (provider, model, reasoning, permission, machine, attachments, mentions), the host owning the

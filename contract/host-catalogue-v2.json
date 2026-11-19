@@ -1839,7 +1839,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991,
-          "description": "Actual offset of the delivered range from the reply anchor. Start is measured at its first returned row; end is the distance of the nearest returned row to the end. The rows are always in normal Bind order. If no rows are returned, use the requested from."
+          "description": "Actual offset of the delivered range from the reply anchor. Start is measured at its first returned row; end is the distance of the nearest returned row to the end. The rows are always in normal Bind order. If no rows are returned, use the requested from. The host checks this equality against the originating request before issuing the reply."
         },
         "rows": {
           "type": "array",
@@ -1882,7 +1882,7 @@
             "throttled",
             "refine_query"
           ],
-          "description": "refine_query asks the viewer to narrow a qualified search that exceeded a posting, row work or prefix expansion limit in query.search. Its rows are provisional and display only. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Show the empty message when `state` is `empty`, including count-free replies."
+          "description": "refine_query asks the viewer to narrow a qualified search that exceeded a posting, row work or prefix expansion limit in query.search. Its rows are provisional and display only. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: \"empty\"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero."
         },
         "activation_contexts": {
           "type": "array",
@@ -1975,6 +1975,9 @@
           },
           "then": {
             "properties": {
+              "offset": {
+                "const": 0
+              },
               "rows": {
                 "maxItems": 0
               },
@@ -3109,7 +3112,7 @@
             "materialization_limit",
             "end_unavailable"
           ],
-          "description": "skip_limit means an otherwise qualified index-only jump would skip too many entries. end_unavailable means the requested end anchor targets a search Bind or the effective count mode is estimate or none. unsupported_plan means no qualified plan for the scope, filters, sort, search or count. materialization_limit means a qualified non-search plan would materialize too many rows. Search row-budget exhaustion returns refine_query. After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. A short ready window or an empty reply signals the end of the rows. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state."
+          "description": "skip_limit means an otherwise qualified index-only jump would skip too many entries. end_unavailable means the requested end anchor targets a search Bind or the effective count mode is estimate or none. unsupported_plan means no qualified plan for the scope, filters, sort, search or count. materialization_limit means a qualified non-search plan would materialize too many rows. Search row-budget exhaustion returns refine_query. After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: \"empty\"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state."
         }
       },
       "description": "Typed response to the corresponding window request when no qualified bounded plan is available."

@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 11.7
+# Plugin API v2 · revision 11.8
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -513,7 +513,7 @@ the requested scope, filters, sort, window or count within the work
 budget. The typed `WindowPlanError` gives the reason. Never serve the
 request with a table scan or a sort of the full candidate set.
 
-After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. A short ready window or an empty reply signals the end of the rows. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state.
+After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: "empty"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state.
 
 The first contract includes nested child rows and user-made sections (Q11).
 `children: {bind}` uses a `source.parent: true` Bind windowed per expanded
@@ -558,8 +558,8 @@ coalesce invalidations before evaluating and share a plan only within an
 identical audience/authority scope. Supersede obsolete requests, return a
 safe throttled state on exhaustion and preserve fair space progress.
 For search Binds and views without exact count authority, End pages
-forward from the last loaded row, or from the start if none is loaded,
-until a short ready window or an empty reply.
+forward from the last loaded row, or from the start if none is loaded.
+For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: "empty"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero.
 On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window.
 Use explicit `anchor:"start"` to continue past the absolute
 jump ceiling. The host checks that `from` is exactly after an issued
