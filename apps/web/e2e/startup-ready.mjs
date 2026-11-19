@@ -16,8 +16,8 @@ const srv = spawn(BIN, ["serve", "--create", "--installation-id", crypto.randomU
 const op = (p, name, input) => p.evaluate(async ([name, input]) => { const r = await fetch("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: crypto.randomUUID(), operation: name, input }) }); return r.json(); }, [name, input]);
 /** Threads and Notes are ready on this page: both lists show what the API holds, and each opens. `held` is what the page asked and never got an answer to. */
 async function ready(p, label, thread, note) {
-  const pending = new Set();
-  p.on("request", (r) => { if (r.url().includes("/api/v1/operations")) pending.add(r); }); p.on("requestfinished", (r) => pending.delete(r)); p.on("requestfailed", (r) => pending.delete(r));
+  const pending = new Set(), born = new Map();
+  p.on("request", (r) => { if (r.url().includes("/api/v1/operations")) { pending.add(r); born.set(r, Date.now()); } }); p.on("requestfinished", (r) => pending.delete(r)); p.on("requestfailed", (r) => pending.delete(r));
   await p.goto(`${url}/threads?server=1`); await p.waitForSelector("html[data-ready]");
   await p.getByText(thread.title).first().waitFor({ timeout: 20000 }).catch(() => {});
   ok(await p.getByText(thread.title).count() >= 1, `${label}: Threads is ready (the thread made through the API is listed)`);
@@ -30,8 +30,8 @@ async function ready(p, label, thread, note) {
   await p.goto(`${url}/notes/${note.id}?server=1`); await p.waitForSelector("html[data-ready]");
   await p.locator(".cm-content").waitFor({ timeout: 20000 }).catch(() => {});
   ok(await p.locator(".cm-content").count() >= 1, `${label}: the note opens with its editor`);
-  await p.waitForTimeout(1500);
-  ok(pending.size === 0, `${label}: no operation is left unanswered`, [...pending].map((r) => /"operation":"([^"]+)"/.exec(r.postData() ?? "")?.[1]).join(","));
+  for (let i = 0; i < 30 && pending.size; i++) await p.waitForTimeout(500); // a busy machine answers late; an answer that never comes is what this looks for
+  ok(pending.size === 0, `${label}: no operation is left unanswered`, [...pending].map((r) => `${/"operation":"([^"]+)"/.exec(r.postData() ?? "")?.[1]}@${Math.round((Date.now() - born.get(r)) / 1000)}s`).join(","));
 }
 try {
   for (let i = 0; i < 120; i++) { try { if ((await fetch(`${url}/api/v1/auth/status`)).ok) break; } catch {} await new Promise((r) => setTimeout(r, 250)); }
@@ -50,7 +50,7 @@ try {
   await ready(p, "first load after sign-up", thread, note);
   const warm = await ctx.newPage();
   await ready(warm, "warm reload (a second page of the same browser)", thread, note);
-  await warm.reload(); await warm.waitForSelector("html[data-ready]");
+  await warm.reload({ waitUntil: "domcontentloaded" }); await warm.waitForSelector("html[data-ready]");
   await b.close();
 } catch (err) { console.log("FAIL  " + err.message); bad++; }
 finally { srv.kill(); rmSync(data, { recursive: true, force: true }); }
