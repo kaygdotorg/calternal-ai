@@ -153,6 +153,7 @@ fn registered_scalar_order_and_checked_parent_scope_follow_child_moves() {
 
     let root = WindowScope::Kind {
         kind: kind.into(),
+        fields: vec![],
         order: WindowOrder {
             field: "due".into(),
             descending: false,

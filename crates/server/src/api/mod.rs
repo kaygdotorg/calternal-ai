@@ -44,6 +44,8 @@ mod notes;
 pub(crate) mod people;
 mod plugin_slots;
 mod plugins;
+#[cfg(feature = "test-plugins")]
+mod reading_fixture;
 mod request;
 mod search;
 pub(crate) mod search_skills;
@@ -140,10 +142,30 @@ pub fn allowed_hosts(port: u16) -> Vec<String> {
 
 /// Build the authenticated API, public site association, and optional static asset routes.
 pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Router {
+    router_with_binding(state, web_dir, None)
+}
+
+/// Install the pinned SDK Reading List descriptor and seed disposable reading
+/// items for the development tokens. Run on a blocking startup worker only.
+/// The ordinary installer still owns production package admission.
+#[cfg(feature = "test-plugins")]
+pub fn router_with_reading_list_fixture(
+    state: Shared,
+    web_dir: Option<PathBuf>,
+) -> Result<Router, String> {
+    let binding = reading_fixture::install(&state)?;
+    Ok(router_with_binding(state, web_dir, Some(binding)))
+}
+
+fn router_with_binding<D: Directory>(
+    state: Shared<D>,
+    web_dir: Option<PathBuf>,
+    reading_list: Option<window_views::Binding>,
+) -> Router {
     let content = state.store.shared_content();
     let api = Router::new()
         .route("/api/v1/describe", get(describe::<D>))
-        .merge(window_views::routes::<D>())
+        .merge(window_views::routes::<D>(reading_list))
         .route(
             "/api/v1/account/live",
             get(crate::account_input::events::<D>),

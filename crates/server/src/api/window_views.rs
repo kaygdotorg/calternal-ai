@@ -90,16 +90,39 @@ struct SpaceShard {
     count_rate: Rate,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum View {
+    NotesView,
+    ReadingListView,
+}
+
+pub(super) struct Binding {
+    pub(super) bind: String,
+    pub(super) fields: Vec<String>,
+    pub(super) scope: WindowScope,
+    pub(super) description: Option<Value>,
+}
+
 struct Views {
+    notes: Binding,
+    reading_list: Option<Binding>,
     actors: [ActorShard; SHARDS],
     spaces: [SpaceShard; SHARDS],
     revision: Arc<AtomicU64>,
 }
 
 impl Views {
-    fn new() -> Self {
+    fn new(reading_list: Option<Binding>) -> Self {
         let limits = limits();
         Self {
+            notes: Binding {
+                bind: "notes".into(),
+                fields: vec!["title".into()],
+                scope: WindowScope::SpaceNotes,
+                description: None,
+            },
+            reading_list,
             actors: std::array::from_fn(|_| ActorShard {
                 leases: Mutex::new(HashMap::new()),
                 rate: Rate::default(),
@@ -115,6 +138,13 @@ impl Views {
         }
     }
 
+    fn binding(&self, view: View) -> Result<&Binding, Error> {
+        match view {
+            View::NotesView => Ok(&self.notes),
+            View::ReadingListView => self.reading_list.as_ref().ok_or_else(hidden),
+        }
+    }
+
     fn actor(&self, account: AccountId) -> &ActorShard {
         &self.actors[usize::from(account.as_uuid().as_bytes()[15]) % SHARDS]
     }
@@ -127,6 +157,7 @@ impl Views {
 struct Lease {
     reference: Uuid,
     partition: Uuid,
+    view: View,
     revision: u64,
     expires: Instant,
     session: Session,
@@ -188,19 +219,16 @@ struct Discovery {
     count: Count,
 }
 
-pub(super) fn routes<D: Directory>() -> Router<Shared<D>> {
+pub(super) fn routes<D: Directory>(reading_list: Option<Binding>) -> Router<Shared<D>> {
     Router::new()
         .route(
-            "/api/v2/spaces/{space}/notes-view",
+            "/api/v2/spaces/{space}/{view}",
             get(discover::<D>).post(open::<D>),
         )
-        .route(
-            "/api/v2/spaces/{space}/notes-view/window",
-            post(window::<D>),
-        )
-        .route("/api/v2/spaces/{space}/notes-view/renew", post(renew::<D>))
+        .route("/api/v2/spaces/{space}/{view}/window", post(window::<D>))
+        .route("/api/v2/spaces/{space}/{view}/renew", post(renew::<D>))
         .layer(DefaultBodyLimit::max(32 * 1024))
-        .layer(Extension(Arc::new(Views::new())))
+        .layer(Extension(Arc::new(Views::new(reading_list))))
 }
 
 fn hidden() -> Error {
@@ -224,9 +252,10 @@ fn view_key(
     who: &Identity,
     session: &Session,
     space: SpaceId,
+    view: View,
     count: Count,
 ) -> Result<Vec<u8>, Error> {
-    serde_json::to_vec(&("v2/notes-view", who.id, session, space, count))
+    serde_json::to_vec(&("v2/space-view", who.id, session, space, view, count))
         .map_err(|_| Error::internal("encode view identity"))
 }
 
@@ -246,13 +275,19 @@ async fn discover<D: Directory>(
     State(state): State<Shared<D>>,
     Extension(who): Extension<Identity>,
     Extension(session): Extension<Session>,
-    Path(space): Path<SpaceId>,
+    Extension(views): Extension<Arc<Views>>,
+    Path((space, view)): Path<(SpaceId, View)>,
     Query(discovery): Query<Discovery>,
 ) -> Response {
     let answer = async {
         admit(&state, &who, space).await?;
-        let reference = hmac::sign(&state.store.cursor_key, &view_key(&who, &session, space, discovery.count)?);
-        Ok(json!({"view_ref": format!("{}.{}",discovery.count.tag(),hex::encode(reference.as_ref())), "bind":"notes", "fields":["title"], "count":discovery.count}))
+        let binding = views.binding(view)?;
+        let reference = hmac::sign(&state.store.cursor_key, &view_key(&who, &session, space, view, discovery.count)?);
+        let mut result = json!({"view_ref": format!("{}.{}",discovery.count.tag(),hex::encode(reference.as_ref())), "bind":binding.bind, "fields":binding.fields, "count":discovery.count});
+        if let Some(description) = &binding.description {
+            result["description"] = description.clone();
+        }
+        Ok(result)
     }.await;
     match answer {
         Ok(value) => private(value, StatusCode::OK),
@@ -271,7 +306,7 @@ async fn open<D: Directory>(
     Extension(who): Extension<Identity>,
     Extension(session): Extension<Session>,
     Extension(views): Extension<Arc<Views>>,
-    Path(space): Path<SpaceId>,
+    Path((space, view)): Path<(SpaceId, View)>,
     Json(Open::ViewOpen { view_ref }): Json<Open>,
 ) -> Response {
     let answer = async {
@@ -280,6 +315,7 @@ async fn open<D: Directory>(
             return Err(hidden());
         }
         admit(&state, &who, space).await?;
+        views.binding(view)?;
         let (mode, signature) = view_ref.split_once('.').ok_or_else(hidden)?;
         let count = match mode {
             "exact" => Count::Exact,
@@ -289,7 +325,7 @@ async fn open<D: Directory>(
         let signature = hex::decode(signature).map_err(|_| hidden())?;
         hmac::verify(
             &state.store.cursor_key,
-            &view_key(&who, &session, space, count)?,
+            &view_key(&who, &session, space, view, count)?,
             &signature,
         )
         .map_err(|_| hidden())?;
@@ -343,6 +379,7 @@ async fn open<D: Directory>(
         let lease = Arc::new(Lease {
             reference: Uuid::new_v4(),
             partition: Uuid::new_v4(),
+            view,
             revision,
             expires: Instant::now()
                 + Duration::from_secs(limits().subscriber_session_lease_seconds),
@@ -378,7 +415,7 @@ async fn window<D: Directory>(
     Extension(who): Extension<Identity>,
     Extension(session): Extension<Session>,
     Extension(views): Extension<Arc<Views>>,
-    Path(space): Path<SpaceId>,
+    Path((space, view)): Path<(SpaceId, View)>,
     headers: HeaderMap,
     Json(request): Json<WindowRequest>,
 ) -> Response {
@@ -395,6 +432,7 @@ async fn window<D: Directory>(
             .ok_or_else(hidden)?;
         if !lease.valid(&views.revision)
             || lease.session != session
+            || lease.view != view
             || lease.partition != header_id(&headers, PARTITION_HEADER)?
         {
             return Err(hidden());
@@ -437,13 +475,14 @@ async fn window<D: Directory>(
         let request_state = state.clone();
         let read_lease = lease.clone();
         let revision = views.revision.clone();
+        let binding = views.binding(view)?;
+        let WindowRequest::Window { request: range } = &request;
+        let scope = if range.bind == binding.bind {
+            binding.scope.clone()
+        } else {
+            WindowScope::Unqualified
+        };
         let (response, _work) = blocking(&state, move |store| {
-            let WindowRequest::Window { request: range } = &request;
-            let scope = if range.bind == "notes" {
-                WindowScope::SpaceNotes
-            } else {
-                WindowScope::Unqualified
-            };
             let response = store
                 .content()
                 .window(space, &request, previous.as_deref(), || {
@@ -508,7 +547,7 @@ async fn renew<D: Directory>(
     Extension(who): Extension<Identity>,
     Extension(session): Extension<Session>,
     Extension(views): Extension<Arc<Views>>,
-    Path(space): Path<SpaceId>,
+    Path((space, view)): Path<(SpaceId, View)>,
     Json(Renew::LeaseRenew {
         lease_ref,
         cache_partition,
@@ -530,6 +569,7 @@ async fn renew<D: Directory>(
         let lease = leases.get(&(who.id, space, lease_ref)).cloned().ok_or_else(hidden)?;
         if !lease.valid(&views.revision)
             || lease.session != session
+            || lease.view != view
             || lease.reference != lease_ref
             || lease.partition != cache_partition
             || format!("{:x}", lease.revision) != grant_revision
@@ -538,7 +578,7 @@ async fn renew<D: Directory>(
         }
         let previous = lease.previous.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let renewed = Arc::new(Lease {
-            reference: Uuid::new_v4(), partition: lease.partition, revision: lease.revision,
+            reference: Uuid::new_v4(), partition: lease.partition, view, revision: lease.revision,
             expires: Instant::now() + Duration::from_secs(limits().subscriber_session_lease_seconds),
             session, audience: lease.audience, count: lease.count, replaced: AtomicBool::new(false),
             work: lease.work.clone(), rate: lease.rate.clone(), previous: Mutex::new(previous),

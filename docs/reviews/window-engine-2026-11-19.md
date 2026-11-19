@@ -173,6 +173,63 @@ retained renderer rows and action contexts need the GenUI view service
 used by the #81 and #82 renderers. No public guest or generic plugin route
 accepts unvalidated descriptions.
 
+## Reading List product-path fixture
+
+The SDK example at `f038a7a8` supplies the checked-in emitted manifest and
+description under `crates/server/tests/fixtures/v2-reading-list`. The
+ordinary installer calls the strict `ManifestV1` decoder before it can
+persist the archive. It rejects the first kind's v2 `icon` field. The
+v1 model also lacks the v2 indexed fields and app descriptor, and its
+validator requires `api_version: 1`. The slice uses an explicit development
+fixture until an installer can validate and persist a v2 package with
+its pinned description. It verifies the emitted template digest and
+registers the manifest's claimed-text kind, approved field projection,
+and single ordered Bind. Workers, writes, reminders and search are outside
+the read-only route.
+
+`GET /api/v2/spaces/{space}/reading-list-view` returns the signed
+`view_ref`, `bind: "items"`, `fields: ["title","added","read"]`,
+the count mode, and the emitted description. POST the sealed
+`ViewOpenRequest` to the same route. POST `WindowRequest` to its
+`/window` route with `X-Calternal-View-Lease` and
+`X-Calternal-Cache-Partition`. The `/renew` route uses the same lease
+envelope and policy as Notes. The member list returns `added DESC` over
+canonical UTC timestamps, an exact count by default, and the declared
+boolean `read` field for the mark. The author-approved field mapping
+qualifies the sort and selects fields at materialization. The slice
+qualifies no read-field predicate. Unknown Binds receive
+`422 unsupported_query_plan`. The space membership and session checks run
+before index access and again before delivery. A different member space and
+an item-only grant confer no list access. The protected grant schema only
+admits Notes and collections, so the HTTP suite proves the latter with a
+real Note grant in the same target space. Generalizing named grants to
+installed kinds needs the production kind-aware authority loader.
+
+On dev-01, build the fixture-enabled server under the shared lock and run
+it against fresh disposable roots. The benchmark's lock is separate.
+
+```sh
+flock -s /tmp/calternal-dev01.lock nix develop -c \
+  cargo build --locked -p calternal-server --features test-plugins
+fixture_root=$(mktemp -d)
+CALTERNAL_TEST_READING_LIST=1 "${CARGO_TARGET_DIR:-target}/debug/calternal" serve \
+  --development --port 0 --create \
+  --installation-id 00000000-0000-0000-0000-000000000001 \
+  --appdata "$fixture_root/appdata" --userdata-ssd "$fixture_root/ssd" \
+  --userdata-hdd "$fixture_root/hdd" --plugin-root "$fixture_root/no-plugins"
+```
+
+The disposable `appdata/startup.json` gives the base URL and local
+development-token filenames. The owner-visible personal and shared space
+each hold three fixture articles. Use the owner token and the personal
+space from `/api/v1/describe` for the HTTP flow. Retain the renderer's
+fixture credentials locally.
+
+A warm Reading List window adds one registered-order lookup to the root
+path, then parses metadata once on each of up to 200 selected heads.
+It uses two scope probes, a covering range, the existing admission and
+delivery checks and zero flushes.
+
 ## Simplification opportunities
 
 - Generalize the existing collection membership relation before qualifying

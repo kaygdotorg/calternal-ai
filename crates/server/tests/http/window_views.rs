@@ -211,3 +211,119 @@ fn space_revocation_releases_no_live_window_rows_or_count() {
     assert!(rejected.body.get("rows").is_none());
     assert!(rejected.body.get("count").is_none());
 }
+
+#[cfg(feature = "test-plugins")]
+#[test]
+fn installed_reading_list_serves_only_the_member_list_and_declared_fields() {
+    let dir = TempDir::new("v2-reading-list");
+    let mut command = server_command(&dir.0, None, None, None);
+    command.env("CALTERNAL_TEST_READING_LIST", "1");
+    let srv = start_server(&dir.0, command);
+    let personal = format!("/api/v2/spaces/{}/reading-list-view", srv.personal);
+    let guest = call(&srv, &srv.guest, "/api/v1/describe", None, &Value::Null);
+    let guest_id = guest.body["principal"]["id"].as_str().unwrap();
+    let guest_spaces = described_spaces(srv.port, &srv.guest);
+    let foreign_space = guest_spaces
+        .iter()
+        .find(|space| **space != srv.shared)
+        .unwrap();
+
+    let auth = rusqlite::Connection::open(dir.0.join("appdata/system/auth.db")).unwrap();
+    let owns_item_only_grant: bool = auth.query_row(
+        "SELECT EXISTS(SELECT 1 FROM item_grants WHERE space_id=?1 AND account_id=?2 AND kind='notes')",
+        [&srv.personal, guest_id], |row| row.get(0),
+    ).unwrap();
+    assert!(
+        owns_item_only_grant,
+        "the guest must have actual item authority"
+    );
+    assert_eq!(
+        call(&srv, &srv.guest, &personal, None, &Value::Null).status,
+        404
+    );
+    let foreign = format!("/api/v2/spaces/{foreign_space}/reading-list-view");
+    assert_eq!(
+        call(&srv, &srv.owner, &foreign, None, &Value::Null).status,
+        404
+    );
+
+    let descriptor = call(&srv, &srv.owner, &personal, None, &Value::Null);
+    assert_eq!(descriptor.status, 200, "{}", descriptor.body);
+    assert_eq!(descriptor.body["bind"], "items");
+    assert_eq!(descriptor.body["fields"], json!(["title", "added", "read"]));
+    assert_eq!(descriptor.body["count"], "exact");
+    assert_eq!(descriptor.body["description"]["binds"][0]["id"], "items");
+    let lease = open(&srv, &personal, "exact");
+    let url = format!("{personal}/window");
+    let page = call(
+        &srv,
+        &srv.owner,
+        &url,
+        Some(json!({
+            "type":"window","request":{"bind":"items","from":0,"to":2},
+        })),
+        &lease,
+    );
+    assert_eq!(page.status, 200, "{}", page.body);
+    let entries = page.body["rows"].as_array().unwrap();
+    assert_eq!(
+        entries[0]["fields"],
+        json!({"title":"Second article","added":"2026-11-19T12:00:00.000Z","read":true})
+    );
+    assert_eq!(entries[1]["fields"]["title"], "Third article");
+    assert_eq!(page.body["count"], json!({"mode":"exact","value":3}));
+    let next = call(
+        &srv,
+        &srv.owner,
+        &url,
+        Some(json!({
+            "type":"window","request":{"bind":"items","from":2,"to":3},
+        })),
+        &lease,
+    );
+    assert_eq!(next.status, 200, "{}", next.body);
+    assert_eq!(next.body["rows"][0]["fields"]["title"], "First article");
+    let end = call(
+        &srv,
+        &srv.owner,
+        &url,
+        Some(json!({
+            "type":"window","request":{"bind":"items","anchor":"end","from":0,"to":1},
+        })),
+        &lease,
+    );
+    assert_eq!(end.status, 200, "{}", end.body);
+    assert_eq!(end.body["rows"][0]["fields"]["title"], "First article");
+    let rejected = call(
+        &srv,
+        &srv.owner,
+        &url,
+        Some(requested("reminders", "start")),
+        &lease,
+    );
+    assert_eq!(rejected.status, 422);
+    assert_eq!(rejected.body["reason"], "unsupported_plan");
+    assert_eq!(
+        call(
+            &srv,
+            &srv.guest,
+            &url,
+            Some(requested("items", "start")),
+            &lease
+        )
+        .status,
+        404
+    );
+    let notes = format!("/api/v2/spaces/{}/notes-view/window", srv.personal);
+    assert_eq!(
+        call(
+            &srv,
+            &srv.owner,
+            &notes,
+            Some(requested("items", "start")),
+            &lease
+        )
+        .status,
+        404
+    );
+}

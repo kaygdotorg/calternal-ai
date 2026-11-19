@@ -2,7 +2,7 @@
 
 mod kinds;
 mod read;
-pub use kinds::{WindowKindOrder, WindowOrder, WindowScope};
+pub use kinds::{WindowField, WindowKindOrder, WindowOrder, WindowScope};
 
 use crate::{
     Content, Error, Result, SpaceId,
@@ -10,7 +10,9 @@ use crate::{
 };
 use rusqlite::{Connection, types::Value as Key};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 use std::sync::OnceLock;
 use uuid::Uuid;
 
@@ -407,14 +409,15 @@ fn result_version(
     access: &WindowAccess,
 ) -> String {
     let source = format!(
-        "{}:{}:{}:{}:{}:{}:{}",
+        "{}:{}:{}:{}:{}:{}:{}:{}",
         access.view,
         scope.0,
         scope.1,
         snapshot.version,
         access.scope.reversed(),
         access.scope.parent_ref().unwrap_or_default(),
-        request.bind
+        request.bind,
+        serde_json::to_string(access.scope.fields()).expect("encode approved projection")
     );
     blake3::hash(source.as_bytes()).to_hex().to_string()
 }
@@ -515,20 +518,13 @@ fn evaluate(
         }
         rows.reserve(keys.len());
         let mut row_bytes = 0;
-        let mut stmt = conn.prepare_cached(
-            "SELECT CASE WHEN json_type(metadata,?2)='text' THEN json_extract(metadata,?2) ELSE '' END
-             FROM items WHERE id=?1"
-        ).map_err(internal)?;
-        let title_path = format!("$.{title_field}");
+        let mut projection = read::Projection::new(conn, &title_field, access.scope.fields())?;
         for (_, id) in &keys {
-            let title: String = stmt
-                .query_row([id, &title_path], |row| row.get(0))
-                .map_err(internal)?;
             let row = WindowRow {
                 id: blake3::hash(format!("{}:{id}", access.view).as_bytes())
                     .to_hex()
                     .to_string(),
-                fields: json!({"title": title}),
+                fields: projection.fields(id)?,
                 item: Uuid::parse_str(id).map_err(internal)?,
             };
             row_bytes += serde_json::to_vec(&row).map_err(internal)?.len();

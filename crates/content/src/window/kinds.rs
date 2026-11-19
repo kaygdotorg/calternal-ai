@@ -23,6 +23,8 @@ pub enum WindowScope {
         kind: String,
         /// Qualified field and display direction.
         order: WindowOrder,
+        /// Additional fields from the host's checked member projection.
+        fields: Vec<WindowField>,
     },
     /// A child edge already checked against the entire live parent ancestry.
     Children {
@@ -53,6 +55,15 @@ impl WindowScope {
     }
 }
 
+/// A typed additional member field resolved against an installed declaration.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub enum WindowField {
+    /// Project a named metadata boolean.
+    Boolean(String),
+    /// Project a named RFC 3339 metadata timestamp.
+    Timestamp(String),
+}
+
 /// One order admitted against the host's approved and registered field.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowOrder {
@@ -63,6 +74,13 @@ pub struct WindowOrder {
 }
 
 impl WindowScope {
+    pub(super) fn fields(&self) -> &[WindowField] {
+        match self {
+            Self::Kind { fields, .. } => fields,
+            _ => &[],
+        }
+    }
+
     pub(super) fn parent_ref(&self) -> Option<&str> {
         match self {
             Self::Children { reference, .. } => Some(reference),
@@ -72,7 +90,9 @@ impl WindowScope {
 
     pub(super) fn registered_order(&self) -> Option<(&str, &WindowOrder)> {
         match self {
-            Self::Kind { kind, order } | Self::Children { kind, order, .. } => Some((kind, order)),
+            Self::Kind { kind, order, .. } | Self::Children { kind, order, .. } => {
+                Some((kind, order))
+            }
             _ => None,
         }
     }

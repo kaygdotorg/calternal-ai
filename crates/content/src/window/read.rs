@@ -301,3 +301,75 @@ mod tests {
         );
     }
 }
+
+pub(super) struct Projection<'a, 'fields> {
+    statement: rusqlite::CachedStatement<'a>,
+    title: &'fields str,
+    title_path: String,
+    fields: &'fields [super::WindowField],
+}
+
+impl<'a, 'fields> Projection<'a, 'fields> {
+    pub(super) fn new(
+        conn: &'a Connection,
+        title: &'fields str,
+        fields: &'fields [super::WindowField],
+    ) -> Result<Self> {
+        let sql = if fields.is_empty() {
+            "SELECT CASE WHEN json_type(metadata,?2)='text' THEN json_extract(metadata,?2) ELSE '' END
+             FROM items WHERE id=?1"
+        } else {
+            "SELECT metadata FROM items WHERE id=?1"
+        };
+        Ok(Self {
+            statement: conn.prepare_cached(sql).map_err(internal)?,
+            title,
+            title_path: format!("$.{title}"),
+            fields,
+        })
+    }
+
+    pub(super) fn fields(&mut self, id: &str) -> Result<serde_json::Value> {
+        use super::WindowField::*;
+        use serde_json::{Map, Value, json};
+        if self.fields.is_empty() {
+            let title: String = self
+                .statement
+                .query_row([id, &self.title_path], |row| row.get(0))
+                .map_err(internal)?;
+            return Ok(json!({"title": title}));
+        }
+        let metadata: String = self
+            .statement
+            .query_row([id], |row| row.get(0))
+            .map_err(internal)?;
+        let metadata: Value = serde_json::from_str(&metadata).map_err(internal)?;
+        let mut fields = Map::new();
+        fields.insert(
+            "title".into(),
+            json!(metadata[self.title].as_str().unwrap_or("")),
+        );
+        for field in self.fields {
+            let (key, value) = match field {
+                Boolean(key) => (key, metadata[key].as_bool().map(Value::Bool)),
+                Timestamp(key) => (
+                    key,
+                    metadata[key]
+                        .as_str()
+                        .filter(|text| {
+                            time::OffsetDateTime::parse(
+                                text,
+                                &time::format_description::well_known::Rfc3339,
+                            )
+                            .is_ok()
+                        })
+                        .map(|text| Value::String(text.into())),
+                ),
+            };
+            if let Some(value) = value {
+                fields.insert(key.clone(), value);
+            }
+        }
+        Ok(Value::Object(fields))
+    }
+}

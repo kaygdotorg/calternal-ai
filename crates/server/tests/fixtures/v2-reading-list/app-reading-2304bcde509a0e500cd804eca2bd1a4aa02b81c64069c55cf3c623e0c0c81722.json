@@ -1,0 +1,295 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "items",
+      "source": {
+        "type": "list",
+        "kind": "reading-item"
+      },
+      "fields": [
+        "title",
+        "added",
+        "read"
+      ],
+      "sort": [
+        {
+          "field": "added",
+          "direction": "desc"
+        }
+      ],
+      "row": {
+        "marks": [
+          {
+            "kind": "icon",
+            "icon": "check",
+            "tone": "good",
+            "when": {
+              "field": "read",
+              "op": "eq",
+              "value": {
+                "literal": true
+              }
+            }
+          }
+        ],
+        "trailingActions": [
+          {
+            "id": "mark-read",
+            "title": "Mark read",
+            "icon": "check",
+            "operation": "host.item.patch-metadata",
+            "inputs": {
+              "item": {
+                "row": "id"
+              },
+              "field": {
+                "literal": "read"
+              },
+              "value": {
+                "literal": true
+              }
+            },
+            "tone": "good",
+            "fullSwipe": true
+          }
+        ],
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "kindIcon": true
+        }
+      },
+      "states": {
+        "empty": {
+          "title": "Nothing to read",
+          "detail": "Add a link below."
+        },
+        "loading": {
+          "title": "Loading"
+        },
+        "error": {
+          "title": "Couldn’t load items"
+        }
+      },
+      "window": {
+        "size": 60,
+        "count": "exact"
+      }
+    },
+    {
+      "id": "reminders",
+      "source": {
+        "type": "list",
+        "kind": "reading-reminder"
+      },
+      "fields": [
+        "title",
+        "due",
+        "person"
+      ],
+      "filter": {
+        "all": [
+          {
+            "field": "person",
+            "op": "eq",
+            "value": {
+              "viewer": "person"
+            }
+          }
+        ]
+      },
+      "sort": [
+        {
+          "field": "due",
+          "direction": "asc"
+        }
+      ],
+      "window": {
+        "size": 20,
+        "count": "exact"
+      },
+      "row": {
+        "marks": [
+          {
+            "kind": "text",
+            "field": "due",
+            "tone": "warn"
+          }
+        ],
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "kindIcon": true
+        }
+      },
+      "states": {
+        "empty": {
+          "title": "No reminders"
+        },
+        "loading": {
+          "title": "Loading"
+        },
+        "error": {
+          "title": "Couldn’t load items"
+        }
+      }
+    },
+    {
+      "id": "reading-search",
+      "source": {
+        "type": "search",
+        "kind": "reading-item",
+        "mode": "terms"
+      },
+      "fields": [
+        "title",
+        "read"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        }
+      },
+      "window": {
+        "size": 60,
+        "count": "none"
+      },
+      "states": {
+        "empty": {
+          "title": "No results"
+        },
+        "loading": {
+          "title": "Loading"
+        },
+        "error": {
+          "title": "Couldn’t load items"
+        }
+      }
+    }
+  ],
+  "view": {
+    "title": "Reading list",
+    "root": {
+      "type": "stack",
+      "title": "Reading list",
+      "children": [
+        {
+          "type": "form",
+          "id": "add",
+          "title": "Add a link",
+          "fields": [
+            {
+              "id": "title",
+              "label": "Title",
+              "input": "text",
+              "required": true,
+              "maxLength": 120
+            },
+            {
+              "id": "url",
+              "label": "Address",
+              "input": "url",
+              "required": true,
+              "maxLength": 500
+            }
+          ],
+          "submit": {
+            "id": "add",
+            "title": "Add",
+            "operation": "reading.add",
+            "inputs": {
+              "title": {
+                "form": "add",
+                "field": "title"
+              },
+              "url": {
+                "form": "add",
+                "field": "url"
+              }
+            },
+            "then": {
+              "route": {
+                "name": "item"
+              }
+            }
+          }
+        },
+        {
+          "type": "list",
+          "bind": "items",
+          "selectable": true,
+          "title": "To read"
+        },
+        {
+          "type": "form",
+          "id": "remind",
+          "title": "Remind me",
+          "fields": [
+            {
+              "id": "when",
+              "label": "When",
+              "input": "date",
+              "required": true
+            },
+            {
+              "id": "note",
+              "label": "Note",
+              "input": "text",
+              "maxLength": 120
+            }
+          ],
+          "submit": {
+            "id": "remind",
+            "title": "Set reminder",
+            "operation": "reading.remind",
+            "inputs": {
+              "item": {
+                "selection": "items"
+              },
+              "when": {
+                "form": "remind",
+                "field": "when"
+              },
+              "note": {
+                "form": "remind",
+                "field": "note"
+              }
+            }
+          }
+        },
+        {
+          "type": "list",
+          "bind": "reminders",
+          "title": "Reminders"
+        }
+      ]
+    }
+  },
+  "chrome": {
+    "sidebar": {
+      "open": true,
+      "title": "Reading list",
+      "sections": [
+        {
+          "id": "items",
+          "title": "To read",
+          "bind": "items"
+        }
+      ]
+    },
+    "header": {
+      "title": "Reading list"
+    },
+    "footer": {
+      "search": {
+        "bind": "reading-search",
+        "placeholder": "Search reading list"
+      }
+    }
+  }
+}
