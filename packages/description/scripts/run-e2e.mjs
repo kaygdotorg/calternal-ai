@@ -10,12 +10,13 @@ import { fileURLToPath } from "node:url";
 const here = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ALL = [["keys", []], ["fixtures", []], ["components", []], ["actions", []], ["bulk", []], ["reading", []], ["images", []], ["perf", []], ["scale-notes", ["notes"]], ["scale-threads", ["threads"]]];
 const want = process.argv.slice(2);
-const git = spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: here, encoding: "utf8" }).stdout.trim();
+const git = process.env.COMMIT ?? (spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: here, encoding: "utf8" }).stdout.trim() || "unknown"); // (COMMIT names it where the tree has no .git)
 const rows = [], tables = []; let failed = 0;
 for (const [name, args] of ALL.filter(([n]) => !want.length || want.includes(n))) {
   const script = name.startsWith("scale") ? "scale" : name;
-  const r = spawnSync("node", [join(here, `e2e/${script}.mjs`), ...args], { cwd: here, encoding: "utf8", timeout: 600000 });
-  const out = `${r.stdout}\n${r.stderr}`;
+  const run = () => spawnSync("node", [join(here, `e2e/${script}.mjs`), ...args], { cwd: here, encoding: "utf8", timeout: 600000 });
+  let r = run(), out = `${r.stdout}\n${r.stderr}`;
+  if (r.status !== 0 && !/^FAIL /m.test(out)) { r = run(); out = `${r.stdout}\n${r.stderr}`; } // a suite that crashed without a verdict (a host restarting, a slow first paint) runs once more; a FAIL is never retried
   const pass = (out.match(/^PASS /gm) ?? []).length, fail = (out.match(/^FAIL /gm) ?? []).length;
   const crashed = r.status !== 0 && fail === 0;
   rows.push(`| ${name} | ${pass} | ${fail}${crashed ? " (crashed: no result)" : ""} | ${r.status === 0 ? "ok" : "exit " + r.status} |`);
