@@ -363,10 +363,8 @@ impl Runner {
                 exec_id,
                 argv,
                 stdin,
-                mut env,
+                env,
             } => {
-                env.retain(|(key, _)| key != "CALTERNAL_URL");
-                env.push(("CALTERNAL_URL".into(), self.link.base().to_owned()));
                 self.start_exec(
                     lease_id,
                     fence,
