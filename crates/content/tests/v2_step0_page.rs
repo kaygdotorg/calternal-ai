@@ -153,6 +153,14 @@ fn fixture(root: &std::path::Path) -> (Content, SpaceId, std::path::PathBuf) {
 
 #[test]
 #[ignore = "disposable perf fixture; see step 0 measurements"]
+fn scoped_search_international() {
+    let root = tempfile::tempdir().unwrap();
+    let (_content, _space, db) = fixture(root.path());
+    search::i18n::exercise(&db, root.path());
+}
+
+#[test]
+#[ignore = "disposable perf fixture; see step 0 measurements"]
 fn scoped_search_worker_lag() {
     let root = tempfile::tempdir().unwrap();
     search_lag::exercise(root.path());

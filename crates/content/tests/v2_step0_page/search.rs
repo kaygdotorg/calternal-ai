@@ -1,4 +1,7 @@
 //! Scoped Notes probes over the existing FTS5 and title-range schemas.
+#[path = "search_i18n.rs"]
+pub(super) mod i18n;
+
 use super::{RUNS, WINDOW, summary};
 use calternal_content::{fold_title, message_terms};
 use rusqlite::{Connection, OpenFlags, params};
