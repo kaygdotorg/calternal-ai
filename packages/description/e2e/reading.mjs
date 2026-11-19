@@ -20,6 +20,8 @@ await p.locator("[data-form=add] label:has-text('Title') input").fill(title);
 const submit = p.locator("[data-form=add] [data-action=add]");
 ok((await submit.getAttribute("aria-disabled")) === "true", "Add is disabled while the address is empty");
 await p.locator("[data-form=add] label:has-text('Address') input").fill("https://example.org/article");
+// the Add context is the view's own and the host may have evicted it under load: the next lease renewal brings it back (at most about 10 s)
+await p.waitForFunction(() => document.querySelector("[data-form=add] [data-action=add]")?.getAttribute("aria-disabled") === null, null, { timeout: 15000 }).catch(() => {});
 ok((await submit.getAttribute("aria-disabled")) === null, "Add enables when the form is valid");
 await submit.click();
 await p.waitForFunction((t) => [...document.querySelectorAll("[data-i] .t")].some((e) => e.textContent === t), title, { timeout: 40000 }).catch(() => {});
