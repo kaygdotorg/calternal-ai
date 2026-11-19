@@ -9,7 +9,7 @@
 
 mod erasure;
 /// Supervision of the isolated v2 package pipe.
-pub mod space_channel;
+mod space_channel;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

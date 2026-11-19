@@ -77,6 +77,21 @@ impl Link {
         Self::build(base, address, reqwest::Client::builder())
     }
 
+    /// Trust a disposable test CA for verified space upgrades in integration fixtures.
+    /// Cost: builds two HTTP clients. The regular origin and binding checks still apply.
+    #[cfg(feature = "test-space-carrier")]
+    #[doc(hidden)]
+    pub fn with_space_test_ca(base: &str, root: reqwest::Certificate) -> Result<Self> {
+        let mut link = Self::new(base)?;
+        link.space_http = Self::configure(base, None, reqwest::Client::builder())?
+            .no_proxy()
+            .add_root_certificate(root)
+            .redirect(reqwest::redirect::Policy::none())
+            .http1_only()
+            .build()?;
+        Ok(link)
+    }
+
     fn configure(
         base: &str,
         address: Option<&ConnectAddress>,

@@ -84,7 +84,7 @@ impl Runner {
 /// The caller owns sandbox teardown. A malformed or mismatched child frame
 /// stops this relay so the caller can fence the package before reusing it.
 /// Cost: one bounded stdout line buffer and a capability-free invocation ID.
-pub async fn relay_package(
+async fn relay_package(
     channel: &mut SpaceChannel,
     pin: &PackagePin,
     mut exec: Exec,

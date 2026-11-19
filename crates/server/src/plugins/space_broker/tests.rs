@@ -26,20 +26,15 @@ use calternal_auth::{
     token::{hash32, normalize_setup_token},
 };
 use calternal_content::{Content, FileFormat, Item, Placement, Request};
-use calternal_machine::{
-    protocol::Stream,
-    runner::space_channel::relay_package,
-    sandbox::{Exec, OutputEvent},
-};
 use calternal_plugin_host::space_channel::SpaceChannel;
-use std::process::Stdio;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
-    sync::mpsc,
-};
+use tokio::net::{TcpListener, TcpStream};
+
+#[cfg(target_os = "linux")]
+#[path = "product_fixture.rs"]
+mod product_fixture;
 
 const CHILD: &str = r#"
+setInterval(() => {}, 1000);
 const lines = require('node:readline').createInterface({input:process.stdin});
 const call = require('node:crypto').randomUUID();
 const send = (invocation, message) => process.stdout.write(JSON.stringify({
@@ -182,64 +177,8 @@ impl Fixture {
     }
 }
 
-async fn real_package(
-    mut runtime: SpaceChannel,
-    pin: PackagePin,
-) -> Result<(), calternal_plugin_host::Error> {
-    let mut child = tokio::task::block_in_place(|| {
-        tokio::process::Command::new("node")
-            .args(["--permission", "-e", CHILD])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap()
-    });
-    let mut stdin = child.stdin.take().unwrap();
-    let mut stdout = child.stdout.take().unwrap();
-    let (input, mut writes) = mpsc::channel::<Vec<u8>>(4);
-    let (send, events) = mpsc::channel(4);
-    let write = tokio::spawn(async move {
-        while let Some(data) = writes.recv().await {
-            if stdin.write_all(&data).await.is_err() {
-                break;
-            }
-        }
-    });
-    let read = tokio::spawn(async move {
-        let mut buffer = [0; 4096];
-        while let Ok(n) = stdout.read(&mut buffer).await {
-            if n == 0
-                || send
-                    .send(OutputEvent::Data(Stream::Stdout, buffer[..n].to_vec()))
-                    .await
-                    .is_err()
-            {
-                break;
-            }
-        }
-    });
-    let result = relay_package(
-        &mut runtime,
-        &pin,
-        Exec {
-            input: Some(input),
-            events,
-        },
-    )
-    .await;
-    if child.try_wait().unwrap().is_none() {
-        child.kill().await.unwrap();
-    }
-    assert!(child.try_wait().unwrap().is_some());
-    write.abort();
-    read.abort();
-    result
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn approved_item_head_reaches_a_real_package_after_reconnect() {
+async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
     let fixture = tokio::task::spawn_blocking(Fixture::new).await.unwrap();
     let (old, peer) = fixture.carrier().await;
     let target = Uuid::now_v7();
@@ -344,22 +283,11 @@ async fn approved_item_head_reaches_a_real_package_after_reconnect() {
         .await
         .unwrap();
     forged.await.unwrap();
-
-    let (fresh, runtime) = fixture.carrier().await;
-    let scope = fixture.scope(&fresh.channel, item.id);
-    let child = tokio::spawn(real_package(runtime, fixture.pin.clone()));
-    let answer = exchange(fresh, fixture.auth.clone(), reader, scope)
-        .await
-        .unwrap();
-    assert_eq!(
-        answer,
-        json!({"metadata":{"title":"Fixture"}, "revision":item.revision})
-    );
-    child.await.unwrap().unwrap();
 }
 
+#[cfg(target_os = "linux")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
-async fn approved_operation_dispatches_over_an_enrolled_http_upgrade() {
+async fn enrolled_runner_multiplexes_and_stops_its_refenced_package_on_lease_loss() {
     use crate::{
         api::{AppState, allowed_hosts, dispatch, router},
         auth::StoredDirectory,
@@ -369,10 +297,11 @@ async fn approved_operation_dispatches_over_an_enrolled_http_upgrade() {
     use calternal_machine::{
         identity::MachineKey,
         protocol::{
-            Capacity, Down, EnrolRequest, Owner, PROTOCOL_VERSION, SPACE_CHANNEL_UPGRADE,
-            SessionFinish, SyncRequest,
+            Capacity, Down, EnrolRequest, Owner, PROTOCOL_VERSION, SessionFinish, SyncRequest,
         },
+        runner::Runner,
     };
+    use product_fixture::{FixtureBackend, TlsRelay, worker_pid};
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -499,41 +428,33 @@ async fn approved_operation_dispatches_over_an_enrolled_http_upgrade() {
         },
     };
     service.sync(machine, &token, request(0)).await.unwrap();
+    let relay = TlsRelay::start(root.path(), address).await;
+    let link = Arc::new(relay.link);
+    link.set_token(Some(Arc::from(token.as_str())));
+    let placement_root = root.path().join("placements");
+    let runner = Arc::new(Runner::new(
+        Arc::new(FixtureBackend::new(&placement_root)),
+        link,
+        2,
+    ));
+    let sync_runner = runner.clone();
     let supervisor = tokio::spawn(async move {
-        let binding = tokio::time::timeout(Duration::from_secs(5), async {
-            let mut ack = 0;
-            loop {
-                for envelope in service.sync(machine, &token, request(ack)).await.unwrap() {
-                    ack = ack.max(envelope.seq);
-                    if let Down::OpenSpaceChannel { channel } = envelope.message {
-                        return channel;
-                    }
+        let mut ack = 0;
+        let mut assigned = None;
+        loop {
+            for envelope in service.sync(machine, &token, request(ack)).await.unwrap() {
+                ack = ack.max(envelope.seq);
+                let message = envelope.message;
+                if matches!(message, Down::Assign { .. }) {
+                    assigned = Some(message.clone());
+                }
+                let opens = matches!(message, Down::OpenSpaceChannel { .. });
+                sync_runner.handle(message).await;
+                if opens {
+                    return assigned.unwrap();
                 }
             }
-        })
-        .await
-        .unwrap();
-        // This loopback connection represents the server side of TLS termination.
-        let response = reqwest::Client::new()
-            .get(format!(
-                "http://{address}/api/v1/machine/spaces/{}/channels/{}",
-                binding.space, binding.assignment,
-            ))
-            .bearer_auth(&token)
-            .header("connection", "Upgrade")
-            .header("upgrade", SPACE_CHANNEL_UPGRADE)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), reqwest::StatusCode::SWITCHING_PROTOCOLS);
-        let runtime = SpaceChannel::runtime(
-            response.upgrade().await.unwrap(),
-            binding.space,
-            binding.assignment,
-        )
-        .await
-        .unwrap();
-        real_package(runtime, binding.package).await.unwrap();
+        }
     });
     let dispatch_read = |request| {
         dispatch(
@@ -549,23 +470,36 @@ async fn approved_operation_dispatches_over_an_enrolled_http_upgrade() {
     let expected = json!({"metadata":{"title":"Enrolled"}, "revision":item.revision});
     assert_eq!(first.unwrap(), expected);
     assert_eq!(second.unwrap(), expected);
-    state
-        .registry
-        .space_item_head(ids.personal, "fixture.head")
-        .unwrap()
-        .wake
-        .awake
-        .lock()
-        .await
-        .as_ref()
-        .unwrap()
-        .fence
-        .close();
-    supervisor.await.unwrap();
+    let mut assigned = supervisor.await.unwrap();
+    let Down::Assign {
+        ref mut fence,
+        ref spec,
+        ..
+    } = assigned
+    else {
+        unreachable!();
+    };
+    let pid = worker_pid(
+        &placement_root
+            .join("workers")
+            .join(spec.thread_id.to_string())
+            .join("work"),
+    )
+    .await;
+    *fence += 1;
+    runner.handle(assigned).await;
+    // Stop forwarding without sending EOF, cancellation or Stop to the runner.
+    tokio::fs::write(&relay.stall, []).await.unwrap();
+    let lost = Instant::now();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while tokio::fs::try_exists(format!("/proc/{pid}")).await.unwrap() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("product supervisor must stop and reap the package");
+    assert!(lost.elapsed() >= Duration::from_secs(3));
     server.abort();
     let _ = server.await;
     drop(root);
 }
-
-#[path = "fault_tests.rs"]
-mod fault_tests;
