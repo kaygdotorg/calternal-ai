@@ -73,12 +73,8 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                 errors.append(f"$.binds: multiple installed owners for kind {kind_id!r}")
             else:
                 man_kinds[kind_id] = kind
-    projected = (catalogue or {}).get("conversation_capability", {}).get("field_projections", {})
-    man_kinds = {
-        name: {**kind, "fields": {**kind.get("fields", {}), **projected}}
-        if kind.get("conversation") is True else kind
-        for name, kind in errors.each(man_kinds.items())
-    }
+    man_kinds = {name: verification.project_kind(kind, catalogue)
+                 for name, kind in errors.each(man_kinds.items())}
     children_edges = {b_id: ((b.get("row") or {}).get("children") or {}).get("bind") for b_id, b in errors.each(binds.items()) if ((b.get("row") or {}).get("children") or {}).get("bind")}
     repeat_rows = {n_["repeat"]["rows"] for _, n_ in walk(doc, errors) if isinstance(n_, dict) and isinstance(n_.get("repeat"), dict) and "id" in n_ and "rows" in n_["repeat"]}
     for path, node in walk(doc, errors):
@@ -459,7 +455,15 @@ def validate_event(doc, bindings, errors):
             check_event_binding(doc, checked_origin, errors, verification.CATALOGUE)
 
 
-def fixture_origins(fixtures, fixtures_dir, manifests_dir):
+def fixture_scope(file, manifests_dir, engine_owner, errors):
+    """Supply the installed conversation owner for local conformance fixtures."""
+    manifest, installed = load_fixture_manifest(file, manifests_dir, errors)
+    if engine_owner and "threads" not in (manifest or {}).get("kinds", {}) and not any("threads" in owner.get("kinds", {}) for owner in installed):
+        installed += (engine_owner,)
+    return manifest, installed
+
+
+def fixture_origins(fixtures, fixtures_dir, manifests_dir, engine_owner=None):
     reply_files = {file.name for file in fixtures if is_reply_fixture(file)}
     if verification.CATALOGUE is None or not reply_files:
         return {}
@@ -473,7 +477,7 @@ def fixture_origins(fixtures, fixtures_dir, manifests_dir):
             check(schema, app, "$", errors)
             if errors:
                 raise ValueError(f"{file}: {'; '.join(errors)}")
-            sources[file.resolve()] = app, *load_fixture_manifest(file, manifests_dir, errors)
+            sources[file.resolve()] = app, *fixture_scope(file, manifests_dir, engine_owner, errors)
     return load_reply_origins(origins, fixtures_dir, sources, verification.CATALOGUE, reply_files, errors)
 
 
@@ -493,9 +497,9 @@ def run_fixtures():
     install_fixtures = sorted(file for file in (manifests_dir / "install").glob("*.json")
                               if file.name != "expected-errors.json")
     expected = expected_errors(fixtures + install_fixtures)
-    origins = fixture_origins(fixtures, fixtures_dir, manifests_dir)
     print("host catalogue: " + ("loaded" if verification.CATALOGUE is not None else "absent (catalogue cases are skipped)"))
     engine_owner = verification.load_checked_manifest(manifests_dir / "rev14-threads-owner.json", Validation()) if verification.CATALOGUE is not None else None
+    origins = fixture_origins(fixtures, fixtures_dir, manifests_dir, engine_owner)
     failed = False
     for file in fixtures:
         manifest_path = manifests_dir / file.name.removeprefix("invalid-")
@@ -519,9 +523,7 @@ def run_fixtures():
                 ):
                     print(f"skip {file.name}  (search qualification needs the host catalogue)")
                     continue
-                manifest, installed = load_fixture_manifest(file, manifests_dir, errors)
-                if engine_owner and "threads" not in (manifest or {}).get("kinds", {}) and not any("threads" in owner.get("kinds", {}) for owner in installed):
-                    installed += (engine_owner,)
+                manifest, installed = fixture_scope(file, manifests_dir, engine_owner, errors)
                 validate_description(doc, manifest, installed, errors)
         except (DuplicateKey, ValueError) as error:
             errors.append(str(error))

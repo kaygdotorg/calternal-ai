@@ -306,7 +306,7 @@
       "components": [
         {
           "type": "conversation-transcript",
-          "id": "transcript",
+          "id": "panel-transcript",
           "config": {
             "conversation": {
               "route": "thread"
@@ -325,7 +325,7 @@
         },
         {
           "type": "composer",
-          "id": "composer",
+          "id": "panel-composer",
           "config": {
             "controls": [
               "attachments",

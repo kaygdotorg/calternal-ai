@@ -511,6 +511,13 @@ def check_manifest_install(manifest, errors):
             errors.append(f"{path}.host_create.after: entry must accept only the created ItemRef of {kind_id!r} at target.field")
 
 
+def project_kind(kind, catalogue):
+    if kind.get("conversation") is not True:
+        return kind
+    projected = (catalogue or {}).get("conversation_capability", {}).get("field_projections", {})
+    return {**kind, "fields": {**kind.get("fields", {}), **projected}}
+
+
 def field_meta(kind, field, generic=None):
     if not isinstance(field, str):
         return {}
@@ -583,7 +590,7 @@ def load_reply_origins(origins, source_dir, sources, catalogue, reply_files, err
                     raise ValueError(f"{description}#{bind_id}: unknown reply filename")
                 if name in resolved:
                     raise ValueError(f"{name}: multiple reply origins")
-                resolved[name] = bind, kind, generic
+                resolved[name] = bind, project_kind(kind, catalogue), generic
     missing = reply_files - resolved.keys()
     if missing:
         raise ValueError(f"Reply origin coverage mismatch. Missing: {sorted(missing)}.")

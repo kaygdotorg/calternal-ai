@@ -49,6 +49,11 @@ class PackageTests(unittest.TestCase):
 
     def stage(self, name):
         self.template = name + ".json"
+        self.installed = []
+        if name == "threads-nested-catalogue-app":
+            owner = self.package / "installed-conversation-owner.json"
+            shutil.copyfile(FIXTURES / "manifests" / "rev14-threads-owner.json", owner)
+            self.installed = ["--installed-manifest", owner]
         shutil.copyfile(FIXTURES / self.template, self.package / self.template)
         shutil.copyfile(FIXTURES / "manifests" / self.template, self.manifest)
 
@@ -67,7 +72,7 @@ class PackageTests(unittest.TestCase):
                               env=env, capture_output=True, text=True, timeout=15)
 
     def verify(self, *args, failure=None, env=None):
-        result = self.cli("--package", self.package, *args, env=env)
+        result = self.cli("--package", self.package, *self.installed, *args, env=env)
         if failure is None:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         else:
@@ -200,7 +205,7 @@ class PackageTests(unittest.TestCase):
         self.event(event)
         self.event({**event, "component": "bogus"}, "unknown component")
         self.event({**event, "component": "composer"}, "cannot use route")
-        self.event({**event, "request": {}}, "missing thread")
+        self.event({**event, "request": {}}, "missing conversation")
 
     def test_composer_options_requires_declared_control(self):
         self.stage("threads-app")
@@ -210,7 +215,7 @@ class PackageTests(unittest.TestCase):
              if component["type"] == "composer")["config"]["controls"] = ["model"]
         self.replace_template(doc)
         event = {"type": "component", "component": "panel-composer", "route": "composer.options",
-                 "request": {"thread": "opaque", "control": "model"}}
+                 "request": {"conversation": "opaque", "control": "model"}}
         self.event(event)
         event["request"]["control"] = "machine"
         self.event(event, "control 'machine' is not configured")
@@ -314,7 +319,7 @@ class PackageTests(unittest.TestCase):
         self.stage("threads-app")
         fixture = FIXTURES / "invalid-catalogue-archive-fullswipe-before-writer.json"
         self.replace_template(json.loads(fixture.read_bytes()))
-        self.verify(failure="fullSwipe is rejected on turns.archive")
+        self.verify(failure="fullSwipe is rejected on host.item.archive")
 
     def test_structure_and_tree_wide_action_ids(self):
         fixture = FIXTURES / "invalid-duplicate-cross-list-action-id.json"
@@ -477,7 +482,7 @@ class InputTests(unittest.TestCase):
                            choices={f"choice-{i}": "invalid" for i in range(extra)})
             check_event_binding(event, bindings, errors, CATALOGUE)
             self.assertEqual((len(errors), errors.visits), (32, 34))
-        origin = ({"id": "all", "fields": ["title"]}, CATALOGUE["kinds"]["threads"], {})
+        origin = ({"id": "all", "fields": ["title"]}, {}, CATALOGUE["generic_item_fields"])
         small = Validation()
         rows = [{"fields": {"title": False}}] * 32
         check_window_rows({"rows": rows}, origin, CATALOGUE, small)

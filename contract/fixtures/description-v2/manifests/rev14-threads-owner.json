@@ -34,11 +34,6 @@
           "title": "New conversation"
         }
       },
-      "composer": {
-        "send": "calternal-orchestrator.send",
-        "steer_live": true,
-        "job": "run"
-      },
       "indexed_fields": {
         "state": {
           "type": "Text",
