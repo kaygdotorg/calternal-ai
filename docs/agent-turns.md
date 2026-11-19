@@ -238,14 +238,17 @@ identifiers, names and timestamps. Without pool entitlement the array is empty.
 Each provider has `enabled` for the space, `check` (null until observed or
 after expiry), and `ready` when enabled, available and signed in. An observed
 check contains only `installed`, `signed_in` and `sign_in_command`.
-The provider's official program owns the login.
+An unavailable provider reports the first unmet condition in `blocked`:
+`disabled`, `machine_offline`, `machine_busy`, `check_required`,
+`check_stale`, `runtime_unavailable` or `sign_in_required`. The provider's
+official program owns the login.
 
 Use a cached read with `calternal agent readiness --space-id SPACE_UUID`.
 After enrollment, use `machines.verify` with the exact `machine_id` and a
 `space_id` where you can use plugins. The machine's account owner can verify
 it. A server administrator can verify a pool machine, even without an
 execution grant. A pool execution grant does not give this verification access.
-The optional `provider_id` defaults to Claude Code.
+The optional `provider_id` uses the installation's default provider when omitted.
 
 Verification runs a single Check job through the machine channel using the
 same provider probe and cache as `agent.check`. The HTTP result contains
@@ -262,8 +265,8 @@ Refresh a provider with `calternal agent check --space-id SPACE_UUID
 --machine-id MACHINE_UUID --provider PROVIDER_ID`. `--pool` checks an
 available entitled pool machine. A Check job is private to its admitting
 account. The scratch workspace is released after the check and the sandbox
-home is retained. The Claude adapter reports the official program's status
-during regular turns as well.
+home is retained. Both adapters report the official program's status during
+regular turns as well.
 
 The cache is in memory, keyed by account and provider on the selected
 machine. It holds at most 128 observations per machine for five minutes each.
@@ -284,3 +287,59 @@ space-local SQL statement for activations and any pin, and one owner-indexed
 in-memory registry snapshot. No body reads, flushes or machine traffic. A cold
 space opens its existing indexes. A check uses the ordinary fenced lease and
 job receipt. Cache publication and invalidation add no durable writes.
+
+## Shared-space execution design
+
+A space's Owner or Manager configures its execution machine using the existing
+`space.settings` capability (ADR 0058). `space.read` permits reading the setting.
+Turn admission still requires the caller's existing capabilities and retains the
+caller's identity for the turn, content permissions, and agent token. The space
+Owner is the execution sponsor. The open server can apply its operator-set limits
+to that sponsor. The private plans service owns the plan-hours meter.
+
+Reuse the machine registry's `machines.db`, fenced leases, enrollment and
+revocation checks, and provider sign-in scratch flow. Store one binding per space
+UUID through the shared migration runner. Bind it to the current space Owner and
+their enrolled sandbox machine. Resolve and recheck that binding before starting
+work. If a configured target stops being eligible, refuse the shared route. An
+explicit personal choice uses the caller's machine and login for that turn.
+Personal and unconfigured spaces keep their existing per-account execution.
+
+A shared sign-in uses a machine-local credential directory scoped to the space.
+Only a current `space.settings` holder can write there through the existing
+sign-in flow. The server holds no provider credentials. Shared execution must
+keep the credential directory outside tool reach. The initial shared adapter
+uses the existing tool-free Claude CLI mode, on a sandboxed machine. Personal
+execution keeps its normal tools. The settings response carries the notice
+“Personal subscriptions are licensed for use by one person.”
+
+Call `space.machine.get` with `space_id` to read the setting and the license
+notice. Call `space.machine.set` with `space_id` and `machine_id` to select a
+machine, or send `machine_id: null` to clear it. Only people with
+`space.settings` see the selected machine ID. Start the existing
+`provider.sign_in.start` flow with `shared: true`, `space_id`, and
+`provider_id: "calternal-claude-code"`. Its browser challenge and answer stay
+private to the account that started the flow. Both `threads.send` and
+`agent.run` accept `personal_machine: true` for a single turn.
+
+Shared login requires a current Podman machine role and a provider image with
+the dedicated shared Claude entry point. Older roles can still serve personal
+turns. Shared Claude turns using the native login start a new provider session
+with an ephemeral home and no executable tools, hooks, or MCP servers. The machine keeps the shared login
+under the enrolling Owner's space directory until that Owner removes it or
+erases the account.
+
+The space Owner can explicitly set `tools_enabled: true` with the existing
+`space.machine.set` operation. New bindings default to off. Enabling tools
+requires protocol v8 and an approved API credential on the selected Podman
+machine. Place the key in the machine sandbox root under
+`broker-credentials/<space-id>/anthropic.key` or `openai.key`, mode 0600.
+The runtime reads the key once per broker launch. Codex also requires its
+qualified image. An unavailable key or unsupported machine refuses the tool
+lease. Disabling tools retires active brokered leases.
+
+The harness uses a machine-local socket and a disposable gateway credential.
+The provider key stays in the broker. The sole workspace tool runs under a
+separate Podman identity with no network, provider mounts or broker socket.
+Full Access can write the mounted workspace. Other modes mount it read-only.
+See [Tools on shared turns](shared-turn-tools.md).

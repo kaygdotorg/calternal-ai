@@ -56,12 +56,20 @@ impl Content {
             else {
                 return Ok(());
             };
-            if place_related {
-                space.place_related(&account, &request, self.fault)?;
+            if place_related && let Err(error) = space.place_related(&account, &request, self.fault)
+            {
+                if crate::files::destination_occupied(&error)
+                    && let Some(id) = &id
+                {
+                    crate::rename_job::cancel_occupied_root(
+                        space, id, &revision, &op, &account, &request,
+                    )?;
+                }
+                return Err(error);
             }
             let item = if let Some(id) = id {
                 if state.as_deref() == Some("purging")
-                    && !space.finish_purge(&id, &account, &request, self.fault)?
+                    && !space.finish_purge(&id, &account, &request, &op, self.fault)?
                 {
                     continue;
                 }

@@ -20,7 +20,8 @@ title: "calternal trash list"
       "space_id": "string",
       "title": "string",
       "revision": "string",
-      "updated_at": "string"
+      "updated_at": "string",
+      "days_remaining": "integer"
     }
   ],
   "next_cursor?": "string"
@@ -32,8 +33,8 @@ title: "calternal trash list"
 Recorded test fixture:
 
 ```text
-ID                                    TITLE     DELETED                     REVISION
-019aabb0-1100-7111-8111-111111111111  New Plan  2026-11-17 06:12:03 +00:00  v2.preview
+ID                                    TITLE     DELETED                     REVISION    DAYS LEFT
+019aabb0-1100-7111-8111-111111111111  New Plan  2026-11-17 06:12:03 +00:00  v2.preview  29
 
 next cursor:  c-next
 ```
@@ -48,6 +49,7 @@ Recorded test fixture:
     "next_cursor": "c-next",
     "notes": [
       {
+        "days_remaining": 29,
         "id": "019aabb0-1100-7111-8111-111111111111",
         "revision": "v2.preview",
         "space_id": "019aabb0-2200-7222-8222-222222222222",

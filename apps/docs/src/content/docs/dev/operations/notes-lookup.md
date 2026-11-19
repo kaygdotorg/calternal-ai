@@ -8,13 +8,14 @@ title: "notes.lookup"
 
 Find a page of up to 100 notes by title prefix
 
-Capability: not declared in this catalogue; the host policy remains authoritative.
+Capability: space.read.
 
 ## Declaration
 
 ```json
 {
   "risk": "read",
+  "required_capability": "space.read",
   "id": "notes.lookup",
   "description": "Find a page of up to 100 notes by title prefix",
   "mutates": false

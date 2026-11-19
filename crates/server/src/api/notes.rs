@@ -45,13 +45,15 @@ pub(super) async fn mutate<D: Directory>(
             let markdown = std::str::from_utf8(&item.bytes).map_err(|_| Error::internal("note is not UTF-8"))?;
             let markdown = crate::notes::rename_heading(markdown, &i.title);
             calternal_core::validate_markdown(&markdown)?;
-            let result = |item: &calternal_content::Item| serde_json::json!({"note":crate::store::note(item)});
+            let job = uuid::Uuid::now_v7();
+            let result = |item: &calternal_content::Item| serde_json::json!({"note":crate::store::note(item),"job_id":job});
             let old_title = item.metadata["title"].as_str().unwrap_or("");
             let renamed = content.write_with_links(
-                space, id, "notes", &i.base_revision,
+                job, space, id, "notes", &i.base_revision,
                 serde_json::json!({"title":i.title}), markdown.as_bytes(), request, result,
                 |item, old, new| crate::notes::retarget(item, old, new, old_title, &i.title, id),
             )?;
+            s.advance_note_rename_job(space, job);
             return Ok(result(&renamed));
         }
         let response = |item: &calternal_content::Item| serde_json::json!({"note":{
@@ -65,4 +67,81 @@ pub(super) async fn mutate<D: Directory>(
         };
         Ok(response(&changed))
     }).await
+}
+
+/// Preview, confirm or inspect irreversible work after the native Notes gate.
+pub(super) async fn empty_trash<D: Directory>(
+    state: &Shared<D>,
+    actor: calternal_types::Actor,
+    rid: &str,
+    op: &str,
+    input: JsonObject,
+) -> Result<Value, Error> {
+    use calternal_core::{NoteJobInput, TrashEmptyInput, TrashScope};
+    match op {
+        "trash.empty.preview" => {
+            let i = decode::<TrashScope>(input)?;
+            let space = space_of(&i.space_id)?;
+            blocking(state, move |s| s.content().empty_trash_preview(space)).await
+        }
+        "trash.empty.status" => {
+            let i = decode::<NoteJobInput>(input)?;
+            let space = space_of(&i.space_id)?;
+            let job = crate::store::item_id(&i.job_id)?;
+            blocking(state, move |s| s.content().empty_trash_status(space, job)).await
+        }
+        _ => {
+            let (fp, input) = super::request::fingerprint(op, input).await?;
+            let i = decode::<TrashEmptyInput>(input)?;
+            let space = space_of(&i.space_id)?;
+            let (rid, op) = (rid.to_owned(), op.to_owned());
+            blocking(state, move |s| {
+                let request = calternal_content::Request {
+                    account: actor.account,
+                    via: actor.via.as_ref(),
+                    id: &rid,
+                    operation: &op,
+                    fingerprint: &fp,
+                };
+                let result = s.content().empty_trash(space, &i.confirmation, request)?;
+                s.notes_maintenance_wake.notify_one();
+                Ok(result)
+            })
+            .await
+        }
+    }
+}
+
+/// Inspect or reverse a previously admitted rename after the space policy gate.
+pub(super) async fn rename_job<D: Directory>(
+    state: &Shared<D>,
+    actor: calternal_types::Actor,
+    rid: &str,
+    op: &str,
+    input: JsonObject,
+) -> Result<Value, Error> {
+    if op == "notes.rename.status" {
+        let i = decode::<calternal_core::NoteJobInput>(input)?;
+        let space = space_of(&i.space_id)?;
+        let job = crate::store::item_id(&i.job_id)?;
+        return blocking(state, move |s| s.content().rename_job_status(space, job)).await;
+    }
+    let (fp, input) = super::request::fingerprint(op, input).await?;
+    let i = decode::<calternal_core::NoteJobInput>(input)?;
+    let space = space_of(&i.space_id)?;
+    let job = crate::store::item_id(&i.job_id)?;
+    let (rid, op) = (rid.to_owned(), op.to_owned());
+    blocking(state, move |s| {
+        let request = calternal_content::Request {
+            account: actor.account,
+            via: actor.via.as_ref(),
+            id: &rid,
+            operation: &op,
+            fingerprint: &fp,
+        };
+        let result = s.content().undo_rename(space, job, request)?;
+        s.notes_maintenance_wake.notify_one();
+        Ok(result)
+    })
+    .await
 }

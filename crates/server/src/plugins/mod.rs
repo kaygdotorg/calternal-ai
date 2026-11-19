@@ -20,6 +20,7 @@ pub(crate) use agent_settings::UPGRADE_SCHEMA as AGENT_SETTINGS_SCHEMA;
 pub mod broker;
 #[cfg(feature = "dev-plugin-drafts")]
 mod draft_diagnostics;
+pub(crate) mod harness_admin;
 pub(crate) mod installed_diagnostics;
 pub mod job_api;
 pub mod job_sql;
@@ -72,7 +73,7 @@ struct TrustedFile {
     plugins: Vec<TrustedEntry>,
 }
 
-/// One compiled-in trusted plugin entry. Paths are relative to `--plugin-root`.
+/// A distribution plugin entry. Paths are relative to `--plugin-root`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrustedEntry {
@@ -271,7 +272,8 @@ pub struct Catalog {
     operations: BTreeMap<String, (usize, Policy)>,
 }
 
-/// Parse the compiled-in trusted plugin list. Cost: one small JSON parse.
+/// Parse the source tree's reference catalog for fixtures and digest reports.
+/// Serving installations use the distribution file. Cost: one small JSON parse.
 pub fn registry_entries() -> Vec<TrustedEntry> {
     let file: TrustedFile =
         serde_json::from_str(TRUSTED_JSON).expect("compiled-in trusted-plugins.json is valid");
@@ -354,7 +356,7 @@ impl Registry {
     pub fn load(plugin_root: &Path) -> Self {
         let plugins = registry_entries()
             .into_iter()
-            .filter_map(|entry| match load_one(plugin_root, &entry, None) {
+            .filter_map(|entry| match load_one(plugin_root, &entry) {
                 Ok(plugin) => Some(plugin),
                 Err(why) => {
                     tracing::warn!(plugin = %entry.id, reason = %why, "fixture plugin not loaded");
@@ -495,6 +497,19 @@ impl Catalog {
         self.plugins.iter().find(|p| p.manifest.id == id)
     }
 
+    /// Choose the distribution's default provider if installed, otherwise the
+    /// first available provider. An installation with no provider keeps its
+    /// normal thread metadata default until a provider is installed.
+    pub(crate) fn default_provider(&self) -> &str {
+        self.plugins
+            .iter()
+            .filter(|plugin| plugin.manifest.provider.is_some() && plugin.unavailable.is_none())
+            .max_by_key(|plugin| plugin.entry.default_enabled)
+            .map_or("calternal-claude-code", |plugin| {
+                plugin.manifest.id.as_str()
+            })
+    }
+
     /// Find code already pinned to an invocation or durable job. Removed and narrowed
     /// revisions disappear at publication. Cost: one bounded lookup.
     pub(crate) fn revision(&self, id: &str, revision: u32) -> Option<&Arc<Plugin>> {
@@ -594,26 +609,19 @@ fn rel_path_ok(p: &str) -> bool {
             .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
-fn load_one(root: &Path, entry: &TrustedEntry, fallback: Option<&[u8]>) -> Result<Plugin, String> {
+fn load_one(root: &Path, entry: &TrustedEntry) -> Result<Plugin, String> {
     if !rel_path_ok(&entry.manifest) {
         return Err("registry manifest path invalid".into());
     }
     let path = root.join(&entry.manifest);
-    let bytes = match std::fs::symlink_metadata(&path) {
-        Ok(meta) => {
-            if !meta.file_type().is_file() {
-                return Err("manifest is not a regular file".into());
-            }
-            if meta.len() > host::MAX_MANIFEST_BYTES as u64 {
-                return Err("manifest too large".into());
-            }
-            Cow::Owned(std::fs::read(&path).map_err(|e| format!("manifest: {e}"))?)
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound && fallback.is_some() => {
-            Cow::Borrowed(fallback.expect("checked fallback"))
-        }
-        Err(e) => return Err(format!("manifest: {e}")),
-    };
+    let meta = std::fs::symlink_metadata(&path).map_err(|e| format!("manifest: {e}"))?;
+    if !meta.file_type().is_file() {
+        return Err("manifest is not a regular file".into());
+    }
+    if meta.len() > host::MAX_MANIFEST_BYTES as u64 {
+        return Err("manifest too large".into());
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("manifest: {e}"))?;
     let manifest = host::parse_manifest(&bytes).map_err(|e| format!("manifest invalid: {e}"))?;
     let mut unavailable = None;
     let worker = match &entry.worker {

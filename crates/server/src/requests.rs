@@ -48,6 +48,15 @@ pub(crate) async fn dispatch<D: Directory>(
     if !matches!(session, Session::Agent { .. }) && !session.is_live(&state.directory).await {
         return Err(Error::unauthorized("sign in again first"));
     }
+    if row.id.starts_with("push.") {
+        return crate::web_push::operation(state, person.id, session, row.id, input).await;
+    }
+    if row.id.starts_with("harnesses.") {
+        return crate::plugins::harness_admin::dispatch(
+            state, machines, person.id, session, row.id, input,
+        )
+        .await;
+    }
     if row.id.starts_with("provider.sign_in.") {
         let machines = machines.ok_or_else(|| Error::unavailable("machines are not enabled"))?;
         return crate::provider_sign_in::dispatch(state, machines, person, session, row.id, input)
@@ -75,7 +84,7 @@ pub(crate) async fn dispatch<D: Directory>(
                     .agent_current(&a.space, &a.job, &token_hash)?
                     .ok_or_else(|| Error::forbidden("thread credential has ended"))?;
                 let i: RequestAskInput = decode(input)?;
-                let label = question_label(&i.form)?;
+                let label = crate::question_form::label(&i.form)?;
                 let machines =
                     machines.ok_or_else(|| Error::unavailable("machines are not enabled"))?;
                 let id = park(&st, &machines, &a, || {
@@ -248,39 +257,6 @@ pub(crate) async fn dispatch<D: Directory>(
         crate::turns::schedule_thread(&state, &machines, space, job, person.id);
     }
     Ok(result)
-}
-
-/// Validate the Inbox's action-free question form and return its display label.
-pub(crate) fn question_label(form: &calternal_core::GenUiView) -> Result<String, Error> {
-    calternal_core::validate_genui(form)?;
-    let limits = calternal_genui::Budgets::default();
-    let program = calternal_genui::compile(&form.source, limits)
-        .program
-        .ok_or_else(|| Error::invalid_input("question form has GenUI diagnostics"))?;
-    let evaluation = calternal_genui::evaluate(&program, None, limits);
-    let [root] = evaluation.roots.as_slice() else {
-        return Err(Error::invalid_input("question must contain one Form"));
-    };
-    if root["type"] != "Form" || !evaluation.diagnostics.is_empty() {
-        return Err(Error::invalid_input("question must contain one valid Form"));
-    }
-    let mut pending = vec![root];
-    while let Some(value) = pending.pop() {
-        match value {
-            Value::Array(items) => pending.extend(items),
-            Value::Object(fields) => {
-                if value["kind"] == "action" {
-                    return Err(Error::invalid_input("question form cannot contain actions"));
-                }
-                pending.extend(fields.values());
-            }
-            _ => (),
-        }
-    }
-    root["props"]["label"]
-        .as_str()
-        .map(str::to_owned)
-        .ok_or_else(|| Error::invalid_input("question form needs a label"))
 }
 
 fn value_is_approval(status: &str) -> bool {

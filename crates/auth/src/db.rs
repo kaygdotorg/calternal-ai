@@ -15,17 +15,19 @@ use std::time::Duration;
 
 mod role_batch;
 
+const AUTH_CHANGES: &[(i64, &str)] = &[
+    (12, include_str!("account_details.sql")),
+    (13, include_str!("oidc.sql")),
+    (14, include_str!("sharing.sql")),
+];
+
 /// Auth store descriptor shared with the locked deployment coordinator. No I/O.
 pub const MIGRATIONS: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new(
         "auth.db",
         11,
         &[include_str!("schema.sql")],
-        &[
-            include_str!("account_details.sql"),
-            include_str!("oidc.sql"),
-            include_str!("sharing.sql"),
-        ],
+        AUTH_CHANGES,
     );
 
 /// A handle to the dedicated auth.db worker. Its bounded mailbox serializes
@@ -332,7 +334,7 @@ mod port_tests {
         let path = dir.path().join("auth.db");
         Connection::open(&path)
             .unwrap()
-            .pragma_update(None, "user_version", 16)
+            .pragma_update(None, "user_version", 15)
             .unwrap();
         assert!(Db::open(&path).is_err());
         let fresh = dir.path().join("fresh.db");

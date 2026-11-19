@@ -24,7 +24,7 @@ pub enum Capability {
     MembersManage = 1 << 5,
     /// Manage Managers, subject to protected ownership invariants.
     ManagersManage = 1 << 6,
-    /// Change shared space settings.
+    /// Change shared space settings and administer permanent removal from Trash.
     SpaceSettings = 1 << 7,
     /// Transfer ownership subject to the protected transfer protocol.
     SpaceTransfer = 1 << 8,
