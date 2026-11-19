@@ -14,7 +14,7 @@ const free = () => new Promise((res, rej) => { const s = createServer(); s.liste
 /** Suite, the environment variable that holds its port, extra arguments, timeout in seconds. */
 const SUITES = [
   ["startup-ready", "CAL_READY_UP_PORT"], ["lookups-server", "CAL_LOOKUP_PORT"], ["job-prompts-server", "CAL_JOB_PORT"], ["push-server", "CAL_PUSH_PORT"], ["requests-server", "CAL_REQ_PORT"], ["readiness-server", "CAL_READY_PORT"], ["steps-server", "CAL_STEPS_PORT"], ["notes-server", "CAL_NOTES_PORT"],
-  ["sign-in", "CAL_SIGNIN_PORT"], ["a11y-server", "CAL_A11Y_PORT"], ["people-server", "CAL_PEOPLE_PORT"], ["machines-server", "CAL_MACH_PORT"], ["served-by-server", "CAL_SERVED_UNUSED"],
+  ["sign-in", "CAL_SIGNIN_PORT"], ["a11y-server", "CAL_A11Y_PORT"], ["people-server", "CAL_PEOPLE_PORT"], ["machines-server", "CAL_MACH_PORT"], ["startup-server", "CAL_START_PORT", ["3"]], ["served-by-server", "CAL_SERVED_UNUSED"], ["live-real", "CAL_LIVE_REAL_UNUSED", [], 420],
 ].map(([name, port, args = [], timeout = 300]) => ({ name, port, args, timeout }));
 
 let bin = process.env.CALTERNAL_SERVER_BIN;
