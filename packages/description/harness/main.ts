@@ -7,7 +7,7 @@ import { AppView, HostSession, HttpTransport, ProductTransport, type AppDescript
 import { MockHost } from "../testing/mock-host";
 import { SyntheticSource } from "../testing/synthetic-source";
 // every sealed description fixture, by file name without the extension
-const all = import.meta.glob("../../../contract/fixtures/description-v2/*.json", { eager: true, import: "default" }) as Record<string, unknown>;
+const all = import.meta.glob(["../../../contract/fixtures/description-v2/*.json", "!../../../contract/fixtures/description-v2/invalid-*.json"], { eager: true, import: "default" }) as Record<string, unknown>;
 
 const q = new URLSearchParams(location.search);
 initInputModality(); initScheme();

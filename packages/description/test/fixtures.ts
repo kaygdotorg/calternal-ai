@@ -14,8 +14,10 @@ export interface Fixture { name: string; path: string; doc: unknown; kind: "even
 export function loadFixtures(): Fixture[] {
   const out: Fixture[] = [];
   const add = (dir: string, name: string) => {
-    const path = join(dir, name); if (!name.endsWith(".json")) return;
-    out.push({ name, path, dir, doc: readJson(path), invalid: name.startsWith("invalid-"), kind: /^(invalid-)?event-/.test(name) ? "event" : /^(invalid-)?reply-/.test(name) ? "reply" : "description" });
+    const path = join(dir, name); if (!name.endsWith(".json") || name === "expected-errors.json") return; // (expected-errors.json lists what the verifier must say about the invalid ones: not a fixture)
+    // A fixture that is not even JSON (the verifier's strict loader refuses NaN and duplicate keys) can only be an invalid one: it stays in the list as a document no schema accepts.
+    let doc: unknown; try { doc = readJson(path); } catch { doc = Symbol.for("not-json"); }
+    out.push({ name, path, dir, doc, invalid: name.startsWith("invalid-"), kind: /^(invalid-)?event-/.test(name) ? "event" : /^(invalid-)?reply-/.test(name) ? "reply" : "description" });
   };
   for (const n of readdirSync(fixturesDir)) add(fixturesDir, n);
   for (const d of readdirSync(join(fixturesDir, "events"), { withFileTypes: true })) if (d.isDirectory()) for (const n of readdirSync(join(fixturesDir, "events", d.name))) add(join(fixturesDir, "events", d.name), n);
