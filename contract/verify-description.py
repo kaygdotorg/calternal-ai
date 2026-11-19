@@ -230,6 +230,29 @@ def semantic(doc, errors, catalogue, manifest):
             kind_id = (bind.get("source") or {}).get("kind")
             if isinstance(kind_id, str) and kind_id not in reads and (manifest.get("_real") or "reads" in manifest):
                 errors.append(f"$.binds[{index}].source: kind {kind_id!r} is not in the manifest's `reads` (every bind needs it, including a package's own kinds)")
+    parent_binds = {i for i, b in binds.items() if (b.get("source") or {}).get("parent")}
+    children_edges = {}
+    for bind_id, b in binds.items():
+        child = ((b.get("row") or {}).get("children") or {}).get("bind")
+        if child is not None:
+            if child not in parent_binds: errors.append(f"$.binds {bind_id}: children bind {child!r} must declare `source.parent: true`")
+            children_edges[bind_id] = child
+    for sec_path, sec in [(p_, n_) for p_, n_ in walk(doc) if isinstance(n_, dict) and "repeat" in n_ and "id" in n_]:
+        rep = sec["repeat"]
+        for key in ("over", "rows"):
+            if rep.get(key) not in binds: errors.append(f"{sec_path}: repeat.{key} {rep.get(key)!r} is not a declared bind")
+        if rep.get("rows") in binds and rep["rows"] not in parent_binds: errors.append(f"{sec_path}: repeat.rows must be a bind with `source.parent: true`")
+        if rep.get("over") in parent_binds: errors.append(f"{sec_path}: repeat.over must be a top-level bind, not a per-parent one")
+        if "bind" in sec or sec.get("rows"): errors.append(f"{sec_path}: a repeated section has no `bind` or literal `rows` of its own")
+    def depth(bind_id, seen=()):
+        if bind_id in seen: errors.append(f"$.binds: children cycle through {bind_id!r}"); return 0
+        nxt = children_edges.get(bind_id)
+        return 1 + depth(nxt, seen + (bind_id,)) if nxt else 1
+    for bind_id in binds:
+        if depth(bind_id) > 3: errors.append(f"$.binds {bind_id}: nested rows deeper than 3 levels")
+    for index, b in enumerate(binds_list):
+        uses_parent = any(isinstance(pr.get("value"), dict) and "parent" in pr["value"] for g in ("all", "any") for pr in (b.get("filter") or {}).get(g, []))
+        if uses_parent and not (b.get("source") or {}).get("parent"): errors.append(f"$.binds[{index}]: {{parent}} is legal only in a bind whose source has `parent: true`")
     header_title = (doc.get("chrome") or {}).get("header", {}).get("title")
     if isinstance(header_title, dict) and header_title.get("bind") in binds and binds[header_title["bind"]].get("source", {}).get("type") != "item":
         errors.append("$.chrome.header.title: a header title takes its text from an `item` bind (the open item), not from a list's first row")

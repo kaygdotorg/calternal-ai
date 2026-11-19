@@ -320,6 +320,10 @@
         "text": {
           "$ref": "#/$defs/TextSource",
           "description": "For `search`: the query text, from a form or draft the person typed. The footer's search control feeds its own search bind: that bind has no `text` and receives the settled text of the shell's search field."
+        },
+        "parent": {
+          "const": true,
+          "description": "This bind is windowed PER PARENT ROW: it lists the children of one row of another bind (child threads under their parent) or the rows of one user-made section. The renderer asks for its windows with the parent row's reference (`parent` in the window request); the host reconstructs the parent from the activation context and authorizes the child list for that parent. Used only through `RowTemplate.children` or `Section.repeat`."
         }
       },
       "additionalProperties": false,
@@ -503,6 +507,23 @@
               ]
             }
           ]
+        },
+        "children": {
+          "type": "object",
+          "properties": {
+            "bind": {
+              "$ref": "#/$defs/Id"
+            },
+            "expanded": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "bind"
+          ],
+          "description": "Nested child rows: a bind with `source.parent: true`, requested per parent row with its own windows. Depth is at most 3 (host-checked, counted through the chain of children); a row with children draws a disclosure control, the system's own."
         }
       },
       "additionalProperties": false,
@@ -603,6 +624,11 @@
           "type": "boolean",
           "default": true,
           "description": "Whether the host pushes changed windows (revision bump) while the view is open."
+        },
+        "persist": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt-in: this bind's own-space rows may be persisted for a member (see Cache.memberRows). A guest's or public view's rows are never persisted."
         }
       },
       "additionalProperties": false,
@@ -876,6 +902,23 @@
             "$ref": "#/$defs/Action"
           },
           "maxItems": 12
+        },
+        "repeat": {
+          "type": "object",
+          "properties": {
+            "over": {
+              "$ref": "#/$defs/Id"
+            },
+            "rows": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "over",
+            "rows"
+          ],
+          "description": "User-made sections: one section per row of the bind `over` (the per-person layout the host stores: its title is the row's title, its order the person's order), each section's rows from the per-parent bind `rows` (`source.parent: true`, `{parent: true}` in its filter). The host stores and authorizes the layout; moving a row or a section is a host operation (Move to, Move up, Move down in the catalogue), never a description."
         }
       },
       "additionalProperties": false,
@@ -1080,7 +1123,16 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 90,
-          "default": 30
+          "default": 30,
+          "description": "Retention in days of what the device keeps (templates; and member rows when kept): 1 to 90, default 30; persisted member rows are further capped at 14 days."
+        },
+        "memberRows": {
+          "enum": [
+            "keep",
+            "none"
+          ],
+          "default": "keep",
+          "description": "keep: the device may persist a MEMBER's own-space rows (only binds with `persist: true`), encrypted, bound to the account and the space, for the retention below, painted at once and then confirmed or corrected by the host; display only, never actions or contexts. Never for a guest or a public view, whatever this says. none: persist no rows."
         }
       },
       "additionalProperties": false,
@@ -1749,7 +1801,7 @@
       ]
     },
     "FilterValue": {
-      "description": "Where a filter, collection or item-reference operand may come from: a literal, the viewer, or the route. NOT the selection of another bind and not a field of a bind, row, form or prompt: a selected row changes the route (a row's `open`), and the route is the one way one bind's result steers another. `in` takes a homogeneous list of at most 32 literals.",
+      "description": "Where a filter, collection or item-reference operand may come from: a literal, the viewer, or the route. NOT the selection of another bind and not a field of a bind, row, form or prompt: a selected row changes the route (a row's `open`), and the route is the one way one bind's result steers another. `in` takes a homogeneous list of at most 32 literals. `{parent: true}` is the parent row of a per-parent bind (nested child rows, a user-made section's rows).",
       "oneOf": [
         {
           "type": "object",
@@ -1800,6 +1852,19 @@
             "route"
           ],
           "description": "A named parameter of the current route (for example the collection or thread in the address). Typed as a reference or string by the field it filters."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "parent": {
+              "const": true
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "parent"
+          ],
+          "description": "The id of the parent row this window is requested for: legal only in a bind whose source has `parent: true`. The host reconstructs it; the renderer never supplies it."
         }
       ]
     },
@@ -1964,24 +2029,8 @@
       ]
     },
     "EventWindow": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "const": "window"
-        },
-        "request": {
-          "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/WindowRequest"
-        },
-        "sentAt": {
-          "type": "number"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "request"
-      ],
-      "description": "Ask for rows [from, to) of a bind: the envelope carries the catalogue's WindowRequest (bind, half-open range of at most 200 rows, ranked offset at most 100,000). The answer is the catalogue's WindowResult (bind, state, count object, result version, stable opaque row ids and the activation contexts of the rows' actions)."
+      "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/WindowRequest",
+      "description": "Ask for rows [from, to) of a bind (optionally for one parent row): the catalogue's WindowRequest is the ONE window envelope ({type: \"window\", request}); this schema cites it and defines no second shape. The answer is the catalogue's WindowResult (bind, parent, window_ref, state, count object, result version, stable opaque row ids and activation contexts)."
     },
     "EventSelection": {
       "type": "object",
