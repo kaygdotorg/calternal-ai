@@ -27,3 +27,12 @@ limit. Fetches carry no caller headers or request body, and redirects are
 refused. The server returns only a safe content type and a sandboxed document
 policy. This first preview supports simple HTTP reads and self-contained
 HTML. WebSocket upgrades and browser network access are disabled.
+
+## API
+
+Publish from an active run with
+`POST /api/v1/machines/runs/{lease}/previews` and a body such as
+`{"port":3000}`. The response contains a preview `id` and its root `path`.
+A signed-in viewer can GET that path or append a path and query for the
+same local service. The dev server should listen on `127.0.0.1` inside the
+container. Stop the run to close its previews immediately.
