@@ -1,0 +1,9 @@
+/*
+ * When the iPhone shell draws the sidebar and the header natively (it sets `data-native-chrome` on the root and `--chrome-top`, `--chrome-bottom`: docs/ios-shell.md, "Native chrome"), the page hides its own and becomes the card:
+ * its sidebar, the pull and peek handles, the card's corner pills and the header line are not drawn; the shell's insets replace the safe areas and the bar height, so everything that pads itself by "safe area plus bar" lands
+ * below the native header and above the home indicator without a change in each screen; the card does not slide (the native sidebar floats over it) and is square.
+ */
+html[data-native-chrome] { --safe-top: var(--chrome-top, env(safe-area-inset-top, 0px)); --safe-bottom: var(--chrome-bottom, env(safe-area-inset-bottom, 0px)); --bar-h: 0px; }
+html[data-native-chrome] .shell .side, html[data-native-chrome] .shell .peek, html[data-native-chrome] .shell .edge, html[data-native-chrome] .shell .hdr { display: none !important; }
+html[data-native-chrome] .shell.narrow .mid { transform: none !important; scale: none !important; }
+html[data-native-chrome] .shell.narrow .mid .mid-card { border-radius: 0 !important; box-shadow: none !important; }

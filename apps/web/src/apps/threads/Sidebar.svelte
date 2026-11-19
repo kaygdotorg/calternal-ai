@@ -24,6 +24,7 @@
   import { spaces } from "../../shell/spaces.svelte";
   import TopEntries from "./TopEntries.svelte";
   import ReasonMark from "./ReasonMark.svelte";
+  import { view } from "./view.svelte";
 
   // A fresh account: nothing listed, no section made, and the list has loaded (so it is not just still arriving).
   const empty = $derived(store.ready && store.threads.length === 0 && layout.sections.length === 0 && store.jobPrompts.length === 0);
@@ -39,7 +40,6 @@
 
   // ---- Inbox and All Threads ----
   // Two tabs under the shortcuts. The Inbox lists only the threads waiting on the person (inbox.ts); it is the page the list opens on when it is not empty. An explicit choice of tab is kept for the visit.
-  let chosen = $state<"inbox" | "all" | null>(null);
   const items = $derived(store.inbox.filter((i) => i.thread.spaceId === spaces.current.id));
   // Snoozed: the threads that left the Inbox until a time (the person's snooze, or a subscription limit waiting to reset). Collapsed by default; the section and its count are always there when there is one. The clock moves to the next return, so a thread comes back by itself.
   const snoozedHere = $derived(store.snoozed.filter((s) => s.thread.spaceId === spaces.current.id));
@@ -52,7 +52,7 @@
   });
   const returns = (s: { until: number; auto: boolean }) => (s.auto ? `Back when the limit resets, ${new Date(s.until).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : backLabel(s.until, store.now));
   const TABS = [{ value: "inbox" as const, label: "Inbox" }, { value: "all" as const, label: "All Threads" }];
-  const tab = $derived(chosen ?? (items.length || store.jobPrompts.length ? "inbox" : "all"));
+  const tab = $derived(view.chosen ?? (items.length || store.jobPrompts.length ? "inbox" : "all"));
 
   // ---- renaming in place ----
   let editing = $state<{ kind: "thread" | "section"; id: string } | null>(null);
@@ -210,7 +210,7 @@
     </div>
   {:else}
   <!-- The shared Selector (ui/Selector, the old app's state switch): an outer pill with the chosen item as a pill inside it that glides to the new choice; arrow keys, Home and End move and choose. -->
-  <div class="tabs"><Selector label="Which threads" options={TABS} value={tab} onchange={(v) => (chosen = v)}>{#snippet optionContent(o)}{@const n = o.value === "inbox" ? items.length + store.jobPrompts.length : 0}<span class="tl"><span class="w">{o.label}{#if n}<span class="n">{n}</span>{/if}</span><span class="w twin" aria-hidden="true">{o.label}{#if n}<span class="n">{n}</span>{/if}</span></span>{/snippet}</Selector></div>
+  <div class="tabs"><Selector label="Which threads" options={TABS} value={tab} onchange={(v) => (view.chosen = v)}>{#snippet optionContent(o)}{@const n = o.value === "inbox" ? items.length + store.jobPrompts.length : 0}<span class="tl"><span class="w">{o.label}{#if n}<span class="n">{n}</span>{/if}</span><span class="w twin" aria-hidden="true">{o.label}{#if n}<span class="n">{n}</span>{/if}</span></span>{/snippet}</Selector></div>
   {#if tab === "inbox"}
     <div role="tabpanel" aria-label="Inbox">
       {#if items.length || store.jobPrompts.length}
