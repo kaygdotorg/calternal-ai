@@ -6,6 +6,8 @@ import { nativeReady } from "./shell/native";
 import "./shell/chrome/native.css";
 import { startNativeChrome, registerChrome } from "./shell/chrome/native-chrome.svelte";
 import { threadsChrome } from "./apps/threads/chrome";
+import { notesChrome } from "./apps/notes/chrome";
+import { settingsChrome } from "./apps/settings/chrome";
 import { appFor } from "./apps/registry";
 import { segments } from "./lib/route.svelte";
 import { interceptLinks } from "./lib/route.svelte";
@@ -36,7 +38,7 @@ Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => set
     const { default: Guest } = await import("./guest/Guest.svelte");
     mount(Guest, { target }); document.documentElement.dataset.ready = ""; return;
   }
-  const ready = () => { document.documentElement.dataset.ready = ""; startChrome(); requestAnimationFrame(() => requestAnimationFrame(() => { nativeReady(); registerChrome("threads", threadsChrome); startNativeChrome(() => appFor(segments()[0])?.kind ?? "threads"); })); /* the first frame is painted: the native shell (if any) lifts its launch cover */ };
+  const ready = () => { document.documentElement.dataset.ready = ""; startChrome(); requestAnimationFrame(() => requestAnimationFrame(() => { nativeReady(); registerChrome("threads", threadsChrome); registerChrome("notes", notesChrome); registerChrome("settings", settingsChrome); startNativeChrome(() => appFor(segments()[0])?.kind ?? "threads"); })); /* the first frame is painted: the native shell (if any) lifts its launch cover */ };
   const gate = async (b: Exclude<import("./server/boot").Boot, { screen: "app" }>) => {
     // A fresh installation or an invitation is the stepped onboarding (who you are first, then the rest); a returning person signing in is the plain card; a reload part-way resumes the onboarding.
     if (b.screen === "onboarding" || (b.screen === "signin" && (b.needsSetup || b.invite))) {

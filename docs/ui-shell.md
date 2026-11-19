@@ -332,3 +332,16 @@ Owner feedback from a native shell on an iPhone 16 Pro Max, built as asked (feat
 Interruptible: nothing waits on a timer except the beat between leaving and arriving content (`--dur-fast`), which a newer move replaces. Checked for fluidity on the Simulator (frames on issue #15) and by the quiet list.
 
 **The stray mark after the wordmark.** See the report on issue #15; the cause and the fix are written there and in `docs/ui-shell-status.md`.
+
+## Native chrome: the page's side, and the compatibility rule (2026-11-19)
+
+**What it is.** Inside the iPhone shell (and the Mac app) the page can hand its navigation chrome to the shell: it publishes a *description* (the header, the sidebar's selectors, sections and rows, the apps, the account menu, the search field, and the person's look) with `calternalNative.chrome(description)`, and answers the shell's `calternal:chrome` events by doing what its own sidebar would do. The shell draws the wallpaper, the sidebar, the header and the card's frame natively; the page is a transparent content card inside, padded by `--chrome-top` and `--chrome-bottom` (`apps/web/src/shell/chrome/`: the store and publisher `native-chrome.svelte.ts`, the schema-exact encoder `encode.ts`, the appearance `appearance.ts`, the providers in `apps/*/chrome.ts`, the rules under `data-native-chrome` in `native.css`). The schema is the shell lane's (`contract/chrome-v1.schema.json`).
+
+**The compatibility rule.** The phone's shell and the server's page are not always updated together, so the two **negotiate the contract version over the bridge, and on any mismatch native chrome stays off and the page draws its own: never a half-drawn shell.** Concretely, in code (`chromeCompatible`, `answerIsNative`, `PAGE_CONTRACT` in `native-chrome.svelte.ts`), with the shell lane's protocol (`docs/ios-shell.md`, "Version negotiation"):
+
+1. The page encodes contract `PAGE_CONTRACT` (1; `version` in the description).
+2. The shell exposes `window.calternalNative.chromeVersions`, the versions it can draw (today `[1]`). The page calls `chrome()` **only** if `calternalNative` and `chrome` exist and `chromeVersions` is a non-empty list that includes the version it encodes (the highest common one; there is one today). A shell with no `chromeVersions` (an older one), an empty list or no common version is **never called**: the page's own chrome stays.
+3. The shell's answer is `{native}`: only `native: true` means it is drawn. `{native: false, reason: "unsupported-version", supported: [...]}` (another version: the shell also removes anything it had drawn) or `{native: false, reason: "rejected"}` (a malformed description) means the page draws its own; the reason is logged through the bridge. Any error or missing field is treated as off.
+4. Native is also off in a browser and with the shell's switch off: the page's own sidebar and header are drawn exactly as before (every page rule is under `html[data-native-chrome]`, which only the shell sets).
+5. A republish that changes nothing the chrome draws costs the shell nothing, so the page publishes on every store change (one per frame).
+6. When the contract changes incompatibly, `PAGE_CONTRACT` and the encoder change together; an old page keeps working against a new shell because the new shell still lists the versions it draws.

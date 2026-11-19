@@ -8,20 +8,38 @@
 import { appearance } from "../../appearance/prefs.svelte";
 import { navigate } from "../../lib/route.svelte";
 import { accentOf } from "./accent";
+import { appearanceOf } from "./appearance";
 import { accountItems, pickAccountItem } from "../accountMenu";
 import { self } from "../self.svelte";
 import { switcherApps } from "../switcherApps.svelte";
-import { toDraft1 } from "./draft1";
+import { toSchema } from "./encode";
 import type { ChromeBody, ChromeDescription, ChromeEvent, ChromeItem, ChromeProvider } from "./types";
 
-/** Which form of the contract the shell decodes: "draft-1" (the first draft, reduced by `draft1.ts`) until the shell takes the agreed fields, then "v2" (the full description). */
-export const CONTRACT: "draft-1" | "v2" = "draft-1";
 
-interface Bridge { chrome?: (d: ChromeDescription | null) => Promise<{ native: boolean }>; log?: (s: string) => unknown }
+interface Bridge { chrome?: (d: ChromeDescription | null) => Promise<{ native: boolean; reason?: string; supported?: number[] }>; log?: (s: string) => unknown; chromeVersions?: number[] }
 const bridge = (): Bridge | undefined => (typeof window === "undefined" ? undefined : (window as unknown as { calternalNative?: Bridge }).calternalNative);
 
-/** Whether the page can publish chrome at all: the bridge has the call (only the iPhone shell, and only a build that has the experiment). */
-export const chromeAvailable = (): boolean => typeof bridge()?.chrome === "function";
+/** The version of the chrome contract this page publishes (`version` in the description; contract/chrome-v1.schema.json). */
+export const PAGE_CONTRACT = 1;
+
+/**
+ * The compatibility rule (docs/ui-shell.md, "Native chrome: the page's side, and the compatibility rule"): the page and the shell negotiate the chrome contract over the bridge, and on ANY mismatch native chrome stays off and the
+ * page draws its own, never a half-drawn shell (the phone's shell and the server's page are not always updated together). The shell exposes `calternalNative.chromeVersions` (the contract versions it can draw, today `[1]`). The page
+ * publishes only when it has the call and `chromeVersions` is a non-empty list that includes the version the page encodes; a shell with no `chromeVersions` (an older one), an empty list or no common version is never called, so
+ * the page's own chrome stays. The shell's answer to a publication is `{native}`: only `native: true` means it is drawn; `{native: false, reason}` (`unsupported-version` with `supported`, or `rejected` for a malformed description)
+ * means the page draws its own, and it also clears whatever the shell had drawn.
+ */
+export function chromeCompatible(b: Pick<Bridge, "chrome" | "chromeVersions"> | undefined = bridge()): boolean {
+  if (typeof b?.chrome !== "function") return false;
+  const v = b.chromeVersions;
+  return Array.isArray(v) && v.length > 0 && v.includes(PAGE_CONTRACT);
+}
+
+/** Whether the shell's answer to a publication means native chrome is on: only an explicit `native: true`; anything else (a refusal with a `reason`, a missing field, an error) is off. */
+export const answerIsNative = (r: { native?: boolean } | null | undefined): boolean => !!r && r.native === true;
+
+/** Whether the page can publish chrome at all (the call exists and the contract versions agree). */
+export const chromeAvailable = (): boolean => chromeCompatible();
 
 class NativeChrome {
   /** The shell drew the chrome for the last publication (it said `native: true`). */
@@ -30,6 +48,10 @@ class NativeChrome {
   open = $state(false);
   /** The text in the native search field. */
   query = $state("");
+  /** Bumped when something the description reads outside the stores has arrived (a wallpaper picture): the publisher then builds it again. */
+  tick = $state(0);
+  /** The part of each long section the shell shows, by section id (`window` events): `[from, to]` row indexes. */
+  windows = $state<Record<string, [number, number]>>({});
   /** Round trips of publications in milliseconds, newest last (at most 200), for the measurement. */
   lat: number[] = [];
   private revision = 0;
@@ -45,18 +67,17 @@ export const nativeChrome = new NativeChrome();
 /** Registers an app's chrome provider. */
 export const registerChrome = (kind: string, p: ChromeProvider): void => nativeChrome.register(kind, p);
 
-const toItem = (m: { id: string; label: string; sub?: string; icon?: string; danger?: boolean; checked?: boolean }): ChromeItem => ({ id: m.id, title: m.label, ...(m.sub ? { sub: m.sub } : {}), ...(m.danger ? { role: "destructive" as const } : {}), ...(m.checked ? { checked: true } : {}), ...(m.icon === "user" ? { symbol: "person.crop.circle" } : m.icon === "settings" ? { symbol: "gearshape" } : m.icon === "signout" ? { symbol: "rectangle.portrait.and.arrow.right" } : {}) });
-const SYMBOL: Record<string, string> = { threads: "bubble.left", notes: "doc.text", settings: "gearshape" };
+const toItem = (m: { id: string; label: string; sub?: string; icon?: string; danger?: boolean; checked?: boolean }): ChromeItem => ({ id: m.id, title: m.label, ...(m.sub ? { sub: m.sub } : {}), ...(m.danger ? { role: "destructive" as const } : {}), ...(m.checked ? { checked: true } : {}), ...(m.icon ? { icon: m.icon } : {}) });
 
 /** The whole description for the current state of the stores: the app's body from its provider, and the shell's parts. Reads reactive state, so call it inside an effect. */
 export function describe(kind: string, body: ChromeBody, scheme: "light" | "dark", revision: number): ChromeDescription {
   return {
-    version: 1, revision, scheme, accent: accentOf(),
+    version: 1, revision, scheme, accent: accentOf(), appearance: appearanceOf(() => { nativeChrome.tick++; }),
     header: body.header,
     sidebar: {
       open: nativeChrome.open, title: appearance.prefs.brand,
       selectors: body.selectors, sections: body.sections,
-      apps: switcherApps().map((a) => ({ id: a.kind, title: a.name, ...(SYMBOL[a.kind] ? { symbol: SYMBOL[a.kind] } : {}), selected: a.kind === kind })),
+      apps: switcherApps().map((a) => ({ id: a.kind, title: a.name, ...(a.icon ? { icon: a.icon } : {}), selected: a.kind === kind })),
       account: { id: "account", initial: [...self.name.trim()][0]?.toUpperCase() ?? "?", title: self.name, menu: accountItems().map(toItem) },
       search: body.search,
     },
@@ -70,6 +91,7 @@ export function routeEvent(kind: string, ev: ChromeEvent): boolean {
     case "account": if (ev.id && pickAccountItem(ev.id)) return true; return false;
     case "sidebar": nativeChrome.open = !!ev.open; return true;
     case "search": nativeChrome.query = ev.text ?? ""; return true;
+    case "window": if (ev.id && ev.from !== undefined && ev.to !== undefined) { nativeChrome.windows = { ...nativeChrome.windows, [ev.id]: [ev.from, ev.to] }; return nativeChrome.providerFor(kind)?.handle(ev) ?? true; } return true;
     case "menu": if (ev.id && !ev.rowId && pickAccountItem(ev.id)) return true; break;
   }
   return nativeChrome.providerFor(kind)?.handle(ev) ?? false;
@@ -81,25 +103,28 @@ export function routeEvent(kind: string, ev: ChromeEvent): boolean {
  */
 export function startNativeChrome(appKind: () => string): () => void {
   const b = bridge();
-  if (!b?.chrome) return () => {};
+  if (!b || !chromeCompatible(b)) return () => {}; // no call, or a contract the shell cannot draw: the page keeps its own chrome
   let frame = 0, latest: ChromeDescription | null = null;
   const send = async () => {
     frame = 0;
     const d = latest; if (!d) return;
     const t0 = performance.now();
     try {
-      const r = await b.chrome!((CONTRACT === "draft-1" ? toDraft1(d) : d) as ChromeDescription);
+      const r = await b.chrome!(toSchema(d) as ChromeDescription);
       const ms = performance.now() - t0;
       nativeChrome.lat.push(ms); if (nativeChrome.lat.length > 200) nativeChrome.lat.shift();
       (window as unknown as { __chromeStats?: unknown }).__chromeStats = { published: d.revision, last: Math.round(ms * 10) / 10, avg: Math.round((nativeChrome.lat.reduce((x, y) => x + y, 0) / nativeChrome.lat.length) * 10) / 10 };
       if ([1, 3, 10, 30].includes(nativeChrome.lat.length)) { try { b.log?.(`chrome publish round trip: last ${ms.toFixed(1)} ms, avg ${(nativeChrome.lat.reduce((x, y) => x + y, 0) / nativeChrome.lat.length).toFixed(1)} ms over ${nativeChrome.lat.length}`); } catch { /* ignored */ } }
-      if (r.native !== nativeChrome.native) { nativeChrome.native = r.native; document.documentElement.toggleAttribute("data-native-chrome-page", r.native); }
+      const on = answerIsNative(r);
+      if (!on && r?.reason) { try { b.log?.(`chrome refused: ${r.reason}${r.supported ? ` (shell draws ${r.supported.join(", ")})` : ""}`); } catch { /* ignored */ } }
+      if (on !== nativeChrome.native) { nativeChrome.native = on; document.documentElement.toggleAttribute("data-native-chrome-page", on); }
     } catch (e) { try { b.log?.(`chrome publish failed: ${String((e as Error)?.message ?? e).slice(0, 300)}`); } catch { /* ignored */ } /* the shell did not answer: keep drawing our own */ }
   };
   const stop = $effect.root(() => {
     $effect(() => {
       const kind = appKind(), p = nativeChrome.providerFor(kind);
       if (!p) return;
+      void nativeChrome.tick;
       const body = p.describe(nativeChrome.query);
       const scheme = (document.documentElement.dataset.scheme === "dark" ? "dark" : "light") as "light" | "dark";
       latest = describe(kind, body, scheme, nativeChrome.nextRevision());
@@ -114,4 +139,17 @@ export function startNativeChrome(appKind: () => string): () => void {
   };
   addEventListener("calternal:chrome", onEvent);
   return () => { removeEventListener("calternal:chrome", onEvent); stop(); if (frame) cancelAnimationFrame(frame); };
+}
+
+/** The most rows sent for a section that is not windowed, and the margin kept around the window the shell shows. */
+const WHOLE = 80, MARGIN = 20;
+/**
+ * A long section as a window of its rows: all of them when the list is short, else the rows the shell asked for (`window` event) plus a margin, with `count` and `offset` (the shell then draws a list of one fixed row height and
+ * keeps spacers for the rest). Reads `nativeChrome.windows`, so a new window republishes.
+ */
+export function windowed<T>(sectionId: string, all: T[]): { rows: T[]; count?: number; offset?: number } {
+  if (all.length <= WHOLE) return { rows: all };
+  const [from, to] = nativeChrome.windows[sectionId] ?? [0, WHOLE / 2];
+  const a = Math.max(0, from - MARGIN), b = Math.min(all.length, to + MARGIN);
+  return { rows: all.slice(a, b), count: all.length, offset: a };
 }

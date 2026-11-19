@@ -11,7 +11,7 @@
 </script>
 
 <div class="wrap">
-  <header class="nc-head">{#if shell.narrow}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}</header>
+  <header class="nc-head" data-chrome-header>{#if shell.narrow}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}</header>
   <article class="nc-article">
     <h1>Trash</h1>
     <p class="lede">Notes you moved here stay for as long as you keep them. Restore one to put it back where it was, or delete it for good.</p>
