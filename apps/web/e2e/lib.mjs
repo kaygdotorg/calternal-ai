@@ -1,7 +1,8 @@
-import { cpus, loadavg } from "node:os";
+import { cpus, loadavg, tmpdir } from "node:os";
 // Shared by the e2e scripts: starts `vite preview` of the built app, opens Chromium, and exposes small helpers.
 import { spawn } from "node:child_process";
-import { readdirSync, readFileSync, readlinkSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { chromium } from "playwright";
 
 export const PORT = 4174;
@@ -38,6 +39,78 @@ export async function serve() {
     await new Promise((r) => setTimeout(r, 250));
   }
   return () => { try { process.kill(-p.pid); } catch { p.kill(); } };
+}
+
+/** Start a real server with disposable roots. Wait for this server's setup token and stop it before removing the roots. */
+export async function startRealServer(port) {
+  const bin = process.env.CAL_BIN ?? `${process.env.HOME}/Developer/lanes/ui-shell/target/debug/calternal`;
+  const data = mkdtempSync(join(tmpdir(), "cal-real-server-"));
+  const appdata = join(data, "appdata");
+  const server = spawn(bin, [
+    "serve", "--create", "--installation-id", crypto.randomUUID(), "--appdata", appdata,
+    "--userdata-ssd", join(data, "ssd"), "--userdata-hdd", join(data, "hdd"),
+    "--port", String(port), "--web-dir", process.env.CAL_DIST ?? "dist",
+    "--plugin-root", process.env.CAL_PLUGINS ?? "../../plugins",
+  ], { stdio: ["ignore", "pipe", "pipe"] });
+  const url = `http://localhost:${port}`;
+  let tail = "", exited = false, startupError;
+  for (const stream of [server.stdout, server.stderr]) {
+    stream.on("data", (chunk) => { tail = (tail + chunk).slice(-4096); });
+  }
+  const closed = new Promise((resolve) => {
+    server.once("error", (error) => { startupError = error; });
+    server.once("close", () => { exited = true; resolve(); });
+  });
+  const stop = async () => {
+    if (!exited) server.kill();
+    await closed;
+    rmSync(data, { recursive: true, force: true });
+  };
+  try {
+    for (let attempt = 0; attempt < 80 && !exited; attempt++) {
+      try {
+        const startup = JSON.parse(readFileSync(join(appdata, "startup.json"), "utf8"));
+        if (startup.pid !== server.pid) throw new Error("Unexpected server PID");
+        const token = readFileSync(join(appdata, "setup.token"), "utf8").trim();
+        const ready = await fetch(`${url}/api/v1/auth/status`, { signal: AbortSignal.timeout(500) });
+        if (token && ready.ok && !exited) {
+          return { bin, data, url, token, stop, logTail: () => tail };
+        }
+      } catch { /* Server not ready yet. */ }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw startupError ?? new Error(`Real server at ${url} did not become ready.
+${tail}`);
+  } catch (error) {
+    await stop();
+    throw error;
+  }
+}
+
+/** Open a real-server test page with a disposable virtual passkey. */
+export async function openRealServerPage(browser) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await context.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
+  const page = await context.newPage();
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true,
+      isUserVerified: true, automaticPresenceSimulation: true,
+    },
+  });
+  return page;
+}
+
+/** Complete first-owner signup against the disposable server. */
+export async function signUpRealServerOwner(page, server, name) {
+  await page.goto(`${server.url}/?server=1`);
+  await page.waitForSelector("html[data-ready]");
+  await signUp(page, server.token, name);
+  await page.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 });
+  await page.waitForSelector("html[data-ready]");
+  await page.waitForTimeout(1200);
 }
 
 /** The devices the screenshots and checks use. */

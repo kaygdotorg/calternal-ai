@@ -2,6 +2,17 @@
 
 `gate.mjs` (`npm run e2e:gate -w apps/web`) is the merge gate; `gate-server.mjs` (`npm run e2e:server`) runs the server-mode suites. Both are described in the repository README ("UI merge gate").
 
+## Real-server suites
+
+Build the web app and server from the same checkout on a development VM.
+Run `npm ci` first so a previous checkout's dependencies cannot leak into the
+build. In `nix develop`, run `npm run build:plugins`,
+`npm run build -w apps/web` and `cargo build --locked -p calternal-server -j3`.
+From `apps/web`, set `CAL_BIN` to the absolute path of the matching binary
+and `CAL_DIST` to the web build directory before running
+`node e2e/machines-server.mjs` or `node e2e/skills-server.mjs`.
+The suites use fresh disposable roots and a virtual passkey.
+
 ## In the gate
 
 first-visit, shell-audit, flat-sidebars, resize, sidebar-scroll, a11y (four parts: device and scheme), text-parity, palette, palette-focus (12 opens), interact, phone-nav, settings-pages, focus-ring, swipe-rows, morph, states, new-thread, keyboard-threads, swipe, sidebar-pull, switch, safe-areas, seam, section-spacing, floating-material, onboarding, app-switcher, composer. Each exits non-zero on a failed check. When a decided behaviour changes on purpose, change the suite in the same merge.
