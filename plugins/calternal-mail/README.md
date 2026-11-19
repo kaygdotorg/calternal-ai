@@ -1,8 +1,8 @@
 # Calternal Mail data plugin
 
-Install this package with the reviewed package workflow in
-[Author and install a TypeScript plugin](../../docs/plugin-authoring.md).
-Enable it in your personal space. Its named `inbox` connection reaches a
+Enable the bundled package in your personal space. To install from this
+directory, follow the reviewed package workflow in
+[Author and install a TypeScript plugin](../../docs/plugin-authoring.md). Its named `inbox` connection reaches a
 public IMAPS mail server through the Calternal host and uses a password entered
 in Calternal's protected prompt. The plugin has no visual surface.
 
@@ -43,7 +43,9 @@ Each operation uses one verified TLS connection, with up to eight concurrent
 Mail connections across the process. The host caps encrypted input at 256 KiB,
 uses an eight-second connect and I/O deadline after bounded DNS resolution,
 and caps a read at 100 MIME parts and 12 levels. Each selected part is capped
-at 16 KiB before and after decoding and each MIME header at 4 KiB. Oversized
+at 16 KiB before and after decoding and each MIME header at 4 KiB. The
+shared per-space plugin network budget also limits starts, concurrency
+and traffic. Oversized
 messages are refused. Read-only operations use `EXAMINE` and `BODY.PEEK`.
 Mail supports password-based IMAPS. OAuth-only accounts need a future
 connection type. The worker has no SMTP, send or attachment download

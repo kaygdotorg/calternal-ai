@@ -456,7 +456,9 @@ most 32 of the package's text kinds through `sources`, for example
 `{"kind":"mail-message","field":"text"}`. Prepare an exact, live stored item
 revision through `prepareContent(context, {kind, item_id, revision, field})`.
 The host takes the person and space from the invocation. It returns only an
-opaque frame ID. Caller-supplied URLs have no direct fetch operation.
+opaque frame ID. Caller-supplied URLs have no direct fetch operation. A package
+with a named IMAPS connection can also declare a non-text `.eml` kind as
+`field: "mail_html"` for the inline HTML of a stored mail snapshot.
 
 Read frame metadata with `plugins.network.content.get`, passing the space
 and frame IDs. The host rechecks the viewer, source revision and plugin

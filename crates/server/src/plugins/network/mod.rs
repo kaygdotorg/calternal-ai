@@ -24,6 +24,14 @@ use crate::{
     store::Store,
 };
 
+/// Reserve a bounded dial against the same per-space concurrency, start and byte
+/// ceilings as other plugin network activity. Unknown transfers are charged in full.
+pub(super) fn reserve(space: SpaceId, bytes: u64) -> Result<admission::Reservation, Error> {
+    static BUDGET: std::sync::LazyLock<Arc<admission::Admission>> =
+        std::sync::LazyLock::new(|| Arc::new(admission::Admission::default()));
+    BUDGET.try_start(space, bytes)
+}
+
 const FRAME_PREFIX: &str = "/api/v1/plugin-content";
 
 fn missing() -> Error {
@@ -78,7 +86,9 @@ pub(super) fn prepare(
     let assets = format!("{}/{}", frame_path(id), asset_signature(store, id));
     let decoded;
     let html = match request.field {
-        calternal_core::ContentFetchField::Text => std::str::from_utf8(&item.bytes).map_err(|_| missing())?,
+        calternal_core::ContentFetchField::Text => {
+            std::str::from_utf8(&item.bytes).map_err(|_| missing())?
+        }
         calternal_core::ContentFetchField::MailHtml => {
             decoded = super::broker::mail::snapshot_html(&item.bytes).ok_or_else(missing)?;
             &decoded

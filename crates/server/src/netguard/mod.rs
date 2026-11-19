@@ -60,8 +60,14 @@ impl Resolve for PublicDns {
 /// Dial the returned addresses without resolving the hostname again.
 pub(crate) async fn public_addresses(host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
     let fqdn = format!("{host}.");
-    let addresses: Vec<_> = tokio::net::lookup_host((fqdn.as_str(), port)).await?.collect();
-    if addresses.is_empty() || addresses.iter().any(|address| deny::is_denied(address.ip())) {
+    let addresses: Vec<_> = tokio::net::lookup_host((fqdn.as_str(), port))
+        .await?
+        .collect();
+    if addresses.is_empty()
+        || addresses
+            .iter()
+            .any(|address| deny::is_denied(address.ip()))
+    {
         return Err(refused());
     }
     Ok(addresses)

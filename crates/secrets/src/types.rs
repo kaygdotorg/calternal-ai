@@ -148,8 +148,14 @@ impl Consumer {
     /// Check the consumer's shape so audit rows stay small and unambiguous.
     pub(crate) fn validate(&self) -> Result<()> {
         let ok = match self {
-            Self::MailLogin { host, port } => *port != 0 && !host.is_empty() && host.len() <= 253
-                && host.bytes().all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b)),
+            Self::MailLogin { host, port } => {
+                *port != 0
+                    && !host.is_empty()
+                    && host.len() <= 253
+                    && host
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b))
+            }
             Self::WebhookSignature { package, route } => {
                 SecretName::for_plugin(package, route).is_ok()
             }

@@ -131,7 +131,7 @@ impl Admission {
 
 /// Hold one concurrency slot and reserve bytes before a request or stream.
 /// Cancelled work with an unknown byte count is conservatively charged in full.
-pub(super) struct Reservation {
+pub(in crate::plugins) struct Reservation {
     admission: Arc<Admission>,
     space: SpaceId,
     reserved: u64,

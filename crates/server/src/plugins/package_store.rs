@@ -229,20 +229,28 @@ pub fn authority_changed(old: &ManifestV1, new: &ManifestV1) -> bool {
         .network
         .as_ref()
         .and_then(|network| network.content_fetch.as_ref());
-    let old_mail = old.network.as_ref().and_then(|network| network.mail_connection.as_ref());
-    let new_mail = new.network.as_ref().and_then(|network| network.mail_connection.as_ref());
-    (new_mail.is_some() && new_mail != old_mail) || new_content.is_some_and(|new| {
-        old_content.is_none_or(|old| {
-            new.profile != old.profile
-                || new
-                    .sources
-                    .iter()
-                    .any(|source| !old.sources.contains(source))
+    let old_mail = old
+        .network
+        .as_ref()
+        .and_then(|network| network.mail_connection.as_ref());
+    let new_mail = new
+        .network
+        .as_ref()
+        .and_then(|network| network.mail_connection.as_ref());
+    (new_mail.is_some() && new_mail != old_mail)
+        || new_content.is_some_and(|new| {
+            old_content.is_none_or(|old| {
+                new.profile != old.profile
+                    || new
+                        .sources
+                        .iter()
+                        .any(|source| !old.sources.contains(source))
+            })
         })
-    }) || new
-        .host_calls
-        .iter()
-        .any(|call| !old.host_calls.contains(call))
+        || new
+            .host_calls
+            .iter()
+            .any(|call| !old.host_calls.contains(call))
         || new
             .secrets
             .iter()
