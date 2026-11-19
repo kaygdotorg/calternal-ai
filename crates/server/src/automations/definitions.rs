@@ -33,11 +33,16 @@ pub(super) struct Definition {
 
 impl Definition {
     fn read(value: Value) -> Result<Self, Error> {
+        if value["format"]
+            .as_str()
+            .is_some_and(|format| format != FORMAT)
+        {
+            return Err(Error::conflict(
+                "This automation uses an unsupported format. Open it with a compatible version of Calternal.",
+            ).with_details(json!({"reason":"unsupported_version"})));
+        }
         let definition: Self = serde_json::from_value(value)
             .map_err(|_| Error::internal("automation metadata could not be read"))?;
-        if definition.format != FORMAT {
-            return Err(Error::unavailable("unsupported automation format"));
-        }
         Ok(definition)
     }
 
@@ -69,6 +74,14 @@ impl Definition {
         Ok((definition, prompt.to_owned()))
     }
 
+    /// Parse the saved expression or report that the schedule needs updating.
+    pub(super) fn calendar(&self) -> Result<Schedule, Error> {
+        Schedule::from_expression(&self.schedule).ok_or_else(|| {
+            Error::conflict("This automation has an unsupported schedule. Preview and save a supported schedule.")
+                .with_details(json!({"reason":"unsupported_schedule"}))
+        })
+    }
+
     fn record(
         &self,
         status: scheduling::Status,
@@ -77,8 +90,7 @@ impl Definition {
         zone: &str,
         prompt: Option<String>,
     ) -> Result<AutomationRecord, Error> {
-        let schedule = Schedule::from_expression(&self.schedule)
-            .ok_or_else(|| Error::unavailable("unsupported calendar expression"))?;
+        let schedule = self.calendar()?;
         let is_creator = self.creator == caller;
         Ok(AutomationRecord {
             id: summary.id.to_string(),

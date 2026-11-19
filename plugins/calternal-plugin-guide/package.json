@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && esbuild src/worker.ts --bundle --platform=node --format=esm --target=node22 --minify --loader:.md=text --outfile=dist/worker.js",
+    "docs:examples": "node scripts/generate-examples.mjs",
+    "build": "node scripts/generate-examples.mjs --check && tsc --noEmit && esbuild src/worker.ts --bundle --platform=node --format=esm --target=node22 --minify --loader:.md=text --outfile=dist/worker.js",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {

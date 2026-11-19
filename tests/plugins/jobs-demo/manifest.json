@@ -46,7 +46,8 @@
           "value": { "type": "integer" },
           "wait": { "enum": ["deadline", "question", "approval", "webhook"] },
           "deadline_ms": { "type": "integer" },
-          "correlation": { "type": "string" }
+          "correlation": { "type": "string" },
+          "question_source": { "type": "string" }
         },
         "required": ["steps", "delay_ms", "every"],
         "additionalProperties": false

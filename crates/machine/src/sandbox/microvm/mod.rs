@@ -198,23 +198,22 @@ impl Backend for MicrovmBackend {
         &'a self,
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        Box::pin(async {
-            let space = spec
-                .space_id
-                .ok_or_else(|| SandboxError("missing sandbox space".into()))?;
-            let slot = self.0.account(spec.account_id);
-            let mut account = slot.lock().await;
-            let vm = self.0.ensure_guest(spec.account_id, &mut account).await?;
-            vm.control(&Request::Start(space, spec.clone())).await?;
-            let thread = Thread::new(
-                slot.clone(),
-                vm.socket.clone(),
-                vm.key.clone(),
-                spec.thread_id,
-                spec.worker.is_some(),
-            );
-            Ok(Arc::new(thread) as Arc<dyn Sandbox>)
-        })
+        if spec.shared_provider_sponsor.is_some() {
+            return Box::pin(async {
+                Err(SandboxError(
+                    "shared provider login is unavailable on this backend".into(),
+                ))
+            });
+        }
+        self.start_thread(spec, None)
+    }
+
+    fn start_harness<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: &'a crate::protocol::HarnessSandbox,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        self.start_thread(spec, Some(harness))
     }
 
     fn discard(&self, account: Uuid, thread: Uuid) -> BoxFuture<'_, SandboxResult<()>> {
@@ -534,7 +533,10 @@ async fn maintain(backend: Weak<State>) {
                 tracing::warn!(%error, "cannot remove exited warm microVM");
             }
         }
-        if warm < state.config.warm_guests && state.capacity.available_permits() > 1 {
+        if warm < state.config.warm_guests
+            && state.capacity.available_permits() > 1
+            && warm_memory_available(state.config.memory_mib).await
+        {
             let started = async {
                 let disk = state.new_disk().await?;
                 match state.boot(disk.clone()).await {
@@ -558,4 +560,56 @@ async fn maintain(backend: Weak<State>) {
             () = tokio::time::sleep(SWEEP) => {}
         }
     }
+}
+
+impl MicrovmBackend {
+    fn start_thread<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: Option<&'a crate::protocol::HarnessSandbox>,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        Box::pin(async move {
+            let space = spec
+                .space_id
+                .ok_or_else(|| SandboxError("missing sandbox space".into()))?;
+            if let Some(harness) = harness
+                && harness.guest_image_digest.as_deref() != Some(&self.0.config.image_digest)
+            {
+                return Err(SandboxError(
+                    "installed harness requires a different guest image".into(),
+                ));
+            }
+            let slot = self.0.account(spec.account_id);
+            let mut account = slot.lock().await;
+            let vm = self.0.ensure_guest(spec.account_id, &mut account).await?;
+            let request = match harness {
+                Some(harness) => Request::StartHarness(space, spec.clone(), harness.clone()),
+                None => Request::Start(space, spec.clone()),
+            };
+            vm.control(&request).await?;
+            let thread = Thread::new(
+                slot.clone(),
+                vm.socket.clone(),
+                vm.key.clone(),
+                spec.thread_id,
+                spec.worker.is_some(),
+            );
+            Ok(Arc::new(thread) as Arc<dyn Sandbox>)
+        })
+    }
+}
+
+/// One host sample on the warm-guest maintenance path. Leave one additional
+/// guest reservation available for normal turn placement.
+async fn warm_memory_available(memory_mib: u32) -> bool {
+    let Some(size) = GuestSize::from_mib(memory_mib) else {
+        return false;
+    };
+    tokio::task::spawn_blocking(move || {
+        crate::memory::sample()
+            .1
+            .is_some_and(|available| available >= 2 * size.host_memory_bytes())
+    })
+    .await
+    .unwrap_or(false)
 }

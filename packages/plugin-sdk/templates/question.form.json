@@ -1,0 +1,4 @@
+{
+  "genui_version": 2,
+  "source": "$text=\"\"\nForm([Input($text, \"What should the job use?\")], \"Job question\")"
+}

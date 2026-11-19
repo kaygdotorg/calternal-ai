@@ -32,6 +32,110 @@ item_id: string,
  */
 text: string, };
 /**
+ * Register or renew the signed-in installation's browser subscription.
+ */
+
+export type PushSubscribeInput = {
+/**
+ * Browser PushSubscription endpoint, restricted to supported HTTPS providers.
+ */
+endpoint: string,
+/**
+ * Unpadded base64url-encoded uncompressed P-256 public key.
+ */
+p256dh: string,
+/**
+ * Unpadded base64url-encoded 16-byte browser authentication secret.
+ */
+auth: string, };
+/**
+ * Remove an installation belonging to the signed-in account.
+ */
+
+export type PushUnsubscribeInput = {
+/**
+ * Installation UUID returned by push.devices.
+ */
+device_id: string, };
+/**
+ * One active subscription, with no endpoint or browser key material.
+ */
+
+export type PushDevice = {
+/**
+ * Revocable installation UUID.
+ */
+device_id: string,
+/**
+ * Display name from the installation directory.
+ */
+name: string,
+/**
+ * Whether the current credential belongs to this installation.
+ */
+current: boolean,
+/**
+ * Server-enforced expiry in Unix milliseconds.
+ */
+expires_at_ms: bigint, };
+/**
+ * Subscription inventory and the public browser application server key.
+ */
+
+export type PushDevices = {
+/**
+ * Unpadded base64url VAPID public key for PushManager.subscribe.
+ */
+application_server_key: string,
+/**
+ * The signed-in account's live subscriptions.
+ */
+devices: Array<PushDevice>, };
+/**
+ * Outcome of an idempotent subscription removal.
+ */
+
+export type PushRemoved = {
+/**
+ * True when a stored subscription was removed.
+ */
+removed: boolean, };
+/**
+ * Best-effort admission of a test notification for the current installation.
+ */
+
+export type PushQueued = {
+/**
+ * True when the background worker accepted the test.
+ */
+queued: boolean, };
+/**
+ * The only status values delivered to a browser push receiver.
+ */
+
+export type PushStatus = "needs_you" | "finished" | "test";
+/**
+ * Browser notification payload, encrypted before the relay receives it.
+ */
+
+export type PushPayload = {
+/**
+ * Current thread title, or a fixed application title for a test.
+ */
+title: string,
+/**
+ * Notification label. No message, tool output, or request text.
+ */
+status: PushStatus,
+/**
+ * Owning space UUID for click routing. Absent for a test push.
+ */
+space_id?: string,
+/**
+ * Thread UUID for click routing. Absent for a test push.
+ */
+thread_id?: string, };
+/**
  * Account-private list input. No caller-supplied account is accepted.
  */
 
@@ -192,7 +296,7 @@ space_id: string,
  */
 machine_id: string,
 /**
- * Optional provider plugin. An empty or absent value checks Claude Code.
+ * Optional provider plugin. An empty or absent value checks the installation's default provider.
  */
 provider_id: string, };
 /**
@@ -208,6 +312,53 @@ sandbox_started: boolean,
  * The provider's check, absent if it did not report an outcome.
  */
 provider: ProviderCheck | null, };
+/**
+ * Input for reading the execution setting.
+ */
+
+export type SpaceMachineGet = {
+/**
+ * Space UUID.
+ */
+space_id: string, };
+/**
+ * Input for setting the shared execution machine.
+ */
+
+export type SpaceMachineSet = {
+/**
+ * Enable isolated tools on this machine. Only the space Owner may enable them.
+ */
+tools_enabled: boolean | null,
+/**
+ * Shared space UUID.
+ */
+space_id: string,
+/**
+ * Owner's sandbox machine UUID or null to clear the setting.
+ */
+machine_id: string | null, };
+/**
+ * Current space execution setting and the notice shown during setup.
+ */
+
+export type SpaceMachineResult = {
+/**
+ * Whether the Owner enabled isolated tools for this binding.
+ */
+tools_enabled: boolean,
+/**
+ * Whether a shared machine is configured.
+ */
+configured: boolean,
+/**
+ * Selected machine UUID, visible only with permission to change it.
+ */
+machine_id: string | null,
+/**
+ * Notice for the person configuring the provider account.
+ */
+notice: string, };
 /**
  * Select the space and optionally a saved thread's placement constraint.
  */
@@ -336,6 +487,11 @@ signed_in: boolean,
  */
 sign_in_command: string, };
 /**
+ * Why the caller cannot currently start a provider turn on one machine.
+ */
+
+export type ProviderBlocked = "disabled" | "machine_offline" | "machine_busy" | "check_required" | "check_stale" | "runtime_unavailable" | "sign_in_required";
+/**
  * A machine's readiness for one provider in this space.
  */
 
@@ -352,6 +508,10 @@ check: ProviderCheck | null,
  * The machine has capacity and the enabled provider reports a login.
  */
 ready: boolean,
+/**
+ * The first unmet readiness condition. A fresh verified provider omits it.
+ */
+blocked?: ProviderBlocked,
 /**
  * Safe reason an automatic title was skipped on this machine, when observed.
  */
@@ -405,7 +565,11 @@ machine_id: string | null,
 /**
  * Use an entitled anonymous pool machine. Mutually exclusive with machine_id.
  */
-pool: boolean, };
+pool: boolean,
+/**
+ * Sign in to the configured space login using space.settings authority.
+ */
+shared: boolean, };
 /**
  * Supply a browser authorization code to the original official process.
  */
@@ -2281,6 +2445,10 @@ direct: boolean,
  */
 pool: boolean,
 /**
+ * Use the caller's machine and login for this turn in a configured shared space.
+ */
+personal_machine: boolean,
+/**
  * Thread UUID for check/run; no thread file is created in step one.
  */
 thread_id: string,
@@ -2305,7 +2473,7 @@ model: string,
  */
 options: { [key in string]?: unknown },
 /**
- * Enabled provider plugin; empty selects calternal-claude-code.
+ * Enabled provider plugin; empty selects the installation's default provider.
  */
 provider_id: string,
 /**
@@ -2316,6 +2484,14 @@ mode: AgentMode,
  * Per-thread recovery override; absent uses the account defaults.
  */
 retry_settings: AgentRetrySettings | null,
+/**
+ * Native provider approval received from this active run.
+ */
+approval_id: string,
+/**
+ * Allow the named native approval for this run.
+ */
+approve: boolean,
 /**
  * Originating app operation prefix; empty grants no originating-app access.
  */
@@ -2410,7 +2586,15 @@ context: Array<ProviderContext>, } | { "type": "steer",
 /**
  * New message, bounded by the command budget.
  */
-prompt: string, } | { "type": "stop" };
+prompt: string, } | { "type": "approve",
+/**
+ * Opaque ID emitted by this run's adapter.
+ */
+request_id: string,
+/**
+ * Authorize this request within the existing sandbox boundary.
+ */
+approved: boolean, } | { "type": "stop" };
 /**
  * A command envelope. `seq` starts at one and increases exactly once per command.
  */
@@ -2501,6 +2685,14 @@ detail: string, } | { "type": "question",
  * Short question, at most 4 KiB.
  */
 text: string, } | { "type": "approval_request",
+/**
+ * ID of an interactive, run-scoped approval. Legacy notices omit it.
+ */
+request_id?: string,
+/**
+ * Whether an interactive confirmation can proceed within the tool sandbox.
+ */
+can_approve?: boolean,
 /**
  * Short action description, at most 4 KiB.
  */
@@ -2893,6 +3085,35 @@ base_revision: string,
  */
 title: string, };
 /**
+ * Progress of an authorized Notes rename or its inverse.
+ */
+
+export type NoteRenameJob = {
+/**
+ * Job UUID returned by the rename.
+ */
+job_id: string,
+/**
+ * Stable identity of the renamed note.
+ */
+note_id: string,
+/**
+ * Original number of candidate linking notes.
+ */
+total: number,
+/**
+ * Number of source files still to inspect in the current direction.
+ */
+remaining: number,
+/**
+ * Number of conflicts skipped in the current direction.
+ */
+skipped: number,
+/**
+ * `pending`, `done`, `undoing`, `undone`, or `blocked`.
+ */
+state: string, };
+/**
  * A single note UUID targeted by a lifecycle operation.
  */
 
@@ -2928,6 +3149,129 @@ id: string,
  * Deleted state of the address.
  */
 state: ItemState, };
+/**
+ * One trashed note and its remaining whole-day retention, rounded up.
+ */
+
+export type TrashedNote = {
+/**
+ * Days until eligibility for automatic purge. Zero means eligible now.
+ */
+days_remaining: number,
+/**
+ * Stable UUID note identity; access is checked against the accompanying space.
+ */
+id: string,
+/**
+ * Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
+ */
+space_id: string,
+/**
+ * Display title, nonblank, at most 256 Unicode scalars and without control characters.
+ */
+title: string,
+/**
+ * Opaque nonempty server revision; compare for equality, never infer order or parse it.
+ */
+revision: string,
+/**
+ * Server-authored UTC RFC 3339 timestamp for this snapshot.
+ */
+updated_at: string, };
+/**
+ * One page of notes eligible for restore or purge, newest deletion first.
+ */
+
+export type TrashListResult = {
+/**
+ * At most 100 notes with their remaining retention.
+ */
+notes: Array<TrashedNote>,
+/**
+ * Opaque next-page cursor, omitted when there are no more notes.
+ */
+next_cursor?: string, };
+/**
+ * Selects the Trash of one space for an irreversible-action preview.
+ */
+
+export type TrashScope = {
+/**
+ * UUID of the owning space.
+ */
+space_id: string, };
+/**
+ * Confirmation for exactly the current set of trashed revisions.
+ */
+
+export type TrashEmptyPreview = {
+/**
+ * Number of selected notes.
+ */
+count: number,
+/**
+ * Logical UTF-8 bytes in all retained versions of the selected notes.
+ */
+bytes: number,
+/**
+ * Opaque set fingerprint required when starting the job.
+ */
+confirmation: string, };
+/**
+ * Confirm the irreversible deletion of a previewed Trash selection.
+ */
+
+export type TrashEmptyInput = {
+/**
+ * UUID of the owning space.
+ */
+space_id: string,
+/**
+ * Confirmation from a fresh preview for the same space.
+ */
+confirmation: string, };
+/**
+ * Select one previously admitted job in its owning space.
+ */
+
+export type NoteJobInput = {
+/**
+ * UUID of the owning space.
+ */
+space_id: string,
+/**
+ * Job UUID returned on admission.
+ */
+job_id: string, };
+/**
+ * Durable progress of one irreversible Empty Trash job.
+ */
+
+export type TrashJob = {
+/**
+ * Stable job UUID.
+ */
+job_id: string,
+/**
+ * Number of notes selected at confirmation.
+ */
+count: number,
+/**
+ * Logical version bytes selected at confirmation.
+ */
+bytes: number,
+/**
+ * Number of selected revisions permanently removed by this job.
+ */
+purged: number,
+/**
+ * Number of selected revisions restored, replaced, blocked or already removed.
+ */
+skipped: number,
+/**
+ * `pending` while work remains, `done` after all selected revisions are examined.
+ */
+state: string, };
 /**
  * Bounded tag lookup result.
  */
@@ -3076,7 +3420,11 @@ export type NoteResult = {
 /**
  * Current note snapshot visible to the authenticated caller.
  */
-note: Note, };
+note: Note,
+/**
+ * Durable link rewrite job when this write changes the note's title.
+ */
+job_id?: string, };
 /**
  * Result for `notes.history`; snapshots are paginated without exposing storage paths.
  */

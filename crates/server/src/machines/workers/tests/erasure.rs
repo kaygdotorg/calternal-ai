@@ -108,6 +108,7 @@ fn exercise_stop(completion: Completion) {
         discards: vec![],
         capacity: Capacity {
             max_sandboxes: 1,
+            available_memory_bytes: Some(64 << 30),
             ..Capacity::default()
         },
         draining: false,

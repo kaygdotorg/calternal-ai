@@ -52,7 +52,11 @@ with an uncertain outcome require ordinary recovery on the same thread.
 The scheduler admits a catch-up run only on its scheduled local day. Earlier
 misses appear in the most recent status and do not create a backlog of threads.
 Pause clears unstarted scheduled work. Enable starts from confirmation time.
-Run now uses a separate receipt and leaves the schedule untouched. Loss of
+Run now uses a separate receipt and leaves the schedule untouched.
+If no eligible machine is available, it returns HTTP 409 with reason
+`no_machine_available`. Connect a machine and select it for the automation,
+then start a new Run now request. Repeating the original request ID returns
+the same refusal while its receipt is retained. Loss of
 space authority stops scheduling and cancels pending work and running jobs
 when checked at dispatch or by the background worker. Re-enable after access
 is restored. File changes outside the guarded operation stop execution when

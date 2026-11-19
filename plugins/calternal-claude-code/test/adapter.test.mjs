@@ -5,8 +5,8 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {Adapter,lines} from '../dist/adapter.js';
 const binary=resolve('test/fake-claude.mjs');
-function fixture(){
- const events=[];const a=new Adapter(binary,async line=>events.push(JSON.parse(line)));let seq=0;
+function fixture(shared = false){
+ const events=[];const a=new Adapter(binary,async line=>events.push(JSON.parse(line)),shared);let seq=0;
  return {a,events,command:command=>a.command(JSON.stringify({version:1,seq:++seq,command}))};
 }
 async function run(prompt){const f=fixture();await f.command({type:'start',options:{},model:'sonnet',cwd:process.cwd(),instructions:'Core instructions',resume:null});await f.command({type:'send',prompt,context:[]});await f.a.finish();return f.events;}
@@ -75,4 +75,18 @@ test('real signed-in Claude opt-in', {skip:process.env.CALTERNAL_TEST_REAL_CLAUD
  const events=[];const a=new Adapter('claude',async line=>events.push(JSON.parse(line)));
  await a.command(JSON.stringify({version:1,seq:1,command:{type:'start',options:{},model:'sonnet',cwd:process.cwd(),instructions:'Reply concisely. Use no tools.',resume:null}}));
  await a.command(JSON.stringify({version:1,seq:2,command:{type:'send',prompt:'Say hello.',context:[]}}));await a.finish();assert.equal(events.at(-1).event.outcome,'done');
+});
+
+test('shared turns launch with zero tools and refuse a tool-enabled CLI', async () => {
+  for (const unexpected of [false, true]) {
+    const f = fixture(true);
+    await f.command({type:'start', model:'sonnet', options:{}, cwd:process.cwd(),
+      instructions:'Reply plainly.', resume:'11111111-1111-4111-8111-111111111111'});
+    await f.command({type:'send', prompt:unexpected ? 'shared-fixture unexpected-tool' : 'shared-fixture', context:[]});
+    await f.a.finish();
+    const events = f.events.map(frame => frame.event);
+    assert.equal(events.at(-1).outcome, unexpected ? 'outcome_unknown' : 'done');
+    assert.equal(events.some(event => event.type === 'text_delta'), !unexpected);
+    assert.ok(!events.some(event => event.type === 'session' || event.type.startsWith('tool_')));
+  }
 });

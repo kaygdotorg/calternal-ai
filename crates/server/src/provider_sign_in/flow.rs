@@ -48,7 +48,45 @@ pub(super) async fn run<D: Directory>(
         None
     };
     let svc = machines.clone();
-    let lease = blocking(move || svc.request_sign_in(space, account, machine)).await;
+    let appdata = state.store.appdata().to_owned();
+    let provider = target.provider.clone();
+    let login_scope = target.login_scope;
+    let shared = target.shared;
+    let lease = match current(&state, &machines, account, &session, &target).await {
+        Ok(()) => {
+            blocking(move || {
+                if let Some(shared) = shared {
+                    return svc.request_shared(space, account, Uuid::new_v4(), shared, true, None);
+                }
+                match crate::plugins::package_store::provider_runtime::read_pin(&appdata, &provider)
+                    .map_err(|_| failed())?
+                {
+                    Some((pin, legacy)) => {
+                        let mut sandbox = crate::plugins::package_store::provider_runtime::sandbox(
+                            &pin,
+                            provider,
+                            login_scope,
+                            false,
+                        );
+                        sandbox.legacy_profile = legacy;
+                        svc.request_harness(
+                            space,
+                            account,
+                            Uuid::new_v4(),
+                            Some(machine),
+                            pin.image,
+                            sandbox,
+                            true,
+                            false,
+                        )
+                    }
+                    None => svc.request_sign_in(space, account, machine),
+                }
+            })
+            .await
+        }
+        Err(error) => Err(error),
+    };
     let done = match lease {
         Ok(lease) => {
             let lease = lease.lease_id;
@@ -121,7 +159,7 @@ async fn relay<D: Directory>(
     mut answer: mpsc::Receiver<String>,
 ) -> Result<(), Error> {
     loop {
-        current(state, account, session, target).await?;
+        current(state, machines, account, session, target).await?;
         let svc = machines.clone();
         let run = blocking(move || svc.run(account, lease)).await?;
         match run.state {
@@ -138,7 +176,7 @@ async fn relay<D: Directory>(
     let mut frame = Vec::new();
     let mut prompted = false;
     loop {
-        current(state, account, session, target).await?;
+        current(state, machines, account, session, target).await?;
         tokio::select! {
             code = answer.recv() => {
                 let mut code = code.ok_or_else(failed)?.into_bytes();
@@ -159,7 +197,7 @@ async fn relay<D: Directory>(
                         if frame.len() + bytes.len() > PROMPT_BYTES { return Err(failed()); }
                         frame.extend(bytes);
                         if frame.ends_with(b"\n") {
-                            let prompt = parse(&frame)?;
+                            let prompt = parse(&frame, &target.policy)?;
                             frame.clear();
                             prompted = true;
                             state.inputs.sign_ins.access(account, |entries| {
@@ -173,10 +211,14 @@ async fn relay<D: Directory>(
                 }
                 if let Some(exit) = batch.exit {
                     if exit.code != Some(0) || !frame.is_empty() { return Err(failed()); }
+                    if target.shared.is_some() {
+                        return Ok(());
+                    }
                     let svc = machines.clone();
                     let (machine, provider) = (target.machine, target.provider.clone());
+                    let sign_in_command = target.policy.command.clone();
                     return blocking(move || svc.record_check(account, lease, machine, provider, ProviderCheck{
-                        installed:true, signed_in:true, sign_in_command: "claude auth login".into(),
+                        installed:true, signed_in:true, sign_in_command,
                     })).await;
                 }
             }
@@ -184,24 +226,15 @@ async fn relay<D: Directory>(
     }
 }
 
-fn parse(bytes: &[u8]) -> Result<Prompt, Error> {
+fn parse(
+    bytes: &[u8],
+    policy: &crate::plugins::package_store::provider_runtime::SignInPolicy,
+) -> Result<Prompt, Error> {
     let prompt: Prompt = serde_json::from_slice(bytes).map_err(|_| failed())?;
-    let valid_url = |raw: &str| {
-        raw.parse::<axum::http::Uri>().is_ok_and(|url| {
-            url.scheme_str() == Some("https")
-                && matches!(
-                    url.authority().map(|a| a.as_str()),
-                    Some(
-                        "claude.ai"
-                            | "claude.com"
-                            | "platform.claude.com"
-                            | "console.anthropic.com"
-                    )
-                )
-                && url.path() == "/oauth/authorize"
-        })
-    };
-    if !prompt.url.as_deref().is_some_and(valid_url)
+    if !prompt
+        .url
+        .as_deref()
+        .is_some_and(|url| policy.allows(url, prompt.needs_code))
         || prompt.display_code.as_deref().is_some_and(|code| {
             code.len() > 64 || !code.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
         })
@@ -213,6 +246,7 @@ fn parse(bytes: &[u8]) -> Result<Prompt, Error> {
 
 async fn current<D: Directory>(
     state: &Shared<D>,
+    machines: &Arc<MachineService>,
     account: AccountId,
     session: &Session,
     target: &Target,
@@ -220,7 +254,18 @@ async fn current<D: Directory>(
     if !session.is_live_in(state).await {
         return Err(failed());
     }
-    authorize(state, account, target.space).await
+    authorize(state, account, target.space).await?;
+    if let Some(shared) = target.shared {
+        let (state, machines, space) = (state.clone(), machines.clone(), target.space);
+        blocking(move || {
+            if super::shared_target(&state, &machines, account, space)? != shared {
+                return Err(failed());
+            }
+            Ok(())
+        })
+        .await?;
+    }
+    Ok(())
 }
 
 async fn invalidate<D: Directory>(state: &Shared<D>, account: AccountId) {

@@ -21,7 +21,8 @@ title: "calternal notes rename"
     "revision": "string",
     "updated_at": "string",
     "markdown": "string"
-  }
+  },
+  "job_id?": "string"
 }
 ```
 
@@ -36,6 +37,7 @@ Title:     New Plan
 Revision:  v2.preview
 State:     Renamed
 Updated:  2026-11-17 06:12:03 +00:00
+Job:  019aabb0-3300-7333-8333-333333333333
 
 # New Plan
 ```
@@ -47,6 +49,7 @@ Recorded test fixture:
 ```json
 {
   "data": {
+    "job_id": "019aabb0-3300-7333-8333-333333333333",
     "note": {
       "id": "019aabb0-1100-7111-8111-111111111111",
       "markdown": "# New Plan\n",

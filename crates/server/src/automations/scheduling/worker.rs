@@ -243,7 +243,7 @@ fn enqueue_due<D: Directory>(
             register(&state.store, &item, &d)?;
             continue;
         }
-        let schedule = schedule(&d)?;
+        let schedule = d.calendar()?;
         let Some(latest) = schedule.latest(&d.timezone, now).filter(|at| *at >= cursor) else {
             continue;
         };

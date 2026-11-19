@@ -11,12 +11,27 @@ fn version(db: &Connection) -> i64 {
 }
 
 #[test]
+#[should_panic(expected = "migration versions must be consecutive")]
+fn rejects_two_steps_claiming_the_same_version() {
+    Schema::new("test", 4, BASE, &[(5, ADD), (5, "SELECT 1")]);
+}
+
+#[test]
+#[should_panic(expected = "migration versions must be consecutive")]
+fn rejects_a_gap_after_the_baseline() {
+    Schema::new("test", 4, BASE, &[(6, ADD)]);
+}
+
+#[test]
 fn advances_in_order_and_preserves_rows() {
     let db = Connection::open_in_memory().unwrap();
     migrate(&db, Schema::new("test", 4, BASE, &[])).unwrap();
     db.execute("INSERT INTO records VALUES (1, 'kept')", [])
         .unwrap();
-    let steps = &[ADD, "CREATE INDEX records_archived ON records(archived)"];
+    let steps = &[
+        (5, ADD),
+        (6, "CREATE INDEX records_archived ON records(archived)"),
+    ];
     migrate(&db, Schema::new("test", 4, BASE, steps)).unwrap();
     migrate(&db, Schema::new("test", 4, BASE, steps)).unwrap();
     assert_eq!(version(&db), 6);
@@ -34,7 +49,7 @@ fn advances_in_order_and_preserves_rows() {
 fn failed_step_rolls_back_schema_and_version() {
     let db = Connection::open_in_memory().unwrap();
     migrate(&db, Schema::new("test", 4, BASE, &[])).unwrap();
-    let steps = &[ADD, "CREATE INDEX invalid ON missing_table(id)"];
+    let steps = &[(5, ADD), (6, "CREATE INDEX invalid ON missing_table(id)")];
     assert!(migrate(&db, Schema::new("test", 4, BASE, steps)).is_err());
     assert_eq!(version(&db), 4);
     assert!(db.prepare("SELECT archived FROM records").is_err());
@@ -55,7 +70,7 @@ fn an_explicitly_compatible_upgrade_admits_the_previous_schema_writer() {
     let db = Connection::open_in_memory().unwrap();
     let old = Schema::new("test", 4, BASE, &[]);
     migrate(&db, old).unwrap();
-    let steps = &[ADD];
+    let steps = &[(5, ADD)];
     migrate_release(&db, Schema::new("test", 4, BASE, steps), true).unwrap();
     migrate(&db, old).unwrap();
     db.execute(
@@ -72,7 +87,7 @@ fn incompatible_release_leaves_no_exception_for_an_older_writer() {
     let db = Connection::open_in_memory().unwrap();
     let old = Schema::new("test", 4, BASE, &[]);
     migrate(&db, old).unwrap();
-    let steps = &[ADD];
+    let steps = &[(5, ADD)];
     migrate_release(&db, Schema::new("test", 4, BASE, steps), false).unwrap();
     assert!(migrate(&db, old).is_err());
 }

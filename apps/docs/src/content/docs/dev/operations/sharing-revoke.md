@@ -6,7 +6,7 @@ title: "sharing.revoke"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-Remove one item grant
+Revoke one item grant, including while the item is in Trash
 
 Capability: not declared in this catalogue; the host policy remains authoritative.
 
@@ -16,7 +16,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "risk": "reversible",
   "id": "sharing.revoke",
-  "description": "Remove one item grant",
+  "description": "Revoke one item grant, including while the item is in Trash",
   "mutates": true
 }
 ```
