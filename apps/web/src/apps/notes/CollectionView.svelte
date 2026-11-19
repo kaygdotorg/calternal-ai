@@ -44,7 +44,7 @@
 
 <div class="note">
   <div class="scroll">
-    <header class="nc-head">
+    <header class="nc-head" data-chrome-header>
       {#if shell.narrow}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
       <span class="grow"></span>
       {#if c}<Pill icon="share" label="Share" aria-haspopup="dialog" bind:el={shareEl} onclick={() => openShare({ kind: "collections", id: c!.id }, c!.title, shareEl ?? null)} />{/if}

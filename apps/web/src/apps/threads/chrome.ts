@@ -4,7 +4,7 @@
  * `archiveThread`, `layout.toggle`, `startThread`). Only top-level threads are listed natively (children are drawn under their parent in the page's own sidebar; the native list has no nesting yet). Pure of the DOM, so it is tested
  * with the stores alone.
  */
-import { ICONS, toast } from "@calternal/ui";
+import { toast } from "@calternal/ui";
 import { navigate, segments } from "../../lib/route.svelte";
 import { spaces } from "../../shell/spaces.svelte";
 import type { ChromeBadge, ChromeBody, ChromeEvent, ChromeItem, ChromeProvider, ChromeRow, ChromeSection } from "../../shell/chrome/types";
@@ -15,31 +15,27 @@ import { archiveThread, copyThreadLink, runThreadItem, threadItems, topLevelIds 
 import { iconOf, top, type TopEntry } from "./top-entries.svelte";
 import { view } from "./view.svelte";
 
-/** SF Symbol names for the page's icon names the menus use. */
-const SYMBOL: Record<string, string> = { edit: "pencil", folder: "folder", clock: "clock", link: "link", "stop-round": "stop.circle", archive: "archivebox", plus: "plus", wrench: "wrench", notes: "doc.text", settings: "gearshape", threads: "bubble.left", spark: "sparkles", question: "questionmark.circle", shield: "checkmark.shield", key: "key", lock: "lock", warning: "exclamationmark.triangle", bell: "bell", stop: "stop.circle" };
-/** The page's own provider marks as SVG (24 grid, `currentColor`), so the native row shows the same glyph as the drawn one. */
-const svg = (name: keyof typeof ICONS): string => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[name]}"/></svg>`;
 const REASON: Record<string, ChromeBadge> = {
-  Question: { kind: "symbol", symbol: SYMBOL.question, tone: "info" }, Approval: { kind: "symbol", symbol: SYMBOL.shield, tone: "info" }, Secret: { kind: "symbol", symbol: SYMBOL.key, tone: "info" },
-  "Sign in": { kind: "symbol", symbol: SYMBOL.lock, tone: "info" }, Failed: { kind: "symbol", symbol: SYMBOL.warning, tone: "bad" }, Interrupted: { kind: "symbol", symbol: SYMBOL.stop, tone: "warn" },
+  Question: { kind: "icon", icon: "question", tone: "info" }, Approval: { kind: "icon", icon: "shield", tone: "info" }, Secret: { kind: "icon", icon: "key", tone: "info" },
+  "Sign in": { kind: "icon", icon: "lock", tone: "info" }, Failed: { kind: "icon", icon: "warning", tone: "bad" }, Interrupted: { kind: "icon", icon: "stop", tone: "warn" },
 };
 
 const path = (e: TopEntry): string | null => (e.target.startsWith("route:") ? e.target.slice(6) : e.target.startsWith("thread:") ? `/threads/${e.target.slice(7)}` : null);
-const asItem = (m: { id: string; label: string; icon?: string; danger?: boolean; input?: ChromeItem["input"] }): ChromeItem => ({ id: m.id, title: m.label, ...(m.icon && SYMBOL[m.icon] ? { symbol: SYMBOL[m.icon] } : {}), ...(m.danger ? { role: "destructive" as const } : {}), ...(m.input ? { input: m.input } : {}) });
+const asItem = (m: { id: string; label: string; icon?: string; danger?: boolean; input?: ChromeItem["input"] }): ChromeItem => ({ id: m.id, title: m.label, ...(m.icon ? { icon: m.icon } : {}), ...(m.danger ? { role: "destructive" as const } : {}), ...(m.input ? { input: m.input } : {}) });
 const menuOf = (t: ThreadSummary): ChromeItem[] => threadItems(t).map((m) => asItem(m.id === "rename" ? { ...m, input: { placeholder: "Name", value: t.title } } : m));
 
 /** The marks at a row's end: why it is in the Inbox (one per reason), else its state when it means something. */
 function marksOf(t: ThreadSummary, reasons?: readonly string[]): ChromeBadge[] {
   if (reasons?.length) return reasons.map((r) => REASON[r] ?? { kind: "dot" });
-  if (t.state === "running") return [{ kind: "symbol", symbol: "arrow.triangle.2.circlepath", tone: "info" }];
-  if (t.state === "waiting") return [{ kind: "symbol", symbol: SYMBOL.bell, tone: "info" }];
+  if (t.state === "running") return [{ kind: "icon", icon: "pulse", tone: "info" }];
+  if (t.state === "waiting") return [{ kind: "icon", icon: "bell", tone: "info" }];
   if (t.state === "failed") return [REASON.Failed!];
   return [];
 }
 
 const rowOf = (t: ThreadSummary, current: string | undefined, reasons?: readonly string[]): ChromeRow => ({
-  id: t.id, title: t.title, icon: { svg: svg(t.provider === "codex" ? "codex" : "claude") }, trailing: marksOf(t, reasons), selected: t.id === current,
-  leadingActions: [{ id: "copy", title: "Copy link", symbol: "link" }], trailingActions: [{ id: "archive", title: "Archive", symbol: "archivebox", role: "destructive" }], menu: menuOf(t),
+  id: t.id, title: t.title, icon: t.provider, trailing: marksOf(t, reasons), selected: t.id === current,
+  leadingActions: [{ id: "copy", title: "Copy link", icon: "link" }], trailingActions: [{ id: "archive", title: "Archive", icon: "archive", role: "destructive" }], menu: menuOf(t),
 });
 
 /** The Threads app's provider for the native chrome. */
@@ -54,8 +50,8 @@ export const threadsChrome: ChromeProvider = {
     const inbox = store.inbox.filter((i) => i.thread.spaceId === here);
     const tab = view.chosen ?? (inbox.length || store.jobPrompts.length ? "inbox" : "all");
     const shortcuts: ChromeSection = {
-      id: "top", title: null, actions: [{ id: "add", title: "Add to this list", symbol: "plus" }],
-      rows: top.entries.map((e) => ({ id: `top:${e.id}`, title: e.label, symbol: SYMBOL[iconOf(e.target)] ?? "circle", selected: path(e) !== null && `/${segments().join("/")}` === path(e) })),
+      id: "top", title: null, actions: [{ id: "add", title: "Add to this list", icon: "plus" }],
+      rows: top.entries.map((e) => ({ id: `top:${e.id}`, title: e.label, icon: iconOf(e.target), selected: path(e) !== null && `/${segments().join("/")}` === path(e) })),
     };
     const sections: ChromeSection[] = [shortcuts];
     if (tab === "inbox") {
@@ -67,7 +63,7 @@ export const threadsChrome: ChromeProvider = {
       for (const s of layout.sections) sections.push({ id: s.id, title: s.name, collapsed: s.collapsed, rows: rowsIn(layout.idsOf(s.id, top0)) });
     }
     return {
-      header: { title: open?.title ?? "Threads", trailing: open ? [{ id: "more", title: "More", symbol: "ellipsis", menu: menuOf(open) }] : [] },
+      header: { title: open?.title ?? "Threads", trailing: open ? [{ id: "more", title: "More", icon: "more", menu: menuOf(open) }] : [] },
       selectors: [{ id: "filter", selected: tab, options: [{ id: "inbox", title: "Inbox", ...(inbox.length ? { badge: { kind: "count" as const, value: inbox.length } } : {}) }, { id: "all", title: "All Threads" }] }],
       sections, search: { placeholder: "Search threads" },
     };
