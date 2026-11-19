@@ -523,6 +523,60 @@ to the latest title and generation. This is a process-exit check.
 It does not qualify hardware power loss, a long backlog, or live
 production authority across the two stores.
 
+The checksummed release harness completed all eight locked perf-01 arms.
+Each table cell is p95 across 100 acknowledgments. The FULL control and
+all three alternatives use the same harness and corpus for each workload.
+
+| Workload | Layout | 1 scope | 4 scopes | 16 scopes | 32 scopes |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 8 KiB, zero idle | FULL control | 98.032 ms | 51.952 ms | 54.729 ms | 60.894 ms |
+| 8 KiB, zero idle | A · FULL, packed `WITHOUT ROWID` | 44.143 ms | 47.830 ms | 47.824 ms | 54.925 ms |
+| 8 KiB, zero idle | B · NORMAL sidecar, before acknowledgment | 27.484 ms | 27.202 ms | 28.619 ms | 41.532 ms |
+| 8 KiB, zero idle | C · NORMAL sidecar, after acknowledgment | 27.259 ms | 28.920 ms | 32.329 ms | 31.823 ms |
+| Short body, moving membership | FULL control | 27.459 ms | 30.762 ms | 30.413 ms | 36.981 ms |
+| Short body, moving membership | A · FULL, packed `WITHOUT ROWID` | 31.227 ms | 31.682 ms | 29.758 ms | 37.757 ms |
+| Short body, moving membership | B · NORMAL sidecar, before acknowledgment | 25.059 ms | 33.950 ms | 36.898 ms | 43.660 ms |
+| Short body, moving membership | C · NORMAL sidecar, after acknowledgment | 26.432 ms | 30.049 ms | 26.293 ms | 29.036 ms |
+
+**A.** Packing clusters all of an item's projection rows in the primary
+B-tree and removes the redundant rowid table/index split. Both workloads
+still update the covering key when it changes. The current title guard
+already skips explicit scope updates for equal visible titles. For this
+single-item save, the count and version share one write per affected
+scope row. Separately caching a version and persisting it with that same
+row would retain the page write. No page-size or scope-version variant was
+measured. The packed layout improved all four 8 KiB p95s in this run
+and all four still exceed 40 ms. The first FULL arm's 98.032 ms p95
+is materially above earlier same-fixture runs. The run does not isolate
+the size of the packed layout's benefit from that variance. The SQLite
+commit still orders the item and current window atomically. Crash recovery
+shows either the old complete state or the new complete state, without
+an index catch-up state. This needs no change to the sealed text.
+
+**B.** Keeping NORMAL sidecar replay in the acknowledgment passes the
+40 ms line through 16 scopes and misses at 32 on both workloads.
+Readers can get a current window and exact count when the checked sidecar
+watermark matches the durable source. If a process exits after the
+source commit and before sidecar publication, it can leave a durable
+item without an acknowledgment. A request after restart sees loading
+with no rows or count while the index catches up. Durable receipt replay
+can resume publication without writing the item twice. The split
+durability boundary needs the proposed revision even if successful saves
+preserve read-after-ack behavior.
+
+**C.** The background worker passes all eight fixture/width combinations.
+Observed publication lag p95 at 1 / 4 / 16 / 32 scopes was 2.152 / 2.156 /
+2.175 / 2.184 ms for 8 KiB and 2.152 / 2.153 / 2.178 / 2.176 ms for the
+short body. The observer polls every 2 ms with one save in flight.
+The 32-scope lag p99 was 20.830 ms and 16.791 ms respectively. After a
+process exit, an acknowledged item can be newer than the last published
+generation. A ready old window requires the explicit freshness semantics
+below. A loading reply with no rows or count is the conservative first
+implementation. The prototype qualifies the engine timer on these two
+fixtures. It does not qualify the separate inherited HTTP save gate,
+mixed workloads, a backlog, power-loss durability, or current viewer
+authority during replay.
+
 ### Proposed revision 14 — Journal-backed window generations
 
 **Decision for the owner.** Should a Notes save be allowed to acknowledge
@@ -565,16 +619,21 @@ return loading without rows or a count. Renewal and cache reuse fence the
 generation as well as grant revision. A superseded snapshot cannot authorize
 an action against the live head.
 
-**Recommendation before the option results.** Keep the current transactional
-contract and merge gate. A same-transaction layout keeps the sealed freshness and crash behavior
-and avoids a second store. Its cost is the foreground WAL traffic measured
-here. A foreground sidecar can preserve the current read-after-ack promise,
-but adds an independently recoverable tick, a publication failure state,
-and two watermarks to verify. Background replay removes that tick from
-save acknowledgment, and adds a visible publication interval, a renderer
-protocol change and a fail-closed recovery state. Choose an asynchronous
-design only after its crash, revocation, backlog and exact-count behavior
-passes a product gate independent of save p95.
+**Recommendation.** Hold this branch from `dev`. Authorize option C only
+as the next product qualification candidate under this proposed revision.
+It was the sole prototype below 40 ms p95 at every tested scope width
+on both fixtures. Option A preserves the sealed freshness and crash behavior
+with one store, and missed all four 8 KiB arms. Option B preserves
+read-after-ack behavior after successful publication, adds a recovery
+boundary and a possible retry after a durable write, and missed both
+32-scope arms. C trades immediate window freshness for lower save
+latency. Require a separate backlog, power-cut, revocation and exact-count
+gate, plus the inherited HTTP Notes save gate. Start with loading and
+no count during catch-up. Enable an explicitly stale ready window only
+after the owner approves the renderer behavior and the authority tests
+show that every row still qualifies. If immediate window freshness remains
+a requirement, retain the sealed same-transaction contract and keep the
+merge held.
 
 ## Review gate
 
