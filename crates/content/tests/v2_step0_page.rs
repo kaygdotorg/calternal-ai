@@ -12,6 +12,11 @@ mod search_lag;
 #[path = "v2_step0_page/search_save.rs"]
 mod search_save;
 
+#[path = "v2_step0_page/threads_index.rs"]
+mod threads_index;
+#[path = "v2_step0_page/threads_lag.rs"]
+mod threads_lag;
+
 use calternal_content::{Content, FileFormat, ItemOrder, Placement};
 use calternal_roots::Roots;
 use calternal_types::SpaceId;
@@ -149,6 +154,20 @@ fn fixture(root: &std::path::Path) -> (Content, SpaceId, std::path::PathBuf) {
     let mut writer = Connection::open(&db).unwrap();
     seed(&mut writer);
     (content, space, db)
+}
+
+#[test]
+#[ignore = "disposable perf fixture; see step 0 measurements"]
+fn scoped_threads_worker_lag() {
+    let root = tempfile::tempdir().unwrap();
+    threads_lag::exercise(root.path());
+}
+
+#[test]
+#[ignore = "disposable perf fixture; see step 0 measurements"]
+fn scoped_threads_windows() {
+    let root = tempfile::tempdir().unwrap();
+    threads_index::exercise(root.path());
 }
 
 #[test]
