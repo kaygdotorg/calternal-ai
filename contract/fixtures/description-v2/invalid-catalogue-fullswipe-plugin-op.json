@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "l",
+      "source": {
+        "type": "list",
+        "kind": "notes"
+      },
+      "fields": [
+        "title"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "trailingActions": [
+          {
+            "id": "mark",
+            "title": "Mark",
+            "operation": "reading.mark-read",
+            "inputs": {
+              "item": {
+                "row": "id"
+              }
+            },
+            "fullSwipe": true
+          }
+        ]
+      }
+    }
+  ]
+}

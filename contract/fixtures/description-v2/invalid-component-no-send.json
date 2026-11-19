@@ -1,14 +1,16 @@
 {
   "version": 2,
-  "kind": "view",
+  "kind": "app",
   "revision": 1,
-  "root": {
-    "type": "component",
-    "component": {
-      "type": "composer",
-      "id": "c",
-      "config": {
-        "placeholder": "x"
+  "view": {
+    "root": {
+      "type": "component",
+      "component": {
+        "type": "composer",
+        "id": "c",
+        "config": {
+          "placeholder": "x"
+        }
       }
     }
   }

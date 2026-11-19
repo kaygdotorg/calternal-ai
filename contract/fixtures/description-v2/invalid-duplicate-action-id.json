@@ -1,26 +1,29 @@
 {
   "version": 2,
+  "kind": "app",
   "revision": 1,
-  "sidebar": {
-    "sections": [
-      {
-        "id": "x",
-        "title": "X",
-        "actions": [
-          {
-            "id": "same",
-            "title": "A",
-            "operation": "notes.pin",
-            "inputs": {}
-          },
-          {
-            "id": "same",
-            "title": "B",
-            "operation": "notes.pin",
-            "inputs": {}
-          }
-        ]
-      }
-    ]
+  "chrome": {
+    "sidebar": {
+      "sections": [
+        {
+          "id": "x",
+          "title": "X",
+          "actions": [
+            {
+              "id": "same",
+              "title": "A",
+              "operation": "notes.pin",
+              "inputs": {}
+            },
+            {
+              "id": "same",
+              "title": "B",
+              "operation": "notes.pin",
+              "inputs": {}
+            }
+          ]
+        }
+      ]
+    }
   }
 }

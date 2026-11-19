@@ -1,13 +1,16 @@
 {
   "version": 2,
+  "kind": "app",
   "revision": 1,
-  "sidebar": {
-    "sections": [
-      {
-        "id": "x",
-        "title": "X",
-        "bind": "nope"
-      }
-    ]
+  "chrome": {
+    "sidebar": {
+      "sections": [
+        {
+          "id": "x",
+          "title": "X",
+          "bind": "nope"
+        }
+      ]
+    }
   }
 }

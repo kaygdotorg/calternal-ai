@@ -1,0 +1,30 @@
+{
+  "description": "Fixture manifest: the kinds and operations the fixture's package declares (a subset of plugin-manifest-v2).",
+  "kinds": {
+    "reading-item": {
+      "fields": {
+        "added": {
+          "type": "Timestamp"
+        },
+        "read": {
+          "type": "Boolean"
+        }
+      }
+    },
+    "reading-reminder": {
+      "fields": {
+        "due": {
+          "type": "Timestamp"
+        },
+        "person": {
+          "type": "AccountRef",
+          "audience": "viewer_self"
+        }
+      }
+    }
+  },
+  "operations": {
+    "reading.add": {},
+    "reading.remind": {}
+  }
+}

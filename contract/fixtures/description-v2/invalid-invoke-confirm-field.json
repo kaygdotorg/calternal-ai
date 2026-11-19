@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "chrome": {
+    "header": {
+      "title": "x",
+      "trailing": [
+        {
+          "id": "go",
+          "title": "Go",
+          "operation": "notes.pin",
+          "inputs": {},
+          "confirm": {
+            "title": "Sure?"
+          }
+        }
+      ]
+    }
+  }
+}
