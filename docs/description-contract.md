@@ -76,16 +76,18 @@ the keyboard at 30 rows a second:
 
 ```
 shell -> host   { type: "window", request: { bind: "notes", from: 120, to: 180, parent?: "<row ref>" } }                 // the catalogue's WindowRequest: the ONE envelope
-host  -> shell  { bind: "notes", parent?, window_ref, state: "ready", result_version, count: {mode, value}, offset: 100,
+host  -> shell  { bind: "notes", audience, parent?, window_ref, state: "ready", result_version, count: {mode, value}, offset: 100,
                   rows: [ { id, fields: {...} }, ... ], activation_contexts: [ { row, contexts: { action_id: token } } ] }   // the catalogue's WindowResult
 ```
 
-The shapes are the catalogue's (`contract/host-catalogue-v2.json`: `WindowRequest`, the **one** envelope; `WindowReply`, which is a `WindowResult` or a typed `WindowPlanError` {status 422, code `unsupported_query_plan`, `reason`: `skip_limit`, `unsupported_plan` or `materialization_limit`}); this document cites them and defines no second one. A query plan the host does not support is answered with the `WindowPlanError`, never a silent empty window. **End-relative windows:** the request may carry `anchor: "end"` in the same envelope, counting `[from, to)` back from the last row (width at most 200, distances not bounded by the absolute cap); **End, Page Down near the end and a scrollbar drag into the last part of the list use it**, so no request needs an absolute offset past the skip cap. The result echoes `anchor: end` and an offset that is the distance of the nearest returned row from the end (rows stay in the bind's normal order), which exposes no total the audience may not have. **Refusal handling:** for `skip_limit` the renderer re-requests from the nearer known end (end-anchored when that is nearer, else paging from the start); for any other reason, or when that paging is refused too, it shows the bind's `error` state. Row ids are opaque and stable;
-no position is an authority reference.
+The catalogue defines one `WindowRequest` envelope and one `WindowReply` union of `WindowResult` and `WindowPlanError` (status 422, code `unsupported_query_plan`, `reason`: `skip_limit`, `unsupported_plan` or `materialization_limit`).
+**End-relative windows.** The request may carry `anchor: "end"` in the same envelope (`anchor` is `start` by default): `[from, to)` is then counted back from the last row, with `to - from` at most the catalogue's `max_request_span` (200), and the distance may exceed the absolute offset cap, so paging can reach any scope. End, Page Down near the end and a scrollbar drag into the last part of the list use it, and no request needs an absolute offset past the skip cap. A result for an end-anchored request echoes `anchor: end` and an `offset` that is the distance of the nearest returned row from the end, with rows in the bind's normal order (no absolute total the audience may not have is exposed). The member cache record is start-anchored only.
+**Refusal handling.** For `reason: skip_limit` (an absolute jump beyond the skip cap) re-request from the nearer known end (end-anchored when that is nearer, else page from the start; the start when the end is unknown). For any other reason, or when that paging is refused too, show the bind's `error` state.
+Row ids are opaque and stable. No position is an authority reference.
 
-* A window is the half-open range `[from, to)` of at most 200 rows; the highest supported ranked offset is 100,000 and the host never scans linearly to reach an offset
-  (a request past the limit is refused, and the renderer shows the end). `window.size` (1 to 200, default 60) is the rows returned per request; `count` is `exact`,
-  `estimate` or `none`.
+* A window is the half-open range `[from, to)` of at most 200 returned rows. The highest supported offset is 500,000. The host may materialize up to 4,096 rows and,
+  separately, skip up to 250,000 entries in an index-only jump from the nearer end of the scoped covering index. Exact counts use the maintained count for the authorized scope.
+  `window.size` is 1 to 200, default 60. `count` is `exact`, `estimate` or `none`.
 * The renderer prefetches ahead of the visible rows and, when a key or a drag walks past the edge of what it holds, asks for the next window at once (no
   settling), coalesced to at most 4 window **requests** a second; the host may answer with a larger range than asked (`offset` and `rows` say what came back).
 * `result_version` identifies the result set. A new version replaces the window wholesale; the renderer skips a replacement equal to what it draws, so a republish that
@@ -329,12 +331,12 @@ plugin code). A description can run a named **invoke** on a component's event on
 * **Data-free templates persist.** A template is a description with its binds as requests: sections, selectors, titles the author wrote, icons, actions. It holds no row, no title of a
   person's item, no count, no account initial and no activation context, so it may be stored (one file of at most 4 MB, keyed by the signed-in account, deleted on sign-out and on account
   switch). `templates: none` keeps nothing.
-* **Q10 (owner decision, 2026-11-19): a MEMBER's own-space rows persist between launches.** Only the rows of binds that opt in (`persist: true`) in the member's own space **and whose query inputs are INVARIANT** (a `list` source with at most a literal collection, and no reference, search text, route, form, selection or parent operand anywhere in the source, filter or sort; account-bound `{viewer: person}` stays invariant; the schema and the verifier refuse `persist` otherwise; no query identity is added to the record; start-anchored windows only); **encrypted, with keys
-  bound to the account and the space, on an unlocked device, and only as the host-authenticated `MemberRowCacheRecord`** (attached to a window result for an own-space member only: `audience` is the constant `own_space_member`, display rows are title and optional subtitle, nothing actionable; the shell validates it on write and on load; it is the one explicit exemption from the rule that viewer projections are never persisted, and a guest or public window carries no such record, so those rows cannot reach the disk path),
-  , **painted at once at the next launch and then confirmed or corrected by the host's first window answer**; retained for at most
-  14 days (or `maxAgeDays` if shorter); **erased on sign-out, on account switch and on any known revocation** (a lost membership, a role change the device learns of, a revoked device). Persisted
-  rows are **display only**: they carry no activation context, no resolution reference, no confirmation challenge or proof and no credential, and **every action still needs a fresh host context**
-  (the renderer disables actions on a row until the host's window answer has issued one). **Never for a guest or a public view**, whatever the description says; `memberRows: none` keeps nothing.
+* **Q10 (owner decision, 2026-11-19): own-space member rows can persist.** Only opted-in root windows without route-dependent or parent scope are eligible, and only for binds whose query inputs are **invariant**: a `list` source with at most a literal collection and no reference, search text, route, form, selection or parent operand anywhere in the source, filter or sort (account-bound `{viewer: person}` stays invariant); the schema and the verifier refuse `persist` otherwise, no query identity is added to the record, and only start-anchored windows are persisted.
+  Accept only `MemberRowCacheRecord`, the display-only exception to session-only projections. The authenticated `ViewOpenResult` and `WindowResult` name the audience.
+  The schema permits the record only on ready or empty own-space member replies without a parent. Before writing, match it to the authenticated active view and window.
+  On write and load check the schema, host proof, scope, opt-ins and expiry (§4.2 of the Plugin API). Load only into the matching own-space root display.
+  Encrypt with account- and space-bound keys. On an unlocked device paint at launch as unconfirmed, then confirm or correct the rows with the first host answer.
+  Keep for at most 14 days or `maxAgeDays` if shorter. Erase on sign-out, account switch or known revocation. Every action needs a fresh host context.
   *Sol's recorded objection:* protected rows should be revalidated by the host before they are painted, because a revocation the device has not yet learned of leaves titles visible for the
   moment before the first answer; the owner accepted that cost knowingly in exchange for an instant first paint. The mitigations are the conditions above (short retention, device lock, key
   binding, erase on a known revocation).
@@ -342,7 +344,7 @@ plugin code). A description can run a named **invoke** on a component's event on
   and a guest of the same account never share a partition), are never written to storage, and are cleared on revocation, on closing a guest link, on sign-out, on account switch and when the
   session ends. Activation contexts, resolution references, confirmation challenges and proofs are never stored anywhere.
 * **What the person sees at first paint.** The template at once (the sidebar's structure, selectors, section titles the author wrote, the footer, the header), with the member's persisted rows
-  where a bind opted in (marked as not yet confirmed) and otherwise skeleton rows and the bind's `loading` state; the host's first window answer confirms or corrects them (one round trip). Offline
+  where an eligible root bind opted in (marked as not yet confirmed) and otherwise skeleton rows and the bind's `loading` state; the host's first window answer confirms or corrects them (one round trip). Offline
   or unauthorised, the person sees the template and the state the host or the shell can say truthfully (`offline`, `sign in again`); a guest or public viewer never sees a title from a past session.
   A shell that cannot meet these rules (an older client) gets a host fallback that obeys the same authority rules, or the page's own chrome.
 * **"Do not paint" is not "discard".** When a lease lapses or the app is in the background, filled rows stay in memory (same session, space and audience partition) but are not drawn as current. The

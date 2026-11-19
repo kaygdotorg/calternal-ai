@@ -389,6 +389,11 @@ for file in sorted((root / "fixtures" / "description-v2").glob("*.json")):
     is_reply = file.name.startswith(("reply-", "invalid-reply-"))
     if doc is not None:
         check({"$ref": "#/$defs/Event"} if is_event else {"$ref": "#/$defs/WindowReply"} if is_reply else schema, doc, "$", errors)
+        if is_event and isinstance(doc, dict) and doc.get("type") == "window" and isinstance(doc.get("request"), dict) and CATALOGUE is not None:
+            req = doc["request"]; limit = ((CATALOGUE.get("query") or {}).get("window") or {}).get("max_request_span")
+            if isinstance(req.get("from"), int) and isinstance(req.get("to"), int):
+                if not req["from"] < req["to"]: errors.append(f"$.request: from ({req['from']}) must be below to ({req['to']})")
+                if limit is not None and req["to"] - req["from"] > limit: errors.append(f"$.request: the span {req['to'] - req['from']} exceeds the catalogue's max_request_span ({limit})")
         if not is_event and not is_reply:
             view_limits(doc, errors)
             semantic(doc, errors, CATALOGUE, manifest)
