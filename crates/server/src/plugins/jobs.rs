@@ -380,7 +380,7 @@ impl Jobs {
             .map_err(|_| Error::internal("job storage directory"))?;
         let path = dir.join("jobs.db");
         calternal_fsio::private::file(&path).map_err(|_| Error::internal("job storage file"))?;
-        let c = Connection::open(path).map_err(db_err)?;
+        let c = Connection::open(&path).map_err(db_err)?;
         c.pragma_update(None, "synchronous", "FULL")
             .map_err(db_err)?;
         c.busy_timeout(Duration::from_secs(5)).map_err(db_err)?;
@@ -388,7 +388,7 @@ impl Jobs {
         c.pragma_update(None, "journal_mode", "WAL")
             .map_err(db_err)?;
         retain(&c)?;
-        let c = Arc::new(JobDatabase::new(c, self.lifecycle.clone(), space_id));
+        let c = Arc::new(JobDatabase::new(c, path, self.lifecycle.clone(), space_id));
         let mut spaces = self.spaces.lock().unwrap_or_else(|p| p.into_inner());
         if let Some((cached, used)) = spaces.get_mut(space) {
             *used = tick;

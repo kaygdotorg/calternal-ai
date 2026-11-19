@@ -183,11 +183,13 @@ The turn-state entry carries `data.job_id`, `data.state` (the sidebar label) and
 wakes both list and detail subscribers. The feed rechecks current space access and
 item ownership on replay and delivery. Turn state uses a space-local outbox
 written in the existing job transaction. One drain per cached space job connection reads at
-most 64 entries per page, appends each through the existing FULL journal commit,
-then retires the page in one jobs commit. The drain releases the jobs lock before
-taking the content lock or awaiting the writer. Publication retries on subsequent
-job transactions and recovery. Pending entries are eligible for pruning after
-seven days. The journal's operator-configured receipt retention bounds deduplication.
+most 64 entries per page and appends each through the existing FULL journal commit.
+It groups published rows for 250 ms and retires up to 64 in one background jobs
+commit. Retirement uses a separate connection and retries if the writer is busy.
+The drain releases the jobs lock before taking the content lock or awaiting the
+writer. On restart, retained rows replay using the same journal event IDs. Pending
+entries are eligible for pruning after seven days. The journal's operator-configured
+receipt retention bounds deduplication.
 
 ### Read the end of a saved thread
 

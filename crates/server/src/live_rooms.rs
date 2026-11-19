@@ -1,5 +1,6 @@
 //! Versioned WebSocket transport for opted-in host content rooms.
 mod access;
+mod delivery;
 mod hub;
 mod update;
 mod wire;
@@ -22,6 +23,7 @@ use axum::{
 };
 use calternal_content::Content;
 use calternal_types::{AccountId, Error};
+use futures_util::SinkExt;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -54,6 +56,7 @@ pub(crate) async fn entry<D: Directory>(
             Err(error) => error.into_response(),
         };
     }
+    let shutdown = req.extensions().get::<crate::shutdown::Shutdown>().cloned();
     let (mut parts, _) = req.into_parts();
     let Some(identity) = parts.extensions.get::<Identity>().cloned() else {
         return crate::api::error_response(Error::unauthorized("missing or invalid session"));
@@ -96,7 +99,22 @@ pub(crate) async fn entry<D: Directory>(
     ws.protocols([VERSION])
         .max_frame_size(wire::FRAME_BYTES)
         .max_message_size(wire::FRAME_BYTES)
-        .on_upgrade(move |socket| serve(socket, host, content, identity.id, session, socket_memory))
+        .on_upgrade({
+            let room = shutdown.as_ref().map(crate::shutdown::Shutdown::room);
+            move |socket| async move {
+                let _room = room;
+                serve(
+                    socket,
+                    host,
+                    content,
+                    identity.id,
+                    session,
+                    socket_memory,
+                    shutdown,
+                )
+                .await;
+            }
+        })
 }
 
 #[derive(Deserialize)]
@@ -162,6 +180,7 @@ async fn serve<D: Directory>(
     account: AccountId,
     session: Session,
     _socket_memory: OwnedSemaphorePermit,
+    shutdown: Option<crate::shutdown::Shutdown>,
 ) {
     let (event_tx, mut events) = mpsc::channel(64);
     let mut conn = Connection {
@@ -187,11 +206,17 @@ async fn serve<D: Directory>(
             }
         };
         let result = tokio::select! {
-            message = conn.socket.recv() => match message {
-                Some(Ok(ws::Message::Text(value))) => conn.control(value.as_str()).await,
-                Some(Ok(ws::Message::Binary(value))) => conn.binary(&value).await,
-                Some(Ok(ws::Message::Ping(_) | ws::Message::Pong(_))) => Ok(()),
-                _ => break,
+            () = crate::shutdown::wait(shutdown.as_ref()) => break,
+            message = conn.socket.recv() => {
+                if shutdown.as_ref().is_some_and(crate::shutdown::Shutdown::is_closing) {
+                    break;
+                }
+                match message {
+                    Some(Ok(ws::Message::Text(value))) => conn.control(value.as_str()).await,
+                    Some(Ok(ws::Message::Binary(value))) => conn.binary(&value).await,
+                    Some(Ok(ws::Message::Ping(_) | ws::Message::Pong(_))) => Ok(()),
+                    _ => break,
+                }
             },
             event = events.recv() => match event {
                 Some(event) => conn.event(event).await,
@@ -393,23 +418,57 @@ impl<D: Directory> Connection<D> {
 
     async fn send(&mut self, address: &str, bytes: &[u8]) -> Result<(), Error> {
         for frame in wire::frames(address, bytes) {
-            let Some(member) = self.members.get(address) else {
-                return Ok(());
-            };
-            let hub = self.host.store.live_rooms();
-            let refresh = member.proof.refresh_needed(
-                hub.item_authority_epoch(),
-                hub.activation_epoch(member.key.space),
-            );
-            if member.termination.borrow().is_some() {
-                return self.left(address, None).await;
+            if !self
+                .send_member(address, ws::Message::Binary(frame.into()))
+                .await?
+            {
+                break;
             }
-            if refresh && let Err(error) = self.authorize_member(member, false).await {
-                return self.left(address, Some(&error)).await;
-            }
-            self.frame(ws::Message::Binary(frame.into())).await?;
         }
         Ok(())
+    }
+
+    /// Check current View at the socket handoff, after waiting for readiness.
+    /// Revocation cuts off room data still queued at the host. A handoff
+    /// approved before commit can finish and socket buffers can still drain.
+    /// Each chunk needs its own approval. A stable epoch adds no storage reads.
+    async fn send_member(&mut self, address: &str, frame: ws::Message) -> Result<bool, Error> {
+        let mut frame = Some(frame);
+        let deadline = Instant::now() + IO_TIMEOUT;
+        loop {
+            let Some(member) = self.members.get(address) else {
+                return Ok(false);
+            };
+            if member.termination.borrow().is_some() {
+                self.left(address, None).await?;
+                return Ok(false);
+            }
+            let hub = self.host.store.live_rooms();
+            let handed_off = tokio::time::timeout_at(
+                deadline,
+                delivery::stage(&mut self.socket, &mut frame, || {
+                    member.termination.borrow().is_none()
+                        && !member.proof.refresh_needed(
+                            hub.item_authority_epoch(),
+                            hub.activation_epoch(member.key.space),
+                        )
+                }),
+            )
+            .await
+            .map_err(|_| closed())?
+            .map_err(|_| closed())?;
+            if handed_off {
+                tokio::time::timeout_at(deadline, self.socket.flush())
+                    .await
+                    .map_err(|_| closed())?
+                    .map_err(|_| closed())?;
+                return Ok(true);
+            }
+            if let Err(error) = self.authorize_member(member, false).await {
+                self.left(address, Some(&error)).await?;
+                return Ok(false);
+            }
+        }
     }
 
     async fn json(&mut self, value: Value) -> Result<(), Error> {

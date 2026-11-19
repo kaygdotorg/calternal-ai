@@ -99,6 +99,11 @@ pub struct AppState<D: Directory = StoredDirectory> {
 /// Reference-counted host state; cloning never clones the directory or its grants.
 pub type Shared<D = StoredDirectory> = Arc<AppState<D>>;
 
+/// Initialize the background Class B origin-address refresh before serving.
+pub async fn configure_content_fetch<D: crate::auth::Directory>(state: &Shared<D>, origin: &str) {
+    crate::plugins::network::fetch::configure(state, origin).await;
+}
+
 pub use crate::web_push::configure as configure_web_push;
 
 /// Start the background search worker against the live plugin catalog.
@@ -159,7 +164,12 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         .route(wallpapers::ROUTE, get(wallpapers::image))
         .route(
             crate::plugins::network::http::FRAME_ROUTE,
-            get(crate::plugins::network::http::document::<D>),
+            get(crate::plugins::network::http::document::<D>)
+                .post(crate::plugins::network::http::load::<D>),
+        )
+        .route(
+            crate::plugins::network::http::ASSET_ROUTE,
+            get(crate::plugins::network::http::asset::<D>),
         )
         .merge(appearance::routes::<D>())
         .route("/api", any(api_not_found))

@@ -125,6 +125,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   },
   "description": "Installed-package diagnostics exposed to authorized space managers.",
   "properties": {
+    "fetch_hosts": {
+      "description": "Latest 32 distinct Class B hostnames attempted in this space over seven days.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "plugin_id": {
       "description": "Installed package ID.",
       "type": "string"
@@ -170,6 +177,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
     }
   },
   "required": [
+    "fetch_hosts",
     "plugin_id",
     "readiness",
     "recent_errors",

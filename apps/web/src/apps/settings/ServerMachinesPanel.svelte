@@ -17,7 +17,7 @@
   async function act(f: () => Promise<unknown>) { busy = true; try { await f(); error = ""; } catch (e) { error = say(e); } await load(); busy = false; }
   // Which providers are signed in on each machine (the readiness read, kept current by the account feed), with the provider's own sign-in command to copy and a Check again.
   let ready = $state<Record<string, MachineState>>({}), checking = $state<string | null>(null), copied = $state(""), silent = $state<Record<string, boolean>>({});
-  async function loadReady() { try { ready = Object.fromEntries((await readiness(spaces.current.id)).machines.map((m) => [m.machine_id, m])); } catch { /* an older server has no readiness: no provider rows */ } }
+  async function loadReady() { try { ready = Object.fromEntries((await readiness(await spaces.whenCurrent())).machines.map((m) => [m.machine_id, m])); } catch { /* an older server has no readiness: no provider rows */ } }
   async function check(m: Machine, provider: string) { checking = `${m.id}/${provider}`; try { await checkProvider(spaces.current.id, m.id, provider); await loadReady(); silent[`${m.id}/${provider}`] = !ready[m.id]?.providers[provider]?.check; } catch (e) { error = say(e, "check the provider"); } checking = null; }
   async function copy(cmd: string) { if (await copyText(cmd)) { copied = cmd; setTimeout(() => (copied = ""), 2000); } else error = "Could not copy. Select the command and copy it."; }
   const standing = (p: ProviderReadiness) => !p.enabled ? "Off in this space" : p.ready ? "Signed in" : !p.check ? "Not checked yet" : !p.check.installed ? "Not installed on this machine" : !p.check.signed_in ? "Not signed in" : "Not ready";

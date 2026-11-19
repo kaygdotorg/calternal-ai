@@ -33,6 +33,10 @@ for (const scheme of ["dark", "light"]) {
   else ok(Math.max(0, ...long) <= 50, `${scheme}: no main-thread task over 50 ms while the slider moves through all five steps at 4x CPU`, `longest ${Math.max(0, ...long).toFixed(0)} ms`);
   ok(before === after, `${scheme}: the blurred wallpaper copies are not rebuilt (same blob URLs before and after)`);
   if (judge) ok(Math.max(...lat) < 150, `${scheme}: each step is on the screen within a few frames at 4x`, `max ${Math.max(...lat).toFixed(0)} ms`);
+  // The live preview wears its own copy of the veil (so a step restyles it in a frame of its own, not the step's): once the slider rests it must match the root's.
+  await page.waitForTimeout(400);
+  const synced = await page.evaluate(() => { const r = document.documentElement.style, pv = document.querySelector(".pv"); if (!pv) return "none"; const names = [...r].filter((n) => /^--(?:[lcr]-(?:tint|dim)(?:-a)?|veil-[lcr])$/.test(n)); return names.length && names.every((n) => pv.style.getPropertyValue(n) === r.getPropertyValue(n)) ? "same" : `differs: ${names.filter((n) => pv.style.getPropertyValue(n) !== r.getPropertyValue(n)).join(",")}`; });
+  ok(synced === "same" || synced === "none", `${scheme}: the live preview shows the veil the slider settled on`, synced);
   await ctx.close();
 }
 await b.close(); stop(); process.exit(bad ? 1 : 0);
