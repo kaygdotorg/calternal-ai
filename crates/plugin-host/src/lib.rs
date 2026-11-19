@@ -11,6 +11,7 @@ mod input_diagnostics;
 mod registry;
 mod runtime;
 mod slots;
+mod strict_json;
 pub use registry::*;
 pub use runtime::*;
 

@@ -97,13 +97,14 @@ pub fn encode_frame(frame: &Frame) -> Result<Vec<u8>, Error> {
     Ok(bytes)
 }
 /// Cost: O(frame bytes), allocates decoded fields, no I/O/locks.
-/// Parse one bounded frame. Transport adapters must bound buffering before finding a newline.
+/// Parse one bounded UTF-8 frame with unique keys and at most 32 nested containers.
+/// Transport adapters must bound buffering before finding a newline.
 pub fn decode_frame(bytes: &[u8]) -> Result<Frame, Error> {
     let bytes = bytes.strip_suffix(b"\n").unwrap_or(bytes);
     if bytes.len() > MAX_FRAME_BYTES {
         return Err(Error::TooLarge);
     }
-    let frame = serde_json::from_slice(bytes).map_err(|_| Error::Invalid)?;
+    let frame = crate::strict_json::parse(bytes)?;
     validate_frame(&frame)?;
     Ok(frame)
 }

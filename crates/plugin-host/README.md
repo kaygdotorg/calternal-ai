@@ -6,6 +6,8 @@ provides worker-v2 admission, callback authorization, cancellation, ordered job
 chunks and bounded queues. This crate mounts no routes and starts no processes.
 
 Wire frames are UTF-8 newline-delimited JSON, max 256 KiB excluding newline.
+The decoder rejects duplicate keys at every depth and allows up to 32 nested
+objects and arrays, including the envelope and message.
 Every frame has `protocol_version: 2`, `invocation_id`, and a tagged `message`.
 The host sends `invoke`, `host_reply`, `cancel`; workers send `host_call`, `chunk`,
 `complete`, `failed`. Unknown fields/versions/directions are errors. Binary or
