@@ -173,12 +173,17 @@ host  -> shell { activation_id, state: ok | pending | error | stale | refused | 
   confirms, `invoke_confirm` returns the challenge and the host returns a `confirmation_proof` bound to the normalized input and the `activation_id` (different input: a new
   challenge). A description may add material inputs (`preview.material`) but cannot remove or relabel one the host requires, and a destination, recipient, audience or
   permission is **always** previewed.
-* **Typed input and the preview (narrow).** A value the person **directly edited in a visible trusted control of the same form** (a composer's draft, a form field, a prompt
-  answer) is shown by that control and needs no separate row in the sheet; nothing else qualifies. Not typed: a field with an `initial` value the person did not change; a
-  `choice` whose label hides its value (the host previews the value); a field in another form, offscreen or collapsed; an input from a route, a row, a selection or a bind
-  field. The shell never sends a flag claiming what was typed, and the host never believes one: it decides from the catalogue which inputs are material and previews every one
-  it cannot prove is typed text of a non-destination kind. A chat send therefore needs no sheet (the composer shows the text, the thread is the route the person is on and
-  the catalogue marks `turns.start` as not needing one); a Share with an audience always does.
+* **Typing is never consent.** The host previews **every material field** of a mutating or disclosing operation, from the catalogue and the manifest, not from the description:
+  the destination, recipient, audience, permission change, provider, model, machine and other options, attachments, mentions, and **defaults, prefills and autofill**,
+  whether or not the person touched them. What a person typed (a composer's text, a form field, a prompt answer) is shown by its own control, and the host's material list may
+  therefore leave out the text itself, but **no value counts as consented to because it was typed, and no input is exempt from the host's classification**. A *trusted* control
+  (the composer, the form's own sheet) may present the host's material list in place, next to the field, **as long as the host wrote that list and the confirmation goes through the
+  protected confirm step**; the shell never sends a flag claiming what was typed or consented, and the host never believes one. A chat send (`turns.start`) is a mutating,
+  external operation: the composer shows the host-written material (thread, provider, model, machine, attachments, mentions, quote) and the send is the confirmation the host
+  challenges; a Share with an audience always opens the host's sheet.
+* **A row moved by churn is still actionable.** The context names the target, its scope and the versions the action depends on. A row that merely scrolled out of the window
+  or moved position because of unrelated changes is **still actionable** (nothing the action depends on changed). Only a change to the **target, its scope or a dependency** makes
+  the activation `stale` (nothing ran).
 * **Retry and idempotency are the host's.** A description cannot declare an action retry-safe or waive a check: effect class and idempotency come from the catalogue and the
   manifest, and the host de-duplicates by `activation_id` (a retry after a dropped connection repeats no effect).
 * **Full swipe.** A swipe action may set `fullSwipe` only if it is the first action of its set **and** the catalogue marks its operation `full_swipe: true` (a reversible host
@@ -250,7 +255,7 @@ the web, SwiftUI natively); no plugin is written twice, and anything the vocabul
   Mac and iPhone apps stay one product. Anything beyond the vocabulary is a request to extend it, not a hole to draw through.
 * **Forms** hold their values on the device. A field is checked there (required, length, `url`/`email`/`number`/`date` shape, `choice` among options) and the submit
   is disabled while a required field is empty or invalid and while the action is pending. The values leave the device only inside the submit's resolved inputs
-  (`{form: id, field: fieldId}`); the form shows what was typed, so by the rule in 3.2 it needs no second sheet, and the trusted preview covers only the inputs the person did not type. After an `ok` outcome the fields clear (`clear: onOk`,
+  (`{form: id, field: fieldId}`); the form shows what was typed, and by the rule in 3.2 the host still previews every material field (typing is never consent); a form may present that list in place. After an `ok` outcome the fields clear (`clear: onOk`,
   the default); after `error` or an unknown outcome they keep what was typed. Errors appear in a `notice` above the submit, never as loose text.
 * **Lists** are binds. `selectable: true` gives the keyboard model of `docs/native-feel.md` section 20 on every platform: Up/Down/Home/End/Page Up/Page Down move
   the selection through ALL rows (drawn or not), the selection paints at once, and what the selection opens (a route change) happens when it settles, **about 100 ms after the last key** (or key up); nothing crosses the bridge while a key repeats, in either direction
@@ -283,7 +288,7 @@ is the host's alone.
   `request-card`. Its size is the card's (the transcript and editor fill it; the composer is at the bottom; the frame reports its height inside the caps).
 * **Refs are typed.** `thread`, `item` and `request` take a value source that resolves to a reference of that type or the host refuses the description; the host
   authorises the viewer for the ref (a guest's grant included) before anything is read. The description holds no viewer data.
-* **Drafts.** The composer's text stays on the device; attachments are handed to the host when attached and held as host-owned `AttachmentRef`s, mentions are account references and a quoted passage is a host-issued quote reference (the catalogue's `Draft`). At activation the host receives it inside `interaction.draft` and checks it (lengths, counts, that every attachment is the viewer's own, that every mention and quote is authorised); it never trusts the client. The composer shows the text, so the send opens no confirmation sheet (3.2). The draft clears only after `ok`; `error` keeps it.
+* **Drafts.** The composer's text stays on the device; attachments are handed to the host when attached and held as host-owned `AttachmentRef`s, mentions are account references and a quoted passage is a host-issued quote reference (the catalogue's `Draft`). At activation the host receives it inside `interaction.draft` and checks it (lengths, counts, that every attachment is the viewer's own, that every mention and quote is authorised); it never trusts the client. The composer shows the text and presents the host-written material of the send in place (3.2): typing is never consent. The draft clears only after `ok`; `error` keeps it.
 * **Transcript reads** use the catalogue's `transcript.page` route: a `TranscriptPageRequest` names the thread and an opaque `after` cursor, the `TranscriptPage` returns at most 128 committed events and a `committed_cursor`; every page is reauthorised and bounded (128 KiB); an expired or revoked cursor is refused and the renderer reads again from the end. No description or renderer invents a cursor.
 * **Streaming** is the host's: the transcript's rows grow and change without a description revision; the host caps the update rate, commits a final message at the
   end, and drops an in-flight load when the viewer moves to another thread (the old transcript load is cancelled, not finished).
@@ -372,9 +377,9 @@ Everything in 5.0 and 5.1 is drawable with system controls. Findings, in order o
 
 ### 8.2 Native review of draft 3 (activation, cache, first paint)
 
-1. **Round trips.** An activation is resolve, (confirm,) dispatch. The renderer shows the action as pending from the first send and treats a `resolve` answer with no
-   `confirmation_challenge` as permission to send `invoke_dispatch` at once; on a phone over a mobile link two round trips for a swipe are acceptable, three are not. The plugins
-   lane should allow a host to answer a resolve that needs no confirmation with the outcome itself (resolve-and-dispatch in one round trip); until then the renderer pipelines.
+1. **Round trips.** An activation is resolve, (confirm,) dispatch. The renderer shows the action as pending from the first send and sends `invoke_dispatch` right after a `resolve` answer that carries no
+   `confirmation_challenge`; on a phone over a mobile link two round trips for a swipe are acceptable, three are not. The plugins
+   lane may later consider answering a resolve that needs no confirmation with the outcome itself (resolve-and-dispatch in one round trip); that is a future question: the three separate steps stay as specified.
 2. **Pending and outcome on a row.** A row with an action in flight shows a quiet progress mark and keeps its place; the row leaves the list only when the host's next window
    no longer contains it (no optimistic removal), so a failed Trash cannot leave a ghost gap. Undo is the outcome's button, shown for its `expiresAt`.
 3. **The confirmation sheet** is a system confirmation dialog (an alert or sheet with the host-written material lines, `Cancel` and the action named with the operation's own verb);
@@ -478,4 +483,3 @@ Part B's own findings are fixed here (`FIXED`); findings about the runtime are t
 | 41 | Device cache of rows | FIXED: data-free templates persist, rows session-only and partitioned, nothing painted before authorisation, first paint is the template with skeleton rows (6) |
 | 45 | Notes: Share sheet, bounded multi-selection; Threads: composer controls with option sources, checked attachments | FIXED: `selectionMode: multiple` with a host-issued `selection_ref`; Share and Trash as host sheets (`ShellAction`); composer `controls`; catalogue `Draft` |
 | 46 | Snooze date/time picker; bind-backed selectors, nested rows, drag, repeaters, conditional fields | FIXED: `prompt.kind: date \| datetime`; the rest recorded as WAIT parity exceptions in 9.2, 9.3 |
-
