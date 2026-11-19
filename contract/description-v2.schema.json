@@ -416,7 +416,7 @@
       "properties": {
         "id": {
           "const": "id",
-          "description": "The row id is always the item id; rows are identified by it everywhere (selection, events, scope)."
+          "description": "The host-issued row reference identifies the row in selection, events and scope. Item rows use their kind’s row reference. Rows of a repeated section use a LayoutEntryRef."
         },
         "title": {
           "type": "object",

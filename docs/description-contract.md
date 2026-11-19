@@ -67,7 +67,7 @@ fields, so the Notes Trash and the Threads Inbox are ordinary binds.
 `waiting_on eq viewer.person`; `waiting_on` and `pending_for` accept only `self` as an operand), `{route: ...}` or `{selection: ...}`. **Never a field of another bind, a row, a
 form or a prompt**: a hidden field of one bind must not steer another bind's query (the cross-bind operand leak). A search takes a `TextSource` (a literal, a form
 field or a composer draft). `{bind, field}` stays legal only in an invoke's inputs and a component's config, where the host reconstructs it. `sort` is at most two
-indexed fields; the item id is the implicit last key, so order is total and stable across windows.
+indexed fields. The host-issued row reference is the implicit last key, so order is total and stable across windows.
 
 ### 2.3 Windows
 
@@ -106,7 +106,7 @@ Row ids are opaque and stable. No position is an authority reference.
 `title` is one field (one line; there is no second line and no free-form row content). `icon` is a catalogue name, a field's value or the kind's own icon.
 `marks` (up to three) are trailing dots, counts, texts or icons, each with an optional `when` predicate and a tone. `leadingActions`, `trailingActions` and `menu` are
 `invoke` definitions; only the first leading or trailing action may set `fullSwipe`. `open` navigates (sets a route parameter to the row id) or invokes.
-Rows are identified by the item id everywhere: selection, events, scope.
+Use the host-issued row reference for row identity in selection, events and scope. Item rows use the kind’s row reference. Rows of a repeated section use a `LayoutEntryRef`.
 
 ### 2.5 States
 

@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 11.1
+# Plugin API v2 · revision 11.2
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -408,8 +408,9 @@ generic fields from the engine record and its configured title field.
 The manifest’s `reads` names every kind a package’s Bind may access,
 including its own. The SDK fills the package’s own kinds into the emitted
 list. Authors write `reads` only for another app’s kinds, including host
-kinds. Check the emitted list before authorizing the viewer and field graph. A package or a field declaration cannot confer authority. A scoped row ID
-identifies the kind’s reference. A request row resolves only to an
+kinds. Check the emitted list before authorizing the viewer and field graph. A package or a field declaration cannot confer authority. A scoped row ID is the host-issued row
+reference. Item rows use the kind’s row reference. Rows of a repeated
+section use a `LayoutEntryRef`. A request row resolves only to an
 authorized `RequestRef`. `waiting_on` and `pending_for` support the
 viewer’s own equality operand only. `threads.active_turn` resolves as a
 Turn ref, never as the parent Thread ref.
