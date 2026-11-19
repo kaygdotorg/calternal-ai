@@ -90,10 +90,9 @@ pub(crate) fn heading_title(markdown: &str) -> Option<&str> {
 }
 
 fn split_frontmatter(markdown: &str) -> (&str, &str) {
-    markdown
-        .strip_prefix("---\n")
-        .and_then(|text| text.split_once("\n---\n"))
-        .unwrap_or(("", markdown))
+    calternal_content::markdown_frontmatter(markdown)
+        .map(|front| (front.properties, front.body))
+        .unwrap_or_else(|| ("", markdown.strip_prefix('\u{feff}').unwrap_or(markdown)))
 }
 
 /// Repoint one locked snapshot and project the final Markdown once. The root
@@ -137,4 +136,15 @@ pub(crate) fn journal_kind(event: &str) -> Option<&'static str> {
             | "notes.rename.undo.item"
     ) || calternal_core::note_operation(event).is_some_and(|op| op.item))
     .then_some("notes")
+}
+
+#[cfg(test)]
+mod byte_tests {
+    use super::*;
+
+    #[test]
+    fn crlf_frontmatter_comments_are_not_headings() {
+        let text = "---\r\n# comment\r\n---\r\n# Actual\r\n";
+        assert_eq!(heading_title(text), Some("Actual"));
+    }
 }

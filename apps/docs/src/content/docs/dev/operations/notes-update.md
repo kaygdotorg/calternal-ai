@@ -51,7 +51,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
       "type": "string"
     },
     "title": {
-      "description": "Optional replacement title: nonblank, at most 256 Unicode scalars, no controls; omission preserves the title and null is rejected.",
+      "description": "Optional legacy title hint, at most 256 Unicode scalars. The server derives the title from the Markdown's first H1, keeping the existing title when there is no H1.",
       "type": "string"
     }
   },

@@ -641,6 +641,14 @@ impl Content {
                     Self::validate_write_size(&metadata, &merged)?;
                     bytes = std::borrow::Cow::Owned(merged);
                     room = Some(checkpoint);
+                } else if kind == "notes" && destination == Destination::Current {
+                    let current = s.get(id)?;
+                    let original = std::str::from_utf8(&current.bytes).map_err(internal)?;
+                    let replacement = std::str::from_utf8(&bytes).map_err(internal)?;
+                    if let Some(restyled) = crate::rooms::style::Style::restore(original, replacement) {
+                        Self::validate_write_size(&metadata, &restyled)?;
+                        bytes = std::borrow::Cow::Owned(restyled);
+                    }
                 }
                 let (seq,path) = (head.seq,head.path);
                 (id,seq+1,Some(path),sha)

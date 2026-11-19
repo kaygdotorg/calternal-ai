@@ -11,6 +11,8 @@ use serde_json::{Value, json};
 
 #[path = "http/live_rooms.rs"]
 mod live_rooms;
+#[path = "http/notes_bytes.rs"]
+mod notes_bytes;
 
 struct TempDir(PathBuf);
 impl TempDir {
@@ -1088,7 +1090,7 @@ fn interrupted_create_and_title_rename_recover_fixed_paths() {
             );
             (id, note["revision"].clone(), srv.personal.clone())
         };
-        let input = json!({"space_id": personal,"id":id,"base_revision":revision,"title":"FIRST","markdown":"two"});
+        let input = json!({"space_id": personal,"id":id,"base_revision":revision,"markdown":"# FIRST\ntwo"});
         {
             let mut srv = start(&d.0, Some(point));
             let reply = try_op(
@@ -1111,7 +1113,7 @@ fn interrupted_create_and_title_rename_recover_fixed_paths() {
         let path = note_file(&d.0, &srv.personal, &id);
         assert_eq!(path.file_name().unwrap(), "FIRST.md");
         assert!(!path.with_file_name("First.md").exists());
-        assert_eq!(note_body(path), "two");
+        assert_eq!(note_body(path), "# FIRST\ntwo");
         let history = op(
             &srv,
             &srv.owner,

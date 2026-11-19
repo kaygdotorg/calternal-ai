@@ -143,47 +143,45 @@ impl Space {
     }
 }
 
-fn frontmatter(text: &str) -> Option<(&str, &str)> {
-    text.strip_prefix("---\n")?.split_once("\n---\n")
-}
-
 fn text_from_file(bytes: &[u8], base: &Item) -> Result<Vec<u8>> {
     let (style, observed) = Style::split(std::str::from_utf8(bytes).map_err(|_| blocked())?);
     let (_, original) = Style::split(std::str::from_utf8(&base.bytes).map_err(internal)?);
-    let original_format = frontmatter(&original).and_then(|(header, _)| {
-        header
+    let original = crate::markdown_frontmatter(&original);
+    let original_format = original.as_ref().and_then(|front| {
+        front
+            .properties
             .lines()
-            .find_map(|line| line.trim_start().strip_prefix("format:").map(str::trim))
+            .find_map(|line| line.strip_prefix("format:").map(str::trim))
     });
-    let (header, body) = frontmatter(&observed).ok_or_else(blocked)?;
+    let front = crate::markdown_frontmatter(&observed).ok_or_else(blocked)?;
     let mut seen_id = false;
     let mut seen_format = false;
-    let mut lines = Vec::new();
-    for line in header.lines() {
-        if let Some(id) = line.trim_start().strip_prefix("calternal-id:") {
+    let mut text = String::from(front.opening);
+    for line in front.properties.split_inclusive('\n') {
+        if let Some(id) = line.strip_prefix("calternal-id:") {
             if seen_id || Uuid::parse_str(id.trim()).ok() != Some(base.id) {
                 return Err(blocked());
             }
             seen_id = true;
-        } else if let Some(format) = line.trim_start().strip_prefix("format:") {
+        } else if let Some(format) = line.strip_prefix("format:") {
             if seen_format || format.trim() != original_format.unwrap_or("calternal-note/v1") {
                 return Err(blocked());
             }
             seen_format = true;
             if original_format.is_some() {
-                lines.push(line);
+                text.push_str(line);
             }
         } else {
-            lines.push(line);
+            text.push_str(line);
         }
     }
     if !seen_id || !seen_format {
         return Err(blocked());
     }
-    let text = if lines.is_empty() {
-        body.to_owned()
-    } else {
-        format!("---\n{}\n---\n{body}", lines.join("\n"))
-    };
+    if text.len() == front.opening.len() && original.is_none() {
+        return Ok(style.encode(front.body));
+    }
+    text.push_str(front.closing);
+    text.push_str(front.body);
     Ok(style.encode(&text))
 }

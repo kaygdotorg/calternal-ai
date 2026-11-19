@@ -38,6 +38,8 @@ pub use settings::{SettingEdit, SettingRecord};
 mod journal;
 mod lifecycle;
 mod linked_write;
+mod markdown;
+pub use markdown::{Frontmatter, markdown_frontmatter};
 mod mutations;
 mod pool;
 mod publication;

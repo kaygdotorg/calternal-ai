@@ -770,6 +770,7 @@ fn outside_edit_uses_the_proven_file_base_and_merges_a_stale_replacement() {
         )
         .unwrap();
     content.enable_live_editing(space, kind).unwrap();
+    let frontmatter = "---\nexample: |\n  calternal-id: literal\n  format: literal\n---\n";
     let first = content
         .write(
             space,
@@ -777,7 +778,7 @@ fn outside_edit_uses_the_proven_file_base_and_merges_a_stale_replacement() {
             kind,
             None,
             json!({"title":"Document"}),
-            b"Start\nEnd\n",
+            format!("{frontmatter}Start\nEnd\n").as_bytes(),
             request(actor, "outside-seed"),
             |_| json!({}),
         )
@@ -804,12 +805,15 @@ fn outside_edit_uses_the_proven_file_base_and_merges_a_stale_replacement() {
             kind,
             Some(&first.revision),
             first.metadata,
-            b"Start agent\nEnd\n",
+            format!("{frontmatter}Start agent\nEnd\n").as_bytes(),
             request(actor, "outside-stale"),
             |_| json!({}),
         )
         .unwrap();
-    assert_eq!(merged.bytes, b"Start agent\nEnd outside\n");
+    assert_eq!(
+        merged.bytes,
+        format!("{frontmatter}Start agent\nEnd outside\n").as_bytes()
+    );
     content.materialize(space, first.id).unwrap();
     assert!(
         std::fs::read_to_string(file)

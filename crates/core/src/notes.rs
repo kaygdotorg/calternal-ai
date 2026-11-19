@@ -147,7 +147,8 @@ pub struct NotesUpdateInput {
     /// Expected opaque current revision, 1..256 UTF-8 bytes; mismatch produces a conflict.
     #[schemars(length(min = 1, max = 256))]
     pub base_revision: String,
-    /// Optional replacement title: nonblank, at most 256 Unicode scalars, no controls; omission preserves the title and null is rejected.
+    /// Optional legacy title hint, at most 256 Unicode scalars. The server derives the title
+    /// from the Markdown's first H1, keeping the existing title when there is no H1.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

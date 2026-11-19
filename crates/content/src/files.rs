@@ -116,40 +116,55 @@ fn skill_bundle(placement: &Placement) -> bool {
     )
 }
 
-const MARKDOWN_FORMAT: &str = "format: calternal-note/v1\n";
+const MARKDOWN_FORMAT: &str = "format: calternal-note/v1";
 
 pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
-    if *format == FileFormat::Markdown {
-        // The host owns identity; untrusted frontmatter cannot claim a second ID.
-        // Preserve the submitted text as the version body, including its properties.
-        let text = std::str::from_utf8(&item.bytes).map_err(internal)?;
-        let mut out = format!("---\ncalternal-id: {}\n", item.id);
-        if let Some(rest) = text.strip_prefix("---\n")
-            && let Some((front, body)) = rest.split_once("\n---\n")
-        {
-            if !front
-                .lines()
-                .any(|line| line.trim_start().starts_with("format:"))
-            {
-                out.push_str(MARKDOWN_FORMAT);
-            }
-            for line in front.lines() {
-                if !line.trim_start().starts_with("calternal-id:") {
-                    out.push_str(line);
-                    out.push('\n');
-                }
-            }
-            out.push_str("---\n");
-            out.push_str(body);
-            return Ok(out.into_bytes());
-        }
-        out.push_str(MARKDOWN_FORMAT);
-        out.push_str("---\n");
-        out.push_str(text);
-        Ok(out.into_bytes())
-    } else {
-        Ok(item.bytes.clone())
+    if *format != FileFormat::Markdown {
+        return Ok(item.bytes.clone());
     }
+    let text = std::str::from_utf8(&item.bytes).map_err(internal)?;
+    // The host owns the top-level ID. Indented lines can be literal YAML
+    // content and must survive placement verbatim.
+    let front = crate::markdown_frontmatter(text);
+    let newline = match text.find('\n') {
+        Some(end) if text[..end].ends_with('\r') => "\r\n",
+        _ => "\n",
+    };
+    let mut out = String::with_capacity(text.len() + 96);
+    if let Some(front) = &front {
+        out.push_str(front.opening);
+    } else {
+        if text.starts_with('\u{feff}') {
+            out.push('\u{feff}');
+        }
+        out.push_str("---");
+        out.push_str(newline);
+    }
+    use std::fmt::Write as _;
+    write!(out, "calternal-id: {}{newline}", item.id).expect("writing into a string");
+    if !front.as_ref().is_some_and(|front| {
+        front
+            .properties
+            .lines()
+            .any(|line| line.starts_with("format:"))
+    }) {
+        out.push_str(MARKDOWN_FORMAT);
+        out.push_str(newline);
+    }
+    if let Some(front) = front {
+        for line in front.properties.split_inclusive('\n') {
+            if !line.starts_with("calternal-id:") {
+                out.push_str(line);
+            }
+        }
+        out.push_str(front.closing);
+        out.push_str(front.body);
+    } else {
+        out.push_str("---");
+        out.push_str(newline);
+        out.push_str(text.strip_prefix('\u{feff}').unwrap_or(text));
+    }
+    Ok(out.into_bytes())
 }
 const DESTINATION_OCCUPIED: &str = "destination_occupied";
 
@@ -672,5 +687,67 @@ mod tests {
         assert_eq!(fs::read(&old).unwrap(), b"competing original path");
         assert_eq!(fs::read(&new).unwrap(), b"competing destination");
         assert_eq!(fs::read(&stage).unwrap(), b"original note");
+    }
+}
+
+#[cfg(test)]
+mod frontmatter_bytes {
+    use super::*;
+
+    fn render(markdown: &str) -> String {
+        let item = Item {
+            id: Uuid::now_v7(),
+            space: crate::SpaceId::new(),
+            kind: "notes".into(),
+            metadata: serde_json::Value::Null,
+            bytes: markdown.as_bytes().to_vec(),
+            revision: "test".into(),
+            updated_at: String::new(),
+        };
+        String::from_utf8(encoded(&item, &FileFormat::Markdown).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn arbitrary_frontmatter_bytes_survive_host_identity_insertion() {
+        let mut state = 7u64;
+        for case in 0..256 {
+            let mut content = String::from(
+                "example: |\n  calternal-id: quoted text\n  format: another literal\n",
+            );
+            for _ in 0..(case % 7) {
+                content.push_str("# ");
+                for _ in 0..(case % 31) {
+                    state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    content.push(
+                        char::from_u32(32 + (state >> 32) as u32 % 65500)
+                            .filter(|c| !matches!(c, '\r' | '\n'))
+                            .unwrap_or(' '),
+                    );
+                }
+                content.push('\n');
+            }
+            let newline = if case % 2 == 0 { "\n" } else { "\r\n" };
+            let content = content.replace('\n', newline);
+            let text =
+                format!("---{newline}calternal-id: untrusted{newline}{content}---{newline}# Body");
+            let placed = render(&text);
+            let mut lines = placed.split_inclusive('\n');
+            assert_eq!(lines.next(), Some(format!("---{newline}").as_str()));
+            assert!(lines.next().unwrap().starts_with("calternal-id: "));
+            assert_eq!(
+                lines.next(),
+                Some(format!("format: calternal-note/v1{newline}").as_str())
+            );
+            assert_eq!(
+                lines.collect::<String>(),
+                format!("{content}---{newline}# Body")
+            );
+        }
+    }
+
+    #[test]
+    fn headerless_markdown_is_wrapped_without_changing_the_body() {
+        let body = "# Title\nuntouched";
+        assert!(render(body).ends_with(&format!("---\n{body}")));
     }
 }

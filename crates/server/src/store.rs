@@ -409,9 +409,10 @@ impl Store {
     }
     /// Updates only the current base revision, preserving external edits/deletes.
     /// Title changes stage the path and link edits in the same content transaction.
-    /// Warm content-only saves project tags and links once and load head metadata
-    /// without its previous body. Cost: one metadata read plus one shared write
-    /// header, and two checked file reads (admission and deferred placement).
+    /// A save uses the Markdown heading for the title and preserves a prior
+    /// title when there is no H1. Cost: one metadata read, one shared write
+    /// header, one previous revision read for text style, and two checked file
+    /// reads (admission and deferred placement).
     /// Three FULL SSD commits precede acknowledgment; file/directory syncs follow
     /// within one second. A title change places its root and returns the durable
     /// job ID for bounded source edits and undo.
@@ -425,7 +426,6 @@ impl Store {
         space_id: SpaceId,
         id: &str,
         base_revision: &str,
-        title: Option<&str>,
         markdown: &str,
         allow_link_rewrites: bool,
         shared_authority: Option<&calternal_auth::spaces::Spaces>,
@@ -441,18 +441,9 @@ impl Store {
             operation,
             fingerprint,
         };
-        let (title, markdown) = match (title, crate::notes::heading_title(markdown)) {
-            (Some(title), Some(heading)) if title != heading => (
-                title,
-                std::borrow::Cow::Owned(crate::notes::rename_heading(markdown, title)),
-            ),
-            (title, heading) => (
-                title.or(heading).unwrap_or(old_title),
-                std::borrow::Cow::Borrowed(markdown),
-            ),
-        };
+        let title = crate::notes::heading_title(markdown).unwrap_or(old_title);
         calternal_core::validate_title(title)?;
-        calternal_core::validate_markdown(&markdown)?;
+        calternal_core::validate_markdown(markdown)?;
         if title != old_title && !allow_link_rewrites {
             return Err(Error::forbidden(
                 "renaming a shared note requires space edit access",
@@ -463,7 +454,7 @@ impl Store {
                 space_id,
                 id,
                 base_revision,
-                crate::notes::metadata(title, &markdown)?,
+                crate::notes::metadata(title, markdown)?,
                 markdown.as_bytes(),
                 request,
                 |i| serde_json::json!({"note":note(i)}),
@@ -488,7 +479,7 @@ impl Store {
                 Some(id),
                 "notes",
                 Some(base_revision),
-                crate::notes::metadata(title, &markdown)?,
+                crate::notes::metadata(title, markdown)?,
                 markdown.as_bytes(),
                 request,
                 |i| serde_json::json!({"note":note(i)}),

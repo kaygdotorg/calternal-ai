@@ -677,7 +677,6 @@ pub(super) async fn mutate_note<D: Directory>(
                     space,
                     &i.id,
                     &i.base_revision,
-                    i.title.as_deref(),
                     &i.markdown,
                     allow_link_rewrites,
                     authority.as_ref(),
