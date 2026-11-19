@@ -56,6 +56,7 @@ impl MachineService {
             st.pool_grants.insert(account);
         } else {
             st.pool_grants.remove(&account);
+            st.close_account_channels(account);
         }
         st.readiness.change(account);
         st.place_waiting(&self.settings);

@@ -157,6 +157,7 @@ impl Exec {
 /// Everything the registry knows. Bounded: challenges by `MAX_CHALLENGES`,
 /// finished execs by ten minutes, sessions by one per machine.
 pub(super) struct State {
+    pub space_channels: HashMap<calternal_types::SpaceId, super::space_channel::Reservation>,
     pub lifecycle: Arc<std::sync::OnceLock<calternal_types::OwnerLifecycle>>,
     pub db: rusqlite::Connection,
     /// Machines with at least one durable erasure. Idle syncs need no SQL read.
@@ -343,6 +344,7 @@ impl State {
     /// Fence a lease and put it back in the queue (its machine went silent).
     /// One commit.
     pub fn interrupt(&mut self, lease: Uuid, why: &str) {
+        self.close_space_lease(lease);
         self.lose_execs(lease, why);
         let Some(l) = self.leases.get_mut(&lease) else {
             return;
@@ -376,6 +378,7 @@ impl State {
     }
 
     fn end_for_placement(&mut self, lease: Uuid, why: &str, keep_files: bool) {
+        self.close_space_lease(lease);
         let Some(l) = self.leases.get_mut(&lease) else {
             return;
         };
@@ -438,6 +441,7 @@ impl State {
     /// Fence the revoked session and release its reservations, including
     /// stopping workers. The caller has durably revoked the machine first.
     pub fn apply_revocation(&mut self, machine: Uuid, settings: &Settings) -> Result<(), Error> {
+        self.close_machine_channels(machine);
         let Some(m) = self.machines.get_mut(&machine) else {
             return Ok(());
         };

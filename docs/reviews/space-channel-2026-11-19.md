@@ -102,6 +102,35 @@ The tracker is bounded to 1,024 active assignments and reclaims dropped
 handles before refusing a new assignment. Its registry mutex only covers
 in-memory operations on the write and assignment paths.
 
+4. **Enrolled upgrade and lane windows (§3).** Reserve one carrier for a
+   space on the existing worker placement and send its single-use nonce
+   over machine sync. The runtime uses HTTP/1.1 Upgrade on the configured
+   TLS origin with the current enrolled bearer and redirects disabled.
+   The host checks machine, exact session, space, lease fence and reservation
+   before the stream receives authority. The first bounded LF object offers
+   major 1 and echoes the binding. The host confirms the same binding,
+   fresh epoch, package pins, four-second lease, and initial credit windows.
+   Use explicit null package, digest and ticket for space-wide renew and
+   fence. Package-scoped credit returns encoded bytes (including LF) and
+   frame slots. Control is prioritized before unsent data. Package lane
+   credits are bounded to two maximum encoded frames and eight outstanding
+   frame slots. The control window is 4 KiB, including one coalesced credit
+   return. The writer owns the one direction-local sequence. It reserves the
+   largest sequence encoding at admission, then refunds the unused bytes at
+   write time. The receiver reads into one bounded line buffer before
+   decoding and checks package credit before handing off the frame.
+   Socket write and flush share a 300 ms deadline. Local fencing and the
+   remote four-second lease run independently of application callbacks and
+   physical writes.
+
+Carrier processing reads and parses one bounded NDJSON object at a time.
+Each sent object uses one write-all and one transport flush. The transport
+runs entirely in memory, without SQLite reads or storage flushes after
+setup. It checks the registered pin and package credits under a short
+per-space memory lock. Setup uses existing machine registry and authority
+lookups. The first machine placement attaches one package. The carrier
+can allocate distinct windows for up to eight pinned packages.
+
 ## Verification and remaining work
 
 On `claude@calternal-dev-01-compute02`, the exact `f3633ca9` source
@@ -115,10 +144,10 @@ existing `cargo test --locked -p calternal-server --test plugin_host --
 --test-threads=1` integration suite passed all 18 tests, including
 malformed child output and the current worker broker path.
 
-The grant revision is implemented in the auth worker. The authenticated
-duplex endpoint, bounded per-package queues and control
-credit, leases and epochs, current-rights tickets, and item-head broker
-are still open. The physical mid-frame stall, concurrent callback progress,
+The grant revision and enrolled duplex transport are implemented. The
+bounded carrier is tested independently of the broker. Its ordinary
+operation caller, current-rights tickets, item-head broker, and the
+real-process fault injection gate are still open. The physical mid-frame stall, concurrent callback progress,
 immediate local fence, isolated second space, remote expiry and
 fresh-ticket receipt replay are spike evidence only. None has been
 reproven against product code in this lane. The carrier tests still need to

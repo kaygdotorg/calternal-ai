@@ -8,6 +8,7 @@
 //! bounded by about 256 KiB in the channel plus 256 KiB here.
 
 mod erasure;
+mod space_channel;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -273,6 +274,10 @@ impl Runner {
     /// assignment can reuse the same workspace.
     pub async fn handle(self: &Arc<Self>, message: Down) {
         match message {
+            Down::OpenSpaceChannel { channel } => {
+                let runner = self.clone();
+                tokio::spawn(async move { runner.open_space_channel(channel).await });
+            }
             Down::Assign {
                 lease_id,
                 fence,

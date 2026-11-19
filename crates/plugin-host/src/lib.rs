@@ -11,6 +11,8 @@ mod input_diagnostics;
 mod registry;
 mod runtime;
 mod slots;
+/// Private wire protocol for an enrolled space runtime.
+pub mod space_channel;
 mod strict_json;
 pub use registry::*;
 pub use runtime::*;

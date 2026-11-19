@@ -368,6 +368,118 @@ mod tests {
             .token
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn space_channel_is_single_use_and_bound_to_the_enrolled_assignee() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_owned();
+        let (service, owner, worker, machine, token, foreign) = blocking(move || {
+            let spaces =
+                calternal_auth::spaces::Spaces::open(&root.join("system/auth.db")).unwrap();
+            let ids = spaces.seed_development().unwrap();
+            let service =
+                MachineService::open(&root, spaces.machines(), Settings::default()).unwrap();
+            service.set_pool_grant(ids.owner, true).unwrap();
+            let (machine, key) = ready_machine_with_key(&service, Owner::Pool, 3);
+            let token = connect(&service, machine, &key);
+            {
+                let mut state = service.lock().unwrap();
+                let live = state
+                    .machines
+                    .get_mut(&machine)
+                    .unwrap()
+                    .live
+                    .as_mut()
+                    .unwrap();
+                live.capacity.max_sandboxes = 3;
+                live.capacity.available_memory_bytes = Some(64 << 30);
+            }
+            let worker = service
+                .request_worker(
+                    ids.owner,
+                    Uuid::new_v4(),
+                    PluginWorker {
+                        space_id: ids.personal,
+                        source: "fixture".into(),
+                    },
+                )
+                .unwrap();
+            let (other, foreign_key) = ready_machine_with_key(&service, Owner::Pool, 1);
+            let foreign = connect(&service, other, &foreign_key);
+            Ok((service, ids.owner, worker, machine, token, foreign))
+        })
+        .await
+        .unwrap();
+        let scheduler = service.clone();
+        let lease = worker.lease_id;
+        let opened = tokio::spawn(async move {
+            scheduler
+                .open_space_channel(
+                    owner,
+                    lease,
+                    calternal_plugin_host::space_channel::PackagePin {
+                        package: "calternal-fixture".into(),
+                        digest: "a".repeat(64),
+                    },
+                )
+                .await
+        });
+        let service2 = service.clone();
+        let binding = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let service3 = service2.clone();
+                let message = blocking(move || {
+                    let state = service3.lock()?;
+                    Ok(state.machines[&machine]
+                        .live
+                        .as_ref()
+                        .unwrap()
+                        .outbox
+                        .iter()
+                        .find_map(|envelope| match &envelope.message {
+                            Down::OpenSpaceChannel { channel } => Some(channel.clone()),
+                            _ => None,
+                        }))
+                })
+                .await
+                .unwrap();
+                if let Some(binding) = message {
+                    break binding;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let service2 = service.clone();
+        blocking(move || {
+            assert!(
+                service2
+                    .claim_channel(&foreign, binding.space, binding.assignment)
+                    .is_err()
+            );
+            assert!(
+                service2
+                    .claim_channel(&token, SpaceId::new(), binding.assignment)
+                    .is_err()
+            );
+            let (_, _, closing, reply) = service2
+                .claim_channel(&token, binding.space, binding.assignment)
+                .unwrap();
+            assert!(
+                service2
+                    .claim_channel(&token, binding.space, binding.assignment)
+                    .is_err()
+            );
+            service2.stop_run(owner, lease).unwrap();
+            assert!(*closing.borrow());
+            drop(reply);
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert!(opened.await.unwrap().is_err());
+    }
+
     #[test]
     fn worker_frames_and_leases_are_not_public_machine_resources() {
         let dir = tempfile::tempdir().unwrap();

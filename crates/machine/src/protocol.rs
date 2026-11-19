@@ -417,10 +417,35 @@ pub struct PluginWorker {
     pub source: String,
 }
 
+/// HTTP/1.1 protocol name for the enrolled plugin space upgrade.
+pub const SPACE_CHANNEL_UPGRADE: &str = "calternal-space-v1";
+
+/// Control-plane binding of an expiring channel to one worker placement.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpaceChannelAssignment {
+    /// Placement lease already allocated to this machine.
+    pub lease_id: Uuid,
+    /// Current generation of the placement lease.
+    pub fence: u64,
+    /// Space that owns the placement.
+    pub space: SpaceId,
+    /// Single-use channel reservation, checked against the enrolled machine session.
+    pub assignment: Uuid,
+    /// Package identity verified by the host when it assigned the worker bundle.
+    pub package: calternal_plugin_host::space_channel::PackagePin,
+}
+
 /// A message from the server to a machine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Down {
+    /// Open the isolated v2 data channel on an existing package placement.
+    OpenSpaceChannel {
+        /// Exact placement and single-use reservation.
+        channel: SpaceChannelAssignment,
+    },
+
     /// Explicit owner discard; never inferred from lease expiry or elapsed time.
     Discard {
         /// Durable request identity, scoped to this enrolled machine.

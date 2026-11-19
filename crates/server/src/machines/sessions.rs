@@ -224,6 +224,7 @@ impl MachineService {
             notify: Arc::new(Notify::new()),
         });
         let owner = machine.row.owner;
+        st.close_machine_channels(f.machine_id);
         st.readiness_changed(owner);
         st.replay_discards(f.machine_id)?;
         let held: Vec<Uuid> = st

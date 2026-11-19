@@ -53,7 +53,7 @@ use calternal_types::Capability;
 use calternal_types::Error;
 
 /// The service as a request extension; absent when machines are disabled.
-type Svc = Option<Extension<Arc<MachineService>>>;
+pub(super) type Svc = Option<Extension<Arc<MachineService>>>;
 
 /// Every machine route. Handlers answer 404 when no [`MachineService`]
 /// extension is installed (tests that build the router without one).
@@ -63,6 +63,10 @@ pub fn routes<D: Directory>() -> Router<Shared<D>> {
         .route("/api/v1/machine/session/start", post(session_start))
         .route("/api/v1/machine/session/finish", post(session_finish))
         .route("/api/v1/machine/sync", post(sync))
+        .route(
+            "/api/v1/machine/spaces/{space}/channels/{assignment}",
+            get(super::space_channel::upgrade::<D>),
+        )
         .route("/api/v1/machine/status", post(erasure_status))
         .route("/api/v1/machine/output", post(output))
         .route("/api/v1/machines", get(list))
@@ -86,7 +90,7 @@ fn reply<T: serde::Serialize>(r: Result<T, Error>) -> Response {
     }
 }
 
-fn service(svc: Svc) -> Result<Arc<MachineService>, Error> {
+pub(super) fn service(svc: Svc) -> Result<Arc<MachineService>, Error> {
     svc.map(|Extension(s)| s)
         .ok_or_else(|| Error::not_found("machines are not enabled"))
 }
@@ -96,7 +100,7 @@ fn body<T: DeserializeOwned>(bytes: &Bytes) -> Result<T, Error> {
         .map_err(|_| Error::invalid_input("body does not match the schema"))
 }
 
-fn bearer(headers: &HeaderMap) -> Result<String, Error> {
+pub(super) fn bearer(headers: &HeaderMap) -> Result<String, Error> {
     headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
