@@ -74,6 +74,8 @@ const TRUSTED_JSON: &str = include_str!("../../trusted-plugins.json");
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TrustedFile {
+    #[serde(default)]
+    operation_namespace_owners: BTreeMap<String, String>,
     plugins: Vec<TrustedEntry>,
 }
 
@@ -279,12 +281,17 @@ pub struct Catalog {
     operations: BTreeMap<String, (usize, Policy)>,
 }
 
-/// Parse the source tree's reference catalog for fixtures and digest reports.
-/// Serving installations use the distribution file. Cost: one small JSON parse.
+/// Copy the pinned distribution entries for fixtures and digest reports.
+/// Serving installations load the distribution file. The pinned list is parsed once.
 pub fn registry_entries() -> Vec<TrustedEntry> {
-    let file: TrustedFile =
-        serde_json::from_str(TRUSTED_JSON).expect("compiled-in trusted-plugins.json is valid");
-    file.plugins
+    trusted_distribution().plugins.clone()
+}
+
+fn trusted_distribution() -> &'static TrustedFile {
+    static DISTRIBUTION: std::sync::OnceLock<TrustedFile> = std::sync::OnceLock::new();
+    DISTRIBUTION.get_or_init(|| {
+        serde_json::from_str(TRUSTED_JSON).expect("compiled-in trusted-plugins.json is valid")
+    })
 }
 
 /// Test-only trusted plugins (`tests/plugins/trusted-test-plugins.json`), compiled in
@@ -478,57 +485,58 @@ impl Catalog {
     /// operations need an authority that is not space-scoped.
     /// Cost: O(declarations * log registered) plus schema compilation per plugin.
     fn from_plugins(plugins: Vec<Arc<Plugin>>) -> Self {
-        Self::from_plugins_with_reservations(plugins, host::DeclarationIndex::default())
+        let mut catalog = Self::default();
+        let mut unavailable = host::DeclarationIndex::default();
+        for plugin in plugins {
+            catalog.load_v1(plugin, &mut unavailable);
+        }
+        catalog.declarations.carry_unavailable(&unavailable, None);
+        catalog.finish_registration();
+        catalog
     }
 
-    fn from_plugins_with_reservations(
-        plugins: Vec<Arc<Plugin>>,
-        declarations: host::DeclarationIndex,
-    ) -> Self {
-        let mut index = host::Registry::with_declarations(declarations);
-        let mut out = Self::default();
-        for plugin in plugins {
-            let id = plugin.manifest.id.clone();
-            if let Err(why) = check_operations(&plugin) {
-                tracing::warn!(plugin = %id, reason = %why, "trusted plugin not loaded");
-                index.reserve_unavailable(&plugin.manifest);
-                continue;
-            }
-            if index.register(plugin.manifest.clone()).is_err() {
-                tracing::warn!(plugin = %id, "trusted plugin collides with a registered plugin");
-                index.reserve_unavailable(&plugin.manifest);
-                continue;
-            }
-            match &plugin.unavailable {
-                Some(why) => {
-                    tracing::warn!(plugin = %id, reason = %why, "trusted plugin unavailable")
-                }
-                None => {
-                    tracing::info!(plugin = %id, version = %plugin.manifest.version, "trusted plugin registered")
-                }
-            }
-            out.plugins.push(plugin);
+    fn load_v1(&mut self, plugin: Arc<Plugin>, unavailable: &mut host::DeclarationIndex) {
+        if let Err(why) = self.register_v1(plugin.clone()) {
+            let manifest = &plugin.manifest;
+            tracing::warn!(plugin = %manifest.id, reason = %why, "trusted plugin not loaded");
+            unavailable
+                .reserve_unavailable(manifest.id.clone(), Some(host::PackageClaims::v1(manifest)));
         }
-        // Policy rows come from the manifests, never from a hand-written table.
-        for row in index.policy_rows() {
-            let Some(slot) = out.plugins.iter().position(|p| p.manifest.id == row.plugin) else {
-                continue;
-            };
-            let item = row.operation.target.is_some();
-            let Some(required) = host_capability(row.operation.required_capability) else {
-                continue;
-            };
+    }
+
+    fn register_v1(&mut self, plugin: Arc<Plugin>) -> Result<(), String> {
+        let manifest = &plugin.manifest;
+        check_operations(manifest)?;
+        self.declarations.register_v1(manifest)?;
+        for op in &manifest.operations {
+            let required = host_capability(op.required_capability).expect("checked capability");
             let policy = Policy {
-                operation: Cow::Owned(row.operation.id.clone()),
+                operation: Cow::Owned(op.id.clone()),
                 required,
-                scope: if item { Scope::Item } else { Scope::Space },
+                scope: if op.target.is_some() {
+                    Scope::Item
+                } else {
+                    Scope::Space
+                },
                 constraint: Constraint::PluginInvocation,
             };
-            out.operations.insert(row.operation.id, (slot, policy));
+            self.operations
+                .insert(op.id.clone(), (self.plugins.len(), policy));
         }
-        out.declarations = index.into_declarations();
-        out.slots = slots::SlotIndex::compile(&out);
-        out
+        match &plugin.unavailable {
+            Some(why) => {
+                tracing::warn!(plugin = %manifest.id, reason = %why, "trusted plugin unavailable")
+            }
+            None => {
+                tracing::info!(plugin = %manifest.id, version = %manifest.version, "trusted plugin registered")
+            }
+        }
+        self.plugins.push(plugin);
+        Ok(())
+    }
+
+    fn finish_registration(&mut self) {
+        self.slots = slots::SlotIndex::compile(self);
     }
 
     /// Whether there is any registered mount or compatible contribution.
@@ -621,22 +629,23 @@ impl Catalog {
 
 /// Reject plugins whose operations would shadow a host binding or require an
 /// account-level capability that has no space scope.
-fn check_operations(plugin: &Plugin) -> Result<(), String> {
-    for operation in &plugin.manifest.operations {
+fn check_operations(manifest: &ManifestV1) -> Result<(), String> {
+    for operation in &manifest.operations {
         check_operation(
+            &manifest.id,
             &operation.id,
             &capability_name(operation.required_capability),
         )?;
     }
-    check_operation_namespace(&plugin.manifest.id)
+    check_operation_namespace(&manifest.id, &manifest.id)
 }
 
-fn check_operation(id: &str, capability: &str) -> Result<(), String> {
+fn check_operation(package: &str, id: &str, capability: &str) -> Result<(), String> {
     if authz::policy(id).is_some() {
         return Err(format!("operation {id} shadows a host operation"));
     }
     if let Some((prefix, _)) = id.split_once('.') {
-        check_operation_namespace(prefix)?;
+        check_operation_namespace(package, prefix)?;
     }
     let capability = Capability::from_name(capability);
     if matches!(
@@ -648,13 +657,29 @@ fn check_operation(id: &str, capability: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn check_operation_namespace(prefix: &str) -> Result<(), String> {
-    if authz::owns_namespace(prefix) {
-        return Err(format!(
-            "Operation namespace {prefix} is reserved by the host"
-        ));
+fn check_operation_namespace(package: &str, prefix: &str) -> Result<(), String> {
+    // A None owner is a host namespace. A distribution entry can assign the
+    // namespace to a package while exact host operation IDs stay reserved.
+    static OWNERS: std::sync::OnceLock<BTreeMap<&str, Option<&str>>> = std::sync::OnceLock::new();
+    let owners = OWNERS.get_or_init(|| {
+        authz::operation_namespaces()
+            .map(|prefix| (prefix, None))
+            .chain(
+                trusted_distribution()
+                    .operation_namespace_owners
+                    .iter()
+                    .map(|(prefix, owner)| (prefix.as_str(), Some(owner.as_str()))),
+            )
+            .collect()
+    });
+    match owners.get(prefix) {
+        None => Ok(()),
+        Some(Some(owner)) if *owner == package => Ok(()),
+        Some(owner) => Err(format!(
+            "Operation namespace {prefix} is reserved by {}",
+            owner.unwrap_or("the host")
+        )),
     }
-    Ok(())
 }
 
 /// Effective activation of `plugin` in one content space: the stored row, or the

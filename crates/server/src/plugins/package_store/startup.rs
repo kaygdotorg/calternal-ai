@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 #[derive(Default)]
 struct InstalledDeclarations {
-    v2: Vec<Arc<host::ManifestV2>>,
+    v2: Vec<(usize, Arc<host::ManifestV2>)>,
     reserved: host::DeclarationIndex,
 }
 
@@ -32,7 +32,7 @@ pub fn load(
     let cache = appdata.join("installed-plugin-workers");
     calternal_fsio::private::directory(&cache).map_err(reason)?;
     let mut installed = InstalledDeclarations::default();
-    let mut plugins = load_rows(
+    let plugins = load_rows(
         &conn,
         &cache,
         "installed_plugins",
@@ -45,36 +45,53 @@ pub fn load(
         plugins
             .iter()
             .chain(&retained)
-            .filter_map(|plugin| plugin.worker.as_deref()),
+            .filter_map(|(_, plugin)| plugin.worker.as_deref()),
     )
     .map_err(reason)?;
+
+    let registry = Registry::default();
+    let mut catalog = Catalog::default();
+    let mut v1 = plugins.into_iter().peekable();
+    for (position, manifest) in installed.v2 {
+        while v1.peek().is_some_and(|(earlier, _)| *earlier < position) {
+            let (_, plugin) = v1.next().expect("peeked v1 row");
+            catalog.load_v1(Arc::new(plugin), &mut installed.reserved);
+        }
+        if let Err(error) = catalog.register_stored_v2(manifest.clone()) {
+            let id = manifest.id().to_owned();
+            tracing::warn!(plugin = %id, reason = %error, "installed v2 package unavailable");
+            installed
+                .reserved
+                .reserve_unavailable(id, Some(host::PackageClaims::v2(&manifest)));
+        }
+    }
+    for (_, plugin) in v1 {
+        catalog.load_v1(Arc::new(plugin), &mut installed.reserved);
+    }
+    // Reservations affect subsequent admission, never the choice of live owners on load.
+    catalog
+        .declarations
+        .carry_unavailable(&installed.reserved, None);
     if let Some(root) = test_root {
         for entry in super::super::test_entries() {
-            match super::super::load_one(root, &entry) {
-                Ok(plugin) => plugins.push(plugin),
+            match super::super::load_one(root, &entry).and_then(|plugin| {
+                catalog.declarations.check_reserved(
+                    &plugin.manifest.id,
+                    &host::PackageClaims::v1(&plugin.manifest),
+                )?;
+                catalog.register_v1(Arc::new(plugin))
+            }) {
+                Ok(()) => {}
                 Err(error) => {
                     tracing::warn!(plugin = %entry.id, reason = %error, "test package unavailable")
                 }
             }
         }
     }
-    let registry = Registry::default();
-    let mut catalog = Catalog::from_plugins_with_reservations(
-        plugins.into_iter().map(Arc::new).collect(),
-        installed.reserved,
-    );
-    for manifest in installed.v2 {
-        let id = manifest.id().to_owned();
-        if let Err(error) = catalog.register_v2(manifest.clone()) {
-            tracing::warn!(plugin = %id, reason = %error, "installed v2 package unavailable");
-            catalog
-                .declarations
-                .reserve_unavailable(id, Some(host::PackageClaims::v2(&manifest)));
-        }
-    }
+    catalog.finish_registration();
     catalog.retained = retained
         .into_iter()
-        .map(|plugin| {
+        .map(|(_, plugin)| {
             (
                 (plugin.manifest.id.clone(), plugin.revision),
                 std::sync::Arc::new(plugin),
@@ -91,9 +108,14 @@ fn load_rows(
     table: &str,
     limit: usize,
     mut installed: Option<&mut InstalledDeclarations>,
-) -> Result<Vec<Plugin>, String> {
+) -> Result<Vec<(usize, Plugin)>, String> {
+    let order = if installed.is_some() {
+        "COALESCE(install_order, revision), revision"
+    } else {
+        "revision"
+    };
     let mut query = conn.prepare(&format!(
-        "SELECT archive, checksum, default_enabled, revision, approval, id FROM {table} ORDER BY revision"
+        "SELECT archive, checksum, default_enabled, revision, approval, id FROM {table} ORDER BY {order}"
     )).map_err(reason)?;
     let mut rows = query.query([]).map_err(reason)?;
     let mut plugins = Vec::new();
@@ -107,7 +129,7 @@ fn load_rows(
         let checksum: String = row.get(1).map_err(reason)?;
         let id: String = row.get(5).map_err(reason)?;
         let package = match verify_archive(&bytes, &checksum) {
-            Ok(()) => read_stored_package(&bytes, &id, installed.as_deref_mut()),
+            Ok(()) => read_stored_package(&bytes, &id, count, installed.as_deref_mut()),
             Err(error) => {
                 if let Some(installed) = installed.as_deref_mut() {
                     installed.reserved.reserve_unavailable(id.clone(), None);
@@ -137,7 +159,7 @@ fn load_rows(
         let mut plugin = Plugin::new(entry, package.manifest, worker)?;
         plugin.revision = revision;
         plugin.activation_approval = row.get(4).map_err(reason)?;
-        plugins.push(plugin);
+        plugins.push((count, plugin));
     }
     Ok(plugins)
 }
@@ -145,6 +167,7 @@ fn load_rows(
 fn read_stored_package(
     bytes: &[u8],
     id: &str,
+    position: usize,
     installed: Option<&mut InstalledDeclarations>,
 ) -> Result<Option<Package>, String> {
     let legacy_error = match Package::read_archive(bytes) {
@@ -158,7 +181,7 @@ fn read_stored_package(
     let error = if v2::archive_version(bytes) == Ok(2) {
         match validate_v2_archive(bytes) {
             Ok(manifest) if manifest.id() == id => {
-                installed.v2.push(manifest);
+                installed.v2.push((position, manifest));
                 return Ok(None);
             }
             Ok(_) => "installed v2 package ID does not match its archive".into(),
@@ -303,7 +326,7 @@ mod tests {
         let bytes =
             serde_json::to_vec(&serde_json::json!({"manifest": manifest, "worker": null})).unwrap();
         let mut installed = InstalledDeclarations::default();
-        let error = read_stored_package(&bytes, "calternal-notes", Some(&mut installed))
+        let error = read_stored_package(&bytes, "calternal-notes", 1, Some(&mut installed))
             .err()
             .expect("the legacy manifest is invalid");
         assert!(error.contains("unknown_v1_field"), "{error}");
@@ -314,7 +337,7 @@ mod tests {
         candidate.id = "other-package".into();
         let error = installed
             .reserved
-            .check_reserved(&host::PackageClaims::v1(&candidate), true)
+            .check_reserved(&candidate.id, &host::PackageClaims::v1(&candidate))
             .unwrap_err();
         assert!(
             error.contains("reserved by unavailable package calternal-notes"),

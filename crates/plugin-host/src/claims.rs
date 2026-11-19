@@ -191,7 +191,6 @@ impl DeclarationIndex {
                 ));
             }
         }
-        self.check_reserved(&claims, false)?;
         for (category, name) in claims.owned {
             self.active
                 .entry(category)
@@ -217,39 +216,50 @@ impl DeclarationIndex {
         );
     }
 
-    /// Refuse conflicting new claims or an unreadable ownership record. Startup
-    /// uses known reservations only, so existing unrelated plugins can still load.
+    /// Check changes against skipped rows. Claims already held by this live
+    /// owner survive overlap, but cannot be transferred to a different owner.
     /// Cost: bounded by the installed package and declaration caps.
-    pub fn check_reserved(&self, claims: &PackageClaims, changing: bool) -> Result<(), String> {
-        for (package, reserved) in &self.unavailable {
-            if let Some(reserved) = reserved {
-                if let Some((category, name)) = claims.owned.intersection(&reserved.owned).next() {
-                    return Err(format!(
-                        "{} {name} is reserved by unavailable package {package}. Remove it with calternal plugin remove {package}.",
-                        category.label()
-                    ));
-                }
-                if changing {
-                    for (_, kind) in claims
-                        .owned
-                        .iter()
-                        .filter(|(category, _)| *category == Category::Kind)
-                    {
-                        if self.kind_owner(kind).is_none() && reserved.reads.contains(kind) {
-                            return Err(format!(
-                                "Kind {kind} has an unresolved read by unavailable package {package}. Remove it with calternal plugin remove {package} before assigning the kind to another owner."
-                            ));
-                        }
-                    }
-                }
-            } else if changing
-                || claims
-                    .owned
-                    .contains(&(Category::Namespace, package.clone()))
+    pub fn check_reserved(&self, package: &str, claims: &PackageClaims) -> Result<(), String> {
+        let mut new_claims = claims
+            .owned
+            .iter()
+            .filter(|(category, name)| self.owner(*category, name) != Some(package))
+            .peekable();
+        if self.unavailable.contains_key(package)
+            && self.owner(Category::Namespace, package) != Some(package)
+        {
+            return Err(format!(
+                "Package {package} is unavailable. Remove it with calternal plugin remove {package}."
+            ));
+        }
+        if new_claims.peek().is_none() {
+            return Ok(());
+        }
+        for (unavailable, reserved) in &self.unavailable {
+            let Some(reserved) = reserved else {
+                return Err(format!(
+                    "Cannot verify ownership for unavailable package {unavailable}. Remove it with calternal plugin remove {unavailable}."
+                ));
+            };
+            if let Some((category, name)) = claims
+                .owned
+                .intersection(&reserved.owned)
+                .find(|(category, name)| self.owner(*category, name) != Some(package))
             {
                 return Err(format!(
-                    "Cannot verify ownership for unavailable package {package}. Remove it with calternal plugin remove {package}."
+                    "{} {name} is reserved by unavailable package {unavailable}. Remove it with calternal plugin remove {unavailable}.",
+                    category.label()
                 ));
+            }
+            for (category, name) in new_claims.clone() {
+                if *category == Category::Kind
+                    && self.kind_owner(name).is_none()
+                    && reserved.reads.contains(name)
+                {
+                    return Err(format!(
+                        "Kind {name} has an unresolved read by unavailable package {unavailable}. Remove it with calternal plugin remove {unavailable} before assigning the kind to another owner."
+                    ));
+                }
             }
         }
         Ok(())

@@ -48,17 +48,25 @@ impl Catalog {
     }
 
     pub(super) fn register_v2(&mut self, manifest: Arc<ManifestV2>) -> Result<(), String> {
+        self.declarations.check_reserved(
+            manifest.id(),
+            &calternal_plugin_host::PackageClaims::v2(&manifest),
+        )?;
+        self.register_stored_v2(manifest)
+    }
+
+    pub(super) fn register_stored_v2(&mut self, manifest: Arc<ManifestV2>) -> Result<(), String> {
         self.check_v2_reads(&manifest)?;
         for operation in declared(&manifest, "operations") {
             let id = operation["id"].as_str().expect("checked operation ID");
             let capability = operation["required_capability"]
                 .as_str()
                 .expect("checked capability");
-            check_operation(id, capability)?;
+            check_operation(manifest.id(), id, capability)?;
         }
-        check_operation_namespace(manifest.id())?;
+        check_operation_namespace(manifest.id(), manifest.id())?;
         for app in declared(&manifest, "apps") {
-            check_operation_namespace(app["id"].as_str().expect("checked app ID"))?;
+            check_operation_namespace(manifest.id(), app["id"].as_str().expect("checked app ID"))?;
         }
         for site in manifest.declaration()["network"]["fixed_sites"]
             .as_array()

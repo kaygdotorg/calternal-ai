@@ -67,7 +67,7 @@ fn host_namespaces_cannot_be_claimed_by_apps_or_legacy_operations() {
         );
     }
     let legacy = legacy_operation("notes.takeover");
-    let error = crate::plugins::check_operations(&legacy).unwrap_err();
+    let error = crate::plugins::check_operations(&legacy.manifest).unwrap_err();
     assert!(
         error.contains("namespace notes is reserved by the host"),
         "{error}"
@@ -186,13 +186,11 @@ fn unreadable_v1_archive_is_skipped_with_actionable_admission_error() {
         worker: None,
     };
     let checksum = package.checksum().unwrap();
-    let why = package_store::prepare(path, package, checksum, false)
-        .err()
+    let candidate = package_store::prepare(path, package, checksum, false)
+        .unwrap()
         .unwrap();
-    assert!(
-        why.contains("Installed package damaged-legacy is unavailable"),
-        "{why}"
-    );
+    let why = catalog(&restarted, "new-package", Some(candidate.plugin)).unwrap_err();
+    assert!(why.contains("unavailable package damaged-legacy"), "{why}");
     assert!(
         why.contains("calternal plugin remove damaged-legacy"),
         "{why}"
@@ -267,4 +265,132 @@ fn replacing_legacy_package_cannot_drop_a_kind_read_by_v2() {
             .iter()
             .any(|item| item.id == "original-kind")
     );
+}
+
+#[test]
+fn delegated_threads_namespace_has_one_owner_and_preserves_exact_host_lookup() {
+    let catalog = Catalog::default();
+    let mut manifest = bare("intruder");
+    manifest["apps"] = json!([app("threads")]);
+    refuse(
+        &catalog,
+        manifest,
+        "namespace threads is reserved by calternal-orchestrator",
+    );
+    for (id, operation, reason) in [
+        (
+            "intruder",
+            "threads.create",
+            "reserved by calternal-orchestrator",
+        ),
+        (
+            "calternal-orchestrator",
+            "threads.lookup",
+            "shadows a host operation",
+        ),
+    ] {
+        let error = crate::plugins::check_operation(id, operation, "space.read").unwrap_err();
+        assert!(error.contains(reason), "{error}");
+    }
+}
+
+#[test]
+fn colliding_and_invalid_rows_do_not_unseat_the_live_owner_after_update_or_restart() {
+    let data = tempfile::tempdir().unwrap();
+    let path = data.path();
+    start_catalog(path);
+    let mut broken = bare("broken-earlier");
+    broken["kinds"] = json!([
+        kind("owned-kind", "Owned Folder"),
+        kind("reserved-kind", "Reserved Folder")
+    ]);
+    broken["obsolete_field"] = json!(true);
+    stored_archive(path, "broken-earlier", broken);
+
+    let owner = legacy_notes("winner", "owned-kind", "Owned Folder");
+    let mut manifest = owner.manifest.clone();
+    manifest
+        .operations
+        .push(legacy_operation("winner.read").manifest.operations[0].clone());
+    let winner = package_store::Package {
+        manifest,
+        worker: None,
+    };
+    let archive = winner.archive().unwrap();
+    package_store::commit_v2(path, "winner", &archive, &winner.checksum().unwrap()).unwrap();
+
+    let loser = legacy_notes("loser", "owned-kind", "Loser Folder");
+    let loser = package_store::Package {
+        manifest: loser.manifest.clone(),
+        worker: None,
+    };
+    let archive = loser.archive().unwrap();
+    package_store::commit_v2(path, "loser", &archive, &loser.checksum().unwrap()).unwrap();
+    let mut skipped_v2 = bare("loser-v2");
+    skipped_v2["kinds"] = json!([kind("owned-kind", "Other Folder")]);
+    stored_archive(path, "loser-v2", skipped_v2);
+
+    let restarted = start_catalog(path);
+    assert!(restarted.get("winner").is_some());
+    assert!(restarted.get("loser").is_none());
+    assert!(restarted.v2_manifest("loser-v2").is_none());
+    assert!(restarted.v2_manifest("broken-earlier").is_none());
+
+    let mut update = winner.manifest.clone();
+    update.version = "0.1.1".into();
+    // Narrowing authority discards retained revisions. The install order
+    // still keeps this owner ahead of both collision losers.
+    update.operations.clear();
+    let update = package_store::Package {
+        manifest: update,
+        worker: None,
+    };
+    let approval = update.checksum().unwrap();
+    let candidate = package_store::prepare(path, update, approval, true)
+        .unwrap()
+        .unwrap();
+    let next = catalog(&restarted, "winner", Some(candidate.plugin.clone())).unwrap();
+    assert_eq!(next.get("winner").unwrap().manifest.version, "0.1.1");
+    package_store::commit(path, candidate).unwrap();
+
+    for _ in 0..2 {
+        let reopened = start_catalog(path);
+        assert_eq!(reopened.get("winner").unwrap().manifest.version, "0.1.1");
+        assert!(reopened.get("loser").is_none());
+        assert!(reopened.v2_manifest("loser-v2").is_none());
+        let mut intruder = bare("intruder");
+        intruder["kinds"] = json!([kind("reserved-kind", "Unrelated Folder")]);
+        refuse(
+            &reopened,
+            intruder,
+            "reserved by unavailable package broken-earlier",
+        );
+    }
+}
+
+#[test]
+fn startup_uses_install_order_across_versions() {
+    let data = tempfile::tempdir().unwrap();
+    let path = data.path();
+    start_catalog(path);
+    let mut first = bare("first-v2");
+    first["kinds"] = json!([kind("owned-kind", "Owned Folder")]);
+    stored_archive(path, "first-v2", first);
+    let second = legacy_notes("later-v1", "owned-kind", "Other Folder");
+    let second = package_store::Package {
+        manifest: second.manifest.clone(),
+        worker: None,
+    };
+    package_store::commit_v2(
+        path,
+        "later-v1",
+        &second.archive().unwrap(),
+        &second.checksum().unwrap(),
+    )
+    .unwrap();
+    for _ in 0..2 {
+        let restarted = start_catalog(path);
+        assert_eq!(restarted.v2_kind("owned-kind").unwrap().0.id(), "first-v2");
+        assert!(restarted.get("later-v1").is_none());
+    }
 }

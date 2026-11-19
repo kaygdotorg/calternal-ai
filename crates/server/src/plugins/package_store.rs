@@ -196,8 +196,7 @@ pub(super) fn next_draft_revision(root: &Path) -> Result<u32, String> {
 }
 
 fn validate_registered(conn: &Connection, package: &Package) -> Result<(), String> {
-    let plugin = Plugin::new(package.entry(false), package.manifest.clone(), None)?;
-    check_operations(&plugin)?;
+    check_operations(&package.manifest)?;
     let mut index = host::Registry::default();
     let mut query = conn
         .prepare("SELECT archive, checksum, id FROM installed_plugins WHERE id <> ?1")
@@ -417,7 +416,7 @@ pub(super) fn prepare(
             }
             (false, None, false)
         };
-    validate_registered(&tx, &package)?;
+    check_operations(&package.manifest)?;
     let revision: u32 = tx.query_row(
         "SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'installed_plugins'), 0) + 1",
         [], |row| row.get(0),
@@ -460,9 +459,17 @@ pub(super) fn commit(appdata: &Path, candidate: Candidate) -> Result<(), String>
         return Err("the package catalog changed while the worker was starting".into());
     }
     let id = &plugin.manifest.id;
+    let install_order: Option<u32> = tx
+        .query_row(
+            "SELECT COALESCE(install_order, revision) FROM installed_plugins WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(reason)?;
     if candidate.retain_previous {
         tx.execute(
-            "INSERT INTO retained_plugins SELECT * FROM installed_plugins WHERE id = ?1",
+            "INSERT INTO retained_plugins SELECT revision, id, archive, checksum, default_enabled, approval FROM installed_plugins WHERE id = ?1",
             [id],
         )
         .map_err(reason)?;
@@ -473,15 +480,16 @@ pub(super) fn commit(appdata: &Path, candidate: Candidate) -> Result<(), String>
     tx.execute("DELETE FROM installed_plugins WHERE id = ?1", [id])
         .map_err(reason)?;
     tx.execute(
-        "INSERT INTO installed_plugins (revision, id, archive, checksum, default_enabled, approval)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO installed_plugins (revision, id, archive, checksum, default_enabled, approval, install_order)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             plugin.revision,
             id,
             candidate.archive,
             candidate.checksum,
             plugin.entry.default_enabled,
-            plugin.activation_approval
+            plugin.activation_approval,
+            install_order,
         ],
     )
     .map_err(reason)?;
@@ -517,7 +525,18 @@ pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
         "installed-plugins.sqlite3",
         1,
         &[PACKAGE_SCHEMA],
-        &[(2, bundled_notes::LIVE_EDITING), (3, provider_runtime::V3)],
+        &[
+            (2, bundled_notes::LIVE_EDITING),
+            (3, provider_runtime::V3),
+            (
+                4,
+                "ALTER TABLE installed_plugins ADD COLUMN install_order INTEGER;
+                 UPDATE installed_plugins SET install_order = (
+                     SELECT MIN(retained.revision) FROM retained_plugins retained
+                     WHERE retained.id = installed_plugins.id
+                 );",
+            ),
+        ],
     );
 
 #[cfg(test)]

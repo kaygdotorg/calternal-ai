@@ -205,18 +205,10 @@ pub fn policy(operation: &str) -> Option<&'static Policy> {
     policies().find(|p| p.operation == operation)
 }
 
-/// Whether host bindings reserve this operation prefix. The first call indexes
-/// the same explicit policies used by `policy`. Subsequent calls do one lookup.
-pub(crate) fn owns_namespace(namespace: &str) -> bool {
-    use std::collections::BTreeSet;
-    static NAMESPACES: std::sync::OnceLock<BTreeSet<&str>> = std::sync::OnceLock::new();
-    NAMESPACES
-        .get_or_init(|| {
-            policies()
-                .filter_map(|policy| policy.operation.split_once('.').map(|(prefix, _)| prefix))
-                .collect()
-        })
-        .contains(namespace)
+/// Prefixes used by explicit host dispatch policies. The plugin catalogue
+/// indexes these once alongside the distribution's assigned owners.
+pub(crate) fn operation_namespaces() -> impl Iterator<Item = &'static str> {
+    policies().filter_map(|policy| policy.operation.split_once('.').map(|(prefix, _)| prefix))
 }
 
 fn policies() -> impl Iterator<Item = &'static Policy> {

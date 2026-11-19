@@ -431,22 +431,6 @@ pub struct Registry {
     declarations: crate::DeclarationIndex,
 }
 impl Registry {
-    /// Start live registration with reservations recovered at startup.
-    pub fn with_declarations(declarations: crate::DeclarationIndex) -> Self {
-        Self {
-            manifests: BTreeMap::new(),
-            declarations,
-        }
-    }
-
-    /// Keep the claims of a skipped legacy declaration without its operations.
-    pub fn reserve_unavailable(&mut self, manifest: &ManifestV1) {
-        self.declarations.reserve_unavailable(
-            manifest.id.clone(),
-            Some(crate::PackageClaims::v1(manifest)),
-        );
-    }
-
     /// Cost: O(new declarations * log registered IDs + schema compilation); allocates only new index keys.
     /// No existing manifest scan, I/O or library locks.
     /// Validate and register all contributions, rejecting kind/operation/template collisions.

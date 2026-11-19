@@ -106,7 +106,12 @@ authority for that package. Preserve appdata when reinstalling the server.
 
 The catalogue reserves each package's operation prefixes. Manifest v2
 also reserves its app IDs for that package. An app or package cannot claim
-a host operation namespace. If a stored package no longer validates, the
+a host operation namespace. The bundled distribution assigns ownership of
+shared namespaces whose exact host operations stay reserved. Installed
+packages keep their original registration order through updates. Startup
+registers valid rows in that order before applying skipped-row reservations.
+A reservation blocks reassignment, while the current live owner can retain
+its existing names on update. If a stored package no longer validates, the
 server keeps its recoverable names and folders reserved while its
 operations and kinds are unavailable. A dependent v2 package stays
 unavailable while its read has no owner. Resolve the unavailable rows
