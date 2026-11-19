@@ -1,7 +1,7 @@
 // Tool steps end to end against a real server of this tree with the repo's fixture provider (plugins/calternal-claude-code/test/fake-claude.mjs, prompt `scripted-tool-steps`): the live step with its
 // name and target, the saved file, the reload replay, a failing step, the 96 KiB output, and a stop mid-step. Env: CAL_BIN, CAL_DIST, CAL_STEPS_PORT.
 import { spawn } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright";
@@ -37,7 +37,7 @@ try {
   const wire = async () => { const r = (await op(p, "agent.readiness", { space_id: space })).data; const m = r.machines[0]; return m ? `machine ${m.connected ? "online" : "offline"}, provider ${JSON.stringify(m.providers["calternal-claude-code"]?.check)}, ready=${m.providers["calternal-claude-code"]?.ready}` : "no machines"; };
 
   // machine
-  const home = join(data, "machine"); const bin = join(data, "bin"); mkdirSync(bin); mkdirSync(join(data, "fakehome")); writeFileSync(join(data, "fakehome", "signed-in"), "");
+  const home = join(data, "machine"); const bin = join(data, "bin"); mkdirSync(bin); symlinkSync(BIN, join(bin, "calternal")); // the direct backend knows the host binary by its name: the fake provider runs `calternal --help`, so the binary under test (whatever it is called) is `calternal` on the fixture's PATH mkdirSync(join(data, "fakehome")); writeFileSync(join(data, "fakehome", "signed-in"), "");
   await p.evaluate(() => localStorage.removeItem("cal.onboarding")); await p.goto(`${url}/settings/machines?server=1`); await p.waitForSelector("html[data-ready]");
   await p.getByRole("button", { name: "Make a code" }).click();
   const code = /--code\s+(\S+)/.exec((await p.locator("code.cmd").first().innerText()).trim())?.[1];

@@ -4,7 +4,7 @@ import { signUp } from "./lib.mjs";
 // Checks: question answered from the bar, approval once / for this thread / denied, a secret provided, a request dropped when its turn is stopped, a second device
 // seeing the bar follow the feed. Env: CAL_BIN, CAL_DIST, CAL_REQ_PORT. Everything is disposable data in a temp directory.
 import { spawn } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright";
@@ -36,7 +36,7 @@ try {
   const code = /--code\s+(\S+)/.exec((await p.locator("code.cmd").first().innerText()).trim())?.[1];
   const home = join(data, "machine");
   // The machine runs the plugin's executable by name from PATH: a wrapper for the built adapter launcher sits first on it.
-  const bin = join(data, "bin"); mkdirSync(bin);
+  const bin = join(data, "bin"); mkdirSync(bin); symlinkSync(BIN, join(bin, "calternal")); // the direct backend knows the host binary by its name: the fake provider runs `calternal --help`, so the binary under test (whatever it is called) is `calternal` on the fixture's PATH
   const launcher = resolve(process.env.CAL_PLUGINS ?? "../../plugins", "calternal-claude-code/bin/calternal-provider-claude-code");
   writeFileSync(join(bin, "calternal-provider-claude-code"), `#!/bin/sh\nexec ${launcher} "$@"\n`); chmodSync(join(bin, "calternal-provider-claude-code"), 0o755);
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, HOME: home, CALTERNAL_ENROLL_CODE: code, CALTERNAL_CLAUDE_BINARY: fake, FAKE_SIGNED_IN: signed, FAKE_LOG: join(data, "fake.log") };

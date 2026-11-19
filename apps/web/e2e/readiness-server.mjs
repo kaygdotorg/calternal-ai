@@ -2,7 +2,7 @@ import { signUp } from "./lib.mjs";
 // Turn readiness against a real server of this tree, each state made true in turn: no machine enrolled, a machine that is stopped, a provider signed out (stand-in `claude`
 // reports it), then Check again after signing in; also what `agent.readiness` says against what the thread shows. Same setup as requests-server.mjs. Env: CAL_BIN, CAL_DIST, CAL_READY_PORT.
 import { spawn } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright";
@@ -45,7 +45,7 @@ try {
   await p.evaluate(() => localStorage.removeItem("cal.onboarding")); await p.goto(`${url}/settings/machines?server=1`); await p.waitForSelector("html[data-ready]");
   await p.getByRole("button", { name: "Make a code" }).click();
   const code = /--code\s+(\S+)/.exec((await p.locator("code.cmd").first().innerText()).trim())?.[1];
-  const home = join(data, "machine"); const bin = join(data, "bin"); mkdirSync(bin);
+  const home = join(data, "machine"); const bin = join(data, "bin"); mkdirSync(bin); symlinkSync(BIN, join(bin, "calternal")); // the direct backend knows the host binary by its name: the fake provider runs `calternal --help`, so the binary under test (whatever it is called) is `calternal` on the fixture's PATH
   const launcher = resolve(process.env.CAL_PLUGINS ?? "../../plugins", "calternal-claude-code/bin/calternal-provider-claude-code");
   writeFileSync(join(bin, "calternal-provider-claude-code"), `#!/bin/sh\nexec ${launcher} "$@"\n`); chmodSync(join(bin, "calternal-provider-claude-code"), 0o755);
   writeFileSync(join(bin, "claude"), `#!/bin/sh\nFAKE_SIGNED_IN=${signed} FAKE_SPACE=${space} exec node ${fake} "$@"\n`); chmodSync(join(bin, "claude"), 0o755);
