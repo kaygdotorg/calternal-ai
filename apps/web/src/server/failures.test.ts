@@ -6,7 +6,7 @@ import * as people from "./people";
 
 // The adapters' failure paths: the server unreachable, a session that ended in the middle of use, a feed that resets, a page cursor the server refuses, an answer that is not what the contract says.
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-const client = (f: (url: string, init?: RequestInit) => Promise<Response>, token: string | null = null) => new ServerClient({ token: () => token, fetch: f as typeof fetch });
+const client = (f: (url: string, init?: RequestInit) => Promise<Response>, token: string | null = null) => new ServerClient({ token: () => token, fetch: f as typeof fetch, retry: { first: 1, max: 1, total: 0 } }); // no patience: these tests are about the first answer (outage.test.ts is about waiting)
 const stream = (frames: string[]) => new Response(new ReadableStream({ start(c) { for (const f of frames) c.enqueue(new TextEncoder().encode(`data: ${f}\n\n`)); c.close(); } }), { status: 200, headers: { "content-type": "text/event-stream" } });
 
 beforeEach(() => { link.state = "ok"; link.quiet = false; localStorage.clear(); });
@@ -27,8 +27,8 @@ describe("operations", () => {
     expired.mockRestore();
   });
   it("an answer that is not JSON is `internal`, with the status, never a crash", async () => {
-    const c = client(async () => new Response("<html>bad gateway</html>", { status: 502 }));
-    await expect(c.operate("notes.list", {})).rejects.toMatchObject({ code: "internal", status: 502 });
+    const c = client(async () => new Response("<html>oops</html>", { status: 500 }));
+    await expect(c.operate("notes.list", {})).rejects.toMatchObject({ code: "internal", status: 500 });
   });
   it("an operation the server refuses carries its own stable code", async () => {
     const c = client(async () => json(409, { ok: false, error: { code: "conflict", message: "stale" } }));

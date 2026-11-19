@@ -135,7 +135,7 @@ export class ServerNotes implements NotesClient {
   sum = (n: { id: string; space_id: string; title: string; updated_at: string; revision: string }): NoteSummary => ({ id: n.id, spaceId: n.space_id, title: n.title, updatedAt: n.updated_at, revision: n.revision });
   async list(spaceId: string, tag?: string, cursor?: string): Promise<Page<NoteSummary>> { const p = await this.server.notes.list(spaceId, tag, cursor); return { items: p.notes.map(this.sum), next: p.next_cursor ?? null }; }
   conv(n: { id: string; space_id: string; title: string; markdown: string; revision: string; updated_at: string }): Note { return { id: n.id, spaceId: n.space_id, title: n.title, markdown: n.markdown, revision: n.revision, updatedAt: n.updated_at }; }
-  async get(spaceId: string, id: string): Promise<Note> { return this.conv((await this.server.notes.get(spaceId, id)).note); }
+  async get(_spaceId: string, id: string): Promise<Note> { return this.conv((await this.server.notes.get("", id)).note); } // the server finds the owning space from the id: a note shared from another space is not in the current one
   async create(spaceId: string, title: string, markdown: string): Promise<Note> { return this.conv((await this.server.notes.create({ space_id: spaceId, title, markdown })).note); }
   async update(spaceId: string, id: string, baseRevision: string, title: string, markdown: string): Promise<Note> { return this.conv((await this.server.notes.update({ space_id: spaceId, id, base_revision: baseRevision, title, markdown })).note); }
   async rename(id: string, revision: string, title: string): Promise<Note> { return this.conv((await this.server.operate<{ note: Parameters<ServerNotes["conv"]>[0] }>("notes.rename", { id, base_revision: revision, title })).note); }

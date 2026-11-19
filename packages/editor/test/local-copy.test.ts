@@ -68,6 +68,7 @@ describe('local copy', () => {
   })
 
   it('compacting never drops another tab’s changes', async () => {
+    LocalCopy.coalesce = false // one stored update per change, so 520 of them reach the compaction threshold
     const n = name()
     const a = new Y.Doc()
     const b = new Y.Doc()
@@ -80,5 +81,22 @@ describe('local copy', () => {
     await LocalCopy.open(n, c)
     expect(c.getText('md').toString()).toContain('from b')
     expect(c.getText('md').toString().split('.').length - 1).toBe(520)
+    LocalCopy.coalesce = true
+  })
+
+  it('a burst of typing is one IndexedDB write after the burst, and the write-ahead list covers it until then', async () => {
+    const n = name()
+    const a = new Y.Doc()
+    const copy = await LocalCopy.open(n, a)
+    a.getText('md').insert(0, 'first ') // the first unconfirmed edit goes at once (it carries the marker)
+    for (let i = 0; i < 60; i++) a.getText('md').insert(a.getText('md').length, 'x')
+    // The page goes away before the burst's write: the write-ahead list holds it.
+    dispatchEvent(new Event('pagehide'))
+    expect(Object.keys(localStorage).some((k) => k.includes(':wal:'))).toBe(true)
+    await tick(200)
+    const b = new Y.Doc()
+    await LocalCopy.open(n, b)
+    expect(b.getText('md').toString()).toBe('first ' + 'x'.repeat(60))
+    copy.destroy()
   })
 })

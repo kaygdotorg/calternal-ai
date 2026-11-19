@@ -36,3 +36,18 @@ describe("no change is sent before the session is confirmed", () => {
     expect(sent).toEqual([]);
   });
 });
+
+describe("a read the last word does not tell is not held", () => {
+  test("onboarding.state goes while the session is unconfirmed (the warm start-up read), a mutation still waits", async () => {
+    const { c, sent } = client();
+    let confirm!: (ok: boolean) => void;
+    link.holdWrites(new Promise<boolean>((r) => (confirm = r)));
+    const write = c.operate("onboarding.finish", {});
+    await c.operate("onboarding.state", {});
+    await Promise.resolve();
+    expect(sent.some((s) => s.includes("onboarding.state"))).toBe(true);
+    expect(sent.some((s) => s.includes("onboarding.finish"))).toBe(false);
+    confirm(true);
+    await write;
+  });
+});

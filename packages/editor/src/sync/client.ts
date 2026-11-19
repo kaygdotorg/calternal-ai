@@ -295,6 +295,7 @@ export class SyncClient {
     this.opts.awareness?.off('update', this.onAwarenessUpdate)
     this.doc.off('update', this.onDocUpdate)
     this.transport.disconnect()
+    this.flushPosts()
     this.bc?.close()
     if (this.checkTimer) clearTimeout(this.checkTimer)
     if (this.baseTimer) clearTimeout(this.baseTimer)
@@ -644,7 +645,25 @@ export class SyncClient {
     }
   }
 
-  private post(m: TabMsg) { this.bc?.postMessage({ ...m, l: this.lineage() }) }
+  /**
+   * Hints to the other tabs of this note. A tab's change reaches the room and the sibling tabs both; the siblings' copy is only a hint (their receipts come from the room), so it can lag: messages are collected and posted together when the
+   * browser is idle (at most 100 ms later, in order), not inside the keystroke's frame. The lineage is read when the message is made.
+   */
+  private post(m: TabMsg) {
+    if (!this.bc) return
+    this.postQueue.push({ ...m, l: this.lineage() })
+    if (this.postTimer) return
+    const idle = (globalThis as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback
+    this.postTimer = idle ? idle(this.flushPosts, { timeout: 100 }) : (setTimeout(this.flushPosts, 50) as unknown as number)
+  }
+  private postQueue: Array<Record<string, unknown>> = []
+  private postTimer = 0
+  private flushPosts = () => {
+    this.postTimer = 0
+    const q = this.postQueue
+    this.postQueue = []
+    for (const m of q) this.bc?.postMessage(m)
+  }
   private onTab(value: unknown) {
     if (!value || typeof value !== 'object') return
     const m = value as TabMsg

@@ -141,6 +141,11 @@ const keyboardPage: Page = {
   ],
 };
 
+const notificationsPage: Page = {
+  id: "notifications", name: "Notifications", icon: "bell", blurb: "A notice on your devices when a thread needs you or has finished: only the thread's title, never the message.",
+  groups: [{ settings: [{ id: "notifications.list", label: "Notifications", control: { type: "custom", load: () => import("./NotificationsPanel.svelte") } }] }],
+};
+
 const machinesPage: Page = {
   id: "machines", name: "Machines", icon: "terminal", blurb: "The machines your threads can run on, and whether each runs them sandboxed or direct.",
   groups: [{ settings: [{ id: "machines.list", label: "Machines", control: { type: "custom", load: () => import("./MachinesPanel.svelte") } }] }],
@@ -239,7 +244,7 @@ const lazy = (id: string, label: string, load: () => Promise<{ default: Componen
 
 /** The sidebar's groups, in order (docs/ui-craft-and-settings-study.md 11.1). */
 export const SECTIONS: Section[] = [
-  { id: "user", name: "User", pages: [appearancePage, agentsPage, keyboardPage, machinesPage, pluginsPage, accountPage] },
+  { id: "user", name: "User", pages: [appearancePage, agentsPage, keyboardPage, notificationsPage, machinesPage, pluginsPage, accountPage] },
   // Admin is the server (for its operator); the third section is the current space, whose name it shows (decided 2026-11-18).
   { id: "server", name: "Admin", pages: [plansPage, poolPage, storagePage] },
   { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [membersPage, invitesPage, secretsPage, instructionsPage, skillsPage(), automationsPage(), spacePluginsPage] },
@@ -273,7 +278,7 @@ function serverSections(): Section[] {
     ...(caps.groupsManage ? [{ id: "groups", name: "Groups", icon: "user" as IconName, blurb: "Groups give a role in a space to everyone in them.", groups: [lazy("server.groups", "Groups", () => import("./GroupsPanel.svelte"))] }] : []),
   ];
   return [
-    { id: "user", name: "User", pages: [appearancePage, keyboardPage, machines, account] },
+    { id: "user", name: "User", pages: [appearancePage, keyboardPage, notificationsPage, machines, account] },
     ...(admin.length ? [{ id: "server" as const, name: "Admin", pages: admin }] : []),
     { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [members, roles, ...(mayManage ? [invites] : []), secrets, skillsPage(), automationsPage(), plugins, manage] },
   ];
