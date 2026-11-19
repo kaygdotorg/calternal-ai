@@ -63,8 +63,9 @@ def check_attempt_fence_trace(trace, errors, catalogue):
         errors.append("$.action: unknown attempt authority action")
         return
     ends_authority = rule["ends_authority"]
+    fenced = rule.get("fences_effects", ends_authority)
     cutover = action == "cutover_retirement"
-    before = {"fence_durable": ends_authority, "cleanup_durable": ends_authority,
+    before = {"fence_durable": fenced, "cleanup_durable": rule.get("cleanup_durable", ends_authority),
               "reply_sent": False, "remote_stops": 0}
     # Cutover recovers already-persisted cleanup for an earlier authorized
     # retirement. It has no active attempt to stop as part of the switch.
@@ -73,16 +74,20 @@ def check_attempt_fence_trace(trace, errors, catalogue):
         before["prior_cleanup_durable"] = True
     if trace["after_commit"] != before:
         errors.append("$.after_commit: wrong durable fence, cleanup or reply state before the crash")
-    expected_probes = {name: "refused" if ends_authority else "allowed"
+    expected_probes = {name: "refused" if fenced else "allowed"
                        for name in ("renewal", "broker_effect", "queued_tool", "egress", "descendant_effect")}
     for point in ("before_dispatch", "after_restart_before_dispatch"):
         if trace[point] != expected_probes:
             errors.append(f"$.{point}: wrong authority while remote Stop is withheld")
     if action == "archive" and trace.get("after_undo_before_dispatch") != expected_probes:
         errors.append("$.after_undo_before_dispatch: archive Undo reopened fenced authority")
+    if action in ("failed_reattachment", "runtime_freeze") and trace.get("stale_thaw") != "refused":
+        errors.append("$.stale_thaw: old proof cannot reopen the runtime gate")
+    if action == "failed_reattachment" and trace.get("placement_lease") != "still_valid":
+        errors.append("$.placement_lease: failed continuity must fence even a valid placement")
     if trace["unaffected_attempt"] != "allowed":
         errors.append("$.unaffected_attempt: retirement cannot fence unrelated authority")
-    expected_stops = 1 if ends_authority and not cutover else 0
+    expected_stops = int(rule.get("new_remote_stop", ends_authority and not cutover))
     expected_cleanup = {"new_exact_stops": expected_stops, "replacement_stops": 0}
     if cutover:
         expected_cleanup["prior_exact_stops"] = 1

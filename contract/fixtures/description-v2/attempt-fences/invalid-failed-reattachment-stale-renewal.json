@@ -1,0 +1,31 @@
+{
+  "action": "failed_reattachment",
+  "after_commit": {
+    "fence_durable": true,
+    "cleanup_durable": true,
+    "reply_sent": false,
+    "remote_stops": 0
+  },
+  "before_dispatch": {
+    "renewal": "refused",
+    "broker_effect": "refused",
+    "queued_tool": "refused",
+    "egress": "refused",
+    "descendant_effect": "refused"
+  },
+  "after_restart_before_dispatch": {
+    "renewal": "allowed",
+    "broker_effect": "refused",
+    "queued_tool": "refused",
+    "egress": "refused",
+    "descendant_effect": "refused"
+  },
+  "unaffected_attempt": "allowed",
+  "after_cleanup_replay": {
+    "new_exact_stops": 1,
+    "replacement_stops": 0
+  },
+  "stale_thaw": "refused",
+  "placement_lease": "still_valid",
+  "error": "$.after_restart_before_dispatch: wrong authority while remote Stop is withheld"
+}

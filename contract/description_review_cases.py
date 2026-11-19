@@ -295,3 +295,49 @@ class ReviewCases:
                     self.assertFalse(errors, list(errors))
                     verification.check({"type": "string", "pattern": pattern}, example + "\n", "$", errors)
                     self.assertTrue(any("does not match" in message for message in errors), list(errors))
+
+    def test_authored_confirmation_uses_the_originating_manifest(self):
+        from copy import deepcopy
+
+        self.stage("reading-list-app")
+        manifest = json.loads(self.manifest.read_bytes())
+        operation = next(op for op in manifest["operations"] if op["id"] == "reading.add")
+        operation["material_inputs"] = {"title": "Book title"}
+        self.manifest.write_text(json.dumps(manifest))
+        self.replace_template(json.loads((self.package / self.template).read_bytes()))
+        checked = {"title": "A book", "url": "https://example.org"}
+        resolution = {
+            "activation_id": "add", "resolution_ref": "resolved", "confirmation_challenge": "challenge",
+            "confirm": "challenge", "material": [
+                {"name": "operation", "label": "Operation", "value": "Add"},
+                {"name": "effect", "label": "Effect", "value": "Create a reading item"},
+                {"name": "input:title", "label": "Book title", "value": "A book"},
+            ],
+        }
+        capture = {
+            "view_open": {
+                "lease": {"lease_ref": "live", "lease_seconds": 15, "grant_revision": "live-grant",
+                          "cache_partition": "partition"},
+                "activation_contexts": {"add": "valid-context"},
+                "audience": "own_space_member",
+            },
+            "event": {"type": "invoke", "action_id": "add", "activation_id": "add",
+                      "activation_context": "valid-context", "interaction": {"form": checked}},
+            "checked_inputs": checked,
+            "resolution": resolution,
+            "confirmation": {"type": "invoke_confirm", "activation_id": "add", "resolution_ref": "resolved",
+                             "confirmation_challenge": "challenge"},
+        }
+        self.event(capture)
+        for key, value, reason in (
+            ("name", "title", "missing confirmation entry 'input:title'"),
+            ("name", "input:url", "unexpected manifest input entry 'input:url'"),
+            ("label", "Altered title", "label for 'input:title' differs from the manifest"),
+            ("value", "Other book", "confirmation value for 'input:title' differs from checked effect or input"),
+        ):
+            with self.subTest(key=key, value=value):
+                changed = deepcopy(capture)
+                changed["resolution"]["material"][-1][key] = value
+                self.event(changed, reason)
+        del capture["checked_inputs"]
+        self.event(capture, "authored confirmation requires checked operation input")

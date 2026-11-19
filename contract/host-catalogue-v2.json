@@ -5441,7 +5441,7 @@
           "effect_fields": [
             "effect"
           ],
-          "rule": "Use the same named-material checker. Require the host's checked effect and its checked named inputs. Derive decision and lifetime entries exclusively from offered actions. Reject their presence as material fields or duplicate offered decisions. A closed card supplies no decisions or lifetimes."
+          "rule": "Show exactly the host's checked effect and its checked named inputs. Reject missing, duplicate, unchecked or altered display material. Derive decision and lifetime entries exclusively from offered actions. Reject their presence as material fields or duplicate offered decisions. A closed card supplies no decisions or lifetimes."
         }
       },
       "host.panel.ask": {
@@ -5637,7 +5637,70 @@
         "before_reply": "Old-writer generation and new-admission fence. Switch only after zero active attempts and zero unresolved execution intents. Keep earlier authorized retirement fences and refusals through switch or rollback.",
         "after_commit": "Replay only outstanding cleanup for already retired attempts. Ordinary cutover issues no new Stop.",
         "ends_authority": true
+      },
+      "failed_reattachment": {
+        "before_reply": "Under the lifecycle fence durably retire the exact old attempt and its descendant authorities with the interrupted status, committed transcript boundary and deduplicated cleanup. Apply when same-execution proof, continuity, safe provider continuation or fresh renewal fails while the attempt may still exist. Refuse later renewals even when its placement lease is valid.",
+        "after_commit": "Dispatch exact old-attempt Stop or reconcile verified death. Preserve published records and reconcile any uncertain provider effect before an authorized person can Resume with a fresh intent.",
+        "ends_authority": true
+      },
+      "ancestor_authority_loss": {
+        "before_reply": "Persist the lost ancestor fence and its subtree admission and effect fence, including descendant attempts and checked child reservations, before completing the authority change.",
+        "after_commit": "Stop affected descendants by exact attempt and retire the affected child reservations after verification.",
+        "ends_authority": true
+      },
+      "runtime_freeze": {
+        "before_reply": "Persist the attempt generation and arm the runtime's independent heartbeat and renewal deadlines before admission. At the earlier freeze cutoff the runtime closes its gateway, fences queued dispatch and freezes the full subtree, including during server loss. Freeze blocks effects and egress while hold and quota remain.",
+        "after_commit": "Dispatch no Stop on a mere freeze. Thaw only after fresh same-execution proof and one-use renewal. Failed recovery or elapsed teardown deadline follows its own retirement row.",
+        "ends_authority": false,
+        "fences_effects": true,
+        "new_remote_stop": false
+      },
+      "runtime_teardown_deadline": {
+        "before_reply": "The durably armed recovery deadline starts local teardown independently of the host. On observation persist irreversible retirement for that exact attempt and its subtree. No thaw once teardown starts. Keep quota while death or gateway closure is unverified.",
+        "after_commit": "Reconcile runtime-local kill and verify subtree and gateway teardown. Reclaim quota and retire the private spool only under its recovery policy. No new remote Stop is needed for the runtime-owned teardown.",
+        "ends_authority": true,
+        "new_remote_stop": false,
+        "cleanup_durable": true
+      },
+      "attempt_terminal": {
+        "before_reply": "Persist the exact attempt's terminal or interrupted state, fence its scoped work and descendants, and record cleanup and spool retirement. This includes provider terminal output and the sealed live-link drain-stall interruption.",
+        "after_commit": "Verify teardown of remaining workers, tools and gateway, stopping the exact attempt if needed. Preserve the committed transcript boundary and uncertain-effect reconciliation.",
+        "ends_authority": true
       }
+    },
+    "proposal_inventory": {
+      "A.1": [
+        "archive",
+        "stop",
+        "snooze",
+        "session_or_job_retirement"
+      ],
+      "A.2": [
+        "session_or_job_retirement",
+        "package_or_placement_retirement",
+        "grant_change",
+        "membership_revocation",
+        "ancestor_authority_loss",
+        "runtime_freeze",
+        "runtime_teardown_deadline"
+      ],
+      "A.3": [
+        "failed_reattachment",
+        "attempt_terminal",
+        "runtime_teardown_deadline"
+      ],
+      "A.4": [
+        "grant_change",
+        "ancestor_authority_loss"
+      ],
+      "A.5": [
+        "cutover_retirement"
+      ],
+      "Host erasure": [
+        "space_erasure",
+        "account_erasure",
+        "conversation_erasure"
+      ]
     }
   }
 }

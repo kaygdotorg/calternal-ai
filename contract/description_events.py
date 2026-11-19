@@ -113,7 +113,8 @@ def prompt_slots(action, errors):
 class EventBindings:
     """Index the authored identifiers of one verified app template."""
 
-    def __init__(self, view, errors):
+    def __init__(self, view, errors, manifest=None):
+        self.operations = (manifest or {}).get("operations", {})
         chrome = view.get("chrome", {})
         self.view_operands, self.required_view_operands = view_route_operands(view, errors)
         self.sidebar = chrome.get("sidebar")

@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.11 draft
+# Plugin API v2 · revision 14.12 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic conversation and execution engines. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -579,8 +579,10 @@ a new slot within receipt retention. Replay a committed spawn by its own receipt
 The placement runtime enforces the heartbeat/renewal freeze and verified
 teardown cutoffs in the sealed proposal. Keep quota until verified
 teardown. Reattach requires exact execution proof, safe provider transport
-and fresh host renewal. Unproven placements stay disabled. Reconcile
-uncertain effects before explicit Resume. The supervisor-owned transport
+and fresh host renewal. Failed proof, continuity, safe transport or renewal
+durably retires the exact attempt under the catalogue’s attempt-authority
+table, even if the placement lease is valid. Unproven placements stay
+disabled. Reconcile uncertain effects before explicit Resume. The supervisor-owned transport
 holds the provider credential. Automatically qualify an installed digest
 and placement with the same host-operated conformance suite for every
 publisher. An unqualified personal-machine harness may report coarse
@@ -618,7 +620,7 @@ enforce that exact effect inside the attempt sandbox. A native
 `can_approve: false`, missing approvability, or unproved containment yields
 dismissal only. A card offers Approve with at least one lifetime and Deny
 without lifetimes. The card uses the same named-material checker as an activation preview.
-Show the exact host-checked effect and its named material. Derive
+Show only the exact host-checked effect and its checked named inputs. Derive
 decisions and lifetimes from the offered actions when validating and
 rendering the card. The material list cannot supply them a second time. Resolve rechecks the live actor, request, approvability
 and the exact lifetime offered in the context. External effects use a
@@ -1123,8 +1125,9 @@ only against the issued context, never its current selection.
    entries from live checked inputs and effects, including manifest
    material inputs. The verifier checks table coverage, uniqueness and
    required material. Refuse a missing, empty or partial preview.
-   Manifest material keys appear as `input:<key>` and retain their declared
-   labels and checked values. Host keys are separate. A captured confirmation
+   Resolve authored operations in the originating manifest. Applicable
+   material keys appear as `input:<key>` and retain their declared labels
+   and checked values. Host keys are separate. A captured confirmation
    must use the originating activation ID, resolution ref and challenge.
    Apply the matching confirmation schema. Only prepared Send supplies
    `final_text`.
@@ -1517,6 +1520,10 @@ Pass these end-to-end flows on the selected wall before app migration.
   Undo before releasing Stop and repeat the probes. Require refusal on
   the losing authority, no effect on an unrelated attempt and
   recovery of only the deduplicated cleanup for the exact old IDs.
+  In the failed reattachment arm keep a valid placement lease, reject
+  fresh continuity, then cut after committing interruption. On restart
+  refuse the old proof and any new renewal of that attempt. Verify
+  unchanged committed records before a fresh explicit Resume.
   Snooze is the qualified no-stop control. Cutover catches stale old
   writer claims while recovering prior authorized cleanup and adds no
   new Stop. The paper traces check the contract. The real host gate
@@ -1719,7 +1726,7 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   qualifies. Scratch activation and Photos-scale I/O and metadata stay
   outside this revision.
 
-### Revision 14.11 draft questions and implementation seams
+### Revision 14.12 draft questions and implementation seams
 
 - Discovery rights, canonical writer and who owns a cross-runner list are
   separate owner questions in [the sealed proposal’s §C][generic-engines].

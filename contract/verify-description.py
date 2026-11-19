@@ -472,7 +472,7 @@ def validate_description(doc, manifest, installed, errors):
 def validate_activation_capture(capture, bindings, errors):
     """Check a bounded chain of accepted replies before resolving an invoke."""
     base = {"view_open", "event"}
-    if (not base <= capture.keys() <= base | {"renewals", "resolution", "confirmation", "checked_facts"}
+    if (not base <= capture.keys() <= base | {"renewals", "windows", "resolution", "confirmation", "checked_facts", "checked_inputs"}
             or not bindings or verification.CATALOGUE is None):
         errors.append("$: composer capture requires an originating description, view_open and event")
         return
@@ -492,6 +492,14 @@ def validate_activation_capture(capture, bindings, errors):
     }
     renewals = capture.get("renewals", [])
     check({"type": "array", "maxItems": 16, "items": pair}, renewals, "$.renewals", errors, catalogue)
+    window_pair = {
+        "type": "object", "additionalProperties": False, "required": ["lease", "request", "result"],
+        "properties": {"lease": {"$ref": "#/$defs/SubscriptionLease"},
+                       "request": {"$ref": "#/$defs/WindowRequest"},
+                       "result": {"$ref": "#/$defs/WindowResult"}},
+    }
+    windows = capture.get("windows", [])
+    check({"type": "array", "maxItems": 16, "items": window_pair}, windows, "$.windows", errors, catalogue)
     if errors:
         return
     origin = bindings()
@@ -553,6 +561,34 @@ def validate_activation_capture(capture, bindings, errors):
         issued = issued_actions(reply, f"{path}.result")
     if errors:
         return
+    accepted_windows = {window["window_ref"]: window for window in errors.each(reply.get("windows", []))}
+    captured_refs = set()
+    for index, window in enumerate(errors.each(windows)):
+        path = f"$.windows[{index}]"
+        request, result = window["request"], window["result"]
+        if window["lease"] != reply["lease"] or result["audience"] != audience:
+            errors.append(f"{path}: must match the last accepted view lease, grant, partition and audience")
+            continue
+        validate_event(request, lambda: origin, errors)
+        payload = request["request"]
+        if any(payload.get(field) != result.get(field)
+               for field in ("bind", "parent", "settle_generation")) or (
+            payload.get("anchor", "start") != result.get("anchor", "start")
+        ):
+            errors.append(f"{path}: result must match the originating window Bind and scope")
+        if result["state"] != "ready":
+            errors.append(f"{path}: activation contexts require a ready window")
+        ref = result["window_ref"]
+        if ref in captured_refs:
+            errors.append(f"{path}: capture must supply one current result per window ref")
+        captured_refs.add(ref)
+        accepted_windows[ref] = result
+    if errors:
+        return
+    # Ordinary windows and renewal windows share the same context alias checks.
+    issued = issued_actions({**reply, "windows": list(accepted_windows.values())}, "$.windows")
+    if errors:
+        return
     event = capture["event"]
     action_id = event["action_id"]
     if action_id in issued or action_id not in origin.actions:
@@ -572,19 +608,40 @@ def validate_activation_capture(capture, bindings, errors):
         if row_bind is None:
             matches = reply["activation_contexts"].get(action_id) == token
         else:
-            matches = any(
-                window["bind"] == row_bind and window["audience"] == audience
-                and row["contexts"].get(action_id) == token
-                and any(value["id"] == row["row"] for value in errors.each(window["rows"]))
-                for window in errors.each(reply.get("windows", []))
-                for row in errors.each(window.get("activation_contexts", []))
-            )
+            issued_rows = set()
+            for window in errors.each(accepted_windows.values()):
+                if window["audience"] != audience:
+                    continue
+                row_ids = {value["id"] for value in errors.each(window["rows"])}
+                for row in errors.each(window.get("activation_contexts", [])):
+                    if row["row"] in row_ids and row["contexts"].get(action_id) == token:
+                        issued_rows.add((window["bind"], row["row"]))
+            matches = len(issued_rows) == 1 and next(iter(issued_rows))[0] == row_bind
         if not matches:
             errors.append("$.activation_context: must match the issued host action context")
         kind = origin.actions[action_id]["operation"]
         facts = capture.get("checked_facts", ())
     if not errors and "resolution" in capture:
-        check_confirmation_exchange(capture, kind, facts, errors, catalogue)
+        material = {}
+        if kind not in catalogue["operations"] and kind != "composer.send":
+            operation = origin.operations.get(kind)
+            if operation is None:
+                errors.append("$.event.action_id: operation is not declared by the originating manifest")
+                return
+            if "checked_inputs" not in capture:
+                errors.append("$.checked_inputs: authored confirmation requires checked operation input")
+                return
+            values = capture["checked_inputs"]
+            check(operation["input_schema"], values, "$.checked_inputs", errors, operation["input_schema"])
+            if errors:
+                return
+            material = {key: (label, values[key]) for key, label in operation.get("material_inputs", {}).items()
+                        if isinstance(values, dict) and key in values}
+            kind = "plugin_operation"
+        elif "checked_inputs" in capture:
+            errors.append("$.checked_inputs: only authored confirmation uses manifest inputs")
+            return
+        check_confirmation_exchange(capture, kind, facts, errors, catalogue, material=material)
 
 
 def validate_event(doc, bindings, errors):
@@ -637,11 +694,12 @@ def fixture_origins(fixtures, fixtures_dir, manifests_dir, engine_owner=None):
     return load_reply_origins(origins, fixtures_dir, sources, verification.CATALOGUE, reply_files, errors)
 
 
-def fixture_event_origin(file, errors):
+def fixture_event_origin(file, manifests_dir, errors):
     """Index a fixture origin only after its entire template passes structural checks."""
     app = read_json(file, errors)
     check(schema, app, "$", errors)
-    return EventBindings(app, errors) if not errors else None
+    manifest, _ = load_fixture_manifest(file, manifests_dir, errors)
+    return EventBindings(app, errors, manifest) if not errors else None
 
 
 def run_fixtures():
@@ -668,7 +726,7 @@ def run_fixtures():
             if file.name.startswith(("event-", "invalid-event-")):
                 app = None
                 if file.parent.parent == fixtures_dir / "events":
-                    app = lambda: fixture_event_origin(fixtures_dir / f"{file.parent.name}.json", errors)
+                    app = lambda: fixture_event_origin(fixtures_dir / f"{file.parent.name}.json", manifests_dir, errors)
                 validate_event(doc, app, errors)
             elif is_reply_fixture(file):
                 validate_reply(doc, origins.get(file.name), errors)
@@ -754,7 +812,12 @@ def run_fixtures():
                 covered.add(case["action"])
             print(("ok   " if passed else "FAIL ") + file.name + ("" if passed else f"  {list(errors)!r}"))
             failed |= not passed
-        required = set(verification.CATALOGUE["attempt_authority_end"]["actions"])
+        policy = verification.CATALOGUE["attempt_authority_end"]
+        required = set(policy["actions"])
+        listed = {action for group in policy["proposal_inventory"].values() for action in group}
+        if listed != required:
+            print("FAIL attempt fence inventory does not match the catalogue actions")
+            failed = True
         if required != covered:
             print(f"FAIL attempt fences missing passing crash traces: {sorted(required - covered)}")
             failed = True
@@ -872,9 +935,10 @@ def verify_package(args, path, inputs):
 
     event_bindings = {}
 
-    def index_origin(doc):
+    def index_origin(source):
+        doc, owner, _ = source
         if id(doc) not in event_bindings:
-            event_bindings[id(doc)] = EventBindings(doc, errors)
+            event_bindings[id(doc)] = EventBindings(doc, errors, owner)
         return event_bindings[id(doc)]
 
     for description_path, file in errors.each(args.event):
@@ -882,7 +946,7 @@ def verify_package(args, path, inputs):
         source = sources.get(declared)
         if source is None:
             raise ValueError(f"{file}: unknown event origin description {description_path}")
-        validate_event(inputs.json(file), lambda: index_origin(source[0]), errors)
+        validate_event(inputs.json(file), lambda: index_origin(source), errors)
         if not report_fixture(file, errors, {}):
             return 1
 

@@ -33,8 +33,14 @@
     "card_context": "context"
   },
   "checked_effect": {
-    "effect": "Edit Research note",
-    "item": "Research note"
+    "effect": {
+      "label": "Effect",
+      "value": "Edit Research note"
+    },
+    "item": {
+      "label": "Item",
+      "value": "Research note"
+    }
   },
   "error": "duplicate offered decision"
 }
