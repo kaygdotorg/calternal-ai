@@ -1199,7 +1199,7 @@
     "count_modes": {
       "exact": "Count of the authorized projection at its checked result version; guest requires explicit count permission.",
       "estimate": "Audience-certified member estimate only. A guest never gets an estimate.",
-      "none": "Omit count. This is always the guest fallback, including nested windows, unless the authorized projection allows an exact count."
+      "none": "Omit count. This is always the guest fallback, including nested windows, unless the authorized projection allows an exact count. Refuse an end anchor with end_unavailable and never send an end-relative result."
     },
     "window": {
       "request_schema": {
@@ -1216,7 +1216,7 @@
       "row_reference_schema": {
         "$ref": "#/$defs/Ref"
       },
-      "description": "The declared parent edge constrains the nested lookup and any count before filtering or pagination. Authorize the entire parent ancestry and each returned row. A parent operand is an optional extra predicate. The window_ref identifies the Bind, stable parent, anchor and issued range within the current lease and partition. Separately cap materialized rows and entries skipped in an index-only jump over the scoped covering index from the nearer end. The absolute form is capped by max_offset. The end anchor supports navigation from the last row without knowing a total. An index-only jump beyond the skip cap returns WindowPlanError with reason skip_limit. Exact counts come from the maintained count for the authorized scope.",
+      "description": "The declared parent edge constrains the nested lookup and any count before filtering or pagination. Authorize the entire parent ancestry and each returned row. A parent operand is an optional extra predicate. The window_ref identifies the Bind, stable parent, anchor and issued range within the current lease and partition. Separately cap materialized rows and entries skipped in an index-only jump over the scoped covering index from the nearer end. Absolute jumps are capped by max_offset. An explicit start anchor can cross that cap only for a count-free forward continuation, exactly at the next row of a host-issued ready start window for the current view, Bind, parent and result version. Seek from the checked boundary key. Before planning an end-relative request, check the effective authorized count mode for its Bind and scope. With mode none return WindowPlanError with reason end_unavailable and no end distance. For End in a count-free view, page forward from the last loaded row until a short terminal window. Do not show a scroll extent implying a total. An index-only jump beyond the skip cap returns WindowPlanError with reason skip_limit. Exact counts come from the maintained count for the authorized scope.",
       "max_nested_row_depth": 3
     },
     "unsupported_plan": {
@@ -1960,15 +1960,34 @@
             }
           },
           "else": {
-            "properties": {
-              "offset": {
-                "maximum": 500000
+            "if": {
+              "properties": {
+                "offset": {
+                  "maximum": 500000
+                }
+              }
+            },
+            "else": {
+              "required": [
+                "anchor"
+              ],
+              "properties": {
+                "anchor": {
+                  "const": "start"
+                },
+                "count": false,
+                "member_cache_record": false
               }
             }
+          },
+          "then": {
+            "required": [
+              "count"
+            ]
           }
         }
       ],
-      "description": "An authenticated reply for the active view and its audience. Check the session, lease partition and audience before consuming rows or a cache record. Any cache record must match this view and window. Echo end anchor on end-relative replies and keep the offset end-relative so it does not disclose a withheld total."
+      "description": "An authenticated reply for the active view and its audience. Check the session, lease partition and audience before consuming rows or a cache record. Any cache record must match this view and window. Only a count-enabled view receives an end anchor and end-relative offset. Every end-anchored reply carries count. Check count policy for the active Bind and scope on each delivery and never send an end distance to a count-free view. An absolute offset above max_offset is only returned to a count-free contiguous forward continuation, with anchor:start and no persistent cache record."
     },
     "ProviderId": {
       "type": "string",
@@ -2811,12 +2830,7 @@
           "if": {
             "required": [
               "anchor"
-            ],
-            "properties": {
-              "anchor": {
-                "const": "end"
-              }
-            }
+            ]
           },
           "else": {
             "properties": {
@@ -2830,7 +2844,7 @@
           }
         }
       ],
-      "description": "Request half-open [from,to) from the chosen anchor. The semantic loader requires from < to and a span within query.window.max_request_span for either anchor. Check authorized scope before using its count or index and return rows in normal Bind order."
+      "description": "Request half-open [from,to) from the chosen anchor. The semantic loader requires from < to and a span within query.window.max_request_span for either anchor. Check authorized scope before using its count or index and return rows in normal Bind order. An end anchor requires an effective authorized count mode other than none. Refuse before computing or returning any end distance. Absolute jumps remain capped by query.window.max_offset, including explicit start anchors. Above the cap, an explicit start anchor is accepted only for a count-free contiguous forward continuation at a checked, current ready window boundary."
     },
     "CachePartitionRef": {
       "$ref": "#/$defs/Ref",
@@ -3029,9 +3043,10 @@
           "enum": [
             "skip_limit",
             "unsupported_plan",
-            "materialization_limit"
+            "materialization_limit",
+            "end_unavailable"
           ],
-          "description": "skip_limit means an otherwise qualified index-only jump would skip too many entries. Page only for skip_limit. unsupported_plan means no qualified plan for the scope, filters, sort, search or count. materialization_limit means a qualified plan would materialize too many rows."
+          "description": "skip_limit means an otherwise qualified index-only jump would skip too many entries. Page only for skip_limit. unsupported_plan means no qualified plan for the scope, filters, sort, search or count. materialization_limit means a qualified plan would materialize too many rows. end_unavailable means the requested end anchor is forbidden because the effective count mode is none. The shell uses forward paging for End in that view."
         }
       },
       "description": "Typed response to the corresponding window request when no qualified bounded plan is available."
@@ -3074,7 +3089,7 @@
         "end"
       ],
       "default": "start",
-      "description": "start counts from the first row; end counts backward from the last authorized row, with zero at the last row."
+      "description": "start counts from the first row; end counts backward from the last authorized row, with zero at the last row. The end anchor is available only for a scope whose effective authorized count mode is not none."
     }
   },
   "activation_limits": {

@@ -223,7 +223,9 @@ def semantic(doc, errors, catalogue, manifest):
                         for name, source in given.items():
                             declared_type = ((schema_in.get(name) or {}).get("$ref") or "").rsplit("/", 1)[-1]
                             ctx_kind = source.get("context") if isinstance(source, dict) and set(source) == {"context"} else None
-                            if declared_type == "LayoutEntryRef" and ctx_kind != "placement": errors.append(f"{path}: input {name!r} of {op} is a LayoutEntryRef: it takes {{context: placement}}")
+                            layout_selection = isinstance(source, dict) and "selection" in source and not source.get("set") and source["selection"] in repeat_rows
+                            layout_bare = owner_in_repeat and isinstance(source, dict) and source == {"row": "id"}
+                            if declared_type == "LayoutEntryRef" and ctx_kind != "placement" and not layout_selection and not layout_bare: errors.append(f"{path}: input {name!r} of {op} is a LayoutEntryRef: it takes {{context: placement}}")
                             if declared_type == "ThreadRef":
                                 if ctx_kind == "placement": errors.append(f"{path}: input {name!r} of {op} is a ThreadRef: it cannot take {{context: placement}}")
                                 if owner_in_repeat and ctx_kind != "item": errors.append(f"{path}: in the rows of a Section.repeat the row id is a placement (LayoutEntryRef): the ThreadRef input {name!r} of {op} must be {{context: item}}, not the bare row id")
@@ -247,8 +249,16 @@ def semantic(doc, errors, catalogue, manifest):
                                 if isinstance(prompt, dict) and prompt.get("kind") == "choice":
                                     option_bind = binds.get(((prompt.get("options") or {}).get("bind")))
                                     choice_ok = (cat_kinds.get(((option_bind or {}).get("source") or {}).get("kind")) or {}).get("row_ref") == declared_type
-                                if strict_thread: from_route = choice_ok = False
-                                if not (from_route or choice_ok or (bare_id and row_ref == declared_type and not owner_in_repeat)):
+                                selection_ok = False
+                                if isinstance(source, dict) and "selection" in source and not source.get("set"):
+                                    sel_bind = binds.get(source["selection"])
+                                    sel_kind = ((sel_bind or {}).get("source") or {}).get("kind")
+                                    sel_ref = (cat_kinds.get(sel_kind) or {}).get("row_ref") if sel_kind in cat_kinds else ("ItemRef" if sel_kind else None)
+                                    if source["selection"] in repeat_rows: sel_ref = "LayoutEntryRef"   # a Section.repeat.rows bind presents the placement as its row id
+                                    selection_ok = sel_ref == declared_type
+                                if strict_thread: from_route = choice_ok = selection_ok = False
+                                bare_ok = bare_id and ((owner_in_repeat and declared_type == "LayoutEntryRef") or (not owner_in_repeat and row_ref == declared_type))
+                                if not (from_route or choice_ok or selection_ok or bare_ok):
                                     errors.append(f"{path}: the {declared_type} input {name!r} of {op} takes only a source of that ref type ({{context}}, a bare row id of a row of that type, or a route), not {json.dumps(source, sort_keys=True)}")
                             if declared_type in ("ChoiceRef", "LayoutSectionRef") and (declared_type == "ChoiceRef" or name == "section"):
                                 prompt = source.get("prompt") if isinstance(source, dict) else None
@@ -341,6 +351,10 @@ def semantic(doc, errors, catalogue, manifest):
             owner = binds_list[int(m.group(1))].get("id") if m else None
             if owner not in repeat_rows: errors.append(f"{path}: {{context: placement}} is legal only inside the rows of a Section.repeat")
             elif owner in set(children_edges.values()): errors.append(f"{path}: this bind is both a section's rows and a child-rows bind: a placement operand would be usable from the child edge, where the row is no placement")
+    dual_edge = repeat_rows & set(children_edges.values())
+    for path_, node_ in walk(doc):
+        if isinstance(node_, dict) and set(node_) == {"selection"} and isinstance(node_["selection"], str) and node_["selection"] in dual_edge:
+            errors.append(f"{path_}: a single-selection operand on {node_['selection']!r} is ambiguous: that bind is both a section's rows (row ref LayoutEntryRef) and a child-rows bind (row ref the underlying item)")
     def depth(bind_id, seen=()):
         if bind_id in seen: errors.append(f"$.binds: children cycle through {bind_id!r}"); return 0
         nxt = children_edges.get(bind_id)

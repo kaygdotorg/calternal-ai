@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 9
+# Plugin API v2 · revision 10
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -448,10 +448,13 @@ one catalogue `WindowReply`. Its `WindowResult` arm gives the Bind, state,
 cite the catalogue’s only request envelope,
 `{type:"window", request: WindowRequestPayload}`. An absent `anchor` means
 `start`. With `anchor:"end"`, `[from,to)` counts backward from the last
-authorized row, with zero at the last row. End and near-end jumps use this
-form. The reply echoes the end anchor and reports the offset as the distance
-of its nearest returned row from the end. Return rows in the Bind’s normal
-order and disclose totals only under the count policy. Both forms require
+authorized row, with zero at the last row. Use this form for End and
+near-end jumps only when the effective authorized count mode is `exact`
+or `estimate`. Its reply includes the count and gives the end-relative
+offset of the returned row nearest the end. Return rows in the Bind’s normal
+order. When the effective count mode is `none`, refuse an end-relative
+request with `WindowPlanError.reason: end_unavailable` before computing
+or returning an end distance. Both forms require
 `0 < to - from ≤ 200`. For a per-parent Bind require its edge-scoped
 `parent` ref. Omit it at the root.
 Count is an exact/estimate object or omitted, as allowed
@@ -465,7 +468,7 @@ index over collection, audience, sort key and stable ID, with a maintained
 count per authorized scope. Exact counts use that maintained count.
 An index-only jump may skip up to 250,000 entries from the nearer end,
 independently of the 4,096-row materialization cap (§4.2). The absolute
-offset ceiling stays 500,000. End-relative offsets are bounded by the
+jump ceiling stays 500,000. End-relative offsets are bounded by the
 largest exactly representable integer on the wire. Scopes of up to
 500,000 rows can jump anywhere. The measured slope projects about
 11 ms at the skip cap. [Step 0 measurements](https://git.kayg.org/kayg/calternal-ai/src/commit/355ab4203901f0efa89c8a6e818285cc6a9b0d8f/docs/measurements/plugin-api-v2-step0.md#covering-index-and-maintained-count).
@@ -491,12 +494,13 @@ The first contract qualifies these plan families.
 
 Return `422 unsupported_query_plan` if the plan or index cannot satisfy
 the requested scope, filters, sort, window or count within the work
-budget. The typed `WindowPlanError` gives the reason. Only `skip_limit`,
-for an otherwise qualified jump exceeding its skip cap, triggers paging
-from the nearer known end. Use the start if the end is unknown. The host
+budget. The typed `WindowPlanError` gives the reason. For `skip_limit` on an otherwise qualified jump, page from the nearer
+known end. Use the start if the end is unknown or the effective count mode
+is `none`. The host
 can page by an adjacent window’s boundary key for the same view and result
-version. For `unsupported_plan` or `materialization_limit`, or if paging
-is also refused, show the Bind error state. Never serve the request with a
+version. For `end_unavailable`, use count-free End paging (§4.2). For
+`unsupported_plan` or `materialization_limit`, or if paging is also
+refused, show the Bind error state. Never serve the request with a
 table scan or a sort of the full candidate set.
 
 The first contract includes nested child rows and user-made sections (Q11).
@@ -525,6 +529,17 @@ It emits up to four coalesced pushes/sec per bind. Authorize before spending wor
 coalesce invalidations before evaluating and share a plan only within an
 identical audience/authority scope. Supersede obsolete requests, return a
 safe throttled state on exhaustion and preserve fair space progress.
+In a count-free view End pages forward from the last loaded row, or from
+the start if none is loaded, until the host returns a short terminal
+window. Use an explicit `anchor:"start"` to continue past the absolute
+jump ceiling. The host checks that `from` is exactly after an issued ready
+start window for the same active view, Bind, parent and result version,
+and seeks from its boundary key. These continuations carry no cache record.
+A short window signals exhaustion only when no more authorized rows remain. Throttling or a work budget refusal does not signal End.
+The renderer shows no scroll extent that implies a total. Check effective
+count policy on every live delivery and never send an end distance to a
+count-free view.
+
 Keyboard viewport prefetch is bounded host I/O during repeated keys.
 Apply prefetch replies for the result version already drawn at once.
 Hold pushes that change the version while selection settles. Navigation
