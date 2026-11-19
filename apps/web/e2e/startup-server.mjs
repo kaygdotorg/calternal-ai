@@ -58,7 +58,7 @@ try {
     await B.close();
     const p = await A.newPage();
     await p.addInitScript(() => { localStorage.setItem("cal.firstrun", "1"); localStorage.setItem("cal.server", "1"); });
-    const sent = []; p.on("request", (r) => { if (r.method() === "POST" && r.url().includes("/api/v1/")) sent.push(`${r.url().split("/api/v1/")[1]} ${(r.postData() ?? "").slice(0, 80)}`); });
+    const sent = []; p.on("request", (r) => { if (r.method() === "POST" && r.url().includes("/api/v1/")) sent.push(`${r.url().split("/api/v1/")[1]} ${(r.postData() ?? "").slice(0, 200)}`); });
     await p.route("**/api/v1/auth/status", async (r) => { await new Promise((x) => setTimeout(x, 2500)); await r.continue(); }); // the server's answer comes late
     await p.goto(`${url}/notes`, { waitUntil: "commit" });
     await p.waitForSelector("html[data-ready]", { timeout: 10000 });
@@ -66,7 +66,9 @@ try {
     await p.getByRole("button", { name: "New note" }).click({ timeout: 4000 }).catch(() => {}); // try a change inside the window
     await p.getByRole("button", { name: "Write the first note" }).click({ timeout: 1000 }).catch(() => {});
     await p.getByRole("heading", { name: "Sign in" }).waitFor({ timeout: 8000 }).catch(() => {});
-    const writes = sent.filter((x) => !/^auth\//.test(x) && !/"operation":"(?:[a-z-]+\.)*(?:list|get|history|members|lookup|preview|events|summarize|resolve)"/.test(x));
+    // A change is what the contract says changes something (`mutates: true`), the same source the client's read set is derived from; an operation the contract does not list counts as a change too.
+    const contract = JSON.parse(readFileSync(new URL("../../../contract/operations.json", import.meta.url), "utf8")), reads = new Set(contract.filter((o) => !o.mutates).map((o) => o.id));
+    const writes = sent.filter((x) => !/^auth\//.test(x) && !reads.has(/"operation":"([^"]+)"/.exec(x)?.[1] ?? ""));
     const rows = [["the revoked session was ended on the server", out.status() === 204], ["the app painted from the record while the answer was pending", painted], ["no change was sent before the session was confirmed", writes.length === 0, writes.join("; ")], ["and the person ends at the sign-in screen", await p.getByRole("heading", { name: "Sign in" }).isVisible()]];
     for (const [m, c, n] of rows) { console.log(`${c ? "PASS" : "FAIL"}  revoked elsewhere: ${m}${n ? "  " + n : ""}`); if (!c) bad++; }
     await A.close();
