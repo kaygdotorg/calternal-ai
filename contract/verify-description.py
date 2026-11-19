@@ -230,14 +230,15 @@ def semantic(doc, errors, catalogue, manifest):
                                 if ctx_kind == "item" and owner_kind != "threads": errors.append(f"{path}: {{context: item}} fills a ThreadRef only from a row of kind `threads`, not {owner_kind!r}")
                             if ctx_kind == "placement" and declared_type not in ("LayoutEntryRef", ""): errors.append(f"{path}: {{context: placement}} fills a LayoutEntryRef, not {declared_type}")
                             if ctx_kind == "item" and declared_type == "LayoutEntryRef": errors.append(f"{path}: {{context: item}} cannot fill the LayoutEntryRef input {name!r}")
-                            REF_TYPES = ("ThreadRef", "ItemRef", "TurnRef", "RequestRef", "CollectionRef", "LayoutEntryRef")
+                            REF_TYPES = {k.get("row_ref") for k in cat_kinds.values() if k.get("row_ref")} | {"ItemRef", "LayoutEntryRef"}   # every ref a row can be or give
+                            move_to_destination = (op, name) == ("host.layout.move_to", "section")   # a destination choice, checked below
                             row_ref_of_owner = (cat_kinds.get(owner_kind) or {}).get("row_ref") if owner_kind in cat_kinds else ("ItemRef" if owner_kind else None)
-                            if declared_type in REF_TYPES and ctx_kind == "item" and declared_type != row_ref_of_owner:
+                            if declared_type in REF_TYPES and ctx_kind == "item" and declared_type != row_ref_of_owner and not move_to_destination:
                                 errors.append(f"{path}: {{context: item}} gives the row's own {row_ref_of_owner} and cannot fill the {declared_type} input {name!r} of {op}")
                             strict_thread = (op, name) == ("host.layout.move_to", "thread")
                             if strict_thread and not (ctx_kind == "item" or (isinstance(source, dict) and source == {"row": "id"})):
                                 errors.append(f"{path}: the `thread` of host.layout.move_to takes only {{context: item}} or the bare id of a threads row, not {json.dumps(source, sort_keys=True)}")
-                            if declared_type in REF_TYPES and ctx_kind is None:
+                            if declared_type in REF_TYPES and ctx_kind is None and not move_to_destination:
                                 bare_id = isinstance(source, dict) and source == {"row": "id"}
                                 from_route = isinstance(source, dict) and set(source) == {"route"}
                                 row_ref = (cat_kinds.get(owner_kind) or {}).get("row_ref") if owner_kind in cat_kinds else ("ItemRef" if owner_kind else None)
