@@ -133,12 +133,6 @@ the lane directory, `TMPDIR=$HOME/gate-tmp` and `nix develop`.
   single launch. Stop before terminal, then require the committed bytes to
   survive while the retired attempt can publish no further output. This
   follows the fake-host tests for append replay and Stop before terminal.
-- With Slice 4, restart with an exact surviving attempt, current generation
-  and fresh renewal. Require the same attempt and zero relaunches. Repeat with
-  failed continuity, stale proof, expired renewal and ambiguous provider
-  effects. Require interruption to commit before cleanup dispatch. A later
-  proof cannot revive the fenced attempt. Hold capacity until verified
-  teardown of the exact old attempt, including when the runtime is unreachable.
 - With the Inbox, race a one-use approval against dispatch, cancellation and
   grant loss. Match approval to the same checked effect and attempt. Verify
   zero tool dispatches at the first Send gate. Child and Resume paths also
@@ -149,6 +143,43 @@ the lane directory, `TMPDIR=$HOME/gate-tmp` and `nix develop`.
   conformance case covers a space store already present at upgrade and a
   store first opened by the candidate. Inspect both for the new tables and
   confirm the older writer still serves its own data after rollback.
+
+## Running Threads survive server and link interruptions
+
+The owner decision is recorded in [the November 20 notes](../morning-2026-11-20.md).
+The behavioral reference is bb 0.50.0, which tracks pending delivery of user
+commands across reconnect and waits for idle before automatic updates.
+[bb 0.50.0 release notes](https://getbb.app/changelog#0-50-0)
+
+These five cases are pending. Run them through the real Threads Send, queued
+follow-up, transcript and protected Stop paths with an installed harness on
+an enrolled development machine. Use a deterministic harness that records
+each accepted input and emits tagged, numbered output on both sides of the
+fault. Keep its evidence outside the server process. Observe the actual
+thread status from an attached client and again on reconnect. Record the
+attempt ID and generation, process identity and launch count, input and
+Stop receipts, output sequences and committed transcript offsets. Use
+explicit barriers at delivery and commit boundaries. Stop only the test's
+server PID, preserving its data directory and machine process. Dev-01 uses
+the shared `/tmp/calternal-dev01.lock` with `flock -s -w 7200`, `nice -n 10`,
+at most three build jobs and at most three test threads.
+
+| Test | Fault and pass criteria | Dependencies |
+| --- | --- | --- |
+| **A. Server dies while the harness is producing output** | Commit an initial output frame, then kill the server while the machine is still emitting. Observe fresh numbered output produced while the server is absent. Restart against the same data and reattach by exact proof with fresh renewal. Require one launch, the same attempt and process, a contiguous transcript containing each offline frame once in order, and no failed status on either side of reconnect. Repeat with the output persisted but its acknowledgement withheld when the server dies. | Slice 3 restores the exact attempt and checks live authority. Slice 4 proves the process and fence survived and retains unacknowledged output on the machine. Slice 1 replays ordered contribution frames and deduplicates the committed boundary. Use Slice 2's writer to verify the final transcript. |
+| **B. Sends straddling restart reach the harness once** | In separate runs send a message or queue a follow-up immediately before the kill, after the client has observed the server is unavailable, and immediately after startup while reconciliation is pending. Reuse the same request ID after ambiguous admission or a lost reply. Cut once before admission and again after the harness accepts the input but before its acknowledgement reaches the server. Require one durable intent, one initiating record and one harness acceptance per Send. A queued follow-up retains its FIFO position and waits for the head to settle. The client retains the offline Send's identity until the server can accept it. | Slice 3 owns durable admission, receipt replay and successor promotion. Slice 1 owns contribution dispatch and call replay. Slice 4 supplies exact delivery acknowledgement or deduplication across carrier reconnect. The Threads client path must preserve the offline submission and stable request ID. |
+| **C. Confirmed Stop survives and stays on its attempt** | Confirm Stop against attempt A and kill the server after the fence and receipt commit, before remote dispatch or reply. Restart, recover the outstanding Stop, and require A to stop with its committed output preserved. Then let a successor start as B. Deliver a delayed copy of A's Stop after reconnect, including an exact receipt replay, and verify B keeps producing output. Also race a stale A context that never committed against the replacement and require a refusal with no Stop sent to B. | Slice 3 owns the protected target, Stop receipt and durable cleanup. Slice 4 proves exact Stop delivery and teardown. Slice 1 verifies that late fenced frames cannot commit and that previously committed output stays visible. |
+| **D. The enrolled-machine link drops mid-output** | Leave the server and machine processes alive and sever only the enrolled link. Verify the machine emits additional tagged output during the drop. Reconnect with a fresh transport, then require the same exact proof, launch count, ordered transcript and nonfailed status as in A. Repeat with a lost acknowledgement and a duplicate frame at reconnect. | Slice 3 reconciles the attempt across the link change. Slice 4 handles carrier reconnect, proof and machine-side retention. Slice 1 deduplicates and delivers the committed output in order. |
+| **E. Automatic updates wait for idle and tolerate a forced update** | Query the updater's server status with an active run and during unsettled reconnect. It must withhold the idle result. Let the active work and any runnable successor settle, then observe the no-run-in-progress result using the updater's actual query. Race a new Send against the idle decision and verify it is admitted under a running server or retained for retry. In a separate run, apply the candidate server update while the enrolled harness is mid-output and require A's continuity, order and status checks across the version change. | Slice 3 owns the reconciled run status and admission boundary. The updater consumes that status. The live version-change arm needs Slice 4 proof across the restart and Slice 1 ordered replay, plus the actual old and candidate server artifacts. |
+
+Use independent proof-loss arms for A and D. Change the process identity or
+fence generation, expire renewal, or revoke authority while disconnected.
+Require the existing freeze and retirement rules to hold. A failed proof
+commits interruption before cleanup dispatch. The old attempt cannot thaw
+later, and capacity stays reserved until exact teardown is verified. The
+positive continuity arms verify actual progress during the outage within
+the authorized runtime window. The contract owner needs to pin the outage
+budget and how it relates to autonomous freeze, teardown and the update gate.
 
 ## Existing primitives
 
