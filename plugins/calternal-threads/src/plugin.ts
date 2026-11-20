@@ -1,5 +1,5 @@
 import { definePlugin } from "@calternal/plugin-sdk";
-import type { AppDescription } from "../generated/wire.js";
+import { description } from "./description.ts";
 import type { ManifestV2 } from "../generated/author.js";
 import { viewerFields, viewerPatchSchema } from "./viewer.ts";
 import { catalogueRef, harnessInput, harnessOutput, object, textSchema } from "./harnesses-v1.ts";
@@ -27,26 +27,6 @@ const legacyMessageResult = object({
   text: { type: "string", maxLength: 8000 }, posted_at: catalogueRef("Timestamp"), turn: { type: "string" },
   next_offset: messageOffset,
 }, "id", "role", "heading", "text", "posted_at");
-const itemRoute = { route: "item" };
-const harnessChoice = { prompt: { title: "Agent", kind: "choice", options: { extension: "harnesses" } } } as const;
-const description: AppDescription = {
-  version: 2, kind: "app", revision: 1,
-  view: { root: { type: "stack", children: [
-    { type: "form", id: "create", fields: [{ id: "title", label: "Title", input: "text", required: true }],
-      submit: { id: "create-thread", title: "New thread", operation: "threads.create",
-        inputs: { title: { form: "create", field: "title" } }, then: { route: { name: "item" } } } },
-    { type: "component", component: { type: "item-view", id: "transcript", config: { item: itemRoute, slot: "body" } } },
-    { type: "form", id: "composer", entry_context: { component: "transcript" }, fields: [{ id: "message", label: "Message", input: "multiline", required: true, maxLength: 4000, draft: { slot: "draft" } }],
-      submit: { id: "send", title: "Send", operation: "threads.send", inputs: {
-        item: itemRoute, text: { form: "composer", field: "message" }, harness: harnessChoice,
-        placement: { prompt: { title: "Run on", kind: "choice", options: { host: "execution_placement" } } },
-      } } },
-    { type: "form", id: "rename", fields: [{ id: "title", label: "Title", input: "text", required: true }],
-      submit: { id: "rename-thread", title: "Rename", operation: "host.item.rename",
-        inputs: { item: itemRoute, title: { form: "rename", field: "title" } } } },
-    { type: "button", invoke: { id: "archive-thread", title: "Archive", operation: "host.item.archive", inputs: { item: itemRoute } } },
-  ] } },
-};
 const app = {
   id: "threads", name: "Threads", icon: "threads",
   extension_points: [{ id: "harnesses", version: 1, kind: "harness", input_schema: harnessInput, output_schema: harnessOutput }],
