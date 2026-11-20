@@ -1,6 +1,7 @@
 # A primitives-only host · integrated design · 2026-11-21
 
-Status: **the integrated design for review (#107).** Nothing here is decided
+Status: **revision 2 of the integrated design (#107)**, with the security
+review's fixes applied (§11). Nothing here is decided
 unless it says "owner decided". It integrates the coordinator's thesis
 (`docs/proposals/primitives-only-thesis-2026-11-21.md`) and six section files
 under [`primitives/`](primitives/):
@@ -64,11 +65,11 @@ Five primitives. The thesis had seven; my first draft had twelve.
 
 | # | Primitive | What it does | The security property it guarantees |
 | --- | --- | --- | --- |
-| 1 | **Files** | Items are Markdown files in a space. Four writes: replace, set fields, append a record, edit or redact one record. Move, trash, restore and revert one change. History of every file. A kind is a schema over frontmatter (and, for record kinds, a record shape) that a plugin declares. | The host stamps every write with person, plugin and run, where no plugin, file share or editor can change the stamp. Paths stay inside the space. |
+| 1 | **Files** | Items are Markdown files in a space. Four writes: replace, set fields, append a record, edit or redact one record. Move, trash, restore and revert one change. History of every file. A kind is a schema over frontmatter (and, for record kinds, a record shape) that a plugin declares. A file's **kind and ID are host-state facts fixed at create**; the frontmatter holds read-only copies. | The host stamps every write with person, plugin and run, where no plugin, file share or editor can change the stamp. On record kinds **every byte change** (replace, share or editor edit, revert, restore) is diffed per record and checked against the kind's policy; a refused change becomes a conflict copy. Paths stay inside the space. |
 | 2 | **Questions** | One index (appdata, rebuildable) over fields, text, links, records and stamps. One query shape with live windows. Lists come from three sources: a **collection** (a file holding a saved query plus hand-added items), a **record file** (the records of one file), or a **facet** (the values of a field). Backlinks, search and the change feed are the same engine. | Every answer, count and rank is computed as the asker, over what the asker may read. A collection grants nothing. |
-| 3 | **Authority** | People, groups, spaces, roles and sharing as the existing app settled them (ADR 0058–0060). A plugin's **grant** (kinds, paths, calls, network, secrets, programs, triggers). One **call table** from name to handler for host methods, the outside (network, secrets, notifications) and every plugin's published operations. Consent, dependencies, slots and picks, quotas and the audit trail. | One check per call, at the table: who is asking, through which plugins, on which targets. Agents (anything outbound-capable) read other people's writing only with those people's consent. |
-| 4 | **Running code** | One per-space **work** table with a state column. Work runs in a **box** (plugin process, hosted sandbox, or a person's enrolled machine), started by a call, a time or a change. A program talks to the host through two append-only, single-writer files: the **inbox** (host writes) and the **log** (machine writes). | A box has no network, files or rights except its grant. Stop fences the run at once and reaches only that run. Nothing outlives its deadline or the 24-hour rule. |
-| 5 | **Drawing** | Plugins declare; they never draw. Kinds declare looks (row, card, cell, page, record). Collections declare views (big: list, table, board, gallery, calendar; small: compact list, strip). The shell is named slots filled by parts. A closed catalogue plus a sealed frame. Host-only screens: sign-in, Settings and Plugins, challenge, consent, Stop, safe mode. | No plugin code runs in a client outside the frame. A plugin cannot spoof or hide a host screen. Drawn values go from the host to the client as the viewer, never to the plugin. |
+| 3 | **Authority** | People, groups, spaces, roles and sharing as the existing app settled them (ADR 0058–0060). A plugin's **grant** (kinds, paths, calls, network, secrets, programs, triggers). One **call table** from name to handler for host methods, the outside (network, secrets, notifications) and every plugin's published operations. Consent, dependencies, slots and picks, quotas and the audit trail. | One check per call, at the table: who is asking, through which plugins, on which targets. Agents read other people's writing only with those people's consent, where an agent is anything **outbound-capable**: the closure, computed at install, over network, secrets, programs, permission to start any program, calls to any outbound-capable operation, and frames. Taint is per worker process: other people's writing returned to a process marks every later write it makes. |
+| 4 | **Running code** | One per-space **work** table with a state column. Work runs in a **box** (plugin process, hosted sandbox, or a person's enrolled machine), started by a call, a time or a change. A program talks to the host through two append-only, single-writer files: the **inbox** (host writes) and the **log** (machine writes). | A box has no network, files or rights except its grant. Stop fences the run at once and reaches only that run, and the run-scoped handles it was given end at Stop. Run files are private to the run's actor. Only the actor may send input to a run. A plugin starts only its own programs, or the program the person picked. |
+| 5 | **Drawing** | Plugins declare; they never draw. Kinds declare looks (row, card, cell, page, record). Collections declare views (big: list, table, board, gallery, calendar; small: compact list, strip). The shell is named slots filled by parts. A closed catalogue plus a sealed frame. Host-only screens: sign-in, Settings and Plugins, challenge, consent, Stop, safe mode. | No plugin code runs in a client outside the frame, and a plugin that declares a frame is outbound-capable. A plugin cannot spoof or hide a host screen; every plugin form carries a non-removable header naming the plugin, and the catalogue has no password-like field. Drawn values go from the host to the client as the viewer, never to the plugin. |
 
 ### 2.1 What was merged or cut, and why
 
@@ -90,7 +91,7 @@ strictly files, appdata rebuildable") and is question 1.
 | Class | What | Rebuildable | Example |
 | --- | --- | --- | --- |
 | Userdata (files) | Items, collections, sidebars, per-person state, attachments | No: it is the truth | `Chats/Lisbon crew/2026-11.md`, `.people/<uuid>/calternal-chat.md` |
-| Host state | History and stamps, receipts, grants, consent, approvals, picks, sign-in, the work table, the audit trail | No | "Lee agreed that Claude may read Lee's messages in Lisbon crew" |
+| Host state | History and stamps, each file's kind and ID, receipts, grants, consent, approvals, picks, sign-in, the work table, the audit trail | No | "Lee agreed that Claude may read Lee's messages in Lisbon crew" |
 | Appdata | Index, search, link table, caches, live window state | Yes, from userdata plus host state | Unread counts |
 
 ## 3. What plugins can and cannot do
@@ -105,19 +106,19 @@ strictly files, appdata rebuildable") and is question 1.
 | Ask questions over anything it may read, and ship collections with big and small views, plus a default sidebar | Notes' "Linked here"; Chat's Pinned strip |
 | Share files with people who share a group with the acting person | A new group chat |
 | Ask authors, through the host's prompt, to let an agent read their writing | Calling Claude into a chat |
-| Run on a call, at a time or on a change; run long programs on a machine whose output lands in a file | The Claude harness |
+| Run on a call, at a time or on a change; run its own long programs (or the one the person picked) on a machine whose output lands in a file private to the actor | The Claude harness |
 | Publish operations, and call the other plugins' operations that its grant names | The composer calls `calternal-chat/send` |
 | Define slots and fill other plugins' slots | A community composer |
 | Reach declared hosts with secrets it cannot read; send notifications | A mail plugin fetching from its server |
 | Declare operations with no code (`create` from fields, `set` a field) | Reading List's Add and Mark read |
-| Show a sealed frame for what the catalogue cannot express | Mail's HTML body |
+| Show a sealed frame for what the catalogue cannot express (which makes the plugin outbound-capable) | Mail's HTML body |
 
 ### 3.2 A plugin cannot
 
 | Cannot | Example |
 | --- | --- |
 | Read or write outside its grant, even when another plugin asks it to | The composer cannot read chats |
-| Name a target it could not reach and was not handed (the designation rule, if question 2 goes that way) | A composer cannot post into a chat it was never shown |
+| Choose a slot's target: the host fills it (the open chat for a composer); name any other target it could not reach and was not handed by the host (designation rule, question 2) | A composer cannot post into a chat the person left |
 | Forge who wrote something | Nobody can post "as Alice" |
 | Edit or delete another author's record, unless the kind's policy and the person's role allow it | Chat cannot let Sam edit Lee's message |
 | Read another person's private state, or see people outside a shared group | Chat cannot see who muted a chat |
@@ -128,6 +129,10 @@ strictly files, appdata rebuildable") and is question 1.
 | Reach any network address except its declared hosts; reach private addresses at all | The harness only reaches its model provider |
 | Start a process or load native code itself; a program is a host-started work unit with mounts and a deadline | A plugin cannot spawn a shell |
 | Register an operation or kind name another plugin owns | A second `chats` kind fails at install |
+| Change a file's kind or ID, by any write path | Editing `kind: notes` into a chat file over the share has no effect |
+| Send input to another person's run, or start another plugin's program | Lee cannot steer Ana's agent; Chat starts only the harness the person picked |
+| Escape consent by starting a program, calling an outbound-capable plugin, or showing a frame | A "summary" part with a frame is filtered like an agent |
+| Rewrite the words of links in files the renamer cannot write | Renaming a note never changes text in Lee's messages |
 
 ## 4. Security
 
@@ -137,26 +142,33 @@ sections give the "checked at" column in detail.
 | # | Threat | What contains it | Primitive |
 | --- | --- | --- | --- |
 | T1 | A plugin reads or writes beyond its grant (path traversal, another kind, an unlisted call) | No ambient authority in the box; every effect is a call checked against the grant, the person's rights and the target, inside the commit; paths resolved beneath the space root | Authority, Files |
-| T2 | Confused deputy: plugin A gets B to act on a target A could not reach | Question 2. Recommended: the designation rule plus host-issued handles; strict intersection is the alternative | Authority |
-| T3 | Forged author or rewritten history | The host stamps writes in host state; header lines in files are readable copies; record policy; history keeps every change | Files |
-| T4 | Agents receive others' writing without consent | Outbound-capable principals mark the call chain; every read in a marked chain withholds records whose author has not consented; consent is host-held and set only from a host prompt | Authority |
-| T5 | Laundering: read in one call, send in another | A plugin with network, secrets or programs is marked for all its reads | Authority |
+| T2 | Confused deputy: plugin A gets B to act on a target A could not reach | Question 2. Recommended: the designation rule; the host fills slot targets itself; handles only from typed returns and run inputs (run-scoped, ending at Stop); strict intersection is the alternative | Authority |
+| T3 | Forged author or rewritten history, including by replace-writes, share edits, header removal and revert | The host stamps writes in host state; header lines are readable copies; every byte change to a record kind is checked against the kind policy per record; history keeps every change | Files |
+| T3b | Changing a file's kind or ID to escape its policy or take over another file's shares | Kind and ID are host-state facts fixed at create; a mismatching frontmatter copy loses | Files |
+| T4 | Agents receive others' writing without consent (through a run, a program started by another plugin, a frame, or a plain file several people wrote) | Outbound-capable is the install-time closure over network, secrets, programs, starting programs, calls to outbound-capable operations, and frames; every read by an outbound-capable plugin withholds writing whose authors have not consented; for a non-record file every person in its revision stamps must consent; consent is host-held and set only from a host prompt | Authority |
+| T5 | Laundering through files, titles, names or collections across calls | Taint per worker process: the other authors returned to a process are stamped as `carries` on every write it makes, and tainted rows are withheld from outbound-capable reads | Authority |
 | T6 | Learning hidden rows from counts, ranks, backlinks or the change feed | Queries run as the asker; rows filtered before counting and ranking | Questions |
-| T7 | A run keeps acting after Stop; a duplicate Stop hits a newer run | Fence at the Stop commit; Stop lives in that run's inbox | Running code |
+| T7 | A run keeps acting after Stop; a duplicate Stop hits a newer run; output written after Stop is posted by a trigger | Fence at the Stop commit; Stop lives in that run's inbox; replies go only through the run's fenced calls with run-scoped handles, never through a trigger on the log | Running code |
+| T7b | Another person steers someone's agent (and so their login and local files) | Only the run's actor may send input; others may only Stop | Running code |
+| T7c | Everyone in the space reads a run's log, with consented messages and the actor's files | Run files live under `.people/<actor>/runs/` and are indexed only for the actor | Running code, Files |
+| T7d | A machine's owner forges calls in a run's log | Question 7: shared-space runs on hosted sandboxes; if a member's machine is allowed, run rights are intersected with the machine owner's rights and consent prompts name the machine and harness | Running code |
 | T8 | Replayed or injected run output; a machine claims another's run | Sequence numbers with compare-and-set append; machine key; placement column; a new host epoch after restore ends every run in flight | Running code |
 | T9 | A program outlives a dead server or a lost machine | Machine-side deadline and 24-hour rule; host mirror marks the run ended | Running code |
 | T10 | Flood: alarms, watches, calls, wake-ups, change loops, disk | Quotas per space and plugin; coalescing; own writes do not trigger own watches; depth limit; record and segment caps | Running code, Files |
 | T11 | Exfiltration over the network | Declared destinations only; private addresses refused at resolve, connect and redirect | Authority |
-| T12 | Secret theft by echo from a declared destination | Secret bound to one destination; responses containing it refused | Authority |
-| T13 | Login theft | Login folders mounted only into runs of their owner, only for approved programs when hosted | Running code |
-| T14 | Spoofed host screen or clickjacking | Host screens in the shell's own layer with the host mark; frames clipped, opaque and below the host layer | Drawing |
-| T15 | A replacement part records what the person types | Picks belong to the person (or the space, for others-facing slots); the pick screen says what the part sees; the part may call only the slot's operations | Drawing, Authority |
+| T12 | A plugin obtains an equivalent credential through a secret (mints a token, writes to its own tenant) | Restated guarantee: plugin code never holds the secret value, and may not set other auth headers on a secret's destination; multi-tenant destinations are flagged at install (question 35). Echo filtering is a cheap extra, not a guarantee | Authority |
+| T13 | Login theft, including by an updated entry script inside an approved image | Login folders mounted only into runs of their owner; approval binds the plugin digest and the image digest, and any change re-approves before hosted placement or login mounts | Running code |
+| T14 | Spoofed host screen, clickjacking, phishing through plugin forms | Host screens in the shell's own layer with the host mark; frames clipped, opaque and below the host layer; every plugin form has a non-removable header naming the plugin; no password-like field | Drawing |
+| T15 | A replacement part records what the person types, or posts somewhere else | Picks belong to the person (or the space, for others-facing slots); the pick screen says what the part sees; the host fills the slot's target, and the part supplies only content | Drawing, Authority |
 | T16 | Lock-out by a broken shell part | Profile, Settings, Plugins and safe mode are host-only and always reachable | Drawing |
-| T17 | A sealed frame exfiltrates what it shows | The frame reads only its own item and what its plugin's operations return; **network isolation does not hold in browsers** (question 9) | Drawing |
+| T17 | A sealed frame exfiltrates what it shows | Network isolation does not hold in browsers, so a plugin that declares a frame is outbound-capable and its reads are consent-filtered; the promise is "a frame can read what its plugin can read" (question 9) | Drawing |
 | T18 | A hostile member deletes or rewrites others' records | Author-owned records; moderation is question 15 | Files, Authority |
-| T19 | A stolen session or modified client approves risky things | Question 16 (passkey for the riskiest confirmations) | Authority |
-| T20 | A malicious update | Wider grants wait for approval; same-grant updates are question 6 | Authority |
-| T21 | One space starves another | Per-space queues and writers; no installation-wide lock on the request path | Running code, Files |
+| T19 | A stolen session or modified client approves risky things | Question 16 (passkey for the riskiest confirmations); revoking a session also revokes the consents and picks it made | Authority |
+| T20 | A malicious update | Approval binds plugin and image digests; on any update the host recomputes every plugin's derived install sentences (including "can read X through B") and any that grow wait for approval; consent records the harness digest | Authority |
+| T20b | A restore from backup undoes revocations | A restore starts a new epoch: sessions invalidated, the handle key rotated, standing consents suspended until reconfirmed | Authority |
+| T20c | A plugin floods the audit trail to evict records of its earlier reads | Audit retention per plugin; marked reads of other people's writing keep their full retention | Authority |
+| T20d | Rank, link resolution or version counters reveal hidden files | Per-file revision counters; push only when the viewer's visible result changes; ranking without corpus statistics, or the leak documented (question 36) | Questions |
+| T21 | One space starves another, or work spread over many spaces starves the host | Per-space queues and writers; no installation-wide lock on the request path; buckets also charged to the account, with an operator ceiling and fair share (question 37) | Running code, Files |
 
 ### 4.1 Where the sections are not sure the design holds
 
@@ -165,23 +177,23 @@ Kept together for the security reviewer, as found:
 | From | Doubt |
 | --- | --- |
 | Authority G1 | A warm plugin process that served Ann can answer Bob from memory (question 5). |
-| Authority G2 | Two colluding plugins, an unmarked reader and a marked sender, can pass text through a file. |
+| Authority G2 | Laundering across calls: replaced by taint per worker process (T5); the remaining channel is a link the person clicks. |
 | Authority G3 | Plugin-built indexes leak existence through rank and result counts. |
 | Authority G4 | Links can carry data in their URL when a person clicks. |
 | Authority G5 | Copies into shared folders are not challenged. |
 | Authority G6, Files 5, Drawing 3 | Timing is not addressed: a query over many unreadable rows is slower. |
 | Authority G7 | Device copies survive removal from a space until the device next signs in. |
 | Authority G8, Files 2 | Deleted bytes: history must be scrubbed with the tombstone; backups, offline devices and modified clients keep them. |
-| Authority G9 | Consent does not name the machine a run executes on. |
+| Authority G9 | Consent does not name the machine: closed, consent prompts name the machine and the harness (T7d). |
 | Authority G10, Running code 19 | Delete for everyone cannot reach an agent's log or a model provider that already received the message. |
 | Running code 12 | A machine's owner can read the logs of runs other members started on it (question 7). |
 | Running code 13 | An unapproved harness on the caller's own machine can send everything it was given to its author (by design). |
-| Running code 14 | Secret echo detection may miss encoded or chunked echoes. |
+| Running code 14 | Secret echo detection misses encoded or chunked echoes: it is now only a cheap filter, and the guarantee is restated (T12, question 35). |
 | Running code | The change-chain depth limit of 4 and the 50 ms machine batching are chosen, not measured; V8 isolates in one process are probably not a security boundary. |
 | Drawing 1 | Frame network isolation fails in browsers (WebRTC) and is unproven in `WKWebView`. |
 | Drawing 2 | Deleting activation contexts relies on the index refusing fields a guest may not see; recheck title-only guests. |
 | Drawing 4 | Phishing inside catalogue components (a form asking for a password) is reduced, not removed. |
-| Drawing 5 | The composer slot must give the open item as a fixed input, so a hostile composer cannot post elsewhere. |
+| Drawing 5 | The composer slot must give the open item as a fixed input: resolved, the host fills slot targets (F10). |
 | Files 1 | Direct disk edits are stamped `outside`; the owner's own server-side edits become withheld from agents. |
 | Files 3, 4 | A rename rewrites links in files the renamer cannot write, and reveals the new name (question 18). |
 | Files 6 | Two plugins declaring the same kind name must be refused at install. |
@@ -207,7 +219,7 @@ line counts are from the drawing section.
 | --- | --- | --- |
 | Kind | `notes`: Markdown files; `tags` and `snooze_until` in frontmatter. | Files |
 | Editing | The catalogue's editor bound to the file; a write with an expected revision. | Files, Drawing |
-| Links | Ordinary relative links. A rename commits at once (old paths resolve through an alias); the host rewrites referring links in the background from the link index. | Files, Questions |
+| Links | Ordinary relative links. A rename commits at once (old paths resolve through an alias); the host rewrites referring link destinations in the background from the link index, and never rewrites link text in files the renamer cannot write. | Files, Questions |
 | Tags | A facet. "Linked here" is a backlinks query. | Questions |
 | Snooze | A work unit due at `snooze_until` that clears the field. | Running code |
 | History | `history` and `revert` of one change. | Files |
@@ -221,11 +233,11 @@ line counts are from the drawing section.
 | Unread, read position, draft, mute | `calternal-chat` | `state.set` per person, buffered to one write per 5 s; the index answers "records after my position". |
 | Sidebar | `calternal-chat` | Default arrangement: Pinned (strip), Groups, People, Cals, Harnesses, Archived; each section a collection. Pins are a personal collection in the person's order. |
 | Quotes | `calternal-chat` | A link to the record's anchor, drawn with the reader's rights; a deleted record shows nothing wherever it is quoted. |
-| Composer | `calternal-chat-composer` (depends on `calternal-chat`) | Fills the composer slot, picked per person; the slot hands it the open chat; it calls `send`. 19 lines for a community composer. |
+| Composer | `calternal-chat-composer` (depends on `calternal-chat`) | Fills the composer slot, picked per person. The part supplies only the text; the host fills the target (the open chat) when it calls `send`. 19 lines for a community composer. |
 | People and consent | `calternal-chat` | Participants are a share; calling an agent asks consenting authors through the host's prompt; one minute without an answer withholds that person's messages (owner decided). |
-| Agents | `calternal-chat-claude` (a harness) | `run.start` makes a work unit on a machine or hosted sandbox. The run's input is references; reads are consent-filtered. The program reads its inbox and appends to its log. The reply reaches the chat through the harness plugin's change trigger, stamped with the run (question 12). |
+| Agents | `calternal-chat-ai` and `calternal-chat-claude` (a harness) | Both are outbound-capable (the AI part may start programs), so all their reads are consent-filtered. The host resolves the program from the person's pick and makes a work unit on a hosted sandbox or the actor's machine. The run's input is references, with run-scoped handles for the chat; its files live in `.people/<actor>/runs/`. The program reads its inbox and appends to its log. The reply is a fenced call from the run (`chat.reply` through its handle), stamped with the run; nothing it writes after Stop takes effect. Only the actor may send it more input. |
 | Restart | host | The machine keeps writing its log; when the server returns, sync sends what the other side lacks; a message sent meanwhile is in the inbox exactly once; Stop is in that run's inbox. |
-| Notifications | `calternal-chat-notify` | Watches changes and calls `notify`, picked per space; mutes are applied by the host per recipient (question 31). |
+| Notifications | `calternal-chat-notify` | Watches changes and calls `notify`, picked per space; a push goes only to recipients who may read the item, and mutes are applied by the host per recipient (question 31). |
 | Size | Chat core 104 lines (today 1,884 plus a 1,317-line test host); 19 interface lines. | |
 
 ### 5.4 What a plain author learns
@@ -284,9 +296,9 @@ part behind the same call route.
 | C4 | Lists: the thesis says collections supply every list; drawing says three sources | **Resolved for drawing's three sources** (collection, record file, facet): all three are the same query engine (files section), so nothing new is learned. |
 | C5 | A person's sidebar edits: files says a list of changes over the default; drawing says a private copy that still picks up new default sections | **Question 13.** Both keep the sidebar a visible file; they differ on updates. |
 | C6 | Record edits: my first draft appended versions; the files section edits in place | **Resolved for in place.** The owner decided a deleted message vanishes with no trace and that the product is an interface over readable files; appended versions keep deleted words in the file. |
-| C7 | The sealed frame cannot be cut off the network in browsers | **Question 9**; the design states the smaller promise (it reads what you open in it) until answered. |
+| C7 | The sealed frame cannot be cut off the network in browsers | **Question 9**; a plugin that declares a frame is outbound-capable, and the promise is "a frame can read what its plugin can read" (security review F1). |
 | C8 | What counts as an "agent": authority says anything outbound-capable; authoring says a declared `agent: true` flag | **Question 3** (with the scope of protected files). Recommended: outbound-capable, so no flag can be skipped. |
-| C9 | Agent replies: the files section has the run append to the chat; authoring has the harness plugin's trigger post it | **Question 12.** |
+| C9 | Agent replies: the files section has the run append to the chat; authoring has the harness plugin's trigger post it | **Resolved by the security review (F9):** neither as written; the run replies through its fenced calls with run-scoped handles (question 12). |
 | C10 | Missed alarms: "the server never decides" (third set) against "a grace period, with one default" (evening) | **Resolved:** the host delivers once late with both times; grace is a plugin setting with an SDK default (running-code Q7). Both records hold together. |
 | C11 | Per-person state folder: hidden `.people/` (files) against "a visible file" for sidebars (owner) | **Resolved:** `.people/<uuid>/` is shown to its owner in Files as "My sidebars and settings"; hidden from everyone else. |
 
@@ -352,7 +364,11 @@ chat it was shown.
   discourage.
 
 In both, the caller's manifest lists every operation it calls (prior art
-Q5), so you see at install which plugins talk to each other.
+Q5), so you see at install which plugins talk to each other. Under (b) the
+host fills slot targets itself, handles exist only for typed returns and
+run inputs (run-scoped, ending at Stop), and results are typed as
+references plus plain values so the host can check what a callee reveals
+(security review).
 **Recommendation:** (b). It gives less power to the less trusted plugin, and
 the host checks the one rule in one place.
 
@@ -381,7 +397,11 @@ lease"; one of them was written by your partner.
   read members' writing here"**, shown to everyone when they join. Chats
   between people and files shared one by one stay protected.
 
-**Recommendation:** (ii) with (c).
+**Recommendation:** (ii) with (c). "Outbound-capable" is the install-time
+closure over network, secrets, programs, permission to start any program,
+calls to any outbound-capable operation, and frames (security review F1,
+F2). The space switch applies only to writing made after each member has
+seen it.
 
 ### 4. May any plugin ever run outside the sandbox?
 
@@ -411,9 +431,12 @@ asked by Ann, it repeats a line from it.
 (b) One process per person for plugins that read others' kinds: airtight,
 memory grows with active people. (c) **(a) for plugins with no network,
 secrets or programs; (b) for outbound-capable ones.**
-**Recommendation:** (c), confirmed against the #103 memory numbers. Until
-then, interface-only plugins run no process and others start on first
-call and stop when idle; no shared runtime per publisher.
+**Recommendation:** the security review (F15) says (b) for **every** plugin
+that reads kinds it does not own, not only outbound-capable ones, because
+an unmarked summary plugin can still answer Ann with Lee's text. That is
+the safe answer; its cost is memory, to be confirmed against the #103
+numbers. Until then, interface-only plugins run no process and others start
+on first call and stop when idle; no shared runtime per publisher.
 
 ### 6. Who approves plugins, and how are updates and publishers handled?
 
@@ -436,7 +459,12 @@ start garbling messages.
   publishers with review can follow; (b) any signed publisher; (c) anyone
   with an account.
 
-**Recommendation:** owner approves; updates (c); sources (a).
+**Recommendation:** owner approves; sources (a). For updates, the security
+review narrows (c): every new digest of a plugin that is outbound-capable
+or fills a slot needs approval; others may update by themselves within the
+same grant. Approval binds the plugin digest and the image digest (F11),
+and the host recomputes every plugin's derived install sentences on any
+update (F12).
 
 ### 7. Whose machine runs an agent in a shared space, and who may read the run's log?
 
@@ -452,7 +480,10 @@ on Kim's machine". (b) **Shared-space runs only on hosted sandboxes**, never
 on a member's machine. Cost: hosted compute. (c) Always the caller's own
 machine and login. Cost: reverses your decision on subscriptions.
 **Recommendation:** (b), with (a) as an explicit space-owner setting shown
-in every consent request. Unapproved harnesses still run only on the
+in every consent request. Under (a) the run's rights are intersected with
+the machine owner's rights, because a machine can forge calls in the log
+(security review F4), and consent prompts name the machine and the harness
+and whether it is approved. Unapproved harnesses still run only on the
 caller's own machine.
 
 ### 8. Does each person approve a plugin's use of their own data?
@@ -477,9 +508,11 @@ both the content policy and the frame sandbox.
 **Why now:** it decides what a frame may read and how Mail shows HTML mail.
 **Example:** a community budget chart opens your "Taxes 2026" note in a
 frame; a hostile version could send the numbers out through WebRTC.
-**Options:** (a) **promise only "it reads what you open in it"**: the frame
-gets its one item plus what its own plugin returns; the install screen says
-its pages may reach the internet. (b) No frames on the web until browsers
+**Options:** (a) **promise only "a frame can read what its plugin can
+read"** (the earlier wording "what you open in it" overstated it): a
+plugin that declares a frame counts as outbound-capable, so its reads are
+consent-filtered, and the install screen says its pages may reach the
+internet. (b) No frames on the web until browsers
 close the hole. Cost: no HTML mail or agent pages in browsers. (c) Frames
 for first-party plugins only. Cost: against "first-party is not special".
 Remote images in Mail: never automatic; per message on your tap, through a
@@ -515,15 +548,19 @@ had already read it.
   sent. (b) Keep it in history for the author only.
 - Run files: (a) also blank it in run logs the host stores. (b) **Leave run
   logs as they are, and say in the delete dialog "agents that already read
-  it keep their copy"**; run files are readable only by the person who
-  started the run and kept 30 days.
+  it keep their copy"**; run files live under `.people/<actor>/runs/`,
+  readable and indexed only for the person who started the run, kept 30
+  days.
 
 **Recommendation:** history (a), run files (b). State plainly that backups
 keep bytes until they rotate.
 
-### 12. When an agent's reply is written, whose write is it?
+### 12. When an agent's reply is written, whose write is it? (resolved by the security review)
 
-*Sources:* authoring Q2; files and running code differ (C9).
+*Sources:* authoring Q2; files and running code differ (C9). **Resolved:**
+neither option as written. The run replies through its own fenced calls,
+using run-scoped handles for the chat that the host mints at `work.start`
+and ends at Stop (F9). The options below are kept for the record.
 **What:** something must append the agent's answer to the chat with a stamp
 saying "Claude, for Lee".
 **Why now:** it decides whether a sandboxed program holds write access to a
@@ -535,7 +572,7 @@ one chat for its lifetime. Exact stamp; a sandbox writes a shared file.
 (b) **The run writes only its log; the harness plugin's change trigger posts
 the reply**, and the host carries the cause so the stamp names the run. The
 program touches nothing shared; triggers must carry causes.
-**Recommendation:** (b).
+**Recommendation (superseded):** (b).
 
 ### 13. Your changes to an app's sidebar: yours alone, and a copy or a list of changes?
 
@@ -591,8 +628,10 @@ between people outside any space role stays (a).
 **Example:** a stolen laptop session approves a plugin with "Any website"
 and "Always" consent in every chat.
 **Options:** (a) a tap is enough. (b) **A passkey for installing or widening
-a plugin, sharing outside the space, and "Always" consent**: a few Face ID
-prompts a month.
+a plugin, sharing outside the space, "Always" consent, picking an
+outbound-capable part and enabling frames**: a few Face ID prompts a month.
+In both, revoking a session also revokes the consents and picks it made
+(F17).
 **Recommendation:** (b).
 
 ### 17. What does "exactly once" mean for a message to a running agent?
@@ -615,11 +654,14 @@ to acknowledge every input. Cost: excludes some community harnesses.
 **What:** some files that link to the renamed one belong to other people.
 **Why now:** it decides whether links always follow renames.
 **Example:** Sam renames a shared note; Lee's private note links to it.
-**Options:** (a) **the host rewrites only the link destination**, recorded
-in history as "link updated after a rename". Cost: Lee's file changes and
-shows the new name. (b) Only files the renamer may write are rewritten; the
-rest resolve through a permanent alias. Cost: aliases pile up.
-**Recommendation:** (a).
+**Options:** (a) the host rewrites the link destination in every linking
+file, recorded in history as "link updated after a rename". Cost: Lee's
+file changes and shows the new name. (b) **Only files the renamer may write
+are rewritten; the rest resolve through a permanent alias.** Cost: aliases
+pile up.
+In both, link text is never rewritten in files the renamer cannot write,
+since a rename could otherwise put words into Lee's messages (F14).
+**Recommendation:** (b), as the security review recommends.
 
 ### 19. Who is the author of bytes changed outside Calternal, and may agents read them?
 
@@ -680,7 +722,9 @@ harness.
 **Why now:** agents, composers and notifications depend on it.
 **Example:** Chat starts whichever harness Alice picked.
 **Options:** (a) **a slot declares an operation signature, and a call to
-the slot reaches the picked part** under question 2's rule. (b) Slots are
+the slot reaches the picked part** under question 2's rule; the host
+resolves the pick and fills the slot's target, so a caller cannot name a
+program or part the person did not pick (F13). (b) Slots are
 drawing-only; behaviour goes through operations named by convention.
 **Recommendation:** (a).
 
@@ -806,6 +850,165 @@ another eligible part.
 see. (b) **Show the error state**, for parts that affect others (AI,
 notifications), so a silent switch never changes what others receive.
 **Recommendation:** (a) for per-person slots, (b) for per-space slots.
+
+### Questions added by the security review
+
+These are numbered after the others; the order is revisited after the
+simplicity review.
+
+### 35. What may a plugin do with a secret, and how does mail work?
+
+*Source:* security review F16 and check (i).
+**What:** "a plugin can use a secret but never read it" is true for the
+value, but a plugin can still call the service's "create token" endpoint
+or send data into its own account on the same service. Mail over IMAP and
+SMTP cannot work by the host adding an HTTPS header.
+**Why now:** it decides what the install screen may promise, and whether a
+mail plugin can exist.
+**Example:** a plugin holds your GitHub token for `api.github.com`; it calls
+the endpoint that mints a new token and keeps that one.
+**Options:** (a) **restate the guarantee**: plugin code never holds the
+value; it may not set other auth headers on a secret's destination;
+multi-tenant destinations (GitHub, Google, Anthropic) are flagged at
+install as "can act in your account there". Mail gets host methods for
+IMAP and SMTP with the secret, behind the same rule. (b) Keep the stronger
+claim and allow only single-purpose destinations. Cost: most useful APIs
+are multi-tenant.
+**Recommendation:** (a).
+
+### 36. May search ranking or counters reveal that hidden files exist?
+
+*Source:* security review F20.
+**What:** full-text ranking uses statistics over the whole space, so hidden
+documents shift the order of visible ones; link resolution and global
+version counters can show that a hidden file exists or changed.
+**Why now:** it fixes the index design in step 2.
+**Example:** Ann searches "divorce" in the family space; the ranking of her
+own results shifts because of Lee's private notes.
+**Options:** (a) **rank without corpus-wide statistics, use per-file
+revision counters, and push live updates only when the viewer's visible
+result changes**: a little worse ranking. (b) Keep corpus ranking and
+document the leak. Cost: an existence oracle for terms.
+**Recommendation:** (a).
+
+### 37. Who may create spaces and groups, and how is the host shared between accounts?
+
+*Source:* security review F21 and its missing questions.
+**What:** quotas are per space; one account with many spaces can multiply
+them and starve the host.
+**Why now:** it decides admission control before running code ships.
+**Example:** an account creates 50 spaces, each running 8 hosted agents.
+**Options:** (a) **charge every bucket to the account as well, with an
+operator ceiling and fair share across accounts**; space and group creation
+allowed for every account up to an operator limit. (b) Only the operator
+creates spaces. Cost: people cannot start a group themselves.
+**Recommendation:** (a).
+
+### 38. Where do person-to-person chats live, and can space roles read them?
+
+*Source:* security review, missing questions.
+**What:** a chat between people is one file in the starter's space, shared
+with the others (owner decided). Rights are `max(space role, shares)`, so a
+manager or reader of that space could read it.
+**Why now:** it decides whether a private chat is private.
+**Example:** Ana starts a chat with Lee inside the family space; Kim, the
+family space's owner, browses its Chats folder.
+**Options:** (a) **person-to-person chats live in the starter's personal
+space**, never in a group space, so only the participants hold rights.
+(b) They may live in a group space, and the chat kind's files are excluded
+from role-based access (shares only). Cost: a per-kind exception to the
+rights function.
+**Recommendation:** (a).
+
+### 39. Which person does a webhook act as, and what bounds it?
+
+*Source:* security review, missing questions.
+**What:** a webhook arrives from outside with no signed-in person.
+**Why now:** a call needs a person for the one check.
+**Example:** a GitHub webhook for a repository a plugin watches.
+**Options:** (a) **the person who set up the webhook**, with a signature
+check against a secret held by the host, a per-webhook rate quota and
+expiry when that person loses access. (b) A space-level "system" principal.
+Cost: a principal with no person behind it, whose rights must be defined.
+**Recommendation:** (a).
+
+### 40. What can visitors through share links, or with title-only access, trigger?
+
+*Source:* security review, missing questions.
+**What:** a guest who opened a share link, or who sees only a title, may
+press a button that calls plugin code.
+**Why now:** it decides whether guests can make plugins work for them.
+**Example:** a public link to a reading list; the visitor presses "Mark
+read".
+**Options:** (a) **guests may run only declarative operations on the shared
+file, and no plugin code**; title-only viewers may trigger nothing. (b)
+Guests run plugin code with guest rights. Cost: plugin code runs for
+people outside the space, under a weak identity.
+**Recommendation:** (a).
+
+### 41. Is a run's access to the actor's own machine bounded?
+
+*Source:* security review, missing questions (with F5).
+**What:** on the actor's own machine a run may mount a working folder and
+the person's login. Server rights do not bound what it does there.
+**Why now:** it decides what "the run's rights" mean on a personal machine.
+**Example:** Ana's agent runs with access to `~/work` on her laptop.
+**Options:** (a) **only folders the actor picks for the run, read-only by
+default, listed in the run's header**; the login folder only for the
+picked harness. (b) The run sees what the harness asks for. Cost: no
+boundary beyond the operating system.
+**Recommendation:** (a).
+
+## 11. Security review and what changed
+
+The independent security review of `6c432d33`
+([`docs/reviews/primitives-only-security-review-2026-11-21.md`](https://git.kayg.org/kayg/calternal-ai/src/branch/dev/docs/reviews/primitives-only-security-review-2026-11-21.md)
+on `dev`) found 21 problems. Revision 2 handles them as follows. "Applied"
+means the rule is now in §2–§5; "question" means it is a real choice for the
+owner. The section files under `primitives/` are left as their lanes wrote
+them; where they disagree, this document wins.
+
+| # | Finding | Disposition |
+| --- | --- | --- |
+| F1 | A plugin with a frame leaks without counting as outbound-capable | Applied: declaring a frame makes a plugin outbound-capable (§2, T4, T17, question 9 restated) |
+| F2 | Starting a program, or calling an outbound-capable plugin, escapes consent | Applied: outbound-capable is the install-time closure (§2, T4, question 3) |
+| F3 | Run files readable by the whole space | Applied: `.people/<actor>/runs/`, indexed only for the actor (§2, T7c, Chat, question 11) |
+| F4 | The machine owner can forge calls in a run's log | Question 7 sharpened: hosted sandboxes for shared spaces; otherwise run rights ∩ machine owner's rights, and prompts name the machine (T7d) |
+| F5 | Anyone can steer someone's run | Applied: only the actor may send input (§2, T7b, can't-list) |
+| F6 | Author-owned records bypassed by replace, share edits, header removal, revert | Applied: one policy check per record on every byte change; refused changes become conflict copies (§2, T3) |
+| F7 | Kind or ID changed by editing frontmatter | Applied: kind and ID are host-state facts fixed at create (§2, §2.2, T3b) |
+| F8 | Contributors to plain files unprotected | Applied: consent from every person in the file's revision stamps (T4) |
+| F9 | Agent replies weaken designation, and post after Stop through a trigger | Applied: run-scoped handles minted at `work.start`, ending at Stop; replies only through fenced calls (T7, Chat, question 12 resolved) |
+| F10 | A slot handle replayed into a chat the person left, or from an alarm | Applied: the host fills slot targets; slot handles removed (T2, T15, question 2) |
+| F11 | Approval does not cover the entry code next to the image | Applied: approval binds plugin and image digests (T13, question 6) |
+| F12 | Derived disclosure grows on another plugin's update | Applied: derived install sentences recomputed on every update; consent records the harness digest (T20, question 6) |
+| F13 | A client names any installed program | Applied: a plugin starts only its own programs or the picked one; the host resolves the pick (§2, question 23) |
+| F14 | Rename rewrites link text inside others' messages | Applied: never rewrite link text in files the renamer cannot write; question 18 now recommends (b) |
+| F15 | Warm memory leaks across people even for unmarked plugins | Question 5 sharpened: the review recommends one process per person for every plugin that reads kinds it does not own |
+| F16 | A secret lets a plugin mint equivalent credentials; mail cannot work by header injection | New question 35; T12 restated |
+| F17 | A revoked session's consents and picks survive | Applied: revoking a session revokes them (T19, question 16) |
+| F18 | A restore brings back revoked sessions and consents | Applied: a restore starts a new epoch (T20b) |
+| F19 | Audit flood evicts records of earlier reads | Applied: retention per plugin; marked reads of others' writing keep full retention (T20c) |
+| F20 | Ranking, link resolution and counters reveal hidden files | New question 36; T20d |
+| F21 | Work spread over many spaces starves the host | New question 37; T21 |
+| Checks (b), (d), (g) | Taint per call is not enough; phishing through catalogue forms | Applied: taint per worker process replaces taint per call (T5); plugin forms carry a non-removable plugin header and the catalogue has no password-like field (T14) |
+| Missing questions | Person-to-person chats, webhooks, visitors, run access on the actor's machine | New questions 38–41. Who may send to a run, kind and ID edits, session revocation, restore, entry-code approval and audit retention are applied above instead of asked |
+
+What the review called theatre or over-built (its §4):
+
+| Item | Change |
+| --- | --- |
+| Echo scrubbing of secrets | Kept only as a cheap filter; it guarantees nothing (T12) |
+| `returns` declarations on free-form results | Dropped as a guarantee: results are typed as references plus plain values, so the host can check them (question 2); the install screen no longer claims to state everything a plugin can learn |
+| Handles for query-result rows | Dropped: designation already passes for targets the plugin can reach; slot handles are dropped too (F10). Handles remain only for typed returns and run inputs |
+| Taint per call | Replaced by taint per worker process |
+| "Declared phrases only" in pushes | Restated: a push goes only to recipients who may read the item; its title is plugin-controlled text |
+| "A frame reads what you open in it" | Restated: "a frame can read what its plugin can read" (question 9) |
+
+Order of work, as the review recommends: step 1 may start once F1, F2 and
+F7 are in, which they now are. Settle F6 and F8 before step 5; F3, F4, F5,
+F9, question 7 and question 12 before steps 6 and 7; F10, F12 and F13
+before step 8; F1 before any frame ships in step 9.
 
 ## 10. What this document does not cover
 
