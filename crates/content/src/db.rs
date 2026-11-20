@@ -91,10 +91,8 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
             (7, crate::trash_job::SCHEMA),
             (8, crate::rename_job::SCHEMA),
             (9, crate::item_write::SCHEMA),
-            (10, crate::item_write::AUTHORSHIP_SCHEMA),
         ],
-    )
-    .with_compatible_creation(8);
+    );
 
 pub(crate) fn database(
     path: &Path,
@@ -295,6 +293,18 @@ mod tests {
             (7, crate::trash_job::SCHEMA),
         ],
     );
+    const RENAME_RELEASE: Schema<'_> = Schema::new(
+        "space content.db",
+        3,
+        SPACE_INITIAL,
+        &[
+            (4, THREAD_SNOOZE),
+            (5, COLLECTION_MEMBERS),
+            (6, crate::rooms::SCHEMA),
+            (7, crate::trash_job::SCHEMA),
+            (8, crate::rename_job::SCHEMA),
+        ],
+    );
 
     #[test]
     fn baseline_threads_survive_the_snooze_migration_and_rollback_writer() {
@@ -489,7 +499,7 @@ mod tests {
              INSERT INTO notes_trash_targets VALUES('job','note','v1');",
         )
         .unwrap();
-        migrate_release(&conn, SPACE_SCHEMA, true).unwrap();
+        migrate_release(&conn, RENAME_RELEASE, true).unwrap();
         assert_eq!(
             calternal_store::migrations::inspect(&conn, EMPTY_TRASH_RELEASE).unwrap(),
             8

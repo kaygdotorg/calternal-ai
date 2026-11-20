@@ -19,6 +19,11 @@ fn invoke(input: serde_json::Value) -> SpaceMessage {
         operation: "fixture.head".into(),
         input,
         deadline_ms: 60_000,
+        author_context: crate::space_channel::AuthorContext {
+            request_id: "fixture-request".into(),
+            actor: calternal_types::AccountId::new(),
+            authored_at: "2026-11-20T00:00:00Z".into(),
+        },
     }
 }
 

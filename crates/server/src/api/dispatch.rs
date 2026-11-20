@@ -114,6 +114,17 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
         }
         return super::sharing::dispatch(state, p, request_id, op, input).await;
     }
+    if catalog.policy(op).is_none() && catalog.v2_operation(op).is_some() {
+        if agent.is_some() {
+            return Err(Error::forbidden(
+                "plugin operations require a person session",
+            ));
+        }
+        return crate::plugins::space_broker::package::invoke(
+            state, p, session, request_id, op, input, machines, None,
+        )
+        .await;
+    }
     if catalog.policy(op).is_none()
         && let Some(space) = input.get("space_id").and_then(Value::as_str)
         && let Ok(space) = SpaceId::parse(space)
@@ -126,6 +137,7 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
             state,
             p,
             session,
+            request_id,
             approved,
             decode(input)?,
             machines,
@@ -510,6 +522,12 @@ pub(super) async fn dispatch_checked<D: Directory>(
             let i: PluginInput = decode(input)?;
             let space = space_of(&i.space_id)?;
             let enable = op == "plugins.enable";
+            if let Some(package) = state.registry.snapshot().v2_package(&i.plugin_id) {
+                return activate_v2(
+                    &state, actor, p.id, request_id, op, fp, space, package, enable,
+                )
+                .await;
+            }
             let st = state.clone();
             let (rid, op, principal) = (request_id.to_string(), op.to_string(), p.id);
             blocking(&state, move |s| {
@@ -580,6 +598,66 @@ pub(super) async fn dispatch_checked<D: Directory>(
             "operation has no host binding in this preview",
         )),
     }
+}
+
+/// Activate or deactivate an installed v2 package in one space through the
+/// same receipt-backed control row as a v1 plugin. Enabling first registers
+/// the package's declared kinds; disabling commits under the space lock that
+/// fences every item write of the package, then ends its awake placements.
+/// Cost: one receipt read, one indexed read per kind (a FULL insert when
+/// new), one FULL control commit and, on disable, one placement fence.
+#[allow(clippy::too_many_arguments)]
+async fn activate_v2<D: Directory>(
+    state: &Shared<D>,
+    actor: calternal_types::Actor,
+    principal: calternal_types::AccountId,
+    request_id: &str,
+    op: &str,
+    fp: String,
+    space: calternal_types::SpaceId,
+    package: Arc<calternal_plugin_host::ManifestV2>,
+    enable: bool,
+) -> Result<Value, Error> {
+    let (rid, op_name, id) = (
+        request_id.to_owned(),
+        op.to_owned(),
+        package.id().to_owned(),
+    );
+    let retired = id.clone();
+    let result = blocking(state, move |s| {
+        if let Some(v) = replay_receipt(s, principal, space, &rid, &op_name, &fp)? {
+            return Ok(v);
+        }
+        if enable {
+            let kinds = crate::plugins::item_engine::kind_registrations(&package)?;
+            s.provision_plugin(space, actor.clone(), &kinds, &[])?;
+        }
+        let default = crate::store::PluginRow {
+            enabled: false,
+            generation: 0,
+            approval: 0,
+        };
+        s.set_plugin_enabled(
+            actor,
+            &rid,
+            &op_name,
+            &fp,
+            space,
+            &id,
+            default,
+            enable,
+            |row| {
+                serde_json::json!({"plugin":{
+                    "package_id": id, "enabled": row.enabled, "generation": row.generation
+                }})
+            },
+        )
+    })
+    .await?;
+    if !enable {
+        state.registry.packages().retire(space, &retired).await;
+    }
+    Ok(result)
 }
 
 /// Retry handling shared by every mutation in an authorized space: the same

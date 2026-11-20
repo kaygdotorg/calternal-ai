@@ -31,6 +31,11 @@ pub(super) struct Write<'a> {
     pub(super) body: CheckedItemBody<'a>,
     pub(super) marker: Option<&'a str>,
     pub(super) stage_begin: Option<&'a str>,
+    /// The host-composed record, when the body change is attested.
+    pub(super) record: Option<&'a Composed>,
+    /// The body change is raw plugin bytes (14.36: never preserves
+    /// creator-only discovery and leaves the body unproven).
+    pub(super) opaque: bool,
 }
 
 #[derive(Deserialize)]
@@ -43,6 +48,7 @@ pub(super) struct Create {
     pub(super) metadata: Value,
     pub(super) body: Option<String>,
     pub(super) attempt_discovery: Option<String>,
+    pub(super) attested: Option<Attested>,
 }
 
 #[derive(Deserialize)]
@@ -68,6 +74,8 @@ pub(super) struct Save {
     pub(super) body: Option<String>,
     pub(super) staged: Option<String>,
     pub(super) attempt_discovery: Option<String>,
+    pub(super) attested: Option<Attested>,
+    pub(super) replace_span: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -75,6 +83,7 @@ pub(super) struct Append {
     pub(super) request_id: RequestId,
     pub(super) item: ItemRef,
     pub(super) expected_revision: RevisionRef,
-    pub(super) bytes: String,
+    pub(super) bytes: Option<String>,
     pub(super) attempt_discovery: Option<String>,
+    pub(super) attested: Option<Attested>,
 }

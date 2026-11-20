@@ -142,10 +142,10 @@ async fn relay_package(
                 }
                 let ticket = frame.ticket.ok_or(ProtocolError::Invalid)?;
                 let (alias, message) = match &frame.message {
-                    SpaceMessage::Invoke { operation, input, .. } if active.len() < MAX_ACTIVE_TICKETS && !active.contains_key(&ticket) => {
+                    SpaceMessage::Invoke { operation, input, author_context, .. } if active.len() < MAX_ACTIVE_TICKETS && !active.contains_key(&ticket) => {
                         let alias = Uuid::new_v4();
                         active.insert(ticket, alias);
-                        (alias, ChildMessage::Invoke { operation: operation.clone(), input: input.clone() })
+                        (alias, ChildMessage::Invoke { operation: operation.clone(), input: input.clone(), author_context: author_context.clone() })
                     }
                     SpaceMessage::Reply { callback_id, result } => {
                         let Some(&alias) = active.get(&ticket) else { continue };
@@ -258,6 +258,11 @@ mod tests {
                         operation: "fixture.head".into(),
                         input: serde_json::json!({}),
                         deadline_ms: 2_000,
+                        author_context: calternal_plugin_host::space_channel::AuthorContext {
+                            request_id: "fixture-request".into(),
+                            actor: calternal_types::AccountId::new(),
+                            authored_at: "2026-11-20T00:00:00Z".into(),
+                        },
                     },
                     || true,
                 )

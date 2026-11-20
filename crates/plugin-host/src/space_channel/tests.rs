@@ -28,6 +28,11 @@ async fn handshake_checks_assignment_and_moves_application_frames() {
             operation: "head".into(),
             input: json!({"id":"fixture"}),
             deadline_ms: 60_000,
+            author_context: crate::space_channel::AuthorContext {
+                request_id: "fixture-request".into(),
+                actor: calternal_types::AccountId::new(),
+                authored_at: "2026-11-20T00:00:00Z".into(),
+            },
         },
     )
     .unwrap();
@@ -95,6 +100,11 @@ async fn full_windows_wait_and_deliver_each_maximum_result() {
                 operation: "fixture.head".into(),
                 input: json!({}),
                 deadline_ms: 1_000,
+                author_context: crate::space_channel::AuthorContext {
+                    request_id: "fixture-request".into(),
+                    actor: calternal_types::AccountId::new(),
+                    authored_at: "2026-11-20T00:00:00Z".into(),
+                },
             },
         )
         .unwrap();

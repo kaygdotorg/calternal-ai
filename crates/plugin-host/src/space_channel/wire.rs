@@ -5,7 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 /// Package identity pinned by the authenticated assignment.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PackagePin {
     /// Package identifier in the approved registry.
@@ -14,12 +14,62 @@ pub struct PackagePin {
     pub digest: String,
 }
 
-/// The methods admitted to the v2 callback wire.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+/// The methods admitted to the v2 callback wire. Each name is the catalogue
+/// method; the host still checks it against the operation's declared methods
+/// and validates its operand before any storage access.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SpaceMethod {
     /// Return the head of one item in the ticket's space.
     ItemHead,
+    /// Read a bounded page of one pinned item revision.
+    ItemRange,
+    /// Read the recorded write spans of one pinned item revision.
+    ItemSpans,
+    /// Create one item of the operation's owned kind.
+    ItemCreate,
+    /// Commit body, metadata or name changes to one item.
+    ItemSave,
+    /// Reserve a bounded staged save.
+    ItemSaveBegin,
+    /// Add one chunk to a staged save.
+    ItemSaveChunk,
+    /// Seal a staged save before its `item_save` commit.
+    ItemSaveSeal,
+    /// Append one bounded record to an append-file item.
+    ItemAppend,
+}
+
+impl SpaceMethod {
+    /// Catalogue method name, as declared in an operation's `methods`.
+    /// Cost: O(1), no allocation.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ItemHead => "item_head",
+            Self::ItemRange => "item_range",
+            Self::ItemSpans => "item_spans",
+            Self::ItemCreate => "item_create",
+            Self::ItemSave => "item_save",
+            Self::ItemSaveBegin => "item_save_begin",
+            Self::ItemSaveChunk => "item_save_chunk",
+            Self::ItemSaveSeal => "item_save_seal",
+            Self::ItemAppend => "item_append",
+        }
+    }
+}
+
+/// Host-stamped author context of one admitted invocation (catalogue
+/// `AuthorInvocationContext`). Replays carry the same values. It grants
+/// nothing; the ticket remains the only authority.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthorContext {
+    /// Durable request ID, the namespace for the worker's subeffect keys.
+    pub request_id: String,
+    /// Stable account of the acting person.
+    pub actor: calternal_types::AccountId,
+    /// RFC 3339 UTC admission time. Not a live deadline.
+    pub authored_at: String,
 }
 
 /// Direction-checked invocation, callback and transport messages.
@@ -34,6 +84,8 @@ pub enum SpaceMessage {
         input: Value,
         /// Relative deadline in milliseconds.
         deadline_ms: u32,
+        /// Host-stamped request, actor and admission time.
+        author_context: AuthorContext,
     },
     /// Supervisor forwards a package's broker callback.
     Call {

@@ -12,7 +12,9 @@ use crate::{
 use calternal_auth::spaces::Spaces;
 use calternal_content::{ItemHead, ItemHeadReader};
 use calternal_machine::{protocol::PluginWorker, sandbox::worker::MAX_SOURCE_BYTES};
-use calternal_plugin_host::space_channel::{PackagePin, SpaceMessage, SpaceMethod, SpaceSender};
+use calternal_plugin_host::space_channel::{
+    AuthorContext, PackagePin, SpaceMessage, SpaceMethod, SpaceSender,
+};
 use calternal_types::{AccountId, Capability, Error, ErrorCode, SpaceId};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -90,6 +92,7 @@ impl ApprovedItemHead {
 }
 
 mod awake;
+pub mod package;
 use awake::{Awake, Wake};
 
 impl ApprovedItemHead {
@@ -157,6 +160,7 @@ pub(crate) async fn invoke<D: Directory>(
     state: Shared<D>,
     actor: Identity,
     session: Session,
+    request_id: &str,
     approval: Arc<ApprovedItemHead>,
     input: ItemHeadInput,
     machines: Option<Arc<MachineService>>,
@@ -219,8 +223,13 @@ pub(crate) async fn invoke<D: Directory>(
             package: approval.package.clone(),
             epoch: awake.epoch,
             operation: approval.operation.clone(),
-            kind: approval.kind.clone(),
-            item: input.item_id,
+            target: Some((approval.kind.clone(), input.item_id)),
+            required: Capability::PluginsUse,
+            author: AuthorContext {
+                request_id: request_id.to_owned(),
+                actor: actor.id,
+                authored_at: crate::store::now_rfc3339(),
+            },
         })
         .await
 }
@@ -235,17 +244,56 @@ async fn wake_space<D: Directory>(
     account: AccountId,
     service: Arc<MachineService>,
 ) -> Result<Arc<Awake>, Error> {
+    let content = state.store.shared_content();
+    let space = approval.space;
+    let reader = crate::blocking::spawn(move || content.item_head_reader(space))
+        .await
+        .map_err(|_| unavailable())??;
+    attach_worker(
+        state,
+        service,
+        account,
+        space,
+        approval.worker_source.clone(),
+        &approval.package,
+        Some(Arc::new(reader)),
+        Arc::downgrade(&approval.wake),
+    )
+    .await
+}
+
+/// Reserve a space placement for one verified worker source, open its
+/// enrolled carrier for the exact pin and wait for readiness. The caller
+/// holds the placement's wake gate. Dropping the result before readiness
+/// stops the run. Cost: one scheduler reservation on a blocking worker and
+/// one carrier handshake; no per-invocation work.
+#[allow(clippy::too_many_arguments)]
+async fn attach_worker<D: Directory>(
+    state: &Shared<D>,
+    service: Arc<MachineService>,
+    account: AccountId,
+    space: SpaceId,
+    source: String,
+    pin: &PackagePin,
+    reader: Option<Arc<ItemHeadReader>>,
+    wake: std::sync::Weak<Wake>,
+) -> Result<Arc<Awake>, Error> {
+    if source.is_empty()
+        || source.len() > MAX_SOURCE_BYTES
+        || sha256_hex(source.as_bytes()) != pin.digest
+    {
+        return Err(unavailable());
+    }
     let scheduler = service.clone();
-    let pinned = approval.clone();
     let runtime = tokio::runtime::Handle::current();
     let placement = crate::blocking::spawn(move || {
-        scheduler.check_space_channel_available(pinned.space)?;
+        scheduler.check_space_channel_available(space)?;
         let run = scheduler.request_space_vm(
             account,
             Uuid::new_v4(),
             PluginWorker {
-                space_id: pinned.space,
-                source: pinned.worker_source.clone(),
+                space_id: space,
+                source,
             },
         )?;
         Ok::<_, Error>(HeldPlacement {
@@ -259,13 +307,8 @@ async fn wake_space<D: Directory>(
     .await
     .map_err(|_| unavailable())??;
     let connected = service
-        .open_space_channel(account, placement.lease, approval.package.clone())
+        .open_space_channel(account, placement.lease, pin.clone())
         .await?;
-    let content = state.store.shared_content();
-    let space = approval.space;
-    let reader = crate::blocking::spawn(move || content.item_head_reader(space))
-        .await
-        .map_err(|_| unavailable())??;
     let authority = state
         .directory
         .protected_spaces()
@@ -274,9 +317,9 @@ async fn wake_space<D: Directory>(
     Awake::attach(
         connected,
         authority,
-        Arc::new(reader),
-        &approval.package,
-        Some((Arc::downgrade(&approval.wake), placement)),
+        reader,
+        pin,
+        Some((wake, placement)),
         awake::IDLE,
     )
     .await
@@ -292,7 +335,7 @@ async fn exchange(
     let awake = Awake::attach(
         connected,
         authority,
-        reader,
+        Some(reader),
         &scope.package,
         None,
         awake::IDLE,
@@ -305,12 +348,13 @@ async fn exchange(
 
 async fn run(
     channel: &SpaceSender,
-    inbox: &mut awake::Inbox,
+    mut inbox: awake::Inbox,
     reader: Arc<ItemHeadReader>,
     ticket: Arc<Ticket>,
     cancel: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<Value, Error> {
     let pin = &ticket.scope.package;
+    let (kind, item) = ticket.scope.target.clone().ok_or_else(missing)?;
     let send_error = |_| {
         ticket
             .require_live(Instant::now())
@@ -325,12 +369,9 @@ async fn run(
             ticket.id(),
             SpaceMessage::Invoke {
                 operation: ticket.scope.operation.clone(),
-                input: json!({"kind":ticket.scope.kind,"item_id":ticket.scope.item}),
-                deadline_ms: ticket
-                    .deadline()
-                    .saturating_duration_since(Instant::now())
-                    .as_millis()
-                    .clamp(1, 60_000) as u32,
+                input: json!({"kind":kind,"item_id":item}),
+                deadline_ms: ticket.deadline_ms(),
+                author_context: ticket.scope.author.clone(),
             },
             move || {
                 !canceled.load(std::sync::atomic::Ordering::Acquire)
@@ -358,14 +399,15 @@ async fn run(
                 method: SpaceMethod::ItemHead,
                 input,
             } if answered.is_none() => {
-                if !item_target_matches(&ticket.scope.kind, ticket.scope.item, input) {
+                if !item_target_matches(&kind, item, input) {
                     return Err(missing());
                 }
                 let (callback_id, read, scoped) = (*callback_id, reader.clone(), ticket.clone());
                 drop(delivery);
+                let target = (kind.clone(), item);
                 let head: ItemHead = tokio::task::spawn_blocking(move || {
                     scoped.require_live(Instant::now())?;
-                    read.read(&scoped.scope.kind, scoped.scope.item)
+                    read.read(&target.0, target.1)
                 })
                 .await
                 .map_err(|_| unavailable())??;

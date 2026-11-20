@@ -15,6 +15,8 @@ const CATALOGUE: &str = include_str!("../../../contract/host-catalogue-v2.json")
 const CONTRACT: &str = "https://calternal.cloud/contract/";
 
 /// Validated installer declaration. Its fields are data, not runtime permission.
+/// The second field caches compiled schemas: kind metadata by kind ID, and
+/// operation input and output by `<operation>` and `<operation>/output`.
 #[derive(Clone, Debug)]
 pub struct ManifestV2(Value, Arc<BTreeMap<String, jsonschema::Validator>>);
 
@@ -59,8 +61,29 @@ impl ManifestV2 {
         let schema = self
             .1
             .get(kind)
+            .filter(|_| !kind.contains('.') && !kind.contains('/'))
             .ok_or_else(|| "undeclared item kind".to_owned())?;
         validate(schema, value, "item metadata")
+    }
+
+    /// Validate one admitted operation's author input with its cached install
+    /// schema. Refuses undeclared operations. No compilation or I/O.
+    pub fn check_operation_input(&self, operation: &str, value: &Value) -> Result<(), String> {
+        self.check_declared(operation, value, "operation input")
+    }
+
+    /// Validate a worker's terminal output for one operation with its cached
+    /// install schema before the host delivers it. No compilation or I/O.
+    pub fn check_operation_output(&self, operation: &str, value: &Value) -> Result<(), String> {
+        self.check_declared(&format!("{operation}/output"), value, "operation output")
+    }
+
+    fn check_declared(&self, key: &str, value: &Value, label: &str) -> Result<(), String> {
+        if !key.contains('.') {
+            return Err("undeclared operation".into());
+        }
+        let schema = self.1.get(key).ok_or("undeclared operation")?;
+        validate(schema, value, label)
     }
 
     /// Validate a broker item operand against the pinned v2 catalogue. The
@@ -390,8 +413,12 @@ fn check_declarations(manifest: &Value) -> Result<BTreeMap<String, jsonschema::V
                 "Operation {id} must use the package or one of its app namespaces"
             ));
         }
-        embedded_schema(&op["input_schema"])?;
-        embedded_schema(&op["output_schema"])?;
+        // Kind IDs never contain a dot, so operation keys cannot collide.
+        validators.insert(id.to_owned(), embedded_schema(&op["input_schema"])?);
+        validators.insert(
+            format!("{id}/output"),
+            embedded_schema(&op["output_schema"])?,
+        );
         if let Some(target) = op.get("target")
             && !owns(&target["kind"])
             && !readable(&target["kind"])

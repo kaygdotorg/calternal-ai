@@ -5,12 +5,12 @@ use calternal_types::{AccountId, Error, ItemRef, RevisionRef, SpaceId};
 use serde_json::Value;
 use uuid::Uuid;
 
+/// Checked item identity, discovery and authorship, and recorded write
+/// spans (`item_spans`). Fresh installs only: edited in place.
 pub(crate) const SCHEMA: &str = "
     CREATE TABLE item_discovery_protection(
         item TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE
-    ) WITHOUT ROWID, STRICT;";
-
-pub(crate) const AUTHORSHIP_SCHEMA: &str = "
+    ) WITHOUT ROWID, STRICT;
     CREATE TABLE checked_item_refs(
         item TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
         reference TEXT NOT NULL UNIQUE
@@ -27,6 +27,36 @@ pub(crate) const AUTHORSHIP_SCHEMA: &str = "
      AND NOT EXISTS(SELECT 1 FROM checked_item_authorship WHERE revision=NEW.revision)
     BEGIN
         INSERT OR IGNORE INTO item_discovery_protection VALUES(NEW.item);
+    END;
+    CREATE TABLE item_write_spans(
+        item TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        born INTEGER NOT NULL,
+        start INTEGER NOT NULL CHECK(start >= 0),
+        span TEXT NOT NULL UNIQUE,
+        retired INTEGER CHECK(retired IS NULL OR retired > born),
+        length INTEGER NOT NULL CHECK(length > 0),
+        middle_start INTEGER NOT NULL CHECK(middle_start >= start),
+        middle_length INTEGER NOT NULL CHECK(middle_length >= 0
+            AND middle_start + middle_length <= start + length),
+        origin TEXT CHECK((origin IS NULL) = (middle_length = 0)),
+        anchor TEXT,
+        PRIMARY KEY(item, born, start)
+    ) WITHOUT ROWID, STRICT;
+    CREATE INDEX item_write_spans_live ON item_write_spans(item, start) WHERE retired IS NULL;
+    CREATE UNIQUE INDEX item_write_span_anchors ON item_write_spans(item, anchor)
+        WHERE retired IS NULL AND anchor IS NOT NULL;
+    CREATE TABLE item_body_unproven(
+        item TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+        since INTEGER NOT NULL
+    ) WITHOUT ROWID, STRICT;
+    CREATE TABLE attested_item_writes(revision TEXT PRIMARY KEY) WITHOUT ROWID, STRICT;
+    CREATE TRIGGER retire_unattested_item_spans AFTER INSERT ON versions
+    WHEN EXISTS(SELECT 1 FROM checked_item_refs WHERE item=NEW.item)
+     AND NOT EXISTS(SELECT 1 FROM attested_item_writes WHERE revision=NEW.revision)
+     AND (SELECT bytes FROM versions WHERE item=NEW.item AND seq=NEW.seq-1) IS NOT NEW.bytes
+    BEGIN
+        UPDATE item_write_spans SET retired=NEW.seq WHERE item=NEW.item AND retired IS NULL;
+        INSERT OR IGNORE INTO item_body_unproven VALUES(NEW.item, NEW.seq);
     END;";
 
 /// Host-checked provenance for a write to a kind with per-item discovery.
@@ -95,6 +125,27 @@ impl DiscoveryWrite {
     }
 }
 
+/// A control value the write requires, such as the owning package's exact
+/// activation stamp in this space. The writer compares it under the space
+/// lock that also serializes control changes, so a disable that commits
+/// first refuses the write and one that commits later waits for it.
+#[derive(Clone, Copy)]
+pub struct ControlFence<'a> {
+    /// Control key, for example `plugin/<package>`.
+    pub key: &'a str,
+    /// The exact value admitted with the invocation.
+    pub value: &'a Value,
+}
+
+impl crate::db::Space {
+    pub(crate) fn require_control(&self, fence: ControlFence<'_>) -> Result<()> {
+        if self.control(fence.key)?.as_ref() != Some(fence.value) {
+            return Err(Error::forbidden("plugin invocation authority unavailable"));
+        }
+        Ok(())
+    }
+}
+
 /// Child placement selected by the owning package. The writer resolves it
 /// below the kind's registered root and reserves the final name in the head.
 #[derive(Clone, Copy)]
@@ -129,6 +180,7 @@ pub enum CheckedItemBody<'a> {
 pub(crate) struct CheckedWrite<'a> {
     pub(crate) placement: CheckedItemPlacement<'a>,
     pub(crate) body: CheckedItemBody<'a>,
+    pub(crate) record: Option<crate::SpanRecord<'a>>,
     pub(crate) discovery: DiscoveryWrite,
     pub(crate) validate: &'a dyn Fn(&Value) -> Result<()>,
 }
@@ -218,8 +270,13 @@ impl Content {
     /// FULL writer transaction is changed and must never reenter content.
     /// The durable receipt and discovery protection share the head's commit
     /// through the existing outbox. Exact receipt replay is handled by the
-    /// authorized caller. Cost: ordinary content commit/publication, checked
-    /// name allocation when requested and at most one current body read.
+    /// authorized caller. A supplied control fence is compared under the
+    /// same space lock before the transaction. A span record binds the
+    /// host-composed record that is the whole replaced body or the appended
+    /// bytes; without one, a body change to a checked item retires its live
+    /// spans and marks the body unproven in the same commit. Cost: ordinary content
+    /// commit/publication, checked name allocation when requested, at most one
+    /// current body read and one indexed control read when fenced.
     #[allow(clippy::too_many_arguments)]
     pub fn write_checked_item(
         &self,
@@ -231,6 +288,8 @@ impl Content {
         metadata: Value,
         body: CheckedItemBody<'_>,
         discovery: DiscoveryWrite,
+        record: Option<crate::SpanRecord<'_>>,
+        fence: Option<ControlFence<'_>>,
         request: Request<'_>,
         guard: impl FnOnce() -> Result<()>,
         validate: impl Fn(&Value) -> Result<()>,
@@ -243,6 +302,19 @@ impl Content {
             || !metadata.is_object()
         {
             return Err(Error::invalid_input("invalid checked content edit"));
+        }
+        if let Some(span) = record {
+            let length = match body {
+                CheckedItemBody::Replace(bytes) | CheckedItemBody::Append(bytes) => bytes.len(),
+                CheckedItemBody::Keep => 0,
+            };
+            if span.length == 0
+                || span.length != length
+                || span.middle_offset + span.middle_length > span.length
+                || span.origin.is_some() != (span.middle_length > 0)
+            {
+                return Err(Error::invalid_input("invalid attested record"));
+            }
         }
         let bytes = match body {
             CheckedItemBody::Replace(bytes) => bytes,
@@ -265,10 +337,11 @@ impl Content {
             None,
             None,
             guard,
-            |_| Ok(()),
+            |s| fence.map_or(Ok(()), |fence| s.require_control(fence)),
             Some(CheckedWrite {
                 placement,
                 body,
+                record,
                 discovery,
                 validate: &validate,
             }),

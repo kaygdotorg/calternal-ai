@@ -39,8 +39,13 @@ fn ticket_is_refused_after_grant_revision_moves_or_epoch_changes() {
         package: pin.clone(),
         epoch,
         operation: "fixture.head".into(),
-        kind: "notes".into(),
-        item: Uuid::new_v4(),
+        target: Some(("notes".into(), Uuid::new_v4())),
+        required: calternal_types::Capability::PluginsUse,
+        author: calternal_plugin_host::space_channel::AuthorContext {
+            request_id: "fixture".into(),
+            actor: ids.guest,
+            authored_at: crate::store::now_rfc3339(),
+        },
     };
     assert!(Ticket::mint(&reader, scope.clone()).is_err());
     spaces

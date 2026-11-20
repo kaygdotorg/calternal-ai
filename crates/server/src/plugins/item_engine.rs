@@ -1,8 +1,8 @@
 //! Typed v2 item callbacks on the existing blocking content writer.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use calternal_content::{
-    CheckedItemBody, CheckedItemPlacement, Content, DiscoveryWrite, FileFormat, Item, Placement,
-    Request,
+    CheckedItemBody, CheckedItemPlacement, Content, ControlFence, DiscoveryWrite, FileFormat, Item,
+    Placement, Request,
 };
 use calternal_core::ManifestPlacement;
 use calternal_plugin_host::ManifestV2;
@@ -18,9 +18,15 @@ use std::{
 };
 use uuid::Uuid;
 
+mod attested;
+mod commit;
+mod provision;
 mod read;
 mod stages;
 mod wire;
+pub use attested::{AttemptOutputs, AttemptText, CapturedInput};
+use attested::{Attested, Composed, Placing};
+pub use provision::kind_registrations;
 pub use stages::ItemStages;
 use wire::*;
 
@@ -54,52 +60,63 @@ pub struct ItemAccess {
     pub field: Option<String>,
 }
 
+/// Live authority for one invocation. It is called on the blocking worker
+/// that runs the engine, including inside the content transaction for the
+/// `Create` and `Write` checks, so it must not reenter content storage there.
+pub type ItemAuthority = Arc<dyn Fn(ItemAccess) -> Result<(), Error> + Send + Sync>;
+
 /// Authorized per-invocation resource for one package-owned kind. Call only
 /// on a blocking worker. The caller owns live package, operation, space,
 /// actor and attempt admission through the supplied authority check.
 /// The write callback runs inside the content transaction. It must use the
 /// checked authority source and may not reenter content storage. The caller
-/// holds any attempt retirement permit through that transaction.
-pub struct ItemEngine<'a> {
-    content: &'a Arc<Content>,
+/// holds any attempt retirement permit through that transaction. The engine
+/// owns shared handles only, so an async broker can move it between
+/// blocking callbacks without holding a thread across worker think time.
+pub struct ItemEngine {
+    content: Arc<Content>,
     space: SpaceId,
     actor: Actor,
-    package: &'a ManifestV2,
-    operation: &'a Value,
-    kind: &'a Value,
-    invocation: &'a RequestId,
-    authorize: &'a dyn Fn(ItemAccess) -> Result<(), Error>,
+    package: Arc<ManifestV2>,
+    operation: usize,
+    kind: usize,
+    invocation: RequestId,
+    authorize: ItemAuthority,
+    fence: Option<(String, Value)>,
     created: HashSet<Uuid>,
     ranges: HashMap<(Uuid, RevisionRef), Instant>,
     calls: usize,
     ticket: Uuid,
-    stages: Option<&'a ItemStages>,
+    stages: Option<Arc<ItemStages>>,
     discovery: bool,
+    captured: Option<CapturedInput>,
+    outputs: Option<AttemptOutputs>,
 }
 
-impl<'a> ItemEngine<'a> {
+impl ItemEngine {
     /// Bind one installed operation and its package-owned kind to a checked
     /// invocation. A target operation must be bound to its declared kind.
     /// Manifest lookup is bounded by its installation limits. No I/O.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        content: &'a Arc<Content>,
+        content: Arc<Content>,
         space: SpaceId,
         account: AccountId,
-        package: &'a ManifestV2,
+        package: Arc<ManifestV2>,
         operation: &str,
         kind: &str,
-        invocation: &'a RequestId,
-        authorize: &'a dyn Fn(ItemAccess) -> Result<(), Error>,
+        invocation: RequestId,
+        authorize: ItemAuthority,
     ) -> Result<Self, Error> {
-        let operation = declaration(package, "operations", operation).ok_or_else(denied)?;
-        if operation["target"]["kind"]
+        let (operation, declared) =
+            position(&package, "operations", operation).ok_or_else(denied)?;
+        if declared["target"]["kind"]
             .as_str()
             .is_some_and(|target| target != kind)
         {
             return Err(denied());
         }
-        let kind = declaration(package, "kinds", kind).ok_or_else(denied)?;
+        let (kind, _) = position(&package, "kinds", kind).ok_or_else(denied)?;
         Ok(Self {
             content,
             space,
@@ -109,13 +126,33 @@ impl<'a> ItemEngine<'a> {
             kind,
             invocation,
             authorize,
+            fence: None,
             created: HashSet::new(),
             ranges: HashMap::new(),
             calls: 0,
             ticket: Uuid::new_v4(),
             stages: None,
             discovery: false,
+            captured: None,
+            outputs: None,
         })
+    }
+
+    /// Require this exact control value, normally the owning package's
+    /// activation stamp, at every item commit. The content writer compares
+    /// it under the space lock that also serializes activation changes.
+    /// No I/O until a write.
+    pub fn with_activation(mut self, key: String, value: Value) -> Self {
+        self.fence = Some((key, value));
+        self
+    }
+
+    fn operation(&self) -> &Value {
+        &self.package.declaration()["operations"][self.operation]
+    }
+
+    fn kind(&self) -> &Value {
+        &self.package.declaration()["kinds"][self.kind]
     }
 
     /// Limit an engine used for attempt discovery to checked read methods.
@@ -130,14 +167,14 @@ impl<'a> ItemEngine<'a> {
     /// leave the invocation authority unchanged. Delivery and protected writes
     /// recheck authority at their boundary. Storage uses the space's content writer.
     pub fn call(&mut self, method: &str, operand: &Value) -> Result<Value, Error> {
-        if self.discovery && !matches!(method, "item_head" | "item_range") {
+        if self.discovery && !matches!(method, "item_head" | "item_range" | "item_spans") {
             return Err(denied());
         }
         if self.calls == calternal_plugin_host::MAX_CALLBACKS {
             return Err(Error::unavailable("item callback limit reached"));
         }
         self.calls += 1;
-        if !self.operation["methods"]
+        if !self.operation()["methods"]
             .as_array()
             .is_some_and(|methods| methods.iter().any(|m| m == method))
         {
@@ -176,13 +213,21 @@ impl<'a> ItemEngine<'a> {
                 }
                 Ok(page)
             }
+            "item_spans" => self.spans(decode(operand)?),
             "item_create" => {
                 let create: Create = decode(operand)?;
                 if create.kind != self.kind_id() {
                     return Err(denied());
                 }
                 self.access(ItemCheck::Create, None, None)?;
-                let bytes = body(create.body.as_deref().unwrap_or_default(), 128 * 1024)?;
+                let composed = create
+                    .attested
+                    .map(|attested| self.compose(attested, Placing::Create, 128 * 1024))
+                    .transpose()?;
+                let bytes = match &composed {
+                    Some(record) => record.bytes.clone(),
+                    None => body(create.body.as_deref().unwrap_or_default(), 128 * 1024)?,
+                };
                 let reference = ItemRef(Uuid::new_v4().to_string());
                 let placed = self.write(Write {
                     method: "item_create",
@@ -200,11 +245,13 @@ impl<'a> ItemEngine<'a> {
                     body: CheckedItemBody::Replace(&bytes),
                     marker: create.attempt_discovery.as_deref(),
                     stage_begin: None,
+                    record: composed.as_ref(),
+                    opaque: composed.is_none() && !bytes.is_empty(),
                 })?;
                 let reference: ItemRef = decode(&placed["item"])?;
                 let item = self.resolve(&reference)?;
                 self.retain_pin(item, decode(&placed["revision"])?)?;
-                if self.operation["creates"] == self.kind["id"] {
+                if self.operation()["creates"] == self.kind()["id"] {
                     self.created.insert(item);
                 }
                 Ok(placed)
@@ -213,24 +260,40 @@ impl<'a> ItemEngine<'a> {
             "item_save_chunk" => self.pool()?.chunk(self, decode(operand)?),
             "item_save_seal" => self.pool()?.seal(self, decode(operand)?),
             "item_save" => {
-                let save: Save = decode(operand)?;
+                let mut save: Save = decode(operand)?;
                 let item = self.resolve(&save.item)?;
+                if save.replace_span.is_some() {
+                    return Err(Error::unavailable(
+                        "recorded span replacement is unavailable",
+                    ));
+                }
+                let composed = save
+                    .attested
+                    .take()
+                    .map(|attested| {
+                        self.compose(attested, Placing::Snapshot(&save.item), 128 * 1024)
+                    })
+                    .transpose()?;
                 let mut stage = None;
                 if save.staged.is_some() {
                     self.access(ItemCheck::Write, Some(item), Some(&save.expected))?;
                     if let Some(saved) = self.load_receipt(&save.request_id)? {
-                        let fp = self.fingerprint("item_save", operand)?;
+                        let fp = self.fingerprint("item_save", operand, None)?;
                         return self
                             .replay(saved, "item_save", &fp, Some(item))
                             .and_then(|(id, result)| self.deliver(id, result));
                     }
                     stage = Some(self.pool()?.sealed(self, &save)?);
                 }
-                let bytes = save
-                    .body
-                    .as_deref()
-                    .map(|encoded| body(encoded, 128 * 1024))
-                    .transpose()?;
+                let bytes = match &composed {
+                    Some(record) => Some(record.bytes.clone()),
+                    None => save
+                        .body
+                        .as_deref()
+                        .map(|encoded| body(encoded, 128 * 1024))
+                        .transpose()?,
+                };
+                let opaque = composed.is_none() && (stage.is_some() || bytes.is_some());
                 let reply = self.write(Write {
                     method: "item_save",
                     operand,
@@ -249,6 +312,8 @@ impl<'a> ItemEngine<'a> {
                         .map_or(CheckedItemBody::Keep, CheckedItemBody::Replace),
                     marker: save.attempt_discovery.as_deref(),
                     stage_begin: stage.as_ref().map(|(_, begin)| begin.as_str()),
+                    record: composed.as_ref(),
+                    opaque,
                 });
                 if let Ok(result) = &reply {
                     if let Some(handle) = save.staged.as_deref() {
@@ -268,9 +333,19 @@ impl<'a> ItemEngine<'a> {
                     reply => reply,
                 }
             }
-            "item_append" if self.kind["append_file"] == true => {
+            "item_append" if self.kind()["append_file"] == true => {
                 let append: Append = decode(operand)?;
-                let bytes = body(&append.bytes, 64 * 1024)?;
+                let composed = append
+                    .attested
+                    .map(|attested| {
+                        self.compose(attested, Placing::Append(&append.item), 64 * 1024)
+                    })
+                    .transpose()?;
+                let bytes = match (&composed, append.bytes.as_deref()) {
+                    (Some(record), None) => record.bytes.clone(),
+                    (None, Some(encoded)) => body(encoded, 64 * 1024)?,
+                    _ => return Err(Error::invalid_input("invalid item operand")),
+                };
                 let item = self.resolve(&append.item)?;
                 let result = self
                     .write(Write {
@@ -285,6 +360,8 @@ impl<'a> ItemEngine<'a> {
                         body: CheckedItemBody::Append(&bytes),
                         marker: append.attempt_discovery.as_deref(),
                         stage_begin: None,
+                        record: composed.as_ref(),
+                        opaque: composed.is_none(),
                     })
                     .map_err(|error| {
                         if error
@@ -308,7 +385,7 @@ impl<'a> ItemEngine<'a> {
     /// broker recorded from a checked create or exact replay may drive routing.
     pub fn created(&self, output: &Value) -> Result<Option<ItemRef>, Error> {
         let Some(value) = output.get("created") else {
-            return if self.operation.get("creates").is_some() {
+            return if self.operation().get("creates").is_some() {
                 Err(denied())
             } else {
                 Ok(None)
@@ -317,7 +394,7 @@ impl<'a> ItemEngine<'a> {
         let reference = decode::<ItemRef>(value)?;
         let item = self.resolve(&reference)?;
         if output.as_object().is_none_or(|object| object.len() != 1)
-            || self.operation["creates"] != self.kind["id"]
+            || self.operation()["creates"] != self.kind()["id"]
             || !self.created.contains(&item)
         {
             return Err(denied());
@@ -339,7 +416,7 @@ impl<'a> ItemEngine<'a> {
             field: None,
         })?;
         if self.discovery
-            && self.kind["attempt_discovery"] == "item_policy"
+            && self.kind()["attempt_discovery"] == "item_policy"
             && !self.content.creator_discoverable(
                 self.space,
                 item.ok_or_else(denied)?,
@@ -358,189 +435,24 @@ impl<'a> ItemEngine<'a> {
     }
 
     fn kind_id(&self) -> &str {
-        self.kind["id"].as_str().expect("validated kind")
-    }
-
-    fn write(&self, write: Write<'_>) -> Result<Value, Error> {
-        let check = if write.target.is_some() {
-            ItemCheck::Write
-        } else {
-            ItemCheck::Create
-        };
-        let guard = || self.access(check, write.target, write.expected);
-        guard()?;
-        if self.kind.get("extractors").is_some() {
-            return Err(Error::unavailable("item extractors are unavailable"));
-        }
-        let fingerprint = self.fingerprint(write.method, write.operand)?;
-        let key = receipt_key(&write.id);
-        let request = Request {
-            account: self.actor.account,
-            via: self.actor.via.as_ref(),
-            id: &key,
-            operation: write.method,
-            fingerprint: &fingerprint,
-        };
-        let encode = |item: &Item| {
-            let receipt = ReceiptRef(write.id.0.clone());
-            let revision = RevisionRef(item.revision.clone());
-            let result = if write.method == "item_append" {
-                json!({"revision":revision,"end_offset":item.bytes.len(),"receipt":receipt})
-            } else {
-                json!({"item":write.reference, "revision":revision, "locator":locator(self.space,item.id),"receipt":receipt})
-            };
-            match write.stage_begin {
-                None => result,
-                Some(begin) => json!({"stage_begin":begin,"result":result}),
-            }
-        };
-        let replay = || -> Result<Option<(Uuid, Value)>, Error> {
-            let Some(saved) = self.load_receipt(&write.id)? else {
-                return Ok(None);
-            };
-            guard()?;
-            self.replay(saved, write.method, &fingerprint, write.target)
-                .map(Some)
-        };
-        let (item, result) = if let Some(replay) = replay()? {
-            replay
-        } else {
-            let discovery = if self.kind["attempt_discovery"] == "item_policy" {
-                DiscoveryWrite::Checked {
-                    allow_creator_only: write.marker == Some("creator_only"),
-                    protect: write.marker == Some("consent_only"),
-                }
-            } else {
-                if write.marker.is_some() {
-                    return Err(denied());
-                }
-                DiscoveryWrite::Unmanaged
-            };
-            match self.content.write_checked_item(
-                self.space,
-                self.kind_id(),
-                write.target,
-                write.expected,
-                write.placement,
-                write.metadata,
-                write.body,
-                discovery,
-                request,
-                guard,
-                |value| {
-                    self.package
-                        .check_item_metadata(self.kind_id(), value)
-                        .map_err(|_| Error::invalid_input("invalid item metadata"))
-                },
-                encode,
-            ) {
-                Ok(item) => (item.id, wire_result(encode(&item))),
-                Err(error) => replay()?.ok_or(error)?,
-            }
-        };
-        self.deliver(item, result)
-    }
-
-    fn fingerprint(&self, method: &str, operand: &Value) -> Result<String, Error> {
-        let bytes = serde_json::to_vec(&(
-            self.package.id(),
-            &self.package.declaration()["worker"]["sha256"],
-            &self.operation["id"],
-            self.invocation,
-            method,
-            operand,
-        ))
-        .map_err(|_| Error::invalid_input("invalid item operand"))?;
-        Ok(crate::store::sha256_hex(&bytes))
-    }
-
-    fn load_receipt(&self, id: &RequestId) -> Result<Option<calternal_content::Receipt>, Error> {
-        self.content
-            .receipt(self.space, self.actor.account, &receipt_key(id))
-    }
-
-    fn replay(
-        &self,
-        saved: calternal_content::Receipt,
-        method: &str,
-        fingerprint: &str,
-        target: Option<Uuid>,
-    ) -> Result<(Uuid, Value), Error> {
-        if saved.operation != method || saved.fingerprint != fingerprint {
-            return Err(Error::request_reused());
-        }
-        let item = saved.item.ok_or_else(denied)?;
-        if target.is_some_and(|target| target != item) {
-            return Err(denied());
-        }
-        Ok((item, wire_result(saved.result)))
-    }
-
-    fn deliver(&self, item: Uuid, result: Value) -> Result<Value, Error> {
-        let revision = decode::<RevisionRef>(&result["revision"])?;
-        self.access(ItemCheck::Deliver, Some(item), Some(&revision))?;
-        Ok(result)
-    }
-
-    /// Provision the installed kind for this space at activation on a
-    /// blocking worker. Existing equal placement is reused. This reads the
-    /// registration once and commits it only on first activation.
-    pub fn provision_kind(&self) -> Result<(), Error> {
-        let placement = match decode::<ManifestPlacement>(&self.kind["storage"])? {
-            ManifestPlacement::Visible { folder } => Placement::Visible { folder },
-            ManifestPlacement::VisibleTree {
-                folder,
-                subdirectories,
-            } => Placement::VisibleTree {
-                folder,
-                subdirectories,
-            },
-            ManifestPlacement::Hidden { .. } => Placement::Hidden {
-                plugin_id: self.package.id().to_owned(),
-            },
-        };
-        let format = if self.kind["claimed_text"] == false {
-            FileFormat::Opaque {
-                extension: decode(&self.kind["extension"])?,
-            }
-        } else {
-            FileFormat::Markdown
-        };
-        self.content
-            .register_kind(self.space, self.kind_id(), placement, format)?;
-        if self.kind["live_room"] == "yjs-v1" {
-            self.content
-                .enable_live_editing(self.space, self.kind_id())?;
-        }
-        Ok(())
+        self.kind()["id"].as_str().expect("validated kind")
     }
 }
 
-impl Drop for ItemEngine<'_> {
+impl Drop for ItemEngine {
     fn drop(&mut self) {
-        if let Some(stages) = self.stages {
+        if let Some(stages) = &self.stages {
             stages.retire(self.ticket);
         }
     }
 }
 
-fn receipt_key(id: &RequestId) -> String {
-    format!("plugin/v2/{}", crate::store::sha256_hex(id.0.as_bytes()))
-}
-
-fn wire_result(mut result: Value) -> Value {
-    if result.get("stage_begin").is_some() {
-        result["result"].take()
-    } else {
-        result
-    }
-}
-
-fn declaration<'a>(package: &'a ManifestV2, section: &str, id: &str) -> Option<&'a Value> {
+fn position<'a>(package: &'a ManifestV2, section: &str, id: &str) -> Option<(usize, &'a Value)> {
     package.declaration()[section]
         .as_array()?
         .iter()
-        .find(|entry| entry["id"] == id)
+        .enumerate()
+        .find(|(_, entry)| entry["id"] == id)
 }
 
 fn denied() -> Error {

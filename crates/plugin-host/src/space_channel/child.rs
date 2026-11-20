@@ -17,7 +17,7 @@ pub struct ChildFrame {
     pub message: ChildMessage,
 }
 
-/// The pipe side of one read-only invocation.
+/// The pipe side of one invocation and its item callbacks.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ChildMessage {
@@ -27,6 +27,8 @@ pub enum ChildMessage {
         operation: String,
         /// Author input with no space or authority fields.
         input: Value,
+        /// Host-stamped author context, copied from the carrier invoke.
+        author_context: super::AuthorContext,
     },
     /// Package requests an engine operation.
     HostCall {

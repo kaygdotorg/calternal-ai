@@ -262,6 +262,7 @@ pub struct Registry {
     catalog: arc_swap::ArcSwap<Catalog>,
     changes: tokio::sync::watch::Sender<u64>,
     space_heads: BTreeMap<SpaceId, BTreeMap<String, Arc<ApprovedItemHead>>>,
+    packages: space_broker::package::PackagePlacements,
     #[cfg(feature = "dev-plugin-drafts")]
     failed_candidates: draft_diagnostics::FailedCandidates,
 }
@@ -342,6 +343,7 @@ impl Registry {
             )),
             changes: Default::default(),
             space_heads: Default::default(),
+            packages: Default::default(),
             #[cfg(feature = "dev-plugin-drafts")]
             failed_candidates: Default::default(),
         }
@@ -382,6 +384,11 @@ impl Registry {
             }
         }
         Ok(self)
+    }
+
+    /// Awake placements and staging pools of activated v2 packages.
+    pub(crate) fn packages(&self) -> &space_broker::package::PackagePlacements {
+        &self.packages
     }
 
     pub(crate) fn space_item_head(

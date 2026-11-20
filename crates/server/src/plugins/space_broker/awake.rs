@@ -24,7 +24,9 @@ pub(super) struct Awake {
     pub(super) fence: SpaceFence,
     pub(super) epoch: Uuid,
     admission: Arc<InvocationReader>,
-    reader: Arc<ItemHeadReader>,
+    /// The item-head profile's pinned reader. Package placements use the
+    /// item engine per invocation instead.
+    reader: Option<Arc<ItemHeadReader>>,
     tickets: Semaphore,
     accepting: AtomicBool,
     drained: watch::Sender<bool>,
@@ -41,7 +43,7 @@ impl Awake {
     pub(super) async fn attach(
         mut connected: Connected,
         authority: Spaces,
-        reader: Arc<ItemHeadReader>,
+        reader: Option<Arc<ItemHeadReader>>,
         pin: &PackagePin,
         placement: Option<(Weak<Wake>, HeldPlacement)>,
         idle: Duration,
@@ -162,7 +164,24 @@ impl Awake {
         (!self.accepting.load(Ordering::Acquire)).then(|| self.drained.subscribe())
     }
 
+    /// Run one item-head profile invocation with the placement's reader.
     pub(super) async fn invoke(&self, scope: Scope) -> Result<Value, Error> {
+        let reader = self.reader.clone().ok_or_else(unavailable)?;
+        self.invoke_with(scope, move |sender, inbox, ticket, cancel| async move {
+            super::run(&sender, inbox, reader, ticket, cancel).await
+        })
+        .await
+    }
+
+    /// Admit one ticket and run `work` with its private inbox until the
+    /// ticket's deadline. Capacity is claimed under the idle fence lock, the
+    /// ticket is minted on a blocking worker, and an unfinished ticket is
+    /// canceled on the carrier when `work` returns early or times out.
+    pub(super) async fn invoke_with<W, F>(&self, scope: Scope, work: W) -> Result<Value, Error>
+    where
+        W: FnOnce(SpaceSender, Inbox, Arc<Ticket>, Arc<AtomicBool>) -> F,
+        F: std::future::Future<Output = Result<Value, Error>>,
+    {
         let _permit = {
             // Claim admission under the same short lock as the idle fence.
             let _registration = self.inboxes.lock().map_err(|_| unavailable())?;
@@ -183,7 +202,7 @@ impl Awake {
                 .await
                 .map_err(|_| unavailable())??,
         );
-        let (send, mut inbox) = mpsc::channel(2);
+        let (send, inbox) = mpsc::channel(2);
         {
             let mut inboxes = self.inboxes.lock().map_err(|_| unavailable())?;
             if !self.sender.is_live() {
@@ -199,13 +218,7 @@ impl Awake {
             completed: false,
         };
         let deadline = tokio::time::Instant::from_std(ticket.deadline());
-        let work = super::run(
-            &self.sender,
-            &mut inbox,
-            self.reader.clone(),
-            ticket.clone(),
-            cancel,
-        );
+        let work = work(self.sender.clone(), inbox, ticket.clone(), cancel);
         let result = tokio::time::timeout_at(deadline, work)
             .await
             .map_err(|_| unavailable())?;

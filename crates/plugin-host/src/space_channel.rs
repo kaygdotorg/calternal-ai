@@ -7,7 +7,7 @@ mod wire;
 use crate::{Error, MAX_FRAME_BYTES};
 use calternal_types::SpaceId;
 use flow::{Credits, Pending, Shared};
-pub use wire::{PackagePin, SpaceFrame, SpaceMessage, SpaceMethod};
+pub use wire::{AuthorContext, PackagePin, SpaceFrame, SpaceMessage, SpaceMethod};
 
 use std::{
     collections::HashMap,

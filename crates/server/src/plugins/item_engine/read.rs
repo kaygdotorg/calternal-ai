@@ -2,7 +2,7 @@
 use super::*;
 use std::time::Duration;
 
-impl ItemEngine<'_> {
+impl ItemEngine {
     /// Retain a checked revision furnished by another host route, such as
     /// a view lease. The live range authority check still applies at use.
     /// Costs one bounded map entry for at most 60 seconds.

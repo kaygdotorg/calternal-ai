@@ -9,6 +9,9 @@ pub struct InvocationGrant {
     pub revision: u64,
     /// Installation expiry in Unix milliseconds, when the sign-in expires.
     pub expires_at: Option<i64>,
+    /// The person's space capabilities at `revision`. Any membership change
+    /// moves the revision, so a ticket holding both observes revocation.
+    pub capabilities: CapabilitySet,
 }
 
 /// One awake space's dedicated read-only admission connection and revision latch.
@@ -55,12 +58,13 @@ impl InvocationReader {
         };
         let mut connection = self.connection.lock().map_err(Error::internal)?;
         let read = connection.transaction().map_err(sql)?;
-        let current = current_capabilities(&read, account, self.grants.space())?;
-        if current.is_none_or(|caps| {
-            !caps.contains(Capability::SpaceRead) || !caps.contains(Capability::PluginsUse)
-        }) {
+        let Some(capabilities) =
+            current_capabilities(&read, account, self.grants.space())?.filter(|caps| {
+                caps.contains(Capability::SpaceRead) && caps.contains(Capability::PluginsUse)
+            })
+        else {
             return Ok(None);
-        }
+        };
         let expires_at = match installation {
             Some(id) => {
                 let live: Option<Option<i64>> = read
@@ -88,6 +92,7 @@ impl InvocationReader {
             (self.grants.current() == Some(revision)).then_some(InvocationGrant {
                 revision,
                 expires_at,
+                capabilities,
             }),
         )
     }

@@ -51,6 +51,7 @@ impl Content {
             };
             let mut room = None;
             let mut preview_update = None;
+            let mut record_at = crate::item_spans::RecordAt::Whole;
             // Refuse further growth when a failed/slow disk misses ADR 0062's
             // maximum; the lifecycle worker continues retrying durable intents.
             if s.pending_since.is_some_and(|at| at.elapsed() >= Duration::from_secs(1)) {
@@ -139,6 +140,7 @@ impl Content {
                             if current.bytes.len().saturating_add(addition.len()) > MAX_DOCUMENT_BYTES {
                                 return Err(Error::invalid_input("append exceeds the document size limit"));
                             }
+                            record_at = crate::item_spans::RecordAt::End(current.bytes.len());
                             current.bytes.extend_from_slice(addition);
                             bytes = std::borrow::Cow::Owned(current.bytes);
                         }
@@ -224,11 +226,20 @@ impl Content {
             guard()?;
             if let Some(edit) = &checked {
                 edit.discovery.stamp(&tx, &root.item.revision)?;
+                if edit.record.is_some() {
+                    crate::item_spans::begin(&tx, &root.item.revision)?;
+                }
             }
             root.write(&tx, old_path.as_deref(), &request.account.to_string())?;
             if let Some(edit) = &checked {
                 if let CheckedItemPlacement::Create { reference, .. } = edit.placement {
                     tx.execute("INSERT INTO checked_item_refs VALUES(?1,?2)", params![id.to_string(), reference.0]).map_err(internal)?;
+                    if edit.record.is_none() && !root.item.bytes.is_empty() {
+                        crate::item_spans::unproven_from(&tx, id, root.seq)?;
+                    }
+                }
+                if let Some(span) = edit.record {
+                    crate::item_spans::record(&tx, id, root.seq, &root.item.revision, record_at, span)?;
                 }
                 edit.discovery.record(&tx, &root.item, request.account, old_path.is_none())?;
             }

@@ -267,6 +267,39 @@ impl PackageV2 {
     }
 }
 
+/// Read the pinned worker of one installed v2 package for a cold placement
+/// wake. The asset must still match the running declaration's pin, so a
+/// replaced row cannot change the code behind a live declaration. Call on a
+/// blocking worker. Cost: one indexed SQLite read, one bounded base64 decode
+/// and one SHA-256 of the worker. Warm invocations never call this.
+pub(in crate::plugins) fn installed_worker(
+    appdata: &Path,
+    id: &str,
+    pin: &Value,
+) -> Result<String, String> {
+    use rusqlite::OptionalExtension;
+    let archive: Vec<u8> = open(appdata)?
+        .query_row(
+            "SELECT archive FROM installed_plugins WHERE id=?1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(reason)?
+        .ok_or("the package is not installed")?;
+    let archive: PackageV2 = serde_json::from_slice(&archive).map_err(reason)?;
+    let encoded = pin["path"]
+        .as_str()
+        .and_then(|path| archive.assets.get(path))
+        .filter(|encoded| encoded.len() <= MAX_WORKER.div_ceil(3) * 4)
+        .ok_or("the pinned worker is missing")?;
+    let bytes = STANDARD.decode(encoded).map_err(reason)?;
+    if pin["sha256"].as_str() != Some(super::super::sha256_hex(&bytes).as_str()) {
+        return Err("the installed worker does not match its pin".into());
+    }
+    String::from_utf8(bytes).map_err(reason)
+}
+
 pub(in crate::plugins) fn validate_v2_archive(bytes: &[u8]) -> Result<Arc<ManifestV2>, String> {
     if bytes.len() > MAX_ARCHIVE {
         return Err("v2 package archive exceeds its byte budget".into());

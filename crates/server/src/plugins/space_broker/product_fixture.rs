@@ -296,3 +296,6 @@ impl TlsRelay {
 
 #[path = "product_tests.rs"]
 mod tests;
+
+#[path = "package_product_tests.rs"]
+mod package_tests;

@@ -19,7 +19,7 @@ mod worker_cache;
 
 pub use startup::load;
 pub use v2::{InstallPackage, PackageV2};
-pub(super) use v2::{commit_v2, validate_v2_archive};
+pub(super) use v2::{commit_v2, installed_worker, validate_v2_archive};
 
 const MAX_WORKER: usize = calternal_machine::sandbox::worker::MAX_SOURCE_BYTES;
 pub(super) const MAX_PACKAGES: usize = 128;

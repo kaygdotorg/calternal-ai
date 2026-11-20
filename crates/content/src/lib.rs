@@ -53,8 +53,10 @@ mod revision_slice;
 mod rooms;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
 pub use rooms::{LiveEdit, LiveTextEdit, RoomSnapshot};
+mod item_spans;
 mod item_write;
-pub use item_write::{CheckedItemBody, CheckedItemPlacement, DiscoveryWrite};
+pub use item_spans::{RecordedSpan, SpanPage, SpanRecord};
+pub use item_write::{CheckedItemBody, CheckedItemPlacement, ControlFence, DiscoveryWrite};
 mod item_head;
 mod write_placed;
 pub use item_head::{ItemHead, ItemHeadReader};
@@ -550,16 +552,22 @@ impl Content {
     /// space's own database. Callers authorize the space first.
     /// Cost: the space's lock and one indexed read; no other space is touched.
     pub fn control(&self, space: SpaceId, key: &str) -> Result<Option<Value>> {
-        self.with_space(space, |s| {
-            s.conn
-                .query_row("SELECT value FROM controls WHERE key=?1", [key], |r| {
-                    r.get::<_, String>(0)
-                })
-                .optional()
-                .map_err(internal)?
-                .map(|v| serde_json::from_str(&v).map_err(internal))
-                .transpose()
-        })
+        self.with_space(space, |s| s.control(key))
+    }
+}
+
+impl db::Space {
+    /// Read one control value on this space's connection. The caller already
+    /// holds the space lock. Cost: one cached indexed read and a JSON parse.
+    pub(crate) fn control(&self, key: &str) -> Result<Option<Value>> {
+        self.conn
+            .prepare_cached("SELECT value FROM controls WHERE key=?1")
+            .map_err(internal)?
+            .query_row([key], |r| r.get::<_, String>(0))
+            .optional()
+            .map_err(internal)?
+            .map(|v| serde_json::from_str(&v).map_err(internal))
+            .transpose()
     }
 }
 

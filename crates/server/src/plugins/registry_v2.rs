@@ -16,6 +16,13 @@ impl Catalog {
         self.v2.get(package).map(Arc::as_ref)
     }
 
+    /// Shared handle to an installed v2 declaration for work that outlives
+    /// this catalogue snapshot, such as one invocation's item engine.
+    /// Cost: O(log packages) and one reference count increment.
+    pub fn v2_package(&self, package: &str) -> Option<Arc<ManifestV2>> {
+        self.v2.get(package).cloned()
+    }
+
     /// Owning v2 package and checked kind declaration. Cost: indexed owner
     /// lookup and at most 64 declaration comparisons. No I/O or wake.
     pub fn v2_kind(&self, kind: &str) -> Option<(&ManifestV2, &Value)> {

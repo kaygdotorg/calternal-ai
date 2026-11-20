@@ -76,7 +76,7 @@ impl ItemStages {
 
     pub(super) fn begin(
         &self,
-        engine: &ItemEngine<'_>,
+        engine: &ItemEngine,
         input: Begin,
         fp: String,
     ) -> Result<Value, Error> {
@@ -133,7 +133,7 @@ impl ItemStages {
 
     fn get<'a>(
         stages: &'a mut HashMap<String, Stage>,
-        engine: &ItemEngine<'_>,
+        engine: &ItemEngine,
         handle: &str,
     ) -> Result<&'a mut Stage, Error> {
         stages
@@ -142,7 +142,7 @@ impl ItemStages {
             .ok_or_else(denied)
     }
 
-    fn authorize_stage(&self, engine: &ItemEngine<'_>, handle: &str) -> Result<(), Error> {
+    fn authorize_stage(&self, engine: &ItemEngine, handle: &str) -> Result<(), Error> {
         let (item, expected) = {
             let mut stages = self.lock()?;
             let stage = Self::get(&mut stages, engine, handle)?;
@@ -155,7 +155,7 @@ impl ItemStages {
         )
     }
 
-    pub(super) fn chunk(&self, engine: &ItemEngine<'_>, input: Chunk) -> Result<Value, Error> {
+    pub(super) fn chunk(&self, engine: &ItemEngine, input: Chunk) -> Result<Value, Error> {
         self.authorize_stage(engine, &input.handle)?;
         let bytes = body(&input.bytes, CHUNK)?;
         let mut stages = self.lock()?;
@@ -186,7 +186,7 @@ impl ItemStages {
         Ok(json!({"next_offset":stage.bytes.len()}))
     }
 
-    pub(super) fn seal(&self, engine: &ItemEngine<'_>, input: Handle) -> Result<Value, Error> {
+    pub(super) fn seal(&self, engine: &ItemEngine, input: Handle) -> Result<Value, Error> {
         self.authorize_stage(engine, &input.handle)?;
         let mut stages = self.lock()?;
         let stage = Self::get(&mut stages, engine, &input.handle)?;
@@ -204,7 +204,7 @@ impl ItemStages {
 
     pub(super) fn sealed(
         &self,
-        engine: &ItemEngine<'_>,
+        engine: &ItemEngine,
         input: &Save,
     ) -> Result<(Arc<Vec<u8>>, String), Error> {
         let mut stages = self.lock()?;
@@ -225,9 +225,10 @@ impl ItemStages {
     }
 }
 
-impl<'a> ItemEngine<'a> {
+impl ItemEngine {
     pub(super) fn pool(&self) -> Result<&ItemStages, Error> {
         self.stages
+            .as_deref()
             .ok_or_else(|| Error::unavailable("item staging unavailable"))
     }
 
@@ -237,7 +238,7 @@ impl<'a> ItemEngine<'a> {
         }
         let item = self.resolve(&input.item)?;
         self.access(ItemCheck::Write, Some(item), Some(&input.expected))?;
-        let fp = self.fingerprint("item_save_begin", operand)?;
+        let fp = self.fingerprint("item_save_begin", operand, None)?;
         if let Some(saved) = self.load_receipt(&input.request_id)? {
             if saved.operation != "item_save"
                 || saved.item != Some(item)
@@ -260,7 +261,7 @@ impl<'a> ItemEngine<'a> {
 
     /// Attach the space's bounded upload pool to this checked invocation.
     /// A pool from another space is refused. No storage or blocking work.
-    pub fn with_stages(mut self, pool: &'a ItemStages) -> Result<Self, Error> {
+    pub fn with_stages(mut self, pool: Arc<ItemStages>) -> Result<Self, Error> {
         if self.space != pool.space {
             return Err(denied());
         }

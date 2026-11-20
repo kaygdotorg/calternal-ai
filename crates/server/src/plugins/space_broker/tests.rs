@@ -188,8 +188,13 @@ impl Fixture {
             package: self.pin.clone(),
             epoch: channel.epoch(),
             operation: "fixture.head".into(),
-            kind: "notes".into(),
-            item,
+            target: Some(("notes".into(), item)),
+            required: Capability::PluginsUse,
+            author: calternal_plugin_host::space_channel::AuthorContext {
+                request_id: "fixture".into(),
+                actor: self.actor,
+                authored_at: crate::store::now_rfc3339(),
+            },
         }
     }
 }
@@ -322,7 +327,7 @@ async fn a_ticket_in_flight_keeps_the_carrier_awake_past_idle() {
     let awake = Awake::attach(
         connected,
         fixture.auth.clone(),
-        Arc::new(reader),
+        Some(Arc::new(reader)),
         &fixture.pin,
         None,
         idle,
@@ -382,7 +387,7 @@ async fn a_full_carrier_refuses_with_busy_before_checking_authority() {
     let awake = Awake::attach(
         connected,
         fixture.auth.clone(),
-        Arc::new(reader),
+        Some(Arc::new(reader)),
         &fixture.pin,
         None,
         awake::IDLE,
@@ -405,8 +410,13 @@ async fn a_full_carrier_refuses_with_busy_before_checking_authority() {
             SpaceMessage::Invoke { .. }
         ));
     }
+    let stranger = AccountId::new();
     let denied_actor = Scope {
-        actor: AccountId::new(),
+        actor: stranger,
+        author: calternal_plugin_host::space_channel::AuthorContext {
+            actor: stranger,
+            ..scope.author.clone()
+        },
         ..scope
     };
     let busy = awake.invoke(denied_actor.clone()).await.unwrap_err();
