@@ -169,6 +169,28 @@ successor running. Check that the updater waits while a run is active and
 that an update forced during a run preserves the same attempt and output.
 The scripted storage test covers only the spool part of these cases.
 
+## Consumed frames and the relay window
+
+The 1 MiB `encoded_spool_bytes` limit bounds the *unconsumed* window, as
+`extension_points.calls.output` says, not the bytes a call ever carried. The
+owning job consumes a committed prefix with `Spool::consume`, in the
+transaction that records its checkpoint. The spool retires those payloads,
+returns their bytes to the call's and the space's window, and keeps one 32-byte
+digest per frame so a repeated frame still answers `Replay` and a changed one
+is refused. A full window answers `Ingest::WindowFull`: nothing is stored or
+sealed, and the machine keeps the frame in its log. `Spool::progress` reports
+the highest contiguous committed sequence (the carrier's resume and ACK
+position), the consumed cursor and the credit to return. A catch-up refusal
+carries the exact refill time as `retry_after_ms` (at most one second), so
+catch-up runs at the live rate. Live over-rate production still seals.
+Digest rows are bounded by the call's frame count and leave with the call at
+receipt expiry; the contract pins no per-call frame bound, noted on #78.
+
+Reading behind the consumed cursor is refused, and `output_text` resolves only
+unconsumed frames, so an attested write must precede its `consume`. Nothing
+calls `consume`, `progress` or the new `WindowFull` outcome yet: slice 3's job
+checkpoint calls `consume`; the enrolled carrier (slice 4) calls `progress`.
+
 ## Simplification opportunities
 
 Keep install and startup on the same asset pin validator. Build checked
