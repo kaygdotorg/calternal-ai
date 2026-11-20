@@ -1,5 +1,5 @@
 {
-  "action": "conversation_audience_widening",
+  "action": "item_audience_widening",
   "after_commit": {
     "fence_durable": true,
     "cleanup_durable": true,
@@ -26,15 +26,15 @@
     "replacement_stops": 0
   },
   "widened_after_commit": {
-    "new_reader_committed_transcript": "allowed",
+    "new_reader_committed_file": "allowed",
     "personal_uncommitted_output": "discarded"
   },
   "widened_after_restart": {
-    "new_reader_committed_transcript": "allowed",
+    "new_reader_committed_file": "allowed",
     "personal_uncommitted_output": "discarded"
   },
   "later_run": {
-    "discovery": "whole_transcript_audience",
+    "discovery": "whole_file_audience",
     "personal_login_tools": "disabled"
   }
 }

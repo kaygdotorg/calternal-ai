@@ -86,12 +86,12 @@ def check_attempt_fence_trace(trace, errors, catalogue):
             errors.append(f"$.{point}: wrong authority while remote Stop is withheld")
     if action == "archive" and trace.get("after_undo_before_dispatch") != expected_probes:
         errors.append("$.after_undo_before_dispatch: archive Undo reopened fenced authority")
-    if action == "conversation_audience_widening":
-        expected = {"new_reader_committed_transcript": "allowed", "personal_uncommitted_output": "discarded"}
+    if action == "item_audience_widening":
+        expected = {"new_reader_committed_file": "allowed", "personal_uncommitted_output": "discarded"}
         for point in ("widened_after_commit", "widened_after_restart"):
             if trace.get(point) != expected:
-                errors.append(f"$.{point}: widening must expose only the committed transcript boundary")
-        if trace.get("later_run") != {"discovery": "whole_transcript_audience", "personal_login_tools": "disabled"}:
+                errors.append(f"$.{point}: widening must expose only the committed file boundary")
+        if trace.get("later_run") != {"discovery": "whole_file_audience", "personal_login_tools": "disabled"}:
             errors.append("$.later_run: subsequent attempts must follow the shared rules")
     if action in ("failed_reattachment", "runtime_freeze") and trace.get("stale_thaw") != "refused":
         errors.append("$.stale_thaw: old proof cannot reopen the runtime gate")

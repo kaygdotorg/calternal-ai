@@ -1,5 +1,5 @@
 {
-  "action": "conversation_erasure",
+  "action": "item_erasure",
   "after_commit": {
     "fence_durable": true,
     "cleanup_durable": true,

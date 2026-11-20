@@ -6,7 +6,7 @@ from description_verification import check, json_equal
 def check_confirmation_material(resolution, kind, facts, errors, catalogue, *, inputs=(), material=None):
     """Require named checked material for the host-derived kind and facts."""
     policy = catalogue["confirmation"]
-    widening = catalogue["attempt_authority_end"]["actions"]["conversation_audience_widening"]
+    widening = catalogue["attempt_authority_end"]["actions"]["item_audience_widening"]
     disclosure = widening["confirmation"]
     widens = disclosure["fact"] in facts and kind in widening["instances"]["catalogue_operations"]
     rule = policy["material_by_kind"].get(kind, {})
@@ -37,7 +37,7 @@ def check_confirmation_material(resolution, kind, facts, errors, catalogue, *, i
         checked[warning["name"]] = warning["value"]
         labels[warning["name"]] = warning["label"]
     elif any(entry["name"] == warning["name"] for entry in errors.each(resolution["material"])):
-        errors.append("$.material: transcript disclosure requires checked audience widening")
+        errors.append("$.material: file disclosure requires checked audience widening")
     check_named_material(resolution["material"], required, errors, prefix, input_keys=input_keys,
                          require_labels=kind == "host.execution.resume", checked=checked,
                          checked_labels=labels)
