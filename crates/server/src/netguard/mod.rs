@@ -1,7 +1,7 @@
 //! Fixed-destination HTTPS for trusted server integrations. The address rules
 //! come from the existing app's netguard (ADR 0071).
 
-mod deny;
+use calternal_types::public_address as deny;
 mod fetch;
 mod local;
 pub(crate) use fetch::{check_url, checked_url, get_with_redirects, read_bounded, redirect_target};

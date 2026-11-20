@@ -18,6 +18,7 @@ mod owner;
 mod owner_lifecycle;
 mod page;
 mod plugin_v2;
+pub mod public_address;
 mod space_paths;
 /// Strict JSON object-member decoding shared by manifests and settings.
 pub mod unique_json;

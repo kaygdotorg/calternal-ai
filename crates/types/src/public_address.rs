@@ -1,4 +1,5 @@
 //! Reserved and non-public address ranges ported from the existing app.
+//! Shared by the server's outbound HTTPS and the machine's execution egress.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
@@ -44,8 +45,11 @@ fn in_v6(a: Ipv6Addr, net: Ipv6Addr, bits: u8) -> bool {
     u128::from(a) & mask == u128::from(net) & mask
 }
 
-/// True for an address that cannot be used for public HTTPS requests.
-pub(super) fn is_denied(ip: IpAddr) -> bool {
+/// True for an address that cannot be used for public HTTPS requests:
+/// private, loopback, link-local, carrier-grade NAT, documentation,
+/// multicast and transition ranges. Pure and constant time over the fixed
+/// range tables.
+pub fn is_denied(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(a) => V4.iter().any(|&(n, b)| in_v4(a, n, b)),
         IpAddr::V6(a) => {
