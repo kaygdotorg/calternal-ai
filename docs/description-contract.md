@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.39 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.40 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -241,7 +241,7 @@ host  -> shell { activation_id, state: ok | pending | error | stale | refused | 
   because of unrelated changes is **still actionable**; only a change to the target, its scope or a dependency makes the activation `stale` (nothing ran).
   For an otherwise authentic host.item.create activation whose collection was deleted or lost edit access after resolve, the opaque collection_unavailable outcome takes precedence over the generic stale dependency outcome.
 * **Confirmation is derived from the catalogue, never from the description** (`confirm: none | challenge`). **A sheet-free, one-exchange mutation (`confirm: none`) exists only for
-  catalogue entries whose engine commits the complete effect and its Undo together** (the catalogue's `atomic_undo: true`, worker-free). **The catalogue's flag decides, not this document or the description:** an operation is sheet-free only where the catalogue sets `atomic_undo`, and Trash, Restore and rename are not until the catalogue establishes complete effect plus Undo at one commit for them. A manifest's
+  catalogue entries whose engine commits the complete effect and its Undo together** (the catalogue's `atomic_undo: true`, worker-free). **The catalogue's flag decides, not this document or the description:** an operation is sheet-free only when it meets the catalogue entry's `atomic_undo` and `atomic_undo_when` for that invocation. A rename with deferred rewrites uses the ordinary path. A manifest's
   `risk` or `reversible` declaration grants **no** eligibility. For these the shell sends the resolve with `dispatch: true` and the host answers with the outcome, **one exchange**.
   **A plugin (worker-backed) operation always takes the ordinary path:** a resolve, then a separate dispatch: **two exchanges**, and **no sheet** unless the host says material requires a
   challenge (a destination, recipient, audience or permission, a bulk set, an irreversible, external or access-widening effect, or an input the manifest declares material): then the host

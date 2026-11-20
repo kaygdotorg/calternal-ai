@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.39 draft
+# Plugin API v2 · revision 14.40 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -456,7 +456,7 @@ its receipt, with long work as a durable job.
 | Items · `item_spans` | Exact readable item revision and optional cursor → ordered recorded byte ranges, middle attribution and span refs. See the [catalogue’s span read][item-spans]. |
 | Items · `item_save` | The owner commits body, declared metadata, including its indexed title, and an optional relocation in one receipt. Apply the generic relocation rule to any path change. Use the typed `head_conflict` reply to reread and reapply an edit on a checked newer head. Metadata-only changes preserve the room checkpoint. Large writes use the typed staged protocol below. |
 | Items · `item_trash`, `item_restore` | Editor or higher. Trash records a tombstone. Restore from Trash uses the current trashed head and restores a live placement. Restore from history takes a source revision and expected live head and appends that version as a new revision. No history restore against a trashed item. Stale heads give `409`. |
-| Items · `item_rename`, `item_rename_status`, `item_rename_undo` | Rename or move accepts the checked item, expected head, and title or destination folder. It commits placement, link rewrites and Undo together. Status for a pending operation checks live item authority. Completion can return a protected Undo action bound to the result and expected revisions. Undo is a fresh receipt-backed operation, with conflict if affected heads moved. Publish progress and actions through the host result route, with no worker payload. |
+| Items · `item_rename`, `item_rename_status`, `item_rename_undo` | Rename or move accepts the checked item, expected head, and title or destination folder. Placement commits with the inline rewrites. A pending result means the placement is committed and the remaining rewrites are running under the [relocation rule][relocate]. The host result route exposes status under live item authority and offers protected Undo at completion. Undo is a fresh receipt-backed operation with the existing expected-revision fences. |
 | Items · `item_purge`, `empty_trash`, `collection_create`, `collection_membership` | Purge and Empty Trash are Manager/Owner-only, irreversible and one confirmed durable job over a pinned Trash selection. Reauthorize per batch and resume by receipt. Apply catalogue `trash` for retention. Collection creation and bounded membership changes commit once with expected revision. |
 | Queries · `items_list`, `items_search` | Kind/optional collection, typed indexed metadata predicates, declared sort under the [catalogue’s sort rules](../contract/host-catalogue-v2.json#/query), cursor/window and field set → authorized page with cursor and count/offset where windowed. Unindexed filter/sort is `400`. Use engine-side query and bounded row/byte budget. Apply authority before count. No whole-kind materialization. |
 | Rooms / sharing · `sharing_check` | Item ref plus requested action → permission for the live grant. A room is an attribute of the kind, opened client-to-host using its own bounded protocol. Room membership and events keep fencing the item grant. No plugin hook acknowledgment. |
@@ -476,11 +476,17 @@ host maintains item identity, revisions, file placement and authority.
 
 The generic [relocation operation][relocate] renames or moves the file
 or its dedicated folder. A backlink index locates affected Markdown
-files. The host moves the item and rewrites links in one transaction.
-Host-made link changes preserve recorded attribution and adjust span
-offsets. The catalogue gives the work limits and the required perf
-measurement. Existing Notes evidence covers a deferred rewrite, so the
-generic atomic path still needs qualification. [Evening decisions][evening]
+files. The move and the rewrites that fit the foreground limits commit
+together. When the work exceeds those limits, one durable host job
+continues from the index. Old paths keep resolving to the same item
+with live authority while rewrites catch up. Host-made link changes
+preserve attribution and adjust span offsets.
+
+Reuse the content writer's [durable forward and inverse batches](../crates/content/src/rename_job.rs)
+and the previous Notes engine's indexed backlinks and restartable bulk edit.
+[ADR 0024][markdown-links] specifies Markdown links and [ADR 0040][departed-links]
+specifies stable identity and indexed departed paths. The catalogue
+pins the two qualification clocks for the generic path. [Evening decisions][evening]
 
 Apply the catalogue’s [file append rule](../contract/host-catalogue-v2.json#/file_append).
 `item_append` checks the exact head, write authority and, when issued under an attempt, its live execution and
@@ -654,14 +660,21 @@ and [authorship rule][item-authorship].
 
 A reply can name a [checked quote][quotes] by item, revision and span.
 The host writes the quoted block and records the original attribution
-separately from the reply. The ordinary record limit and the quote budget
-apply. Deleting the original removes its quotes in the same commit and
+separately from the reply. The quote is pinned to what the source span
+said at its checked revision. An edit that supplies no new quote keeps the
+existing quoted bytes even if the source has been edited. An explicit
+re-quote supplies a new checked source. The ordinary record limit and the
+quote budget apply. Deleting the original removes its quotes in the same commit and
 leaves the other messages and reply anchors. The interim policy removes
 copies in other items too wherever that atomic path is qualified. The
 [cross-item question](morning-decisions.md#cross-item-quote-deletion--2026-11-20)
 remains with the owner.
 
 A kind declares its [default app and format metadata][format-open].
+Its optional [title binding][title-binding] lets the host update the dated
+folder and the declared title line with the indexed title in the same
+commit. For `calternal-thread/v2` the folder follows the UTC creation date
+and title, and the initial frontmatter binds the `title` key.
 `calternal-thread/v2` opens in Threads. A person can explicitly open it
 in a compatible editor such as Notes. The Threads format marks its
 trailing heading tag beginning with ` {#m-` and ending with `}`.
@@ -1278,7 +1291,7 @@ revisions of all affected resources and refuses if any dependency moved.
 | --- | --- |
 | `host.item.create` | Under one FULL content transaction’s fence, check live creation authority, optional collection-membership edit authority and the normal item and membership quotas. Then commit the empty item with its permitted defaults and the host’s empty-source extraction, requested membership and Undo together. An omitted route parameter skips placement. A supplied ref that is absent, foreign, unreadable or not editable returns the same opaque `collection_unavailable` outcome. Quota refusal returns `create_limit_reached` with no item, membership or Undo committed. Undo rechecks live authority and the item head, its membership and sharing revisions and the introduced membership revision, if any. Refuse on any change. On success remove the item and its introduced membership together. Return the created ref with no runtime wake or challenge, even in a shared collection. Any declared follow-up receives only the created ref under §1 after commit. |
 | `host.item.trash`, `host.item.restore` | The FULL content transaction records the item revision, recoverable placement and Undo. Full swipe covers eligible single-item Trash and restore from Trash. Apply §5 to restores that add file readers. Trash paths with separate lifecycle cleanup are ineligible. |
-| `host.item.rename` | Use the [catalogue’s relocation rule][relocate]. One FULL content transaction records the placement, every affected head, link bytes and Undo. |
+| `host.item.rename` | Use the [catalogue’s relocation rule][relocate]. One FULL content transaction records the placement, inline rewrites, Undo intent and any continuation job. The protected Undo action is available at completion. |
 | `host.collection.move` | Use the catalogue's confirmation rule for the checked destination. Apply §5 whenever the move adds file readers. On an eligible shortcut, the FULL content transaction commits the complete move and Undo in one exchange. A two-collection move is ineligible for the shortcut until both membership changes commit together. |
 | `host.layout.move_to`, `host.layout.move_up`, `host.layout.move_down` | The per-person layout revision transaction records the complete placement or ordering edit and Undo for the actor, space and app. Move to still previews its destination. |
 | `host.layout.section.create` | The per-person layout revision transaction creates the section and commits Undo that removes it. |
@@ -1753,8 +1766,11 @@ and queued follow-ups are owned by the app and harness contract.
 [item-authorship]: ../contract/host-catalogue-v2.json#/execution_attempt_authority/discovery/item_policy/authorship
 [attested-write]: ../contract/host-catalogue-v2.json#/item_engine/attested_write
 [item-spans]: ../contract/host-catalogue-v2.json#/item_engine/item_spans
+[markdown-links]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0024-links-are-standard-markdown.md
+[departed-links]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0040-links-say-what-happened.md
 [relocate]: ../contract/host-catalogue-v2.json#/item_engine/relocate
 [quotes]: ../contract/host-catalogue-v2.json#/item_engine/quotes
+[title-binding]: ../contract/host-catalogue-v2.json#/item_engine/title_binding
 [format-open]: ../contract/host-catalogue-v2.json#/item_engine/format_open
 [save-gate]: ../contract/host-catalogue-v2.json#/item_engine/save_qualification
 [evening]: https://git.kayg.org/kayg/calternal-ai/src/commit/340c0472f846b5855f0824765a019d177a9763b0/docs/morning-2026-11-20.md#evening-decisions-owner-2026-11-20

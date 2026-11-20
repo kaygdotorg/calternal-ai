@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 14.39 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 14.40 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -588,6 +588,22 @@
         },
         "default_app": {
           "$ref": "#/definitions/localId"
+        },
+        "title_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "description": "Host-owned destinations for the kind's title_field. Apply catalogue item_engine.title_binding at create and on every title change.",
+          "properties": {
+            "placement": {
+              "const": "utc_date_folder",
+              "description": "Use one dedicated folder named from the item's recorded UTC creation date and normalized title, with the same file name inside it."
+            },
+            "frontmatter_key": {
+              "$ref": "#/definitions/localId",
+              "description": "Exact key of one single-line literal title value in the initial frontmatter."
+            }
+          }
         },
         "metadata_tokens": {
           "type": "array",
