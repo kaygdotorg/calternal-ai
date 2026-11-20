@@ -1,6 +1,6 @@
 //! Shared content writer transaction and outbox admission.
 use super::*;
-use crate::item_write::{CheckedItemBody, CheckedWrite};
+use crate::item_write::{CheckedItemBody, CheckedItemPlacement, CheckedWrite, DiscoveryWrite};
 use crate::linked_write::{Retarget, Staged};
 use crate::mutations::Destination;
 use crate::rooms::Body;
@@ -196,7 +196,7 @@ impl Content {
             filename.finish();
             // Body-only writes leave room delivery caches valid. Lifecycle,
             // membership and path changes can invalidate existing handles.
-            let protect = checked.as_ref().is_some_and(|edit| edit.protect);
+            let protect = checked.as_ref().is_some_and(|edit| !matches!(edit.discovery, DiscoveryWrite::Unmanaged));
             let _revision = (protect || kind == "collections"
                 || destination != Destination::Current
                 || old_path.as_ref().is_some_and(|old| *old != path))
@@ -222,9 +222,15 @@ impl Content {
             let response=result(&root.item);
             let tx=s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
             guard()?;
+            if let Some(edit) = &checked {
+                edit.discovery.stamp(&tx, &root.item.revision)?;
+            }
             root.write(&tx, old_path.as_deref(), &request.account.to_string())?;
-            if protect {
-                tx.execute("INSERT OR IGNORE INTO item_discovery_protection VALUES(?1)", [id.to_string()]).map_err(internal)?;
+            if let Some(edit) = &checked {
+                if let CheckedItemPlacement::Create { reference, .. } = edit.placement {
+                    tx.execute("INSERT INTO checked_item_refs VALUES(?1,?2)", params![id.to_string(), reference.0]).map_err(internal)?;
+                }
+                edit.discovery.record(&tx, &root.item, request.account, old_path.is_none())?;
             }
             match destination {
                 Destination::Trash => {

@@ -52,6 +52,20 @@ impl ItemHeadReader {
     /// covers the read and the release of the temporary slot reference.
     /// Call off the asynchronous executor.
     pub fn read(&self, kind: &str, id: Uuid) -> Result<ItemHead> {
+        self.read_inner(kind, id, false).map(|(head, _)| head)
+    }
+
+    /// Read the current live head and its body byte length, without loading the
+    /// body. The caller must authorize that exact revision before delivery.
+    /// Cost: two indexed probes in one query and no writes or file I/O.
+    pub fn read_with_size(&self, kind: &str, id: Uuid) -> Result<(ItemHead, u64)> {
+        self.read_inner(kind, id, true).and_then(|(head, size)| {
+            let size = u64::try_from(size.ok_or_else(missing)?).map_err(internal)?;
+            Ok((head, size))
+        })
+    }
+
+    fn read_inner(&self, kind: &str, id: Uuid, size: bool) -> Result<(ItemHead, Option<i64>)> {
         let _step = self.content.lifecycle.step(self.space.as_uuid())?;
         let cached = lock(&self.slot).upgrade();
         let slot = match cached {
@@ -68,11 +82,13 @@ impl ItemHeadReader {
             .ok_or_else(missing)?
             .read(|c| {
                 c.prepare_cached(
-                    "SELECT metadata, revision FROM items WHERE id=?1 AND kind=?2
+                    "SELECT metadata, revision, CASE WHEN ?3 THEN
+                   (SELECT length(bytes) FROM versions WHERE item=items.id AND seq=items.seq)
+                 END FROM items WHERE id=?1 AND kind=?2
                  AND substr(path,1,7) <> '.trash/' AND mat_state NOT IN ('purged','purging')",
                 )?
-                .query_row(params![id.to_string(), kind], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get(1)?))
+                .query_row(params![id.to_string(), kind, size], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get(1)?, row.get(2)?))
                 })
                 .optional()
             })
@@ -84,9 +100,12 @@ impl ItemHeadReader {
                 }
             })?
             .ok_or_else(missing)?;
-        Ok(ItemHead {
-            metadata: serde_json::from_str(&row.0).map_err(internal)?,
-            revision: row.1,
-        })
+        Ok((
+            ItemHead {
+                metadata: serde_json::from_str(&row.0).map_err(internal)?,
+                revision: row.1,
+            },
+            row.2,
+        ))
     }
 }
