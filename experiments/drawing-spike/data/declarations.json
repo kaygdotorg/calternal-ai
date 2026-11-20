@@ -1,0 +1,423 @@
+{
+ "plugins": [
+  {
+   "id": "reading-list",
+   "name": "Reading List",
+   "version": "2.0.0",
+   "icon": "book",
+   "kinds": {
+    "reading": {
+     "fields": {
+      "url": {
+       "type": "url",
+       "label": "Link"
+      },
+      "title": {
+       "type": "text",
+       "indexed": true
+      },
+      "read": {
+       "type": "bool",
+       "default": false,
+       "indexed": true,
+       "values": {
+        "false": "To read",
+        "true": "Read"
+       }
+      }
+     },
+     "row": {
+      "title": "title",
+      "detail": [
+       "site(url)",
+       "created"
+      ],
+      "trailing": [
+       {
+        "dot": {
+         "when": "!read"
+        }
+       }
+      ]
+     },
+     "card": {
+      "title": "title",
+      "detail": [
+       "site(url)"
+      ]
+     }
+    }
+   },
+   "operations": {
+    "add": {
+     "create": "reading",
+     "inputs": [
+      "url",
+      "title"
+     ],
+     "title": "Add link"
+    },
+    "done": {
+     "set": "reading",
+     "fields": {
+      "read": true
+     },
+     "title": "Mark read",
+     "icon": "check",
+     "when": "!read",
+     "place": "swipe"
+    }
+   },
+   "sidebar": [
+    {
+     "collection": "Unread",
+     "kind": "reading",
+     "where": "!read",
+     "sort": "-created"
+    },
+    {
+     "collection": "All",
+     "kind": "reading",
+     "sort": "-created",
+     "group": "read"
+    }
+   ]
+  },
+  {
+   "id": "calternal-chat",
+   "name": "Chat",
+   "version": "2.0.0",
+   "icon": "chat",
+   "grant": {
+    "people": true
+   },
+   "kinds": {
+    "chats": {
+     "fields": {
+      "title": {
+       "type": "text",
+       "indexed": true
+      },
+      "people": {
+       "type": "list",
+       "of": {
+        "type": "person"
+       },
+       "indexed": true
+      },
+      "archived": {
+       "type": "bool",
+       "default": false,
+       "indexed": true
+      }
+     },
+     "records": {
+      "fields": {
+       "mentions": {
+        "type": "list",
+        "of": {
+         "type": "person"
+        },
+        "indexed": true
+       },
+       "quote": {
+        "type": "link"
+       }
+      },
+      "edit": "author",
+      "redact": "author-or-manager",
+      "position": "read",
+      "segment": "monthly"
+     },
+     "folder": "Chats",
+     "row": {
+      "title": [
+       "title",
+       "people"
+      ],
+      "leading": {
+       "avatar": "people"
+      },
+      "detail": [
+       "last.excerpt"
+      ],
+      "trailing": [
+       "last.at",
+       {
+        "count": "me.unread",
+        "quiet": "me.muted"
+       }
+      ]
+     },
+     "record": {
+      "body": "body",
+      "quote": "quote"
+     },
+     "page": {
+      "records": {
+       "composer": "composer",
+       "actions": {
+        "reply": {
+         "compose": {
+          "quote": "record"
+         },
+         "place": "menu"
+        },
+        "edit": {
+         "op": "calternal-chat/edit",
+         "inputs": {
+          "chat": "this",
+          "anchor": "record"
+         },
+         "defaults": {
+          "text": "record.body"
+         },
+         "when": "own"
+        },
+        "delete": {
+         "op": "calternal-chat/delete",
+         "inputs": {
+          "chat": "this",
+          "anchor": "record"
+         },
+         "when": "own",
+         "confirm": "Delete for everyone?"
+        },
+        "ask": {
+         "op": "calternal-chat-ai/call",
+         "inputs": {
+          "chat": "this",
+          "range": "records.selection"
+         },
+         "pick": {
+          "harness": "calternal-chat-ai/harness"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "slots": {
+    "composer": {
+     "slot": true,
+     "effect": "viewer",
+     "recommended": "calternal-chat-composer",
+     "gives": [
+      "this",
+      "draft",
+      "quote"
+     ],
+     "may": [
+      "calternal-chat/send"
+     ]
+    }
+   },
+   "operations": {
+    "create": {
+     "title": "New chat",
+     "input": {
+      "title": {
+       "type": "text"
+      },
+      "people": {
+       "type": "list",
+       "of": {
+        "type": "person"
+       }
+      }
+     },
+     "handler": "code"
+    },
+    "send": {
+     "title": "Send",
+     "public": true,
+     "input": {
+      "chat": {
+       "type": "link"
+      },
+      "text": {
+       "type": "text"
+      },
+      "quote": {
+       "type": "link",
+       "optional": true
+      }
+     },
+     "handler": "code"
+    },
+    "reply": {
+     "title": "Agent reply",
+     "public": true,
+     "input": {
+      "chat": {
+       "type": "link"
+      },
+      "call": {
+       "type": "text"
+      },
+      "text": {
+       "type": "text"
+      }
+     },
+     "handler": "code"
+    },
+    "edit": {
+     "title": "Edit",
+     "input": {
+      "chat": {
+       "type": "link"
+      },
+      "anchor": {
+       "type": "text"
+      },
+      "text": {
+       "type": "text"
+      }
+     },
+     "handler": "code"
+    },
+    "delete": {
+     "title": "Delete for everyone",
+     "input": {
+      "chat": {
+       "type": "link"
+      },
+      "anchor": {
+       "type": "text"
+      }
+     },
+     "handler": "code"
+    },
+    "mute": {
+     "title": "Mute",
+     "input": {
+      "chat": {
+       "type": "link"
+      },
+      "on": {
+       "type": "bool"
+      }
+     },
+     "handler": "code"
+    }
+   },
+   "sidebar": [
+    {
+     "collection": "Pinned",
+     "hand": true,
+     "view": "strip"
+    },
+    {
+     "collection": "Chats",
+     "kind": "chats",
+     "where": "!archived",
+     "sort": "-updated"
+    },
+    {
+     "collection": "Archived",
+     "kind": "chats",
+     "where": "archived",
+     "sort": "-updated"
+    }
+   ]
+  },
+  {
+   "id": "calternal-chat-ai",
+   "name": "Chat agents",
+   "version": "2.0.0",
+   "icon": "spark",
+   "depends": [
+    {
+     "plugin": "calternal-chat",
+     "version": "^2"
+    }
+   ],
+   "grant": {
+    "kinds": {
+     "chats": "read"
+    },
+    "calls": [
+     "calternal-chat/send"
+    ]
+   },
+   "slots": {
+    "harness": {
+     "slot": true,
+     "effect": "viewer",
+     "recommended": "calternal-chat-claude-code"
+    }
+   },
+   "operations": {
+    "call": {
+     "title": "Ask an agent",
+     "input": {
+      "chat": {
+       "type": "link"
+      },
+      "range": {
+       "type": "list",
+       "of": {
+        "type": "text"
+       }
+      },
+      "prompt": {
+       "type": "text"
+      },
+      "harness": {
+       "type": "text"
+      }
+     },
+     "handler": "code"
+    },
+    "stop": {
+     "title": "Stop the agent",
+     "input": {
+      "chat": {
+       "type": "link"
+      }
+     },
+     "handler": "code"
+    },
+    "steer": {
+     "title": "Tell the agent",
+     "input": {
+      "chat": {
+       "type": "link"
+      },
+      "text": {
+       "type": "text"
+      }
+     },
+     "handler": "code"
+    }
+   }
+  },
+  {
+   "id": "calternal-chat-composer",
+   "name": "Chat composer",
+   "version": "2.0.0",
+   "icon": "edit",
+   "depends": [
+    {
+     "plugin": "calternal-chat",
+     "version": "^2"
+    }
+   ],
+   "fills": {
+    "calternal-chat/composer": {
+     "composer": {
+      "send": "calternal-chat/send",
+      "draft": true,
+      "mention": "this.people",
+      "inputs": {
+       "chat": "this",
+       "text": "draft",
+       "quote": "quote"
+      }
+     }
+    }
+   }
+  }
+ ]
+}

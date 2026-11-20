@@ -1,0 +1,6 @@
+build/
+shots/
+DrawingSpike/declarations.json
+DrawingSpike/fixtures.json
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/

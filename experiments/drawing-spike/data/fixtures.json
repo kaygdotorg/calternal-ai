@@ -1,0 +1,981 @@
+{
+ "viewer": {
+  "id": "p-ana",
+  "name": "Ana Silva",
+  "tz": "Europe/Lisbon",
+  "now": "2026-11-20T10:20:00Z"
+ },
+ "slots": {
+  "calternal-chat/composer": "calternal-chat-composer",
+  "calternal-chat-ai/harness": [
+   {
+    "plugin": "calternal-chat-claude-code",
+    "name": "Claude",
+    "icon": "claude"
+   },
+   {
+    "plugin": "calternal-chat-codex",
+    "name": "Codex",
+    "icon": "codex"
+   }
+  ]
+ },
+ "windows": {
+  "reading-list/Unread": {
+   "rows": [
+    {
+     "item": "r1",
+     "kind": "reading-list/reading",
+     "values": {
+      "title": "The unreasonable effectiveness of plain text",
+      "site(url)": "brandur.org",
+      "created": {
+       "at": "2026-11-20T08:12:00Z"
+      },
+      "read": false
+     }
+    },
+    {
+     "item": "r2",
+     "kind": "reading-list/reading",
+     "values": {
+      "title": "SwiftUI scroll position, explained",
+      "site(url)": "developer.apple.com",
+      "created": {
+       "at": "2026-11-19T21:40:00Z"
+      },
+      "read": false
+     }
+    },
+    {
+     "item": "r3",
+     "kind": "reading-list/reading",
+     "values": {
+      "title": "Local-first software: you own your data",
+      "site(url)": "inkandswitch.com",
+      "created": {
+       "at": "2026-11-19T10:05:00Z"
+      },
+      "read": false
+     }
+    },
+    {
+     "item": "r5",
+     "kind": "reading-list/reading",
+     "values": {
+      "title": "A field guide to calm interfaces",
+      "site(url)": "calmtech.com",
+      "created": {
+       "at": "2026-11-17T09:00:00Z"
+      },
+      "read": false
+     }
+    },
+    {
+     "item": "r7",
+     "kind": "reading-list/reading",
+     "values": {
+      "title": "Why we sync with CRDTs (and when we don't)",
+      "site(url)": "linear.app",
+      "created": {
+       "at": "2026-11-12T19:45:00Z"
+      },
+      "read": false
+     }
+    }
+   ],
+   "count": 5
+  },
+  "reading-list/All": {
+   "rows": [
+    {
+     "item": "r1",
+     "kind": "reading-list/reading",
+     "values": {
+      "title": "The unreasonable effectiveness of plain text",
+      "site(url)": "brandur.org",
+      "created": {
+       "at": "2026-11-20T08:12:00Z"
+      },
+      "read": false
+     }
+    },
+    {
+     "item": "r2",
+     "kind": "reading-list/reading",
+     "values": {
+      "title": "SwiftUI scroll position, explained",
+      "site(url)": "developer.apple.com",
+      "created": {
+       "at": "2026-11-19T21:40:00Z"
+      },
+      "read": false
+     }
+    },
+    {
+     "item": "r3",
+     "kind": "reading-list/reading",
+     "values": {
+      "title": "Local-first software: you own your data",
+      "site(url)": "inkandswitch.com",
+      "created": {
+       "at": "2026-11-19T10:05:00Z"
+      },
+      "read": false
+     }
+    },
+    {
+     "item": "r4",
+     "kind": "reading-list/reading",
+     "values": {
+      "title": "How SQLite scales read concurrency",
+      "site(url)": "fly.io",
+      "created": {
+       "at": "2026-11-18T16:30:00Z"
+      },
+      "read": true
+     }
+    },
+    {
+     "item": "r5",
+     "kind": "reading-list/reading",
+     "values": {
+      "title": "A field guide to calm interfaces",
+      "site(url)": "calmtech.com",
+      "created": {
+       "at": "2026-11-17T09:00:00Z"
+      },
+      "read": false
+     }
+    },
+    {
+     "item": "r6",
+     "kind": "reading-list/reading",
+     "values": {
+      "title": "Designing for the thumb zone",
+      "site(url)": "smashingmagazine.com",
+      "created": {
+       "at": "2026-11-15T13:20:00Z"
+      },
+      "read": true
+     }
+    },
+    {
+     "item": "r7",
+     "kind": "reading-list/reading",
+     "values": {
+      "title": "Why we sync with CRDTs (and when we don't)",
+      "site(url)": "linear.app",
+      "created": {
+       "at": "2026-11-12T19:45:00Z"
+      },
+      "read": false
+     }
+    },
+    {
+     "item": "r8",
+     "kind": "reading-list/reading",
+     "values": {
+      "title": "Typography for long reading on phones",
+      "site(url)": "practicaltypography.com",
+      "created": {
+       "at": "2026-11-10T07:30:00Z"
+      },
+      "read": true
+     }
+    }
+   ],
+   "count": 8
+  },
+  "calternal-chat/Pinned": {
+   "rows": [
+    {
+     "item": "c1",
+     "kind": "calternal-chat/chats",
+     "values": {
+      "title": "Release 2.4",
+      "people": {
+       "people": [
+        {
+         "id": "p-ana",
+         "name": "Ana Silva",
+         "me": true
+        },
+        {
+         "id": "p-ivo",
+         "name": "Ivo Novak"
+        },
+        {
+         "id": "p-hana",
+         "name": "Hana Sato"
+        }
+       ]
+      },
+      "last.excerpt": "Hana: @Ana can you post it?",
+      "last.at": {
+       "at": "2026-11-20T10:15:00Z"
+      },
+      "me.unread": 3,
+      "me.muted": false
+     }
+    },
+    {
+     "item": "c2",
+     "kind": "calternal-chat/chats",
+     "values": {
+      "title": "",
+      "people": {
+       "people": [
+        {
+         "id": "p-ana",
+         "name": "Ana Silva",
+         "me": true
+        },
+        {
+         "id": "p-hana",
+         "name": "Hana Sato"
+        }
+       ]
+      },
+      "last.excerpt": "See you at nine.",
+      "last.at": {
+       "at": "2026-11-19T19:02:00Z"
+      },
+      "me.unread": 0,
+      "me.muted": false
+     }
+    },
+    {
+     "item": "c3",
+     "kind": "calternal-chat/chats",
+     "values": {
+      "title": "Lisbon crew",
+      "people": {
+       "people": [
+        {
+         "id": "p-ana",
+         "name": "Ana Silva",
+         "me": true
+        },
+        {
+         "id": "p-ivo",
+         "name": "Ivo Novak"
+        },
+        {
+         "id": "p-hana",
+         "name": "Hana Sato"
+        },
+        {
+         "id": "p-lee",
+         "name": "Lee Park"
+        }
+       ]
+      },
+      "last.excerpt": "Lee: the flat has a balcony",
+      "last.at": {
+       "at": "2026-11-20T09:58:00Z"
+      },
+      "me.unread": 12,
+      "me.muted": true
+     }
+    },
+    {
+     "item": "c4",
+     "kind": "calternal-chat/chats",
+     "values": {
+      "title": "",
+      "people": {
+       "people": [
+        {
+         "id": "p-ana",
+         "name": "Ana Silva",
+         "me": true
+        },
+        {
+         "id": "p-ivo",
+         "name": "Ivo Novak"
+        }
+       ]
+      },
+      "last.excerpt": "Can you review my branch?",
+      "last.at": {
+       "at": "2026-11-20T08:20:00Z"
+      },
+      "me.unread": 1,
+      "me.muted": false
+     }
+    }
+   ]
+  },
+  "calternal-chat/Chats": {
+   "rows": [
+    {
+     "item": "c1",
+     "kind": "calternal-chat/chats",
+     "values": {
+      "title": "Release 2.4",
+      "people": {
+       "people": [
+        {
+         "id": "p-ana",
+         "name": "Ana Silva",
+         "me": true
+        },
+        {
+         "id": "p-ivo",
+         "name": "Ivo Novak"
+        },
+        {
+         "id": "p-hana",
+         "name": "Hana Sato"
+        }
+       ]
+      },
+      "last.excerpt": "Hana: @Ana can you post it?",
+      "last.at": {
+       "at": "2026-11-20T10:15:00Z"
+      },
+      "me.unread": 3,
+      "me.muted": false
+     }
+    },
+    {
+     "item": "c3",
+     "kind": "calternal-chat/chats",
+     "values": {
+      "title": "Lisbon crew",
+      "people": {
+       "people": [
+        {
+         "id": "p-ana",
+         "name": "Ana Silva",
+         "me": true
+        },
+        {
+         "id": "p-ivo",
+         "name": "Ivo Novak"
+        },
+        {
+         "id": "p-hana",
+         "name": "Hana Sato"
+        },
+        {
+         "id": "p-lee",
+         "name": "Lee Park"
+        }
+       ]
+      },
+      "last.excerpt": "Lee: the flat has a balcony",
+      "last.at": {
+       "at": "2026-11-20T09:58:00Z"
+      },
+      "me.unread": 12,
+      "me.muted": true
+     }
+    },
+    {
+     "item": "c4",
+     "kind": "calternal-chat/chats",
+     "values": {
+      "title": "",
+      "people": {
+       "people": [
+        {
+         "id": "p-ana",
+         "name": "Ana Silva",
+         "me": true
+        },
+        {
+         "id": "p-ivo",
+         "name": "Ivo Novak"
+        }
+       ]
+      },
+      "last.excerpt": "Can you review my branch?",
+      "last.at": {
+       "at": "2026-11-20T08:20:00Z"
+      },
+      "me.unread": 1,
+      "me.muted": false
+     }
+    },
+    {
+     "item": "c2",
+     "kind": "calternal-chat/chats",
+     "values": {
+      "title": "",
+      "people": {
+       "people": [
+        {
+         "id": "p-ana",
+         "name": "Ana Silva",
+         "me": true
+        },
+        {
+         "id": "p-hana",
+         "name": "Hana Sato"
+        }
+       ]
+      },
+      "last.excerpt": "See you at nine.",
+      "last.at": {
+       "at": "2026-11-19T19:02:00Z"
+      },
+      "me.unread": 0,
+      "me.muted": false
+     }
+    },
+    {
+     "item": "c5",
+     "kind": "calternal-chat/chats",
+     "values": {
+      "title": "Sync design with Claude",
+      "people": {
+       "people": [
+        {
+         "id": "p-ana",
+         "name": "Ana Silva",
+         "me": true
+        }
+       ]
+      },
+      "last.excerpt": "Claude: here is the plan for the outbox",
+      "last.at": {
+       "at": "2026-11-18T22:10:00Z"
+      },
+      "me.unread": 0,
+      "me.muted": false
+     }
+    },
+    {
+     "item": "c6",
+     "kind": "calternal-chat/chats",
+     "values": {
+      "title": "Book club",
+      "people": {
+       "people": [
+        {
+         "id": "p-ana",
+         "name": "Ana Silva",
+         "me": true
+        },
+        {
+         "id": "p-lee",
+         "name": "Lee Park"
+        },
+        {
+         "id": "p-hana",
+         "name": "Hana Sato"
+        }
+       ]
+      },
+      "last.excerpt": "Next one: Piranesi",
+      "last.at": {
+       "at": "2026-11-16T18:00:00Z"
+      },
+      "me.unread": 0,
+      "me.muted": false
+     }
+    }
+   ]
+  },
+  "calternal-chat/Archived": {
+   "rows": [
+    {
+     "item": "c7",
+     "kind": "calternal-chat/chats",
+     "values": {
+      "title": "Old flat",
+      "people": {
+       "people": [
+        {
+         "id": "p-ana",
+         "name": "Ana Silva",
+         "me": true
+        },
+        {
+         "id": "p-lee",
+         "name": "Lee Park"
+        }
+       ]
+      },
+      "last.excerpt": "Keys returned.",
+      "last.at": {
+       "at": "2026-09-30T12:00:00Z"
+      },
+      "me.unread": 0,
+      "me.muted": false
+     }
+    },
+    {
+     "item": "c8",
+     "kind": "calternal-chat/chats",
+     "values": {
+      "title": "Conference 2025",
+      "people": {
+       "people": [
+        {
+         "id": "p-ana",
+         "name": "Ana Silva",
+         "me": true
+        },
+        {
+         "id": "p-ivo",
+         "name": "Ivo Novak"
+        },
+        {
+         "id": "p-lee",
+         "name": "Lee Park"
+        }
+       ]
+      },
+      "last.excerpt": "Slides are up",
+      "last.at": {
+       "at": "2025-10-04T15:00:00Z"
+      },
+      "me.unread": 0,
+      "me.muted": false
+     }
+    }
+   ]
+  }
+ },
+ "records": {
+  "c1": {
+   "position": "a24",
+   "unread": 3,
+   "page": {
+    "records": [
+     {
+      "anchor": "a12",
+      "body": "",
+      "fields": {
+       "mentions": []
+      },
+      "stamp": {
+       "person": {
+        "id": "p-ivo",
+        "name": "Ivo Novak"
+       },
+       "at": "2026-11-19T11:40:00Z"
+      },
+      "redacted": true
+     },
+     {
+      "anchor": "a13",
+      "body": "Sorry, wrong chat.",
+      "fields": {
+       "mentions": []
+      },
+      "stamp": {
+       "person": {
+        "id": "p-ivo",
+        "name": "Ivo Novak"
+       },
+       "at": "2026-11-19T11:41:00Z"
+      }
+     },
+     {
+      "anchor": "a14",
+      "body": "Shall we cut the release tomorrow morning?",
+      "fields": {
+       "mentions": []
+      },
+      "stamp": {
+       "person": {
+        "id": "p-ana",
+        "name": "Ana Silva"
+       },
+       "at": "2026-11-19T14:15:00Z"
+      }
+     },
+     {
+      "anchor": "a15",
+      "body": "Yes, nine works for me.",
+      "fields": {
+       "mentions": []
+      },
+      "stamp": {
+       "person": {
+        "id": "p-hana",
+        "name": "Hana Sato"
+       },
+       "at": "2026-11-19T14:20:00Z"
+      }
+     },
+     {
+      "anchor": "a16",
+      "body": "Works for me too.",
+      "fields": {
+       "mentions": []
+      },
+      "stamp": {
+       "person": {
+        "id": "p-ivo",
+        "name": "Ivo Novak"
+       },
+       "at": "2026-11-19T14:22:00Z"
+      }
+     },
+     {
+      "anchor": "a17",
+      "body": "Good morning. Tagging 2.4.0 now.",
+      "fields": {
+       "mentions": []
+      },
+      "stamp": {
+       "person": {
+        "id": "p-ivo",
+        "name": "Ivo Novak"
+       },
+       "at": "2026-11-20T08:51:00Z"
+      }
+     },
+     {
+      "anchor": "a18",
+      "body": "The tag is pushed and the pipeline is running.",
+      "fields": {
+       "mentions": []
+      },
+      "stamp": {
+       "person": {
+        "id": "p-ivo",
+        "name": "Ivo Novak"
+       },
+       "at": "2026-11-20T08:52:00Z"
+      }
+     },
+     {
+      "anchor": "a19",
+      "body": "Watching it.",
+      "fields": {
+       "mentions": []
+      },
+      "stamp": {
+       "person": {
+        "id": "p-ana",
+        "name": "Ana Silva"
+       },
+       "at": "2026-11-20T08:58:00Z"
+      }
+     },
+     {
+      "anchor": "a20",
+      "body": "Did I miss something yesterday?",
+      "fields": {
+       "mentions": [],
+       "quote": "a12"
+      },
+      "stamp": {
+       "person": {
+        "id": "p-hana",
+        "name": "Hana Sato"
+       },
+       "at": "2026-11-20T09:05:00Z"
+      }
+     },
+     {
+      "anchor": "a21",
+      "body": "No, that one was meant for the infra chat.",
+      "fields": {
+       "mentions": [],
+       "quote": "a20"
+      },
+      "stamp": {
+       "person": {
+        "id": "p-ivo",
+        "name": "Ivo Novak"
+       },
+       "at": "2026-11-20T09:06:00Z"
+      }
+     },
+     {
+      "anchor": "a22",
+      "body": "The pipeline is green. Publishing to the stores.",
+      "fields": {
+       "mentions": []
+      },
+      "stamp": {
+       "person": {
+        "id": "p-ana",
+        "name": "Ana Silva"
+       },
+       "at": "2026-11-20T09:40:00Z"
+      }
+     },
+     {
+      "anchor": "a23",
+      "body": "Claude, could you draft the website changelog from the release notes?",
+      "fields": {
+       "mentions": []
+      },
+      "stamp": {
+       "person": {
+        "id": "p-ana",
+        "name": "Ana Silva"
+       },
+       "at": "2026-11-20T10:02:00Z"
+      }
+     },
+     {
+      "anchor": "a24",
+      "body": "Here is a draft:\n**2.4** brings faster sync, a new share sheet and three fixes in development tools. The full notes are in the app.",
+      "fields": {
+       "mentions": [],
+       "quote": "a23"
+      },
+      "stamp": {
+       "person": {
+        "id": "p-ana",
+        "name": "Ana Silva"
+       },
+       "run": {
+        "name": "Claude",
+        "icon": "claude"
+       },
+       "at": "2026-11-20T10:04:00Z"
+      }
+     },
+     {
+      "anchor": "a25",
+      "body": "Looks good. I would add the iPad keyboard shortcuts.",
+      "fields": {
+       "mentions": []
+      },
+      "stamp": {
+       "person": {
+        "id": "p-hana",
+        "name": "Hana Sato"
+       },
+       "at": "2026-11-20T10:10:00Z"
+      }
+     },
+     {
+      "anchor": "a26",
+      "body": "Agreed, and the store listing is live.",
+      "fields": {
+       "mentions": []
+      },
+      "stamp": {
+       "person": {
+        "id": "p-ivo",
+        "name": "Ivo Novak"
+       },
+       "at": "2026-11-20T10:12:00Z"
+      }
+     },
+     {
+      "anchor": "a27",
+      "body": "[@Ana](person:p-ana) can you post it?",
+      "fields": {
+       "mentions": [
+        "p-ana"
+       ]
+      },
+      "stamp": {
+       "person": {
+        "id": "p-hana",
+        "name": "Hana Sato"
+       },
+       "at": "2026-11-20T10:15:00Z"
+      }
+     }
+    ],
+    "refs": {
+     "a12": {
+      "gone": true
+     },
+     "a20": {
+      "author": "Hana Sato",
+      "excerpt": "Did I miss something yesterday?"
+     },
+     "a23": {
+      "author": "Ana Silva",
+      "excerpt": "Claude, could you draft the website changelog from the release notes?"
+     }
+    },
+    "before": "older"
+   },
+   "pages": {
+    "older": {
+     "records": [
+      {
+       "anchor": "a01",
+       "body": "Morning! Did the dependency audit finish overnight?",
+       "fields": {
+        "mentions": []
+       },
+       "stamp": {
+        "person": {
+         "id": "p-ivo",
+         "name": "Ivo Novak"
+        },
+        "at": "2026-11-19T09:02:00Z"
+       }
+      },
+      {
+       "anchor": "a02",
+       "body": "I would like to ship 2.4 today if it is clean.",
+       "fields": {
+        "mentions": []
+       },
+       "stamp": {
+        "person": {
+         "id": "p-ivo",
+         "name": "Ivo Novak"
+        },
+        "at": "2026-11-19T09:03:00Z"
+       }
+      },
+      {
+       "anchor": "a03",
+       "body": "It finished at six. Three advisories, all in dev dependencies, none reachable from the app.",
+       "fields": {
+        "mentions": []
+       },
+       "stamp": {
+        "person": {
+         "id": "p-ana",
+         "name": "Ana Silva"
+        },
+        "at": "2026-11-19T09:10:00Z"
+       }
+      },
+      {
+       "anchor": "a04",
+       "body": "Can someone summarise them for the release notes?",
+       "fields": {
+        "mentions": []
+       },
+       "stamp": {
+        "person": {
+         "id": "p-hana",
+         "name": "Hana Sato"
+        },
+        "at": "2026-11-19T09:12:00Z"
+       }
+      },
+      {
+       "anchor": "a05",
+       "body": "On it: I will ask Claude to write them up and check `npm audit` again.",
+       "fields": {
+        "mentions": [],
+        "quote": "a04"
+       },
+       "stamp": {
+        "person": {
+         "id": "p-ana",
+         "name": "Ana Silva"
+        },
+        "at": "2026-11-19T09:14:00Z"
+       }
+      },
+      {
+       "anchor": "a06",
+       "body": "All three are in `eslint-plugin-x` and its test helpers. The fixed version is **4.1.2**; after the update `npm audit --omit=dev` finds no vulnerabilities.",
+       "fields": {
+        "mentions": [],
+        "quote": "a05"
+       },
+       "stamp": {
+        "person": {
+         "id": "p-ana",
+         "name": "Ana Silva"
+        },
+        "run": {
+         "name": "Claude",
+         "icon": "claude"
+        },
+        "at": "2026-11-19T09:16:00Z"
+       }
+      },
+      {
+       "anchor": "a07",
+       "body": "Great, thank you [@Ana](person:p-ana). That goes straight into the notes.",
+       "fields": {
+        "mentions": [
+         "p-ana"
+        ]
+       },
+       "stamp": {
+        "person": {
+         "id": "p-hana",
+         "name": "Hana Sato"
+        },
+        "at": "2026-11-19T09:20:00Z"
+       },
+       "edited": true
+      },
+      {
+       "anchor": "a08",
+       "body": "Build 2.4.0-rc1 is up on staging.",
+       "fields": {
+        "mentions": []
+       },
+       "stamp": {
+        "person": {
+         "id": "p-ivo",
+         "name": "Ivo Novak"
+        },
+        "at": "2026-11-19T10:05:00Z"
+       }
+      },
+      {
+       "anchor": "a09",
+       "body": "Smoke tests pass on the web; iOS is still running.",
+       "fields": {
+        "mentions": []
+       },
+       "stamp": {
+        "person": {
+         "id": "p-ivo",
+         "name": "Ivo Novak"
+        },
+        "at": "2026-11-19T10:06:00Z"
+       }
+      },
+      {
+       "anchor": "a10",
+       "body": "iOS passes too. One flaky test in the share sheet, filed as #212.",
+       "fields": {
+        "mentions": []
+       },
+       "stamp": {
+        "person": {
+         "id": "p-ana",
+         "name": "Ana Silva"
+        },
+        "at": "2026-11-19T10:30:00Z"
+       }
+      },
+      {
+       "anchor": "a11",
+       "body": "The release notes draft is in Notes.",
+       "fields": {
+        "mentions": []
+       },
+       "stamp": {
+        "person": {
+         "id": "p-hana",
+         "name": "Hana Sato"
+        },
+        "at": "2026-11-19T11:02:00Z"
+       }
+      }
+     ],
+     "refs": {
+      "a04": {
+       "author": "Hana Sato",
+       "excerpt": "Can someone summarise them for the release notes?"
+      },
+      "a05": {
+       "author": "Ana Silva",
+       "excerpt": "On it: I will ask Claude to write them up and check `npm audit` again."
+      }
+     },
+     "before": null
+    }
+   }
+  }
+ }
+}
