@@ -5,7 +5,7 @@
   // scrolled into view; a "jump to latest" control carries the unread count and an "@" control the mention count. Entry actions come from the config and the host's per-entry contexts (a menu on the entry); an action may
   // open the composer in reply or edit mode; with `selectionMode: "range"` the person picks first and last message and the host returns a selection ref that range actions send. A stale result is marked; moving to
   // another item cancels the old load; the view follows the end while the person reads the end and never pulls a person who scrolled away.
-  import { onDestroy, tick } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import { Menu, Spinner, failed, tokenMs } from "@calternal/ui";
   import type { ActionOutcome } from "../model";
   import type { EntryAction, ItemViewConfig, ItemViewReply, ItemViewSignal, SnapshotNode } from "../draft";
@@ -13,6 +13,7 @@
   import { resolveRef } from "./ref";
   import { provideEntry } from "./entry-context";
   import { ItemViewState } from "./entry-state.svelte";
+  import { endsGroup, startsGroup } from "./groups";
   import Snapshot from "./Snapshot.svelte";
 
   let { config, id }: { config: ItemViewConfig; id: string } = $props();
@@ -44,6 +45,72 @@
   }
   const children = (n: SnapshotNode | undefined): SnapshotNode[] => (n?.type === "stack" ? n.children : n ? [n] : []);
 
+  // ---- windowing: a long thread draws only the messages in and near view. Each message's height is measured once it has been drawn (an estimate stands in until then) and kept by its anchor; the top and bottom of what is not
+  // drawn are padding of the summed heights, so the scroll bar and the end of the thread are true. The place is kept when heights are learned above the view, when older messages are added, and when jumping: a jump asks
+  // for a position, draws what is there, measures, and asks again until the answer stops moving. Threads up to WINDOW_MIN items are drawn whole.
+  const WINDOW_MIN = 120;
+  const items = $derived(children(reply?.view?.content));
+  const windowed = $derived(items.length > WINDOW_MIN);
+  const keys = $derived.by(() => {
+    const seen = new Map<string, number>();
+    return items.map((c) => { const b = c.type === "snapshot-entry" ? c.anchor : `${c.type}:${(c as { kind?: string }).kind ?? ""}:${(c as { timestamp?: string; text?: string }).timestamp ?? (c as { text?: string }).text ?? ""}`; const n = seen.get(b) ?? 0; seen.set(b, n + 1); return n ? `${b}#${n}` : b; });
+  });
+  const itemIndex = $derived(new Map(keys.map((k, i) => [k, i])));
+  const order = $derived(items.flatMap((c) => (c.type === "snapshot-entry" ? [c.anchor] : [])));
+  const orderIndex = $derived(new Map(order.map((a, i) => [a, i])));
+  const hmap = new Map<string, number>();
+  let avg = 84, offs: number[] = [0], ver = $state(0), range = $state({ a: 0, b: -1 });
+  const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+  function relayout() { const o = new Array<number>(items.length + 1); o[0] = 0; for (let i = 0; i < items.length; i++) o[i + 1] = o[i]! + (hmap.get(keys[i]!) ?? avg); offs = o; ver++; }
+  const find = (y: number): number => { let lo = 0, hi = items.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (offs[m]! <= y) lo = m; else hi = m - 1; } return lo; };
+  /** The drawn range for the scroll position: the view plus a screen and a half either side. */
+  function update() {
+    if (!windowed || !el) return;
+    const over = el.clientHeight * 1.5, a = find(Math.max(0, el.scrollTop - over)), b = Math.min(items.length - 1, find(el.scrollTop + el.clientHeight + over));
+    if (a !== range.a || b !== range.b) range = { a, b };
+  }
+  /** Reads the heights of what is drawn; learning a height above the view moves the scroll by the difference so the message in view does not move. True when something changed. */
+  function measure(): boolean {
+    if (!windowed || !el) return false;
+    const ai = find(el.scrollTop), before = offs[ai]!;
+    let changed = false, sum = 0, n = 0;
+    for (const node of el.querySelectorAll<HTMLElement>("[data-vi]")) {
+      const k = keys[Number(node.dataset.vi)]; if (k === undefined) continue;
+      const h = node.offsetHeight; sum += h; n++;
+      const old = hmap.get(k); if (old === undefined || Math.abs(old - h) > 0.5) { hmap.set(k, h); changed = true; }
+    }
+    if (n) avg = Math.round((avg * 3 + sum / n) / 4);
+    if (changed) { relayout(); const d = offs[ai]! - before; if (d) el.scrollTop += d; }
+    return changed;
+  }
+  /** Draws what the scroll position needs and learns its heights (a few passes at most). */
+  async function settle() { for (let i = 0; i < 4; i++) { update(); await tick(); await frame(); if (!measure()) break; } update(); }
+  /** Puts item `i` at the start, centre or end of the view (or just into view) and keeps correcting until the position stops moving. */
+  async function showIndex(i: number, mode: "start" | "center" | "end" | "nearest") {
+    if (!el) return;
+    for (let n = 0; n < 8; n++) {
+      const box = el, max = Math.max(0, offs[items.length]! - box.clientHeight), h = offs[i + 1]! - offs[i]!;
+      let target = mode === "end" ? max : mode === "start" ? offs[i]! : mode === "center" ? offs[i]! - (box.clientHeight - h) / 2 : offs[i]! < box.scrollTop ? offs[i]! : offs[i + 1]! > box.scrollTop + box.clientHeight ? offs[i + 1]! - box.clientHeight : box.scrollTop;
+      target = Math.max(0, Math.min(target, max));
+      if (n > 0 && Math.abs(target - box.scrollTop) < 1) break;
+      box.scrollTop = target; update(); await tick(); await frame(); measure();
+    }
+    if (mode === "end") { await tick(); await frame(); measure(); box0().scrollTop = box0().scrollHeight; } // the last pass learned heights at the very end: take the true end
+    update(); await tick();
+  }
+  const box0 = () => el!;
+  /** Reveals an entry by anchor, drawn or not; true when the page has it. */
+  async function reveal(anchor: string, block: "start" | "center" | "nearest"): Promise<boolean> {
+    const idx = itemIndex.get(anchor); if (idx === undefined) return false;
+    if (windowed) await showIndex(idx, block);
+    else { const t = el?.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(anchor)}"]`); if (!t) return false; t.scrollIntoView({ block, behavior: "auto" }); }
+    const t = el?.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(anchor)}"]`);
+    if (t && block !== "nearest") { t.classList.remove("hl"); void t.offsetWidth; t.classList.add("hl"); }
+    return true;
+  }
+  const toEnd = async () => { if (!el) return; if (windowed) await showIndex(items.length - 1, "end"); else el.scrollTop = el.scrollHeight; };
+  $effect(() => { void items; void keys; void windowed; untrack(() => { if (windowed) { relayout(); update(); void tick().then(() => frame()).then(() => { if (measure()) update(); }); } else range = { a: 0, b: items.length - 1 }; }); });
+
   $effect(() => {
     const it = item; const gen = ++generation; const ctl = new AbortController();
     st.reply = null; st.composer = null; st.endSelection(); failedOpen = false; reconnecting = false; lastMarked = ""; away = false;
@@ -58,8 +125,8 @@
         retry = 0; reconnecting = false;
         if (r.state === "anchor_unavailable") { r = await open(it, ctl); continue; }
         const prev = st.reply; st.reply = r; failedOpen = false; noteChanges(prev, r); await tick();
-        if (first) { first = false; if (reading && r.reading?.first_unread && el?.querySelector(`[data-anchor="${CSS.escape(r.reading.first_unread)}"]`)) scrollTo(r.reading.first_unread, "start"); else if (r.anchor) scrollTo(r.anchor, "center"); else if (el) el.scrollTop = el.scrollHeight; }
-        else if (atEnd && el) el.scrollTop = el.scrollHeight;
+        if (first) { first = false; if (reading && r.reading?.first_unread && itemIndex.has(r.reading.first_unread)) await reveal(r.reading.first_unread, "start"); else if (r.anchor && itemIndex.has(r.anchor)) await reveal(r.anchor, "center"); else await toEnd(); }
+        else if (atEnd && el) await toEnd();
         watch();
         if (!r.follow) return;
         let sig: ItemViewSignal | null = null;
@@ -74,18 +141,18 @@
         if (w && r?.anchor) { first = true; }
       }
     })();
-    return () => { ctl.abort(); clearTimeout(markTimer); io?.disconnect(); };
+    return () => { ctl.abort(); clearTimeout(markTimer); io?.disconnect(); io = undefined; visible.clear(); hmap.clear(); };
   });
 
-  function onscroll() { if (!el) return; atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 40; away = !atEnd; }
-  function scrollTo(anchor: string, block: "start" | "center") {
-    const t = el?.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(anchor)}"]`); if (!t) return false;
-    t.scrollIntoView({ block, behavior: "auto" }); t.classList.remove("hl"); void t.offsetWidth; t.classList.add("hl"); return true;
+  let scrollFrame = 0;
+  function onscroll() {
+    if (!el) return; atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 40; away = !atEnd;
+    if (windowed && !scrollFrame) scrollFrame = requestAnimationFrame(() => { scrollFrame = 0; update(); void tick().then(() => { measure(); watch(); }); });
   }
   /** Jump to an anchor: on the page, or by opening the view at that anchor; a "back" chip returns to where the person was. */
   function jump(anchor: string) {
     if (el) back = el.scrollTop;
-    if (!scrollTo(anchor, "center")) { reopenWith = { anchor }; nudge?.(); }
+    void reveal(anchor, "center").then((found) => { if (!found) { reopenWith = { anchor }; nudge?.(); } });
     setTimeout(() => { back = null; }, 8000);
   }
   /** Jump to latest: the scroll position eases to the end over --dur-slow on a cubic ease-out (instant when motion is reduced); any wheel, touch or key from the person takes it over. */
@@ -95,7 +162,7 @@
     const box = el, from = box.scrollTop, ms = tokenMs("--dur-slow", 300), t0 = performance.now(); cancelAnimationFrame(tween);
     const stop = () => { cancelAnimationFrame(tween); box.removeEventListener("wheel", stop); box.removeEventListener("touchstart", stop); box.removeEventListener("keydown", stop); };
     box.addEventListener("wheel", stop, { once: true, passive: true }); box.addEventListener("touchstart", stop, { once: true, passive: true }); box.addEventListener("keydown", stop, { once: true });
-    const step = (now: number) => { const k = ms <= 1 ? 1 : Math.min(1, (now - t0) / ms), e = 1 - (1 - k) ** 3; box.scrollTop = from + (box.scrollHeight - box.clientHeight - from) * e; if (k < 1) tween = requestAnimationFrame(step); else stop(); };
+    const step = (now: number) => { const k = ms <= 1 ? 1 : Math.min(1, (now - t0) / ms), e = 1 - (1 - k) ** 3; box.scrollTop = from + (box.scrollHeight - box.clientHeight - from) * e; if (k < 1) tween = requestAnimationFrame(step); else { stop(); if (windowed) void toEnd(); } };
     tween = requestAnimationFrame(step);
   }
   function nextMention() { const a = reply?.reading?.next_mention; if (a) jump(a); else { reopenWith = { position: "mention" }; nudge?.(); } }
@@ -105,9 +172,10 @@
   async function loadOlder() {
     const cursor = st.reply?.older; if (!cursor || loadingOlder || !item || !el) return;
     loadingOlder = true; const box = el, below = box.scrollHeight - box.scrollTop;
+    const ai = windowed ? find(box.scrollTop) : -1, aKey = ai >= 0 ? keys[ai] : undefined, aOff = ai >= 0 ? box.scrollTop - offs[ai]! : 0; // (the message at the top of the view, and how far into it)
     try {
       const r = await open(item, new AbortController(), { cursor });
-      if (r?.view && st.reply) { st.reply = { ...st.reply, older: r.older, view: { content: { type: "stack", children: [...children(r.view.content), ...children(st.reply.view?.content)] } }, entry_controls: [...(r.entry_controls ?? []), ...(st.reply.entry_controls ?? [])], quotes: [...(r.quotes ?? []), ...(st.reply.quotes ?? [])] }; await tick(); box.scrollTop = box.scrollHeight - below; watch(); }
+      if (r?.view && st.reply) { st.reply = { ...st.reply, older: r.older, view: { content: { type: "stack", children: [...children(r.view.content), ...children(st.reply.view?.content)] } }, entry_controls: [...(r.entry_controls ?? []), ...(st.reply.entry_controls ?? [])], quotes: [...(r.quotes ?? []), ...(st.reply.quotes ?? [])] }; await tick(); if (aKey !== undefined) { relayout(); const ni = itemIndex.get(aKey); if (ni !== undefined) box.scrollTop = offs[ni]! + aOff; await settle(); } else box.scrollTop = box.scrollHeight - below; watch(); }
     } finally { loadingOlder = false; }
   }
   $effect(() => { olderIo?.disconnect(); if (!olderEl || !el) return; olderIo = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) void loadOlder(); }, { root: el, rootMargin: "600px 0px 0px 0px" }); olderIo.observe(olderEl); return () => olderIo?.disconnect(); });
@@ -116,18 +184,17 @@
   let io: IntersectionObserver | undefined;
   const visible = new Set<Element>();
   function watch() {
-    io?.disconnect(); visible.clear();
     if (!reading || !el) return;
-    io = new IntersectionObserver((es) => {
+    io ??= new IntersectionObserver((es) => {
       for (const e of es) { if (e.isIntersecting) visible.add(e.target); else visible.delete(e.target); }
       clearTimeout(markTimer); markTimer = window.setTimeout(mark, 700);
     }, { root: el, threshold: 0.6 });
-    for (const n of el.querySelectorAll("[data-entry]")) io.observe(n);
+    for (const n of el.querySelectorAll("[data-entry]")) io.observe(n); // (observing a message already watched changes nothing)
   }
   async function mark() {
     if (!el || !visible.size || !reply?.window_ref) return;
-    const all = [...el.querySelectorAll("[data-entry]")];
-    const last = [...visible].sort((a, b) => all.indexOf(b) - all.indexOf(a))[0] as HTMLElement; const upto = last?.dataset.anchor;
+    const seen = [...visible].filter((n) => n.isConnected).map((n) => (n as HTMLElement).dataset.anchor!);
+    const upto = seen.sort((a, b) => (orderIndex.get(b) ?? -1) - (orderIndex.get(a) ?? -1))[0];
     if (!upto || upto === lastMarked) return;
     if (!(reply.reading?.unread || reply.reading?.mentions)) { lastMarked = upto; return; } // nothing unread: nothing to write
     lastMarked = upto;
@@ -166,9 +233,9 @@
   function pick(anchor: string) { select(st.picked.length === 1 && st.origin ? [st.origin, anchor] : [anchor]); }
   function select(p: string[]) {
     st.origin = p[0]!;
-    const all = [...(el?.querySelectorAll("[data-entry]") ?? [])].map((e) => (e as HTMLElement).dataset.anchor!);
-    const [a, b] = p.length === 2 ? [...p].sort((x, y) => all.indexOf(x) - all.indexOf(y)) : [p[0]!, undefined];
-    st.picked = b && b !== a ? [a, b] : [a]; st.selectionRef = undefined; st.count = b ? all.indexOf(b) - all.indexOf(a) + 1 : 1;
+    const at = (x: string) => orderIndex.get(x) ?? -1;
+    const [a, b] = p.length === 2 ? [...p].sort((x, y) => at(x) - at(y)) : [p[0]!, undefined];
+    st.picked = b && b !== a ? [a, b] : [a]; st.selectionRef = undefined; st.count = b ? at(b) - at(a) + 1 : 1;
     clearTimeout(selTimer);
     selTimer = window.setTimeout(async () => {
       if (!reply?.window_ref) return;
@@ -183,18 +250,18 @@
   provideEntry({ state: st, menu: (anchor, at) => { menu = { anchor, ...at }; }, pick, jump, link: (t) => void openLink(t) });
 
   // ---- keyboard: Up, Down, Home and End move between messages (one tab stop for the whole log); Enter or the Menu key opens the message menu; Shift with an arrow starts a selection and extends it, Space picks, Escape ends it.
-  const entryEls = () => [...(el?.querySelectorAll<HTMLElement>("[data-entry]") ?? [])];
-  function focusEntry(n: HTMLElement) { st.active = n.dataset.anchor!; n.focus({ preventScroll: true }); n.scrollIntoView({ block: "nearest" }); }
-  function keydown(e: KeyboardEvent) {
+  async function focusEntry(anchor: string) { await reveal(anchor, "nearest"); st.active = anchor; await tick(); el?.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(anchor)}"]`)?.focus({ preventScroll: true }); }
+  async function keydown(e: KeyboardEvent) {
     if ((e.target as HTMLElement).closest("button, a, input, textarea")) return;
-    const list = entryEls(); if (!list.length) return;
-    const i = list.findIndex((x) => x.dataset.anchor === st.active), last = list.length - 1;
-    const to = e.key === "ArrowDown" ? Math.min(last, i < 0 ? last : i + 1) : e.key === "ArrowUp" ? Math.max(0, i < 0 ? last : i - 1) : e.key === "Home" ? 0 : e.key === "End" ? last : -1;
+    if (!order.length) return;
+    const i = st.active ? (orderIndex.get(st.active) ?? -1) : -1, last = order.length - 1;
+    const to = e.key === "ArrowDown" ? Math.min(last, i < 0 ? last : i + 1) : e.key === "ArrowUp" ? Math.max(0, i < 0 ? last : i - 1) : e.key === "Home" ? 0 : e.key === "End" ? last : e.key === "PageUp" ? Math.max(0, (i < 0 ? last : i) - 8) : e.key === "PageDown" ? Math.min(last, (i < 0 ? last : i) + 8) : -1;
     if (to >= 0) {
-      e.preventDefault(); const from = i < 0 ? to : i; focusEntry(list[to]!);
-      if (e.shiftKey && rangeActions.length && !st.readOnly) { if (!st.selecting) st.selecting = true; select([st.origin ?? list[from]!.dataset.anchor!, list[to]!.dataset.anchor!]); }
+      e.preventDefault(); const from = i < 0 ? to : i;
+      if (e.shiftKey && rangeActions.length && !st.readOnly) { if (!st.selecting) st.selecting = true; select([st.origin ?? order[from]!, order[to]!]); }
+      await focusEntry(order[to]!);
     } else if ((e.key === "Enter" || e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) && i >= 0 && !st.selecting) {
-      e.preventDefault(); const r = list[i]!.getBoundingClientRect(); if (st.controlOf(st.active!)?.actions?.length) menu = { anchor: st.active!, x: r.left + 24, y: r.top + 24 };
+      e.preventDefault(); const n = el?.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(st.active!)}"]`); const r = n?.getBoundingClientRect(); if (r && st.controlOf(st.active!)?.actions?.length) menu = { anchor: st.active!, x: r.left + 24, y: r.top + 24 };
     } else if (e.key === " " && st.selecting && i >= 0) { e.preventDefault(); pick(st.active!); }
     else if (e.key === "Escape" && st.selecting) { e.preventDefault(); st.endSelection(); }
   }
@@ -225,7 +292,9 @@
     <div class="wrap">
       <div class="scroll" bind:this={el} {onscroll} onkeydown={keydown} tabindex={st.active ? -1 : 0} role={st.selecting ? "listbox" : "log"} aria-multiselectable={st.selecting || undefined} aria-live={st.selecting ? "off" : "polite"} aria-label="Messages">
         {#if reply.older}<button type="button" class="older" data-older bind:this={olderEl} onclick={() => void loadOlder()}>Earlier messages</button>{/if}
-        <Snapshot node={reply.view.content} />
+        {#if windowed}{@const pad = (void ver, { top: offs[range.a] ?? 0, bottom: (offs[items.length] ?? 0) - (offs[range.b + 1] ?? 0) })}
+          <div class="vs" data-windowed style:padding-top="{pad.top}px" style:padding-bottom="{pad.bottom}px">{#each items.slice(range.a, range.b + 1) as c, k (keys[range.a + k])}<div class="vi" data-vi={range.a + k}><Snapshot node={c} first={startsGroup(items, range.a + k)} last={endsGroup(items, range.a + k)} /></div>{/each}</div>
+        {:else}<Snapshot node={reply.view.content} />{/if}
         {#each activity as a (a.label + a.kind)}<p class="act" data-activity={a.kind} role="status">{a.label}…</p>{/each}
       </div>
       {#if back !== null}<button type="button" class="chip" data-back-chip onclick={() => { if (el) el.scrollTop = back!; back = null; }}>Back to where you were</button>{/if}
@@ -245,6 +314,7 @@
   .wrap { position: relative; display: flex; flex-direction: column; min-height: 0; flex: 1; }
   .scroll { overflow-y: auto; flex: 1; min-height: 0; padding: var(--s-2) var(--s-4) var(--s-4); display: flex; flex-direction: column; gap: var(--s-1); overscroll-behavior: contain; }
   .scroll > :global(.s) { gap: var(--s-1); }
+  .scroll:has(.vs) { overflow-anchor: none; } .vs { display: flex; flex-direction: column; } .vi { display: flex; flex-direction: column; padding-top: var(--s-1); }
   .msg { margin: auto; color: var(--ink-3); text-align: center; padding: var(--s-6); } .msg.bad { color: var(--danger); }
   .note { flex: none; margin: 0 var(--s-4) var(--s-1); padding: var(--s-2) var(--s-4); border-radius: var(--r-select); color: var(--warn); font-size: var(--text-label); } .note.ro { color: var(--ink-2); background: rgb(var(--ink-rgb) / 0.07); }
   .bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); margin: 0 var(--s-4) var(--s-2); padding: var(--s-1) var(--s-2); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); }

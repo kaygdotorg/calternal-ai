@@ -8,6 +8,7 @@
   import { knownIcon } from "../render/icons";
   import { parseInline } from "./inline";
   import { useEntry } from "./entry-context";
+  import { endsGroup, startsGroup } from "./groups";
   import EntryRequest from "./EntryRequest.svelte";
   import Snapshot from "./Snapshot.svelte";
   let { node, first = true, last = true, entry, endText = false }: { node: SnapshotNode; first?: boolean; last?: boolean; /** The anchor of the entry this node sits in. */ entry?: string; /** The text ends the bubble: the time follows it on the same line. */ endText?: boolean } = $props();
@@ -29,14 +30,6 @@
     if (d.toDateString() === y.toDateString()) return "Yesterday";
     return new Intl.DateTimeFormat(undefined, { dateStyle: "long" }).format(d);
   }
-  /** Whether the child at `i` starts a group of entries: no entry before it from the same author within five minutes. */
-  function startsGroup(kids: SnapshotNode[], i: number): boolean {
-    const a = kids[i], b = kids[i - 1];
-    if (a?.type !== "snapshot-entry" || b?.type !== "snapshot-entry") return true;
-    return a.author.key !== b.author.key || t(a.timestamp) - t(b.timestamp) > 5 * 60_000 || t(a.timestamp) < t(b.timestamp);
-  }
-  /** Whether the child at `i` ends its group: the next child is not an entry from the same author within five minutes. */
-  const endsGroup = (kids: SnapshotNode[], i: number): boolean => i === kids.length - 1 || startsGroup(kids, i + 1);
   const quoteOf = (e: string | undefined, span: string) => ctx?.state.reply?.quotes?.find((q) => q.entry === e && q.source.span === span);
   const unreadHere = $derived(node.type === "snapshot-entry" && (ctx?.state.reply?.reading?.first_unread === node.anchor || ctx?.state.leaving === node.anchor));
   const unread = $derived(node.type === "snapshot-entry" && ctx?.state.reply?.reading?.first_unread === node.anchor ? ctx.state.reply.reading.unread : undefined);

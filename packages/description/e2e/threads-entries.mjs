@@ -268,6 +268,8 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   const { page: p } = await go("", DESK);
   await openFirst(p);
   ok((await p.locator("[data-panel=info]").textContent()).includes("Last activity"), "the right panel draws content nodes");
+  ok(!/\d{4}-\d{2}-\d{2}T/.test(await p.locator("[data-panel=info]").textContent()) && /\d{1,2}:\d{2}/.test(await p.locator("[data-panel=info]").textContent()), "a time in the panel is shown in local time, not as stored (UTC)", (await p.locator("[data-panel=info]").textContent()).replace(/\s+/g, " ").slice(0, 80));
+  ok((await p.locator("[data-i] button.row [data-mark=text]").first().evaluate((e) => e.getBoundingClientRect().width / e.closest("button.row").getBoundingClientRect().width)) < 0.2, "the time takes less than a fifth of a row, so the title keeps its room");
   await p.getByRole("button", { name: "Mute this thread" }).click();
   await p.waitForSelector("[data-dialog=choose]", { timeout: 5000 });
   const labels = await p.locator("[data-dialog=choose] button[role=option]").allTextContents();
@@ -321,6 +323,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   await p.locator("[data-i] button.row").first().evaluate((e) => e.click()); await p.waitForSelector("[data-entry]", { timeout: 10000 });
   const w = await p.evaluate(() => ({ s: document.documentElement.scrollWidth, c: document.documentElement.clientWidth }));
   ok(w.s <= w.c, "nothing overflows the phone's width", JSON.stringify(w));
+  const ha = p.locator("[data-action=call-in]"); ok((await ha.textContent()).trim() === "" && (await ha.getAttribute("aria-label")) === "Call an agent in" && (await p.locator("main h1").textContent()).includes("Where to eat on Friday"), "on a phone the header action is its icon only (named for a screen reader) and the title is whole", await p.locator("main h1").textContent());
   await snap(p, "next-phone-2-conversation");
   await p.locator("[data-anchor=e5] [data-entry-menu]").click(); await p.waitForSelector("[role=menuitem]", { timeout: 3000 });
   const mb = await p.locator("[role=menuitem]").first().boundingBox(); ok(mb.height >= 44, "menu rows are 44 pt tall", String(mb.height));

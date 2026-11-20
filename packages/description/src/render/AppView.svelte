@@ -116,7 +116,7 @@
         <Card label={itemTitle || title || "Content"} variant="pane" class="card">
           <div class="col">
             <header class="head">{#if compact}<button class="back" type="button" aria-label="Back to the list" data-back onclick={() => setRoute("item", "")}><Icon name="back" /></button>{/if}{#if itemTitle ?? title}<h1 class="h1">{itemTitle ?? title}</h1>{/if}
-              <div class="hact">{#each [...(header?.leading ?? []), ...(header?.trailing ?? [])] as a (a.id)}{@const sb = setBind(a)}<ActionButton action={a} context={viewContext(a.id)} selection={sb ? selectionFor(sb) : undefined} setOf={sb} />{/each}</div></header>
+              <div class="hact">{#each [...(header?.leading ?? []), ...(header?.trailing ?? [])] as a (a.id)}{@const sb = setBind(a)}<ActionButton action={a} context={viewContext(a.id)} selection={sb ? selectionFor(sb) : undefined} setOf={sb} iconOnly={compact} />{/each}</div></header>
             {#if description.view}<div class="body"><Node node={description.view.root} /></div>{/if}
           </div>
         </Card>

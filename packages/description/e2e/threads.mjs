@@ -22,7 +22,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   ok(/\b(min|hour|day|yesterday|ago|\d)/i.test(titles[0]), "each row says when it last changed, in relative time");
   ok((await p.locator("[data-count-of=archived]").textContent()) === "2" && /Archived\s+2/.test(await p.locator("[data-selector=view]").innerText()), "the Archived option carries its exact count");
   const one = await p.locator("[data-i] button.row").first().evaluate((e) => ({ second: !!e.querySelector(".s"), time: e.querySelector("[data-mark=text]")?.textContent ?? "", h: e.getBoundingClientRect().height }));
-  ok(!one.second && /\b(min|hour|day|yesterday|ago|week|now)/i.test(one.time), "a thread row is one line: the title, then the time and the counts at its end", JSON.stringify(one));
+  ok(!one.second && /^(now|\d+[mhdw]|yesterday)$/.test(one.time), "a thread row is one line: the title, then the time and the counts at its end", JSON.stringify(one));
   await snap(p, "desktop-1-list");
   await openFirst(p);
   ok((await p.locator("main h1").textContent()).includes("Where to eat"), "opening a thread shows its title in the header");

@@ -14,7 +14,7 @@
   const app = useApp(), { viewContext } = useActions();
   /** True when an action's inputs read the ticked set of a multiple-selection list. */
   const setBind = (inputs: Record<string, unknown> | undefined): string | undefined => { for (const v of Object.values(inputs ?? {})) { const s = v as { selection?: string; set?: boolean }; if (s.selection && s.set) return s.selection; } return undefined; };
-  const fmt = (v: unknown): string => (v === undefined || v === null ? "" : typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(v) ? secondaryOf([{ field: "v", format: "relative_date" }], { v }) ?? v : typeof v === "string" ? v : typeof v === "number" ? (v > 1e9 && v < 1e13 ? secondaryOf([{ field: "v", format: "relative_date" }], { v }) ?? String(v) : String(v)) : String(v));
+  const fmt = (v: unknown): string => (v === undefined || v === null ? "" : typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(v) ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(v)) : typeof v === "string" ? v : typeof v === "number" ? (v > 1e9 && v < 1e13 ? secondaryOf([{ field: "v", format: "relative_date" }], { v }) ?? String(v) : String(v)) : String(v));
 </script>
 
 {#if node.type === "stack"}

@@ -40,6 +40,20 @@ export function holds(p: Predicate | undefined, fields: RowFields): boolean {
 /** A trailing mark ready to draw. */
 export interface MarkView { kind: "dot" | "count" | "text" | "icon"; text?: string; icon?: string; tone?: "good" | "warn" | "bad" | "quiet" }
 
+/** A time as short as a row can hold: now, 5m, 1h, yesterday, 3d, 2w, else the date (a one-line row gives its title the room). */
+export function shortAgo(t: number, now: number): string {
+  const s = Math.max(0, Math.round((now - t) / 1000));
+  if (s < 60) return "now";
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400 && new Date(t).toDateString() === new Date(now).toDateString()) return `${Math.floor(s / 3600)}h`;
+  const days = Math.round((new Date(now).setHours(0, 0, 0, 0) - new Date(t).setHours(0, 0, 0, 0)) / 86400000);
+  if (days <= 0) return `${Math.max(1, Math.floor(s / 3600))}h`;
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days}d`;
+  if (days < 35) return `${Math.floor(days / 7)}w`;
+  return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
 /** The marks of a row, at most three, those whose `when` holds. A count of zero draws nothing, as a system badge does. */
@@ -51,7 +65,7 @@ export function marksOf(marks: Marks | undefined, fields: RowFields): MarkView[]
     switch (m.kind) {
       case "dot": if (m.when || have) out.push({ kind: "dot", tone: m.tone }); break;
       case "count": { const n = num(have); if (n !== null && n > 0) out.push({ kind: "count", text: String(n), tone: m.tone }); break; }
-      case "text": { const t = m.value ?? have; if (t !== undefined && t !== null && t !== "") { const when = typeof t === "string" && RFC3339.test(t) ? ms(t) : null; out.push({ kind: "text", text: when !== null ? relativeDate(when, Date.now()) : String(t), tone: m.tone }); } break; } // (a Timestamp field in a text mark reads as a relative date, as in the row's line before: a one-line row keeps its time)
+      case "text": { const t = m.value ?? have; if (t !== undefined && t !== null && t !== "") { const when = typeof t === "string" && RFC3339.test(t) ? ms(t) : null; out.push({ kind: "text", text: when !== null ? shortAgo(when, Date.now()) : String(t), tone: m.tone }); } break; } // (a Timestamp field in a text mark reads as a relative date, as in the row's line before: a one-line row keeps its time)
       case "icon": if (m.icon) out.push({ kind: "icon", icon: typeof m.icon === "string" ? m.icon : undefined, tone: m.tone }); break;
     }
   }
