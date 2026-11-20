@@ -113,6 +113,7 @@ test("generic rename moves the folder, updates indexed links and preserves IDs a
   const final = host.files.get(item)!;
   const spanIndex = final.spanHistory.get(final.revision)!;
   assert.deepEqual(decodeIndexed(Buffer.from(host.markdown(item)), spanIndex.spans, spanIndex.body_provenance).thread.messages, before.messages);
+  assert.deepEqual(spanIndex.spans[0]?.attribution, { kind: "host" });
   assert.deepEqual(spanIndex.spans.at(-1)?.quote?.attribution, { kind: "person", actor: final.creator });
 
   const pending = await send("pre-archive", "Never start");
@@ -410,7 +411,7 @@ test("the shorter heading and suffix fit a long reply and keep a literal delimit
   assert.ok(host.markdown(item).includes(`\n${delimiter}\n\n`));
   assert.ok(!host.markdown(item).includes(`\\${delimiter}`));
   const index = host.files.get(item)!.spanHistory.get(host.files.get(item)!.revision)!;
-  assert.deepEqual(index.spans.map(span => span.attribution.kind), ["person", "person", "attempt"]);
+  assert.deepEqual(index.spans.map(span => span.attribution?.kind), ["person", "person", "attempt"]);
   const first = decodeIndexed(Buffer.from(host.markdown(item)), index.spans, index.body_provenance).thread.messages[0];
   const message = await handlers["threads.message"]({ item, message: first.id }, context("reopen-literal", "threads.message"));
   assert.equal(message.text, delimiter);
@@ -483,6 +484,27 @@ test("indexed spans preserve literal heading and trailer lookalikes next to an o
   ], "unproven");
   assert.deepEqual(result.thread.messages, [next, first]);
   assert.deepEqual([...result.spans], [[first.id, "first-message"]]);
+});
+
+test("a checked read joins host-origin range chunks inside one recorded message", async () => {
+  const { host, item, send, context } = await setup();
+  const job = await send("origin-chunks", "link A and link B");
+  await host.run(job.job_id);
+  const file = host.files.get(item)!;
+  const { spans } = file.spanHistory.get(file.revision)!;
+  const [title, prompt, reply] = spans;
+  assert.equal(prompt.attribution?.kind, "person");
+  assert.equal(reply.attribution?.kind, "attempt");
+  const message = host.thread(item).messages[0].id;
+  const ranges = [{ offset: prompt.middle_offset + 5, length: 1 }, { offset: prompt.middle_offset + 16, length: 1 }];
+  spans.splice(0, spans.length, title, { ...prompt, host_ranges: [ranges[0]], host_ranges_more: true },
+    { ...prompt, host_ranges: [ranges[1]] }, reply);
+  host.spanPageSize = 2;
+  const result = await handlers["threads.message"]({ item, message }, context("read-origin-chunks", "threads.message"));
+  assert.equal(result.text, "link A and link B");
+  spans[2].host_ranges![0].offset = ranges[0].offset;
+  await assert.rejects(handlers["threads.message"]({ item, message }, context("overlapping-origin-chunks", "threads.message")),
+    /host-written ranges are invalid/);
 });
 
 test("opaque fallback stages a large reframe without losing formerly indexed literal headings", async () => {

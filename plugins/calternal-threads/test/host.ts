@@ -49,7 +49,7 @@ const exchanges = {
 } as const;
 const trace: [name: string, value: unknown][] = [];
 
-/** Check the fake's revision 14.40 exchanges against the pinned schemas. */
+/** Check the fake's revision 14.41 exchanges against the pinned schemas. */
 export function checkTrace() {
   const check = fileURLToPath(new URL("../check-shapes.py", import.meta.url));
   const contract = fileURLToPath(new URL("../.build/contract/", import.meta.url));
@@ -516,7 +516,7 @@ export class FakeHost {
       if (quote) {
         assert.ok(file && quote.item === args.item && file.history.has(quote.revision), "quote source unavailable");
         const origin = file.spanHistory.get(quote.revision)?.spans.find(candidate => candidate.span === quote.span);
-        assert.ok(origin && file.spans.has(quote.span) && origin.middle_length > 0 && origin.attribution.kind !== "empty" &&
+        assert.ok(origin && file.spans.has(quote.span) && origin.middle_length > 0 && origin.attribution &&
           !file.withheldRevisions.has(quote.revision), "quote source unavailable");
         const record = file.bindings.get(origin.span)!.record;
         const copies = [...file.spans.values()].filter(entry => entry.span !== retiring &&
@@ -549,9 +549,9 @@ export class FakeHost {
       const quoteLength = Buffer.byteLength(composed.quoted?.text ?? "");
       const attribution = attested.source.kind === "input" ? { kind: "person" as const, actor: receiptActor }
         : attested.source.kind === "output" ? { kind: "attempt" as const, attempt: job!.attempt!.execution }
-        : { kind: "empty" as const };
+        : undefined;
       target.spans.set(span, { span, offset, length: composed.bytes.length,
-        middle_offset: offset + composed.prefixBytes + quoteLength, middle_length: composed.middleBytes, attribution,
+        middle_offset: offset + composed.prefixBytes + quoteLength, middle_length: composed.middleBytes, ...(attribution && { attribution }),
         ...(composed.quoted && { quote: { offset: offset + composed.prefixBytes, length: quoteLength, attribution: composed.quoted.attribution } }),
       });
       target.bindings.set(span, { record: record ?? span, quotedRecord: composed.quoted?.record, quoteSource: composed.quoted?.source });
@@ -687,7 +687,7 @@ export class FakeHost {
                 for (const [older, index] of target.spanHistory) {
                   if (index.spans.some(entry => {
                     const binding = target.bindings.get(entry.span)!;
-                    return entry.attribution.kind !== "empty" &&
+                    return entry.attribution !== undefined &&
                       (binding.record === record || (entry.quote && binding.quotedRecord === record));
                   })) target.withheldRevisions.add(older);
                 }
@@ -973,6 +973,7 @@ export class FakeHost {
       if (span.offset === 0) {
         span.length += delta;
         span.middle_length += delta;
+        if (nextTitle !== priorTitle) span.attribution = { kind: "host" };
       } else {
         span.offset += delta;
         span.middle_offset += delta;

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { MAX_V2_FRAME_BYTES } from "@calternal/plugin-sdk";
 import type { AttestedBody, ItemRef, ItemSave, ItemSpansPage, RevisionRef } from "../generated/wire.js";
 import { decode, decodeIndexed, encode, encodeRecord, MAX_FILE_BYTES, type messageRecord, needsOpaqueEscape, page, quoteBlock, step, type Thread } from "./format.ts";
@@ -7,6 +8,26 @@ import type { Context } from "./interface.ts";
 /** The installed item kind shared by both conversation shapes. */
 export const kind = "threads";
 const slot = "body";
+
+function mergeSpanPage(index: ItemSpansPage["spans"], page: ItemSpansPage) {
+  const prior = index.at(-1);
+  const [first, ...remaining] = page.spans;
+  const invalid = () => new Error("The saved message ranges are invalid.");
+  if (page.spans.slice(0, -1).some(span => span.host_ranges_more) || (page.spans.at(-1)?.host_ranges_more && !page.next)) throw invalid();
+  if (prior?.host_ranges_more) {
+    if (!first?.host_ranges?.length || !prior.host_ranges ||
+        first.span !== prior.span || first.offset !== prior.offset || first.length !== prior.length ||
+        first.middle_offset !== prior.middle_offset || first.middle_length !== prior.middle_length ||
+        !isDeepStrictEqual(first.attribution, prior.attribution) ||
+        !isDeepStrictEqual(first.quote, prior.quote)) throw invalid();
+    const { host_ranges_more, ...completed } = first;
+    index[index.length - 1] = { ...completed, host_ranges: prior.host_ranges, ...(host_ranges_more && { host_ranges_more }) };
+    prior.host_ranges.push(...first.host_ranges);
+    index.push(...remaining);
+  } else {
+    index.push(...page.spans);
+  }
+}
 
 /** Encode the full Markdown body within the inline broker frame budget. */
 export function inlineBody(body: Buffer): string {
@@ -38,7 +59,7 @@ export async function read(ctx: Context, item: ItemRef, revision: RevisionRef) {
             (provenance !== undefined && page.body_provenance !== provenance) ||
             page.spans.length > 128 || (page.next && (!page.spans.length || seen.has(page.next))) ||
             index.length + page.spans.length > bytes.length) throw new Error("The saved message ranges are invalid.");
-        index.push(...page.spans);
+        mergeSpanPage(index, page);
         provenance = page.body_provenance;
         cursor = page.next;
         if (cursor) seen.add(cursor);

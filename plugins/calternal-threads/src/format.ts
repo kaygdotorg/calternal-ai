@@ -230,7 +230,7 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
   let end = start < body.length && body.at(-1) === "" ? body.length - 1 : body.length;
   if (markers.includes("deleted")) {
     if (body.some(line => line !== "") || attrs.size !== 1 || markers.length !== 1 ||
-        (indexed && (indexed.text !== "" || attribution?.kind !== "empty"))) throw new Error("Could not read the deleted message marker.");
+        (indexed && (indexed.text !== "" || attribution !== undefined))) throw new Error("Could not read the deleted message marker.");
     return { id, author, posted_at, text: "", deleted: true };
   }
   let replyQuote = indexed?.quote;
@@ -257,7 +257,7 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
     end -= 2;
   }
   const framingBody = body.slice(start, end).join("\n");
-  if (indexed && (framingBody !== "" || attribution?.kind === "empty")) throw new Error("Could not read where the message text starts and ends.");
+  if (indexed && (framingBody !== "" || !attribution)) throw new Error("Could not read where the message text starts and ends.");
   const message: Message = { id, author, posted_at, text: indexed?.text ?? escapeBodyHeadings(framingBody, false) };
   const reply = attrs.get("reply-to");
   if (replyQuote !== undefined && !reply) throw new Error("Could not identify the quoted message.");
@@ -375,12 +375,19 @@ export function decodeIndexed(bytes: Buffer, index: readonly IndexedSpan[], prov
     let cursor = headerEnd;
     const refs = new Set<SpanRef>();
     for (const [position, entry] of index.entries()) {
-      const { offset, length, span, middle_offset, middle_length, quote } = entry;
+      const { offset, length, span, middle_offset, middle_length, quote, attribution, host_ranges } = entry;
       const end = offset + length;
       const middleEnd = middle_offset + middle_length;
       if (![offset, length, middle_offset, middle_length].every(Number.isSafeInteger) || length <= 0 || end > bytes.length ||
-          middle_offset < offset || middle_length < 0 || middleEnd > end || refs.has(span)) {
+          middle_offset < offset || middle_length < 0 || middleEnd > end || refs.has(span) ||
+          (middle_length > 0) !== (attribution !== undefined)) {
         throw new Error("The saved message ranges are invalid.");
+      }
+      let priorEnd = offset - 1;
+      for (const range of host_ranges ?? []) {
+        if (![range.offset, range.length].every(Number.isSafeInteger) || range.offset <= priorEnd ||
+            range.length < 1 || range.offset + range.length > end) throw new Error("The saved host-written ranges are invalid.");
+        priorEnd = range.offset + range.length;
       }
       refs.add(span);
       // An attested create records the frontmatter as the first span.

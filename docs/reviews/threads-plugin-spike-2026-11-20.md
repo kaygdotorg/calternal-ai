@@ -4,8 +4,8 @@ The lane starts from dev `80864d0d`. The spike has rerun against
 14.30 (`b89586dd`), 14.31 (`00828198`), 14.32 (`3ca11613`) and
 14.33 (`47024c0f`), 14.34 (`b4d0f20d`), 14.35 (`36d49713`) and
 14.36 (`1c38c21d`), 14.37 (`0d684545`), 14.38 (`430cb649`) and
-14.39 (`d07c380b`). The current pin for both plugins is draft 14.40 at
-`35a5095980947ada8adb5b5431150d7490ab8691`
+14.39 (`d07c380b`) and 14.40 (`35a50959`). The current pin for both plugins is draft 14.41 at
+`4a1e099b616ad7f97a2e8f7994fb782ef5ce4061`
 on `origin/lane/v2-host-base`. It follows the November 20
 decision that the Threads app (`calternal-threads`) owns the conversation file and the selected harness
 owns its working log. The lane issue is [#92](https://git.kayg.org/kayg/calternal-ai/issues/92).
@@ -39,11 +39,11 @@ flock -s /tmp/calternal-dev02.lock nix develop -c bash -c '
 '
 ```
 
-The build uses the 14.40 revision-aware SDK builder. It pins both
+The build uses the 14.41 revision-aware SDK builder. It pins both
 plugin manifests and workers, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-All 47 tests and both Conformance tool 1.1.0 plugin checks passed
-on dev-02 at the 14.40 pin under the shared lock. The repository
+All 48 tests and both Conformance tool 1.1.0 plugin checks passed
+on dev-02 at the 14.41 pin under the shared lock. The repository
 documentation gate passed in the earlier afternoon run. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
@@ -767,7 +767,7 @@ require a cross-owner write grant that the design does not provide.
 The plugin worker code uses no native Threads dispatch, special plugin ID,
 direct plugin connection, inherited provider credential, or server-owned
 thread format. The fixture provider port stands in for live execution placement. The
-14.40 fake carries replies through the catalogue's checked contribution
+14.41 fake carries replies through the catalogue's checked contribution
 methods. People-thread invitations still use fixture ports. The harness manifest includes
 an image-shaped fixture digest and a pinned entry that fails closed.
 It cannot launch Claude Code. The real image, login mapping and reviewed
@@ -854,6 +854,15 @@ scanner are here.
 | Bounded relocation and old links | **CLOSED** for the new exchange | The fixture commits the new folder, title and first rewrite before returning `pending` for overflow. The remaining unrewritten link resolves to the new location through the same item ID and fragment, and an unauthorized viewer is refused. Completing the pending work rewrites the remaining link and issues Undo. Live persistence, replay, path-reuse protection and rewrite cost still need qualification. |
 | Attribution for a host-patched title span | **OPEN** · new | `title_binding.frontmatter` allows the entire recorded title middle to become host-written metadata. `ItemRecordedSpan.attribution` still lists only person, attempt and empty. The app skips the frontmatter span for display, but a generic reader of `item_spans` needs a way to distinguish host title bytes from captured person text. Pin a host-metadata attribution or specify that title-only spans are excluded from returned author attribution. |
 | Earlier findings | **UNCHANGED** | Checked quotes and same-item redaction, default app and hidden metadata declarations, typed timestamps and other fixture behavior pass. The live host, performance, renderer, consent, delivery, SDK and cutover findings are still open. |
+
+## Revision 14.41 disposition
+
+| Finding | Status | Evidence or remaining gap |
+| --- | --- | --- |
+| Attribution for a host-patched title span | **CLOSED** | The fixture changes the title middle to `{kind: "host"}` on rename and preserves the sender and the original quote on the neighboring records. Moving without a title change preserves the existing origin. |
+| Durable span reads and host substitutions | **CLOSED** for the catalogue exchange | A checked read joins the chunks for one span before decoding it and rejects overlapping host-written ranges. It keeps message boundaries, sender metadata and attempt metadata intact. An empty tombstone middle has no origin. The fixture does not exercise live rewrite or redaction origin transactions. |
+| 14.40 rename and reply edits, checked quotes and redaction | **CLOSED** at their previous scope | Both builds and all exchange tests pass. The prior live rewrite, Undo, provenance durability and latency qualification remains open. |
+| Earlier findings | **UNCHANGED** | The revision adds no further contract findings for the v2 flows. The prior consent, delivery, renderer, SDK and cutover work remains. |
 
 ## Simplification opportunities
 
