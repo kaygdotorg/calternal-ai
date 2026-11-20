@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.40 draft
+# Plugin API v2 · revision 14.41 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -453,7 +453,7 @@ its receipt, with long work as a durable job.
 | Engine / methods | Input → output, refusal and bound |
 | --- | --- |
 | Items · `item_create`, `item_head`, `item_range`, `item_history` | Apply the [catalogue item schemas](../contract/host-catalogue-v2.json#/item_engine). Create returns a checked item, revision, portable locator and receipt. Range is pinned and bounded. History uses the existing cursor and authorized revision summaries. |
-| Items · `item_spans` | Exact readable item revision and optional cursor → ordered recorded byte ranges, middle attribution and span refs. See the [catalogue’s span read][item-spans]. |
+| Items · `item_spans` | Exact readable item revision and optional cursor → ordered recorded byte ranges, byte origins and span refs. See the [catalogue’s span read][item-spans]. |
 | Items · `item_save` | The owner commits body, declared metadata, including its indexed title, and an optional relocation in one receipt. Apply the generic relocation rule to any path change. Use the typed `head_conflict` reply to reread and reapply an edit on a checked newer head. Metadata-only changes preserve the room checkpoint. Large writes use the typed staged protocol below. |
 | Items · `item_trash`, `item_restore` | Editor or higher. Trash records a tombstone. Restore from Trash uses the current trashed head and restores a live placement. Restore from history takes a source revision and expected live head and appends that version as a new revision. No history restore against a trashed item. Stale heads give `409`. |
 | Items · `item_rename`, `item_rename_status`, `item_rename_undo` | Rename or move accepts the checked item, expected head, and title or destination folder. Placement commits with the inline rewrites. A pending result means the placement is committed and the remaining rewrites are running under the [relocation rule][relocate]. The host result route exposes status under live item authority and offers protected Undo at completion. Undo is a fresh receipt-backed operation with the existing expected-revision fences. |
@@ -648,7 +648,11 @@ checked source. The host records the full span and the middle attribution
 in the same transaction. Threads stores the message text as plain
 paragraphs in that middle span. On reopen the owning plugin reads
 `item_spans` for the exact readable revision, up to 128 spans per
-page. The durable byte ranges supply the message boundaries even
+page. A recorded middle or quote has a person, attempt or host origin.
+When the host replaces part of a record, the returned host ranges mark
+the replacement bytes and the surrounding attribution stays intact.
+Read all range chunks for that span before using its attribution.
+The durable byte ranges supply the message boundaries even
 when the middle includes a heading-shaped line. Keep the captured
 text byte-for-byte, including those lines. One message edit replaces
 one recorded span, and deletion replaces it with an empty middle. Notes can save a

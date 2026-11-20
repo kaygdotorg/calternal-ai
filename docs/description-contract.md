@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.40 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.41 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -628,7 +628,7 @@ The host composes and records each contiguous message under the
 [catalogue’s authorship rule][write-authorship]. On reopen the owning
 plugin uses `item_spans` and `item_range` for the same revision. Byte
 ranges mark the message and its exact middle, including any line that
-looks like a heading. A quote adds a separate attributed range.
+looks like a heading. A quote adds a separate attributed range. Use the [catalogue’s byte origins](../contract/host-catalogue-v2.json#/item_engine/item_spans/origins) when identifying authored content.
 Provide a heading's `timestamp` as a typed instant. The renderer formats
 it in the viewer's time zone and locale. The plugin reads UTC from its
 own file format. A renderer uses the typed value to draw the time.
