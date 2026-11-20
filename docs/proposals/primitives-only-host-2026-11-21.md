@@ -406,12 +406,13 @@ server. Estimates are rough.
 | Measurement | Decides |
 | --- | --- |
 | Append, edit and delete-with-history-scrub on a 64 MiB record file | D5: if cost is flat in file size, there are no segments |
-| Plugin process memory and cold start (#103) | T2: whether one process per plugin and person is affordable |
+| ~~Plugin process memory and cold start (#103)~~ **Done**: about 16 MiB per process, nothing when idle, 35 to 51 ms cold start cached; shared runtime rejected | T2 (recommendation stands), A23, operator defaults |
+| Still unmeasured from #103: the product's in-guest sandbox (seccomp, user separation), the real broker, and several spaces waking at once | Space wake budget and the per-account ceiling (T10) |
 | A live window's save path against the 40 ms gate without stored row sets | Step 2's window design |
 | The warm path of the one check (target: no disk reads) | Step 3 |
 | Change-chain depth and machine batching under load | Running-code limits |
 | The kill-the-server run test | Step 6 |
-| Whether V8 isolates can be a boundary | T2 option (b) and process sharing |
+| Whether V8 isolates can be a boundary | Answered for worker threads by #103: no (a worker thread read files outside its permissions); no design depends on it now |
 
 ## 8. Was and is
 
@@ -455,6 +456,7 @@ Accepted unless you object.
 | A20 | Approval binds a plugin's digest and its program's image digest; the host recomputes every derived install sentence on any update. | The code next to a login is what must be approved. |
 | A21 | Record files accept outside changes only as pure appends; anything else becomes a conflict copy. | Only authors change records. |
 | A22 | Request IDs are derived by the host; authors never write them. | Retries stay exact without author bookkeeping. |
+| A23 | No shared runtime per publisher: the earlier agreement to try one is answered by measurement. | [#103 measurement](https://git.kayg.org/kayg/calternal-ai/src/branch/lane/plugin-memory/docs/measurements/plugin-split-memory-2026-11-20.md): worker threads in one runtime saved only 10 MiB at seven plugins and cost more at one or two; calls took about twice as long; a native crash or the OOM killer took every plugin in the runtime; one plugin wrote a frame the host accepted as another's reply; and in Node 24.21.0 a worker thread could read any file below the process's current directory regardless of its permissions. |
 
 ### B. The real forks
 
@@ -494,9 +496,19 @@ asked by Ann, it repeats a line from it, or it wrote the line into a file
 that Ann's agent then reads.
 *Options:*
 - (a) **One worker process per plugin and acting person**, stopped when
-  idle. Airtight for recall. Cost: memory grows with active people (waiting
-  on #103). Laundering through files still needs (b) on top, unless the
-  process is never handed others' writing.
+  idle. Airtight for recall. Cost, measured ([#103 measurement](https://git.kayg.org/kayg/calternal-ai/src/branch/lane/plugin-memory/docs/measurements/plugin-split-memory-2026-11-20.md)): about 16 MiB of
+  guest memory per active person per code-carrying plugin while in use
+  (15 to 17 MiB, about 11 MiB of it Node itself), nothing when idle; a
+  stopped process's first call takes 35 to 51 ms p50 with files cached
+  and 86 to 157 ms uncached. Laundering through files still needs (b) on
+  top, unless the process is never handed others' writing.
+  *Worked example:* a five-person space where Chat is active for three
+  people. Chat core owns `chats`, so it keeps one shared process: 16 MiB.
+  `calternal-chat-ai` and `calternal-chat-notify` read a kind they do not
+  own, so each gets one process per active person: 2 × 3 × 16 = 96 MiB.
+  Total about 112 MiB while all three are in use, against about 48 MiB
+  with one process per plugin; when they go idle, 0. The two idle members
+  cost nothing.
 - (b) **Taint per process.** Every write by a process that was handed
   other people's writing is stamped as carrying those authors, and is left
   out for outbound-capable readers. Cost: an ordinary Chat process smears
@@ -505,8 +517,10 @@ that Ann's agent then reads.
 - (c) Trust installed plugins (revision 14's rule). Cost: no protection.
 
 *Recommendation:* (a) for every plugin that reads kinds it does not own,
-with (b) limited to processes of such plugins, once #103 shows the memory
-cost is acceptable. Until then, interface-only plugins run no process.
+with (b) limited to processes of such plugins. **It stands after the
+measurement:** the extra cost is about 16 MiB per active person per such
+plugin, only while in use, and the price is one cold start (35 to 51 ms
+cached) per person after each idle stop.
 
 **T3. What counts as "an agent", and which writing is protected?**
 *What:* the host treats anything outbound-capable as an agent: a run, or a
@@ -758,7 +772,8 @@ by side, the rest as tabs.
 | Missed alarms | Delivered once, late, with both times; grace is the plugin's setting (SDK default one hour) |
 | A sleeping laptop | Sleep counts towards the 24-hour rule; the run stops at wake and the app offers resume |
 | Updates and reboots under hosted runs | Server updates never wait; reboots wait for idle up to a limit, then mark runs interrupted with a resume offer |
-| Process sharing | Interface-only plugins run no process; others start on first call and stop when idle (until T2 and #103) |
+| Process sharing | Plugins never share a process. Interface-only plugins run no process. Others start on first call and stop when idle (measured, #103). |
+| Idle stop | 60 s (the bench used 15 s). Longer keeps about 16 MiB per process resident while a person pauses; shorter pays a 35 to 51 ms cold start (86 to 157 ms uncached) more often. 60 s covers the pauses of a conversation without keeping processes for a person who has left. |
 | Retention | Trash 30 days, receipts 7 days, run files 30 days, audit per plugin |
 | Per-person state writes | Coalesced by the host (about every 5 s); not an author concept |
 
