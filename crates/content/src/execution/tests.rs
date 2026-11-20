@@ -33,6 +33,7 @@ fn seed_item(db: &Connection, item: &ItemRef) {
 fn pin(item: ItemRef, actor: AccountId) -> PinnedExecution {
     PinnedExecution {
         item: item.clone(),
+        kind: "example".into(),
         actor,
         installation: InstallationId::new(),
         installation_generation: 1,
@@ -46,8 +47,13 @@ fn pin(item: ItemRef, actor: AccountId) -> PinnedExecution {
             package: PackageId("example-harness".into()),
             contribution: calternal_types::ContributionId("run".into()),
         },
-        placement: PlacementRef("checked-placement".into()),
+        contribution_digest: "c".repeat(64),
+        entry_digest: "d".repeat(64),
+        image_digest: "e".repeat(64),
+        placement: Some(PlacementRef("checked-placement".into())),
+        machine: Uuid::now_v7(),
         profile: "checked-profile".into(),
+        profile_generation: 1,
         audience_generation: 1,
         effect_ceiling: json!({}),
         input: json!({"item": item}),
