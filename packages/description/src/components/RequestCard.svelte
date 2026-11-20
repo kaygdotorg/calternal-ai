@@ -1,6 +1,6 @@
 <script lang="ts">
   // The request-card host component: one protected record and its resolver. The card shows what the host sends as the trusted preview (title and the arguments, in the order the host wrote them) and ONLY the host's own
-  // buttons resolve it: Approve (once, or for this thread) and Deny go to the `request_resolve` route with the host-issued card context and request ref. Nothing here is a plugin's: a description cannot relabel,
+  // buttons resolve it: Approve (once, or for this chat) and Deny go to the `request_resolve` route with the host-issued card context and request ref. Nothing here is a plugin's: a description cannot relabel,
   // reorder or cover it. A request the host no longer has (resolved elsewhere) is shown as settled.
   import type { ActionOutcome, RequestCard } from "../model";
   import { useApp, useActions } from "../invoke/context";
@@ -32,7 +32,7 @@
     <dl class="m" data-material>{#each card.material as m (m.label)}<dt>{m.label}</dt><dd>{typeof m.value === "string" ? m.value : JSON.stringify(m.value)}</dd>{/each}</dl>
     {#if outcome && outcome.state !== "ok"}<div class="err" role="alert">{outcome.message}</div>
     {:else if outcome}<p class="done" role="status">Done.</p>
-    {:else if !config.compact || true}<div class="b"><button type="button" aria-disabled={busy || undefined} onclick={() => decide("approve", "once")}>Approve once</button><button type="button" aria-disabled={busy || undefined} onclick={() => decide("approve", "this_thread")}>Approve for this thread</button><button type="button" aria-disabled={busy || undefined} onclick={() => decide("deny")}>Deny</button></div>{/if}
+    {:else if !config.compact || true}<div class="b"><button type="button" aria-disabled={busy || undefined} onclick={() => decide("approve", "once")}>Approve once</button><button type="button" aria-disabled={busy || undefined} onclick={() => decide("approve", "this_thread")}>Approve for this chat</button><button type="button" aria-disabled={busy || undefined} onclick={() => decide("deny")}>Deny</button></div>{/if}
   </section>
 {:else}<span data-host-component="request-card" data-host-component-id={id} hidden></span>{/if}
 

@@ -13,7 +13,7 @@
   import ChildRows from "./ChildRows.svelte";
   import { useApp } from "../invoke/context";
 
-  let { template, row, store, kindIcon, selected, depth = 0, onclick }: { template: RowTemplate; row: WindowRow; store: WindowStore; kindIcon?: string; selected: boolean; depth?: number; onclick?: (e: MouseEvent) => void } = $props();
+  let { template, row, store, kindIcon, selected, depth = 0, flat = false, onclick, extra = [], onextra }: { template: RowTemplate; row: WindowRow; store: WindowStore; kindIcon?: string; selected: boolean; depth?: number; flat?: boolean; /** No indentation at any depth (the sidebar of sections draws a Cal's threads at the same margin). */ onclick?: (e: MouseEvent) => void; /** Further menu items (Move up, Move down) a list adds for its own arrangement, and what picking one does. */ extra?: MenuItem[]; onextra?: (id: string) => void } = $props();
   const app = useApp();
   const kids = $derived(template.children ? app?.storeFor(template.children.bind, row.parent_refs?.[template.children.bind]) : undefined);
   let open = $state(false);
@@ -27,8 +27,8 @@
   let menuOpen = $state(false), menuAnchor = $state<{ x: number; y: number } | null>(null), moreEl = $state<HTMLElement | null>(null);
   // The keyboard and context menu offers every action of the row: the swipe actions too (a swipe is never the only way), then the declared menu, each once.
   const every = $derived.by(() => { const seen = new Set<string>(); return [...lead, ...trail, ...menu].filter((a) => !seen.has(a.id) && !!seen.add(a.id)); });
-  const items = $derived<MenuItem[]>(every.map((a) => ({ id: a.id, label: a.title ?? a.id, danger: a.role === "destructive", disabled: off(a) })));
-  async function pick(id: string) { menuOpen = false; const a = every.find((m) => m.id === id); if (a && "operation" in a) await ui.invoker.run(a, { context: ctx(a) }); }
+  const items = $derived<MenuItem[]>([...every.map((a) => ({ id: a.id, label: a.title ?? a.id, danger: a.role === "destructive", disabled: off(a) })), ...extra]);
+  async function pick(id: string) { menuOpen = false; if (extra.some((x) => x.id === id)) { onextra?.(id); return; } const a = every.find((m) => m.id === id); if (a && "operation" in a) await ui.invoker.run(a, { context: ctx(a) }); }
 
   // Swipe (touch only): dragging a row right shows its leading actions, left its trailing ones; past 45% of the row's width the FIRST action of that side runs, but only if it is a full swipe the catalogue allows for its
   // operation (`full_swipe`). The same actions are buttons and menu items, so a swipe is never the only way, and a swipe never opens a confirmation or runs a plugin operation.
@@ -44,31 +44,35 @@
   }
 </script>
 
-<div class="ra" data-actions class:sel={selected} oncontextmenu={(e) => { if (every.length) { e.preventDefault(); menuAnchor = { x: e.clientX, y: e.clientY }; menuOpen = true; } }}
+<div class="ra" data-actions class:sel={selected} oncontextmenu={(e) => { if (items.length) { e.preventDefault(); menuAnchor = { x: e.clientX, y: e.clientY }; menuOpen = true; } }}
   onkeydown={(e) => { if (template.children && (e.target as HTMLElement).matches?.("button.row")) { if (e.key === "ArrowRight" && !open) { open = true; e.preventDefault(); } else if (e.key === "ArrowLeft" && open) { open = false; e.preventDefault(); } } }}
   onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={() => { drag = false; dx = 0; }} style:transform={dx ? `translateX(${dx}px)` : undefined}>
   <RowView {template} {row} {kindIcon} {selected} {depth} {onclick} />
   {#if template.children && row.parent_refs?.[template.children.bind]}<button type="button" tabindex="-1" class="disc" aria-expanded={open} aria-label={open ? "Collapse" : "Expand"} onclick={() => (open = !open)}>{open ? "▾" : "▸"}</button>{/if}
   {#if lead.length || trail.length || menu.length}
     <div class="acts" role="group" aria-label="Actions">
-      {#each lead as a (a.id)}<ActionButton action={a} context={ctx(a)} disabled={off(a)} />{/each}
-      {#each trail as a (a.id)}<ActionButton action={a} context={ctx(a)} disabled={off(a)} />{/each}
+      {#each lead as a (a.id)}<span class="ab fold"><ActionButton action={a} context={ctx(a)} disabled={off(a)} /></span>{/each}
+      {#each trail as a, k (a.id)}<span class="ab" class:fold={k > 0}><ActionButton action={a} context={ctx(a)} disabled={off(a)} /></span>{/each}
       {#if every.length}<button type="button" tabindex="-1" class="more" aria-label="More actions" bind:this={moreEl} onclick={() => { menuAnchor = null; menuOpen = true; }}>…</button>{/if}
     </div>
   {/if}
-  {#if open && kids}<ChildRows store={kids} depth={depth + 1} {kindIcon} />{/if}
-  {#if every.length}<Menu open={menuOpen} {items} label="Actions" onpick={pick} onclose={() => (menuOpen = false)} trigger={moreEl} anchor={menuAnchor ? { left: menuAnchor.x, top: menuAnchor.y, right: menuAnchor.x, bottom: menuAnchor.y } : null} />{/if}
+  {#if open && kids}<ChildRows store={kids} depth={flat ? 0 : depth + 1} {kindIcon} />{/if}
+  {#if items.length}<Menu open={menuOpen} {items} label="Actions" onpick={pick} onclose={() => (menuOpen = false)} trigger={moreEl} anchor={menuAnchor ? { left: menuAnchor.x, top: menuAnchor.y, right: menuAnchor.x, bottom: menuAnchor.y } : null} />{/if}
 </div>
 
 <style>
   .ra { position: relative; touch-action: pan-y; }
-  /* Row actions are compact: an icon where the action has one (its title is the accessible name and the tooltip), so the group never covers the row's own label, and only its buttons take pointer events. */
-  .acts { pointer-events: none; position: absolute; inset-block: 0; inset-inline-end: var(--s-3); display: flex; align-items: center; gap: var(--s-2); opacity: 0; }
-  /* Hidden by opacity, not display, so the arrow keys can move focus into it; its buttons take pointer events only while it is shown. */
-  .ra:hover .acts, .ra:focus-within .acts, .ra.sel .acts { opacity: 1; }
-  .disc { position: absolute; inset-inline-start: 0; top: 0; min-width: 20px; min-height: var(--row-h); color: var(--ink-3); }
-  .ra:hover .acts :global(button), .ra:focus-within .acts :global(button), .ra.sel .acts :global(button) { pointer-events: auto; }
-  .acts :global(.btn[data-has-icon]) { padding: 0 var(--s-3); min-width: 44px; justify-content: center; }
+  /* Pointing at a row swaps its marks for its actions (docs/ui-design-system.md "Interaction rules"): the counts fade out and the first trailing action and "More" appear in their place on the row's own glass, so nothing is drawn over the title or the time.
+     Only hover and keyboard focus show them (a selected row does not), and only their buttons take pointer events. */
+  .acts { pointer-events: none; position: absolute; inset-block: 0; inset-inline-end: var(--s-2); display: flex; align-items: center; gap: var(--s-1); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+  .ra:hover .acts, .ra:focus-within .acts { opacity: 1; }
+  .ra:hover :global([data-mark]), .ra:focus-within :global([data-mark]) { opacity: 0; }
+  :global([data-mark]) { transition: opacity var(--dur-fast) var(--ease-out); }
+  .ra:hover .acts :global(button), .ra:focus-within .acts :global(button) { pointer-events: auto; }
+  .ab.fold:not(:focus-within) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .disc { position: absolute; inset-inline-start: -4px; z-index: 1; top: 0; min-width: 20px; min-height: var(--row-h); color: var(--ink-3); }
+  .acts :global(.btn[data-has-icon]) { padding: 0; min-width: 28px; width: 28px; height: 28px; justify-content: center; border-radius: 50%; }
   .acts :global(.btn[data-has-icon] > span:last-child) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .more { min-width: 44px; min-height: 44px; border-radius: var(--r-select); color: var(--ink-2); }
+  .more { min-width: 28px; height: 28px; border-radius: 50%; color: var(--ink-2); }
+  .more:hover, .acts :global(.btn:hover) { background: rgb(var(--ink-rgb) / 0.08); }
 </style>

@@ -8,7 +8,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = join(dirname(fileURLToPath(import.meta.url)), "..");
-const ALL = [["keys", []], ["fixtures", []], ["components", []], ["actions", []], ["bulk", []], ["reading", []], ["images", []], ["perf", []], ["scale-notes", ["notes"]], ["scale-threads", ["threads"]]];
+const ALL = [["keys", []], ["fixtures", []], ["components", []], ["chat", []], ["chat-entries", []], ["actions", []], ["bulk", []], ["reading", []], ["images", []], ["perf", []], ["scale-notes", ["notes"]], ["scale-threads", ["threads"]]];
 const want = process.argv.slice(2);
 const git = process.env.COMMIT ?? (spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: here, encoding: "utf8" }).stdout.trim() || "unknown"); // (COMMIT names it where the tree has no .git)
 const rows = [], tables = [], fails = [], retried = []; let failed = 0;

@@ -38,7 +38,7 @@ describe("turn-transcript", () => {
     await vi.advanceTimersByTimeAsync(4000); await flush();
     expect(refused).toBe(true); expect(view.container.querySelectorAll("[data-event]").length).toBeGreaterThan(0);
     const none = await draw("turn-transcript", { thread: { route: "thread" } }, {});
-    await flush(); expect(none.src.log.length).toBe(0); expect(none.view.container.textContent).toContain("Choose a thread");
+    await flush(); expect(none.src.log.length).toBe(0); expect(none.view.container.textContent).toContain("Choose a chat");
   });
 });
 
@@ -78,7 +78,7 @@ describe("request-card", () => {
     const { src, view } = await draw("request-card", { request: { route: "request" } }, { request: "req-1" });
     await flush();
     expect(view.container.querySelectorAll("[data-material] dt").length).toBe(2);
-    await fireEvent.click([...view.container.querySelectorAll("button")].find((b) => b.textContent === "Approve for this thread")!); await flush();
+    await fireEvent.click([...view.container.querySelectorAll("button")].find((b) => b.textContent === "Approve for this chat")!); await flush();
     const r = src.log.find((l) => l.route === "request.resolve")!.body as any;
     expect(r).toEqual({ type: "request_resolve", card_context: "synthetic-card", request_ref: "req-1", decision: "approve", lifetime: "this_thread" });
   });

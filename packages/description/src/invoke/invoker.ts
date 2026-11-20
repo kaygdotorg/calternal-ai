@@ -14,7 +14,7 @@ export interface InvokerHooks {
   /** Asks for a text, date or datetime answer; null means the person cancelled. */
   prompt(spec: { name: string; title: string; placeholder?: string; kind: "text" | "date" | "datetime"; initial?: string }): Promise<string | null>;
   /** Shows the labels of the host's options and returns the picked `ref`; null means cancelled. */
-  choose(spec: { name: string; title: string; options: ChoiceOptions["options"] }): Promise<string | null>;
+  choose(spec: { name: string; title: string; options: ChoiceOptions["options"]; default_ref?: string }): Promise<string | null>;
   /** The protected confirmation: shows exactly the material the host wrote; true only on the person's explicit confirmation. */
   confirm(spec: { action: Invoke; material: ConfirmationMaterial[] }): Promise<boolean>;
   /** The outcome is in (also pending ones when they settle). */
@@ -23,12 +23,18 @@ export interface InvokerHooks {
   route?(name: string, created: string): void;
 }
 
+/** One page of options the host returned for a choice: the labels to show, the eligible default, and for an extension choice (a harness) the typed ref the placement request needs. */
+export interface ChoicePage { options: { ref: string; label: string; harness_ref?: string }[]; default_ref?: string }
+
 /** What the caller holds for one activation. */
 export interface Activation {
   /** The host-issued context for this action on the row or view it was drawn for. Absent: nothing is sent. */
   context: string | undefined;
   /** Values on the device: `form` fields of the submitting form, a composer `draft`, a ticked `selection_ref`. */
   interaction?: Pick<Interaction, "form" | "draft" | "selection_ref">;
+  /** The activation id the person's chip choices were fetched for (a placement option is bound to it) and the harness they picked; set by a composer that asked ahead. */
+  activation_id?: string;
+  harness?: string;
   /** Called first when a held selection must be sent before the activation (the context then arrives). */
   flush?: () => Promise<void>;
   /** Re-reads the context after `flush`. */
@@ -63,9 +69,9 @@ export class Invoker {
     let mayHaveRun = false; // true once a request that could have run the operation has been sent
     try {
       const interaction: Interaction = { ...(a.interaction ?? {}) };
-      const asked = await this.#ask(action, context, interaction);
+      const activation_id = a.activation_id ?? newId();
+      const asked = await this.#ask(action, context, interaction, activation_id, a.harness);
       if (!asked) return { state: "cancelled" };
-      const activation_id = newId();
       mayHaveRun = oneExchange(action.operation); // a one-exchange resolve is also the dispatch
       let reply = await this.session.exchange<ActionOutcome | ActivationResolution>("activation.resolve", { type: "invoke", action_id: action.id, activation_id, activation_context: context, ...(Object.keys(interaction).length ? { interaction } : {}), ...(oneExchange(action.operation) ? { dispatch: true } : {}) });
       let outcome: ActionOutcome;
@@ -92,15 +98,32 @@ export class Invoker {
     } finally { this.busy.delete(key); }
   }
 
-  /** Collects prompt answers and choices the inputs name. Returns false when the person cancelled. */
-  async #ask(action: Invoke, context: string, into: Interaction): Promise<boolean> {
+  /**
+   * Collects prompt answers and choices the inputs name, in the order the description declares them. A `choice` takes its options from a bind (`choice.options`), from the app's extension point
+   * (`extension.choices`, for example the installed harnesses) or from the host (`execution_placement`, asked after the harness because placement depends on it: the harness ref travels with the request, with the
+   * activation id the person is about to start). Returns false when the person cancelled.
+   */
+  async #ask(action: Invoke, context: string, into: Interaction, activation_id: string, preharness?: string): Promise<boolean> {
+    let harness: string | undefined = preharness;
     for (const [name, src] of Object.entries(action.inputs ?? {})) {
       if (!("prompt" in src)) continue;
       const p = src.prompt;
+      // 14.43: a prompt (the harness and placement choices of a message that addresses no agent) is asked only while its condition on the form holds; a hidden prompt supplies nothing.
+      const cond = (p as { showWhen?: { form: string; field: string; op: "exists" | "eq"; value?: unknown } }).showWhen;
+      if (cond) {
+        const form = (into.form ?? {}) as Record<string, unknown>, scope = (this.session.formKeyed ? form[cond.form] : form) as Record<string, unknown> | undefined, v = scope?.[cond.field];
+        if (cond.op === "exists" ? v === undefined || v === null || v === "" || v === false : !(v === cond.value || String(v) === String(cond.value))) continue;
+      }
+      if (p.kind === "choice" && into.choices?.[name]) continue; // already picked on a chip, before Send
       if (p.kind === "choice") {
-        const opts = await this.session.exchange<ChoiceOptions>("choice.options", { type: "choice_options", activation_context: context, slot: name });
-        const ref = await this.hooks.choose({ name, title: p.title, options: opts.options });
+        const from = (p as { options?: { extension?: string; host?: string } }).options ?? {};
+        let page: ChoicePage;
+        if (from.extension) page = await this.session.exchange<ChoicePage>("extension.choices", { type: "extension_choices", app: this.session.app ?? "", point: from.extension, activation_context: context, slot: name });
+        else if (from.host) page = await this.session.exchange<ChoicePage>("choice.options", { type: "choice_options", activation_context: context, slot: name, activation_id, ...(harness ? { harness } : {}) });
+        else page = await this.session.exchange<ChoicePage>("choice.options", { type: "choice_options", activation_context: context, slot: name });
+        const ref = await this.hooks.choose({ name, title: p.title, options: page.options, default_ref: page.default_ref });
         if (ref === null) return false;
+        if (from.extension) harness = page.options.find((o) => o.ref === ref)?.harness_ref ?? harness;
         (into.choices ??= {})[name] = ref;
       } else {
         const initial = p.initial && "literal" in p.initial && typeof p.initial.literal === "string" ? p.initial.literal : undefined;

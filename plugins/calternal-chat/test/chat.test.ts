@@ -9,16 +9,16 @@ after(checkTrace);
 async function setup() {
   const host = new FakeHost();
   const context = (request: string, operation: string) => host.context(request, operation);
-  const { created: item } = await handlers["threads.create"]({ title: "Review the lease" }, host.createContext("create-1", "Review the lease"));
+  const { created: item } = await handlers["chat.create"]({ title: "Review the lease" }, host.createContext("create-1", "Review the lease"));
   const selection = host.choose();
   const send = (request: string, text: string) =>
-    handlers["threads.send"]({ item, text, ...selection }, host.composerContext(request, item, text));
+    handlers["chat.send"]({ item, text, ...selection }, host.composerContext(request, item, text));
   return { host, item, send, selection, context };
 }
 
 test("create, select a contributed harness, append its reply and Stop an exact attempt", async () => {
   const { host, item, send, context } = await setup();
-  assert.match(host.files.get(item)!.path!, /^Threads\/2026-11-20 Review the lease\/Conversation\.md$/);
+  assert.match(host.files.get(item)!.path!, /^Chats\/2026-11-20 Review the lease\/Conversation\.md$/);
   assert.deepEqual(host.thread(item).participants.map(p => p.kind), ["person"]);
   const first = await send("send-1", "Say hello 🦊\n\n---\n<!-- ## Agent -->");
   assert.deepEqual(await send("send-1", "Say hello 🦊\n\n---\n<!-- ## Agent -->"), first);
@@ -31,7 +31,7 @@ test("create, select a contributed harness, append its reply and Stop an exact a
   assert.match(JSON.stringify(host.snapshots.get(item)!.view), /"timestamp":"2026-11-20T12:00:00Z"/);
   assert.match(host.markdown(reply.log!.id), /## Reply/);
   assert.ok(host.markdown(item).includes(`{#m-${reply.id} `));
-  assert.equal((await handlers["threads.message"]({ item, message: reply.id }, context("read-1", "threads.message"))).text, reply.text);
+  assert.equal((await handlers["chat.message"]({ item, message: reply.id }, context("read-1", "chat.message"))).text, reply.text);
   assert.equal(host.snapshots.get(item)?.source_revision, host.files.get(item)?.revision);
   assert.match(JSON.stringify(host.snapshots.get(item)!.view), /Reply to Say hello/);
 
@@ -95,21 +95,21 @@ test("generic rename moves the folder, updates indexed links and preserves IDs a
   assert.equal(after.id, before.id);
   assert.deepEqual(after.messages, before.messages);
   assert.notEqual(host.files.get(item)!.path, path);
-  assert.equal(host.files.get(item)!.path, "Threads/2026-11-20 Later title/Conversation.md");
-  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Threads/2026-11-20 Later title/Conversation.md#${anchor}>)\n`);
-  assert.equal(host.linkedMarkdown.get("Notes/Nested/Agenda.md"), `[Read the conversation](<../../Threads/2026-11-20 Later title/Conversation.md#${anchor}>)\n`);
+  assert.equal(host.files.get(item)!.path, "Chats/2026-11-20 Later title/Conversation.md");
+  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Chats/2026-11-20 Later title/Conversation.md#${anchor}>)\n`);
+  assert.equal(host.linkedMarkdown.get("Notes/Nested/Agenda.md"), `[Read the conversation](<../../Chats/2026-11-20 Later title/Conversation.md#${anchor}>)\n`);
   assert.equal(host.linkedMarkdown.get("Notes/Unrelated.md"), "No conversation link\n");
-  assert.deepEqual(await handlers["threads.refresh"]({
+  assert.deepEqual(await handlers["chat.refresh"]({
     item, source_revision: original.source_revision,
-  }, context("refresh-1", "threads.refresh")), { view: original.view });
+  }, context("refresh-1", "chat.refresh")), { view: original.view });
   assert.equal(host.snapshots.get(item)!.source_revision, host.files.get(item)!.revision);
   await host.rename(item, "Final title", "rename-2");
-  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Threads/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
+  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Chats/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
   const moved = await host.rename(item, undefined, "move", undefined, ["Decisions"]);
   if (moved.state !== "ok") throw new Error("Expected inline move");
-  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Threads/Decisions/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
+  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Chats/Decisions/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
   await host.undoRename(moved.undo.ref, "undo-move");
-  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Threads/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
+  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Chats/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
   const final = host.files.get(item)!;
   const spanIndex = final.spanHistory.get(final.revision)!;
   assert.deepEqual(decodeIndexed(Buffer.from(host.markdown(item)), spanIndex.spans, spanIndex.body_provenance).thread.messages, before.messages);
@@ -136,7 +136,7 @@ test("rename commits the title and folder before deferred links finish and old l
   const later = host.linkedMarkdown.get("Notes/Later.md");
   const outcome = await host.rename(item, "Deferred title", "rename-with-overflow");
   if (outcome.state !== "pending") throw new Error("Expected deferred rewrites");
-  const expected = "Threads/2026-11-20 Deferred title/Conversation.md";
+  const expected = "Chats/2026-11-20 Deferred title/Conversation.md";
   assert.notEqual(path, expected);
   assert.equal(host.files.get(item)?.path, expected);
   assert.equal(host.thread(item).title, "Deferred title");
@@ -155,9 +155,9 @@ test("rename commits the title and folder before deferred links finish and old l
 test("alarm delivery retains checked harness and lets the worker decide whether to run late", async () => {
   const { host, item, selection, context } = await setup();
   const arm = (if_missed: "skip" | "run", request: string) =>
-    handlers["threads.arm"]({
+    handlers["chat.arm"]({
       item, harness: selection.harness, text: if_missed, at: "2026-11-20T13:00:00Z", if_missed,
-    }, context(request, "threads.arm"));
+    }, context(request, "chat.arm"));
   const skipped = await arm("skip", "alarm-skip");
   await host.deliver(skipped.alarm, "2026-11-20T13:01:01Z");
   assert.equal(host.thread(item).messages.length, 0);
@@ -182,9 +182,9 @@ test("newest pages keep complete messages and older reads stay on the same revis
   const snapshot = host.snapshots.get(item)!;
   assert.ok(snapshot.older);
   assert.ok(Buffer.byteLength(JSON.stringify(snapshot.view)) < 65536);
-  const read = (older?: string) => handlers["threads.refresh"]({
+  const read = (older?: string) => handlers["chat.refresh"]({
     item, source_revision: snapshot.source_revision, older,
-  }, context("page-older", "threads.refresh"));
+  }, context("page-older", "chat.refresh"));
   let page = await read();
   assert.ok("view" in page);
   assert.deepEqual(page.view, snapshot.view);
@@ -223,7 +223,7 @@ test("replay after a committed append with a lost ACK publishes the head without
 test("unchecked harness and placement refs fail before job admission", async () => {
   const { host, item, selection, context } = await setup();
   const send = (input: Partial<typeof selection>) =>
-    handlers["threads.send"]({ item, text: "Run this", ...selection, ...input }, context("forged-choice", "threads.send"));
+    handlers["chat.send"]({ item, text: "Run this", ...selection, ...input }, context("forged-choice", "chat.send"));
   await assert.rejects(send({ harness: "claude-code" }), /unchecked harness/);
   await assert.rejects(send({ placement: "some-other-machine" }), /unchecked placement/);
   assert.equal(host.jobs.size, 0);
@@ -250,7 +250,7 @@ test("a rename while the harness is running preserves the reply and snapshot", a
 test("two conversations with the same title get different readable placements", async () => {
   const { host, item, context } = await setup();
   const create = (request: string) =>
-    handlers["threads.create"]({ title: "Review the lease" }, host.createContext(request, "Review the lease"));
+    handlers["chat.create"]({ title: "Review the lease" }, host.createContext(request, "Review the lease"));
   const { created } = await create("same-title");
   assert.notEqual(created, item);
   assert.match(host.files.get(created)!.path!, /Review the lease \(2\)\/Conversation\.md$/);
@@ -270,7 +270,7 @@ test("first contribution output and log survive Stop before the terminal frame",
   await outputCommitted;
   const reply = host.thread(item).messages.at(-1)!;
   const source_revision = host.files.get(item)!.revision;
-  const refresh = (anchor: string) => handlers["threads.refresh"]({ item, source_revision, anchor }, context("open-anchor", "threads.refresh"));
+  const refresh = (anchor: string) => handlers["chat.refresh"]({ item, source_revision, anchor }, context("open-anchor", "chat.refresh"));
   assert.deepEqual(await refresh("unknown-message"), { anchor_unavailable: true });
   const anchored = await refresh(reply.id);
   assert.ok("anchor" in anchored);
@@ -289,14 +289,14 @@ test("a fresh checked harness binding reuses the stored logical agent participan
   const previous = host.choose();
   const fresh = host.rotateHarness();
   assert.notEqual(previous.harness, fresh.harness);
-  await assert.rejects(handlers["threads.send"]({ item, text: "Stale", ...previous },
-    context("old-binding", "threads.send")), /unchecked harness/);
-  const { job_id } = await handlers["threads.send"]({ item, text: "Second binding", ...fresh },
+  await assert.rejects(handlers["chat.send"]({ item, text: "Stale", ...previous },
+    context("old-binding", "chat.send")), /unchecked harness/);
+  const { job_id } = await handlers["chat.send"]({ item, text: "Second binding", ...fresh },
     host.composerContext("new-binding", item, "Second binding"));
   await host.run(job_id);
   const agents = host.thread(item).participants.filter(person => person.kind === "agent");
   assert.equal(agents.length, 1);
-  assert.deepEqual(agents[0].contribution, { package: "calternal-threads-claude-code", contribution: "claude-code" });
+  assert.deepEqual(agents[0].contribution, { package: "calternal-chat-claude-code", contribution: "claude-code" });
   assert.doesNotMatch(host.markdown(item), /checked-harness/);
 });
 
@@ -305,9 +305,9 @@ test("the shared run target is outside both Send and alarm broker payloads", asy
   const { job_id } = await send("single-send-item", "Start");
   assert.equal(host.jobs.get(job_id)?.context.item, item);
   await host.run(job_id);
-  const { alarm } = await handlers["threads.arm"]({
+  const { alarm } = await handlers["chat.arm"]({
     item, harness: selection.harness, text: "Later", at: "2026-11-21T12:00:00Z", if_missed: "run",
-  }, context("single-alarm-item", "threads.arm"));
+  }, context("single-alarm-item", "chat.arm"));
   assert.equal(host.alarms.get(alarm)?.item, item);
   assert.ok(!Object.hasOwn(host.alarms.get(alarm)!.input, "item"));
   await host.deliver(alarm, "2026-11-21T12:00:00Z");
@@ -324,9 +324,9 @@ test("Send and alarm admission refuse an oversized contribution with 413 before 
   const error = { status: 413, code: "contribution_frame_limit" };
   const prompt = '"'.repeat(8192);
   await assert.rejects(send("oversized-send", prompt), error);
-  await assert.rejects(handlers["threads.arm"]({
+  await assert.rejects(handlers["chat.arm"]({
     item, harness: selection.harness, text: prompt, at: "2026-11-21T12:00:00Z", if_missed: "run",
-  }, context("oversized-alarm", "threads.arm")), error);
+  }, context("oversized-alarm", "chat.arm")), error);
   assert.equal(providerCalls, 0);
   assert.equal(host.jobs.size, 0);
   assert.equal(host.alarms.size, 0);
@@ -356,7 +356,7 @@ test("the broker refuses a changed contribution input on the same admitted attem
   try {
     const job = host.jobs.get(job_id)!;
     assert.deepEqual(job.context.contribution_input, { text: "Approved" });
-    const ctx = host.context(job_id, "threads.run", job);
+    const ctx = host.context(job_id, "chat.run", job);
     const substitute = { execution: job.attempt!.execution, contribution: job.context.harness, input: { text: "Changed" } };
     await assert.rejects(ctx.call("contribution_call", {
       ...substitute, request_id: step(job_id, "contribution"),
@@ -391,7 +391,7 @@ test("the creator retains discovery across several attested prompts and replies"
 
 test("the shorter heading and suffix fit a long reply and keep a literal delimiter attested", async () => {
   const { host, item, send, context } = await setup();
-  const agent = { ...agentParticipant("test-thread", { package: "calternal-threads-claude-code", contribution: "claude-code" }),
+  const agent = { ...agentParticipant("test-thread", { package: "calternal-chat-claude-code", contribution: "claude-code" }),
     name: "é".repeat(100) };
   const base = { id: "0123456789abcdef", author: agent, posted_at: "2026-11-20T12:00:00Z",
     replyTo: "aabbccddeeff0011", replyToName: "Alice", text: "Reply",
@@ -413,14 +413,14 @@ test("the shorter heading and suffix fit a long reply and keep a literal delimit
   const index = host.files.get(item)!.spanHistory.get(host.files.get(item)!.revision)!;
   assert.deepEqual(index.spans.map(span => span.attribution?.kind), ["person", "person", "attempt"]);
   const first = decodeIndexed(Buffer.from(host.markdown(item)), index.spans, index.body_provenance).thread.messages[0];
-  const message = await handlers["threads.message"]({ item, message: first.id }, context("reopen-literal", "threads.message"));
+  const message = await handlers["chat.message"]({ item, message: first.id }, context("reopen-literal", "chat.message"));
   assert.equal(message.text, delimiter);
   assert.equal(host.files.get(item)!.discovery, "creator_only");
 });
 
 test("a checked editor save qualifies complete bytes and downgrades unexplained bytes in the same checked path", async () => {
   const host = new FakeHost();
-  const { created: item } = await handlers["threads.create"]({ title: "Field notes" }, host.createContext("editor-source", "Field notes"));
+  const { created: item } = await handlers["chat.create"]({ title: "Field notes" }, host.createContext("editor-source", "Field notes"));
   const creator = host.files.get(item)!.creator;
   const snapshot = "---\ntitle: Field notes\n---\n\n# Field notes\n\n🐝 by the gate.\n";
   await host.saveCapturedText(item, snapshot, Buffer.from(snapshot));
@@ -453,9 +453,9 @@ test("Markdown keeps one plain body span and reversibly escapes only tagged head
   const saved = encode({ ...thread, messages: [message] });
   assert.deepEqual(Buffer.from(saved), Buffer.concat([existing, expected]));
   assert.deepEqual(decode(saved).messages, [message]);
-  const agent = agentParticipant(thread.id, { package: "calternal-threads-claude-code", contribution: "claude-code" });
+  const agent = agentParticipant(thread.id, { package: "calternal-chat-claude-code", contribution: "claude-code" });
   const agentHeader = Buffer.from(
-    `  - p2 | Claude Code | agent | ${agent.id}\nagent-p2-plugin: calternal-threads-claude-code\nagent-p2-harness: claude-code\n`,
+    `  - p2 | Claude Code | agent | ${agent.id}\nagent-p2-plugin: calternal-chat-claude-code\nagent-p2-harness: claude-code\n`,
   );
   const withFirstPrompt = Buffer.from(encode({ ...thread, participants: [alice, agent], messages: [message] }));
   assert.deepEqual(withFirstPrompt, Buffer.concat([existing.subarray(0, -5), agentHeader, existing.subarray(-5), expected]));
@@ -500,10 +500,10 @@ test("a checked read joins host-origin range chunks inside one recorded message"
   spans.splice(0, spans.length, title, { ...prompt, host_ranges: [ranges[0]], host_ranges_more: true },
     { ...prompt, host_ranges: [ranges[1]] }, reply);
   host.spanPageSize = 2;
-  const result = await handlers["threads.message"]({ item, message }, context("read-origin-chunks", "threads.message"));
+  const result = await handlers["chat.message"]({ item, message }, context("read-origin-chunks", "chat.message"));
   assert.equal(result.text, "link A and link B");
   spans[2].host_ranges![0].offset = ranges[0].offset;
-  await assert.rejects(handlers["threads.message"]({ item, message }, context("overlapping-origin-chunks", "threads.message")),
+  await assert.rejects(handlers["chat.message"]({ item, message }, context("overlapping-origin-chunks", "chat.message")),
     /host-written ranges are invalid/);
 });
 
@@ -520,14 +520,14 @@ test("opaque fallback stages a large reframe without losing formerly indexed lit
   const old = file.spanHistory.get(oldRevision)!;
   const first = decodeIndexed(Buffer.from(host.markdown(item)), old.spans, old.body_provenance).thread.messages[0];
   assert.ok(Buffer.byteLength(host.markdown(item)) > 128 * 1024);
-  const alarm = await handlers["threads.arm"]({ item, harness: selection.harness, text: "Scheduled",
-    at: "2026-11-20T13:00:00Z", if_missed: "run" }, context("arm-fallback", "threads.arm"));
+  const alarm = await handlers["chat.arm"]({ item, harness: selection.harness, text: "Scheduled",
+    at: "2026-11-20T13:00:00Z", if_missed: "run" }, context("arm-fallback", "chat.arm"));
   await host.deliver(alarm.alarm, "2026-11-20T13:00:01Z");
   assert.equal(file.discovery, "consent_only");
   assert.equal(file.spanHistory.get(file.revision)?.spans.length, 0);
   assert.equal(file.spanHistory.get(oldRevision)?.spans.length, 25);
   assert.ok(host.markdown(item).includes(`\\${delimiter}`));
-  const result = await handlers["threads.message"]({ item, message: first.id }, context("read-after-fallback", "threads.message"));
+  const result = await handlers["chat.message"]({ item, message: first.id }, context("read-after-fallback", "chat.message"));
   assert.equal(result.text, first.text);
   await host.run((await send("after-opaque", "New checked message")).job_id);
   assert.equal(file.spanHistory.get(file.revision)?.spans.length, 2);

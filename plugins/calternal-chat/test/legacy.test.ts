@@ -37,13 +37,13 @@ test("the current server's v1 records retain their headings, IDs, UTF-8 bodies a
 
 test("installed Threads opens a v1 message by its original UUID and refuses v1 mutations", async () => {
   const host = new FakeHost();
-  const { created: item } = await handlers["threads.create"]({ title: "Legacy fixture" }, host.createContext("create-legacy", "Legacy fixture"));
+  const { created: item } = await handlers["chat.create"]({ title: "Legacy fixture" }, host.createContext("create-legacy", "Legacy fixture"));
   const { publish } = await host.stageUnproven(item, disk);
   await publish();
   const file = host.files.get(item)!;
   const revision = file.revision;
   const open = (anchor?: string, older?: string) =>
-    handlers["threads.refresh"]({ item, source_revision: revision, anchor, older }, host.context("v1-read", "threads.refresh"));
+    handlers["chat.refresh"]({ item, source_revision: revision, anchor, older }, host.context("v1-read", "chat.refresh"));
   const latest = await open();
   assert.match(JSON.stringify(latest), new RegExp(agentId));
   assert.match(JSON.stringify(latest), /bytes of tool output/);
@@ -54,15 +54,15 @@ test("installed Threads opens a v1 message by its original UUID and refuses v1 m
   assert.doesNotMatch(JSON.stringify(latest), /provider-session|machine_id/);
   assert.equal((await open(personId)).anchor, personId);
   assert.deepEqual(await open("unknown"), { anchor_unavailable: true });
-  assert.deepEqual(await handlers["threads.message"]({ item, message: personId }, host.context("v1-message", "threads.message")),
+  assert.deepEqual(await handlers["chat.message"]({ item, message: personId }, host.context("v1-message", "chat.message")),
     decodeLegacy(disk).messages[0]);
   assert.equal(file.discovery, "consent_only");
 
   const selection = host.choose();
-  await assert.rejects(handlers["threads.send"]({ item, text: "No write", ...selection },
+  await assert.rejects(handlers["chat.send"]({ item, text: "No write", ...selection },
     host.composerContext("v1-no-send", item, "No write")), /read-only/);
-  await assert.rejects(handlers["threads.arm"]({ item, text: "No alarm", harness: selection.harness,
-    at: "2026-11-20T12:01:00Z", if_missed: "skip" }, host.context("v1-no-alarm", "threads.arm")), /read-only/);
+  await assert.rejects(handlers["chat.arm"]({ item, text: "No alarm", harness: selection.harness,
+    at: "2026-11-20T12:01:00Z", if_missed: "skip" }, host.context("v1-no-alarm", "chat.arm")), /read-only/);
   assert.equal(host.jobs.size, 0);
   assert.equal(file.revision, revision);
   assert.deepEqual(Buffer.from(host.markdown(item)), disk);

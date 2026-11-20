@@ -2,9 +2,9 @@
   // The root of a drawn app: sidebar (with selectors and footer), header, the view's content and the panel, over one open host session. It keeps one WindowStore per (bind, parent) and one Selection per bind, shared by every
   // place that draws the bind, holds the route parameters (selectors and row `open` set them; binds that read a route parameter start over when it changes), and refuses a description it cannot draw. It holds no app-specific
   // code: what is drawn is only what the description declares; the page supplies the host components and the shell's own controls.
-  import { onDestroy, setContext, untrack, type Component } from "svelte";
-  import { Glass, Toasts, navHold } from "@calternal/ui";
-  import type { Action, AppDescription, Bind } from "../model";
+  import { onDestroy, onMount, setContext, untrack, type Component } from "svelte";
+  import { Card, Icon, Toasts, navHold } from "@calternal/ui";
+  import type { Action, AppDescription, Bind, ContentNode } from "../model";
   import type { HostSession } from "../wire/session";
   import { refusalOf } from "../check";
   import { WindowStore } from "../windows/window-store.svelte";
@@ -16,6 +16,7 @@
   import Node from "./Node.svelte";
   import HostComponent from "./HostComponent.svelte";
   import { hostComponents } from "../components/registry";
+  import { ItemViews } from "../components/entry-state.svelte";
   import { ImageCache } from "./images";
   import ActionButton from "./ActionButton.svelte";
 
@@ -74,7 +75,7 @@
   const selections = new Map<string, Selection>();
   const selectionFor = (id: string): Selection => { let x = selections.get(id); if (!x) { x = new Selection(id, session); selections.set(id, x); } return x; };
   const kindIconFor = (id: string): string | undefined => { const k = binds.get(id)?.source.kind; return k ? props.kindIcons?.[k] : undefined; };
-  const app: AppContext = { storeFor, selectionFor, kindIconFor, route, setRoute, get components() { return { ...hostComponents, ...(props.components ?? {}) } as AppContext["components"]; }, onshell: (a) => props.onshell?.(a), openApp: (id) => props.openApp?.(id) };
+  const app: AppContext = { itemViews: new ItemViews(), storeFor, selectionFor, kindIconFor, route, setRoute, get components() { return { ...hostComponents, ...(props.components ?? {}) } as AppContext["components"]; }, onshell: (a) => props.onshell?.(a), openApp: (id) => props.openApp?.(id) };
   setContext(APP_KEY, app);
   session.held = () => Object.fromEntries([...stores.values()].filter((s) => s.windowRef && s.resultVersion).map((s) => [s.windowRef!, s.resultVersion!]));
   // The lease: while it has lapsed the rows are not drawn as current and offer no contexts; a renewal repaints only the windows it names as retained and may bring replacement windows (section 6).
@@ -86,29 +87,46 @@
   const setBind = (a: Action): string | undefined => { for (const v of Object.values(("inputs" in a ? a.inputs : undefined) ?? {})) { const x = v as { selection?: string; set?: boolean }; if (x.selection && x.set) return x.selection; } return undefined; };
   const header = description.chrome?.header;
   const title = typeof header?.title === "string" ? header.title : description.view?.title;
-  // A header title taken from an item bind's field: the open item's, never a list's first row.
-  const itemTitle = $derived.by(() => { const t = header?.title; if (!t || typeof t === "string") return undefined; const s = storeFor(t.bind); return s ? String(s.row(0)?.fields[t.field] ?? "") : undefined; });
+  // A header title taken from an item bind's field: the open item's, never a list's first row. The store is made here, not inside the derived value: a signal created while a derived runs is not tracked by it, so a title
+  // read from a store born there would never update. It asks the host only once an item is open (the route change resets it).
+  const titleSpec = header?.title && typeof header.title !== "string" ? header.title : undefined;
+  const titleStore = titleSpec ? storeFor(titleSpec.bind) : undefined;
+  const itemTitle = $derived(titleSpec && titleStore ? String(titleStore.row(0)?.fields[titleSpec.field] ?? "") : undefined);
   const panel = description.chrome?.panel;
+  // A narrow window (a phone) shows one pane at a time: the list while no item is open, the card (with a Back control) once one is.
+  let compact = $state(false);
+  onMount(() => { const q = matchMedia("(max-width: 720px)"); compact = q.matches; const f = () => { compact = q.matches; }; q.addEventListener("change", f); return () => q.removeEventListener("change", f); });
+  const opened = $derived(!!route.item);
+  const listPane = $derived(!compact || !opened), cardPane = $derived(!compact || opened);
 </script>
 
 {#if refusal}
   <div class="refused" role="alert" data-refused>This app cannot be drawn here: {refusal.reason}.</div>
 {:else}
-  <div class="app" data-app>
-    {#if description.chrome?.sidebar || description.chrome?.footer}
-      <aside class="side" style:width="{description.chrome.sidebar?.width ?? 280}px"><Glass />
+  <!-- The shell's three regions (docs/ui-shell.md): the sidebar and the panel sit flat on the page's background (the wallpaper and its veil, drawn by the page), the middle card is the only surface on top of it. Each region
+       carries the secondary inks solved for the pixels under it. A phone shows one at a time. -->
+  <div class="app" data-app data-compact={compact || undefined} data-pane={compact ? (opened ? "card" : "list") : undefined}>
+    {#if (description.chrome?.sidebar || description.chrome?.footer) && listPane}
+      <aside class="side" style:--sw={compact ? "100%" : description.chrome.sidebar?.width ? `${description.chrome.sidebar.width}px` : undefined} style:--time-max={compact ? "72px" : `${Math.round((description.chrome.sidebar?.width ?? 240) * 0.2)}px`}>
         <Sidebar sidebar={description.chrome.sidebar ?? {}} footer={description.chrome.footer} role={props.role} initial={props.initial} />
       </aside>
     {/if}
-    <main class="main"><Glass />
-      <div class="head">{#if itemTitle ?? title}<h1 class="h1">{itemTitle ?? title}</h1>{/if}
-        {#each [...(header?.leading ?? []), ...(header?.trailing ?? [])] as a (a.id)}{@const sb = setBind(a)}<ActionButton action={a} context={viewContext(a.id)} selection={sb ? selectionFor(sb) : undefined} setOf={sb} />{/each}</div>
-      {#if description.view}<Node node={description.view.root} />{/if}
-    </main>
-    {#if panel && panel.open !== false}
-      <aside class="panel" data-panel={panel.id ?? "panel"} aria-label={panel.title ?? "Panel"}><Glass />
+    {#if cardPane}
+      <main class="mid">
+        <Card label={itemTitle || title || "Content"} variant="pane" class="card">
+          <div class="col">
+            <header class="head">{#if compact}<button class="back" type="button" aria-label="Back to the list" data-back onclick={() => setRoute("item", "")}><Icon name="back" /></button>{/if}{#if itemTitle ?? title}<h1 class="h1">{itemTitle ?? title}</h1>{/if}
+              <div class="hact">{#each [...(header?.leading ?? []), ...(header?.trailing ?? [])] as a (a.id)}{@const sb = setBind(a)}<ActionButton action={a} context={viewContext(a.id)} selection={sb ? selectionFor(sb) : undefined} setOf={sb} iconOnly={compact} />{/each}</div></header>
+            {#if description.view}<div class="body"><Node node={description.view.root} /></div>{/if}
+          </div>
+        </Card>
+      </main>
+    {/if}
+    {#if panel && panel.open !== false && !compact}
+      <aside class="right" data-panel={panel.id ?? "panel"} aria-label={panel.title ?? "Panel"}>
         {#if panel.title}<h2 class="ph">{panel.title}</h2>{/if}
-        {#each panel.components as c (c.id)}<HostComponent component={c} />{/each}
+        {#each panel.components ?? [] as c (c.id)}<HostComponent component={c} />{/each}
+        {#each (panel as unknown as { content?: ContentNode[] }).content ?? [] as n, k (k)}<Node node={n} />{/each}
       </aside>
     {/if}
   </div>
@@ -117,13 +135,19 @@
 <Toasts />
 
 <style>
-  /* The shell look of packages/ui: floating glass panes (sidebar, card, panel) over the page's own ground, one pane radius. */
-  .app { display: flex; gap: var(--s-4); height: 100%; min-height: 0; padding: var(--s-4); box-sizing: border-box; }
-  .side { position: relative; flex: none; min-height: 0; border-radius: var(--r-pane); isolation: isolate; }
-  .main { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--s-4); padding: var(--s-5); border-radius: var(--r-pane); isolation: isolate; }
-  .panel { position: relative; flex: none; width: 320px; min-height: 0; display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); border-radius: var(--r-pane); isolation: isolate; }
-  .ph { margin: 0; font-size: var(--text-ui); font-weight: var(--strong-weight); }
-  .head { display: flex; align-items: center; gap: var(--s-3); }
-  .h1 { margin: 0; font-size: var(--text-title, 28px); }
+  /* The shell's layout (apps/web shell/Shell.svelte): flat sidebar and panel on the background, one inset around the card, the card as the packages/ui pane (its own wallpaper copy and veil, concentric radii). */
+  .app { display: flex; height: 100%; min-height: 0; box-sizing: border-box; }
+  .side { flex: none; width: var(--sw, var(--side-w)); min-height: 0; overflow: clip; --ink-2: var(--l-ink2, currentcolor); --ink-3: var(--l-ink3, currentcolor); }
+  .mid { flex: 1; min-width: 0; min-height: 0; padding: 0 var(--inset); --ink-2: var(--c-ink2, currentcolor); --ink-3: var(--c-ink3, currentcolor); }
+  .mid :global(.card) { height: 100%; }
+  .right { flex: none; width: var(--right-w); min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4) var(--s-4) var(--s-6); box-sizing: border-box; --ink-2: var(--r-ink2, currentcolor); --ink-3: var(--r-ink3, currentcolor); }
+  .col { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+  .head { flex: none; height: var(--bar-h); display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-4) 0 var(--s-6); }
+  .hact { display: flex; align-items: center; gap: var(--s-2); }
+  .h1 { margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-heading); font-weight: var(--strong-weight); }
+  .body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 var(--s-4) var(--s-4); }
+  .ph { margin: var(--s-2) 0 0; padding: 0 var(--s-2); font-size: var(--text-section); font-weight: var(--strong-weight); color: var(--ink-3); }
+  .back { flex: none; display: inline-grid; place-items: center; min-width: var(--pill-h); min-height: var(--pill-h); margin-inline-start: calc(var(--s-4) * -1); color: var(--ink); border-radius: 50%; }
+  .app[data-compact] .mid { padding: 0 var(--inset); } .app[data-compact] .side { width: 100%; }
   .refused { padding: var(--s-6); color: var(--danger); }
 </style>

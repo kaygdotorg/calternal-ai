@@ -327,7 +327,7 @@ async function consult({ item, prompt }: Target & { prompt: string }, ctx: Peopl
     `consulted-agent: ${agents.consultant.package}/${agents.consultant.contribution}`, "---", "",
   ].join("\n");
   const saved = await ctx.call("item_create", {
-    request_id: step(ctx.author.request_id, "consultation-file"), kind: "thread-consultations",
+    request_id: step(ctx.author.request_id, "consultation-file"), kind: "chat-consultations",
     name: "Consultation.md", metadata: { title }, body: inlineBody(Buffer.from(body)),
   });
   let revision = saved.revision;

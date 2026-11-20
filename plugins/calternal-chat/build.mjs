@@ -30,7 +30,7 @@ const { generateDescriptionTypes } = await import(new URL("packages/contracts/sc
 await writeFile(new URL("wire.d.ts", generated), await generateDescriptionTypes(contract));
 execFileSync(fileURLToPath(new URL("node_modules/.bin/tsc", root)), ["-p", fileURLToPath(new URL("tsconfig.json", here))], { stdio: "inherit" });
 
-const packages = [here, new URL("../calternal-threads-claude-code/", here)];
+const packages = [here, new URL("../calternal-chat-claude-code/", here)];
 for (const [index, plugin] of packages.entries()) {
   const bundled = await build({
     entryPoints: [fileURLToPath(new URL("src/worker.ts", plugin))],

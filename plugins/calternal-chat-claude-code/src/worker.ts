@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { encodeContributionFrame } from "../../calternal-threads/generated/contribution-frame.mjs";
-import { checkedText, type HarnessInput, type HarnessOutput } from "@calternal/threads/harnesses-v1";
-import type { Context } from "../../calternal-threads/src/interface.ts";
+import { encodeContributionFrame } from "../../calternal-chat/generated/contribution-frame.mjs";
+import { checkedText, type HarnessInput, type HarnessOutput } from "@calternal/chat/harnesses-v1";
+import type { Context } from "../../calternal-chat/src/interface.ts";
 
 type HarnessContext = Pick<Context, "call" | "author"> & {
   // The fake supplies provider output. Live placement runs the pinned entry.
@@ -31,4 +31,4 @@ async function run({ text }: HarnessInput, ctx: HarnessContext): Promise<Harness
 }
 
 /** The contributing worker used by the fake placement when it runs the entry. */
-export const handlers = { "threads-claude-code.run": run };
+export const handlers = { "chat-claude-code.run": run };

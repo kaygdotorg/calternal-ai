@@ -28,6 +28,7 @@ export const IMAGES_KEY = Symbol("description-images");
 import type { WindowStore } from "../windows/window-store.svelte";
 import type { Selection } from "../windows/selection.svelte";
 import type { Component } from "svelte";
+import type { ItemViews } from "../components/entry-state.svelte";
 /** The stores and selections of the open app, for parts that reach them by bind id (child rows, multiple selection) and the host components the page supplies. */
 export interface AppContext {
   /** The window store of a bind (per parent ref for a child bind), made on first use. */
@@ -40,6 +41,8 @@ export interface AppContext {
   route: Record<string, string>;
   /** Sets a route parameter; binds that read it start over. */
   setRoute(name: string, value: string): void;
+  /** The live state of the item views drawn, by component id (a composer bound to one reads it). */
+  itemViews: ItemViews;
   /** The host components, by type: the package's own, overridden by the page's. */
   components: Record<string, Component<{ config: unknown; id: string }>>;
   /** The shell's own controls: a shell action (route, reload, sign out, sheet) and the app switcher. */

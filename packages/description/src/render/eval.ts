@@ -38,7 +38,23 @@ export function holds(p: Predicate | undefined, fields: RowFields): boolean {
 }
 
 /** A trailing mark ready to draw. */
-export interface MarkView { kind: "dot" | "count" | "text" | "icon"; text?: string; icon?: string; tone?: "good" | "warn" | "bad" }
+export interface MarkView { kind: "dot" | "count" | "text" | "icon"; text?: string; icon?: string; tone?: "good" | "warn" | "bad" | "quiet" }
+
+/** A time as short as a row can hold: now, 5m, 1h, yesterday, 3d, 2w, else the date (a one-line row gives its title the room). */
+export function shortAgo(t: number, now: number): string {
+  const s = Math.max(0, Math.round((now - t) / 1000));
+  if (s < 60) return "now";
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400 && new Date(t).toDateString() === new Date(now).toDateString()) return `${Math.floor(s / 3600)}h`;
+  const days = Math.round((new Date(now).setHours(0, 0, 0, 0) - new Date(t).setHours(0, 0, 0, 0)) / 86400000);
+  if (days <= 0) return `${Math.max(1, Math.floor(s / 3600))}h`;
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days}d`;
+  if (days < 35) return `${Math.floor(days / 7)}w`;
+  return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
 /** The marks of a row, at most three, those whose `when` holds. A count of zero draws nothing, as a system badge does. */
 export function marksOf(marks: Marks | undefined, fields: RowFields): MarkView[] {
@@ -49,7 +65,7 @@ export function marksOf(marks: Marks | undefined, fields: RowFields): MarkView[]
     switch (m.kind) {
       case "dot": if (m.when || have) out.push({ kind: "dot", tone: m.tone }); break;
       case "count": { const n = num(have); if (n !== null && n > 0) out.push({ kind: "count", text: String(n), tone: m.tone }); break; }
-      case "text": { const t = m.value ?? have; if (t !== undefined && t !== null && t !== "") out.push({ kind: "text", text: String(t), tone: m.tone }); break; }
+      case "text": { const t = m.value ?? have; if (t !== undefined && t !== null && t !== "") { const when = typeof t === "string" && RFC3339.test(t) ? ms(t) : null; out.push({ kind: "text", text: when !== null ? shortAgo(when, Date.now()) : String(t), tone: m.tone }); } break; } // (a Timestamp field in a text mark reads as a relative date, as in the row's line before: a one-line row keeps its time)
       case "icon": if (m.icon) out.push({ kind: "icon", icon: typeof m.icon === "string" ? m.icon : undefined, tone: m.tone }); break;
     }
   }
@@ -81,6 +97,15 @@ export function relativeDate(t: number, now: number): string {
   const div = [1, 60, 3600, 86400, 604800, 2629800, 31557600];
   for (let i = 0; i < units.length; i++) if (a < units[i]![0]) return rtf ? rtf.format(Math.round(d / div[i]!), units[i]![1]) : new Date(t).toLocaleDateString();
   return new Date(t).toLocaleDateString();
+}
+
+/** The secondary line as its parts (the same rules as `secondaryOf`), so a row can ellipsise the first and keep the last (the time) whole. */
+export function secondaryParts(parts: readonly Secondary[] | undefined, fields: RowFields, now: number = Date.now()): string[] {
+  const s = secondaryOf(parts, fields, now);
+  if (!s) return [];
+  const out: string[] = [];
+  for (const p of (parts ?? []).slice(0, 3)) { const one = secondaryOf([p], fields, now); if (one) out.push(one); }
+  return out;
 }
 
 /** The secondary line: the declared parts, in order, each from its projected field; an absent or malformed part (and its separator) is omitted; joined by a space, a middle dot and a space. Undefined when the template declares none. */

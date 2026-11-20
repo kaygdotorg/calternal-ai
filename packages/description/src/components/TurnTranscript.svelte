@@ -62,7 +62,7 @@
 </script>
 
 <section class="tr" data-host-component="turn-transcript" data-host-component-id={id} aria-label="Conversation" aria-busy={loading}>
-  {#if !thread}<p class="note">Choose a thread.</p>
+  {#if !thread}<p class="note">Choose a chat.</p>
   {:else if failed}<p class="note bad" role="alert">The conversation could not be read.</p>
   {:else}
     <div class="scroll" bind:this={el} {onscroll} role="log" aria-live="polite" tabindex="0">

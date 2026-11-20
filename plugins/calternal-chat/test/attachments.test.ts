@@ -39,7 +39,7 @@ test("a shared message commits checked files once and reopens them within the vi
   assert.doesNotMatch(host.markdown(item), /upload-|private bytes/);
   assert.equal(files(host.snapshots.get(item)?.view)[0]?.label, "Meeting [notes] 🌏.pdf");
 
-  const live = () => handlers["threads.refresh"]({ item, source_revision: host.files.get(item)!.revision, anchor: message },
+  const live = () => handlers["chat.refresh"]({ item, source_revision: host.files.get(item)!.revision, anchor: message },
     host.peopleContext(alice, "open-file"));
   const [asset, another] = files((await live()).view);
   assert.equal(host.attachmentRange(asset.ref, alice, 0, 7).toString(), "private");
@@ -62,14 +62,14 @@ test("a shared message commits checked files once and reopens them within the vi
 test("Send pins a staged upload to one job and records it on the authored prompt", async () => {
   const host = new FakeHost();
   const text = "Review this file.";
-  const { created: item } = await handlers["threads.create"]({ title: "File send" }, host.createContext("new", "File send"));
+  const { created: item } = await handlers["chat.create"]({ title: "File send" }, host.createContext("new", "File send"));
   const choice = host.upload(item, alice, "agenda.txt", "attachment contents");
   const longName = host.upload(item, alice, "🌏".repeat(40) + ".txt", "attachment contents");
-  await assert.rejects(handlers["threads.send"]({ item, text, ...host.choose(), attachments: [longName] },
+  await assert.rejects(handlers["chat.send"]({ item, text, ...host.choose(), attachments: [longName] },
     host.composerContext("over-budget", item, text)), /attachment names are too long/);
   assert.equal(host.jobs.size, 0);
   const input = { item, text, ...host.choose(), attachments: [choice] };
-  const send = (request: string) => handlers["threads.send"](input, host.composerContext(request, item, text));
+  const send = (request: string) => handlers["chat.send"](input, host.composerContext(request, item, text));
   const cancelled = await send("cancel-upload");
   host.stop(item, { intent: cancelled.job_id });
   host.settle(cancelled.job_id);

@@ -17,7 +17,7 @@
     "types": "node scripts/generate-types.mjs",
     "check": "node scripts/generate-types.mjs --check && node scripts/check-docs.mjs && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
-    "harness:build": "npm run tokens -w @calternal/ui && mkdir -p harness/public/wallpapers && cp -f ../../apps/web/public/wallpapers/EX_STserBZM.jpg harness/public/wallpapers/ 2>/dev/null; vite build -c vite.harness.config.ts",
+    "harness:build": "npm run tokens -w @calternal/ui && mkdir -p harness/public/wallpapers harness/public/fonts && cp -f ../../apps/web/public/wallpapers/* harness/public/wallpapers/ 2>/dev/null; cp -f ../../apps/web/public/fonts/*.woff2 harness/public/fonts/ 2>/dev/null; vite build -c vite.harness.config.ts",
     "harness": "vite preview -c vite.harness.config.ts",
     "e2e:perf": "node e2e/perf.mjs",
     "e2e:keys": "node e2e/keys.mjs",
