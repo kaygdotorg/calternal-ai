@@ -139,11 +139,11 @@ type Stamp = { person?: PersonRef; plugin: string; run?: WorkRef; carries?: Pers
 
 **Counts.** 14 declarations (`plugin`, `kind`, `collection`, `facet`,
 `operation`, `create`, `set`, `slot`, part (`fills`), `grant`, `depends`,
-`watches`, `programs`, `phrases`) and 27 calls: files `create`, `read`,
+`watches`, `programs`, `phrases`) and 26 calls: files `create`, `read`,
 `replace`, `set`, `history`; records `append`, `edit`, `redact`, `read`;
 `state.get`, `state.set`; the four host file operations; `query`;
 `people.find`, `people.share`; `work.start`, `work.send`, `work.stop`,
-`work.list`; `call`; `net.fetch`; `notify`; `key`. That is 41 names, plus six
+`work.list`; `call`; `net.fetch`; `notify`; `key`. That is 40 names, plus six
 inside a box (`input`, `records`, `inbox`, `log.append`, `log.call`,
 `log.end`). Revision 14 had 47 broker methods, about 60 concepts for a
 Chat-class plugin and 312 numeric limits.
