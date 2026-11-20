@@ -228,7 +228,7 @@ fn byte_budgets_keep_capacity_for_terminal() {
         frame["data"] = json!("x".repeat(limit - envelope));
         frame
     };
-    for (attempt, frames, elapsed) in [("rate", 16, 0), ("retained", 63, 1000)] {
+    for (attempt, frames, elapsed) in [("rate", 16, 0)] {
         let spool =
             Spool::checked(&tx, &ExecutionRef(attempt.into()), 1, |_, _, _| Ok(true)).unwrap();
         let call = spool.reserve(3000).unwrap();
@@ -355,13 +355,18 @@ fn machine_backlog_survives_restart_and_another_lost_ack() {
                     );
                     tx.commit().unwrap();
                     pauses += 1;
-                    assert!(pauses <= 2);
-                    now += 1000;
+                    let wait = error.details.as_ref().unwrap()["retry_after_ms"]
+                        .as_i64()
+                        .unwrap();
+                    assert!((1..1000).contains(&wait));
+                    now += wait;
                 }
             }
         }
     }
-    assert_eq!(pauses, 2);
+    // The wait is the exact refill time, so catch-up runs at the live rate
+    // and finishes in about two seconds instead of failing the call.
+    assert!(pauses > 0 && now - 3000 < 2000, "{pauses} {now}");
 
     let tx = db.transaction().unwrap();
     let spool = checked(&tx, 1).unwrap();
@@ -378,4 +383,83 @@ fn machine_backlog_survives_restart_and_another_lost_ack() {
         delivered.extend(page);
     }
     assert_eq!(delivered, buffered);
+}
+
+#[test]
+fn consumed_prefix_retires_payloads_and_returns_window_credit() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("space.db");
+    let mut db = setup(&path);
+    let big = |seq| {
+        let mut frame = json!({"seq":seq,"kind":"output","data":""});
+        let envelope = serde_json::to_vec(&frame).unwrap().len() + 1;
+        let limit = contribution_limits().encoded_frame_bytes as usize;
+        frame["data"] = json!("x".repeat(limit - envelope));
+        frame
+    };
+    let tx = db.transaction().unwrap();
+    let spool = checked(&tx, 1).unwrap();
+    let call = spool.reserve(1000).unwrap();
+    assert!(spool.claim_launch(call).unwrap());
+    // A call far larger than the 1 MiB window completes when consumed in step.
+    let (mut now, mut seq, mut consumed) = (1000, 1, 0);
+    while seq <= 200 {
+        match spool.ingest(call, &big(seq), now, |_| true).unwrap() {
+            Ingest::Stored => seq += 1,
+            Ingest::WindowFull => {
+                // Full window: nothing sealed, credit is zero until consumed.
+                let progress = spool.progress(call).unwrap();
+                assert!(progress.credit_bytes < 16384 && !progress.terminal);
+                assert_eq!(progress.committed, seq - 1);
+                spool.consume(call, progress.committed).unwrap();
+                consumed = progress.committed;
+                assert!(spool.progress(call).unwrap().credit_bytes > 1_000_000);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        now += 70;
+    }
+    assert_eq!(
+        spool
+            .ingest(call, &json!({"seq":201,"kind":"terminal","state":"ok"}), now, |_| true)
+            .unwrap(),
+        Ingest::Stored
+    );
+    // Replay identity survives retirement; a changed frame is refused.
+    assert_eq!(
+        spool.ingest(call, &big(1), now, |_| true).unwrap(),
+        Ingest::Replay
+    );
+    let mut changed = big(1);
+    changed["data"] = json!("y");
+    assert_eq!(
+        spool.ingest(call, &changed, now, |_| true).unwrap_err().code,
+        ErrorCode::Conflict
+    );
+    // Retired output cannot be read or resolved; the cursor is monotone.
+    assert_eq!(
+        spool.read(call, 0, 256 * 1024).unwrap_err().code,
+        ErrorCode::Conflict
+    );
+    assert!(spool.output_text(call, 1, 1, "text").unwrap().is_none());
+    spool.consume(call, 1).unwrap();
+    assert_eq!(spool.progress(call).unwrap().consumed, consumed);
+    assert_eq!(
+        spool.consume(call, 202).unwrap_err().code,
+        ErrorCode::Conflict
+    );
+    assert!(!spool.read(call, consumed, 256 * 1024).unwrap().is_empty());
+    tx.commit().unwrap();
+    drop(db);
+
+    // The committed cursor and the consumed cursor survive a restart.
+    let mut db = open_db(&path);
+    let tx = db.transaction().unwrap();
+    let spool = checked(&tx, 1).unwrap();
+    let progress = spool.progress(call).unwrap();
+    assert_eq!((progress.committed, progress.consumed, progress.terminal), (201, consumed, true));
+    spool.consume(call, 201).unwrap();
+    assert_eq!(budget(&tx).unwrap().bytes, 0);
+    assert_eq!(spool.progress(call).unwrap().credit_bytes, 1_048_576);
+    tx.commit().unwrap();
 }

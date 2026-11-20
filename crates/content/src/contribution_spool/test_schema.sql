@@ -6,6 +6,7 @@ CREATE TABLE contribution_calls (
     generation INTEGER NOT NULL CHECK(generation > 0),
     allocated INTEGER NOT NULL CHECK(allocated >= 0),
     next INTEGER NOT NULL DEFAULT 1 CHECK(next > 0),
+    consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed >= 0 AND consumed < next),
     claimed INTEGER NOT NULL DEFAULT 0 CHECK(claimed IN (0, 1)),
     terminal INTEGER NOT NULL DEFAULT 0 CHECK(terminal IN (0, 1)),
     expires INTEGER,
@@ -19,7 +20,8 @@ CREATE INDEX contribution_calls_expiration ON contribution_calls(expires);
 CREATE TABLE contribution_frames (
     call TEXT NOT NULL REFERENCES contribution_calls(call) ON DELETE CASCADE,
     seq INTEGER NOT NULL CHECK(seq > 0),
-    payload BLOB NOT NULL,
+    payload BLOB,
+    digest BLOB NOT NULL CHECK(length(digest) = 32),
     producer INTEGER NOT NULL CHECK(producer IN (0, 1)),
     PRIMARY KEY(call, seq)
 ) WITHOUT ROWID, STRICT;

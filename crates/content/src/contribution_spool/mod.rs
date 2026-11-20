@@ -8,6 +8,8 @@ use uuid::Uuid;
 
 mod rate;
 use rate::{Bucket, Capacity};
+mod window;
+pub use window::Progress;
 
 // The wire contract is tighter than the enclosing worker message.
 const SPACE_BYTES: i64 = 128 * 1024 * 1024;
@@ -23,8 +25,14 @@ const TERMINAL_RESERVE: i64 = 64;
 pub enum Ingest {
     /// The new producer frame was stored in sequence.
     Stored,
-    /// The exact producer frame was already committed.
+    /// The exact producer frame was already committed, whether its payload is
+    /// still held or has been retired by [`Spool::consume`].
     Replay,
+    /// The unconsumed window (the call's or the space's) has no room for this
+    /// output. Nothing was stored and nothing sealed: the producer keeps the
+    /// frame in its machine log and resends it after the owning job consumes
+    /// a prefix and the carrier returns credit from [`Spool::progress`].
+    WindowFull,
     /// The host stored (or already stored) a terminal failure. The producer's
     /// refused frame is not committed and the caller must end the producer.
     Sealed,
@@ -163,12 +171,12 @@ impl<'tx, 'conn> Spool<'tx, 'conn> {
             let saved = self
                 .tx
                 .query_row(
-                    "SELECT payload,producer FROM contribution_frames WHERE call=?1 AND seq=?2",
+                    "SELECT digest,producer FROM contribution_frames WHERE call=?1 AND seq=?2",
                     params![call.to_string(), seq],
                     |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, bool>(1)?)),
                 )
                 .map_err(internal)?;
-            return if saved.0 == encoded && saved.1 {
+            return if saved.0 == digest(&encoded) && saved.1 {
                 Ok(Ingest::Replay)
             } else if !saved.1 {
                 Ok(Ingest::Sealed)
@@ -185,13 +193,15 @@ impl<'tx, 'conn> Spool<'tx, 'conn> {
         let size = (encoded.len() + 1) as i64;
         let space = budget(self.tx)?;
         let limits = contribution_limits();
-        if size > limits.encoded_frame_bytes
-            || (output.is_some()
-                && (state.allocated + size > limits.encoded_spool_bytes
-                    || space.bytes + size > SPACE_BYTES))
-        {
+        if size > limits.encoded_frame_bytes {
             self.seal_failed(call, seq)?;
             return Ok(Ingest::Sealed);
+        }
+        if output.is_some()
+            && (state.allocated + size > limits.encoded_spool_bytes
+                || space.bytes + size > SPACE_BYTES)
+        {
+            return Ok(Ingest::WindowFull);
         }
         if output.is_some_and(|data| !validate_output(data)) {
             return Err(Error::input_field(
@@ -199,31 +209,29 @@ impl<'tx, 'conn> Spool<'tx, 'conn> {
                 "must match the checked contribution output",
             ));
         }
+        let attempt_capacity = Capacity::new(
+            limits.encoded_bytes_per_second_per_attempt,
+            limits.frames_per_second_per_attempt,
+        );
+        let space_capacity = Capacity::new(
+            limits.encoded_bytes_per_second_per_space,
+            limits.frames_per_second_per_space,
+        );
         let credit = state
             .rate
-            .charge(
-                Capacity::new(
-                    limits.encoded_bytes_per_second_per_attempt,
-                    limits.frames_per_second_per_attempt,
-                ),
-                now,
-                size,
-            )
-            .zip(space.rate.charge(
-                Capacity::new(
-                    limits.encoded_bytes_per_second_per_space,
-                    limits.frames_per_second_per_space,
-                ),
-                now,
-                size,
-            ));
+            .charge(attempt_capacity, now, size)
+            .zip(space.rate.charge(space_capacity, now, size));
         if credit.is_none() {
             if buffered {
+                let wait = state
+                    .rate
+                    .wait_ms(attempt_capacity, now, size)
+                    .max(space.rate.wait_ms(space_capacity, now, size));
                 return Err(Error::new(
                     ErrorCode::RetryAfter,
                     "Wait for contribution ingest credit",
                 )
-                .with_details(json!({"retry_after_ms":1000})));
+                .with_details(json!({"retry_after_ms":wait})));
             }
             self.seal_failed(call, seq)?;
             return Ok(Ingest::Sealed);
@@ -246,87 +254,9 @@ impl<'tx, 'conn> Spool<'tx, 'conn> {
         Ok(())
     }
 
-    /// Read at most one bounded, ordered committed page. The caller reserves
-    /// its outer broker headers from `limit`. A too-small budget for the first
-    /// frame returns an error, so an empty page means there is no committed tail.
-    /// Drop the transaction before parking a reader. Cost: two indexed reads.
-    pub fn read(&self, call: Uuid, after: i64, limit: usize) -> Result<Vec<Value>> {
-        if !(0..=MAX_SEQ).contains(&after) {
-            return Err(Error::input_field(
-                "/after",
-                "must be a contribution sequence",
-            ));
-        }
-        self.call(call)?;
-        let mut statement = self.tx.prepare_cached(
-            "SELECT payload FROM contribution_frames WHERE call=?1 AND seq>?2 ORDER BY seq LIMIT ?3",
-        ).map_err(internal)?;
-        let mut rows = statement
-            .query(params![call.to_string(), after, BATCH_FRAMES as i64])
-            .map_err(internal)?;
-        let mut frames = Vec::new();
-        let too_large = || {
-            Error::new(
-                ErrorCode::TooLarge,
-                "Contribution reply exceeds its envelope",
-            )
-        };
-        let mut remaining = limit
-            .min(MAX_FRAME_BYTES)
-            .checked_sub(b"{\"frames\":[]}".len())
-            .ok_or_else(too_large)?;
-        while let Some(row) = rows.next().map_err(internal)? {
-            let bytes: Vec<u8> = row.get(0).map_err(internal)?;
-            let size = bytes.len() + usize::from(!frames.is_empty());
-            if size > remaining {
-                if frames.is_empty() {
-                    return Err(too_large());
-                }
-                break;
-            }
-            remaining -= size;
-            frames.push(serde_json::from_slice(&bytes).map_err(internal)?);
-        }
-        Ok(frames)
-    }
-
-    /// Resolve one manifest-selected string field from a committed output
-    /// frame for the item writer's exact-attempt authorship check. The broker
-    /// supplies the operation's checked opt-in and delivered sequence. No
-    /// worker-supplied text participates. Cost: one scoped indexed read and
-    /// one bounded decode.
-    pub fn output_text(
-        &self,
-        call: Uuid,
-        seq: i64,
-        delivered_through: i64,
-        field: &str,
-    ) -> Result<Option<String>> {
-        if seq <= 0 || seq > delivered_through {
-            return Ok(None);
-        }
-        let bytes: Option<Vec<u8>> = self.tx.prepare_cached(
-            "SELECT f.payload FROM contribution_frames f JOIN contribution_calls c ON c.call=f.call
-             WHERE c.call=?1 AND f.seq=?2 AND c.execution=?3 AND c.generation=?4
-               AND c.expires IS NULL AND f.producer=1",
-        ).map_err(internal)?.query_row(
-            params![call.to_string(), seq, self.execution.0, self.generation],
-            |row| row.get(0),
-        ).optional().map_err(internal)?;
-        let Some(bytes) = bytes else {
-            return Ok(None);
-        };
-        let frame: Value = serde_json::from_slice(&bytes).map_err(internal)?;
-        Ok(frame
-            .get("data")
-            .and_then(|data| data.get(field))
-            .and_then(Value::as_str)
-            .map(str::to_owned))
-    }
-
     fn call(&self, call: Uuid) -> Result<Call> {
         self.tx.prepare_cached(
-            "SELECT next,allocated,claimed,terminal,rate_ms,byte_credit,frame_credit
+            "SELECT next,allocated,claimed,terminal,rate_ms,byte_credit,frame_credit,consumed
              FROM contribution_calls WHERE call=?1 AND execution=?2 AND generation=?3 AND expires IS NULL",
         ).map_err(internal)?.query_row(params![call.to_string(), self.execution.0, self.generation],
             |row| Ok(Call {
@@ -335,6 +265,7 @@ impl<'tx, 'conn> Spool<'tx, 'conn> {
                 claimed: row.get(2)?,
                 terminal: row.get(3)?,
                 rate: Bucket { ms: row.get(4)?, bytes: row.get(5)?, frames: row.get(6)? },
+                consumed: row.get(7)?,
             })
         ).optional().map_err(internal)?.ok_or_else(unavailable)
     }
@@ -363,9 +294,11 @@ impl<'tx, 'conn> Spool<'tx, 'conn> {
         let attempt_credit = credit.map(|(attempt, _)| attempt);
         let space_credit = credit.map(|(_, space)| space);
         self.tx
-            .prepare_cached("INSERT INTO contribution_frames VALUES(?1,?2,?3,?4)")
+            .prepare_cached(
+                "INSERT INTO contribution_frames(call,seq,payload,digest,producer) VALUES(?1,?2,?3,?4,?5)",
+            )
             .map_err(internal)?
-            .execute(params![call, seq, payload, credit.is_some()])
+            .execute(params![call, seq, payload, digest(payload), credit.is_some()])
             .map_err(internal)?;
         self.tx
             .prepare_cached(
@@ -407,6 +340,7 @@ struct Call {
     claimed: bool,
     terminal: bool,
     rate: Bucket,
+    consumed: i64,
 }
 
 struct Budget {
@@ -498,6 +432,12 @@ pub fn prune(tx: &Transaction<'_>, now: i64) -> Result<()> {
         .map_err(internal)?;
     }
     Ok(())
+}
+
+/// Replay identity of a stored frame. It outlives the payload, which is
+/// retired once the owning job consumes the frame.
+fn digest(encoded: &[u8]) -> Vec<u8> {
+    blake3::hash(encoded).as_bytes().to_vec()
 }
 
 fn unavailable() -> Error {

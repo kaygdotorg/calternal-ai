@@ -32,3 +32,18 @@ impl Bucket {
         })
     }
 }
+
+impl Bucket {
+    /// Milliseconds until a frame of `bytes` can be charged, at least one.
+    /// The refill is capped at one second of burst, so the answer never
+    /// exceeds one second for a frame within the pinned frame bound.
+    pub(super) fn wait_ms(self, capacity: Capacity, now: i64, bytes: i64) -> i64 {
+        let elapsed = now.saturating_sub(self.ms).clamp(0, 1000);
+        let have_bytes = (self.bytes + elapsed * capacity.bytes).min(capacity.bytes * 1000);
+        let have_frames = (self.frames + elapsed * capacity.frames).min(capacity.frames * 1000);
+        let ceil = |need: i64, rate: i64| (need.max(0) + rate - 1) / rate.max(1);
+        ceil(bytes * 1000 - have_bytes, capacity.bytes)
+            .max(ceil(1000 - have_frames, capacity.frames))
+            .clamp(1, 1000)
+    }
+}
