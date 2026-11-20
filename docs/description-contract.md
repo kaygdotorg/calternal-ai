@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.26 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.27 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -95,6 +95,12 @@ chain produced no rows. An empty batch with a cursor continues. Draw no
 total, fixed page indicator or End affordance. Keep an unchanged
 acknowledged chain on renewal under the
 [common retention rule](../contract/host-catalogue-v2.json#/view_result_retention).
+On host `PluginSearchInvalidated`, clear only the page chain matching
+the lease, Bind and settle generation, including buffered pages, selections,
+action contexts and cursors. Ignore later replies for that generation.
+For another search, settle again with a fresh generation. The
+[catalogue’s signal table](../contract/host-catalogue-v2.json#/subscription_catch_up/signals)
+pins the authority and clearing rules for all live subscriptions.
 
 **End-relative windows.** End and near-end jumps use `anchor:"end"` only on non-search Binds with exact count authority. A `loading`, `throttled` or `error` reply on that active request keeps `anchor:"end"` and carries no offset or count. Apply exact count and distance only to ready or empty End results. Search refinement is start-anchored. Follow the [catalogue’s end-anchor and result ordering rules](../contract/host-catalogue-v2.json#/$defs/WindowResult).
 
@@ -113,7 +119,7 @@ Row ids are opaque and stable. No position is an authority reference.
 * `result_version` identifies the result set. A new version replaces the window wholesale; the renderer skips a replacement equal to what it draws, so a republish that
   only moved the selection costs nothing.
 * **Live:** with `live: true` the host pushes a changed window (new `result_version`) while the view is open. While a key repeats the renderer **applies at once every reply to a
-  prefetch for the result version it already drew** (so arrowing never runs into skeleton rows) and **holds only pushes that change the version**, applying the latest when the
+  prefetch for the result version it already drew** (so arrowing never runs into skeleton rows) and **holds only newer window results that change the version**, applying the latest when the
   selection settles (or a few a second). A selection held by the settle window is flushed before any activation is sent, so an action never runs against the previously
   settled row.
 
@@ -327,7 +333,7 @@ the web, SwiftUI natively); no plugin is written twice, and anything the vocabul
   is disabled while a required field is empty or invalid and while the action is pending. The values leave the device only inside the submit's resolved inputs
   (`{form: id, field: fieldId}`); the form shows what was typed, and by the rule in 3.2 the host still previews every material field (typing is never consent); a form may present that list in place. After an `ok` outcome the fields clear (`clear: onOk`,
   the default); after `error` or an unknown outcome they keep what was typed. Errors appear in a `notice` above the submit, never as loose text.
-* **Lists** are binds. On every platform, Up and Down move the selection through the rows when `selectable: true`. The route opens when selection settles, about 100 ms after the last key or on key up. Selection and navigation events wait during repeats. Apply prefetch replies for the result version already drawn at once. Hold only version-changing pushes until selection settles. Prefetch requests still cross up to the normal request cap (§8). The web renderer waits 1.6 times the longest gap between repeats in the burst, between 45 and 120 ms. A route load starts only after repeats settle, and a new arrow cancels the previous load.
+* **Lists** are binds. On every platform, Up and Down move the selection through the rows when `selectable: true`. The route opens when selection settles, about 100 ms after the last key or on key up. Selection and navigation events wait during repeats. Apply prefetch replies for the result version already drawn at once. Hold only newer version-changing window results until selection settles. Apply invalidation immediately. Prefetch requests still cross up to the normal request cap (§8). The web renderer waits 1.6 times the longest gap between repeats in the burst, between 45 and 120 ms. A route load starts only after repeats settle, and a new arrow cancels the previous load.
 * **Web keyboard focus.** Each list is one Tab stop. Rows use the list's arrow navigation and do not add sequential Tab stops.
 * **Home, End and Page Up/Down** scroll the list without changing selection on any platform. The renderer requests unloaded windows for the viewport. Home asks for the initial window. On a non-search Bind with exact count authority, End requests the end anchor and Page Up/Down may use it near the tail. Search End and End without exact count authority page forward from the last loaded row. Follow §2.3 during recovery. Count-free views show no extent implying a total.
 * **Search refinement** uses the `refine_query` Bind state in §2.5.
@@ -546,7 +552,7 @@ What the renderer needs from the contract, and what it costs:
    drawing. (A page may still say which row it selected; the shell treats a later change as a reveal request.)
 3. **Equatable rows**: row values are small and comparable so an unchanged row is skipped when a window is replaced.
 4. **Up and Down move selection. Home, End and Page Up/Down only scroll** on every platform. While an arrow repeats, selection and row events go out once after the key settles (about 100 ms after the last key). Window **requests** for
-   prefetch may cross, coalesced to at most 4 a second; replies to prefetch for the result version already drawn are applied at once and only pushes that change the version are held until the selection settles,
+   prefetch may cross, coalesced to at most 4 a second; replies to prefetch for the result version already drawn are applied at once and only newer window results that change the version are held until the selection settles,
    decoded and compared off the main thread; a held selection is flushed before an activation is sent. A republish that only confirms the selection must not touch the list.
 5. **One title line**, then the declared secondary line in the secondary colour. Ellipsise both lines. Rows without a secondary line stay single-line. Use one aligned icon column where the description supplies leading icons. While a navigation key repeats, defer image fetches and cancel reads in flight. After it settles, fetch only still-visible rows’ current refs. For a note without a current thumbnail, draw the miniature from the authorised snippet, or the document miniature without text before the snippet is available. Use a single neutral accent: the accent is passed only to the unread mark and a prominent action.
 6. **Swipe actions** need `title`, `icon`, `tone` and `fullSwipe` on the invoke; they draw with the system's swipe look, tinted by tone, never by the root tint.

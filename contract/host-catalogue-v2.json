@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Revision 14.26 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
+  "description": "Revision 14.27 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -1249,7 +1249,7 @@
         "selection": "An eligible explicitly selected search profile resolves to an installed operation with a declared read contract. Ordinary host search never calls or waits for it. The profile can rerank checked candidates or query a package-owned index built by its declared background job. Rerank mode receives candidates from the checked host query. Index mode declares an owning index job and receives no host candidate list.",
         "authority": "Use only fields the querying person can currently read as input to the index or reranker, and for matching, ranking, and continuation. Apply the same rule to the background index data made available to that query. Keep a profile off unless it can demonstrate this rule. Reauthorize every returned ItemRef before projecting host-owned fields and contexts. Return no counts, fixed page lengths, scores, rejected refs or package-chosen display text.",
         "limits": "Use a checked cursor instead of the host window's offsets and span. Response batches are variable and limited by max_candidates. Bind continuation to the exact query generation, profile, authorized input scope and active lease. Apply worker and query budgets and the checked interactive deadline independently of ordinary host search. Only a ready batch without next ends the cursor chain. If no batch in that generation yielded rows, the renderer shows the Bind's empty message. Otherwise keep the accumulated rows. An empty intermediate batch continues with its cursor. Loading, throttling and failure do not establish an empty result.",
-        "renewal": "Apply view_result_retention. An exact acknowledged page keeps its content and cursor chain under the renewed lease, with refreshed row contexts. Re-settle only when its checked search scope or cursor chain is invalidated. Use subscription_catch_up for the profile's scoped invalidation watch. Catch-up does not refresh the profile.",
+        "renewal": "Apply view_result_retention. An exact acknowledged page keeps its content and cursor chain under the renewed lease, with refreshed row contexts. Re-settle only when its checked search scope or cursor chain is invalidated. Use subscription_catch_up for the profile's scoped invalidation watch. Catch-up does not refresh the profile. Use PluginSearchInvalidated under subscription_catch_up.signals.plugin_search for a superseded chain.",
         "eligibility": "Select the effective search path before settle from the authenticated view audience and the Bind declaration. Only live own_space_member and member views may select an explicit plugin profile. Guest and public views use default host search even if their template names a profile or the signed-in account has another member view. Use the host defaults and normal host query qualification for this path. Recheck the effective audience at settle, query admission and delivery. An audience change invalidates the view and requires a fresh open before another settle."
       }
     },
@@ -5141,6 +5141,75 @@
           "$ref": "#/$defs/Ref"
         }
       }
+    },
+    "PluginSearchInvalidated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "lease_ref",
+        "bind",
+        "settle_generation"
+      ],
+      "properties": {
+        "type": {
+          "const": "plugin_search_invalidated"
+        },
+        "lease_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "settle_generation": {
+          "$ref": "#/$defs/SearchSettleGeneration"
+        }
+      },
+      "description": "Host-only notification on the active authenticated view subscription. It identifies an existing plugin search chain and carries no rows, count, cursor, reason or replacement context."
+    },
+    "WindowInvalidated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "lease_ref",
+        "bind"
+      ],
+      "properties": {
+        "type": {
+          "const": "window_invalidated"
+        },
+        "lease_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "parent": {
+          "$ref": "#/$defs/WindowParentRef"
+        },
+        "settle_generation": {
+          "$ref": "#/$defs/SearchSettleGeneration"
+        }
+      },
+      "description": "Host-only notification on the active authenticated view subscription. Invalidate all delivered ranges of the exact checked Bind scope. Include parent exactly for per-parent scopes and settle_generation exactly for default search. Use only previously issued scope identifiers, even after content access is revoked. Carry no rows, count, revision or reason."
+    },
+    "HostLiveSignal": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ItemViewSignal"
+        },
+        {
+          "$ref": "#/$defs/WindowResult"
+        },
+        {
+          "$ref": "#/$defs/WindowInvalidated"
+        },
+        {
+          "$ref": "#/$defs/PluginSearchInvalidated"
+        }
+      ],
+      "description": "Host to renderer only, over the authenticated active view subscription. Apply subscription_catch_up and match the signal to the active lease and applicable scope before use. Solicited request and renewal replies keep their own schemas."
     }
   },
   "activation_limits": {
@@ -5416,7 +5485,7 @@
       "output_schema": {
         "$ref": "#/$defs/PluginSearchPage"
       },
-      "scope": "Require a live member audience on the active view and the exact explicit declared profile selected before settle. Check the settled Bind and generation. Apply query.search.plugin at admission and delivery. A guest or public request cannot invoke a plugin, including with a forged member cursor or Bind. Apply subscription_catch_up to the search invalidation watch."
+      "scope": "Require a live member audience on the active view and the exact explicit declared profile selected before settle. Check the settled Bind and generation. Apply query.search.plugin at admission and delivery. A guest or public request cannot invoke a plugin, including with a forged member cursor or Bind. Apply subscription_catch_up to the search invalidation watch. Host-only catch-up and invalidation use HostLiveSignal and leave the page reply unchanged."
     },
     "item_view.follow": {
       "input_schema": {
@@ -6138,7 +6207,7 @@
     "retention_days": 30,
     "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action. Start retention at trash commit. No item kind or package overrides the retention period."
   },
-  "exchanges_revision": "14.26",
+  "exchanges_revision": "14.27",
   "view_result_retention": {
     "rule": "Host windows, plugin search pages and stored or live item-view pages use the same result_versions and retained_results exchange. On a successful renewal with an unchanged grant revision, re-confirm the exact result ref and version, current audience and checked scope, including the active settle generation for a plugin search, the slot for an item view, and live access to each exact item, asset and source revision represented in the result. Retain each still-authorized unchanged result by acknowledging the exact pair, without rerendering or invoking a plugin. Treat a changed or refused result as an invalidation of that result only. A changed audience requires a new view. Apply subscription_catch_up to each retained subscription and its result check.",
     "scope": "Retain only on the same authenticated view, account and cache partition. Rebind the acknowledged result's eligible continuation, follow and item-view asset refs to the renewed lease. Asset reads still apply view_snapshots.assets at admission and delivery. Supply current scoped contexts in retained_results for retained plugin-search pages. A missing context is unavailable. Replace old tokens as a set. Invalidate selections or activities whose originating result or context no longer holds. Acknowledge each exact result at most once under the existing aggregate cap.",
@@ -6151,6 +6220,58 @@
       "Read the current committed revision or published result watermark of that exact authorized scope. Compare it to the revision or result the viewer held when registering, opening or renewing. With no previous result, use this read for the initial reply.",
       "Deliver any newer authorized state or the route's invalidation or changed signal. Merge notifications queued during the read with catch-up, coalescing duplicates by the same scoped revision order. Never let an older snapshot overwrite a later result and never miss a publication racing registration, catch-up or the first reply."
     ],
-    "authority": "Keep scope and version order server-side. Do not compare opaque refs lexically or infer visible changes from a space-wide watermark. Recheck the exact lease, audience and live authority before delivery. Fence superseded scopes, preserve each route's loading, invalidation and coalescing rules, and do not wake a plugin to perform catch-up or reconfirm unchanged results."
+    "authority": "Keep scope and version order server-side. Do not compare opaque refs lexically or infer visible changes from a space-wide watermark. Recheck the exact lease, audience and live authority before delivery. Fence superseded scopes, preserve each route's loading, invalidation and coalescing rules, and do not wake a plugin to perform catch-up or reconfirm unchanged results. A scoped invalidation may identify a result the host had issued to this lease after access to its content is revoked. It must carry no revoked content or new scope metadata. Fence outstanding deliveries for the invalidated result before signaling and keep live pushes and invalidations ordered with rebind. Close the affected lease if an invalidation cannot be delivered.",
+    "signals": {
+      "item_view_follow": {
+        "newer": {
+          "$ref": "#/$defs/ItemViewSignal"
+        },
+        "invalidated": {
+          "$ref": "#/$defs/ItemViewSignal"
+        },
+        "delivery": "Use changed for a newer authorized head and invalidated for a relevant invalidation under view_snapshots.follow. On changed fetch the newest live head and replace the old page chain when its revision changes.",
+        "clears": "On invalidated clear the affected displayed and buffered item-view pages, asset refs and bytes, older cursors, follow ref and any dependent activity. Keep the rest of the view."
+      },
+      "window_pushes": {
+        "newer": {
+          "$ref": "#/$defs/WindowResult"
+        },
+        "invalidated": {
+          "$ref": "#/$defs/WindowInvalidated"
+        },
+        "delivery": "Push the newer authorized window of the current live Bind scope. When affected displayed data cannot remain visible, invalidate even if a replacement window is still loading. Omit settle_generation.",
+        "clears": "On invalidation clear the exact Bind scope's windows, count, displayed cache and assets, selections and action contexts, including buffered data and dependent activities. Apply immediately during held keys. Discard superseded outstanding replies and request the viewport again under live authority. Keep other scopes."
+      },
+      "default_search": {
+        "newer": {
+          "$ref": "#/$defs/WindowResult"
+        },
+        "invalidated": {
+          "$ref": "#/$defs/WindowInvalidated"
+        },
+        "delivery": "Use the same window signals with the active settle_generation. Echo the parent for a per-parent search. A scoped invalidation also discards earlier provisional search rows.",
+        "clears": "Clear as for window pushes, for this Bind and settle generation only, including provisional rows and the displayed count. Other Bind scopes remain."
+      },
+      "plugin_search": {
+        "newer": {
+          "$ref": "#/$defs/PluginSearchInvalidated"
+        },
+        "invalidated": {
+          "$ref": "#/$defs/PluginSearchInvalidated"
+        },
+        "delivery": "Use the same invalidation on an authorized advance that supersedes the chain or on loss of its authority. Fence the cursor chain and its derived contexts before delivering the signal. No unsolicited page and no worker wake. Ignore a signal for an old lease, Bind or settle_generation.",
+        "clears": "Clear the exact chain's displayed and buffered pages, continuations, selections including set refs, and action contexts. Ignore in-flight pages for the invalidated generation. Keep the rest of the view. To search again, settle with a fresh generation under live authority and request the first page."
+      },
+      "renewal": {
+        "newer": {
+          "$ref": "#/$defs/LeaseRenewResult"
+        },
+        "invalidated": {
+          "$ref": "#/$defs/LeaseRenewResult"
+        },
+        "delivery": "Return replacement host windows and exact retained pairs in the matching renewal reply. Omission of a requested exact result from retained_results invalidates that result. Put eligible catch-up windows in that reply or send the watch-specific signals under the renewed lease after the reply. Fence old-lease signals at handoff. Item-view and plugin-search content arrives only through their ordinary read routes.",
+        "clears": "Clear unacknowledged results and dependent selections, contexts, assets or continuations under view_result_retention. Keep exact retained results and their replacement contexts. On lease failure or disconnect clear all live content of that view under the existing lease rule."
+      }
+    }
   }
 }

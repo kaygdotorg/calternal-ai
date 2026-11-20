@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.26 draft
+# Plugin API v2 · revision 14.27 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -878,7 +878,9 @@ distance only with exact count authority.
 
 Keyboard viewport prefetch is bounded host I/O during repeated keys.
 Apply prefetch replies for the result version already drawn at once.
-Hold pushes that change the version while selection settles. Navigation
+Hold newer window results that change the version while selection settles.
+Apply scoped invalidations immediately under the catalogue’s
+[signal table](../contract/host-catalogue-v2.json#/subscription_catch_up/signals). Navigation
 waits for settling. Selection-dependent activation follows §4.3. Prefetch
 and pushes never wake a worker. Live window, search and item-view
 subscriptions and lease renewal use the catalogue’s
@@ -1461,8 +1463,12 @@ intentional refusal/retry with an actionable response.
   Reject profiles whose unreadable field can influence a match, ordering
   or continuation. Exercise default and explicit settle, a cursor chain
   ending without rows and unchanged renewal without a plugin call.
-  Check that invalidated pages restart under a fresh settle. Reject
-  old cursors, selection and contexts from invalidated pages.
+  For a plugin-search invalidation require the exact lease, Bind and
+  settle generation to clear only that chain and its scoped selections
+  and contexts, with no worker call. Deliver stalled old pages and a
+  signal for a superseded generation. Neither may alter the fresh chain.
+  Restart the invalidated chain only through a fresh settle. Reject its
+  old cursors, selections and action contexts.
   Settle the same template as a member, guest and public viewer. Require
   zero plugin calls for guest or public, including a forged profile cursor.
 - **Generic idle archive.** Use an ordinary declared kind and the real
