@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 14.21 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 14.22 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -463,7 +463,8 @@
           "const": true
         },
         "alarm": {
-          "const": true
+          "const": true,
+          "description": "Allow a one-shot alarm. When this job also declares execution:true, AlarmSet requires the top-level harness operand. Other alarm jobs refuse that operand."
         }
       },
       "if": { "properties": { "replayable": { "const": false } } },
@@ -715,7 +716,7 @@
             "maxLength": 256,
             "pattern": "^(?!\\.{1,2}(?:/|(?![\\s\\S])))[A-Za-z0-9._-]+(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[A-Za-z0-9._-]+)*(?![\\s\\S])"
           },
-          "description": "Relative login paths inside the person's sandbox, disclosed at install. The person chooses any backing directory to share under the catalogue's provider_login rule."
+          "description": "Relative login mount paths disclosed at install. Backing storage is personal or space-scoped under the catalogue's provider_login rule."
         }
       },
       "required": [

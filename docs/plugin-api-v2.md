@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.21 draft
+# Plugin API v2 · revision 14.22 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -334,9 +334,11 @@ insufficient.
 
 **Ending attempt authority.** The catalogue's
 [`attempt_authority_end` table](../contract/host-catalogue-v2.json#/attempt_authority_end)
-defines the durable fence and post-commit work for each action. In
-confirmed archive the exact admitted-attempt fence and recovery work
-commit in the FULL archive transaction before the reply. Undo leaves the
+defines the durable fence and post-commit work for each action. Apply its
+[retirement authority rule](../contract/host-catalogue-v2.json#/attempt_authority_end/retirement_authority)
+to the entire affected set, including any queued successor, before committing
+an actor-initiated retirement. In confirmed archive the exact fences and
+recovery work commit in the FULL archive transaction before the reply. Undo leaves the
 fence in force. Before dispatch or after a crash, the local committed
 fence already blocks renewal, queued tools, effects and egress, including
 descendant effects. Remote Stop and verified teardown consume the
@@ -453,11 +455,11 @@ its receipt, with long work as a durable job.
 | Items · `item_purge`, `empty_trash`, `collection_create`, `collection_membership` | Purge and Empty Trash are Manager/Owner-only, irreversible and one confirmed durable job over a pinned Trash selection. Reauthorize per batch and resume by receipt. Apply catalogue `trash` for retention. Collection creation and bounded membership changes commit once with expected revision. |
 | Queries · `items_list`, `items_search` | Kind/optional collection, typed indexed metadata predicates, declared sort under the [catalogue’s sort rules](../contract/host-catalogue-v2.json#/query), cursor/window and field set → authorized page with cursor and count/offset where windowed. Unindexed filter/sort is `400`. Use engine-side query and bounded row/byte budget. Apply authority before count. No whole-kind materialization. |
 | Rooms / sharing · `sharing_check` | Item ref plus requested action → permission for the live grant. A room is an attribute of the kind, opened client-to-host using its own bounded protocol. Room membership and events keep fencing the item grant. No plugin hook acknowledgment. |
-| Jobs · `start_job`, `checkpoint_job`, `job_status`, `cancel_job` | Declared job, payload and resolved target/grant → durable job ID. Checkpoint only the owning current run. Status/cancel uses a scoped job ID with opaque `404` for foreign jobs. Bounded checkpoints, live progress and park count per space/package. |
+| Jobs · `start_job`, `checkpoint_job`, `job_status`, `cancel_job` | Declared job, payload and resolved target/grant → durable job ID. Checkpoint only the owning current run. Status/cancel uses a scoped job ID with opaque `404` for foreign jobs. An execution cancellation uses the same retirement authority as Stop. Bounded checkpoints, live progress and park count per space/package. |
 | Settings / secrets · `read_setting`, `set_setting`, `request_secret_handle` | Declared key or secret purpose → effective value/version or opaque handle. Validate type, compare revision on writes and bind personal values to the actor. One bounded engine operation. Missing authorization is `403` or opaque `404` as appropriate. |
 | Proxy · `proxy_request`, `credential_call` | Approved install line and bounded HTTPS request → bounded response. The host-only sealed content route exposes authorized opaque image refs to the renderer. Unapproved destination is `403`, oversize `413`, quota `429`. Anonymous media keeps the existing 10 MB, three redirects and 16 hosts/minute fixture ceilings. Typed call returns the profile output or `403` without contacting the endpoint. |
 | Execution · `execution_start`, `execution_status`, `execution_input`, `execution_spawn_child`, `execution_stop` | The catalogue types each call. The host issues the admitted intent, resolves provider and placement, and binds every effect to the exact attempt under live authority. Start, input, child and Stop use checked receipts. |
-| Alarms · `alarm_set`, `alarm_cancel` | Declared replayable alarm job, checked input and one UTC instant → durable receipt. The job's host metadata carries scheduled and actual time. |
+| Alarms · `alarm_set`, `alarm_cancel` | Declared replayable alarm job, checked input and one UTC instant → durable receipt. Supply the typed `AlarmSet.harness` exactly for an execution alarm under the catalogue’s admission rule. The job's host metadata carries scheduled and actual time. |
 | Files · `item_append` | Checked item, expected revision and bounded opaque bytes → durable revision, byte boundary and receipt. |
 | Item views · `item_view_publish` | Declared snapshot slot, checked exact audience and source revision → retained native description and receipt. |
 
@@ -512,18 +514,19 @@ machine. Do not expose native session IDs. Current authority, compatible
 binding, and reconciliation of uncertain effects are required before
 admission. Section 5 retires incompatible bindings before widening.
 
-A harness declares its relative `login_directories` inside the person’s
-sandbox. The bundled harnesses declare `.claude` and `.codex` by the same
+A harness declares its relative `login_directories` mount paths. The bundled harnesses declare `.claude` and `.codex` by the same
 mechanism. Mount private backing directories for each harness by default.
 Only the person’s explicit choice shares a backing directory between
 selected harnesses. A matching path or name grants no access. Apply
 the catalogue’s [login custody rule](../contract/host-catalogue-v2.json#/execution_attempt_authority/provider_login)
 before mounting. In a personal sandbox the program and its tools may read
 the approved login. Keep credentials out of other accounts, output and
-portable backups. The configured
-shared login has tools off until isolation is proved (owner decision 74).
-A shared run cannot reach former personal session files by path or native
-ID. Apply this to new runs as well as continuation, across every publisher.
+portable backups. In a shared space use the separate space-scoped binding
+approved by the Owner and configured by the Owner or a Manager under
+the catalogue’s shared-space rule. Keep tools off until isolation is proved
+(owner decision 74). A shared-space run cannot reach personal login or
+session files by path or native ID. Apply this to new runs as well as
+continuation, across every publisher.
 **Harness placement (owner decision, 2026-11-20).** A harness reviewed
 once and approved for its pinned build can run on any eligible placement,
 including hosted sandboxes. Bundled harnesses go through the same review.
@@ -1110,7 +1113,7 @@ revisions of all affected resources and refuses if any dependency moved.
 | `host.layout.section.create` | The per-person layout revision transaction creates the section and commits Undo that removes it. |
 | `host.layout.section.rename` | The same layout transaction commits the title change and its prior title for Undo. |
 | `host.layout.section.remove` | One per-person layout revision transaction retires the section and its placement generation and records Undo naming that generation. Retired generations are excluded from reads. Undo rechecks live membership and the post-effect layout revision and reactivates the exact generation in one transaction before its expiry. Reactivation grants no item access. Reclaim expired retired generations in bounded background batches. Removal and Undo perform no per-placement work. |
-| `host.item.archive` | Use the catalogue’s checked idle predicate, qualification gate and execution fence. A protected archive binds any exact pending job or attempt. Undo that adds file readers goes through §5. |
+| `host.item.archive` | Use the catalogue’s checked idle predicate, qualification gate and execution fence. A protected archive binds the whole affected set and uses the catalogue’s retirement authority rule. Undo that adds file readers goes through §5. |
 | `host.item.unarchive` | The FULL item content transaction commits the new head and Undo. Use the catalogue shortcut only when eligible. Apply §5 if the change adds file readers. |
 | `host.item.patch-metadata` | The room-checked FULL content transaction records the changed head and Undo for a single boolean toggle. Full swipe covers this case. |
 
@@ -1410,10 +1413,16 @@ intentional refusal/retry with an actionable response.
   enrolled machine, and admit it on the actor’s own eligible enrollment.
   Recheck a changed build and a revoked enrollment. Apply the same
   checks to community and bundled harnesses. Try another harness’s
-  login path without and with explicit sharing. Queue a successor,
-  replay its receipt, fill the queue, revoke before promotion and
-  check that two attempts never run on one item. Fire a durable alarm
-  after restart and verify the exact pinned harness.
+  login path without and with explicit sharing. Start a shared-space run
+  as another member and verify it uses only the Owner-approved binding,
+  with tools off. Refuse stale builds and revoked bindings. Queue a
+  successor as a different starter. Refuse archive by the head starter
+  alone and refuse dispatch after a successor or authority change. Check
+  that Stop of the head alone preserves the successor. Replay the queued
+  receipt, fill the queue, revoke before promotion and require at most one
+  running attempt. Fire an execution alarm after restart with conflicting
+  refs in its job input. Require the exact typed harness binding and refuse
+  admission after that binding is revoked.
 - **Lists and search.** Before enabling background list replay, cut power on
   both sides of the save and publication commits. Introduce a backlog.
   Require bounded recovery to live-authority rows and counts, loading without
