@@ -144,3 +144,16 @@ export function fixtureWorker(
     },
   };
 }
+
+/** In-process v2 host for plugin tests; see its module comment for what it does not prove. */
+export { FakeHost, loadPackage } from "./fake-host/host.js";
+/** Options, call records and package shapes for the v2 fake host. */
+export type { AuthoredApp, AuthoredPackage, BrokerCall, FakeHostOptions, InvokeOptions, Receipt } from "./fake-host/host.js";
+/** Harness choices and pending alarms of the v2 fake host. */
+export type { Choice, HarnessChoice, PendingAlarm } from "./fake-host/execution.js";
+/** The refusal the v2 fake host raises, with status, code and, for missing declarations, the manifest path. */
+export { HostRefusal } from "./fake-host/refusal.js";
+/** Stored item and job state the v2 fake host exposes to assertions. */
+export type { StoredItem } from "./fake-host/items.js";
+/** Installed package and admitted job shapes of the v2 fake host. */
+export type { Captured, ContributionCallState, InstalledPackage, Job } from "./fake-host/invocation.js";

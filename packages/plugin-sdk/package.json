@@ -20,7 +20,7 @@
   "scripts": {
     "build": "node scripts/generate-author-types.mjs && tsc -p tsconfig.json",
     "test": "npm run build && node --test test/*.test.mjs && npm run test:types && npm run test:author",
-    "test:author": "vitest run test/author-v2.test.ts test/build-author-package.test.ts",
+    "test:author": "vitest run test/author-v2.test.ts test/build-author-package.test.ts test/fake-host.test.ts",
     "test:broker-types": "tsc --noEmit --strict --module nodenext test/revisioned-broker-types.mts",
     "test:types": "tsc --noEmit --strict --target es2022 --module esnext --moduleResolution bundler --skipLibCheck test/types/operation-types.ts test/fixtures/sample-plugins.ts"
   },
