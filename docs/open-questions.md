@@ -6,6 +6,8 @@ move to the decision record they belong to and leave this list. Terms: see
 
 ## To try on the morning of 2026-11-20
 
+- **Start here: [the morning document](morning-2026-11-20.md)**: what is live (production release 31fb41179460), what to try, what happened overnight, and thirteen questions each with context, cost and a recommendation.
+
 - Sign up on https://calternal.cloud/ (release da32f88750a6: a fresh install on the morning of 2026-11-20 from dev da32f887, with kayg's go, so it has automations and skills, sharing, live rooms for notes, web push, thread titles and snooze). Setup code: `ssh calternal@calternal-cloud podman exec calternal-ai /usr/local/bin/calternal setup-code --appdata /data/appdata`. Then: add an email, dismiss the second-passkey prompt, add a second passkey, regenerate recovery codes, change the username. Two of these failed on the earlier build once an email existed; fixed and proven against a live server. Then reload the page and start a thread and a note: that is the hang that was fixed, checked against the shipped image.
 - On a phone, https://preview.calternal.cloud/ai/ (fixtures): Settings, Appearance (flat pages); the composer and keyboard in Safari and as a home-screen app; the sticky header pill; long-press on a thread or note row (lift follows the finger, slide to choose); Share on a note (people, links, collections); a collection page; Skills and Automations in Settings; landscape with a request card.
 - The canvas with `?canvas=1` until the default is flipped: windows, the header pill in a Settings window, presence avatars in a note window's actions.
