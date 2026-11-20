@@ -5,6 +5,25 @@ use rusqlite::{Transaction, TransactionBehavior, params};
 use serde_json::Value;
 
 impl Content {
+    /// Run one bounded execution storage operation in the existing FULL
+    /// per-space writer. The callback must not re-enter content or dispatch
+    /// remote work. Cost: one local transaction and one flush if it writes.
+    pub fn execution_transaction<T>(
+        &self,
+        space: SpaceId,
+        run: impl FnOnce(&Transaction<'_>) -> Result<T>,
+    ) -> Result<T> {
+        self.with_space(space, |s| {
+            let tx = s
+                .conn
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(internal)?;
+            let value = run(&tx)?;
+            tx.commit().map_err(internal)?;
+            Ok(value)
+        })
+    }
+
     /// Commit a checked execution effect and its receipt on the selected
     /// space's FULL content transaction. Checks run on both fresh and replay
     /// paths under the space's writer lock. Neither callback may re-enter

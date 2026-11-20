@@ -3,7 +3,8 @@
 Slice 3, Forgejo [#94](https://git.kayg.org/kayg/calternal-ai/issues/94).
 The initial exchange map is from the revision 14.33 build plan at `cc13ae21`
 and the Threads fake host at `6125ad96`. Implement the tests with the shared
-Rust identities on the host base. Revision 14.34 at `b4d0f20d` pins the
+Rust identities on the host base. The lane is based on revision 14.35 at
+`36d49713`. Revision 14.34 pins the
 initiating installation through renewal and puts archive and its execution
 fences on the same per-space content writer.
 
@@ -16,6 +17,19 @@ disposable SQLite stores. The product broker, renderer activation, live grant
 and installation hooks, cross-store fences and authenticated machine proof
 still need integration. The test callback models the live check result and
 the exact teardown key, and does not qualify the enrolled carrier.
+
+The server adapter in `plugins::execution_v2` compares Send operands with
+the checked installed declaration and placement, injects the one item field
+before run validation, and calls contribution preflight before admission.
+Claim produces the host-owned invocation context. The owning-job handle
+reserves an attempt and replays its transition cursor. Protected Stop
+selection issues one context per eligible target. Resolve rechecks the
+exact target and dispatch requires confirmation for the same member,
+installation, lease, component and item, then writes the receipt with the
+fence. Slice 1 supplies the installed-package resolver, frame validator and
+carrier callback registration. Slice 6 supplies the active renderer lease
+and confirmation-proof resolver. Their input authority and proof checks are
+fixture callbacks in the server adapter test.
 
 Slice 2 owns registration of `execution/schema.sql` in the per-space migration
 and calls `archive_targets` and `fence_archive` from its item archive writer.

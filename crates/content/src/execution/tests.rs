@@ -107,12 +107,14 @@ fn stop_fences_only_its_head_and_teardown_gates_successor() {
     let tx = db.transaction().unwrap();
     let head = admit(&tx, &pin, 64).unwrap();
     let claimed = claim(&tx, &head.job, |_| Ok(true)).unwrap().unwrap();
-    assert_eq!(claimed, pin);
-    let attempt = start(&tx, &head.job, &pin.harness, |_| Ok(true)).unwrap();
+    assert_eq!(claimed.pin, pin);
+    assert_eq!(claimed.intent, head.intent);
+    let started = start(&tx, &head.job, &pin.harness, |_| Ok(true)).unwrap();
     assert_eq!(
         start(&tx, &head.job, &pin.harness, |_| Ok(true)).unwrap(),
-        attempt
+        started
     );
+    let attempt = started.attempt;
     assert!(stop_pending(&tx, &head.intent, |_, _| Ok(())).is_err());
 
     let first_actor = pin.actor;
@@ -125,15 +127,10 @@ fn stop_fences_only_its_head_and_teardown_gates_successor() {
         Some(json!({"reason": "pending_limit"}))
     );
     assert!(claim(&tx, &successor.job, |_| Ok(true)).unwrap().is_none());
-    assert!(
-        stop(&tx, &attempt.execution, |_, _| Err(Error::forbidden(
-            "foreign"
-        )))
-        .is_err()
-    );
+    assert!(stop(&tx, &attempt, |_, _| Err(Error::forbidden("foreign"))).is_err());
     assert!(is_current(&tx, &attempt, |_| Ok(true)).unwrap());
     assert!(
-        !stop(&tx, &attempt.execution, |target, starter| {
+        !stop(&tx, &attempt, |target, starter| {
             assert_eq!(target, &item);
             assert_eq!(starter, first_actor);
             Ok(())
@@ -297,8 +294,8 @@ fn lost_admission_and_stop_acks_replay_the_content_writer_receipts() {
     let attempt = content
         .with_space(space, |s| {
             let tx = s.conn.transaction().map_err(internal)?;
-            assert_eq!(claim(&tx, &job, |_| Ok(true))?, Some(pin.clone()));
-            let attempt = start(&tx, &job, &pin.harness, |_| Ok(true))?;
+            assert_eq!(claim(&tx, &job, |_| Ok(true))?.unwrap().pin, pin);
+            let attempt = start(&tx, &job, &pin.harness, |_| Ok(true))?.attempt;
             tx.commit().map_err(internal)?;
             Ok(attempt)
         })
@@ -316,7 +313,7 @@ fn lost_admission_and_stop_acks_replay_the_content_writer_receipts() {
     });
     let stopped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         content.execution_command(space, stop_request, || Ok(()), |tx| {
-            let transition = stop(tx, &attempt.execution, |item, starter| {
+            let transition = stop(tx, &attempt, |item, starter| {
                 assert_eq!(item, &pin.item);
                 assert_eq!(starter, actor);
                 Ok(())
@@ -359,7 +356,9 @@ fn archive_matches_and_checks_both_starters_before_retiring_work() {
     let tx = db.transaction().unwrap();
     let head = admit(&tx, &first, 64).unwrap();
     claim(&tx, &head.job, |_| Ok(true)).unwrap().unwrap();
-    let attempt = start(&tx, &head.job, &first.harness, |_| Ok(true)).unwrap();
+    let attempt = start(&tx, &head.job, &first.harness, |_| Ok(true))
+        .unwrap()
+        .attempt;
     let old_selection = archive_targets(&tx, &item).unwrap();
     let successor = admit(&tx, &second, 64).unwrap();
     assert!(fence_archive(&tx, &item, &old_selection, |_| panic!("stale archive")).is_err());
@@ -412,6 +411,9 @@ fn installation_retirement_leaves_other_actors_and_devices_live() {
         .unwrap()
         .is_none()
     );
-    assert_eq!(claim(&tx, &head.job, |_| Ok(true)).unwrap(), Some(first));
+    assert_eq!(
+        claim(&tx, &head.job, |_| Ok(true)).unwrap().unwrap().pin,
+        first
+    );
     assert!(cleanup(&tx, 64).unwrap().is_empty());
 }
