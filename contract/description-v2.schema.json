@@ -2801,7 +2801,7 @@
     },
     "MemberRowCacheRecord": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/MemberRowCacheRecord",
-      "description": "The ONLY record the device may write to disk for rows: attached by the host to a window result for an own-space MEMBER (`audience` is the constant own_space_member), with account, space, template digest, bind, offset, issue and expiry, display rows (title and optional subtitle text or typed subtitle_timestamp for a date, no contexts or action material) and the host's proof; the shell validates it on write and on load. A guest or public window never carries one, so they cannot reach the disk path."
+      "description": "The ONLY record the device may write to disk for rows: attached by the host to a window result for an own-space MEMBER (`audience` is the constant own_space_member), with account, space, template digest, bind, signed scope_ref, offset, issue and expiry, display rows (title and optional subtitle text or typed subtitle_timestamp for a date, no contexts or action material) and the host's proof; the shell validates it on write and on load. A guest or public window never carries one, so they cannot reach the disk path."
     },
     "HostLiveSignal": {
       "$ref": "host-catalogue-v2.json#/$defs/HostLiveSignal",

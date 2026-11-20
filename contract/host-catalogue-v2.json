@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Revision 14.27 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
+  "description": "Revision 14.28 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -1103,7 +1103,8 @@
           "PageUp",
           "PageDown"
         ]
-      }
+      },
+      "scope_identity": "Issue scope_ref in every WindowResult for a checked scope, including loading and throttled replies, and repeat it in matching pushes and invalidations. Bind it to the authenticated account, space, audience, installed app and view definition, template digest, Bind, and exact checked route operands, parent and settled search scope when applicable. Canonicalize the resolved operands. Different checked route operands always get different refs. The identity does not depend on range, anchor, result or grant revision. Within a lease the same checked scope reuses its ref. Rebind that ref on renewal of the same scope. For invariant member scopes eligible for signed row records, keep the opaque ref stable across leases and restart for the same cache scope. Record the ref from the authenticated reply with the corresponding request. An invalidation for a prior route on the same lease can erase that scope even when another route is now displayed. Never accept a client-supplied scope ref as authority or mint one for an unauthorized request."
     },
     "list_publication": {
       "commit": "Commit the authoritative item or scope change and its durable publication intent and any receipt and Undo before acknowledgement. The save does not wait for index publication.",
@@ -1776,6 +1777,7 @@
       "additionalProperties": false,
       "required": [
         "bind",
+        "scope_ref",
         "state",
         "result_version",
         "rows",
@@ -1874,6 +1876,9 @@
         },
         "settle_generation": {
           "$ref": "#/$defs/SearchSettleGeneration"
+        },
+        "scope_ref": {
+          "$ref": "#/$defs/WindowScopeRef"
         }
       },
       "allOf": [
@@ -3290,6 +3295,7 @@
         "space",
         "template_digest",
         "bind",
+        "scope_ref",
         "window_ref",
         "offset",
         "issued_at",
@@ -3364,9 +3370,12 @@
         "proof": {
           "$ref": "#/$defs/ProofRef",
           "description": "Proof wire form ed25519.<key_id>.<base64url signature>, over the domain string calternal-member-row-cache-v2 followed by LF and RFC 8785 canonical JSON of this record without proof."
+        },
+        "scope_ref": {
+          "$ref": "#/$defs/WindowScopeRef"
         }
       },
-      "description": "A persistable member row projection under cache_policy and offline_download. Issue only on an opted-in, ready or empty start-anchored root window for a live own-space member whose Bind has invariant query inputs. A list may name a literal collection. No reference, search text, route, form, selection or parent operand in its source, filter or sort. Authenticate the account, space, template, Bind, window and offset. The host builds the display record from the authoritative title and host-allowlisted display fields approved for offline use. Body-derived fields require an exact authorized offline grant under offline_download. Omit the record if any required title is ineligible.  Never include row IDs, contexts, action material or credentials."
+      "description": "A persistable member row projection under cache_policy and offline_download. Issue only on an opted-in, ready or empty start-anchored root window for a live own-space member whose Bind has invariant query inputs. A list may name a literal collection. No reference, search text, route, form, selection or parent operand in its source, filter or sort. Authenticate the account, space, template, Bind, scope_ref, window and offset. The signed scope_ref identifies every persisted row range in that scope for erasure under cache_policy. The host builds the display record from the authoritative title and host-allowlisted display fields approved for offline use. Body-derived fields require an exact authorized offline grant under offline_download. Omit the record if any required title is ineligible.  Never include row IDs, contexts, action material or credentials."
     },
     "WindowPlanError": {
       "type": "object",
@@ -5173,7 +5182,8 @@
       "required": [
         "type",
         "lease_ref",
-        "bind"
+        "bind",
+        "scope_ref"
       ],
       "properties": {
         "type": {
@@ -5190,9 +5200,12 @@
         },
         "settle_generation": {
           "$ref": "#/$defs/SearchSettleGeneration"
+        },
+        "scope_ref": {
+          "$ref": "#/$defs/WindowScopeRef"
         }
       },
-      "description": "Host-only notification on the active authenticated view subscription. Invalidate all delivered ranges of the exact checked Bind scope. Include parent exactly for per-parent scopes and settle_generation exactly for default search. Use only previously issued scope identifiers, even after content access is revoked. Carry no rows, count, revision or reason."
+      "description": "Host-only notification on the active authenticated view subscription. Invalidate only the scope_ref issued for that checked Bind scope. Include parent exactly for per-parent scopes and settle_generation exactly for default search. Match these operands to the issued scope. Use only previously issued scope identifiers, including after content access is revoked. Carry no rows, count, revision or reason."
     },
     "HostLiveSignal": {
       "oneOf": [
@@ -5210,6 +5223,10 @@
         }
       ],
       "description": "Host to renderer only, over the authenticated active view subscription. Apply subscription_catch_up and match the signal to the active lease and applicable scope before use. Solicited request and renewal replies keep their own schemas."
+    },
+    "WindowScopeRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host-issued identity of the exact authorized Bind scope. Apply query.window.scope_identity. It grants no access."
     }
   },
   "activation_limits": {
@@ -5808,11 +5825,12 @@
   },
   "cache_policy": {
     "member_rows_max_age_seconds": 1209600,
-    "persistent_row_scope": "Start-anchored root list windows with invariant inputs only. Permit a literal collection and account-bound viewer:person. Deny search, references and route, form, selection or parent operands in source, filter or sort. Verify shape, host proof, account, space, template, Bind, offset, lifetime and opt-ins on write and load. On write the record must match the authenticated active view and reply, including own_space_member audience and window_ref. On load use only the matching local own-space root display. Never serialize a WindowResult.",
-    "persistent_row_authority": "Display on unlocked devices as unconfirmed until the host confirms or corrects the rows. Encrypt with account- and space-bound keys. Never persist guest or public rows, action credentials or contexts. Erase on sign-out, account switch or known revocation. Every action requires a fresh host context. Body-derived parts require the matching offline grant. Apply offline_download retention.",
+    "persistent_row_scope": "Start-anchored root list windows with invariant inputs only. Permit a literal collection and account-bound viewer:person. Deny search, references and route, form, selection or parent operands in source, filter or sort. Verify shape, host proof, account, space, template, Bind, signed scope_ref, offset, lifetime and opt-ins on write and load. On write the record must match the authenticated active view and reply, including own_space_member audience, scope_ref and window_ref. Index records on the device by the authenticated account, space and signed scope_ref so a scope invalidation can erase every offset without relying on the current viewport or lease. On load use only the matching local own-space root display. Never serialize a WindowResult.",
+    "persistent_row_authority": "Display on unlocked devices as unconfirmed until the host confirms or corrects the rows. Encrypt with account- and space-bound keys. Never persist guest or public rows, action credentials or contexts. Erase on sign-out, account switch or known revocation. Apply persistent_row_invalidation to every authenticated invalidation. Every action requires a fresh host context. Body-derived parts require the matching offline grant. Apply offline_download retention.",
     "record_schema": {
       "$ref": "#/$defs/MemberRowCacheRecord"
-    }
+    },
+    "persistent_row_invalidation": "For every accepted authenticated invalidation, durably erase all persisted row records in the exact invalidated scope, including all cached offsets and records no longer displayed or written under earlier leases. A renewal omission identifies the scope through the exact requested result that was invalidated. Stop queued writes from invalidated results and prevent those records from prepainting after a restart. Complete or recover pending erasures before reading cached rows on launch. Apply erasure even if the invalidation has no reason and arrives without a separate revocation notice. Only a fresh authorized result may write replacement records. Preserve records in unrelated scopes."
   },
   "execution_attempt_authority": {
     "principal": "A distinct host-minted principal per exact attempt, bound to the sender and the admitted request. Its separately fenced lease grants no ordinary invocation ticket or member principal.",
@@ -6207,10 +6225,10 @@
     "retention_days": 30,
     "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action. Start retention at trash commit. No item kind or package overrides the retention period."
   },
-  "exchanges_revision": "14.27",
+  "exchanges_revision": "14.28",
   "view_result_retention": {
     "rule": "Host windows, plugin search pages and stored or live item-view pages use the same result_versions and retained_results exchange. On a successful renewal with an unchanged grant revision, re-confirm the exact result ref and version, current audience and checked scope, including the active settle generation for a plugin search, the slot for an item view, and live access to each exact item, asset and source revision represented in the result. Retain each still-authorized unchanged result by acknowledging the exact pair, without rerendering or invoking a plugin. Treat a changed or refused result as an invalidation of that result only. A changed audience requires a new view. Apply subscription_catch_up to each retained subscription and its result check.",
-    "scope": "Retain only on the same authenticated view, account and cache partition. Rebind the acknowledged result's eligible continuation, follow and item-view asset refs to the renewed lease. Asset reads still apply view_snapshots.assets at admission and delivery. Supply current scoped contexts in retained_results for retained plugin-search pages. A missing context is unavailable. Replace old tokens as a set. Invalidate selections or activities whose originating result or context no longer holds. Acknowledge each exact result at most once under the existing aggregate cap.",
+    "scope": "Retain only on the same authenticated view, account and cache partition. Rebind the acknowledged result's eligible continuation, follow and item-view asset refs to the renewed lease. Asset reads still apply view_snapshots.assets at admission and delivery. Supply current scoped contexts in retained_results for retained plugin-search pages. A missing context is unavailable. Replace old tokens as a set. Invalidate selections or activities whose originating result or context no longer holds. Acknowledge each exact result at most once under the existing aggregate cap. Reuse the recorded window scope_ref for an unchanged checked scope, and use the exact omitted result's scope for persisted row erasure.",
     "renderer": "Keep confirmed content on screen. Clear the affected result on actual invalidation, lease loss or disconnect. On a fresh authorized view retry a missing item page from its head and re-settle any missing plugin search chain before requesting its first page. An acknowledged unchanged chain continues from its retained cursor without another settle. Resume a partial chain only from a retained boundary; discard a dependent suffix without that boundary. Ignore replies from superseded requests."
   },
   "subscription_catch_up": {
@@ -6220,9 +6238,10 @@
       "Read the current committed revision or published result watermark of that exact authorized scope. Compare it to the revision or result the viewer held when registering, opening or renewing. With no previous result, use this read for the initial reply.",
       "Deliver any newer authorized state or the route's invalidation or changed signal. Merge notifications queued during the read with catch-up, coalescing duplicates by the same scoped revision order. Never let an older snapshot overwrite a later result and never miss a publication racing registration, catch-up or the first reply."
     ],
-    "authority": "Keep scope and version order server-side. Do not compare opaque refs lexically or infer visible changes from a space-wide watermark. Recheck the exact lease, audience and live authority before delivery. Fence superseded scopes, preserve each route's loading, invalidation and coalescing rules, and do not wake a plugin to perform catch-up or reconfirm unchanged results. A scoped invalidation may identify a result the host had issued to this lease after access to its content is revoked. It must carry no revoked content or new scope metadata. Fence outstanding deliveries for the invalidated result before signaling and keep live pushes and invalidations ordered with rebind. Close the affected lease if an invalidation cannot be delivered.",
+    "authority": "Keep scope and version order server-side. Do not compare opaque refs lexically or infer visible changes from a space-wide watermark. Recheck the exact lease, audience and live authority before delivery. Fence superseded scopes, preserve each route's loading, invalidation and coalescing rules, and do not wake a plugin to perform catch-up or reconfirm unchanged results. A scoped invalidation may identify a result the host had issued to this lease after access to its content is revoked. It must carry no revoked content or new scope metadata. Fence outstanding deliveries for the invalidated result before signaling and keep live pushes and invalidations ordered with rebind. Close the affected lease if an invalidation cannot be delivered. Each accepted invalidation applies cache_policy.persistent_row_invalidation to its named scope, whether or not that scope is still displayed.",
     "signals": {
       "item_view_follow": {
+        "scope": "The active authenticated lease and the follow ref identify one exact checked item, slot, source revision and audience, including that live head's page chain.",
         "newer": {
           "$ref": "#/$defs/ItemViewSignal"
         },
@@ -6230,9 +6249,10 @@
           "$ref": "#/$defs/ItemViewSignal"
         },
         "delivery": "Use changed for a newer authorized head and invalidated for a relevant invalidation under view_snapshots.follow. On changed fetch the newest live head and replace the old page chain when its revision changes.",
-        "clears": "On invalidated clear the affected displayed and buffered item-view pages, asset refs and bytes, older cursors, follow ref and any dependent activity. Keep the rest of the view."
+        "clears": "On invalidated clear the affected displayed and buffered item-view pages, asset refs and bytes, older cursors, follow ref and any dependent activity. Apply cache_policy.persistent_row_invalidation. Item-view subscriptions issue no persisted row records. Keep the rest of the view."
       },
       "window_pushes": {
+        "scope": "The active authenticated lease and the issued scope_ref identify the exact Bind scope and checked route operands. Only touch that scope even if the same Bind now shows another collection.",
         "newer": {
           "$ref": "#/$defs/WindowResult"
         },
@@ -6240,9 +6260,10 @@
           "$ref": "#/$defs/WindowInvalidated"
         },
         "delivery": "Push the newer authorized window of the current live Bind scope. When affected displayed data cannot remain visible, invalidate even if a replacement window is still loading. Omit settle_generation.",
-        "clears": "On invalidation clear the exact Bind scope's windows, count, displayed cache and assets, selections and action contexts, including buffered data and dependent activities. Apply immediately during held keys. Discard superseded outstanding replies and request the viewport again under live authority. Keep other scopes."
+        "clears": "On invalidation clear the exact Bind scope's windows, count, displayed cache and assets, selections and action contexts, including buffered data and dependent activities. Erase all persisted row records for that scope_ref under cache_policy.persistent_row_invalidation. Apply immediately during held keys. Discard superseded outstanding replies and request the viewport again under live authority. Keep other scopes."
       },
       "default_search": {
+        "scope": "The active authenticated lease, issued scope_ref and settle_generation identify the exact checked search scope. Match any parent and Bind to the issued scope.",
         "newer": {
           "$ref": "#/$defs/WindowResult"
         },
@@ -6250,9 +6271,10 @@
           "$ref": "#/$defs/WindowInvalidated"
         },
         "delivery": "Use the same window signals with the active settle_generation. Echo the parent for a per-parent search. A scoped invalidation also discards earlier provisional search rows.",
-        "clears": "Clear as for window pushes, for this Bind and settle generation only, including provisional rows and the displayed count. Other Bind scopes remain."
+        "clears": "Clear as for window pushes, for this exact scope_ref and settle generation only, including provisional rows and the displayed count. Apply cache_policy.persistent_row_invalidation. Search scopes issue no persisted row records. Keep other scopes."
       },
       "plugin_search": {
+        "scope": "Match the explicit lease_ref, Bind and settle_generation; a settled generation pins one exact query and checked route, parent and profile scope.",
         "newer": {
           "$ref": "#/$defs/PluginSearchInvalidated"
         },
@@ -6260,17 +6282,18 @@
           "$ref": "#/$defs/PluginSearchInvalidated"
         },
         "delivery": "Use the same invalidation on an authorized advance that supersedes the chain or on loss of its authority. Fence the cursor chain and its derived contexts before delivering the signal. No unsolicited page and no worker wake. Ignore a signal for an old lease, Bind or settle_generation.",
-        "clears": "Clear the exact chain's displayed and buffered pages, continuations, selections including set refs, and action contexts. Ignore in-flight pages for the invalidated generation. Keep the rest of the view. To search again, settle with a fresh generation under live authority and request the first page."
+        "clears": "Clear the exact chain's displayed and buffered pages, continuations, selections including set refs, and action contexts. Ignore in-flight pages for the invalidated generation. Apply cache_policy.persistent_row_invalidation. Plugin search issues no persisted row records. Keep the rest of the view. To search again, settle with a fresh generation under live authority and request the first page."
       },
       "renewal": {
+        "scope": "Match request_lease_ref, renewal_id and cache_partition. Match each retained pair or omitted pair to the exact requested window_ref and result_version, then to its recorded scope. A replacement host window carries its own scope_ref. Post-renewal signals must match the renewed lease and their own scope keys.",
         "newer": {
           "$ref": "#/$defs/LeaseRenewResult"
         },
         "invalidated": {
           "$ref": "#/$defs/LeaseRenewResult"
         },
-        "delivery": "Return replacement host windows and exact retained pairs in the matching renewal reply. Omission of a requested exact result from retained_results invalidates that result. Put eligible catch-up windows in that reply or send the watch-specific signals under the renewed lease after the reply. Fence old-lease signals at handoff. Item-view and plugin-search content arrives only through their ordinary read routes.",
-        "clears": "Clear unacknowledged results and dependent selections, contexts, assets or continuations under view_result_retention. Keep exact retained results and their replacement contexts. On lease failure or disconnect clear all live content of that view under the existing lease rule."
+        "delivery": "Return replacement host windows and exact retained pairs in the matching renewal reply. Omission of a requested exact result from retained_results invalidates that result. Put eligible catch-up windows in that reply or send the watch-specific signals under the renewed lease after the reply. Fence old-lease signals at handoff. Carry a pending invalidation for a previously issued window scope across handoff under the renewed lease. Emit it before any replacement results for that scope and omit that scope from retained_results and windows in the renewal reply. Item-view and plugin-search content arrives only through their ordinary read routes.",
+        "clears": "Clear unacknowledged results and dependent selections, contexts, assets or continuations under view_result_retention. For each invalidated result erase any persisted row records of its recorded scope under cache_policy.persistent_row_invalidation. Keep exact retained results and their replacement contexts. On lease failure or disconnect clear all live content of that view under the existing lease rule."
       }
     }
   }

@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.27 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.28 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -74,13 +74,13 @@ For host-indexed lists, both renderers ask for **index windows**. An exact count
 
 ```
 shell -> host   { type: "window", request: { bind: "notes", from: 120, to: 180, parent?: "<row ref>" } }                 // the catalogue's WindowRequest: the ONE envelope
-host  -> shell  { bind: "notes", audience, parent?, window_ref, state: "ready", result_version, count: {mode, value}, offset: 100,
+host  -> shell  { bind: "notes", audience, parent?, scope_ref, window_ref, state: "ready", result_version, count: {mode, value}, offset: 100,
                   rows: [ { id, fields: {...} }, ... ], activation_contexts: [ { row, contexts: { action_id: token } } ] }   // the catalogue's WindowResult
 ```
 
 The catalogue defines one `WindowRequest` envelope and one `WindowReply` union of `WindowResult` and `WindowPlanError`. The typed refusal carries status 422, code `unsupported_query_plan`, and a reason.
 
-**List freshness.** After a save, the window engine replays the durable publication intent in the background. An affected Bind returns `loading` without rows, counts, contexts or an end distance until its current authorized generation is verified. Suspend use of affected old results, cached rows and action contexts when invalidated. Resume the viewport request when the new generation is ready.
+**List freshness.** After a save, the window engine replays the durable publication intent in the background. An affected Bind returns `loading` without rows, counts, contexts or an end distance until its current authorized generation is verified. Clear affected results and contexts and erase persisted row records when invalidated (§6). Resume the viewport request when the new generation is ready.
 
 **Explicit plugin search.** Decide the path before settle from the
 authenticated view-open audience. A live member view with
@@ -116,7 +116,7 @@ Row ids are opaque and stable. No position is an authority reference.
   See the catalogue’s `query.window` for window sizes and `query.search` for the shared search depth. Beyond that depth, the host serves search windows while both work budgets hold.
 * The renderer prefetches ahead of the visible rows and, when a key or a drag walks past the edge of what it holds, asks for the next window at once (no
   settling), coalesced to at most 4 window **requests** a second; the host may answer with a larger range than asked (`offset` and `rows` say what came back).
-* `result_version` identifies the result set. A new version replaces the window wholesale; the renderer skips a replacement equal to what it draws, so a republish that
+* `scope_ref` identifies the host-checked Bind scope, including its route operands. Match it on pushes and invalidations. The same Bind can have different refs for different routes. `result_version` identifies the result set. A new version replaces the window wholesale; the renderer skips a replacement equal to what it draws, so a republish that
   only moved the selection costs nothing.
 * **Live:** with `live: true` the host pushes a changed window (new `result_version`) while the view is open. While a key repeats the renderer **applies at once every reply to a
   prefetch for the result version it already drew** (so arrowing never runs into skeleton rows) and **holds only newer window results that change the version**, applying the latest when the
@@ -504,9 +504,14 @@ such as Empty Trash.
 Data-free templates may persist by account. Invariant, start-anchored
 root windows that opted in can also supply signed display-only member
 row records. Check the authenticated lease, account, space, Bind,
-partition, template and exact window before saving. Verify the host
-signature and scope when loading. A body-derived field in a persisted
-row needs a matching checked offline grant. Ordinary row-record
+partition, template, signed `scope_ref` and exact window before saving.
+Verify the host signature and scope when loading. Every accepted
+invalidation durably erases all persisted row records of the named
+scope, including offscreen records. It also fences queued writes from
+invalidated results. No reason or separate revocation notice is needed.
+Apply the [cache policy](../contract/host-catalogue-v2.json#/cache_policy/persistent_row_invalidation).
+
+A body-derived field in a persisted row needs a matching checked offline grant. Ordinary row-record
 lifetimes still bound prepaint hints. Draw eligible records unconfirmed
 then confirm or correct them on reconnect.
 

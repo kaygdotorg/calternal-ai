@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.27 draft
+# Plugin API v2 · revision 14.28 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -725,7 +725,7 @@ Ordering and `prefix` require the field’s declared type and index collation.
 Apply the [catalogue’s sort rules](../contract/host-catalogue-v2.json#/query). Use half-open
 `[from,to)`. The host may prefetch within the row and byte cap and returns
 one catalogue `WindowReply`. Its `WindowResult` arm gives the Bind, state,
-`window_ref`, result version, stable rows and the offset where applicable. Both schemas
+host-issued `scope_ref`, `window_ref`, result version, stable rows and the offset where applicable. Both schemas
 cite the catalogue’s only request envelope,
 `{type:"window", request: WindowRequestPayload}`. An absent `anchor` means
 `start`. With `anchor:"end"`, `[from,to)` counts backward from the last
@@ -1420,6 +1420,13 @@ intentional refusal/retry with an actionable response.
   baseline read, and after the read before first delivery. Require the
   current result or its scoped invalidation, with no missed update or
   version regression. Repeat with revocation and a hidden-only edit.
+  On one lease and Bind, open two collection scopes with distinct routes.
+  Delay the first scope's invalidation until the second is drawn. Require
+  that only the named scope clears. For opted-in invariant scopes, cache
+  several offsets, invalidate one scope without a reason or revoke notice
+  and restart offline. Require every offset of that scope absent with
+  unrelated records intact. Race a buffered cache write and a restart
+  while applying the invalidation.
   Invalidate an affected view or
   cut the lease or connection and require immediate clearing. Reopen
   under fresh authority. Meter wake separately from first paint.
