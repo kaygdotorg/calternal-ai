@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ContributionIdentity, ItemSnapshotView, ItemLocator, SnapshotNode, Timestamp } from "../generated/wire.js";
+import type { AttestedBody, ContributionIdentity, ItemSnapshotView, ItemLocator, SnapshotNode, Timestamp } from "../generated/wire.js";
 
 type Person = { kind: "person"; id: string; name: string };
 type Agent = { kind: "agent"; id: string; name: string; contribution: ContributionIdentity };
@@ -108,8 +108,19 @@ function timestamp(value: string): Timestamp {
   return date.toISOString().replace(/\.000Z$/u, "Z");
 }
 
-/** Append a tagged heading and one plain body span, escaping delimiter-shaped lines. */
-export function encodeMessage(message: Message, participants: Participant[]): string {
+type FramedText = { prefix: string; text: string; suffix: string };
+const maxFramingBytes = 512;
+
+/** Select a host source only when the exact text and framing can be stored as-is. */
+export function attest(parts: FramedText, source: AttestedBody["source"]): AttestedBody | undefined {
+  const { prefix, text, suffix } = parts;
+  if (Buffer.byteLength(prefix) > maxFramingBytes || Buffer.byteLength(suffix) > maxFramingBytes ||
+      escapeBodyHeadings(text, true) !== text) return;
+  return { source, prefix, suffix };
+}
+
+/** Frame one message around the exact original text. Inline agent identities let replies append without rewriting frontmatter. */
+export function messageRecord(message: Message, participants: Participant[], inlineAgent = false): FramedText {
   const alias = (id: string) => {
     const index = participants.findIndex(person => person.id === id);
     if (index < 0) throw new Error("Message participant unavailable.");
@@ -117,7 +128,13 @@ export function encodeMessage(message: Message, participants: Participant[]): st
   };
   const heading = [escapeLabel(message.author.name), utc(message.posted_at)];
   const attrs = [`#m-${message.id}`, `by=${alias(message.author.id)}`];
-  if (message.deleted) return `### ${[...heading, "deleted"].join(" · ")} {${attrs.join(" ")}}\n\n`;
+  if (message.deleted) {
+    return { prefix: `### ${[...heading, "deleted"].join(" · ")} {${attrs.join(" ")}}\n\n`, text: "", suffix: "" };
+  }
+  if (inlineAgent && message.author.kind === "agent") {
+    const { package: pkg, contribution } = message.author.contribution;
+    attrs.push(`agent=${encodeURIComponent(pkg)}/${encodeURIComponent(contribution)}`);
+  }
   if (message.edited) heading.push("edited");
   if (message.replyTo && message.replyToName) {
     heading.push(`reply to ${escapeLabel(message.replyToName)}`);
@@ -131,13 +148,23 @@ export function encodeMessage(message: Message, participants: Participant[]): st
   for (const [name, link] of [["log", message.log], ["consult", message.consultation]] as const) {
     if (link) attrs.push(`${name}=${encodeURIComponent(link.space)}/${encodeURIComponent(link.id)}`);
   }
-  return `### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n${escapeBodyHeadings(message.text, true)}\n\n`;
+  return { prefix: `### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n`, text: message.text, suffix: "\n\n" };
 }
 
-/** Serialize the transcript in the same format as the append stream. */
-export function encode(thread: Thread): string {
-  const { title, created, id, participants, messages, conversation } = thread;
-  const header = ["---", "format: calternal-thread/v2", `id: ${id}`, `title: ${title}`, `created: ${utc(created)}`];
+/** Render the opaque Markdown for a record that cannot use host composition. */
+export function encodeRecord({ prefix, text, suffix }: FramedText): string {
+  return prefix + escapeBodyHeadings(text, true) + suffix;
+}
+
+/** Append a tagged heading and one plain body span. */
+export function encodeMessage(message: Message, participants: Participant[]): string {
+  return encodeRecord(messageRecord(message, participants));
+}
+
+/** Frame an empty conversation around its checked title. */
+export function threadHeader(thread: Thread): FramedText {
+  const { title, created, id, participants, conversation } = thread;
+  const header = [`created: ${utc(created)}`];
   if (conversation) header.push("conversation: people");
   header.push("participants:");
   participants.forEach((person, index) => header.push(`  - p${index + 1} | ${escapeLabel(person.name)} | ${person.kind} | ${person.id}`));
@@ -147,10 +174,17 @@ export function encode(thread: Thread): string {
         `agent-p${index + 1}-contribution: ${person.contribution.contribution}`);
     }
   });
-  return `${header.join("\n")}\n---\n\n` + messages.map(message => encodeMessage(message, participants)).join("");
+  return { prefix: `---\nformat: calternal-thread/v2\nid: ${id}\ntitle: `, text: title,
+    suffix: `\n${header.join("\n")}\n---\n\n` };
 }
 
-function decodeMessage(line: string, body: string[], people: Map<string, Participant>): Message {
+/** Serialize the transcript in the same format as the append stream. */
+export function encode(thread: Thread): string {
+  const { prefix, text, suffix } = threadHeader(thread);
+  return prefix + text + suffix + thread.messages.map(message => encodeMessage(message, thread.participants)).join("");
+}
+
+function decodeMessage(line: string, body: string[], people: Map<string, Participant>, threadId: string): Message {
   const match = messageHeading.exec(line);
   if (!match) throw new Error("Unreadable message heading.");
   const [, label, id, raw] = match;
@@ -158,10 +192,20 @@ function decodeMessage(line: string, body: string[], people: Map<string, Partici
   const attrs = new Map<string, string>();
   for (const field of raw.split(" ")) {
     const [key, value] = field.split("=", 2);
-    if (!["by", "re", "ask", "to", "log", "consult"].includes(key) || !value || attrs.has(key)) {
+    if (!["by", "re", "ask", "to", "log", "consult", "agent"].includes(key) || !value || attrs.has(key)) {
       throw new Error("Unreadable message attributes.");
     }
     attrs.set(key, value);
+  }
+  const inlineAgent = attrs.get("agent");
+  if (inlineAgent) {
+    const [pkg, contribution, ...extra] = inlineAgent.split("/");
+    if (!pkg || !contribution || extra.length) throw new Error("Unreadable contribution identity.");
+    const agent = agentParticipant(threadId, { package: decodeURIComponent(pkg), contribution: decodeURIComponent(contribution) });
+    const alias = attrs.get("by")!;
+    const previous = people.get(alias);
+    if (previous && previous.id !== agent.id) throw new Error("Conflicting agent participant.");
+    people.set(alias, agent);
   }
   const participant = (alias: string | undefined) => {
     const person = alias && people.get(alias);
@@ -251,7 +295,7 @@ export function decode(body: string): Thread {
   let content: string[] = [];
   const finish = () => {
     if (heading === undefined) return;
-    const message = decodeMessage(heading, content, people);
+    const message = decodeMessage(heading, content, people, id);
     if (anchors.has(message.id)) throw new Error("Duplicate message anchor.");
     anchors.add(message.id);
     messages.push(message);

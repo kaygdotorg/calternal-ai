@@ -1,7 +1,7 @@
 import type { ItemViewRead, ItemRef, Timestamp } from "../generated/wire.js";
 import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { checkedText, type HarnessInput, type HarnessOutput } from "./harnesses-v1.ts";
-import { agentParticipant, checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, messageId, page, personParticipant, step, messageView, type Thread } from "./format.ts";
+import { agentParticipant, attest, checkedTitle, encode, encodeRecord, folder, MAX_FILE_BYTES, messageId, messageRecord, page, personParticipant, step, threadHeader, messageView, type Thread } from "./format.ts";
 import type { Context, RunInput, Send } from "./interface.ts";
 import { inlineBody, kind, publish, read } from "./files.ts";
 import { requireConversationWrite, type PeopleContext } from "./people.ts";
@@ -30,10 +30,12 @@ async function create({ title }: { title: string }, ctx: Context) {
     participants: [personParticipant(ctx.author.actor, ctx.author.actor_label)],
     messages: [],
   };
+  const attested = title === thread.title ? attest(threadHeader(thread), { kind: "input" }) : undefined;
   const head = await ctx.call("item_create", {
     request_id: step(ctx.author.request_id, "create"),
-    kind, folders: [folder(thread)], name: "Conversation.md", attempt_discovery: "creator_only",
-    metadata: { title: thread.title }, body: inlineBody(Buffer.from(encode(thread))),
+    kind, folders: [folder(thread)], name: "Conversation.md",
+    metadata: { title: thread.title },
+    ...(attested ? { attested, attempt_discovery: "creator_only" } : { body: inlineBody(Buffer.from(encode(thread))) }),
   });
   await publish(ctx, head.item, head.revision, thread);
   return { created: head.item };
@@ -78,26 +80,21 @@ async function run(input: RunInput, ctx: Context) {
   let revision = head.revision;
   let currentSize = size;
   if (!thread.messages.some(message => message.id === promptId)) {
-    const added = !thread.participants.some(participant => participant.id === agent.id);
-    if (added && thread.participants.length >= 64) throw new Error("Thread participant limit reached.");
-    if (added) thread.participants.push(agent);
+    if (!thread.participants.some(participant => participant.id === agent.id) && thread.participants.length >= 64) {
+      throw new Error("Thread participant limit reached.");
+    }
     const prompt = { id: promptId, author: person, text, posted_at: ctx.author.authored_at };
     thread.messages.push(prompt);
-    const body = Buffer.from(added ? encode(thread) : encodeMessage(prompt, thread.participants));
-    currentSize = added ? body.length : size + body.length;
+    const record = messageRecord(prompt, thread.participants);
+    const body = Buffer.from(encodeRecord(record));
+    currentSize = size + body.length;
     // Reserve one reply and its bounded message metadata before admitting execution.
     if (currentSize + 18 * 1024 > MAX_FILE_BYTES) throw new Error("Thread is full.");
     const request_id = step(ctx.author.request_id, "prompt");
-    if (added) {
-      const saved = await ctx.call("item_save", { request_id, item, expected: revision, body: inlineBody(body) });
-      if ("code" in saved) throw new Error(saved.code);
-      revision = saved.revision;
-    } else {
-      const saved = await ctx.call("item_append", {
-        request_id, item, expected_revision: revision, bytes: body.toString("base64"),
-      });
-      revision = saved.revision;
-    }
+    const attested = ctx.alarm ? undefined : attest(record, { kind: "input" });
+    const saved = await ctx.call("item_append", { request_id, item, expected_revision: revision,
+      ...(attested ? { attested } : { bytes: body.toString("base64"), attempt_discovery: "consent_only" }) });
+    revision = saved.revision;
   }
   await publish(ctx, item, revision, thread);
   const attempt = await ctx.call("execution_start", { request_id: step(ctx.author.request_id, "start"), harness });
@@ -128,12 +125,16 @@ async function run(input: RunInput, ctx: Context) {
       if (thread.messages.some(message => message.id === id)) continue;
       // The contribution broker validates the data against both manifests.
       const output = frame.data as HarnessOutput;
+      if (!thread.participants.some(participant => participant.id === agent.id)) thread.participants.push(agent);
       const message = { id, author: agent, text: checkedText(output.text), posted_at: ctx.author.authored_at, log: output.log };
-      const bytes = Buffer.from(encodeMessage(message, thread.participants));
+      const record = messageRecord(message, thread.participants, true);
+      const bytes = Buffer.from(encodeRecord(record));
       if (currentSize + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
+      const attested = attest(record, { kind: "output", seq: frame.seq });
       const saved = await ctx.call("item_append", {
         request_id: step(ctx.author.request_id, `append-${call}-${frame.seq}-${revision}`),
-        item, expected_revision: revision, bytes: bytes.toString("base64"),
+        item, expected_revision: revision,
+        ...(attested ? { attested } : { bytes: bytes.toString("base64"), attempt_discovery: "consent_only" }),
       });
       thread.messages.push(message);
       currentSize = saved.end_offset;

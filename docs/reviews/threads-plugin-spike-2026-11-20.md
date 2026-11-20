@@ -2,9 +2,9 @@
 
 The lane starts from dev `80864d0d`. The spike has rerun against
 14.30 (`b89586dd`), 14.31 (`00828198`), 14.32 (`3ca11613`) and
-14.33 (`47024c0f`), 14.34 (`b4d0f20d`) and 14.35 (`36d49713`).
-The current pin for both packages is draft 14.36 at
-`1c38c21d37f5d5ecc7b32b52e1a9986ce7d7919d`
+14.33 (`47024c0f`), 14.34 (`b4d0f20d`), 14.35 (`36d49713`) and
+14.36 (`1c38c21d`). The current pin for both packages is draft 14.37 at
+`0d6845451e6eba68b7fd8c64cce1a61618bc1031`
 on `origin/lane/v2-host-base`. It follows the November 20
 decision that the Threads app (`calternal-threads`) owns the conversation file and the selected harness
 owns its working log. The lane issue is [#92](https://git.kayg.org/kayg/calternal-ai/issues/92).
@@ -38,11 +38,11 @@ flock -s /tmp/calternal-dev02.lock nix develop -c bash -c '
 '
 ```
 
-The build uses the 14.36 revision-aware SDK builder. It pins both
+The build uses the 14.37 revision-aware SDK builder. It pins both
 manifest/worker packages, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-All 40 tests and both Conformance tool 1.1.0 package checks passed
-on dev-02 at the 14.36 pin under the shared lock. The repository
+All 41 tests and both Conformance tool 1.1.0 package checks passed
+on dev-02 at the 14.37 pin under the shared lock. The repository
 documentation gate passed in the earlier afternoon run. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
@@ -409,8 +409,33 @@ unescaped delimiter as a record boundary and removes exactly one
 leading backslash from an escaped delimiter. The registered body
 and the escape can therefore round-trip without parsing Markdown.
 
-The 14.36 run retains opaque writes. The 14.37 pin and the
-several-Sends discovery test depend on its published writer exchange.
+#### Revision 14.37 disposition
+
+| Finding | Status | Evidence or remaining gap |
+| --- | --- | --- |
+| Normal creator discovery | **CLOSED** on the fake host | The checked title is the middle at creation. Each of three ordinary Sends appends the exact checked composer text. Each reply uses its validated output sequence. Host-recorded attribution preserves creator discovery through those writes. |
+| Shared sender attribution and span changes | **CLOSED** for the tested exchange | The checked writer attributes Bob's submission and edit to Bob's account even when the heading label is Alice. The edit replaces one recorded span, a stale ref is refused, and deletion uses an empty middle plus the package's tombstone heading. The neighboring record stays intact. The tombstone has no authored middle. |
+| Import classification | **CLOSED** at the contract and fixture level | Raw staged import removes creator discovery at publication. An exact Notes-like snapshot can use the empty-framing attested save. The same writer can save additional unexplained bytes only via the opaque path, which downgrades the item. |
+| Delimiter escape | **OPEN** | Catalogue `item_engine.attested_write.compose` explicitly prohibits transforms. A body line requiring the reversible escape below is stored as an explicit opaque write, which sets `consent_only`. If those messages must preserve discovery, pin the one reversible delimiter escape as a checked capture/serialization rule, or provide a boundary mechanism that leaves the captured middle unchanged. |
+| Recover message span refs | **OPEN** | Receipts return a span ref, but there is no checked lookup after reopening by message anchor and no durable app receipt-to-anchor binding in the current people fixture. The edit/delete test passes the earlier checked receipt into the fixture. Define a scoped lookup or a durable app mapping. A raw whole-body rename or an opaque people-thread rewrite retires existing spans. |
+| Generated span ref name | **PARTLY** | The SDK generator carries the type on `ItemSave.replace_span` but emits the aliased ref without a public `ItemWriteSpanRef` name. Threads uses the generated property type. Keep the catalogue name available in the SDK so applications can name the value returned by receipts. |
+| Other 14.36 findings | **Unchanged** | Live host qualification, invoked and alarm-source details, trusted per-message consent, and the outstanding people, cutover and SDK wires remain open. |
+
+For personal threads, the starter stays in the frontmatter. An agent
+reply carries its durable contribution identity as a compact `agent=`
+heading attribute. The reader incorporates that participant into the
+roster from its first reply. This avoids rewriting the whole file to
+insert the first harness participant, which 14.37 would treat as opaque.
+People-thread fixtures can still list the agent in frontmatter.
+
+The worker measures framing in UTF-8 bytes, including escapes and
+references. With a 100-character two-byte display name, a reply
+reference and an agent log locator, the test fits the 512-byte prefix
+cap. With a 100-character four-byte reply label the same shape exceeds
+the cap. The worker writes an explicit opaque record in that case
+and preserves the full name and link. On a personal item that choice
+sets `consent_only`. Scheduled prompts also use the opaque path while
+the alarm invocation has no checked composer capture.
 
 ### Messaging decisions fixture
 
@@ -501,11 +526,11 @@ Yes, I’ll bring the key.
 
 ### Bob · 2026-11-20 09:03 UTC · deleted {#m-264b5e3f491fd782 by=p2}
 
-### Claude Code · 2026-11-20 09:06 UTC · asked by Alice {#m-4daee5fd2fb71be4 by=p3 ask=p1 log=019a0000-0000-7000-8000-000000000010/item-14}
+### Claude Code · 2026-11-20 09:06 UTC · asked by Alice {#m-4daee5fd2fb71be4 by=p3 ask=p1 log=019a0000-0000-7000-8000-000000000010/item-19}
 
 Reply to the permitted context
 
-### Claude Code · 2026-11-20 09:07 UTC · asked by Alice {#m-9d1c7cac655cb70d by=p3 ask=p1 consult=019a0000-0000-7000-8000-000000000010/item-19}
+### Claude Code · 2026-11-20 09:07 UTC · asked by Alice {#m-9d1c7cac655cb70d by=p3 ask=p1 consult=019a0000-0000-7000-8000-000000000010/item-24}
 
 Agreed recommendation
 
@@ -705,7 +730,7 @@ require a cross-owner write grant that the design does not provide.
 The package worker code uses no native Threads dispatch, special plugin ID,
 direct package connection, inherited provider credential, or server-owned
 thread format. The fixture provider port stands in for live execution placement. The
-14.36 fake carries replies through the catalogue's checked contribution
+14.37 fake carries replies through the catalogue's checked contribution
 methods. People-thread invitations still use fixture ports. The harness manifest includes
 an image-shaped fixture digest and a pinned entry that fails closed.
 It cannot launch Claude Code. The real image, login mapping and reviewed
@@ -780,6 +805,5 @@ when visibility changes before confirmation. [ADR 0060][adr0060]
 - Put shared broker request and result shapes in the catalogue once and
   derive worker typings, fake validation and author examples from them.
   That removes the spike's fixture declarations and draft packaging script.
-- Use the same complete-byte proof for exact editor snapshots, checked
-  splices and formatted appends. Exact editor saves need only identity
-  encoding. Threads adds deterministic framing and quoting.
+- Keep one host composition path for complete editor snapshots,
+  formatted appends and recorded-span replacements.

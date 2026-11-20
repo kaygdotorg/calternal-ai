@@ -1,6 +1,6 @@
-import type { AccountRef, ContributionIdentity, ItemContentReceipt, ItemCreate, ItemLocator, ItemRef, RevisionRef } from "../generated/wire.js";
+import type { AccountRef, ContributionIdentity, ItemContentReceipt, ItemCreate, ItemLocator, ItemRef, ItemSave, RevisionRef } from "../generated/wire.js";
 import { inlineBody, kind, publish, read } from "./files.ts";
-import { agentParticipant, checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, messageId, messageView, personParticipant, step, type Message, type Thread } from "./format.ts";
+import { agentParticipant, attest, checkedTitle, encode, encodeRecord, folder, MAX_FILE_BYTES, messageId, messageRecord, messageView, personParticipant, step, type Message, type Thread } from "./format.ts";
 import { checkedText, type HarnessOutput } from "./harnesses-v1.ts";
 import type { Context } from "./interface.ts";
 
@@ -23,6 +23,8 @@ export type PeopleContext = Context & {
   createShared?: (input: ItemCreate, people: readonly AccountRef[]) => Promise<ItemContentReceipt>;
   // Checks current common membership using the host's item grants and account directory.
   canWriteConversation?: (item: ItemRef) => Promise<boolean>;
+  // Fixture binding to the captured text and the app's previously checked message receipt.
+  messageWrite?: { item: ItemRef; text?: string; replace?: { message: string; span: NonNullable<ItemSave["replace_span"]> } };
   privateState?: {
     read(item: ItemRef): Promise<string | undefined>;
     write(item: ItemRef, body: string, expected: string | undefined): Promise<void>;
@@ -121,10 +123,14 @@ async function post({ item, text, replyTo, mentions = [] }: Target & {
     id, author: personParticipant(ctx.author.actor, ctx.author.actor_label ?? sender.name), text: checkedText(text), posted_at: ctx.author.authored_at,
     ...(target && { replyTo, replyToName: target.author.name }), ...(recipients.length && { mentions: recipients }),
   };
-  const bytes = Buffer.from(encodeMessage(message, thread.participants));
+  const record = messageRecord(message, thread.participants);
+  const bytes = Buffer.from(encodeRecord(record));
   if (size + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
+  const captured = ctx.messageWrite;
+  const attested = captured?.item === item && captured.text === text ? attest(record, { kind: "input" }) : undefined;
   const saved = await ctx.call("item_append", {
-    request_id: step(ctx.author.request_id, "person-post"), item, expected_revision: revision, bytes: bytes.toString("base64"),
+    request_id: step(ctx.author.request_id, "person-post"), item, expected_revision: revision,
+    ...(attested ? { attested } : { bytes: bytes.toString("base64") }),
   });
   thread.messages.push(message);
   await publish(ctx, item, saved.revision, thread);
@@ -161,7 +167,20 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
     entry.text = checkedText(text);
     entry.edited = true;
   }
-  await save(ctx, item, revision, thread, text === undefined ? "person-delete" : "person-edit");
+  const purpose = text === undefined ? "person-delete" : "person-edit";
+  const captured = ctx.messageWrite;
+  if (captured?.item === item && captured.replace?.message === message && captured.text === text) {
+    const record = messageRecord(entry, thread.participants);
+    const attested = attest(record, { kind: text === undefined ? "empty" : "input" });
+    if (attested) {
+      const result = await ctx.call("item_save", { request_id: step(ctx.author.request_id, purpose),
+        item, expected: revision, replace_span: captured.replace.span, attested });
+      if ("code" in result) throw new Error(result.code);
+      await publish(ctx, item, result.revision, thread);
+      return;
+    }
+  }
+  await save(ctx, item, revision, thread, purpose);
 }
 
 function stateOf(body: string | undefined): State {

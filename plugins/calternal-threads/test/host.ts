@@ -5,8 +5,8 @@ import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AlarmDelivery, AlarmSet, ExecutionJobContext, ExecutionJobStart, ExecutionStatus,
-  ExecutionStopRequest, ExecutionStopResult, HostWorkerInvokeFrame, ItemContentReceipt, ItemCreate, ItemSave, ItemStageBegin, ItemStageChunk, ItemStageSeal, ItemViewPublish } from "../generated/wire.js";
+import type { AlarmDelivery, AlarmSet, AttestedBody, ExecutionJobContext, ExecutionJobStart, ExecutionStatus,
+  ExecutionStopRequest, ExecutionStopResult, HostWorkerInvokeFrame, ItemAppend, ItemContentReceipt, ItemCreate, ItemSave, ItemStageBegin, ItemStageChunk, ItemStageSeal, ItemViewPublish } from "../generated/wire.js";
 import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { authorContext } from "../generated/author-context.mjs";
 import type { ManifestV2 } from "../generated/author.js";
@@ -47,14 +47,14 @@ const exchanges = {
 } as const;
 const trace: [name: string, value: unknown][] = [];
 
-/** Check the fake's revision 14.36 exchanges against the pinned schemas. */
+/** Check the fake's revision 14.37 exchanges against the pinned schemas. */
 export function checkTrace() {
   const check = fileURLToPath(new URL("../check-shapes.py", import.meta.url));
   const contract = fileURLToPath(new URL("../.build/contract/", import.meta.url));
   execFileSync("python3", ["-B", check, contract], { input: JSON.stringify(trace), stdio: ["pipe", "inherit", "inherit"] });
 }
 
-type File = { space: string; people?: readonly string[]; creator: string; discovery: "creator_only" | "consent_only"; owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; authors: Map<string, string>; revision: string; path?: string; archived: boolean; title: string };
+type File = { space: string; people?: readonly string[]; creator: string; discovery: "creator_only" | "consent_only"; owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; authors: Map<string, string>; spans: Map<string, { start: number; length: number }>; revision: string; path?: string; archived: boolean; title: string };
 type Job = {
   context: ExecutionJobContext;
   starter: string;
@@ -66,7 +66,7 @@ type Job = {
   result?: HarnessOutput;
   contribution?: { call: string; input: HarnessInput };
 };
-type CheckedText = { item: string; text: string };
+type CheckedText = { item?: string; text: string };
 type Owner = File["owner"];
 type Stage = { spec: ItemStageBegin; chunks: Buffer[]; length: number; sealed?: Buffer };
 type StagingMethod = "item_save_begin" | "item_save_chunk" | "item_save_seal";
@@ -150,6 +150,18 @@ export class FakeHost {
     return this.context(request, "threads.send", undefined, undefined, "threads", undefined, { item, text });
   }
 
+  /** Simulate checked new-thread form capture. */
+  createContext(request: string, title: string) {
+    return this.context(request, "threads.create", undefined, undefined, "threads", undefined, { text: title });
+  }
+
+  /** Return the newest issued span from the fixture writer's receipts. */
+  lastSpan(item: string) {
+    const span = [...this.files.get(item)!.spans.keys()].at(-1);
+    assert.ok(span);
+    return span;
+  }
+
   /** Seed checked empty bytes for import tests independently of the app's formatted create. */
   async createEmptyCreatorItem() {
     const input: ItemCreate = {
@@ -164,7 +176,8 @@ export class FakeHost {
   /** Exercise a synthetic checked editor save with independent capture and write bytes. */
   async saveCapturedText(item: string, text: string, bytes: Buffer) {
     const input: ItemSave = {
-      request_id: this.id("editor"), item, expected: this.files.get(item)!.revision, body: bytes.toString("base64"),
+      request_id: this.id("editor"), item, expected: this.files.get(item)!.revision,
+      ...(bytes.equals(Buffer.from(text)) ? { attested: { source: { kind: "input" } } } : { body: bytes.toString("base64") }),
     };
     const result = await this.call("threads", input.request_id, "item_save", input, undefined, actor, true, undefined, { item, text });
     trace.push(["ItemSave", input], ["ItemSaveReply", result]);
@@ -247,17 +260,19 @@ export class FakeHost {
     };
   }
 
-  peopleContext(person: string, request: string, authored_at = now, actor_label = personLabels[person], group = defaultGroup): PeopleContext {
+  peopleContext(person: string, request: string, authored_at = now, actor_label = personLabels[person], group = defaultGroup,
+    messageWrite?: PeopleContext["messageWrite"]): PeopleContext {
     const call: Context["call"] = async (method, input) => {
       assert.ok(peopleMethods.has(method));
       const wire = exchanges[method as keyof typeof exchanges];
       if (wire) trace.push([wire[0], input]);
-      const result = await this.call("threads", request, method, input, undefined, person, true);
+      const captured = messageWrite?.text === undefined ? undefined : { item: messageWrite.item, text: messageWrite.text };
+      const result = await this.call("threads", request, method, input, undefined, person, true, undefined, captured);
       if (wire) trace.push([wire[1], result]);
       return result as never;
     };
     return {
-      author: { request_id: request, actor: person, authored_at, ...(actor_label && { actor_label }) }, call,
+      author: { request_id: request, actor: person, authored_at, ...(actor_label && { actor_label }) }, call, messageWrite,
       canWriteConversation: async item => this.conversationAccess(item, person) === "full",
       visiblePeople: async (ids = directoryAccounts) => ids.filter(id => this.canPickPerson(group, person, id))
         .map(id => ({ id, name: personLabels[id] })),
@@ -403,14 +418,13 @@ export class FakeHost {
     const person = job?.starter ?? actor;
     const message = frame ?? { author_context: { request_id: request, actor: person, authored_at: now, actor_label: personLabels[person] }, job_context: job?.context, alarm };
     assert.equal(message.author_context?.actor, person);
-    if (capturedInput) assert.equal(declared.write_origins?.host_input, "text");
+    if (capturedInput) assert.equal(declared.write_origins?.host_input, operation === "threads.create" ? "title" : "text");
     const call: Context["call"] = async (method, input) => {
       assert.ok((declared.methods as readonly string[]).includes(method), "undeclared method");
       const wire = exchanges[method as keyof typeof exchanges];
       if (wire) trace.push([wire[0], input]);
-      const captured = capturedInput ?? (declared.write_origins?.attempt_output === "text" && job?.attempt && job.result
-        ? { item: job.context.item, text: job.result.text } : job?.capturedInput);
-      const result = await this.call(owner, request, method, input, job, person, true, undefined, captured);
+      const result = await this.call(owner, request, method, input, job, person, true, undefined,
+        capturedInput ?? job?.capturedInput, declared.write_origins?.attempt_output === "text");
       if (wire) trace.push([wire[1], result]);
       return result as never;
     };
@@ -419,7 +433,7 @@ export class FakeHost {
   }
 
   // This dispatch is the only place that unpacks fixture broker method operands.
-  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0] | StagingMethod, input: unknown, job?: Job, receiptActor = actor, checkedInvocation = false, shared?: readonly string[], captured?: CheckedText): Promise<unknown> {
+  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0] | StagingMethod, input: unknown, job?: Job, receiptActor = actor, checkedInvocation = false, shared?: readonly string[], captured?: CheckedText, allowsOutput = false): Promise<unknown> {
     if (job) {
       assert.ok(this.jobs.get(job.context.intent) === job && job.state === "running", "attempt retired");
       assert.equal(job.starter, receiptActor);
@@ -438,12 +452,28 @@ export class FakeHost {
     const requestId = args.request_id ?? request;
     const receiptKey = (name: string) => `${owner}:${receiptActor}:${name}:${requestId}`;
     const commit = (effect: () => unknown) => this.receipt(receiptKey(method), input, effect);
-    // No installed generic encoding exists at this pin. Only exact source bytes qualify here.
-    const attributeWrite = (target: File, revision: string, bytes: Buffer) => {
-      const author = checkedInvocation && captured?.item === args.item && bytes.equals(Buffer.from(captured.text))
-        ? receiptActor : undefined;
-      if (author !== undefined) target.authors.set(revision, author);
-      if (author !== target.creator || args.attempt_discovery === "consent_only") target.discovery = "consent_only";
+    const compose = ({ source, prefix = "", suffix = "" }: AttestedBody) => {
+      assert.ok(checkedInvocation);
+      assert.ok(Buffer.byteLength(prefix) <= 512 && Buffer.byteLength(suffix) <= 512, "framing exceeds 512 bytes");
+      let text = "";
+      if (source.kind === "input") {
+        assert.ok(captured && captured.item === args.item, "missing checked input");
+        text = captured.text;
+      } else if (source.kind === "output") {
+        assert.ok(allowsOutput && job?.attempt && job.result && source.seq === 1, "missing delivered output");
+        text = job.result.text;
+      }
+      return Buffer.from(prefix + text + suffix);
+    };
+    const attributeWrite = (target: File, revision: string, attested?: AttestedBody) => {
+      if (attested && attested.source.kind !== "empty") target.authors.set(revision, receiptActor);
+      if (!attested || receiptActor !== target.creator || args.attempt_discovery === "consent_only") target.discovery = "consent_only";
+    };
+    const recordSpan = (target: File, start: number, length: number) => {
+      if (!length) return {};
+      const span = this.id("span");
+      target.spans.set(span, { start, length });
+      return { span };
     };
     switch (method) {
       case "item_create": return commit(() => {
@@ -451,7 +481,7 @@ export class FakeHost {
         assert.ok(create.kind === owner || (owner === "threads" && create.kind === "thread-consultations"));
         const item = this.id("item");
         const revision = this.id("rev");
-        const body = Buffer.from(create.body ?? "", "base64");
+        const body = create.attested ? compose(create.attested) : Buffer.from(create.body ?? "", "base64");
         const root = create.kind === "thread-consultations" ? ".calternal/thread-consultations" : owner === "threads" ? "Threads" : ".calternal";
         const folders = create.folders ?? [];
         const used = new Set([...this.files.values()].map(file => file.path));
@@ -461,15 +491,17 @@ export class FakeHost {
             ? [root, `${folders[0]} (${suffix})`, ...folders.slice(1), create.name].join("/")
             : [root, `${suffix} ${create.name}`].join("/");
         }
-        const discovery = create.attempt_discovery === "creator_only" && checkedInvocation && !shared && body.length === 0
+        const discovery = create.attempt_discovery === "creator_only" && checkedInvocation && !shared && (create.attested || body.length === 0)
           ? "creator_only" : "consent_only";
         if (create.attempt_discovery === "creator_only") {
           assert.equal(application.manifest.kinds.find(kind => kind.id === create.kind)?.attempt_discovery, "item_policy");
         }
-        this.files.set(item, { owner, space: this.personalSpace(receiptActor), people: shared && [...shared], creator: receiptActor, discovery, revision, history: new Map([[revision, body]]),
-          authors: new Map(),
-          path, archived: false, title: String(create.metadata.title) });
-        return { item, revision, locator: { space: this.personalSpace(receiptActor), id: item }, receipt: requestId };
+        const target: File = { owner, space: this.personalSpace(receiptActor), people: shared && [...shared], creator: receiptActor, discovery, revision, history: new Map([[revision, body]]),
+          authors: new Map(), spans: new Map(), path, archived: false, title: String(create.metadata.title) };
+        const span = create.attested ? recordSpan(target, 0, body.length) : {};
+        if (create.attested) attributeWrite(target, revision, create.attested);
+        this.files.set(item, target);
+        return { item, revision, locator: { space: target.space, id: item }, receipt: requestId, ...span };
       });
       case "item_save_begin": {
         const spec = input as ItemStageBegin;
@@ -515,15 +547,33 @@ export class FakeHost {
             assert.ok(stage?.sealed && stage.spec.item === save.item && stage.spec.expected === save.expected
               && stage.spec.request_id === save.request_id, "invalid staged replacement");
           }
-          const body = stage?.sealed ?? (save.body === undefined
-            ? target.history.get(target.revision)! : Buffer.from(save.body, "base64"));
+          const original = target.history.get(target.revision)!;
+          let body = stage?.sealed ?? (save.body === undefined ? original : Buffer.from(save.body, "base64"));
+          let span = {};
+          if (save.attested) {
+            const replacement = compose(save.attested);
+            if (save.replace_span) {
+              const prior = target.spans.get(save.replace_span);
+              assert.ok(prior, "span unavailable");
+              body = Buffer.concat([original.subarray(0, prior.start), replacement, original.subarray(prior.start + prior.length)]);
+              target.spans.delete(save.replace_span);
+              for (const other of target.spans.values()) {
+                if (other.start > prior.start) other.start += replacement.length - prior.length;
+              }
+              span = recordSpan(target, prior.start, replacement.length);
+            } else {
+              body = replacement;
+              target.spans.clear();
+              span = recordSpan(target, 0, replacement.length);
+            }
+          } else if (stage || save.body !== undefined) target.spans.clear();
           if (save.staged !== undefined) this.stages.delete(save.staged);
           target.history.set(revision, body);
           target.revision = revision;
           if (typeof save.patch?.title === "string") target.title = save.patch.title;
-          if (stage || save.body !== undefined) attributeWrite(target, revision, body);
+          if (stage || save.body !== undefined || save.attested) attributeWrite(target, revision, save.attested);
           if (save.attempt_discovery === "consent_only") target.discovery = "consent_only";
-          const result = { item: save.item, revision, locator: { space: target.space, id: save.item }, receipt: requestId };
+          const result = { item: save.item, revision, locator: { space: target.space, id: save.item }, receipt: requestId, ...span };
           if (stage) this.receipts.get(receiptKey("item_save_begin"))!.result = result;
           return result;
         });
@@ -586,17 +636,19 @@ export class FakeHost {
       }
       case "item_append": {
         const target = writable();
+        const append = input as ItemAppend;
         const receipt = commit(() => {
           assert.equal(args.expected_revision, target.revision, "stale head");
           const revision = this.id("rev");
           const prior = target.history.get(target.revision)!;
-          const addition = Buffer.from(args.bytes, "base64");
+          const addition = append.attested ? compose(append.attested) : Buffer.from(append.bytes ?? "", "base64");
           assert.ok(addition.length <= 65536);
           const body = Buffer.concat([prior, addition]);
           target.history.set(revision, body);
           target.revision = revision;
-          attributeWrite(target, revision, addition);
-          return { revision, end_offset: body.length, receipt: requestId };
+          attributeWrite(target, revision, append.attested);
+          return { revision, end_offset: body.length, receipt: requestId,
+            ...(append.attested ? recordSpan(target, prior.length, addition.length) : {}) };
         });
         if (owner === "threads" && this.loseNextAppendAck) {
           this.loseNextAppendAck = false;

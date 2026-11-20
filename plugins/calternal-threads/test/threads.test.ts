@@ -1,7 +1,7 @@
 import type { SnapshotNode } from "../generated/wire.js";
 import assert from "node:assert/strict";
 import test, { after } from "node:test";
-import { agentParticipant, decode, encode, encodeMessage, personParticipant, step, type Thread } from "../src/format.ts";
+import { agentParticipant, attest, decode, encode, encodeMessage, messageRecord, personParticipant, step, type Thread } from "../src/format.ts";
 import { FakeHost, handlers, checkTrace } from "./host.ts";
 
 after(checkTrace);
@@ -9,7 +9,7 @@ after(checkTrace);
 async function setup() {
   const host = new FakeHost();
   const context = (request: string, operation: string) => host.context(request, operation);
-  const { created: item } = await handlers["threads.create"]({ title: "Review the lease" }, context("create-1", "threads.create"));
+  const { created: item } = await handlers["threads.create"]({ title: "Review the lease" }, host.createContext("create-1", "Review the lease"));
   const selection = host.choose();
   const send = (request: string, text: string) =>
     handlers["threads.send"]({ item, text, ...selection }, host.composerContext(request, item, text));
@@ -156,10 +156,10 @@ test("replay after a committed append with a lost ACK publishes the head without
   let providerCalls = 0;
   host.claude = async () => {
     providerCalls++;
+    host.loseNextAppendAck = true;
     return "Saved before disconnect";
   };
   const { job_id } = await send("lost-append-ack", "Run once");
-  host.loseNextAppendAck = true;
   await assert.rejects(host.run(job_id), /acknowledgement lost/);
   const before = host.markdown(item);
   assert.notEqual(host.snapshots.get(item)?.source_revision, host.files.get(item)?.revision);
@@ -200,7 +200,7 @@ test("a rename while the harness is running preserves the reply and snapshot", a
 test("two conversations with the same title get different readable placements", async () => {
   const { host, item, context } = await setup();
   const create = (request: string) =>
-    handlers["threads.create"]({ title: "Review the lease" }, context(request, "threads.create"));
+    handlers["threads.create"]({ title: "Review the lease" }, host.createContext(request, "Review the lease"));
   const { created } = await create("same-title");
   assert.notEqual(created, item);
   assert.match(host.files.get(created)!.path!, /Review the lease \(2\)\/Conversation\.md$/);
@@ -242,7 +242,7 @@ test("a fresh checked harness binding reuses the stored logical agent participan
   await assert.rejects(handlers["threads.send"]({ item, text: "Stale", ...previous },
     context("old-binding", "threads.send")), /unchecked harness/);
   const { job_id } = await handlers["threads.send"]({ item, text: "Second binding", ...fresh },
-    context("new-binding", "threads.send"));
+    host.composerContext("new-binding", item, "Second binding"));
   await host.run(job_id);
   const agents = decode(host.markdown(item)).participants.filter(person => person.kind === "agent");
   assert.equal(agents.length, 1);
@@ -320,23 +320,44 @@ test("the broker refuses a changed contribution input on the same admitted attem
   }
 });
 
-test("formatted prompts and replies remain opaque without a qualified encoding even when the source is checked", async () => {
+test("the creator retains discovery across several attested prompts and replies", async () => {
   const { host, item, send } = await setup();
   const creator = host.files.get(item)!.creator;
   host.claude = async text => {
-    assert.equal(host.writeAuthor(item), undefined);
-    assert.deepEqual(host.discoverAsAttempt(creator), []);
+    assert.equal(host.writeAuthor(item), creator);
+    assert.deepEqual(host.discoverAsAttempt(creator), [item]);
     return `Reply to ${text}`;
   };
   for (const [index, text] of ["First", "Second", "Third"].entries()) {
     const { job_id } = await send(`discovery-${index}`, text);
     await host.run(job_id);
-    assert.equal(host.writeAuthor(item), undefined);
-    assert.deepEqual(host.discoverAsAttempt(creator), []);
+    assert.equal(host.writeAuthor(item), creator);
+    assert.deepEqual(host.discoverAsAttempt(creator), [item]);
   }
   const { messages } = decode(host.markdown(item));
   assert.deepEqual(messages.map(message => message.author.kind), ["person", "agent", "person", "agent", "person", "agent"]);
   assert.equal(messages.at(-1)?.text, "Reply to Third");
+});
+
+test("the UTF-8 framing budget covers a long reply heading and escaped records use the opaque path", async () => {
+  const { host, item, send } = await setup();
+  const agent = { ...agentParticipant("test-thread", { package: "calternal-threads-claude-code", contribution: "claude-code" }),
+    name: "é".repeat(100) };
+  const base = { id: "0123456789abcdef", author: agent, posted_at: "2026-11-20T12:00:00Z",
+    replyTo: "aabbccddeeff0011", replyToName: "Alice", text: "Reply",
+    log: { space: "019a0000-0000-7000-8000-000000000010", id: "run-1" } };
+  const heading = messageRecord(base, [agent], true);
+  assert.ok(Buffer.byteLength(heading.prefix) <= 512);
+  assert.ok(attest(heading, { kind: "output", seq: 1 }));
+  const oversized = messageRecord({ ...base, replyToName: "🐝".repeat(100) }, [agent], true);
+  assert.ok(Buffer.byteLength(oversized.prefix) > 512);
+  assert.equal(attest(oversized, { kind: "output", seq: 1 }), undefined);
+
+  const delimiter = "### Example {#m-aabbccddeeff0011 by=p1}";
+  const { job_id } = await send("escaped-heading", delimiter);
+  await host.run(job_id);
+  assert.equal(decode(host.markdown(item)).messages[0].text, delimiter);
+  assert.equal(host.files.get(item)!.discovery, "consent_only");
 });
 
 test("a checked editor save qualifies complete bytes and downgrades unexplained bytes in the same checked path", async () => {
@@ -386,8 +407,9 @@ test("Markdown keeps one plain body span and reversibly escapes only tagged head
 });
 
 test("an unproven staged replacement sets consent_only and a worker cannot clear it", async () => {
-  const host = new FakeHost();
-  const { item } = await host.createEmptyCreatorItem();
+  const { host, item, send } = await setup();
+  const { job_id } = await send("before-import", "Proven conversation");
+  await host.run(job_id);
   const creator = "019a0000-0000-7000-8000-000000000001";
   assert.deepEqual(host.discoverAsAttempt(creator), [item]);
   const body = Buffer.from(host.markdown(item) + "Imported material of unproven authorship\n" + "x".repeat(140 * 1024));

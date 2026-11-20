@@ -57,6 +57,7 @@ const metadata = {
   jobs: [{ id: "run", run_operation: "threads.run", replayable: true, execution: true, alarm: true }],
   operations: [
     { ...write, id: "threads.create", title: "New thread", creates: "threads", methods: ["item_create", ...writeView],
+      write_origins: { host_input: "title" },
       input_schema: object({ title }, "title"), output_schema: object({ created: item }, "created") },
     { ...execute, id: "threads.send", title: "Send", target, methods: [...readBody, "start_job"], material_inputs: { placement: "Machine and login" },
       write_origins: { host_input: "text" },
@@ -64,7 +65,7 @@ const metadata = {
       output_schema: catalogueRef("ExecutionJobReceipt") },
     { ...write, id: "threads.rename", title: "Rename", target, methods: [...readBody, "item_save", ...writeView],
       input_schema: object({ item, title }, "item", "title"), output_schema: empty },
-    { ...execute, id: "threads.run", title: "Run harness", target, methods: [...readBody, "item_save", "item_append", "execution_start", "contribution_call", "contribution_read", ...writeView],
+    { ...execute, id: "threads.run", title: "Run harness", target, methods: [...readBody, "item_append", "execution_start", "contribution_call", "contribution_read", ...writeView],
       write_origins: { attempt_output: "text" },
       input_schema: object({ item, if_missed: ifMissed }, "item"), output_schema: empty },
     { ...execute, id: "threads.arm", title: "Schedule a run", target, methods: [...readBody, "alarm_set"],
