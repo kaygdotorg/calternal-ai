@@ -12,14 +12,14 @@ const mute = (id: string, title: string, inputs: Record<string, unknown>) => ({ 
 const muteFor = { prompt: { title: "Mute for", kind: "choice", options: [
   { value: "1h", label: "1 hour" }, { value: "8h", label: "8 hours" }, { value: "2d", label: "2 days" }, { value: "forever", label: "Until I unmute" }, { value: "mentions", label: "Mute, but tell me about mentions" }] } };
 const pin = (id: string, on: boolean) => ({ id, title: on ? "Pin" : "Unpin", icon: "spark", operation: "threads.state", inputs: { item: row, pinned: { literal: on } } });
-/** A thread row: shape icon, title, last line (the draft when there is one), time, then the counts. A muted chat never rings and its count is quiet; a mention keeps its accent count. */
+/** A thread row is one line: shape icon, title, then the time and the counts. */
 const rowTemplate = (n: string) => ({
   title: { field: "title", fallback: "Untitled thread" },
-  secondary: [{ field: "preview", format: "text" }, { field: "updated", format: "relative_date" }],
   icon: { field: "shape", name: "threads", map: { person: "user", group: "user", agent: "spark", mixed: "threads" } },
+  // One line: the title, then at its end the time and the counts (a muted chat keeps only its mention count, in the accent: it never rings).
   marks: [
+    { kind: "text", field: "updated" },
     { kind: "count", field: "mentions", when: eq("muted", true) },
-    { kind: "count", field: "unread", tone: "quiet", when: eq("muted", true) },
     { kind: "count", field: "unread", when: eq("muted", false) },
   ],
   open: { route: { name: "item", value: "id" } },
@@ -56,7 +56,7 @@ export const descriptionNext = {
     { id: "archived-count", source: { type: "list", kind: "threads" }, fields: [], filter: { all: [eq("archived", true)] }, window: { size: 1, count: "exact" } },
     { id: "thread", source: { type: "item", kind: "threads", ref: item }, fields: ["title", "updated", "shape", "muted", "pinned"] },
     { id: "found", source: { type: "search", kind: "threads" }, fields: ["title", "updated", "preview"], window: { size: 30, count: "none" },
-      row: { title: { field: "title" }, secondary: [{ field: "preview", format: "text" }, { field: "updated", format: "relative_date" }], open: { route: { name: "item", value: "id" } }, icon: { kindIcon: true } },
+      row: { title: { field: "title" }, open: { route: { name: "item", value: "id" } }, icon: { kindIcon: true } },
       states: { empty: { title: "No thread matches" } } },
   ],
   chrome: {

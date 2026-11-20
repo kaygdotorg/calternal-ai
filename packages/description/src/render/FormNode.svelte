@@ -243,7 +243,8 @@
   .chips { display: flex; flex-wrap: wrap; gap: var(--s-1); padding: 0 var(--s-1) var(--s-1) 0; margin-inline-start: calc(var(--s-3) * -1); } .chips :global(.pill) { font-size: var(--text-label); }
   .compose > .err, .compose > .mode, .compose > .pick { margin-inline-end: var(--s-2); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .mode { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-1) var(--s-1) var(--s-1) var(--s-4); margin-top: var(--s-2); border-inline-start: 3px solid var(--accent); border-radius: var(--r-select); background: var(--accent-soft); color: var(--ink-2); }
+  .mode { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-1) var(--s-1) var(--s-1) calc(var(--s-4) + 3px); margin-top: var(--s-2); position: relative; border-radius: 0 var(--r-select) var(--r-select) 0; background: var(--accent-soft); color: var(--ink-2); }
+  .mode::before { content: ""; position: absolute; inset-block: 0; inset-inline-start: 0; width: 3px; background: var(--accent); }
   .mode button { display: inline-grid; place-items: center; min-width: var(--pill-h); min-height: var(--pill-h); color: var(--ink-2); border-radius: 50%; }
   .pick { list-style: none; margin: 0; padding: var(--s-2); border-radius: var(--r-menu); background: rgb(var(--ink-rgb) / 0.07); max-height: 40vh; overflow: auto; }
   .pick button { width: 100%; min-height: var(--row-h); text-align: start; padding: 0 var(--s-4); border-radius: var(--r-select); color: var(--ink); display: flex; justify-content: space-between; } .pick button[aria-selected="true"], .pick button:hover { background: var(--hover); } .k { color: var(--ink-3); font-size: var(--text-label); }

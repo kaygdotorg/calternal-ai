@@ -17,9 +17,8 @@
   const marks = $derived(marksOf(template.marks, fields));
 </script>
 
-<Row {title} {sub} {selected} {depth} {onclick}>
-  <!-- The second line: everything but its last part may ellipsise; the last part (a time) stays whole at the end (the shared Row's own line is a flex box, whose plain text cannot ellipsise). -->
-  {#snippet meta()}{#if parts.length > 1}<span class="sl">{parts.slice(0, -1).join(" \u00b7 ")}</span><span class="sx">\u00b7 {parts.at(-1)}</span>{:else}<span class="sl">{parts[0] ?? ""}</span>{/if}{/snippet}
+{#snippet metaLine()}{#if parts.length > 1}<span class="sl">{parts.slice(0, -1).join(" \u00b7 ")}</span><span class="sx">\u00b7 {parts.at(-1)}</span>{:else}<span class="sl">{parts[0] ?? ""}</span>{/if}{/snippet}
+<Row {title} {sub} {selected} {depth} {onclick} meta={parts.length ? metaLine : undefined}>
   {#snippet leading()}{#if img}<RowImage ref={typeof fields[img.field] === "string" ? (fields[img.field] as string) : undefined} snippet={img.fallback && typeof fields[img.fallback] === "string" ? (fields[img.fallback] as string) : undefined} />{:else if iconName !== undefined}<span class="lead">{#if icon}<Icon name={icon} />{:else}<i class="missing" data-icon-missing={iconName}></i>{/if}</span>{/if}{/snippet}
   {#snippet trailing()}{#each marks as m, k (k)}
     {#if m.kind === "dot"}<i class="dot {m.tone ?? ''}" data-mark="dot"></i>

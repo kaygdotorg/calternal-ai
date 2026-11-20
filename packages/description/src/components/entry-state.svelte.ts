@@ -11,7 +11,7 @@ export interface ComposerMode { mode: "reply" | "edit"; anchor: string; ref: str
 /** State shared between an item view, its entries and the composer bound to it. */
 export class ItemViewState {
   /** The newest page and its overlays (null until the first open). */
-  reply = $state<ItemViewReply | null>(null);
+  reply = $state.raw<ItemViewReply | null>(null);
   /** The reply or edit mode in force, or null. */
   composer = $state<ComposerMode | null>(null);
   /** Whether the person is choosing messages for a range action. */

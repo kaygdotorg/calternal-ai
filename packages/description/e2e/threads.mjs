@@ -21,8 +21,8 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   ok(titles.length === 7 && titles[0].startsWith("Where to eat on Friday"), "the sidebar lists the 7 threads, pinned first", titles[0].slice(0, 40));
   ok(/\b(min|hour|day|yesterday|ago|\d)/i.test(titles[0]), "each row says when it last changed, in relative time");
   ok((await p.locator("[data-count-of=archived]").textContent()) === "2" && /Archived\s+2/.test(await p.locator("[data-selector=view]").innerText()), "the Archived option carries its exact count");
-  const sec = await p.locator("[data-i] button.row").first().evaluate((e) => { const s = e.querySelector(".s"); const l = s.querySelector(".sl"), x = s.querySelector(".sx"); return { ell: getComputedStyle(l).textOverflow, tail: x?.textContent ?? "" }; });
-  ok(sec.ell === "ellipsis" && /[a-z0-9]/i.test(sec.tail), "a row's second line ellipsises its text and keeps the time whole at the end", JSON.stringify(sec));
+  const one = await p.locator("[data-i] button.row").first().evaluate((e) => ({ second: !!e.querySelector(".s"), time: e.querySelector("[data-mark=text]")?.textContent ?? "", h: e.getBoundingClientRect().height }));
+  ok(!one.second && /\b(min|hour|day|yesterday|ago|week|now)/i.test(one.time), "a thread row is one line: the title, then the time and the counts at its end", JSON.stringify(one));
   await snap(p, "desktop-1-list");
   await openFirst(p);
   ok((await p.locator("main h1").textContent()).includes("Where to eat"), "opening a thread shows its title in the header");

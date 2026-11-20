@@ -21,10 +21,10 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   await p.waitForSelector("[data-i] button.row", { timeout: 20000 });
   const rows = await p.locator("[data-i] button.row").evaluateAll((els) => els.map((e) => e.textContent.trim()));
   ok(rows.length === 7 && rows[0].startsWith("Where to eat") && rows[1].startsWith("Release notes"), "pinned threads come first, then the rest by activity", rows.slice(0, 2).join(" | "));
-  ok(/Draft: Add the new search/.test(rows[1]), "a thread with a draft shows it as its last line");
+  ok((await p.locator("[data-i] button.row .s").count()) === 0 && (await p.locator("[data-i] button.row").first().locator("[data-mark=text]").count()) === 1, "every thread row is one line, with its time at the end");
   const marks = await p.locator("[data-i] button.row").evaluateAll((els) => els.map((e) => [...e.querySelectorAll("[data-mark=count]")].map((m) => `${m.textContent}${m.classList.contains("quiet") ? "q" : ""}`)));
-  ok(marks[0].join() === "3", "an unmuted thread shows its unread count in the accent", marks[0].join());
-  ok(marks[3].join() === "2,41q" || marks[3].join() === "2,41q".replace(",", ""), "a muted thread keeps a mention count in the accent and a quiet unread count at the end", marks[3].join());
+  ok(marks[0].join() === "3", "an unmuted thread shows its unread count in the accent, after its time", marks[0].join());
+  ok(marks[3].join() === "2", "a muted thread (it never rings) keeps only its mention count, in the accent", marks[3].join());
   ok(marks[1].length === 0, "a thread with nothing unread shows no count");
   await snap(p, "next-desktop-1-list");
   await p.getByText("People", { exact: true }).first().click(); await p.waitForTimeout(600);
@@ -49,6 +49,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   const a = p.locator("[data-anchor=e4] a"); ok((await a.getAttribute("href")) === "https://example.test/menu" && /noopener/.test(await a.getAttribute("rel")), "an explicit http(s) link opens safely");
   ok(!(await p.locator("[data-anchor=e1]").textContent()).includes("**"), "no marker characters are left in the text");
   ok((await p.locator("[data-anchor=e9] [data-state-mark]").textContent()) === "Sending…", "a queued message says it is sending");
+  ok(await p.locator("[data-anchor=e6] [data-quote]").evaluate((q) => { const b = getComputedStyle(q, "::before"); return b.width === "3px" && b.borderTopLeftRadius === "0px" && getComputedStyle(q).borderTopLeftRadius === "0px" && getComputedStyle(q).borderBottomLeftRadius === "0px"; }), "a quote's leading bar is a straight, square-ended strip");
   ok((await p.locator("[data-anchor=e6] [data-quote]").textContent()).includes("River it is. Booking now.") && (await p.locator("[data-anchor=e6] .qa").textContent()) === "Ada", "a reply shows the host's quoted text and author");
   ok((await p.locator("[data-activity=working]").textContent()).includes("Codex is working"), "the agent's working state shows under the last message");
   await snap(p, "next-desktop-2-conversation");

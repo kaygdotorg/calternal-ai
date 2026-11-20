@@ -40,6 +40,8 @@ export function holds(p: Predicate | undefined, fields: RowFields): boolean {
 /** A trailing mark ready to draw. */
 export interface MarkView { kind: "dot" | "count" | "text" | "icon"; text?: string; icon?: string; tone?: "good" | "warn" | "bad" | "quiet" }
 
+const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
 /** The marks of a row, at most three, those whose `when` holds. A count of zero draws nothing, as a system badge does. */
 export function marksOf(marks: Marks | undefined, fields: RowFields): MarkView[] {
   const out: MarkView[] = [];
@@ -49,7 +51,7 @@ export function marksOf(marks: Marks | undefined, fields: RowFields): MarkView[]
     switch (m.kind) {
       case "dot": if (m.when || have) out.push({ kind: "dot", tone: m.tone }); break;
       case "count": { const n = num(have); if (n !== null && n > 0) out.push({ kind: "count", text: String(n), tone: m.tone }); break; }
-      case "text": { const t = m.value ?? have; if (t !== undefined && t !== null && t !== "") out.push({ kind: "text", text: String(t), tone: m.tone }); break; }
+      case "text": { const t = m.value ?? have; if (t !== undefined && t !== null && t !== "") { const when = typeof t === "string" && RFC3339.test(t) ? ms(t) : null; out.push({ kind: "text", text: when !== null ? relativeDate(when, Date.now()) : String(t), tone: m.tone }); } break; } // (a Timestamp field in a text mark reads as a relative date, as in the row's line before: a one-line row keeps its time)
       case "icon": if (m.icon) out.push({ kind: "icon", icon: typeof m.icon === "string" ? m.icon : undefined, tone: m.tone }); break;
     }
   }

@@ -100,6 +100,18 @@
   }
   function nextMention() { const a = reply?.reading?.next_mention; if (a) jump(a); else { reopenWith = { position: "mention" }; nudge?.(); } }
 
+  // ---- earlier messages: the host's cursor pages older entries; one is read as the top comes within a screen of view, and the person's place is kept (the content grows above the viewport).
+  let olderEl = $state<HTMLElement>(), loadingOlder = false, olderIo: IntersectionObserver | undefined;
+  async function loadOlder() {
+    const cursor = st.reply?.older; if (!cursor || loadingOlder || !item || !el) return;
+    loadingOlder = true; const box = el, below = box.scrollHeight - box.scrollTop;
+    try {
+      const r = await open(item, new AbortController(), { cursor });
+      if (r?.view && st.reply) { st.reply = { ...st.reply, older: r.older, view: { content: { type: "stack", children: [...children(r.view.content), ...children(st.reply.view?.content)] } }, entry_controls: [...(r.entry_controls ?? []), ...(st.reply.entry_controls ?? [])], quotes: [...(r.quotes ?? []), ...(st.reply.quotes ?? [])] }; await tick(); box.scrollTop = box.scrollHeight - below; watch(); }
+    } finally { loadingOlder = false; }
+  }
+  $effect(() => { olderIo?.disconnect(); if (!olderEl || !el) return; olderIo = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) void loadOlder(); }, { root: el, rootMargin: "600px 0px 0px 0px" }); olderIo.observe(olderEl); return () => olderIo?.disconnect(); });
+
   // ---- reading position: the last entry that has scrolled into view, written once the view settles (never moved backwards by the host)
   let io: IntersectionObserver | undefined;
   const visible = new Set<Element>();
@@ -212,7 +224,7 @@
     {/if}
     <div class="wrap">
       <div class="scroll" bind:this={el} {onscroll} onkeydown={keydown} tabindex={st.active ? -1 : 0} role={st.selecting ? "listbox" : "log"} aria-multiselectable={st.selecting || undefined} aria-live={st.selecting ? "off" : "polite"} aria-label="Messages">
-        {#if reply.older}<button type="button" class="older" data-older onclick={async () => { const ctl = new AbortController(); const r = await open(item!, ctl, { cursor: reply!.older }); if (r?.view && st.reply) { st.reply = { ...st.reply, older: r.older, view: { content: { type: "stack", children: [...children(r.view.content), ...children(st.reply.view?.content)] } } }; } }}>Earlier messages</button>{/if}
+        {#if reply.older}<button type="button" class="older" data-older bind:this={olderEl} onclick={() => void loadOlder()}>Earlier messages</button>{/if}
         <Snapshot node={reply.view.content} />
         {#each activity as a (a.label + a.kind)}<p class="act" data-activity={a.kind} role="status">{a.label}…</p>{/each}
       </div>

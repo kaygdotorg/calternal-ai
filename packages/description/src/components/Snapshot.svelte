@@ -60,7 +60,7 @@
 {#snippet inline(text: string)}{#each parseInline(text) as s, k (k)}{#if s.t === "strong"}<strong>{s.text}</strong>{:else if s.t === "em"}<em>{s.text}</em>{:else if s.t === "code"}<code class="ic">{s.text}</code>{:else if s.t === "link"}<a href={s.href} target="_blank" rel="noopener noreferrer nofollow">{s.text}</a>{:else}{s.text}{/if}{/each}{/snippet}
 
 {#if node.type === "stack"}
-  <div class="s" class:row={node.axis === "horizontal"} data-snapshot="stack">{#if node.title}<h3 class="st">{node.title}</h3>{/if}{#each node.children as c, k (k)}<Snapshot node={c} first={startsGroup(node.children, k)} last={endsGroup(node.children, k)} />{/each}</div>
+  <div class="s" class:row={node.axis === "horizontal"} data-snapshot="stack">{#if node.title}<h3 class="st">{node.title}</h3>{/if}{#each node.children as c, k (c.type === "snapshot-entry" ? c.anchor : `${c.type}:${k}`)}<Snapshot node={c} first={startsGroup(node.children, k)} last={endsGroup(node.children, k)} />{/each}</div>
 {:else if node.type === "snapshot-marker"}
   {#if node.kind === "date"}<div class="mk" data-snapshot="marker" data-marker="date"><time datetime={node.timestamp}>{day(node.timestamp)}</time></div>
   {:else}<div class="mk sys" data-snapshot="marker" data-marker="system"><span>{node.text}</span></div>{/if}
@@ -116,6 +116,8 @@
   .ic { font-family: var(--font-mono); }
   /* An entry: a bubble whose time ends its last line (as Telegram's does), names above the first of a group, own messages to the end in the accent's soft tint, others to the start in the ink tint. A group's inner corners are tighter, so a run reads as one. */
   .e { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-1); margin-top: var(--s-1); max-width: min(82%, 38rem); scroll-margin: var(--s-6); position: relative; }
+  /* Messages off screen are skipped by the browser (not laid out or painted) until they near the viewport: a long thread costs what is in view. */
+  :global(html:not([data-no-cv])) .e { content-visibility: auto; contain-intrinsic-size: auto 4.5rem; }
   .e.first { margin-top: var(--s-4); } .e.own { align-self: flex-end; align-items: flex-end; }
   .e.selecting { cursor: pointer; } .e.picked .bub { outline: 2px solid var(--accent); outline-offset: 1px; }
   :global(.hl) { animation: hl var(--dur-slow) var(--ease-out); } @keyframes hl { from { background: var(--accent-soft); } to { background: transparent; } }
@@ -136,7 +138,9 @@
   .ed, .sd { font-style: italic; } .sd.bad { color: var(--danger); font-style: normal; }
   .more { position: absolute; top: var(--s-1); right: var(--s-1); width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; color: var(--ink-2); background: rgb(var(--tint) / 0.85); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
   .e:hover .more, .more:focus-visible { opacity: 1; }
-  .qt { display: grid; gap: 2px; align-self: stretch; text-align: start; padding: var(--s-2) var(--s-3); border-inline-start: 3px solid var(--accent); border-radius: var(--r-select); background: var(--accent-soft); color: inherit; }
+  /* The quote's leading bar is a straight, square-ended strip (a pseudo element the full height of the quote), never a rounded border. */
+  .qt { position: relative; display: grid; gap: 2px; align-self: stretch; text-align: start; padding: var(--s-2) var(--s-3) var(--s-2) calc(var(--s-3) + 3px); border-radius: 0 var(--r-select) var(--r-select) 0; background: var(--accent-soft); color: inherit; }
+  .qt::before { content: ""; position: absolute; inset-block: 0; inset-inline-start: 0; width: 3px; background: var(--accent); }
   .qt:disabled { cursor: default; } .qa { font-weight: var(--strong-weight); font-size: var(--text-label); color: var(--accent); } .qx { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: var(--ink-2); font-size: var(--text-label); }
   .lk { display: inline-flex; align-items: center; gap: var(--s-2); width: fit-content; color: var(--accent); text-align: start; font-size: var(--text-body); } .lk:hover { text-decoration: underline; }
   .mk { align-self: center; margin-block: var(--s-4) var(--s-1); color: var(--ink-2); font-size: var(--text-label); } .mk time, .mk.sys span { display: inline-block; padding: var(--s-1) var(--s-4); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); }

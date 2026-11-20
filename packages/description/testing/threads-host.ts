@@ -53,7 +53,7 @@ export function transcript(id: string, extra = 0) {
 }
 
 /** Options of the fixture host. */
-export interface ThreadsHostOptions { scenario?: string; actionIds: string[]; latencyMs?: number; /** The 14.43 interface: viewer-private fields, entries and their overlays. */ next?: boolean }
+export interface ThreadsHostOptions { scenario?: string; /** The number of messages of the `scale` scenario. */ messages?: number; actionIds: string[]; latencyMs?: number; /** The 14.43 interface: viewer-private fields, entries and their overlays. */ next?: boolean }
 
 /** A `MockHost` whose view open also issues the contexts of the description's view-level actions (the composer's Send, the header's Archive, the New thread shortcut). */
 class ViewContexts extends MockHost {
@@ -118,7 +118,19 @@ export function threadsHost(o: ThreadsHostOptions) {
       ...(o.scenario === "consent" ? { requests: [{ anchor: A(8), card: { request_ref: "rq-1", title: "Ada asks Codex to read your messages 1 to 3", detail: "Codex would read the three messages you wrote in this thread.", material: [], state: "open", card_context: "ctx-card", expires_at: new Date(Date.now() + 60000).toISOString(), actions: [{ decision: "approve", lifetimes: ["once", "this_item"] }, { decision: "deny" }] } }] } : {}),
       activity: [{ label: "Codex is working", kind: "working", expires_at: new Date(Date.now() + 120000).toISOString() }] };
   }
+  // ---- scale: a thread of `o.messages` entries served as the contract does, a bounded newest page and a host-issued cursor for each older one (`?scenario=scale&messages=5000`).
+  const PAGE = 60, TOTAL = o.messages ?? 5000;
+  function scalePage(id: string, cursor?: string) {
+    const end = cursor ? Number(cursor.slice(1)) : TOTAL, start = Math.max(0, end - PAGE);
+    const es = Array.from({ length: end - start }, (_, k) => { const i = start + k, who = i % 7 === 3 ? ["a-codex", "Codex"] : i % 2 ? ["p-ben", "Ben"] : ["p-ada", "Ada"];
+      const text = `Message ${i + 1}: ${"words in a sentence ".repeat(1 + (i % 6))}`.trim();
+      return { type: "snapshot-entry", anchor: `m${i}`, timestamp: iso(60 * (TOTAL - i)), author: { key: who[0], name: who[1] }, children: [{ type: "snapshot-text", text, markup: "inline" }, ...(i % 41 === 0 ? [{ type: "snapshot-code", text: "npm test\nok" }] : [])] }; });
+    const ctrls = es.map((e) => ({ anchor: e.anchor, entry: `h-${e.anchor}`, ...(e.author.key === "p-ada" ? { own: true as const } : {}), actions: [{ action: "reply", activation_context: `ctx-reply-${e.anchor}` }] }));
+    return { state: "live", source_revision: "rev-1", window_ref: `win-${id}`, result_version: "v-1", ...(cursor ? {} : { follow: `f-${id}-0` }), ...(start > 0 ? { older: `c${start}` } : {}), view: { content: { type: "stack", children: es } }, entry_controls: ctrls, access: { state: "read_write" }, reading: { unread: 0, mentions: 0, version: "rd-0" } };
+  }
   async function nextRoute(route: Route, body: any): Promise<unknown | undefined> {
+    if (o.scenario === "scale" && route === "item_view.open") return scalePage(String(body.item ?? "t"), body.cursor);
+    if (o.scenario === "scale" && route === "item_view.follow") return new Promise(() => {});
     const id = String(body.item ?? body.window_ref?.replace(/^win-/, "") ?? "t-lunch");
     switch (route) {
       case "item_view.open": if (o.scenario === "reconnect" && ++opens >= 2 && opens <= 4) throw new Error("connection lost"); if (o.scenario === "loading") await new Promise((r) => setTimeout(r, 60_000)); if (o.scenario === "unavailable") return { state: "unavailable" }; return page(id);
@@ -152,8 +164,9 @@ export function threadsHost(o: ThreadsHostOptions) {
     fields: (i, b) => {
       const t = rowOf(b, i);
       if (!o.next) return { title: t.title, updated: NOW - t.ago, archived: b === "archived" };
+      const when = iso(t.ago);
       const ex = EXTRA[t.id] ?? { shape: "person", unread: 0, mentions: 0, muted: false, pinned: false, preview: "" };
-      return { title: t.title, updated: NOW - t.ago, archived: b === "archived", ...ex };
+      return { title: t.title, updated: when, archived: b === "archived", ...ex };
     },
     ...(o.next ? { /* the sections of the 14.43 list are filtered by the host; the fixture serves the same seven threads, pinned first */ } : {}),
     intercept: (req) => (o.scenario === "error" && (req.bind === "threads" || req.bind === "all") ? ({ status: 422, code: "unsupported_query_plan", reason: "host_error" } as never) : undefined),
