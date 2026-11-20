@@ -27,6 +27,28 @@ Owner decisions this draft is bound by (2026-11-20, recorded in
   part is split by effect. A missing part falls back to another one, or
   shows an error that suggests the official part.
 
+## 0. Compared with the coordinator's thesis
+
+The thesis (`docs/proposals/primitives-only-thesis-2026-11-21.md` on `dev`)
+has seven primitives; this draft has twelve. They differ in grouping more
+than in substance.
+
+| This draft | Thesis | Which is better |
+| --- | --- | --- |
+| Files (P2) and Records (P3) | One primitive, Files | The thesis: append is one of two ways to write a file, not a second idea to learn. |
+| People and spaces (P1) and Grants (P4) | One primitive, People and permissions | The thesis, but grants must stay a clearly named part, since agent reads depend on them. |
+| Index (P5) and Collections (P6) | One primitive, Questions | The thesis: a collection is a saved question stored as a file. |
+| Work (P7) and Sandboxes (P8) | One primitive, Running code (started by a call, a time or a change) | The thesis. Its three triggers are clearer than my "work unit". |
+| Sync and changes (P9) | Not a primitive; implied by "a change" and "sync resumes" | **This draft**: devices, machines and live windows all need the same change feed, so name it once. |
+| Calls (P10), with network and secrets as calls | Calls, plus a separate "The outside" | The thesis: the outside has its own threat model (exfiltration). |
+| Drawing (P11) | Drawing, with replaceable shell parts | The thesis: shell parts are needed for the owner's sidebar card. |
+| Packages (P12) | Not a primitive | **This draft**: dependencies, slots, pick scope and fallback are owner decisions that need a home. |
+| Plugin-to-plugin rights: callee runs with its own rights, limited by the caller's and the person's | Callee runs with the intersection of caller, callee and person | Open: see question 6. The thesis is safer; mine lets a part ask the owner's plugin to write on its behalf. |
+
+The integrated design (after the section lanes) starts from the thesis's
+seven, adds sync and packages only if the sections confirm the need, and
+keeps the rights question for the owner.
+
 ## 1. The primitives
 
 There are twelve. Each has three lines: **does** (what it does),
