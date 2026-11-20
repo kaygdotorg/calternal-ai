@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.44 draft
+# Plugin API v2 · revision 14.45 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -553,7 +553,10 @@ deadlines and verified teardown. Keep quota until teardown is verified.
 An intact enrolled runtime continues on its authorized inference path
 when the server or carrier is away. Its own durable working log holds
 all output. The relay keeps a bounded window and resumes from the last
-host-durable cursor. A transport outage has no time limit of its own.
+host-durable cursor. After 24 hours of continuous server unreachability
+the machine stops the run and keeps its log under the catalogue's
+[outage limit](../contract/host-catalogue-v2.json#/execution_recovery/outage_limit);
+the run deadline, Stop and quota still end it earlier.
 Host-mediated effects wait for live authorization. Reattach only with
 exact live execution proof, safe transport and fresh renewal. Failed
 reattachment durably retires the old attempt. The plugin may
@@ -1749,13 +1752,13 @@ uses the behavior described in [bb 0.50.0][bb-050-restarts].
 | --- | --- |
 | Kill the server while a harness produces output. Cut after a machine log commit before relay and after host commit before ACK. Restart while the same execution is alive. | The machine keeps producing during the outage. Reattach once by exact proof. Deliver every authorized output record in sequence with one item effect per record. The view never reports failure due to the outage. |
 | Drop the enrolled connection with output and control work outstanding. Keep it down beyond the old renewal and teardown windows, with a run deadline and quota still available. Repeat with a full relay window. | The durable machine working log holds the suffix. Relay memory stays bounded. Reconnect drains from the host's committed cursor, with no lost or duplicate data and no replacement run. Exercise a true local containment loss separately and require the runtime fence. |
+| Keep the server unreachable for the outage limit (a shortened test setting of the same rule), with deadline and quota still available. Reconnect after the stop. | The machine stops the run once at the limit, retains its log and terminal, and relays both on reconnect. A reconnect one moment before the limit continues the run. |
 | Send a message or queue a follow-up immediately before, during and after restart. Lose the server ACK and repeat using the same action receipt. Race a steer with output completion and lose its application ACK. | Each Send and follow-up is delivered to the harness exactly once, including the device-outbox arm. A steer is delivered once to its pinned attempt or resolves as undelivered before the plugin may offer a replacement submission. Compare applied harness receipts and committed item heads. |
 | Commit Stop, cut before machine delivery, restart, then delay a duplicate Stop until a newer run is active. Repeat with a Stop still only in the authenticated device outbox at the crash. | The old attempt's effects are fenced at commit. The exact old attempt stops after reconnect, with no egress past its fence and no Stop effect on the successor. A never-admitted Stop can be retried only against the old live target. |
 | Request the updater fence while busy and again when idle. Race a Send at the grant boundary and while the fence is held. Apply an actual restart and separately let the fence time out. Force an update during output. | The operator reports busy until there is no run in progress and grants one bounded fence at idle. Work cannot launch during the fence. Each allowed Send queues durably and is delivered once after startup recovery or expiry. The forced update preserves the old attempt and output under the same recovery gate. |
 | Present a new machine boot, forged proof or retired session. | No replacement attempt is started by reattachment. A live old attempt is unaffected by a forged proof. A fresh continuation is an explicit owning-plugin choice under current authority. |
 
-Keep this gate distinct from legacy import and the pre-cutover additive
-upgrade check. Record effect counts and the actual reboot and replay
+Keep this gate distinct from legacy import. Record effect counts and the actual reboot and replay
 conditions on dev-01. Use the locked perf VM for the separate latency
 gates.
 
@@ -1772,8 +1775,10 @@ Remove native Turns and Notes dispatch and authority aliases, the
 `threads` namespace owner map and lookup, bundled-ID exceptions and
 native owner routing in startup, jobs and turn admission. Installed
 manifests provide ordinary ownership. Keep the generic collision checks
-and trusted install. Changes merged before cutover still use additive
-migrations and the [running-release upgrade check](../scripts/verify-additive-upgrade.sh).
+and trusted install. Until production holds data someone would miss,
+every deploy is a fresh install: schemas are edited in place, with no
+additive-migration requirement and no image-pair upgrade check
+([owner decision][no-upgrade-proofs]).
 Delete the transitional `open_cutover_requirements` and
 `application_cutover_requirements` catalogue tables after cutover.
 
@@ -1818,6 +1823,7 @@ queued follow-ups through the generic job contract.
 [execution-recovery]: ../contract/host-catalogue-v2.json#/execution_recovery
 [running-restart]: https://git.kayg.org/kayg/calternal-ai/src/commit/9b22fa15f60c0caf781993c041533d1e93f80d78/docs/morning-2026-11-20.md
 [bb-050-restarts]: https://getbb.app/changelog#0-50-0
+[no-upgrade-proofs]: https://git.kayg.org/kayg/calternal-ai/src/commit/831eba997d250570edd61511d6224aa323d47b42/docs/morning-2026-11-20.md#night-decisions-owner-2026-11-20
 [fresh-cutover]: https://git.kayg.org/kayg/calternal-ai/src/commit/ee88c9f60c5256d3cc5b9adbce3c0e5036854c99/docs/morning-2026-11-20.md
 [entry-views]: ../contract/host-catalogue-v2.json#/item_views_entries
 [viewer-state]: ../contract/host-catalogue-v2.json#/viewer_item_state

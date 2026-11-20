@@ -27,7 +27,8 @@ Reuse `crates/plugin-host/src/registry_v2.rs` and `claims.rs`, and
 existing job receipt namespace in `api/plugins/receipts.rs` and the durable job and bounded progress
 boundaries in `plugins/{jobs,job_streams.rs}`. The current job progress stream is
 ephemeral. Use the bounded host window and durable acknowledge cursor from
-`execution_recovery.machine_log`. The harness owns the disconnected suffix on the
+`execution_recovery.machine_log`; retire consumed frames to cursors and one chain digest per
+call under `calls.retirement`. The harness owns the disconnected suffix on the
 machine. Recover ordered output by call and cursor without a second launch.
 
 Qualify two installed packages, same local app IDs with different owners, wrong-version
@@ -68,7 +69,7 @@ Reuse `crates/server/src/plugins/jobs/{claim.rs,complete.rs,waits.rs}`,
 `plugins/space_ticket.rs`, `turns/{admission.rs,lease.rs,control.rs,
 space_execution.rs}`, `api/request_action.rs` and `crates/core/src/requests.rs`. Keep
 SQLite work per scope using rusqlite and the existing writer. Slice 2 owns the per-space content writer transaction
-and its migration sequence. Slice 3 owns the execution lifecycle rows and
+and its schema, edited in place (fresh installs only). Slice 3 owns the execution lifecycle rows and
 supplies the archive fences and cleanup in that same FULL transaction. Dispatch
 remote cleanup after the fence commits. Hold quota until verified teardown. Persist
 steer and Stop delivery by exact attempt and request ID. Add the authenticated
@@ -88,7 +89,8 @@ rules in `execution_attempt_authority`. Verify source and digest, mount the sepa
 pinned entry and selected login scope, and run with the declared execution network and
 exact attempt ticket. Wire the bounded entry relay and terminal to slice 1. Append to the durable harness
 log before acknowledging producer acceptance. Continue an intact enrolled attempt
-during server or carrier loss. Keep local containment and run deadlines independent
+during server or carrier loss, and stop it after 24 hours of continuous unreachability
+(`execution_recovery.outage_limit`), keeping its log. Keep local containment and run deadlines independent
 of the server. Rebind only on the exact proof and replay outstanding control receipts
 with slice 3.
 
@@ -211,9 +213,9 @@ enrolled carrier, one registered harness and a text item view. Drive create, Sen
 output, replay and Stop against the actual server and writer. Follow with the supported
 provider and test login. Keep alarm, staged edits, richer view assets, offline, children,
 Resume and people paths disabled until their gates pass. Rollout waits for the fresh
-install requirements in §8 and the measured 500 ms p95 product wake gates. Use
-additive migrations and the running-release upgrade check for changes merged before
-cutover.
+install requirements in §8 and the measured 500 ms p95 product wake gates. Every
+deploy before the Threads cutover is a fresh install: edit schemas in place, with no
+migration chain, additive-migration requirement or image-pair upgrade check.
 
 The owner permits a fresh production redeploy at the Threads cutover. Qualify freshly
 created files and jobs under §8. Slice 3 removes the native Turns job interpreter, admission,
