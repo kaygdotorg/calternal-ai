@@ -169,7 +169,7 @@ impl Runner {
             cpus: std::thread::available_parallelism().map_or(1, |n| n.get() as u32),
             memory_bytes,
             available_memory_bytes,
-            small_plugin_vm: self.backend.supports_small_plugin_vm(),
+            small_vm: self.backend.small_vm_capacity(),
             max_sandboxes: self.max_sandboxes,
             running_sandboxes: self.slots.lock().expect("slots").len() as u32,
         }

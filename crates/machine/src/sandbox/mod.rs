@@ -160,10 +160,10 @@ pub trait Backend: Send + Sync + 'static {
     fn start<'a>(&'a self, spec: &'a SandboxSpec)
     -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>>;
 
-    /// Whether the initialized backend accepts offline plugin VM placements.
-    /// Cost: one field check, with no I/O or guest start.
-    fn supports_small_plugin_vm(&self) -> bool {
-        false
+    /// Configured policy and current reservations of the offline plugin VM
+    /// backend, when initialized. Cost: a field check and semaphore count.
+    fn small_vm_capacity(&self) -> Option<crate::protocol::SmallVmCapacity> {
+        None
     }
 
     /// Erase a space's offline VM checkpoint after its placements are stopped.

@@ -209,13 +209,33 @@ pub struct Capacity {
     /// machine cannot provide a measurement. Admission waits for a sample.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub available_memory_bytes: Option<u64>,
-    /// Whether this machine has initialized the offline small plugin wall.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub small_plugin_vm: bool,
+    /// Live inventory and policy for the initialized offline plugin-VM backend.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub small_vm: Option<SmallVmCapacity>,
     /// Most provider and worker slots the machine can hold at once.
     pub max_sandboxes: u32,
     /// Slots currently held, including idle leases and pending removals.
     pub running_sandboxes: u32,
+}
+
+/// RAM in MiB reserved for each small plugin VM.
+pub const SMALL_VM_MEMORY_MIB: u32 = 256;
+/// Idle window in seconds when the small VM config omits one.
+pub const SMALL_VM_IDLE_SECONDS: u32 = 15 * 60;
+
+/// Machine-local resource accounting for the offline plugin VM profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SmallVmCapacity {
+    /// Idle seconds before sleep, counting from the last completed call.
+    pub idle_seconds: u32,
+    /// Operator ceiling on reserved guest RAM, in bytes.
+    pub memory_limit_bytes: u64,
+    /// Effective resident limit after applying both the RAM and VMM ceilings.
+    pub max_residents: u32,
+    /// Guests with a RAM reservation, including boot and snapshot teardown.
+    pub resident_count: u32,
+    /// Total reserved guest RAM in bytes. Physical memory use varies by guest.
+    pub resident_memory_bytes: u64,
 }
 
 /// State of one lease's sandbox as the machine sees it.
@@ -290,11 +310,14 @@ pub struct ErasureStatusRequest {
     pub signature: String,
 }
 
-/// Number of durable owner erasures still awaiting this machine.
+/// Signed machine status response with pending erasures and live small-VM use.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ErasureStatus {
     /// Pending erasure instructions, which survive disconnection.
     pub pending_erasures: u64,
+    /// Latest reported small VM inventory while the role is online.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub small_vm: Option<SmallVmCapacity>,
 }
 
 /// Sign a status challenge in a domain distinct from session establishment.

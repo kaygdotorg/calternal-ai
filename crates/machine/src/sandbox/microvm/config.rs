@@ -33,6 +33,13 @@ pub struct Config {
     /// Absolute operator policy path for a networked guest. Omit for offline guests.
     #[serde(default)]
     pub network_policy: Option<PathBuf>,
+    /// Small plugin VM idle seconds. Omit for 15 minutes.
+    #[serde(default)]
+    pub idle_seconds: Option<u32>,
+    /// Small plugin VM memory ceiling in MiB. Omit to reserve guest RAM
+    /// for every configured VMM slot.
+    #[serde(default)]
+    pub resident_memory_mib: Option<u32>,
 }
 
 impl Config {
@@ -55,12 +62,18 @@ impl Config {
                 .is_some_and(|path| !path.is_absolute())
             || !(1..=32).contains(&config.vcpus)
             || if small {
-                config.memory_mib != 256
+                config.memory_mib != crate::protocol::SMALL_VM_MEMORY_MIB
                     || config.vcpus != 2
                     || config.network_policy.is_some()
                     || config.warm_guests != 0
+                    || config.idle_seconds == Some(0)
+                    || config
+                        .resident_memory_mib
+                        .is_some_and(|mib| mib < config.memory_mib)
             } else {
                 GuestSize::from_mib(config.memory_mib).is_none()
+                    || config.idle_seconds.is_some()
+                    || config.resident_memory_mib.is_some()
             }
             || !(1024..=65536).contains(&config.disk_mib)
             || !(1..=64).contains(&config.max_guests)

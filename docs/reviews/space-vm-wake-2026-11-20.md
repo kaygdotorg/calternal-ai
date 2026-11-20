@@ -32,10 +32,38 @@ pre-start work, once the remaining randomness checks are established.
 
 The real-KVM machine fixture on dev-01 passed cold launch, snapshot
 publication, rejection before reseed, independent restored Node randomness,
-interruption recovery and invalid-checkpoint handling. The historical perf-02
-plain-launcher experiment measured 1,638.89 ms p50 and 2,253.21 ms p95 from
-arrival through the first validated reply. Those measurements describe the
-experimental arm. Product timing uses the lane's own perf capture.
+interruption recovery and invalid-checkpoint handling. All three enrolled
+runner KVM cases passed, covering item-head execution, idle snapshot and
+restore, and carrier lease-loss teardown.
+
+Step 1, `689948e54729`, completed ten disk wakes on locked perf-02. All ten
+returned validated replies without errors or cold fallbacks. The timings
+below are milliseconds with p50 and p95 computed independently. Raw evidence
+is under `/srv/homes/perf/vmw1/launcher`.
+
+| Stage | p50 | p95 |
+| --- | ---: | ---: |
+| VMM launch to API ready | 23.04 | 23.83 |
+| Reseed | 527.16 | 800.38 |
+| Package admission | 25.64 | 53.61 |
+| First validated reply | 1,577.93 | 1,937.73 |
+| Resident follow-up | 4.50 | 5.53 |
+
+## Residency
+
+The broker tracks the end of authorized calls on the existing carrier. An
+active call holds a local admission slot. The idle timer and scheduler use
+that same state to fence new calls before sending the existing sleep command.
+Memory pressure selects the least recently used idle carrier. The scheduler
+waits for its normal teardown proof before using the reclaimed reservation.
+The machine semaphore enforces the same ceiling through start and teardown.
+The reported memory figure is reserved guest RAM. Perf PSS is measured
+separately.
+
+The resident call path adds local memory updates and no storage reads or
+flushes. It retains the existing ticket and item-read calls. Wake and sleep
+use the existing scheduler, checkpoint proof and scratch durability steps.
+There are no new tables.
 
 ## Simplification opportunities
 

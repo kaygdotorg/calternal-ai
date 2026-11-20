@@ -125,11 +125,12 @@ impl Backend for ConfiguredBackend {
             }
         })
     }
-    fn supports_small_plugin_vm(&self) -> bool {
+    fn small_vm_capacity(&self) -> Option<crate::protocol::SmallVmCapacity> {
         #[cfg(target_os = "linux")]
-        return self.name() == "podman" && self.small_vm.is_some();
-        #[cfg(not(target_os = "linux"))]
-        false
+        if self.name() == "podman" {
+            return self.small_vm.as_ref().and_then(|vm| vm.capacity());
+        }
+        None
     }
 
     fn erase_space_runtime(

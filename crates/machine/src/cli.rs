@@ -303,6 +303,7 @@ fn identity(
     c: &Credentials,
     dir: &std::path::Path,
     status: Option<(&str, Option<u64>, &str)>,
+    small_vm: Option<crate::protocol::SmallVmCapacity>,
 ) -> Reply {
     let mut data = json!({
         "machine_id": c.machine_id,
@@ -316,12 +317,35 @@ fn identity(
             data["pending_erasures"] = json!(count);
         }
     }
-    let reply = Reply::new(data).fields([
+    if let Some(capacity) = small_vm {
+        data["small_vm"] = json!(capacity);
+    }
+    let mut reply = Reply::new(data).fields([
         ("machine", c.machine_id.to_string()),
         ("owner", owner_label(c.owner)),
         ("server", c.server.clone()),
         ("credentials", Credentials::path(dir).display().to_string()),
     ]);
+    if let Some(capacity) = small_vm {
+        reply = reply.fields([
+            (
+                "resident plugin VMs",
+                format!("{} of {}", capacity.resident_count, capacity.max_residents),
+            ),
+            (
+                "reserved plugin VM memory",
+                format!(
+                    "{} of {} MiB",
+                    capacity.resident_memory_bytes >> 20,
+                    capacity.memory_limit_bytes >> 20
+                ),
+            ),
+            (
+                "plugin VM idle window",
+                format!("{} s", capacity.idle_seconds),
+            ),
+        ]);
+    }
     if let Some((state, count, hint)) = status {
         reply
             .fields([(
@@ -370,7 +394,7 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             )
             .await
             .map_err(|e| fail("machine enroll", e))?;
-            Ok(identity(&creds, &dir, None))
+            Ok(identity(&creds, &dir, None, None))
         }
         Command::Discard {
             account_id,
@@ -426,8 +450,9 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                 .hint("Run `calternal machine enroll --server URL --code CODE`, or pass the right --dir."),
                 _ => fail("machine status", e),
             })?;
-            let status = match connection::erasure_status_at(&creds, connect_address.as_ref()).await
-            {
+            let report = connection::erasure_status_at(&creds, connect_address.as_ref()).await;
+            let small_vm = report.as_ref().ok().and_then(|status| status.small_vm);
+            let status = match report {
                 Ok(status) if status.pending_erasures == 0 => (
                     "clear",
                     Some(0),
@@ -454,7 +479,7 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                     "Reconnect to the server or ask the operator to check calternal machines list.",
                 ),
             };
-            Ok(identity(&creds, &dir, Some(status)))
+            Ok(identity(&creds, &dir, Some(status), small_vm))
         }
         Command::Run {
             connect_address,
@@ -699,6 +724,7 @@ mod tests {
             &creds(),
             Path::new("/home/u/.local/share/calternal/machine"),
             None,
+            None,
         );
         let text = Output::fixed(false, None, UtcOffset::UTC).render(&r);
         assert!(
@@ -714,6 +740,7 @@ mod tests {
                 Some(2),
                 "Run calternal machine run to apply and acknowledge erasures.",
             )),
+            None,
         );
         both("machine-status", "calternal machine status", Ok(status));
     }
@@ -772,6 +799,7 @@ mod tests {
         let reply = identity(
             &creds(),
             Path::new("/home/u/.local/share/calternal/machine"),
+            None,
             None,
         );
         let terminal = Output::fixed_terminal(false, 120, UtcOffset::UTC, true);

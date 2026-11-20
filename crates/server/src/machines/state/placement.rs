@@ -44,9 +44,7 @@ impl State {
                 self.end_for_placement(lease, "shared space machine changed", false);
                 continue;
             }
-            let small = l.row.worker
-                && l.row.image.as_deref()
-                    == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE);
+            let small = l.is_small_vm();
             let (checkpoint, erasures) = if small {
                 match registry::checkpoint::placement(&self.db, l.row.space) {
                     Ok(placement) => placement,
@@ -71,7 +69,11 @@ impl State {
                 })
                 .filter(|m| registry::readiness::connected(m, settings))
                 .map(|m| {
-                    let free = self.free_for(m, sponsor, settings);
+                    let free = if small {
+                        self.free_small_vm(m)
+                    } else {
+                        self.free_for(m, sponsor, settings)
+                    };
                     memory_blocked |= free == 0 && self.free_slots(m) > 0;
                     (m, free)
                 })
@@ -101,7 +103,12 @@ impl State {
         };
         let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
         if self.machines.get(&machine).is_none_or(|m| {
-            !registry::readiness::connected(m, settings) || self.free_for(m, sponsor, settings) == 0
+            !registry::readiness::connected(m, settings)
+                || if l.is_small_vm() {
+                    self.free_small_vm(m) == 0
+                } else {
+                    self.free_for(m, sponsor, settings) == 0
+                }
         }) {
             return;
         }
@@ -169,6 +176,7 @@ impl State {
                 );
                 continue;
             };
+            let small = l.is_small_vm();
             let l = self
                 .leases
                 .get_mut(&r.lease_id)
@@ -217,10 +225,13 @@ impl State {
                 continue;
             } else if l.state == LeaseState::Waiting
                 && l.row.last_machine == Some(machine)
-                && self
-                    .machines
-                    .get(&machine)
-                    .is_some_and(|m| self.free_for(m, sponsor, settings) > 0)
+                && self.machines.get(&machine).is_some_and(|m| {
+                    if small {
+                        self.free_small_vm(m) > 0
+                    } else {
+                        self.free_for(m, sponsor, settings) > 0
+                    }
+                })
             {
                 self.assign(r.lease_id, machine, settings);
             } else {

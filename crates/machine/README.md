@@ -116,6 +116,13 @@ and networking, drops privileges, and uses per-worker cgroup limits. Snapshots
 contain no live package process. A restored guest must acknowledge kernel
 reseed before it can stage and start a fresh package.
 
+The small VM JSON accepts `idle_seconds` (default 900) and
+`resident_memory_mib` (default `memory_mib` × `max_guests`). The machine reserves
+256 MiB of guest RAM for each placement. A full machine sleeps the least
+recently used idle guest before admitting another space. Calls arriving during
+sleep join the same teardown before the next wake. `calternal machine status`
+reports resident count, reserved guest RAM and the configured idle window.
+
 
 
 First-owner deployments start their machine service before setup. The server

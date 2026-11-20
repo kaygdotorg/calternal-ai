@@ -6,7 +6,10 @@ use super::{
 use crate::{
     api::{Shared, authorization},
     auth::{Directory, Identity},
-    machines::{MachineService, space_channel::Connected},
+    machines::{
+        MachineService,
+        space_channel::{Connected, HeldPlacement},
+    },
     store::sha256_hex,
 };
 use calternal_auth::spaces::Spaces;
@@ -122,37 +125,6 @@ fn item_target_matches(kind: &str, id: Uuid, input: &Value) -> bool {
     ItemTarget::deserialize(input).is_ok_and(|target| target.kind == kind && target.item_id == id)
 }
 
-struct HeldPlacement {
-    service: Arc<MachineService>,
-    account: AccountId,
-    lease: Uuid,
-    runtime: tokio::runtime::Handle,
-    settled: bool,
-}
-
-impl HeldPlacement {
-    async fn suspend(&mut self) -> Result<(), Error> {
-        let (service, account, lease) = (self.service.clone(), self.account, self.lease);
-        crate::blocking::spawn(move || service.sleep_space_run(account, lease))
-            .await
-            .map_err(|_| unavailable())??;
-        self.settled = true;
-        self.service.clone().wait_worker_stopped(lease).await
-    }
-}
-
-impl Drop for HeldPlacement {
-    fn drop(&mut self) {
-        if self.settled {
-            return;
-        }
-        let (service, account, lease) = (self.service.clone(), self.account, self.lease);
-        self.runtime.spawn(async move {
-            let _ = crate::blocking::spawn(move || service.stop_run(account, lease)).await;
-        });
-    }
-}
-
 pub(crate) async fn invoke<D: Directory>(
     state: Shared<D>,
     actor: Identity,
@@ -174,9 +146,14 @@ pub(crate) async fn invoke<D: Directory>(
     };
     // Only cold wake enters the authority worker for preflight or the machine
     // registry for placement. Warm invocations use the pinned space reader.
-    let awake = loop {
+    let (awake, usage) = loop {
         let mut wake = approval.wake.awake.lock().await;
         if let Some(awake) = wake.as_ref() {
+            if awake.sender.is_live()
+                && let Some(usage) = awake.admit()?
+            {
+                break (awake.clone(), usage);
+            }
             if let Some(mut drained) = awake.drain_waiter() {
                 drop(wake);
                 tokio::time::timeout(
@@ -187,9 +164,6 @@ pub(crate) async fn invoke<D: Directory>(
                 .map_err(|_| unavailable())?
                 .map_err(|_| unavailable())?;
                 continue;
-            }
-            if awake.sender.is_live() {
-                break awake.clone();
             }
         }
         {
@@ -208,20 +182,24 @@ pub(crate) async fn invoke<D: Directory>(
                 .or_else(|| state.store.machines())
                 .ok_or_else(unavailable)?;
             let awake = wake_space(&state, &approval, actor.id, service).await?;
+            let usage = awake.admit()?.ok_or_else(unavailable)?;
             *wake = Some(awake.clone());
-            break awake;
+            break (awake, usage);
         }
     };
     awake
-        .invoke(Scope {
-            actor: actor.id,
-            installation,
-            package: approval.package.clone(),
-            epoch: awake.epoch,
-            operation: approval.operation.clone(),
-            kind: approval.kind.clone(),
-            item: input.item_id,
-        })
+        .invoke_reserved(
+            Scope {
+                actor: actor.id,
+                installation,
+                package: approval.package.clone(),
+                epoch: awake.epoch,
+                operation: approval.operation.clone(),
+                kind: approval.kind.clone(),
+                item: input.item_id,
+            },
+            usage,
+        )
         .await
 }
 
@@ -235,29 +213,15 @@ async fn wake_space<D: Directory>(
     account: AccountId,
     service: Arc<MachineService>,
 ) -> Result<Arc<Awake>, Error> {
-    let scheduler = service.clone();
-    let pinned = approval.clone();
-    let runtime = tokio::runtime::Handle::current();
-    let placement = crate::blocking::spawn(move || {
-        scheduler.check_space_channel_available(pinned.space)?;
-        let run = scheduler.request_space_vm(
+    let placement = service
+        .place_space_vm(
             account,
-            Uuid::new_v4(),
             PluginWorker {
-                space_id: pinned.space,
-                source: pinned.worker_source.clone(),
+                space_id: approval.space,
+                source: approval.worker_source.clone(),
             },
-        )?;
-        Ok::<_, Error>(HeldPlacement {
-            service: scheduler,
-            account,
-            lease: run.lease_id,
-            runtime,
-            settled: false,
-        })
-    })
-    .await
-    .map_err(|_| unavailable())??;
+        )
+        .await?;
     let connected = service
         .open_space_channel(account, placement.lease, approval.package.clone())
         .await?;
@@ -277,7 +241,6 @@ async fn wake_space<D: Directory>(
         Arc::new(reader),
         &approval.package,
         Some((Arc::downgrade(&approval.wake), placement)),
-        awake::IDLE,
     )
     .await
 }
@@ -289,15 +252,7 @@ async fn exchange(
     reader: Arc<ItemHeadReader>,
     scope: Scope,
 ) -> Result<Value, Error> {
-    let awake = Awake::attach(
-        connected,
-        authority,
-        reader,
-        &scope.package,
-        None,
-        awake::IDLE,
-    )
-    .await?;
+    let awake = Awake::attach(connected, authority, reader, &scope.package, None).await?;
     let result = awake.invoke(scope).await;
     awake.fence.close();
     result

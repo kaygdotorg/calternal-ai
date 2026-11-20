@@ -206,7 +206,7 @@ fn dormant_space_runtime_erasure_replays_for_both_owners() {
                 .as_mut()
                 .unwrap()
                 .capacity
-                .small_plugin_vm = true;
+                .small_vm = Some(super::small_vm_capacity(1));
         }
         let run = service
             .request_space_vm(
@@ -305,7 +305,7 @@ fn space_report(ack: u64, slots: u32, draining: bool) -> SyncRequest {
         discards: vec![],
         capacity: Capacity {
             max_sandboxes: slots,
-            small_plugin_vm: true,
+            small_vm: Some(super::small_vm_capacity(slots)),
             available_memory_bytes: Some(64 << 30),
             ..Default::default()
         },

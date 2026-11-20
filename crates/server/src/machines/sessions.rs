@@ -112,7 +112,7 @@ impl MachineService {
         Ok(challenge)
     }
 
-    /// Read this machine's outstanding erasures without replacing its session.
+    /// Read this machine's outstanding erasures and live VM use without replacing its session.
     /// A single-use challenge binds the proof to the enrolled key.
     pub fn erasure_status(
         &self,
@@ -141,6 +141,11 @@ impl MachineService {
             .map_err(|_| denied())?;
         Ok(calternal_machine::protocol::ErasureStatus {
             pending_erasures: super::erasure_queue::count(&st.db, request.machine_id)?,
+            small_vm: machine
+                .live
+                .as_ref()
+                .filter(|_| super::readiness::connected(machine, &self.settings))
+                .and_then(|live| live.capacity.small_vm),
         })
     }
 
@@ -361,6 +366,7 @@ impl MachineService {
         let readiness_changed = live.capacity.max_sandboxes != req.capacity.max_sandboxes
             || live.capacity.running_sandboxes != req.capacity.running_sandboxes
             || live.capacity.available_memory_bytes != req.capacity.available_memory_bytes
+            || live.capacity.small_vm != req.capacity.small_vm
             || live.draining != req.draining;
         live.capacity = req.capacity;
         // Closing or not-yet-reported leases still count against this sample.

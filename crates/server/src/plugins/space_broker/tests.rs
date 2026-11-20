@@ -176,6 +176,9 @@ impl Fixture {
                 channel: host.unwrap(),
                 grants: self.grants.clone(),
                 restore_consumed: tokio::sync::watch::channel(true).1,
+                residency: Arc::new(crate::machines::space_channel::Residency::new(
+                    Duration::from_secs(calternal_machine::protocol::SMALL_VM_IDLE_SECONDS.into()),
+                )),
             },
             runtime.unwrap(),
         )
@@ -312,20 +315,20 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_ticket_in_flight_keeps_the_carrier_awake_past_idle() {
     let fixture = tokio::task::spawn_blocking(Fixture::new).await.unwrap();
-    let (connected, mut runtime) = fixture.carrier().await;
+    let (mut connected, mut runtime) = fixture.carrier().await;
     let item = tokio::task::block_in_place(|| fixture.write(Uuid::now_v7()));
     let scope = fixture.scope(&connected.channel, item.id);
     let reader =
         tokio::task::block_in_place(|| fixture.content.item_head_reader(fixture.space)).unwrap();
     runtime.ready(&fixture.pin).unwrap();
     let idle = Duration::from_millis(150);
+    connected.residency = Arc::new(crate::machines::space_channel::Residency::new(idle));
     let awake = Awake::attach(
         connected,
         fixture.auth.clone(),
         Arc::new(reader),
         &fixture.pin,
         None,
-        idle,
     )
     .await
     .unwrap();
@@ -385,7 +388,6 @@ async fn a_full_carrier_refuses_with_busy_before_checking_authority() {
         Arc::new(reader),
         &fixture.pin,
         None,
-        awake::IDLE,
     )
     .await
     .unwrap();
