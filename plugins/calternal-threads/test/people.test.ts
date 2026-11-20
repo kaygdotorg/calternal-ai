@@ -77,13 +77,14 @@ test("an invited agent receives only scoped messages whose authors have consente
   await assert.rejects(handlers["threads.send"]({ item, text: "Bypass", ...host.choose() },
     host.context("ordinary-send", "threads.send")), /invitation/i);
   await run("single-withheld", { message: second.message }, []);
+  await run("caller-old-message-withheld", { message: first.message }, []);
   await run("single", { message: third.message }, [cara]);
-  await run("range", { from: first.message, through: second.message }, []);
-  await run("whole", { whole: true }, [cara]);
+  await run("range", { from: first.message, through: second.message }, [alice]);
+  await run("whole", { whole: true }, [alice, cara]);
   assert.deepEqual(host.invitedInputs.map(input => input.messages.map(message => message.text)), [
-    [], ["Cara visible"], ["Alice visible"], ["Alice visible", "Cara visible"],
+    [], [], ["Cara visible"], ["Alice visible"], ["Alice visible", "Cara visible"],
   ]);
-  assert.equal(decode(host.markdown(item)).messages.filter(message => message.author.kind === "agent").length, 4);
+  assert.equal(decode(host.markdown(item)).messages.filter(message => message.author.kind === "agent").length, 5);
 });
 
 test("a grant for the previous body cannot disclose an edit or deleted message", async () => {
@@ -102,15 +103,16 @@ test("discovery uses the checked creator policy per item and excludes a people t
   const { created: ownThread } = await handlers["threads.create"](
     { title: "My agent conversation" }, host.context("own-agent", "threads.create"),
   );
+  assert.deepEqual(host.discoverAsAttempt(alice), [ownThread]);
+  assert.deepEqual(host.discoverAsAttempt(bob), []);
   const { job_id } = await handlers["threads.send"]({ item: ownThread, text: "Hello", ...host.choose() },
     host.context("own-agent-send", "threads.send"));
   await host.run(job_id);
-  assert.deepEqual(host.discoverAsAttempt(alice), [ownThread]);
-  assert.deepEqual(host.discoverAsAttempt(bob), []);
+  assert.deepEqual(host.discoverAsAttempt(alice), []);
 
-  const invite = host.invitedContext(alice, "explicit-invite", { item, scope: { message: first.message }, consent: [] });
+  const invite = host.invitedContext(alice, "explicit-invite", { item, scope: { message: first.message }, consent: [alice] });
   await people.callAgent({ item, prompt: "Read this selection" }, invite);
-  assert.deepEqual(host.discoverAsAttempt(alice), [ownThread]);
+  assert.deepEqual(host.discoverAsAttempt(alice), []);
   assert.deepEqual(host.invitedInputs.map(input => input.messages.map(message => message.text)), [["Alice visible"]]);
 });
 
@@ -177,7 +179,7 @@ test("the conversation file example has two people, one agent and a separate pri
   await people.edit({ item, message: answer.message, text: "Can we meet by the garden gate at 10:30?" },
     context(alice, "example-edit", "09:04"));
   await people.remove({ item, message: discarded.message }, context(bob, "example-delete", "09:05"));
-  const invite = host.invitedContext(alice, "example-agent", { item, scope: { message: answer.message }, consent: [] },
+  const invite = host.invitedContext(alice, "example-agent", { item, scope: { message: answer.message }, consent: [alice] },
     "2026-11-20T09:06:00Z");
   await people.callAgent({ item, prompt: "Summarize our meeting time." }, invite);
   await people.consult({ item, prompt: "Consult another agent on a wet-weather backup.", exchanges: 1 },
@@ -203,7 +205,7 @@ test("a displayed name and time survive a hand edit of the body without a length
   assert.match(old, /participants:\n  - p1 \| Alice \| person/);
   assert.doesNotMatch(old, /<!--|length|id="message/);
   const updated = old.replace("> Alice visible", "> The longer hand-edited body.\n>\n> ### Someone · 2026-11-20 12:00 UTC {#m-aabbccddeeff0011 by=p2}");
-  const publish = await host.stageUnproven(item, Buffer.from(updated));
+  const { publish } = await host.stageUnproven(item, Buffer.from(updated));
   await publish();
   assert.equal((await people.message({ item, message: first.message }, ctx(bob, "read-edited-file"))).text,
     "The longer hand-edited body.\n\n### Someone · 2026-11-20 12:00 UTC {#m-aabbccddeeff0011 by=p2}");
@@ -241,27 +243,25 @@ test("the people picker and new shares use current shared-group visibility", asy
   const people = peopleFromBundle();
   const pendingInvite = "019a0000-0000-7000-8000-000000000004";
   host.setDirectoryGroups([
-    { source: "local", members: [alice] },
-    { source: "oidc", members: [alice, bob] },
+    { id: "another-group", source: "local", members: [alice, cara] },
+    { id: "checked-group", source: "oidc", members: [alice, bob] },
   ]);
-  const ctx = host.peopleContext(alice, "pick");
+  const ctx = host.peopleContext(alice, "pick", undefined, undefined, "checked-group");
   assert.deepEqual((await ctx.visiblePeople!()).map(({ id }) => id), [alice, bob]);
   assert.deepEqual((await ctx.visiblePeople!([cara, pendingInvite])), []);
   for (const id of [cara, pendingInvite]) {
     await assert.rejects(people.create({ title: "Unavailable", participants: [id] }, ctx), /^Error: Participants unavailable\.$/);
   }
   assert.equal(host.files.size, 0);
-  host.setDirectoryCapabilities(alice, ["people.invite", "groups.manage"]);
-  assert.deepEqual((await ctx.visiblePeople!()).map(({ id }) => id), [alice, bob]);
-  host.setDirectoryCapabilities(alice, ["people.manage"]);
-  assert.deepEqual((await ctx.visiblePeople!()).map(({ id }) => id), [alice, bob, cara]);
-  host.setDirectoryCapabilities(alice, []);
+  const other = host.peopleContext(alice, "other-picker", undefined, undefined, "another-group");
+  assert.deepEqual((await other.visiblePeople!()).map(({ id }) => id), [alice, cara]);
+  await assert.rejects(people.create({ title: "Mixed", participants: [bob, cara] }, ctx), /Participants unavailable/);
 
   const input = { title: "Named share", participants: [bob] };
   const { created: item } = await people.create(input, ctx);
   assert.deepEqual(decode(host.markdown(item)).participants.map(({ id }) => id), [alice, bob]);
   host.setDirectoryGroups([]);
-  assert.deepEqual((await ctx.visiblePeople!()).map(({ id }) => id), [alice]);
+  assert.deepEqual(await ctx.visiblePeople!(), []);
   await assert.rejects(people.create(input, ctx), /Participants unavailable/);
   assert.equal(host.conversationAccess(item, bob), "full");
 });
@@ -283,7 +283,7 @@ test("a membership change between picker lookup and shared creation blocks the w
 test("a call keeps its selection across later posts, with revocable one-call and always consent", async () => {
   const { host, people, ctx, item, first, second, post } = await setup();
   host.setAlwaysConsent(item, bob, true);
-  const call = (request: string, consent: string[]) => host.invitedContext(alice, request, { item, scope: { whole: true }, consent });
+  const call = (request: string, consent: string[]) => host.invitedContext(alice, request, { item, scope: { whole: true }, consent: [alice, ...consent] });
   const original = call("snapshot", [cara]);
   let savedTool: ((id: string) => { text: string } | undefined) | undefined;
   const late = await post(bob, "after-call", "Too late for the first selection");
@@ -330,6 +330,7 @@ test("a consultation is bounded, linked and posts exactly one result to the conv
 
 test("ask-each-time authorization expires and is never reused by a later call", async () => {
   const { host, people, item } = await setup();
+  host.setAlwaysConsent(item, alice, true);
   const call = (name: string, consent: string[]) =>
     host.invitedContext(alice, name, { item, scope: { whole: true }, consent });
   const approved = call("one-approved-call", [bob]);

@@ -1,9 +1,9 @@
 # Threads app spike · 2026-11-20
 
 The lane starts from dev `80864d0d`. The spike has rerun against
-14.30 (`b89586dd`), 14.31 (`00828198`) and 14.32 (`3ca11613`).
-The current package pin is draft 14.33 at
-`47024c0f0b31c3db6406feaf4950b0f95553ec02`. It follows the November 20
+14.30 (`b89586dd`), 14.31 (`00828198`), 14.32 (`3ca11613`) and
+14.33 (`47024c0f`). The current pin for both packages is draft 14.34 at
+`b4d0f20df45961d9b5c4e1d44e63657de2752b73` on `origin/lane/v2-host-base`. It follows the November 20
 decision that the Threads app (`calternal-threads`) owns the conversation file and the selected harness
 owns its working log. The lane issue is [#92](https://git.kayg.org/kayg/calternal-ai/issues/92).
 
@@ -33,11 +33,12 @@ nix develop -c npm test -w @calternal/threads
 nix develop -c npm run conformance -w @calternal/threads
 ```
 
-The build uses the 14.33 revision-aware SDK builder. It pins both
+The build uses the 14.34 revision-aware SDK builder. It pins both
 manifest/worker packages, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-On dev-01, all 32 tests and the repository documentation gate passed. Conformance tool 1.1.0 independently
-accepted both packages. The verified entry asset still uses scripted
+On dev-01, all 34 tests and both Conformance tool 1.1.0 checks passed
+at the 14.34 pin. The repository documentation gate passed in the earlier
+afternoon run. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
 The agent-thread tests exercise create, first Send with the contributed harness,
@@ -231,6 +232,54 @@ revisions. The staged test covers discovery before and after publication
 and the attempted worker clear. It does not prove live ref invalidation
 or a host recertification path.
 
+
+### Revision 14.34 disposition
+
+| Finding | Status | Evidence or remaining gap |
+| --- | --- | --- |
+| File custody | **CLOSED** | The Threads app writes the conversation and the harness owns its separate log. |
+| Harness ingress and egress | **CLOSED** | Admission pins input and the checked contribution returns bounded output. |
+| Harness entry and packaging | **CLOSED** | Both packages pass the ABI, asset and execution policy checks. Placement remains fixture-only. |
+| Contribution target identity | **CLOSED** | The qualified app and contribution interfaces match. |
+| Item create, save, range and placement | **CLOSED** | Typed inline and staged operations pass. Exact begin and final-save replay return the committed receipt after stage retirement. Changed operands conflict. |
+| Rename and lifecycle projection | **PARTLY** | The atomic body, title and leaf and archived predicate are defined. A folder move on rename remains open. |
+| Worker context and receipts | **PARTLY** | The pinned input and author context pass; §3 staged replay identities are now specified and exercised in the fixture. Sealed dispatch and durable receipt recovery still need host tests. |
+| Create outcome | **CLOSED** | Checked creation still maps to the activation result. |
+| Stable identifiers and message links | **CLOSED** | Stable message anchors, portable locators and logical agent identities pass. |
+| Alarm lateness | **CLOSED** | The worker consumes the missed bit and applies the authored grace period. |
+| Snapshot text bounds | **CLOSED** | Page tests cover complete messages, code points and aggregate bytes. |
+| SDK and guide | **PARTLY** | Both packages build with the pinned SDK. The installable guide update and host parity remain open. |
+| Conformance tool crash | **CLOSED** | Tool 1.1.0 accepts both packages at 14.34. |
+| People-thread custody and participant refs | **PARTLY** | §3 pins one starter-space item and checked full item grants, including item sharing. Checked lookup and atomic creation and grant wires remain open. |
+| People-message edits and tombstones | **PARTLY** | Current-head saves and links work. History, search, cache and offline propagation remain open. |
+| Private per-person thread state | **PARTLY** | `attempt_disclosure.private_state` defines actor/package/item scope and live access. Compare-and-set, retention and wire shapes remain open. |
+| Scope and consent for called-in agents | **PARTLY** | `attempt_disclosure` pins selection, both consent modes, revocation and fences. Trusted authorship, selection evidence and grant wires remain open. The fixture withholds even the caller's old messages without a grant. |
+| Called-in agent data and output | **PARTLY** | The policy limits tools to the checked selection and fences delivery and derived output. Per-author projection and tools-on isolation still need live qualification. |
+| Placement for a private people conversation | **PARTLY** | Selected-material calls use the caller's enrolled machine and login in a personal space or the configured binding in a shared space. The checked placement exchange and qualification remain open. |
+| Kind-wide denial of discovery (14.31) | **CLOSED** | The decision is still per item. A checked fresh creator item is discoverable by the creator's attempts. Ordinary opaque continuation loses that eligibility under 14.34. See the new finding below. |
+| Harness egress and OCI acquisition fields (14.31) | **CLOSED** | The fields pass package checks; registry and egress enforcement need live qualification. |
+| Generated `ItemSave` and `ItemViewPage` (14.31) | **CLOSED** | The generated fields used by both packages still compile. |
+| First Send target operand (14.31) | **CLOSED** | Send and alarms use top-level `item`, and the host keeps the contributed input separate. |
+| Encoded contribution limits (14.31) | **CLOSED** | Both LF-terminated frames are bounded before admission and at dispatch. |
+| Participant identity (14.31) | **CLOSED** | The stored logical identity remains separate from the checked harness ref. |
+| Preflight for encoded contribution size (14.32) | **CLOSED** | Oversized Send and alarms return 413 before any prompt, receipt, revision, provider call or job is saved. |
+| Provenance for privacy downgrades (14.32) | **CLOSED** | Staged import sets `consent_only` at publication and the worker cannot clear it. Unproven continuation now has the same rule. |
+| Generic contribution input types and alarm dependency (14.33) | **OPEN** | The generator and the relevant wire definitions are unchanged. The object-only type and missing conditional alarm requirement remain. |
+| Viewer-scoped row fields | **PARTLY** | The generic private-record policy is defined. Viewer-specific counts, invalidation and their UI binding still need a checked surface. |
+| Receipt, typing and device routing | **OPEN** | Muted-chat delivery, the account preference and iOS device state still need host exchanges. |
+| Read-only v1 cutover reader | **OPEN** | §3 pins the format identifier scheme. The existing v1 reader behavior is listed below and still needs implementation at cutover. |
+| Agent consultation | **PARTLY** | §3 and `attempt_disclosure.consultation` specify a linked item, child-execution ceilings and an independent disclosure check. Live child admission and result authority are unqualified. |
+| Account picker and atomic named grants | **PARTLY** | `group_people_scope` pins one checked common group. The fixture exercises mixed-group refusal and revalidation at write. Package-facing exchange and live bootstrap remain open. |
+| Account invites and contact identity | **PARTLY** | Group members may issue scoped invites under 14.34. Contact association and package-facing invitation, redemption and default-space bootstrap remain for Contacts. |
+| Existing sharing rights and group removal | **PARTLY** | 14.34 grants editing and sharing rights within the item. The named-grant operation mapping and consequences for an existing cross-space item grant after removal from the group remain open. |
+| Account lookup versus agent discovery | **CLOSED** | `group_people_scope` and `attempt_disclosure` explicitly govern separate checks. Future Contacts policy and live host paths remain open. |
+
+#### Findings added at 14.34
+
+| Status and reference | What the app needed | Smallest change |
+| --- | --- | --- |
+| **OPEN** · §3 and catalogue `execution_attempt_authority.discovery.item_policy.write` | The checked initial create can set `creator_only`. An ordinary worker body save or append has no generic way to prove sole-creator continuation. In the fixture a personal thread disappears from the creator's agent discovery after the first Send writes its prompt and reply. The job still completes. A rename that rewrites the Markdown likewise has no checked continuation. | Specify a generic checked path that binds exact authored and authorized derived material to the current revision and the creator's authority, or state which personal thread writes intentionally end discovery. Keep the fail-closed behavior until the checked path is enabled. |
+| **PARTLY** · §3 and catalogue `group_people_scope.lookup`, `group_people_scope.writes` | The old administration directory can show all accounts to `people.manage` and its ordinary visibility includes any shared group. The Threads picker may use only one checked common group. The old invite capability and the new own-group member rule also differ. | Keep management visibility separate. Pin the checked group selector and a group-scoped invite grant that uses the existing single-use redemption flow. Retain the checked, idempotent default-space bootstrap. |
 
 ### Messaging decisions fixture
 
@@ -460,16 +509,19 @@ outside this fixture change.
 
 ### Contacts and sharing findings
 
-The Threads app follows the existing account model. The picker lists
-host-verified accounts visible to the starter. A person can see themself
-and fellow members of local or mirrored groups. `people.manage` grants
-visibility across the directory. The fixture uses the same predicate for
-the picker, selected-account lookup and commit of the named grants. It
-rejects hidden and unknown IDs with the same error, including on a replay.
+The Threads app follows the existing account model. The existing
+management directory grants broader visibility through `people.manage`.
+14.34 keeps that protected directory separate and limits the Threads
+picker to the checked common group. The same fixture predicate checks
+the picker, selected-account lookup and commit of named grants. A person
+may appear through a local or mirrored group. The fixture rejects hidden
+and unknown IDs with the same error, including on replay.
 [ADR 0058][adr0058] · [ADR 0060][adr0060] · [Existing share commit][share-commit]
 
-Account invites are single-use onboarding links issued under
-`people.invite`. Redemption creates the account and applies any assigned
+In the existing app, account invites are single-use onboarding links issued
+under `people.invite`. 14.34 allows members to issue links scoped to
+their own group and calls for a default shared space per group. The
+package exchange stays open. Redemption creates the account and applies any assigned
 local memberships together. An account becomes eligible to pick when the
 same directory rule can see it. The picker deals in account IDs. Contact
 cards and CardDAV lists have their own identities and can supply contact
@@ -478,10 +530,10 @@ Contacts adds one. [ADR 0059][adr0059] · [ADR 0063][adr0063] · [ADR 0064][adr0
 
 | Finding | Smallest contract change or decision |
 | --- | --- |
-| **OPEN** · API §§1, 3, 5 and ADRs 0058, 0060. The catalogue has no checked account selector or atomic named-share creation for community plugins. A `people.invite` or `groups.manage` capability alone grants no broader selector visibility. | Provide a host-owned picker source and checked named-share creation driven by the same live visibility predicate. Recheck access before returning saved receipts and when committing grants. Return stable account IDs and display names and keep private group and account details in the directory. |
-| **OPEN** · ADRs 0059, 0063, 0064 and the Contacts handoff. An account invite grants onboarding and group membership. The existing contact file ID and imported card UID identify contact data. Neither supplies a named share for an unregistered recipient. | Keep onboarding in the host. If Contacts later supports an invite from the picker, establish the account through the existing invite flow and check current visibility before sharing. Leave card-to-account association with Contacts. |
-| **OPEN** · Afternoon full participant privileges and the [existing sharing decisions][sharing]. One starter-owned file agrees with the existing owner's-file and named-share model. Existing named grants expose read or edit and leave share management with the owner. The afternoon decision uses “full privileges.” The fixture proves transcript reads and writes with author-only message edits and deletion. | Pin whether full privileges include changing shares or whole-item lifecycle operations such as deletion, and map each operation to an existing capability. The fixture keeps an existing named grant when group visibility changes. ADR 0060 affects directory eligibility immediately, and the existing sharing model revokes named grants separately. Decide whether Threads needs a different rule during the Contacts work. |
-| **OPEN** · ADR 0060 and the afternoon discovery rules govern different checks. Local and mirrored groups control whom people can find and select. Attempt discovery is per item and remains consent-scoped for conversations between people. | Keep group membership as an input to account selection. Keep the agent's selected-content and author-consent check on its separate admission path. Leave live group audiences and further discovery rules to Contacts. |
+| API §§1, 3, 5 and ADRs 0058, 0060. The catalogue has no checked account selector or atomic named-share creation for community plugins. A `people.invite` or `groups.manage` capability alone grants no broader selector visibility. | Provide a host-owned picker source and checked named-share creation driven by the same live visibility predicate. Recheck access before returning saved receipts and when committing grants. Return stable account IDs and display names from the checked group and keep private group and account details in the directory. |
+| ADRs 0059, 0063, 0064 and the Contacts handoff. An account invite grants onboarding and group membership. The existing contact file ID and imported card UID identify contact data. Neither supplies a named share for an unregistered recipient. | Keep onboarding in the host. If Contacts later supports an invite from the picker, establish the account through the existing invite flow and check current visibility before sharing. Leave card-to-account association with Contacts. |
+| Afternoon full participant privileges and the [existing sharing decisions][sharing]. One starter-owned file agrees with the existing owner's-file and named-share model. Existing named grants expose read or edit and leave share management with the owner. 14.34 explicitly includes changing shares within the item. The fixture proves transcript reads and writes with author-only message edits and deletion. | Pin the checked exchange and map whole-item lifecycle operations such as deletion to existing capabilities. The fixture keeps an existing named grant when group visibility changes. ADR 0060 affects directory eligibility immediately, and the existing sharing model revokes named grants separately. Decide whether Threads needs a different rule during the Contacts work. |
+| ADR 0060 and the afternoon discovery rules govern different checks. Local and mirrored groups control whom people can find and select. Attempt discovery is per item and remains consent-scoped for conversations between people. | Keep group membership as an input to account selection. Keep the agent's selected-content and author-consent check on its separate admission path. Leave live group audiences and further discovery rules to Contacts. |
 
 [adr0058]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0058-roles-are-capability-sets.md
 [adr0059]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0059-invites-and-storage-quota.md
@@ -501,7 +553,7 @@ require a cross-owner write grant that the design does not provide.
 The package worker code uses no native Threads dispatch, special plugin ID,
 direct package connection, inherited provider credential, or server-owned
 thread format. The fixture provider port stands in for live execution placement. The
-14.33 fake carries replies through the catalogue's checked contribution
+14.34 fake carries replies through the catalogue's checked contribution
 methods. People-thread invitations still use fixture ports. The harness manifest includes
 an image-shaped fixture digest and a pinned entry that fails closed.
 It cannot launch Claude Code. The real image, login mapping and reviewed
@@ -565,6 +617,14 @@ when visibility changes before confirmation. [ADR 0060][adr0060]
   usable, with an old folder name beside a new title. Recommend the
   original folder for the first release and message links based on
   stable item/message IDs.
+- **When someone leaves a group, do they keep conversations already
+  shared with them?** Contacts needs this answer before enabling named
+  conversation grants. If Bob leaves the garden group, retaining his
+  named grant lets him keep the conversation he helped write until the
+  grant is removed. Revoking it automatically cuts off that history and
+  requires the host to fence access to starter-space items as part of
+  group removal. Follow existing named sharing for the first slice and
+  let the group change immediately restrict future picks. [ADR 0060][adr0060] · [Existing sharing decisions][sharing]
 
 ## Simplification opportunities
 

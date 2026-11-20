@@ -325,9 +325,13 @@ test("an unproven staged replacement sets consent_only and a worker cannot clear
   const creator = "019a0000-0000-7000-8000-000000000001";
   assert.deepEqual(host.discoverAsAttempt(creator), [item]);
   const body = Buffer.from(host.markdown(item) + "Imported material of unproven authorship\n" + "x".repeat(140 * 1024));
-  const publish = await host.stageUnproven(item, body);
+  const { begin, publish } = await host.stageUnproven(item, body);
   assert.deepEqual(host.discoverAsAttempt(creator), [item]);
-  await publish();
+  const receipt = await publish();
+  assert.deepEqual(await begin(), receipt);
+  assert.deepEqual(await publish(), receipt);
+  await assert.rejects(begin(body.length - 1), /conflicting replay/);
+  await assert.rejects(publish("Different save"), /conflicting replay/);
   assert.equal(host.markdown(item), body.toString());
   assert.equal(host.files.get(item)!.discovery, "consent_only");
   assert.deepEqual(host.discoverAsAttempt(creator), []);

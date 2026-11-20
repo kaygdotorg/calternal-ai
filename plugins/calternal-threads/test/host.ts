@@ -47,7 +47,7 @@ const exchanges = {
 } as const;
 const trace: [name: string, value: unknown][] = [];
 
-/** Check the fake's revision 14.33 exchanges against the pinned schemas. */
+/** Check the fake's revision 14.34 exchanges against the pinned schemas. */
 export function checkTrace() {
   const check = fileURLToPath(new URL("../check-shapes.py", import.meta.url));
   const contract = fileURLToPath(new URL("../.build/contract/", import.meta.url));
@@ -78,7 +78,8 @@ const directoryAccounts = [
   actor, "019a0000-0000-7000-8000-000000000002", "019a0000-0000-7000-8000-000000000003",
 ];
 const personLabels: Record<string, string> = Object.fromEntries(directoryAccounts.map((id, index) => [id, ["Alice", "Bob", "Cara"][index]]));
-type DirectoryGroup = { source: "local" | "oidc"; members: readonly string[] };
+const defaultGroup = "threads-group";
+type DirectoryGroup = { id: string; source: "local" | "oidc"; members: readonly string[] };
 const peopleMethods = new Set(["item_create", "item_head", "item_range", "item_save", "item_append", "item_view_context", "item_view_publish"]);
 
 /** One in-memory space. Validates package ownership, exact revisions and
@@ -101,8 +102,7 @@ export class FakeHost {
   invitationClock = (authoredAt: string) => Date.parse(authoredAt);
   private personState = new Map<string, string>();
   private personPreferences = new Map<string, string>();
-  private directoryGroups: readonly DirectoryGroup[] = [{ source: "local", members: directoryAccounts }];
-  private directoryCapabilities = new Map<string, readonly string[]>();
+  private directoryGroups: readonly DirectoryGroup[] = [{ id: defaultGroup, source: "local", members: directoryAccounts }];
   beforeTerminal = async () => {};
   claude = async (text: string) => `Reply to ${text}`;
 
@@ -147,15 +147,19 @@ export class FakeHost {
       trace.push([after, result]);
       return result as T;
     };
-    const { handle } = await call<{ handle: string }>("item_save_begin", {
+    const spec = {
       request_id, item, expected, length: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"),
-    });
+    };
+    const { handle } = await call<{ handle: string }>("item_save_begin", spec);
     for (let offset = 0; offset < bytes.length; offset += 65536) {
       await call("item_save_chunk", { handle, offset, bytes: bytes.subarray(offset, offset + 65536).toString("base64") });
     }
     const { staged } = await call<{ staged: string }>("item_save_seal", { handle });
     // The import has no trusted provenance. The wire save omits the marker.
-    return () => call("item_save", { request_id, item, expected, staged });
+    return {
+      begin: (length = spec.length) => call("item_save_begin", { ...spec, length }),
+      publish: (title?: string) => call("item_save", { request_id, item, expected, staged, ...(title && { patch: { title } }) }),
+    };
   }
 
   attemptRestoreDiscovery(item: string) {
@@ -174,17 +178,11 @@ export class FakeHost {
     this.directoryGroups = groups;
   }
 
-  /** Set the viewer's named capabilities independently of their group memberships. */
-  setDirectoryCapabilities(viewer: string, capabilities: readonly string[]) {
-    this.directoryCapabilities.set(viewer, capabilities);
-  }
-
-  // Mirrors Auth::can_see_person on existing accounts (ADR 0060).
-  private canSeePerson(viewer: string, person: string) {
-    return directoryAccounts.includes(viewer) && directoryAccounts.includes(person) && (
-      viewer === person || this.directoryCapabilities.get(viewer)?.includes("people.manage") ||
-      this.directoryGroups.some(group => group.members.includes(viewer) && group.members.includes(person))
-    );
+  // The package picker uses the checked group, separate from administrative visibility (ADR 0060).
+  private canPickPerson(group: string, viewer: string, person: string) {
+    const members = this.directoryGroups.find(entry => entry.id === group)?.members;
+    return directoryAccounts.includes(viewer) && directoryAccounts.includes(person) &&
+      members?.includes(viewer) && members.includes(person);
   }
 
   conversationAccess(item: string, person: string) {
@@ -213,7 +211,7 @@ export class FakeHost {
     };
   }
 
-  peopleContext(person: string, request: string, authored_at = now, actor_label = personLabels[person]): PeopleContext {
+  peopleContext(person: string, request: string, authored_at = now, actor_label = personLabels[person], group = defaultGroup): PeopleContext {
     const call: Context["call"] = async (method, input) => {
       assert.ok(peopleMethods.has(method));
       const wire = exchanges[method as keyof typeof exchanges];
@@ -224,10 +222,10 @@ export class FakeHost {
     };
     return {
       author: { request_id: request, actor: person, authored_at, ...(actor_label && { actor_label }) }, call,
-      visiblePeople: async (ids = directoryAccounts) => ids.filter(id => this.canSeePerson(person, id))
+      visiblePeople: async (ids = directoryAccounts) => ids.filter(id => this.canPickPerson(group, person, id))
         .map(id => ({ id, name: personLabels[id] })),
       createShared: async (input, people) => {
-        if (!people.includes(person) || people.some(id => !this.canSeePerson(person, id))) {
+        if (!people.includes(person) || people.some(id => !this.canPickPerson(group, person, id))) {
           throw new Error("Participants unavailable.");
         }
         assert.equal(input.kind, "threads");
@@ -264,7 +262,7 @@ export class FakeHost {
     const permission = (author: string) => this.consent.get(JSON.stringify([item, author])) ?? { generation: 0, always: false };
     const grants = new Map((file.people ?? []).flatMap(author => {
       const grant = permission(author);
-      if (author === person || grant.always) return [[author, { ...grant, until: Infinity }] as const];
+      if (grant.always) return [[author, { ...grant, until: Infinity }] as const];
       if (consent.includes(author)) return [[author, { ...grant, until: Date.parse(authored_at) + 5 * 60_000 }] as const];
       return [];
     }));
@@ -382,7 +380,8 @@ export class FakeHost {
       return file;
     };
     const requestId = args.request_id ?? request;
-    const commit = (effect: () => unknown) => this.receipt(`${owner}:${receiptActor}:${method}:${requestId}`, input, effect);
+    const receiptKey = (name: string) => `${owner}:${receiptActor}:${name}:${requestId}`;
+    const commit = (effect: () => unknown) => this.receipt(receiptKey(method), input, effect);
     switch (method) {
       case "item_create": return commit(() => {
         const create = input as ItemCreate;
@@ -408,14 +407,17 @@ export class FakeHost {
           path, archived: false, title: String(create.metadata.title) });
         return { item, revision, locator: { space: this.personalSpace(receiptActor), id: item }, receipt: requestId };
       });
-      case "item_save_begin": return commit(() => {
+      case "item_save_begin": {
         const spec = input as ItemStageBegin;
-        assert.equal(spec.expected, writable().revision);
-        assert.ok(spec.length > 0 && spec.length <= 2 * 1024 * 1024);
-        const handle = this.id("stage");
-        this.stages.set(handle, { spec, chunks: [], length: 0 });
-        return { handle };
-      });
+        const target = writable();
+        return commit(() => {
+          assert.equal(spec.expected, target.revision);
+          assert.ok(spec.length > 0 && spec.length <= 2 * 1024 * 1024);
+          const handle = this.id("stage");
+          this.stages.set(handle, { spec, chunks: [], length: 0 });
+          return { handle };
+        });
+      }
       case "item_save_chunk": {
         const { handle, offset, bytes } = input as ItemStageChunk;
         const stage = this.stages.get(handle);
@@ -439,7 +441,7 @@ export class FakeHost {
         const save = input as ItemSave;
         assert.ok(args.attempt_discovery === undefined || args.attempt_discovery === "consent_only", "host-owned marker");
         const target = writable();
-        if (save.expected !== target.revision && !this.receipts.has(`${owner}:${receiptActor}:${method}:${requestId}`)) {
+        if (save.expected !== target.revision && !this.receipts.has(receiptKey(method))) {
           return { status: 409, code: "head_conflict", current: this.head(save.item, target) };
         }
         return commit(() => {
@@ -455,8 +457,12 @@ export class FakeHost {
           target.history.set(revision, body);
           target.revision = revision;
           if (typeof save.patch?.title === "string") target.title = save.patch.title;
-          if (stage || save.attempt_discovery === "consent_only" || receiptActor !== target.creator) target.discovery = "consent_only";
-          return { item: save.item, revision, locator: { space: target.space, id: save.item }, receipt: requestId };
+          if (stage || save.body !== undefined || save.attempt_discovery === "consent_only" || receiptActor !== target.creator) {
+            target.discovery = "consent_only";
+          }
+          const result = { item: save.item, revision, locator: { space: target.space, id: save.item }, receipt: requestId };
+          if (stage) this.receipts.get(receiptKey("item_save_begin"))!.result = result;
+          return result;
         });
       }
       case "item_head": {
@@ -526,7 +532,7 @@ export class FakeHost {
           const body = Buffer.concat([prior, addition]);
           target.history.set(revision, body);
           target.revision = revision;
-          if (args.attempt_discovery === "consent_only" || receiptActor !== target.creator) target.discovery = "consent_only";
+          target.discovery = "consent_only";
           return { revision, end_offset: body.length, receipt: requestId };
         });
         if (owner === "threads" && this.loseNextAppendAck) {
