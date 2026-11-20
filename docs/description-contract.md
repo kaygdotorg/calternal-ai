@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.36 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.37 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -622,8 +622,10 @@ Renew the lease under §6 if needed while awaiting output.
 
 The Send operation declares `write_origins.host_input: "text"` for the
 checked composer field. The host binds that submission to the admitted
-job. The owning job can preserve discovery for the prompt only by
-verifying the written bytes under the [catalogue’s authorship rule][write-authorship].
+job. The owning job appends it using an attested body with source kind
+`input`. Each reply uses source kind `output` and its checked sequence.
+The host composes and records each contiguous message under the
+[catalogue’s authorship rule][write-authorship].
 
 **Personal space.** Open the app and item, pick Example harness in the
 composer and keep its short option ref `h-opt`. Use the selected option's

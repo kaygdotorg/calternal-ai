@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.36 draft
+# Plugin API v2 · revision 14.37 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -465,7 +465,7 @@ its receipt, with long work as a durable job.
 | Proxy · `proxy_request`, `credential_call` | Approved install line and bounded HTTPS request → bounded response. The host-only sealed content route exposes authorized opaque image refs to the renderer. Unapproved destination is `403`, oversize `413`, quota `429`. Anonymous media keeps the existing 10 MB, three redirects and 16 hosts/minute fixture ceilings. Typed call returns the profile output or `403` without contacting the endpoint. |
 | Execution · `execution_start`, `execution_status`, `execution_input`, `execution_spawn_child`, `execution_stop` | The catalogue types each call. The host issues the admitted intent, resolves provider and placement, and binds every effect to the exact attempt under live authority. Start, input, child and Stop use checked receipts. |
 | Alarms · `alarm_set`, `alarm_cancel` | Declared replayable alarm job, checked input and one UTC instant → durable receipt. Supply the typed `AlarmSet.harness` exactly for an execution alarm under the catalogue’s admission rule. The job's host metadata carries scheduled and actual time. |
-| Files · `item_append` | Checked item, expected revision and bounded opaque bytes → durable revision, byte boundary and receipt. |
+| Files · `item_append` | Checked item, expected revision and opaque bytes or attested body → durable revision, byte boundary and receipt. |
 | Item views · `item_view_publish` | Declared snapshot slot, checked exact audience and source revision → retained native description and receipt. |
 
 
@@ -624,14 +624,18 @@ Threads opts into the catalogue’s [per-item discovery rule][item-discovery].
 A person's own agent thread can be `creator_only` and stays discoverable
 to their own authorized attempts. A people conversation is `consent_only`
 and stays outside attempt list, search, direct reads and derived output.
-An operation opts in with manifest `write_origins`. Apply the
-[catalogue’s checked authorship rule][item-authorship] at the writer.
-The host binds the exact submitted component text or validated attempt
-output and verifies the bytes before preserving discovery. Raw imports,
-including inside the same authenticated operation, remain opaque.
-Qualification includes an ordinary Send and a same-invocation import
-with the marker omitted. For an app's formatted records, the host
-needs a qualified generic encoding that verifies the complete write.
+An operation opts in with manifest `write_origins`. For an
+[attested write][attested-write], the host concatenates the package's
+prefix, the exact checked input or attempt output, and the package's
+suffix. Prefix and suffix are each at most 512 UTF-8 bytes and are
+attributed to the package. The middle is selected by reference to its
+checked source. The host records the full span and the middle attribution
+in the same transaction. Threads stores the message text as plain
+paragraphs in that middle span. One message edit replaces one recorded
+span, and deletion replaces it with an empty middle. Notes can save a
+complete host-captured editor snapshot with empty framing. Plugin-built
+whole bodies and imports remain opaque. Follow the
+[catalogue's authorship rule][item-authorship] for discovery.
 An authorized writer can request protection. Only the host can clear it
 on verified provenance. The harness receives selected material through
 the [disclosure boundary][attempt-disclosure] and has no direct read or
@@ -1709,3 +1713,4 @@ and queued follow-ups are owned by the app and harness contract.
 [adr-groups]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0060-groups-and-person-visibility.md
 [adr-contacts]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0064-contacts-sync-over-carddav.md
 [item-authorship]: ../contract/host-catalogue-v2.json#/execution_attempt_authority/discovery/item_policy/authorship
+[attested-write]: ../contract/host-catalogue-v2.json#/item_engine/attested_write
