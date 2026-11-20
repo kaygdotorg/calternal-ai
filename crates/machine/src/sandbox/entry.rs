@@ -2,12 +2,27 @@
 use calternal_plugin_host::{Error, entry};
 use serde_json::Value;
 
-use super::{Exec, OutputEvent};
+use super::{EntryLog, Exec, OutputEvent, Sandbox, egress::EgressProxy};
 use crate::protocol::Stream;
-use std::time::Duration;
+use std::sync::Arc;
+use tokio::net::UnixListener;
 
-/// Hard process deadline for the network-none entry.
-pub(crate) const RUNTIME_LIMIT: Duration = Duration::from_secs(60);
+/// One started entry and the machine-side ends of its private sockets. The
+/// runner owns all of them: it relays broker calls over the carrier while
+/// authority is live and drops the egress proxy with the run.
+pub struct EntryLaunch {
+    /// Supervised sandbox; `stop` tears down the whole subtree.
+    pub(crate) sandbox: Arc<dyn Sandbox>,
+    /// Entry stdin and checked stdout.
+    pub(crate) exec: Exec,
+    /// Durable working log for accepted output.
+    pub(crate) log: EntryLog,
+    /// Listener behind the in-sandbox broker endpoint, when the operation
+    /// declared host methods.
+    pub(crate) broker: Option<UnixListener>,
+    /// Approved execution egress, when the program has any.
+    pub(crate) egress: Option<EgressProxy>,
+}
 
 /// Bounded, ordered stdout for one contribution process.
 pub(crate) struct EntryOutput {

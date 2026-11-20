@@ -1,26 +1,36 @@
 //! Start one contributed entry without inheriting the native workspace or home.
 use super::*;
+use crate::sandbox::{EntryLaunch, egress::EgressProxy};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use calternal_plugin_host::entry::{self, EntryProgram};
 use std::{io::Write, os::unix::fs::OpenOptionsExt, path::Path};
 
 const ENTRY_MOUNT: &str = "/calternal-entry";
+const RUN_MOUNT: &str = "/run/calternal";
+const HOME: &str = "/home/entry";
 
 impl PodmanBackend {
-    /// Verify the staged image and package asset before binding the entry. The
-    /// caller owns attempt admission, timeout enforcement, verified teardown,
-    /// and disposal of the private working log after output is committed.
+    /// Verify the program, staged image and package asset before binding the
+    /// entry. Mounts only the read-only entry, a private tmpfs home, the
+    /// approved login backing directories under it, and a read-only run
+    /// directory holding the broker and egress sockets when declared. The
+    /// sandbox never has a network interface. The caller owns attempt
+    /// admission, the run deadline, verified teardown, the broker relay and
+    /// disposal of the private working log after output is committed.
     /// Costs one image inspection, one bounded hash/write, one directory sync
-    /// for the log entry and two engine calls.
+    /// for the log entry, one per new login directory and two engine calls.
     pub(super) async fn launch_entry(
         &self,
         ticket: Uuid,
         program: &EntryProgram,
         live: Arc<dyn Fn() -> bool + Send + Sync>,
-    ) -> SandboxResult<(PodmanSandbox, Exec, super::super::EntryLog)> {
+    ) -> SandboxResult<EntryLaunch> {
         if self.guest || self.kvm_fallback || ticket.is_nil() || !live() {
             return Err(SandboxError("entry placement is unavailable".into()));
         }
+        program
+            .check()
+            .map_err(|_| SandboxError("invalid entry program".into()))?;
         let input = entry::encode_invoke(&program.invocation).map_err(SandboxError::new)?;
         let input = String::from_utf8(input).map_err(SandboxError::new)?;
         let image_id =
@@ -38,7 +48,18 @@ impl PodmanBackend {
         if !root.to_str().is_some_and(|path| !path.contains(':')) {
             return Err(SandboxError("invalid entry staging root".into()));
         }
+        let logins = match &program.login {
+            Some(login) => super::super::provider_home::prepare_entry_logins(&root, login).await?,
+            None => Vec::new(),
+        };
         let dir = stage_entry(root.join("entries"), program.entry_sha256.clone(), bytes).await?;
+        let ports = match open_ports(&dir, program).await {
+            Ok(ports) => ports,
+            Err(error) => {
+                remove_stage(&dir).await?;
+                return Err(error);
+            }
+        };
         let asset = dir.join("entry");
 
         let cidfile = dir.join("container.id");
@@ -51,48 +72,82 @@ impl PodmanBackend {
                 .to_string_lossy()
         );
         let attempt_label = format!("org.calternal.entry-ticket={ticket}");
-        let timeout = format!("--timeout={}", super::super::entry::RUNTIME_LIMIT.as_secs());
-        let created = podman(
-            &self.podman,
-            &[
-                "create",
-                "--interactive",
-                "--pull=never",
-                "--network=none",
-                "--init",
-                "--pid=private",
-                "--ipc=private",
-                "--cap-drop=all",
-                "--security-opt=no-new-privileges",
-                "--read-only",
-                "--read-only-tmpfs=false",
-                "--log-driver=none",
-                "--http-proxy=false",
-                "--no-healthcheck",
-                "--image-volume=ignore",
-                "--memory=256m",
-                "--memory-swap=256m",
-                "--pids-limit=64",
-                "--cpus=1",
-                &timeout,
-                "--stop-timeout=0",
-                "--workdir=/",
-                "--entrypoint",
-                ENTRY_MOUNT,
-                "--volume",
-                &mount,
-                "--cidfile",
-                &cidfile.to_string_lossy(),
-                "--label",
-                &label,
-                "--label",
-                &attempt_label,
-                "--name",
-                &name,
-                &image_id,
-            ],
-        )
-        .await;
+        let timeout = format!("--timeout={}", program.run_limit_secs);
+        let mut args: Vec<String> = [
+            "create",
+            "--interactive",
+            "--pull=never",
+            "--network=none",
+            "--init",
+            "--pid=private",
+            "--ipc=private",
+            "--cap-drop=all",
+            "--security-opt=no-new-privileges",
+            "--read-only",
+            "--read-only-tmpfs=false",
+            "--log-driver=none",
+            "--http-proxy=false",
+            "--no-healthcheck",
+            "--image-volume=ignore",
+            "--memory=1g",
+            "--memory-swap=1g",
+            "--pids-limit=256",
+            "--cpus=2",
+            &timeout,
+            "--stop-timeout=0",
+            "--workdir=/",
+            "--tmpfs",
+            &format!("{HOME}:mode=0700"),
+            "--tmpfs",
+            "/tmp:mode=1777",
+            "--env",
+            &format!("HOME={HOME}"),
+            "--entrypoint",
+            ENTRY_MOUNT,
+            "--volume",
+            &mount,
+        ]
+        .iter()
+        .map(|arg| arg.to_string())
+        .collect();
+        for (backing, path) in &logins {
+            args.extend([
+                "--volume".into(),
+                format!("{}:{HOME}/{path}:rw", backing.display()),
+            ]);
+        }
+        if ports.0.is_some() || ports.1.is_some() {
+            args.extend([
+                "--volume".into(),
+                format!("{}:{RUN_MOUNT}:ro", dir.join("run").display()),
+            ]);
+        }
+        if ports.0.is_some() {
+            args.extend([
+                "--env".into(),
+                format!("CALTERNAL_BROKER_SOCKET={}", entry::BROKER_ENDPOINT),
+            ]);
+        }
+        if ports.1.is_some() {
+            let endpoint = super::super::egress::ENDPOINT;
+            args.extend([
+                "--env".into(),
+                format!("CALTERNAL_EGRESS_SOCKET={endpoint}"),
+            ]);
+        }
+        args.extend([
+            "--cidfile".into(),
+            cidfile.to_string_lossy().into_owned(),
+            "--label".into(),
+            label,
+            "--label".into(),
+            attempt_label,
+            "--name".into(),
+            name.clone(),
+            image_id,
+        ]);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let created = podman(&self.podman, &args).await;
         let container = match created {
             Ok(container) => container,
             Err(_) => {
@@ -137,7 +192,14 @@ impl PodmanBackend {
                 if let Some(pid) = pid {
                     sandbox.clients.lock().expect("clients").insert(pid as i32);
                 }
-                Ok((sandbox, exec, log))
+                let (broker, egress) = ports;
+                Ok(EntryLaunch {
+                    sandbox: Arc::new(sandbox),
+                    exec,
+                    log,
+                    broker,
+                    egress,
+                })
             }
             Err(error) => {
                 let _ = tokio::fs::remove_file(log.path).await;
@@ -146,6 +208,34 @@ impl PodmanBackend {
             }
         }
     }
+}
+
+type Ports = (Option<tokio::net::UnixListener>, Option<EgressProxy>);
+
+// Bind the broker and egress sockets in a private run directory that the
+// sandbox mounts read-only. Connecting to a socket needs no write access.
+async fn open_ports(dir: &Path, program: &EntryProgram) -> SandboxResult<Ports> {
+    let broker = !program.methods.is_empty();
+    let egress = program.network != calternal_plugin_host::entry::EntryNetwork::None;
+    if !broker && !egress {
+        return Ok((None, None));
+    }
+    let run = dir.join("run");
+    let create = run.clone();
+    tokio::task::spawn_blocking(move || calternal_fsio::private::directory(&create))
+        .await
+        .map_err(SandboxError::new)?
+        .map_err(SandboxError::new)?;
+    let listener = broker
+        .then(|| tokio::net::UnixListener::bind(run.join("broker.sock")))
+        .transpose()
+        .map_err(SandboxError::new)?;
+    let proxy = EgressProxy::start(
+        &run,
+        &program.network,
+        super::super::egress::public_resolver(),
+    )?;
+    Ok((listener, proxy))
 }
 
 // Inspect only the exact repository-qualified manifest digest. Run the

@@ -216,11 +216,8 @@ impl Backend for PodmanBackend {
         ticket: Uuid,
         program: &'a calternal_plugin_host::entry::EntryProgram,
         live: Arc<dyn Fn() -> bool + Send + Sync>,
-    ) -> BoxFuture<'a, SandboxResult<(Arc<dyn Sandbox>, Exec, super::EntryLog)>> {
-        Box::pin(async move {
-            let (sandbox, exec, log) = self.launch_entry(ticket, program, live).await?;
-            Ok((Arc::new(sandbox) as Arc<dyn Sandbox>, exec, log))
-        })
+    ) -> BoxFuture<'a, SandboxResult<super::EntryLaunch>> {
+        Box::pin(self.launch_entry(ticket, program, live))
     }
 }
 

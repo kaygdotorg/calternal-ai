@@ -32,4 +32,5 @@ tempfile.workspace = true
 
 [dev-dependencies]
 calternal-cli = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["test-util"] }
 time.workspace = true

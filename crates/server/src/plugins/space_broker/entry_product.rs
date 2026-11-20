@@ -14,8 +14,8 @@ use calternal_machine::{
     sandbox::{Backend, podman::PodmanBackend},
 };
 use calternal_plugin_host::{
-    entry::EntryProgram,
-    space_channel::{PackagePin, SpaceMessage},
+    entry::{EntryLogin, EntryNetwork, EntryProgram},
+    space_channel::{PackagePin, SpaceMessage, SpaceMethod},
 };
 use serde_json::json;
 use std::{sync::Arc, time::Duration};
@@ -23,6 +23,20 @@ use tokio::net::TcpListener;
 use uuid::Uuid;
 
 const OFFLINE_FRAMES: u64 = 320;
+
+fn program(source: &str, digest: &str, input: serde_json::Value) -> EntryProgram {
+    EntryProgram {
+        image_source: source.into(),
+        image_digest: digest.into(),
+        entry_sha256: sha256_hex(SCRIPT),
+        entry_base64: STANDARD.encode(SCRIPT),
+        invocation: json!({"call":"fixture-call","input":input}),
+        methods: vec![],
+        login: None,
+        network: EntryNetwork::None,
+        run_limit_secs: 60,
+    }
+}
 const OFFLINE_BYTES: usize = 12_000;
 
 const SCRIPT: &[u8] = br#"#!/usr/local/bin/node
@@ -44,10 +58,35 @@ setTimeout(() => {
       }
       process.stdout.write(JSON.stringify({seq:input.offline_frames + 2,kind:'terminal',state:'ok'}) + '\n');
     }, 6200);
+  } else if (input.provider) {
+    provider();
   } else {
     process.stdout.write('{"seq":2,"kind":"terminal","state":"ok"}\n');
   }
 }, 20);
+function provider() {
+  const dir = require('node:path').join(process.env.HOME, '.fixture-login');
+  const file = dir + '/runs';
+  const runs = (fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0) + 1;
+  fs.writeFileSync(file, String(runs));
+  const sock = require('node:net').connect(process.env.CALTERNAL_BROKER_SOCKET);
+  const replies = [];
+  let buffer = '';
+  sock.on('data', data => {
+    buffer += data;
+    for (let end; (end = buffer.indexOf('\n')) >= 0; buffer = buffer.slice(end + 1)) {
+      replies.push(JSON.parse(buffer.slice(0, end)));
+      if (replies.length === 2) sock.write('{"type":"call","callback_id":"c3","method":"item_head","input":{},"ticket":"forged"}\n');
+    }
+  });
+  sock.on('close', () => {
+    const egress = process.env.CALTERNAL_EGRESS_SOCKET ?? null;
+    process.stdout.write(JSON.stringify({seq:2,kind:'output',data:{runs,replies,egress}}) + '\n');
+    process.stdout.write('{"seq":3,"kind":"terminal","state":"ok"}\n');
+  });
+  sock.write('{"type":"call","callback_id":"c1","method":"item_purge","input":{}}\n');
+  sock.write('{"type":"call","callback_id":"c2","method":"item_head","input":{"probe":true}}\n');
+}
 "#;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
@@ -184,13 +223,7 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
                     &pin,
                     if valid_ticket { ticket } else { Uuid::new_v4() },
                     SpaceMessage::StartEntry {
-                        program: EntryProgram {
-                            image_source: source.into(),
-                            image_digest: digest.into(),
-                            entry_sha256: sha256_hex(SCRIPT),
-                            entry_base64: STANDARD.encode(SCRIPT),
-                            invocation: json!({"call":"fixture-call","input":{"text":"fixture","wait_for_stop":stop}}),
-                        },
+                        program: program(source, digest, json!({"text":"fixture","wait_for_stop":stop})),
                     },
                     || true,
                 )
@@ -260,13 +293,7 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
         channel.sender().send_checked_wait(
             &pin,
             ticket,
-            SpaceMessage::StartEntry { program: EntryProgram {
-                image_source: source.into(),
-                image_digest: digest.into(),
-                entry_sha256: sha256_hex(SCRIPT),
-                entry_base64: STANDARD.encode(SCRIPT),
-                invocation: json!({"call":"fixture-call","input":{"text":"fixture","disconnect":true,"offline_frames":OFFLINE_FRAMES,"offline_bytes":OFFLINE_BYTES}}),
-            }},
+            SpaceMessage::StartEntry { program: program(source, digest, json!({"text":"fixture","disconnect":true,"offline_frames":OFFLINE_FRAMES,"offline_bytes":OFFLINE_BYTES})) },
             || true,
         ).await.unwrap();
         assert!(matches!(&channel.receive().await.unwrap().frame().message,
@@ -330,6 +357,62 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
             tokio::task::yield_now().await;
         }
     }).await.unwrap();
+    // Provider path: one declared callback answered by the host, an
+    // undeclared one refused on the machine, a forged field closing the
+    // stream, and login backing private to each harness contribution.
+    for (contribution, runs) in [("first", 1), ("first", 2), ("second", 1)] {
+        let ticket = Uuid::new_v4();
+        let (_, mut channel) = service
+            .open_entry_channel(ids.owner, ids.personal, machine, ticket, pin.clone())
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(30), async {
+            assert!(matches!(channel.receive().await.unwrap().frame().message, SpaceMessage::Ready {}));
+            let mut started = program(source, digest, json!({"text":"fixture","provider":true}));
+            started.methods = vec![SpaceMethod::new("item_head").unwrap()];
+            started.login = Some(EntryLogin {
+                account: ids.owner,
+                package: "fixture-entry".into(),
+                contribution: contribution.into(),
+                directories: vec![".fixture-login".into()],
+            });
+            channel.sender().send_checked_wait(&pin, ticket, SpaceMessage::StartEntry { program: started }, || true)
+                .await.unwrap();
+            let mut called = false;
+            let mut seq = 0;
+            let result = loop {
+                let delivery = channel.receive().await.unwrap();
+                assert_eq!(delivery.frame().ticket, Some(ticket));
+                match &delivery.frame().message {
+                    SpaceMessage::Call { callback_id, method, input } => {
+                        assert!(!called && method.as_str() == "item_head" && input == &json!({"probe":true}));
+                        called = true;
+                        channel.sender().send(&pin, ticket, SpaceMessage::Reply {
+                            callback_id: *callback_id, result: Ok(json!({"head":"fixture"})),
+                        }).unwrap();
+                    }
+                    SpaceMessage::Chunk { data } => {
+                        seq += 1;
+                        assert_eq!(data["seq"], seq);
+                        channel.sender().send(&pin, ticket, SpaceMessage::EntryAck { through: seq }).unwrap();
+                        if seq == 2 { break data["data"].clone(); }
+                    }
+                    other => panic!("unexpected {other:?}"),
+                }
+            };
+            assert!(called);
+            assert_eq!(result, json!({"runs": runs, "egress": null, "replies": [
+                {"type":"reply","callback_id":"c1","ok":false,"error":{"status":403,"code":"forbidden"}},
+                {"type":"reply","callback_id":"c2","ok":true,"data":{"head":"fixture"}},
+            ]}));
+            let terminal = channel.receive().await.unwrap();
+            assert!(matches!(&terminal.frame().message, SpaceMessage::Complete { result: Ok(data) } if data["seq"] == 3));
+            channel.sender().send(&pin, ticket, SpaceMessage::EntryAck { through: 3 }).unwrap();
+            assert!(channel.receive().await.is_none());
+        })
+        .await
+        .unwrap();
+    }
     assert!(worker_revision.current().is_some());
     sync.abort();
     server.abort();

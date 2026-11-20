@@ -1,9 +1,9 @@
 //! Keep one bounded output stream per exact running entry across carrier loss.
+use super::entry_broker::BrokerRelay;
 use super::entry_tail::EntryTail;
 use super::*;
 use crate::sandbox::{
-    EntryLog,
-    entry::RUNTIME_LIMIT,
+    EntryLaunch, EntryLog,
     entry_log::{read_entry, record_entry},
 };
 use calternal_plugin_host::Error as ProtocolError;
@@ -16,7 +16,7 @@ use tokio::sync::{mpsc, watch};
 
 // The owner allows 24 hours of continuous absence. Keep recorded output
 // after stopping the process, until the host commits the tail.
-const OUTAGE_LIMIT: Duration = Duration::from_secs(24 * 60 * 60);
+pub(super) const OUTAGE_LIMIT: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// Reach the same entry actor on a replacement carrier while the machine lives.
 pub(super) struct EntrySlot {
@@ -26,7 +26,8 @@ pub(super) struct EntrySlot {
     attach: mpsc::Sender<Attachment>,
 }
 
-struct Attachment {
+/// One authenticated carrier bound to an entry, with its relay cursor.
+pub(super) struct Attachment {
     channel: SpaceChannel,
     session: watch::Receiver<Option<Arc<str>>>,
     life: watch::Receiver<bool>,
@@ -161,9 +162,9 @@ impl Runner {
                 // Transport loss retains a started sandbox. Stop retires it.
                 let started = launch.await;
                 if stop {
-                    if let Ok((sandbox, _, log)) = started {
-                        let _ = sandbox.stop().await;
-                        let _ = tokio::fs::remove_file(log.path).await;
+                    if let Ok(started) = started {
+                        let _ = started.sandbox.stop().await;
+                        let _ = tokio::fs::remove_file(started.log.path).await;
                     }
                     return;
                 }
@@ -171,15 +172,18 @@ impl Runner {
             }
             started = &mut launch => (started, true),
         };
-        let Ok((
+        let Ok(EntryLaunch {
             sandbox,
             exec,
-            EntryLog {
-                path,
-                reader,
-                writer,
-            },
-        )) = started
+            log:
+                EntryLog {
+                    path,
+                    reader,
+                    writer,
+                },
+            broker,
+            egress,
+        }) = started
         else {
             let _ = fence
                 .send_wait(
@@ -198,33 +202,45 @@ impl Runner {
             return;
         };
         let (publish, published) = watch::channel(0);
-        let mut producer = tokio::spawn(record_entry(exec, writer, publish));
-        let mut sandbox = Some(sandbox);
-        let deadline = tokio::time::sleep(RUNTIME_LIMIT);
-        tokio::pin!(deadline);
-        let preserve_log = drive_entry(
+        let mut run = Run {
             package,
             ticket,
             reader,
-            &mut producer,
+            producer: tokio::spawn(record_entry(exec, writer, publish)),
             published,
-            &mut sandbox,
-            attached.then_some(link),
-            replacements,
-            deadline,
-        )
-        .await;
-        if let Some(sandbox) = sandbox {
+            sandbox: Some(sandbox),
+            broker: broker.map(|listener| BrokerRelay::start(listener, program.methods.clone())),
+        };
+        let deadline = tokio::time::sleep(Duration::from_secs(program.run_limit_secs.into()));
+        tokio::pin!(deadline);
+        let preserve_log =
+            drive_entry(&mut run, attached.then_some(link), replacements, deadline).await;
+        // Fence callbacks and egress before teardown so no effect or reply
+        // follows the end of authority.
+        drop(run.broker.take());
+        drop(egress);
+        if let Some(sandbox) = run.sandbox.take() {
             let _ = sandbox.stop().await;
         }
-        if !producer.is_finished() {
-            producer.abort();
-            let _ = producer.await;
+        if !run.producer.is_finished() {
+            run.producer.abort();
+            let _ = (&mut run.producer).await;
         }
         if !preserve_log {
             let _ = tokio::fs::remove_file(path).await;
         }
     }
+}
+
+/// One running entry's machine-side state, owned by the carrier driver.
+pub(super) struct Run<'a> {
+    pub(super) package: &'a PackagePin,
+    pub(super) ticket: Uuid,
+    pub(super) reader: Arc<std::fs::File>,
+    pub(super) producer: tokio::task::JoinHandle<Result<(), ProtocolError>>,
+    pub(super) published: watch::Receiver<u64>,
+    pub(super) sandbox: Option<Arc<dyn Sandbox>>,
+    pub(super) broker: Option<BrokerRelay>,
 }
 
 async fn launch_interrupted(link: &mut Attachment, ticket: Uuid) -> bool {
@@ -236,19 +252,21 @@ async fn launch_interrupted(link: &mut Attachment, ticket: Uuid) -> bool {
     false
 }
 
+enum Outbound {
+    Output { seq: u64, end: u64 },
+    Call(Uuid),
+}
+
 // Keep the log if local I/O or teardown fails, or if Stop arrives after
-// the watchdog has already ended the run.
-async fn drive_entry(
-    package: &PackagePin,
-    ticket: Uuid,
-    reader: Arc<std::fs::File>,
-    producer: &mut tokio::task::JoinHandle<Result<(), ProtocolError>>,
-    mut published: watch::Receiver<u64>,
-    sandbox: &mut Option<Arc<dyn Sandbox>>,
+// the watchdog has already ended the run. Broker calls go before output so
+// a callback waiting on the host is never queued behind a long backlog.
+pub(super) async fn drive_entry(
+    run: &mut Run<'_>,
     mut link: Option<Attachment>,
     mut replacements: mpsc::Receiver<Attachment>,
     mut deadline: std::pin::Pin<&mut tokio::time::Sleep>,
 ) -> bool {
+    let (package, ticket) = (run.package, run.ticket);
     let mut tail = EntryTail::default();
     let mut was_live = link.is_some();
     let mut producer_done = false;
@@ -257,7 +275,7 @@ async fn drive_entry(
     let expiry = tokio::time::sleep(OUTAGE_LIMIT);
     tokio::pin!(expiry);
     loop {
-        let through = *published.borrow_and_update();
+        let through = *run.published.borrow_and_update();
         if producer_done && tail.acked() == through {
             return false;
         }
@@ -268,7 +286,17 @@ async fn drive_entry(
         }
         was_live = link.is_some();
         let watch_expiry = !was_live && !outage_expired;
-        let outbound = if let Some(link) = link.as_ref()
+        let call = link
+            .as_ref()
+            .and(run.broker.as_ref())
+            .and_then(BrokerRelay::next_unsent);
+        let outbound = if let Some((id, message)) = call {
+            Some((
+                Outbound::Call(id),
+                message,
+                link.as_ref().expect("live").channel.sender(),
+            ))
+        } else if let Some(link) = link.as_ref()
             && link.cursor < through
             && tail.can_send(link.cursor)
         {
@@ -276,7 +304,7 @@ async fn drive_entry(
                 .as_ref()
                 .is_none_or(|(offset, _, _)| *offset != link.offset)
             {
-                let Ok((end, message)) = read_entry(reader.clone(), link.offset).await else {
+                let Ok((end, message)) = read_entry(run.reader.clone(), link.offset).await else {
                     return true;
                 };
                 read = Some((link.offset, end, message));
@@ -286,8 +314,10 @@ async fn drive_entry(
                 None
             } else {
                 Some((
-                    link.cursor + 1,
-                    *end,
+                    Outbound::Output {
+                        seq: link.cursor + 1,
+                        end: *end,
+                    },
                     match message {
                         SpaceMessage::Chunk { data } => SpaceMessage::Chunk { data: data.clone() },
                         SpaceMessage::Complete { result } => SpaceMessage::Complete {
@@ -308,28 +338,31 @@ async fn drive_entry(
             }
         };
         let send = async {
-            let Some((seq, end, msg, sender)) = outbound else {
+            let Some((what, msg, sender)) = outbound else {
                 return std::future::pending().await;
             };
-            sender
-                .send_wait(package, ticket, msg)
-                .await
-                .map(|()| (seq, end))
+            sender.send_wait(package, ticket, msg).await.map(|()| what)
+        };
+        let entry_call = async {
+            match run.broker.as_mut() {
+                Some(broker) => broker.next_call().await,
+                None => std::future::pending().await,
+            }
         };
         tokio::select! {
             biased;
             _ = &mut expiry, if watch_expiry => {
                 outage_expired = true;
-                if let Some(runtime) = sandbox.take()
+                if let Some(runtime) = run.sandbox.take()
                     && runtime.stop().await.is_err() { return true; }
             }
-            _ = &mut deadline, if sandbox.is_some() => {
-                let runtime = sandbox.take().expect("active entry");
+            _ = &mut deadline, if run.sandbox.is_some() => {
+                let runtime = run.sandbox.take().expect("active entry");
                 if runtime.stop().await.is_err() { return true; }
             }
-            result = &mut *producer, if !producer_done => {
+            result = &mut run.producer, if !producer_done => {
                 if !matches!(result, Ok(Ok(()))) { return true; }
-                if let Some(runtime) = sandbox.take()
+                if let Some(runtime) = run.sandbox.take()
                     && runtime.stop().await.is_err() { return true; }
                 producer_done = true;
             }
@@ -343,6 +376,7 @@ async fn drive_entry(
                     SpaceMessage::EntryAck { through } if link.as_ref().is_some_and(|link| *through <= link.cursor) => {
                         if tail.acknowledge(*through).is_err() { link = None; }
                     }
+                    SpaceMessage::Reply { callback_id, result } if run.broker.as_mut().is_some_and(|broker| broker.reply(*callback_id, result.clone())) => {}
                     _ => { link = None; }
                 },
                 None => { link = None; }
@@ -351,15 +385,19 @@ async fn drive_entry(
                 if let Ok(offset) = tail.acknowledge(replacement.cursor)
                     && replacement.channel.sender().send(package, ticket, SpaceMessage::EntryAttached {
                         origin: replacement.origin,
-                        buffered_through: *published.borrow(),
+                        buffered_through: *run.published.borrow(),
                     }).is_ok()
                 {
                     replacement.offset = offset;
                     link = Some(replacement);
+                    if let Some(broker) = run.broker.as_mut() { broker.reattached(); }
                 }
             }
             sent = send => match sent {
-                Ok((seq, end)) => {
+                Ok(Outbound::Call(id)) => {
+                    run.broker.as_mut().expect("relayed call").sent(id);
+                }
+                Ok(Outbound::Output { seq, end }) => {
                     tail.sent(seq, end);
                     let link = link.as_mut().expect("sending carrier");
                     link.cursor = seq;
@@ -368,7 +406,10 @@ async fn drive_entry(
                 }
                 Err(_) => { link = None; }
             },
-            changed = published.changed(), if !producer_done => {
+            call = entry_call => {
+                run.broker.as_mut().expect("entry broker").queue(call);
+            }
+            changed = run.published.changed(), if !producer_done => {
                 if changed.is_err() { tokio::task::yield_now().await; }
             }
         }

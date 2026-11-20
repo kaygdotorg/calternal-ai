@@ -152,3 +152,36 @@ fn import_existing(account: &Path, login: &Path) -> io::Result<()> {
         result => result,
     }
 }
+
+/// Prepare private backing for each approved login directory of one entry
+/// harness and return `(backing, relative mount path)` pairs. Backing lives at
+/// `accounts/<account>/harness-logins/<package>/<contribution>/<sha256(path)>`,
+/// so two harnesses declaring the same path never share storage and no
+/// backing directory nests inside another. Reads no login bytes. Costs one
+/// stat chain and at most one directory sync per new directory.
+pub(super) async fn prepare_entry_logins(
+    root: &Path,
+    login: &calternal_plugin_host::entry::EntryLogin,
+) -> SandboxResult<Vec<(PathBuf, String)>> {
+    let harness = root
+        .join("accounts")
+        .join(login.account.as_uuid().to_string())
+        .join("harness-logins")
+        .join(&login.package)
+        .join(&login.contribution);
+    let mounts: Vec<(PathBuf, String)> = login
+        .directories
+        .iter()
+        .map(|path| {
+            let digest = ring::digest::digest(&ring::digest::SHA256, path.as_bytes());
+            let name: String = digest.as_ref().iter().map(|b| format!("{b:02x}")).collect();
+            (harness.join(name), path.clone())
+        })
+        .collect();
+    let backing: Vec<PathBuf> = mounts.iter().map(|(dir, _)| dir.clone()).collect();
+    tokio::task::spawn_blocking(move || backing.iter().try_for_each(|dir| private::directory(dir)))
+        .await
+        .map_err(SandboxError::new)?
+        .map_err(SandboxError::new)?;
+    Ok(mounts)
+}

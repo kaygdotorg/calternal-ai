@@ -7,7 +7,10 @@
 //! the process (see [`crate::sandbox`]). Memory per running exec is therefore
 //! bounded by about 256 KiB in the channel plus 256 KiB here.
 
+mod entry_broker;
 mod entry_channel;
+#[cfg(test)]
+mod entry_outage_tests;
 mod entry_tail;
 mod erasure;
 mod lifecycle;
