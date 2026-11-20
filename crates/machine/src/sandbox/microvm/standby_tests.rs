@@ -8,6 +8,9 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 await Promise.resolve();
 const assert = require('node:assert/strict');
+const os = require('node:os');
+assert.deepEqual(os.cpus(), []);
+assert.ok(os.availableParallelism() > 0);
 const crypto = require('node:crypto');
 const tls = require('node:tls');
 const vm = require('node:vm');
@@ -39,6 +42,7 @@ const socket = new Duplex({
         assert.ok(chunk.length >= 43);
         console.log(JSON.stringify({
             launcher,
+            rss: process.memoryUsage.rss(),
             bytes: digest(crypto.randomBytes(32)),
             uuid: digest(crypto.randomUUID()),
             values: digest(crypto.getRandomValues(new Uint8Array(32))),
@@ -69,6 +73,13 @@ process.stdin.on('data', chunk => {
         launcher: process.argv[1].endsWith('/standby.cjs'), bytes: received.toString('hex'),
     }), () => process.exit(0));
 });
+"#;
+
+const HEAP_PACKAGE: &str = r#"
+console.log(process.argv[1].endsWith('/standby.cjs') ? 'standby' : 'fresh');
+const retained = [];
+for (let i = 0; i < 2048; i++) retained.push(Array(16384).fill(i));
+process.exit(23);
 "#;
 
 async fn draw(worker: &Placement) -> serde_json::Value {
@@ -145,7 +156,9 @@ async fn image_standby_refreshes_randomness_and_preserves_denials() {
         shared_tools: None,
     };
     let cold = runtime.start(&spec, None).await.unwrap();
-    assert_eq!(draw(&cold).await["launcher"], false);
+    let fresh_draw = draw(&cold).await;
+    assert_eq!(fresh_draw["launcher"], false);
+    println!("Fresh plugin process RSS {} bytes", fresh_draw["rss"]);
     assert!(cold.checkpoint(1).await.unwrap());
     let saved = Generation::current(&cold.saved, &cold.binding)
         .unwrap()
@@ -163,6 +176,7 @@ async fn image_standby_refreshes_randomness_and_preserves_denials() {
             draw["launcher"], true,
             "product fell back instead of using the proven launcher"
         );
+        println!("Restored plugin process RSS {} bytes", draw["rss"]);
         restored.stop().await.unwrap();
         observations.push(draw);
     }
@@ -217,6 +231,37 @@ async fn image_standby_refreshes_randomness_and_preserves_denials() {
     assert_eq!(fallback["launcher"], false);
     assert_eq!(fallback["bytes"], fresh_bytes["bytes"]);
     failed_refresh.stop().await.unwrap();
+
+    spec.worker.as_mut().unwrap().source = HEAP_PACKAGE.into();
+    for checkpoint in [None, Some(1)] {
+        spec.thread_id = Uuid::new_v4();
+        let placement = runtime.start(&spec, checkpoint).await.unwrap();
+        let exec = placement
+            .exec(ExecRequest {
+                argv: worker::ARGV.map(str::to_owned).to_vec(),
+                interactive: true,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let (out, err, status) =
+            tokio::time::timeout(Duration::from_secs(20), crate::sandbox::collect(exec))
+                .await
+                .unwrap();
+        let error = String::from_utf8_lossy(&err);
+        assert_eq!(
+            out,
+            if checkpoint.is_some() {
+                b"standby\n".as_slice()
+            } else {
+                b"fresh\n"
+            },
+            "heap proof used the wrong launch mode"
+        );
+        assert!(matches!(status.code, Some(134 | 139)), "{status:?} {error}");
+        assert!(error.contains("JavaScript heap out of memory"), "{error}");
+        placement.stop().await.unwrap();
+    }
     assert_eq!(
         Generation::current(&cold.saved, &cold.binding)
             .unwrap()

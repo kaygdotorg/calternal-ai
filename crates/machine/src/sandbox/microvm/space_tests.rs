@@ -415,12 +415,12 @@ mod restart_tests;
 mod standby_tests;
 
 #[tokio::test]
+#[ignore = "requires the native proof image and real KVM"]
 async fn native_worker_isolation_and_kernel_randomness_survive_restore() {
-    let Some(config) = std::env::var_os("CALTERNAL_SMALL_VM_NATIVE_TEST_CONFIG").map(PathBuf::from)
-    else {
-        eprintln!("SKIP native probe image: CALTERNAL_SMALL_VM_NATIVE_TEST_CONFIG is unset");
-        return;
-    };
+    let config = PathBuf::from(
+        std::env::var_os("CALTERNAL_SMALL_VM_NATIVE_TEST_CONFIG")
+            .expect("native KVM proof requires CALTERNAL_SMALL_VM_NATIVE_TEST_CONFIG"),
+    );
     let root = tempfile::Builder::new()
         .prefix("nv")
         .rand_bytes(5)

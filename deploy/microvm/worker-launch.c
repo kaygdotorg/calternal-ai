@@ -24,6 +24,8 @@
 // Only the trusted agent UID can invoke this setuid helper. All setup
 // happens inside the guest and completes before any package code runs.
 static const char root[] = "/opt/standard";
+static char old_space[] = "--max-old-space-size=96";
+static char semi_space[] = "--max-semi-space-size=4";
 
 static void require(int result, const char *step) {
     if (result < 0) {
@@ -116,12 +118,12 @@ static void worker(const char *source, const struct sock_fprog *policy, int stan
 #endif
     char *const command[] = {
         "node", "--permission", "--allow-fs-read=.", "--disallow-code-generation-from-strings",
-        "--max-old-space-size=128", "worker.js", NULL,
+        old_space, semi_space, "worker.js", NULL,
     };
     char *const parked[] = {
         "/usr/local/bin/node", "--permission", "--allow-addons",
         "--allow-fs-read=/opt/calternal-standby", "--allow-fs-read=/plugin",
-        "--disallow-code-generation-from-strings", "--max-old-space-size=128",
+        "--disallow-code-generation-from-strings", old_space, semi_space,
         "/opt/calternal-standby/standby.cjs", NULL,
     };
     char *const env[] = {"LANG=C.UTF-8", NULL};

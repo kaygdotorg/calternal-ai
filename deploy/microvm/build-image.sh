@@ -28,7 +28,8 @@ CALTERNAL_GUEST_AGENT=$(realpath "$1")
 CALTERNAL_GUEST_CLI=$(realpath "$2")
 CALTERNAL_GUEST_ROOT="$scratch/rootfs.tar.gz"
 CALTERNAL_GUEST_REPO=$(cd -- "$(dirname -- "$0")/../.." && pwd)
-nix build --impure --out-link "$scratch/candidate" --expr '
+build_variant() {
+  CALTERNAL_WORKER_PROOF="$2" nix build --impure --out-link "$scratch/$1" --expr '
   let
     repository = builtins.getEnv "CALTERNAL_GUEST_REPO";
     lock = builtins.fromJSON (builtins.readFile (repository + "/flake.lock"));
@@ -42,9 +43,13 @@ nix build --impure --out-link "$scratch/candidate" --expr '
     agent = input "CALTERNAL_GUEST_AGENT";
     cli = input "CALTERNAL_GUEST_CLI";
     standardRoot = input "CALTERNAL_GUEST_ROOT";
+    workerProof = builtins.getEnv "CALTERNAL_WORKER_PROOF" == "1";
   }'
-# Qualify the exact image while its output is still private. The proof
-# opens KVM and exercises two restores through the shipped guest agent.
+}
+build_variant candidate 0
+build_variant native 1
+# Keep both images private until KVM has qualified the release image and
+# the native probes that run under the same launcher setup in the test image.
 export CALTERNAL_PROOF_FIRECRACKER=$(command -v firecracker)
 export CALTERNAL_PROOF_SERIAL="$proof/serial.log"
 cat > "$proof/firecracker" <<'WRAPPER'
@@ -55,37 +60,45 @@ fi
 exec "$CALTERNAL_PROOF_FIRECRACKER" "$@"
 WRAPPER
 chmod 0700 "$proof/firecracker"
-python3 - "$proof/small.json" "$scratch/candidate" "$proof/firecracker" "$(command -v mkfs.ext4)" <<'PYCONFIG'
+python3 - "$proof" "$scratch" "$(command -v mkfs.ext4)" <<'PYCONFIG'
 import hashlib
 import json
 from pathlib import Path
 import sys
 
-config, image, firecracker, mkfs = sys.argv[1:]
-manifest = Path(image) / "image.sha256"
-Path(config).write_text(json.dumps(dict(
-    firecracker=firecracker,
-    image_directory=image,
-    image_digest=hashlib.sha256(manifest.read_bytes()).hexdigest(),
-    mkfs_ext4=mkfs,
-    vcpus=2, memory_mib=256, disk_mib=1024, max_guests=1, warm_guests=0, prestarted_worker=True,
-)))
+proof, scratch = map(Path, sys.argv[1:3])
+for variant in ("candidate", "native"):
+    image = scratch / variant
+    (proof / f"{variant}.json").write_text(json.dumps(dict(
+        firecracker=str(proof / "firecracker"),
+        image_directory=str(image),
+        image_digest=hashlib.sha256((image / "image.sha256").read_bytes()).hexdigest(),
+        mkfs_ext4=sys.argv[3],
+        vcpus=2, memory_mib=256, disk_mib=1024, max_guests=1, warm_guests=0,
+        prestarted_worker=variant == "candidate",
+    )))
 PYCONFIG
-export CALTERNAL_SMALL_VM_TEST_CONFIG="$proof/small.json" CALTERNAL_SMALL_VM_PROOF_REQUIRED=1
-if ! (
-  cd "$CALTERNAL_GUEST_REPO"
-  if [[ -n ${CALTERNAL_MICROVM_PROOF_MAX_LOAD:-} ]]; then
-    until awk -v limit="$CALTERNAL_MICROVM_PROOF_MAX_LOAD" 'NR == 1 { exit !($1 <= limit) }' /proc/loadavg; do
-      sleep 5
-    done
+export CALTERNAL_SMALL_VM_TEST_CONFIG="$proof/candidate.json" CALTERNAL_SMALL_VM_PROOF_REQUIRED=1
+export CALTERNAL_SMALL_VM_NATIVE_TEST_CONFIG="$proof/native.json"
+run_proof() {
+  local test_name="$1"
+  if ! (
+    cd "$CALTERNAL_GUEST_REPO"
+    if [[ -n ${CALTERNAL_MICROVM_PROOF_MAX_LOAD:-} ]]; then
+      until awk -v limit="$CALTERNAL_MICROVM_PROOF_MAX_LOAD" 'NR == 1 { exit !($1 <= limit) }' /proc/loadavg; do
+        sleep 5
+      done
+    fi
+    nix develop -c cargo test --locked -j"${CARGO_BUILD_JOBS:-3}" -p calternal-machine --lib \
+      "$test_name" -- --include-ignored --nocapture --test-threads=3
+  ) | tee "$proof/$test_name.log"; then
+    if [[ -f "$CALTERNAL_PROOF_SERIAL" ]]; then tail -100 "$CALTERNAL_PROOF_SERIAL" >&2; fi
+    return 1
   fi
-  nix develop -c cargo test --locked -j"${CARGO_BUILD_JOBS:-3}" -p calternal-machine --lib \
-    image_standby_refreshes_randomness_and_preserves_denials -- --nocapture --test-threads=3
-) | tee "$proof/test.log"; then
-  if [[ -f "$CALTERNAL_PROOF_SERIAL" ]]; then tail -100 "$CALTERNAL_PROOF_SERIAL" >&2; fi
-  exit 1
-fi
-grep -Eq '^test .*::image_standby_refreshes_randomness_and_preserves_denials \.\.\. ok$' "$proof/test.log"
+  grep -Eq "^test .*::$test_name \.\.\. ok$" "$proof/$test_name.log"
+}
+run_proof image_standby_refreshes_randomness_and_preserves_denials
+run_proof native_worker_isolation_and_kernel_randomness_survive_restore
 output=$(realpath -- "$(dirname -- "$4")")/$(basename -- "$4")
 nix-store --add-root "$output" --indirect --realise "$(readlink -f "$scratch/candidate")"
 sha256sum "$4/image.sha256"

@@ -12,7 +12,7 @@ writes or scratch-disk flushes. The agent guest still uses its Podman backend.
 | Process identity | UID and GID 1100, separate from the guest agent at UID 1000. No supplementary groups or capabilities. |
 | Resource controls | Dedicated cgroup v2 with 192 MiB memory, zero swap, 64 PIDs and one CPU of quota. The earlier Podman worker allowed 256 MiB. |
 | Isolation | Private mount, PID, network, IPC, UTS and cgroup namespaces. The launcher pivots to the read-only runtime with private proc and a small device set, then detaches the guest root. The package mount is read-only, noexec, nosuid and nodev. |
-| Process restrictions | `no_new_privs`, the existing worker seccomp allowlist compiled for capability-empty amd64, and the existing Node permission flags and 128 MiB heap setting. |
+| Process restrictions | `no_new_privs`, the existing worker seccomp allowlist compiled for capability-empty amd64, and the existing Node permission flags. Node old space is capped at 96 MiB with 4 MiB semi-spaces. |
 | Package lifecycle | The launcher accepts the guest agent UID and a placement UUID. It closes inherited descriptors beyond the three exec pipes. Before exec it checks UID, GID, namespace PID, `no_new_privs`, denied socket creation and read-only code. Teardown kills the cgroup before removing the package. |
 
 The small guest now omits nested user-namespace mapping, OCI masked paths and
@@ -264,10 +264,9 @@ it to a specific component in the reply path.
    questions remain in [issue #90](https://git.kayg.org/kayg/calternal-ai/issues/90).
 
 The native fixture uses `workerProof = true` in the guest image derivation.
-It runs the probes after the product launcher has set its UID, namespaces,
-mounts, cgroup and seccomp. A regular image builds without that fixture. The
-native proof reads `/dev/urandom` directly and checks that two restores of a
-single snapshot yield different byte sequences.
+It runs the probes after the launcher has set its UID, namespaces, mounts,
+cgroup and seccomp. The native proof reads `/dev/urandom` directly and checks
+that two restores of one snapshot yield different byte sequences.
 
 On dev-01, image manifest `c7e8b4aec3b1` passed the regular checkpoint,
 image and process-restart KVM cases. Native probe image `cffb35933192` passed
@@ -315,6 +314,28 @@ Raw logs, checksums and the summary are under `/srv/homes/perf/vmw4`.
 Standby stays off by default. Operators can set `prestarted_worker: true`
 to enable it. The plain launcher, idle timeout and memory ceiling apply to
 both modes. Disk wake still exceeds the 500 ms target.
+
+## Second independent review follow-up
+
+`deploy/microvm/build-image.sh` now derives the release and native-proof
+images from the same normalized root, guest agent, CLI and pinned kernel.
+It requires both exact KVM tests before it publishes the release link. The
+native test fails if invoked without its image configuration. Both tests
+passed for the build that published release manifest `b5159e123bae`.
+
+The release test verifies that retained JavaScript objects exhaust the V8
+heap in both worker modes, with the fatal heap-limit diagnostic. The separate
+native test verifies the 192 MiB cgroup limit with external Buffer memory.
+The plugin guide documents `os.availableParallelism()` and the supported
+`process.stdin` interface. The release test confirms `os.cpus()` is empty.
+
+On locked perf-02, a guest agent with measurement probes sampled
+`memory.current` after the standby task check and after each refresh, before
+package load. The parked cgroup charged 14.70 MiB. All four refreshed
+samples charged 14.89 MiB, leaving 177.11 MiB under the 192 MiB cap before
+package load. Node RSS was 49.20 MiB fresh and up to 53.75 MiB after standby
+release in the small proof package. RSS includes shared resident pages.
+Evidence is under `/srv/homes/perf/vmw5`.
 
 ## Review gate
 

@@ -122,12 +122,14 @@ two-vCPU Firecracker guest. Use the digest-pinned image assembled by
 code on private tmpfs and starts Node through a restricted process launcher.
 The launcher installs the worker seccomp profile, isolates mounts, processes
 and networking, drops privileges, and gives each worker a 192 MiB memory
-limit with no swap. The remaining guest memory is available to the kernel,
+limit with no swap. Node caps old space at 96 MiB and each semi-space at 4 MiB.
+The remaining guest memory is available to the kernel,
 the control agent and the reseed helper. Restores launch fresh Node by
 default. Set `prestarted_worker: true` to park a clean trusted launcher before
 checkpointing. The restored guest must acknowledge kernel reseed before the
-launcher can refresh and load a package. The image build runs the two-restore
-randomness and permission proof under KVM before publishing its output link.
+launcher can refresh and load a package. Before publishing its output link,
+the image build requires the release image's randomness, permissions and heap
+proof and the native isolation proof on a test image built from the same inputs.
 
 The small VM JSON accepts `idle_seconds` (1 through 86400, default 900) and
 `resident_memory_mib` (default `memory_mib` × `max_guests`). The machine reserves
