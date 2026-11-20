@@ -30,6 +30,8 @@ mod provider_sign_in_cases;
 mod requests_cases;
 mod requests_review_cases;
 mod threads_cases;
+#[cfg(feature = "threads-v2")]
+mod threads_v2_cases;
 
 mod content_fetch_cases;
 mod cursor_cases;
