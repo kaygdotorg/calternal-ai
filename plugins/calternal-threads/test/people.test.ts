@@ -179,6 +179,62 @@ test("a new reply cannot target a deleted message and an existing reply stays vi
   assert.equal(decode(host.markdown(item)).messages.find(entry => entry.id === reply.message)?.replyTo, first.message);
 });
 
+test("deleting a message removes its checked quote in a second thread and fences the old revision", async () => {
+  const host = new FakeHost();
+  const people = peopleFromBundle();
+  const create = async (title: string, participants = [bob], starter = alice) =>
+    (await people.create({ title, participants }, host.peopleContext(starter, title))).created;
+  const source = await create("Source");
+  const destination = await create("Destination");
+  const wider = await create("Wider", [bob, cara]);
+  const otherSpace = await create("Other space", [alice], bob);
+  const write = (item: string, actor: string, request: string, text: string) =>
+    host.peopleContext(actor, request, undefined, undefined, undefined, { item, text });
+  const secret = "Original text 🌏\n\nSecond paragraph";
+  const { message: sourceMessage } = await people.post({ item: source, text: secret }, write(source, alice, "source", secret));
+  const reply = { text: "> Bob's own words\n\nA reply", replyIn: source, replyTo: sourceMessage };
+  for (const [item, reason] of [[otherSpace, /same space/], [wider, /quote source unavailable/]] as const) {
+    const revision = host.files.get(item)!.revision;
+    await assert.rejects(people.post({ item, ...reply }, write(item, bob, item, reply.text)), reason);
+    assert.equal(host.files.get(item)!.revision, revision);
+  }
+  await assert.rejects(people.post({ item: destination, ...reply }, host.peopleContext(bob, "unchecked")), /requires a checked/);
+  const writer = write(destination, bob, "quote", reply.text);
+  const { message } = await people.post({ item: destination, ...reply }, writer);
+  const following = "Keep this later message";
+  const { message: later } = await people.post({ item: destination, text: following }, write(destination, alice, "later", following));
+  const previous = await writer.call("item_head", { item: destination });
+  const spans = await writer.call("item_spans", { item: destination, revision: previous.revision });
+  const readReply = () => people.message({ item: destination, message }, host.peopleContext(bob, "read-destination"));
+  assert.equal((await readReply()).replyQuote, secret);
+  assert.equal((await readReply()).replyIn?.id, source);
+  assert.match(host.markdown(destination), /> Original text 🌏/);
+  assert.deepEqual(spans.spans[0].quote?.attribution, { kind: "person", actor: alice });
+  const edit = "A later edit to the source";
+  await people.edit({ item: source, message: sourceMessage, text: edit }, write(source, alice, "edit-source", edit));
+  assert.equal((await readReply()).replyQuote, secret);
+
+  const deletion = host.peopleContext(alice, "delete-source");
+  await people.remove({ item: source, message: sourceMessage }, deletion);
+  const current = await writer.call("item_head", { item: destination });
+  assert.notEqual(current.revision, previous.revision);
+  assert.doesNotMatch(host.markdown(destination), /Original text|Second paragraph/);
+  assert.match(host.markdown(destination), /> Bob's own words/);
+  assert.equal((await readReply()).text, reply.text);
+  assert.equal((await readReply()).replyQuote, undefined);
+  assert.equal((await readReply()).replyIn, undefined);
+  assert.equal((await people.message({ item: destination, message: later }, writer)).text, following);
+  assert.equal(host.snapshots.has(destination), false);
+  const after = await writer.call("item_spans", { item: destination, revision: current.revision });
+  assert.equal(after.spans[0].span, spans.spans[0].span);
+  assert.deepEqual(after.spans[0].attribution, { kind: "person", actor: bob });
+  assert.equal(after.spans[0].quote, undefined);
+  assert.equal(after.spans[1].offset, spans.spans[1].offset - spans.spans[0].quote!.length);
+  await assert.rejects(writer.call("item_range", { item: destination, revision: previous.revision, offset: 0, length: 10 }), /withheld/);
+  await people.remove({ item: source, message: sourceMessage }, deletion);
+  assert.equal(host.files.get(destination)!.revision, current.revision);
+});
+
 test("checked quotes retain the original author, survive a source edit and are redacted with it", async () => {
   const { host, people, item, ctx } = await setup();
   const writer = (person: string, request: string, text: string) =>

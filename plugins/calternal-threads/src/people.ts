@@ -101,10 +101,15 @@ async function create(input: { title: string; participants: AccountRef[] }, ctx:
   return { created: head.item };
 }
 
-async function post({ item, text, replyTo, mentions = [] }: Target & {
-  text: string; replyTo?: string; mentions?: AccountRef[];
+async function post({ item, text, replyTo, replyIn, mentions = [] }: Target & {
+  text: string; replyTo?: string; replyIn?: ItemRef; mentions?: AccountRef[];
 }, ctx: PeopleContext) {
-  const { thread, revision, size, spans } = await writableMember(ctx, item);
+  const destination = await writableMember(ctx, item);
+  const { thread, revision, size, locator } = destination;
+  const external = replyIn !== undefined && replyIn !== item;
+  if (external && replyTo === undefined) throw new Error("Choose a message to quote.");
+  const origin = external ? await member(ctx, replyIn) : destination;
+  if (origin.locator.space !== locator.space) throw new Error("Quotes must come from the same space.");
   const id = messageId(ctx.author.request_id, `person-${ctx.author.actor}`);
   const recipients = [...new Set(mentions)].sort();
   if (recipients.some(id => !thread.participants.some(person => person.kind === "person" && person.id === id))) {
@@ -113,22 +118,25 @@ async function post({ item, text, replyTo, mentions = [] }: Target & {
   const existing = thread.messages.find(message => message.id === id);
   if (existing) {
     if (!existing.edited && !existing.deleted && (
-      existing.text !== text || existing.replyTo !== replyTo || JSON.stringify(existing.mentions ?? []) !== JSON.stringify(recipients)
+      existing.text !== text || existing.replyTo !== replyTo || existing.replyIn?.id !== (external ? origin.locator.id : undefined) ||
+      JSON.stringify(existing.mentions ?? []) !== JSON.stringify(recipients)
     )) throw new Error("Conflicting replay.");
     await publish(ctx, item, revision, thread);
     return { message: id };
   }
-  const target = replyTo === undefined ? undefined : messageView(thread, replyTo);
+  const target = replyTo === undefined ? undefined : messageView(origin.thread, replyTo);
   const sender = thread.participants.find(person => person.id === ctx.author.actor)!;
   const message = {
     id, author: personParticipant(ctx.author.actor, ctx.author.actor_label ?? sender.name), text: checkedText(text), posted_at: ctx.author.authored_at,
-    ...(target && { replyTo, replyToName: target.author.name, replyQuote: checkedText(target.text) }), ...(recipients.length && { mentions: recipients }),
+    ...(target && { replyTo, replyToName: target.author.name, replyQuote: checkedText(target.text) }),
+    ...(external && { replyIn: origin.locator }), ...(recipients.length && { mentions: recipients }),
   };
   const record = messageRecord(message, thread.participants);
   const captured = ctx.messageWrite;
-  const sourceSpan = replyTo === undefined ? undefined : spans.get(replyTo);
-  const quote = sourceSpan === undefined ? undefined : { item, revision, span: sourceSpan };
+  const sourceSpan = replyTo === undefined ? undefined : origin.spans.get(replyTo);
+  const quote = sourceSpan === undefined ? undefined : { item: replyIn ?? item, revision: origin.revision, span: sourceSpan };
   const attested = captured?.item === item && captured.text === text ? attest(record, { kind: "input" }, quote) : undefined;
+  if (external && !attested) throw new Error("A quote from another thread requires a checked source and a checked reply.");
   thread.messages.push(message);
   const saved = await appendRecord(ctx, item, revision, step(ctx.author.request_id, "person-post"), size, thread, record, attested);
   await publish(ctx, item, saved.revision, thread);
@@ -156,19 +164,21 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
   }
   let quote;
   if (requote) {
+    if (entry.replyIn) throw new Error("Choose a new checked source to change a quote from another thread.");
     const target = thread.messages.find(candidate => candidate.id === entry.replyTo && !candidate.deleted);
     const sourceSpan = target && spans.get(target.id);
     if (!target || sourceSpan === undefined) throw new Error("The original message is unavailable for a new quote.");
     entry.replyQuote = checkedText(target.text);
     quote = { item, revision, span: sourceSpan };
   }
-  const quotedBy = text === undefined ? thread.messages.filter(reply => reply.replyTo === message && reply.replyQuote !== undefined) : [];
+  const quotedBy = text === undefined ? thread.messages.filter(reply => !reply.replyIn && reply.replyTo === message && reply.replyQuote !== undefined) : [];
   if (text === undefined) {
     entry.text = "";
     entry.deleted = true;
     delete entry.edited;
     delete entry.replyTo;
     delete entry.replyToName;
+    delete entry.replyIn;
     delete entry.replyQuote;
     delete entry.mentions;
     for (const reply of quotedBy) delete reply.replyQuote;
@@ -260,7 +270,7 @@ async function row({ item }: Target, ctx: PeopleContext) {
   for (const message of thread.messages.slice(after + 1)) {
     if (message.deleted || message.author.id === actor) continue;
     const mentioned = message.mentions?.includes(actor) ?? false;
-    const replied = message.replyTo !== undefined && own.has(message.replyTo);
+    const replied = !message.replyIn && message.replyTo !== undefined && own.has(message.replyTo);
     counts.unread++;
     counts.mentions += Number(mentioned);
     counts.replies += Number(replied);

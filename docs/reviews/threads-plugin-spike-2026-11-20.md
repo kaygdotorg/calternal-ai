@@ -42,7 +42,7 @@ flock -s /tmp/calternal-dev02.lock nix develop -c bash -c '
 The build uses the 14.41 revision-aware SDK builder. It pins both
 plugin manifests and workers, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-All 52 tests and both Conformance tool 1.1.0 plugin checks passed
+All 53 tests and both Conformance tool 1.1.0 plugin checks passed
 on dev-02 at the 14.41 pin under the shared lock. This includes four
 v1 reader tests. The repository
 documentation gate passed in the earlier afternoon run. The verified entry asset still uses scripted
@@ -875,6 +875,14 @@ scanner are here.
 | Durable span reads and host substitutions | **CLOSED** for the catalogue exchange | A checked read joins the chunks for one span before decoding it and rejects overlapping host-written ranges. It keeps message boundaries, sender metadata and attempt metadata intact. An empty tombstone middle has no origin. The fixture does not exercise live rewrite or redaction origin transactions. |
 | 14.40 rename and reply edits, checked quotes and redaction | **CLOSED** at their previous scope | Both builds and all exchange tests pass. The prior live rewrite, Undo, provenance durability and latency qualification remains open. |
 | Earlier findings | **UNCHANGED** | The revision adds no further contract findings for the v2 flows. The prior consent, delivery, renderer and SDK work remains. See the v1 cutover findings for remaining host work. |
+
+## Quotes in other threads
+
+| Finding and reference | Status | Evidence or remaining work |
+| --- | --- | --- |
+| Delete quotes in another thread · catalogue `item_engine.quotes.redaction` | **CLOSED** in the fixture | Threads sends a checked source item, revision and span when posting the reply. Delete issues the existing empty-middle replacement on the source. The fixture follows the checked quote index, removes the quote bytes in the second thread in the same receipt, preserves the reply's span and author and shifts later offsets. An older destination revision is withheld and its retained page invalidated. Retrying Delete leaves the second thread's revision unchanged. |
+| Audience and placement checks · catalogue `item_engine.quotes.compose` | **CLOSED** in the fixture | Both threads are in the same space and all destination participants can read the source. The test refuses a wider audience, a separate space and an unchecked reply. Cross-space copies remain outside the catalogue's single-writer transaction. |
+| Live redaction and opaque writes · catalogue `item_engine.quotes.redaction` | **OPEN** | Qualify indexed multi-item commits, stale heads, restart, revoke and history, cache and offline delivery. Preserve live and retained dependencies before admitting any write that replaces an indexed source or destination with opaque bytes. Threads refuses to re-encode a checked cross-thread quote as ordinary text. The fixture also refuses whole-file replacements that would detach the dependency. |
 
 ## Simplification opportunities
 

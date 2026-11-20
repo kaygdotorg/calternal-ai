@@ -119,6 +119,7 @@ export class FakeHost {
   files = new Map<string, File>();
   jobs = new Map<string, Job>();
   snapshots = new Map<string, ItemViewPublish>();
+  private quoteDestinations = new Map<string, Set<string>>();
   alarms = new Map<string, AlarmSet>();
   receipts = new Map<string, { fingerprint: string; result: unknown }>();
   private stages = new Map<string, Stage>();
@@ -513,16 +514,28 @@ export class FakeHost {
         text = job.result.text;
       }
       let quoted: { text: string; record: string; source: QuoteSource; attribution: NonNullable<Span["quote"]>["attribution"] } | undefined;
+      const checkedOrigin = (quote: QuoteSource) => {
+        const source = this.files.get(quote.item);
+        assert.ok(file && source && source.owner === owner && source.space === file.space &&
+          (file.people ?? [file.creator]).every(person => (source.people ?? [source.creator]).includes(person)) &&
+          (source.people ?? [source.creator]).includes(receiptActor) &&
+          source.history.has(quote.revision) && !source.withheldRevisions.has(quote.revision), "quote source unavailable");
+        return source;
+      };
       if (quote) {
-        assert.ok(file && quote.item === args.item && file.history.has(quote.revision), "quote source unavailable");
-        const origin = file.spanHistory.get(quote.revision)?.spans.find(candidate => candidate.span === quote.span);
-        assert.ok(origin && file.spans.has(quote.span) && origin.middle_length > 0 && origin.attribution &&
-          !file.withheldRevisions.has(quote.revision), "quote source unavailable");
-        const record = file.bindings.get(origin.span)!.record;
-        const copies = [...file.spans.values()].filter(entry => entry.span !== retiring &&
-          file.bindings.get(entry.span)?.quotedRecord === record);
-        assert.ok(copies.length < 64, "quote copy limit");
-        const source = file.history.get(quote.revision)!.subarray(origin.middle_offset, origin.middle_offset + origin.middle_length);
+        const originFile = checkedOrigin(quote);
+        const origin = originFile.spanHistory.get(quote.revision)?.spans.find(candidate => candidate.span === quote.span);
+        assert.ok(origin && originFile.spans.has(quote.span) && origin.middle_length > 0 && origin.attribution, "quote source unavailable");
+        const record = originFile.bindings.get(origin.span)!.record;
+        let copies = 0;
+        for (const item of this.quoteDestinations.get(record) ?? []) {
+          const destination = this.files.get(item)!;
+          for (const entry of destination.spans.values()) {
+            if (entry.span !== retiring && entry.quote && destination.bindings.get(entry.span)?.quotedRecord === record) copies++;
+          }
+        }
+        assert.ok(copies < 64, "quote copy limit");
+        const source = originFile.history.get(quote.revision)!.subarray(origin.middle_offset, origin.middle_offset + origin.middle_length);
         const block = source.toString().split("\n").map(line => `> ${line}`).join("\n") + "\n\n";
         assert.ok(Buffer.byteLength(block) <= 65536, "quote byte limit");
         quoted = { text: block, record, source: quote, attribution: origin.attribution };
@@ -530,7 +543,8 @@ export class FakeHost {
         const existing = file.spans.get(retiring)?.quote;
         if (existing) {
           const { quotedRecord, quoteSource } = file.bindings.get(retiring)!;
-          assert.ok(quotedRecord && quoteSource && !file.withheldRevisions.has(quoteSource.revision), "quote cannot be retained");
+          assert.ok(quotedRecord && quoteSource, "quote cannot be retained");
+          checkedOrigin(quoteSource);
           const bytes = file.history.get(file.revision)!;
           quoted = { text: bytes.subarray(existing.offset, existing.offset + existing.length).toString(),
             record: quotedRecord, source: quoteSource, attribution: existing.attribution };
@@ -555,6 +569,11 @@ export class FakeHost {
         ...(composed.quoted && { quote: { offset: offset + composed.prefixBytes, length: quoteLength, attribution: composed.quoted.attribution } }),
       });
       target.bindings.set(span, { record: record ?? span, quotedRecord: composed.quoted?.record, quoteSource: composed.quoted?.source });
+      if (composed.quoted) {
+        const destinations = this.quoteDestinations.get(composed.quoted.record) ?? new Set<string>();
+        destinations.add(args.item);
+        this.quoteDestinations.set(composed.quoted.record, destinations);
+      }
       return { span };
     };
     const shiftAfter = (target: File, start: number, delta: number) => {
@@ -563,6 +582,7 @@ export class FakeHost {
         span.offset += delta;
         span.middle_offset += delta;
         if (span.quote) span.quote.offset += delta;
+        for (const range of span.host_ranges ?? []) range.offset += delta;
       }
     };
     const publishIndex = (target: File, revision: string, opaque = false) => {
@@ -663,6 +683,13 @@ export class FakeHost {
           const original = target.history.get(target.revision)!;
           let body = stage?.sealed ?? (save.body === undefined ? original : Buffer.from(save.body, "base64"));
           let span = {};
+          if (stage || save.body !== undefined || (save.attested && !save.replace_span)) {
+            assert.ok([...target.spans.values()].every(entry => {
+              const binding = target.bindings.get(entry.span)!;
+              return (!entry.quote || binding.quoteSource?.item === save.item) &&
+                [...this.quoteDestinations.get(binding.record) ?? []].every(item => item === save.item);
+            }), "A whole-file change cannot discard a checked quote from another thread.");
+          }
           if (save.attested) {
             const replacement = compose(save.attested, save.replace_span);
             if (save.replace_span) {
@@ -674,22 +701,50 @@ export class FakeHost {
               shiftAfter(target, prior.offset, replacement.bytes.length - prior.length);
               span = recordSpan(target, prior.offset, replacement, save.attested, record);
               if (save.attested.source.kind === "empty") {
-                for (const dependent of target.spans.values()) {
-                  const quote = dependent.quote;
-                  const binding = target.bindings.get(dependent.span)!;
-                  if (!quote || binding.quotedRecord !== record) continue;
-                  body = Buffer.concat([body.subarray(0, quote.offset), body.subarray(quote.offset + quote.length)]);
-                  dependent.length -= quote.length;
-                  dependent.middle_offset -= quote.length;
-                  delete dependent.quote;
-                  shiftAfter(target, dependent.offset, -quote.length);
-                }
-                for (const [older, index] of target.spanHistory) {
-                  if (index.spans.some(entry => {
-                    const binding = target.bindings.get(entry.span)!;
-                    return entry.attribution !== undefined &&
-                      (binding.record === record || (entry.quote && binding.quotedRecord === record));
-                  })) target.withheldRevisions.add(older);
+                const affected = new Set([save.item, ...this.quoteDestinations.get(record) ?? []]);
+                for (const item of affected) {
+                  const dependentFile = this.files.get(item)!;
+                  let current = item === save.item ? body : dependentFile.history.get(dependentFile.revision)!;
+                  let changed = false;
+                  for (const dependent of dependentFile.spans.values()) {
+                    const quote = dependent.quote;
+                    if (!quote || dependentFile.bindings.get(dependent.span)?.quotedRecord !== record) continue;
+                    current = Buffer.concat([current.subarray(0, quote.offset), current.subarray(quote.offset + quote.length)]);
+                    const quoteEnd = quote.offset + quote.length;
+                    const remaining: NonNullable<Span["host_ranges"]>[number][] = [];
+                    for (const range of dependent.host_ranges ?? []) {
+                      const end = range.offset + range.length;
+                      const length = range.length - Math.max(0, Math.min(end, quoteEnd) - Math.max(range.offset, quote.offset));
+                      if (!length) continue;
+                      const offset = range.offset - Math.min(quote.length, Math.max(0, range.offset - quote.offset));
+                      const last = remaining.at(-1);
+                      if (last && last.offset + last.length === offset) last.length += length;
+                      else remaining.push({ length, offset });
+                    }
+                    if (remaining.length) dependent.host_ranges = [remaining[0], ...remaining.slice(1)];
+                    else delete dependent.host_ranges;
+                    dependent.length -= quote.length;
+                    dependent.middle_offset -= quote.length;
+                    delete dependent.quote;
+                    shiftAfter(dependentFile, dependent.offset, -quote.length);
+                    changed = true;
+                  }
+                  for (const [older, index] of dependentFile.spanHistory) {
+                    if (index.spans.some(entry => {
+                      const binding = dependentFile.bindings.get(entry.span)!;
+                      return entry.attribution !== undefined &&
+                        (binding.record === record || (entry.quote && binding.quotedRecord === record));
+                    })) dependentFile.withheldRevisions.add(older);
+                  }
+                  const snapshot = this.snapshots.get(item);
+                  if (snapshot && dependentFile.withheldRevisions.has(snapshot.source_revision)) this.snapshots.delete(item);
+                  if (item === save.item) body = current;
+                  else if (changed) {
+                    const next = this.id("rev");
+                    dependentFile.history.set(next, current);
+                    dependentFile.revision = next;
+                    publishIndex(dependentFile, next);
+                  }
                 }
               }
             } else {

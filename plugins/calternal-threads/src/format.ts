@@ -30,6 +30,7 @@ export type Message = {
   posted_at: Timestamp;
   replyTo?: string;
   replyToName?: string;
+  replyIn?: ItemLocator;
   replyQuote?: string;
   askedBy?: Person;
   mentions?: string[];
@@ -137,7 +138,7 @@ export function messageRecord(message: Message, participants: Participant[], inl
   }
   if (message.mentions?.length) attrs.push(`mentions=${message.mentions.map(alias).join(",")}`);
   const links: string[] = [];
-  for (const [name, link] of [["run-log", message.log], ["consultation", message.consultation]] as const) {
+  for (const [name, link] of [["run-log", message.log], ["consultation", message.consultation], ["reply-in", message.replyIn]] as const) {
     if (link) links.push(`${name}=${encodeURIComponent(link.space)}/${encodeURIComponent(link.id)}`);
   }
   if (links.length) attrs.push("links=1");
@@ -185,6 +186,9 @@ export function threadHeader(thread: Thread): FramedText {
 
 /** Serialize the transcript in the same format as the append stream. */
 export function encode(thread: Thread): string {
+  if (thread.messages.some(message => message.replyIn && message.replyQuote !== undefined)) {
+    throw new Error("Use a checked write to keep quotes from other threads.");
+  }
   const { prefix, text, suffix } = threadHeader(thread);
   return prefix + text + suffix + thread.messages.map(message => encodeMessage(message, thread.participants)).join("");
 }
@@ -247,7 +251,7 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
   }
   const refs = new Map<string, string>();
   if (attrs.has("links")) {
-    const trailer = /^<!-- ((?:run-log|consultation)=[^ <>]+(?: (?:run-log|consultation)=[^ <>]+)?) -->$/u.exec(body[end - 1]);
+    const trailer = /^<!-- ((?:run-log|consultation|reply-in)=[^ <>]+(?: (?:run-log|consultation|reply-in)=[^ <>]+){0,2}) -->$/u.exec(body[end - 1]);
     if (attrs.get("links") !== "1" || !trailer || body[end - 2] !== "") throw new Error("Could not read the links after the message.");
     for (const ref of trailer[1].split(" ")) {
       const [key, value] = ref.split("=", 2);
@@ -277,12 +281,15 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
   }
   const mentions = attrs.get("mentions");
   if (mentions) message.mentions = mentions.split(",").map(alias => participant(alias).id);
-  for (const [attribute, field] of [["run-log", "log"], ["consultation", "consultation"]] as const) {
+  for (const [attribute, field] of [["run-log", "log"], ["consultation", "consultation"], ["reply-in", "replyIn"]] as const) {
     const value = refs.get(attribute);
     if (!value) continue;
     const [space, id, ...rest] = value.split("/");
     if (!space || !id || rest.length) throw new Error("Could not read the saved link.");
     message[field] = { space: decodeURIComponent(space), id: decodeURIComponent(id) };
+  }
+  if (message.replyIn && (!message.replyTo || (replyQuote !== undefined && !indexed?.span.quote))) {
+    throw new Error("A quote from another thread requires a checked source.");
   }
   if (markers.includes("edited")) message.edited = true;
   return message;
@@ -428,9 +435,9 @@ export function decodeIndexed(bytes: Buffer, index: readonly IndexedSpan[], prov
 export function messageView(thread: Thread, id: string): Omit<Message, "deleted"> {
   const message = thread.messages.find(entry => entry.id === id);
   if (!message || message.deleted) throw new Error("Message unavailable.");
-  const { replyTo, replyToName, replyQuote, deleted, ...fields } = message;
-  const target = replyTo && thread.messages.find(entry => entry.id === replyTo && !entry.deleted);
-  return { ...fields, ...(target && { replyTo, replyToName, ...(replyQuote !== undefined && { replyQuote }) }) };
+  const { replyTo, replyToName, replyQuote, replyIn, deleted, ...fields } = message;
+  const visible = replyIn ? replyQuote !== undefined : replyTo && thread.messages.some(entry => entry.id === replyTo && !entry.deleted);
+  return { ...fields, ...(visible && { replyTo, replyToName, ...(replyQuote !== undefined && { replyQuote }), ...(replyIn && { replyIn }) }) };
 }
 
 export function page(thread: Thread, older?: string, anchor?: string): { view: ItemSnapshotView; older?: string; anchor?: string } {
