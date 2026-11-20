@@ -1,0 +1,48 @@
+{
+  "definition": "RequestCardRecord",
+  "value": {
+    "request_ref": "request-ref",
+    "title": "Approve edit",
+    "state": "open",
+    "material": [
+      {
+        "name": "item",
+        "label": "Item",
+        "value": "Research note"
+      },
+      {
+        "name": "effect",
+        "label": "Effect",
+        "value": "Edit Research note"
+      },
+      {
+        "name": "decision",
+        "label": "Decision",
+        "value": "approve"
+      }
+    ],
+    "actions": [
+      {
+        "decision": "approve",
+        "lifetimes": [
+          "once"
+        ]
+      },
+      {
+        "decision": "deny"
+      }
+    ],
+    "card_context": "context"
+  },
+  "checked_effect": {
+    "effect": {
+      "label": "Effect",
+      "value": "Edit Research note"
+    },
+    "item": {
+      "label": "Item",
+      "value": "Research note"
+    }
+  },
+  "error": "'decision' must come from offered actions"
+}

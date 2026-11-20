@@ -1,0 +1,36 @@
+{
+  "definition": "RequestCardRecord",
+  "value": {
+    "request_ref": "request-ref",
+    "title": "Approve edit",
+    "state": "open",
+    "material": [
+      {
+        "name": "item",
+        "label": "Item",
+        "value": "Research note"
+      },
+      {
+        "name": "effect",
+        "label": "Effect",
+        "value": "Dismiss an unapprovable edit request"
+      }
+    ],
+    "actions": [
+      {
+        "decision": "deny"
+      }
+    ],
+    "card_context": "context"
+  },
+  "checked_effect": {
+    "effect": {
+      "label": "Effect",
+      "value": "Dismiss an unapprovable edit request"
+    },
+    "item": {
+      "label": "Item",
+      "value": "Research note"
+    }
+  }
+}

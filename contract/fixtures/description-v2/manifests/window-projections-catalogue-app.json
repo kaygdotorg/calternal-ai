@@ -67,11 +67,11 @@
           "audience": "member_item"
         },
         "field_threadref": {
-          "type": "ThreadRef",
+          "type": "ItemRef",
           "audience": "member_item"
         },
         "field_turnref": {
-          "type": "TurnRef",
+          "type": "ExecutionRef",
           "audience": "member_item"
         },
         "field_requestref": {

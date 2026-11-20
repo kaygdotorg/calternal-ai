@@ -1,0 +1,8 @@
+{
+  "type": "view_open",
+  "view_ref": "notes:open",
+  "route": {
+    "collection": "collection-checked",
+    "item": "note-checked"
+  }
+}

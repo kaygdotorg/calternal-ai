@@ -1,0 +1,9 @@
+{
+  "audience": "member",
+  "bind": "notes",
+  "state": "throttled",
+  "anchor": "end",
+  "result_version": null,
+  "window_ref": null,
+  "rows": []
+}

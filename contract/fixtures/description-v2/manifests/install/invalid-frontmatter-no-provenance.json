@@ -1,0 +1,106 @@
+{
+  "api_version": 2,
+  "id": "notes",
+  "name": "Notes",
+  "version": "1.0.0",
+  "icon": "notes",
+  "network": "none",
+  "apps": [
+    {
+      "id": "notes",
+      "name": "Notes",
+      "icon": "notes",
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "notes-tags-app.json",
+          "sha256": "195687e629df55a441c96ab56a04aa2a90de8e037390d469eb1c2321faac547e"
+        }
+      }
+    }
+  ],
+  "kinds": [
+    {
+      "id": "notes",
+      "icon": "notes",
+      "title_field": "title",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        }
+      },
+      "indexed_fields": {
+        "pinned": {
+          "type": "Boolean",
+          "audience": "member_item"
+        },
+        "snippet": {
+          "type": "Text",
+          "audience": "member_item",
+          "source": "body_excerpt"
+        },
+        "thumbnail": {
+          "type": "RowImageRef",
+          "audience": "member_item",
+          "body_derived": true
+        },
+        "tags": {
+          "type": "TextSet",
+          "audience": "member_item"
+        }
+      },
+      "searchable": true,
+      "live_room": "yjs-v1",
+      "host_create": {
+        "defaults": {
+          "title": "Untitled"
+        }
+      },
+      "extractors": [
+        {
+          "selector": "frontmatter",
+          "key": "tags",
+          "output": "tags"
+        },
+        {
+          "selector": "inline_tags",
+          "output": "tags",
+          "marker": "#",
+          "separator": "/",
+          "exclude": [
+            "code",
+            "links",
+            "addresses",
+            "escapes",
+            "frontmatter"
+          ]
+        }
+      ],
+      "device_row_images": [
+        "thumbnail"
+      ],
+      "trash_retention_days": 30
+    }
+  ],
+  "reads": [
+    "collections",
+    "notes"
+  ],
+  "operations": []
+}

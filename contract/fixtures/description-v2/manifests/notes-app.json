@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "notes-app.json",
-          "sha256": "7f5d5a8142dafe1a9990e6c16a0ec0c291558bd06670f807c68f28b8a3f5ff58"
+          "sha256": "e5a7c092a2f890b6402c0b3631b806f6752448cef8149ff36133660eac237ae2"
         }
       }
     }
@@ -59,6 +59,11 @@
           "type": "RowImageRef",
           "audience": "member_item",
           "body_derived": true
+        },
+        "tags": {
+          "type": "TextSet",
+          "audience": "member_item",
+          "body_derived": true
         }
       },
       "searchable": true,
@@ -67,7 +72,31 @@
         "defaults": {
           "title": "Untitled"
         }
-      }
+      },
+      "extractors": [
+        {
+          "selector": "frontmatter",
+          "key": "tags",
+          "output": "tags"
+        },
+        {
+          "selector": "inline_tags",
+          "output": "tags",
+          "marker": "#",
+          "separator": "/",
+          "exclude": [
+            "code",
+            "links",
+            "addresses",
+            "escapes",
+            "frontmatter"
+          ]
+        }
+      ],
+      "device_row_images": [
+        "thumbnail"
+      ],
+      "trash_retention_days": 30
     }
   ],
   "reads": [

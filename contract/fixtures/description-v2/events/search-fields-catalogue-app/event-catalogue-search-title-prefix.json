@@ -2,5 +2,6 @@
   "type": "search",
   "bind": "title",
   "text": "storage",
-  "match": "prefix"
+  "match": "prefix",
+  "settle_generation": 1
 }

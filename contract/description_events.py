@@ -1,12 +1,19 @@
 """Template-aware checks for event identifiers and catalogue request shapes."""
 
-from description_verification import check
+from description_verification import check, validate_search_generation
 
-COMPONENT_TYPES = {"item-editor", "turn-transcript", "composer", "request-card", "sealed-html-frame"}
+COMPONENT_TYPES = {"item-editor", "conversation-transcript", "composer", "request-card", "sealed-html-frame"}
 TYPED_ROUTES = {
-    "transcript.page": "turn-transcript",
+    "transcript.page": "conversation-transcript",
     "composer.options": "composer",
     "request_resolve": "request-card",
+    "request-card.read": "request-card",
+    "transcript.quote": "conversation-transcript",
+    "transcript.body": "conversation-transcript",
+    "transcript.attachment": "conversation-transcript",
+    "editor.open": "item-editor",
+    "row_images.prepare": "item-editor",
+    "transcript.follow": "conversation-transcript",
     "sealed_frame.open": "sealed-html-frame",
     "sealed_frame.resize": "sealed-html-frame",
     "sealed_frame.open_link": "sealed-html-frame",
@@ -14,7 +21,7 @@ TYPED_ROUTES = {
 HOST_SURFACE_ROUTES = {"undo", "status", "view.open", "view.renew"}
 
 
-def walk(node, errors, path="$"):
+def walk(node, errors, path="$", *, skip_literals=False):
     """Yield each JSON node with its document path."""
     if errors.full:
         return
@@ -22,10 +29,78 @@ def walk(node, errors, path="$"):
     yield path, node
     if isinstance(node, dict):
         for key, value in errors.each(node.items()):
-            yield from walk(value, errors, f"{path}.{key}")
+            if not (skip_literals and key == "literal"):
+                yield from walk(value, errors, f"{path}.{key}", skip_literals=skip_literals)
     elif isinstance(node, list):
         for index, value in enumerate(errors.each(node)):
-            yield from walk(value, errors, f"{path}[{index}]")
+            yield from walk(value, errors, f"{path}[{index}]", skip_literals=skip_literals)
+
+
+def route_operands(node, errors):
+    """Find route value consumers without mistaking a route's target for an input."""
+    return {value["route"] for _, value in walk(node, errors, skip_literals=True)
+            if isinstance(value, dict) and value.keys() == {"route"} and isinstance(value["route"], str)}
+
+
+def check_route_operands(request, allowed, required, path, errors):
+    """Check the declared names and leave runtime ref authority to the host."""
+    supplied = request.get("route", {}).keys()
+    for name in errors.each(sorted(supplied - allowed)):
+        errors.append(f"{path}: undeclared route operand {name!r}")
+    for name in errors.each(sorted(required - supplied)):
+        errors.append(f"{path}: missing required route operand {name!r}")
+
+
+def bind_route_operands(bind, errors):
+    """Collect query inputs across the source and both filter groups."""
+    return route_operands([bind["source"], bind.get("filter", {})], errors)
+
+
+def view_route_operands(view, errors):
+    """Collect host-facing chrome and content inputs and required root config."""
+    card = view.get("view", {}).get("root", {})
+    allowed = route_operands([view.get("chrome", {}), card], errors)
+    required = set()
+    if "chrome" not in view:
+        for _, node in walk(card, errors, skip_literals=True):
+            if isinstance(node, dict) and node.get("type") in COMPONENT_TYPES:
+                required.update(route_operands(node.get("config", {}), errors))
+    return allowed, required
+
+
+def check_route_capacity(view, limit, errors):
+    """Reject consumers that cannot fit their prerequisites in one request."""
+    def verify(path, names):
+        if len(names) > limit:
+            errors.append(f"{path}: needs more than {limit} distinct route operands")
+
+    def consumers(node, path, required):
+        for position, value in walk(node, errors, path, skip_literals=True):
+            if not isinstance(value, dict):
+                continue
+            if "id" in value and ("operation" in value or "shell" in value):
+                inputs = [value.get("inputs", {}), value.get("shell", {})]
+                verify(position, required | route_operands(inputs, errors))
+            if value.get("type") in COMPONENT_TYPES:
+                verify(position, required | route_operands(value["config"], errors))
+
+    _, required = view_route_operands(view, errors)
+    verify("$.view.root", required)
+    consumers(view.get("chrome", {}), "$.chrome", required)
+    consumers(view.get("view", {}).get("root", {}), "$.view.root", required)
+    for index, bind in enumerate(errors.each(view.get("binds", []))):
+        path = f"$.binds[{index}]"
+        required = bind_route_operands(bind, errors)
+        verify(path, required)
+        consumers(bind.get("row", {}), f"{path}.row", required)
+
+
+def check_bind_scope(request, bind, path, errors, *, row_context=False):
+    required = bind_route_operands(bind, errors)
+    allowed = required | route_operands(bind.get("row", {}), errors) if row_context else required
+    check_route_operands(request, allowed, required, f"{path}.route", errors)
+    if ("parent" in request) != bool(bind["source"].get("parent")):
+        errors.append(f"{path}.parent: parent scope must match source.parent")
 
 
 def prompt_slots(action, errors):
@@ -38,8 +113,10 @@ def prompt_slots(action, errors):
 class EventBindings:
     """Index the authored identifiers of one verified app template."""
 
-    def __init__(self, view, errors):
+    def __init__(self, view, errors, manifest=None):
+        self.operations = (manifest or {}).get("operations", {})
         chrome = view.get("chrome", {})
+        self.view_operands, self.required_view_operands = view_route_operands(view, errors)
         self.sidebar = chrome.get("sidebar")
         self.panel = chrome.get("panel")
         footer = chrome.get("footer", {})
@@ -48,6 +125,7 @@ class EventBindings:
         self.sections = {section["id"]: section for section in errors.each((self.sidebar or {}).get("sections", []))}
         self.binds = {bind["id"]: bind for bind in errors.each(view.get("binds", []))}
         self.actions = {}
+        self.row_action_binds = {}
         self.shell_actions = {}
         self.components = {}
         self.routes = set()
@@ -68,7 +146,7 @@ class EventBindings:
         self.form_fields = {}
         self.choices = set()
         self.multiple = set()
-        for _, node in walk(view, errors):
+        for path, node in walk(view, errors):
             if not isinstance(node, dict):
                 continue
             if isinstance(route := node.get("route"), str):
@@ -84,6 +162,10 @@ class EventBindings:
                 self.multiple.add(node["bind"])
             if isinstance(node.get("operation"), str) and "id" in node:
                 self.actions[node["id"]] = node
+                if path.startswith("$.binds["):
+                    index, _, rest = path.removeprefix("$.binds[").partition("]")
+                    if rest.startswith(".row."):
+                        self.row_action_binds[node["id"]] = view["binds"][int(index)]["id"]
                 self.choices.update(name for name, slot in errors.each(prompt_slots(node, errors).items()) if slot == "choices")
             if "shell" in node:
                 self.shell_actions[node["id"]] = node["shell"]
@@ -99,6 +181,45 @@ class EventBindings:
         if bind is None:
             errors.append(f"$: bind {ident!r} is not in the active description")
         return bind
+
+
+def check_composer_actions(bindings, reply, audience, errors):
+    """Check the complete composer action map in one accepted host reply."""
+    issued = {}
+    for component, actions in errors.each(reply.get("composer_actions", {}).items()):
+        if bindings.components.get(component, {}).get("type") != "composer":
+            errors.append(f"$.authority_reply.composer_actions: {component!r} is not a composer in the active description")
+        for purpose, action_id in errors.each(actions.items()):
+            if purpose == "resume" and audience not in ("own_space_member", "member"):
+                errors.append("$.authority_reply.composer_actions: Resume requires a member view")
+            if action_id in issued or action_id in bindings.actions or action_id in bindings.shell_actions:
+                errors.append(f"$.authority_reply.composer_actions: duplicate action ID {action_id!r}")
+            if action_id not in reply["activation_contexts"]:
+                errors.append(f"$.authority_reply.activation_contexts: missing issued context for {action_id!r}")
+            issued[action_id] = (component, purpose)
+    return issued
+
+
+def check_composer_invoke(event, reply, issued, errors):
+    """Resolve a host-owned action only from the latest accepted reply."""
+    action_id = event["action_id"]
+    if action_id not in issued:
+        errors.append("$.action_id: expected a composer action issued in the originating view")
+        return
+    if reply["activation_contexts"].get(action_id) != event["activation_context"]:
+        errors.append("$.activation_context: must match the issued composer action context")
+    interaction = event.get("interaction", {})
+    purpose = issued[action_id][1]
+    if purpose == "send":
+        allowed = {"draft", "options"}
+        if "dispatch" in event:
+            errors.append("$.dispatch: prepared Send requires confirmation")
+    else:
+        allowed = set()
+        if purpose == "resume" and "dispatch" in event:
+            errors.append("$.dispatch: Resume requires protected confirmation")
+    if interaction.keys() - allowed:
+        errors.append("$.interaction: unexpected values for this host composer action")
 
 
 def check_invoke(event, bindings, errors):
@@ -171,6 +292,8 @@ def check_component(event, bindings, errors, catalogue):
     allowed = route in HOST_SURFACE_ROUTES
     if route in TYPED_ROUTES:
         allowed = component is not None and component["type"] == TYPED_ROUTES[route]
+        if allowed and route == "row_images.prepare" and component["config"].get("mode") == "read":
+            errors.append("$.component: row_images.prepare requires an editable item editor")
         if allowed and route == "composer.options":
             controls = component["config"].get("controls", [])
             if request["control"] not in errors.each(controls):
@@ -185,6 +308,10 @@ def check_component(event, bindings, errors, catalogue):
             errors.append("$.request.kind: Trash Sheet kind is not declared by a Bind")
     if not allowed:
         errors.append(f"$.component: {ident!r} cannot use route {route!r}")
+    elif "component" in request and request["component"] != ident:
+        errors.append("$.request.component: must match the component envelope")
+    elif route == "view.open":
+        check_route_operands(request, bindings.view_operands, bindings.required_view_operands, "$.request.route", errors)
 
 
 def check_event_binding(event, bindings, errors, catalogue):
@@ -201,12 +328,15 @@ def check_event_binding(event, bindings, errors, catalogue):
         request = event["request"]
         bind = bindings.bind_for(request["bind"], errors)
         if bind is not None:
-            if ("parent" in request) != bool(bind["source"].get("parent")):
-                errors.append("$.request.parent: window parent scope must match source.parent")
+            validate_search_generation(request, bind, errors)
+            check_bind_scope(request, bind, "$.request", errors, row_context=True)
             if bind["source"]["type"] == "search":
                 check({"$ref": "#/$defs/EventSearchWindow"}, event, "$", errors)
     elif event_type in ("selection", "selection_set"):
         bind = bindings.bind_for(event["bind"], errors)
+        if bind:
+            check_bind_scope(event, bind, "$", errors, row_context=event_type == "selection")
+            validate_search_generation(event, bind, errors)
         if bind and bind["source"]["type"] not in ("list", "search"):
             errors.append("$.bind: selection requires a list or search Bind")
         if bind and event_type == "selection_set" and event["bind"] not in bindings.multiple:
@@ -215,6 +345,10 @@ def check_event_binding(event, bindings, errors, catalogue):
         bind = bindings.bind_for(event.get("bind", bindings.footer_search), errors)
         if bind and bind["source"]["type"] != "search":
             errors.append(f"$: bind {bind['id']!r} is not a search bind")
+        elif bind:
+            check_bind_scope(event, bind, "$", errors)
+    elif event_type == "view_open":
+        check_route_operands(event, bindings.view_operands, bindings.required_view_operands, "$.route", errors)
     elif event_type == "refresh":
         if "bind" in event:
             bindings.bind_for(event["bind"], errors)
@@ -240,5 +374,5 @@ def check_event_binding(event, bindings, errors, catalogue):
     elif event_type == "choice_options":
         if event["slot"] not in bindings.choices:
             errors.append(f"$.slot: unknown choice slot {event['slot']!r} in the active description")
-    elif event_type not in {"invoke_confirm", "invoke_dispatch", "view_open", "lease_renew", "undo", "action_status"}:
+    elif event_type not in {"invoke_confirm", "invoke_dispatch", "lease_renew", "undo", "action_status"}:
         errors.append(f"$.type: missing template checker for event {event_type!r}")

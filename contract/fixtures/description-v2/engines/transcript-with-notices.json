@@ -1,0 +1,21 @@
+{
+  "definition": "TranscriptPage",
+  "value": {
+    "records": [
+      {
+        "record_id": "record-1",
+        "role": "agent",
+        "text": "Finished"
+      }
+    ],
+    "committed_cursor": "cursor-1",
+    "older_cursor": "older-1",
+    "notices": [
+      {
+        "label": "Lantern",
+        "at": "2026-11-20T12:00:00Z",
+        "state": "done"
+      }
+    ]
+  }
+}

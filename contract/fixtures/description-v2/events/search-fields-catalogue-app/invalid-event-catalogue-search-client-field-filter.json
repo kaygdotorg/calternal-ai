@@ -2,5 +2,6 @@
   "type": "search",
   "bind": "all",
   "text": "storage",
-  "field_filter": "title"
+  "field_filter": "title",
+  "settle_generation": 1
 }

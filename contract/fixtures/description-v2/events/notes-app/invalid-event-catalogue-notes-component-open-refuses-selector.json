@@ -1,0 +1,12 @@
+{
+  "type": "component",
+  "component": "create",
+  "route": "view.open",
+  "request": {
+    "type": "view_open",
+    "view_ref": "notes:open",
+    "route": {
+      "view": "notes"
+    }
+  }
+}

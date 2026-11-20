@@ -21,9 +21,9 @@
           {
             "id": "ar",
             "title": "Archive",
-            "operation": "turns.archive",
+            "operation": "host.item.archive",
             "inputs": {
-              "thread": {
+              "item": {
                 "row": "field",
                 "field": "provider"
               }

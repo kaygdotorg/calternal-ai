@@ -82,10 +82,20 @@ restart persistence before removing only that directory. Running-server mode
 creates disposable notes, never stops that server, and namespaces request IDs
 per run so it can be repeated. It never prints tokens.
 
-## Plugin v2 verifier
+## Plugin v2 conformance tool
 
-Run the pinned verifier alongside its Python modules and JSON Schemas. Use ordinary
-Python so it can import adjacent modules. `python -I` is unsupported.
+The [Plugin API text](../docs/plugin-api-v2.md),
+[description contract](../docs/description-contract.md), host catalogue and
+schemas are normative and are sealed together on review.
+`verify-description.py` and its modules are a versioned conformance tool
+with their own fixtures, tests and fixes. The tool reports evidence about
+the contract. It does not define the contract or hold its seal. Derive
+cross-reply rules from the catalogue wherever possible and keep the
+shared fixture corpus for host, SDK and renderer checks.
+
+Record `python3 contract/verify-description.py --version` and the
+contract revision with a run. Use ordinary Python so it can import the
+adjacent modules. `python -I` is unsupported.
 
 ```sh
 python3 contract/verify-description.py
@@ -102,11 +112,29 @@ passes structural validation before its IDs are indexed or its semantic checks
 run. Component events also pass the catalogue's route-specific request schema
 before the originating template is indexed. The host
 checks live authority over opaque references such as rows, leases, activations
-and proofs. Directory mode finds replies in
+and proofs. To verify a captured host-issued composer Invoke, submit
+`{"view_open": <ViewOpenResult>, "event": <ResolveActivation>}` as the
+event artifact. The verifier matches the composer and exact context against
+the originating description and view-open reply. For an Invoke issued
+on renewal, include `renewals: [{request, result}, …]` in acceptance order.
+The verifier checks up to 16 pairs against the immediately preceding reply’s
+lease and grant and validates each replacement map. The Invoke uses only
+the last map and context. The capture bound applies to verifier artifacts.
+
+Reply validation checks the named audience against each declared source and
+checks cache text against the offline-eligible display parts of the paired
+window. The grant fixtures also supply the body permission as an oracle
+input. A standalone reply contains no proof of the live body grant. The
+host checks live source, item and field authority before planning and at
+delivery.
+
+Directory mode finds replies in
 `replies/`. Use `--reply FILE` to select replies and `--origins FILE` to override
 `replies/origins.json`. The origins map names a verified description and Bind
 for each reply. Events and app templates alone need no origins map. Use
-`--installed-manifest FILE` for additional kind owners.
+`--installed-manifest FILE` for additional kind owners and provider
+contributions. The verifier rejects provider IDs repeated across the
+supplied installation manifests.
 
 | Input | Bound or check |
 | --- | --- |
@@ -116,7 +144,7 @@ for each reply. Events and app templates alone need no origins map. Use
 | Numbers | Tokens are at most 128 characters. Integer tokens are within ±(2⁵³−1) and decimal or exponent tokens must be finite binary64 values. Schemas enforce smaller ranges where declared. |
 | Embedded schemas and references | The manifest passes the pinned manifest schema before indexing. Embedded schemas are checked against the vendored Draft 7 meta-schema and linked against the pinned offline registry and their own schema positions. There is no network fetch. Schema URIs and embedded patterns are capped at 2,048 UTF-8 bytes. Schema evaluation allows 128 nested evaluations. Each package verification or fixture check shares one 200,000-visit budget and one 32-diagnostic collector across decoded tree inspection, structure, indexing, schema linking, ownership and semantic checks. Collection checks preflight their minimum cost where the size is known, charge each inspected element and stop at the diagnostic cap. A reference must target a schema position, even when the target is a boolean. |
 | IDs and namespaces | Duplicate declaration IDs are rejected before indexing, including manifest setting keys and secret names. Action IDs span Invoke and shell sites. Form and component IDs are checked in their respective view namespaces. Colliding installed package IDs, kind owners and reserved host kind or operation names are rejected. |
-| Catalogue selection | Conformance always uses the checked-in host catalogue. The environment variable `CALTERNAL_HOST_CATALOGUE` is available only in `--fixture-testing`, which cannot be combined with package mode. |
+| Catalogue selection | The tool uses the checked-in host catalogue. The environment variable `CALTERNAL_HOST_CATALOGUE` is available only in `--fixture-testing`, which cannot be combined with package mode. |
 
 The dev-01 null-array regression submits a full 4 MiB artifact. It requires the
 post-decode visit-limit refusal within 5 seconds and 128 MiB peak RSS for the

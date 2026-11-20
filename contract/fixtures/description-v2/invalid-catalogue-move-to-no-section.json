@@ -22,7 +22,7 @@
             "title": "Move to",
             "operation": "host.layout.move_to",
             "inputs": {
-              "thread": {
+              "conversation": {
                 "context": "item"
               }
             }

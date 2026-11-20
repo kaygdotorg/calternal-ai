@@ -1,0 +1,7 @@
+{
+  "definition": "ExecutionStopRequest",
+  "value": {
+    "request_id": "request-1"
+  },
+  "error": "matches 0 of the oneOf branches"
+}

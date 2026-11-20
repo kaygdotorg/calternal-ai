@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "invalid-catalogue-move-to-field-as-thread-app.json",
-          "sha256": "c3a29f36f8e8dffbec8825e988186963e7c80f8849e647b85e33181a9a826547"
+          "sha256": "387f88fdc5f7ef1590c348f5c8790d0ce579bc01ca91cd07e9794c6537d2c991"
         }
       }
     }

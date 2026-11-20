@@ -1,0 +1,13 @@
+{
+  "definition": "WindowRow",
+  "value": {
+    "id": "item-1",
+    "fields": {
+      "title": "Example",
+      "thumbnail": "previous-authorized-image-ref"
+    },
+    "stale_images": [
+      "thumbnail"
+    ]
+  }
+}

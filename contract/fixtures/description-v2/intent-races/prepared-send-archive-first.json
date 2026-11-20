@@ -1,0 +1,40 @@
+{
+  "origin": "prepared_send",
+  "events": [
+    [
+      "idle_archive",
+      null,
+      "archived"
+    ],
+    [
+      "commit_intent",
+      "first",
+      "refused"
+    ],
+    [
+      "claim",
+      "first",
+      "refused"
+    ],
+    [
+      "undo",
+      null,
+      "restored"
+    ],
+    [
+      "commit_intent",
+      "fresh",
+      "starting"
+    ],
+    [
+      "claim",
+      "fresh",
+      "started"
+    ],
+    [
+      "claim",
+      "fresh",
+      "replayed"
+    ]
+  ]
+}

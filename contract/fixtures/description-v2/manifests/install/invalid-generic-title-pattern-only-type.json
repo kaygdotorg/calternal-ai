@@ -1,0 +1,25 @@
+{
+  "api_version": 2,
+  "id": "albums",
+  "name": "Albums",
+  "version": "1.0.0",
+  "icon": "folder",
+  "network": "none",
+  "apps": [],
+  "reads": ["albums"],
+  "operations": [],
+  "kinds": [
+    {
+      "id": "albums",
+      "icon": "folder",
+      "title_field": "title",
+      "storage": { "hidden": true },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "properties": { "title": {} },
+        "patternProperties": { "^title$": { "type": "string" } }
+      }
+    }
+  ]
+}

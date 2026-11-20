@@ -1,0 +1,7 @@
+{
+  "definition": "ExecutionAttemptChildRefusal",
+  "value": {
+    "reason": "queue_unlimited"
+  },
+  "error": "$.reason:"
+}

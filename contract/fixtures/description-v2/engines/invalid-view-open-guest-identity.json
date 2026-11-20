@@ -1,0 +1,18 @@
+{
+  "definition": "ViewOpenResult",
+  "value": {
+    "lease": {
+      "lease_ref": "lease",
+      "lease_seconds": 15,
+      "grant_revision": "current",
+      "cache_partition": "personal"
+    },
+    "audience": "guest",
+    "activation_contexts": {},
+    "viewer": {
+      "person": "person-1",
+      "role": "reader"
+    }
+  },
+  "error": "$.viewer: not allowed here"
+}

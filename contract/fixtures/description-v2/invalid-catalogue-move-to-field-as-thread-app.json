@@ -58,9 +58,6 @@
             "icon": "folder",
             "operation": "host.layout.move_to",
             "inputs": {
-              "thread": {
-                "context": "item"
-              },
               "section": {
                 "prompt": {
                   "title": "Move to",
@@ -69,6 +66,9 @@
                     "bind": "layout"
                   }
                 }
+              },
+              "conversation": {
+                "context": "item"
               }
             }
           },
@@ -76,9 +76,9 @@
             "id": "archive-waiting",
             "title": "Archive",
             "icon": "archive",
-            "operation": "turns.archive",
+            "operation": "host.item.archive",
             "inputs": {
-              "thread": {
+              "item": {
                 "context": "item"
               }
             }
@@ -136,10 +136,6 @@
             "icon": "folder",
             "operation": "host.layout.move_to",
             "inputs": {
-              "thread": {
-                "row": "field",
-                "field": "provider"
-              },
               "section": {
                 "prompt": {
                   "title": "Move to",
@@ -148,6 +144,10 @@
                     "bind": "layout"
                   }
                 }
+              },
+              "conversation": {
+                "row": "field",
+                "field": "provider"
               }
             }
           },
@@ -155,9 +155,9 @@
             "id": "archive-all",
             "title": "Archive",
             "icon": "archive",
-            "operation": "turns.archive",
+            "operation": "host.item.archive",
             "inputs": {
-              "thread": {
+              "item": {
                 "context": "item"
               }
             }
@@ -212,9 +212,6 @@
             "icon": "folder",
             "operation": "host.layout.move_to",
             "inputs": {
-              "thread": {
-                "context": "item"
-              },
               "section": {
                 "prompt": {
                   "title": "Move to",
@@ -223,6 +220,9 @@
                     "bind": "layout"
                   }
                 }
+              },
+              "conversation": {
+                "context": "item"
               }
             }
           },
@@ -230,9 +230,9 @@
             "id": "archive-children",
             "title": "Archive",
             "icon": "archive",
-            "operation": "turns.archive",
+            "operation": "host.item.archive",
             "inputs": {
-              "thread": {
+              "item": {
                 "context": "item"
               }
             }
@@ -377,9 +377,9 @@
             "id": "archive-in-section",
             "title": "Archive",
             "icon": "archive",
-            "operation": "turns.archive",
+            "operation": "host.item.archive",
             "inputs": {
-              "thread": {
+              "item": {
                 "context": "item"
               }
             }
@@ -428,8 +428,12 @@
                 "invoke": {
                   "id": "create",
                   "title": "New thread",
-                  "operation": "turns.create",
-                  "inputs": {}
+                  "operation": "host.item.create",
+                  "inputs": {
+                    "kind": {
+                      "literal": "threads"
+                    }
+                  }
                 }
               }
             }
@@ -504,10 +508,10 @@
     "root": {
       "type": "component",
       "component": {
-        "type": "turn-transcript",
+        "type": "conversation-transcript",
         "id": "transcript",
         "config": {
-          "thread": {
+          "conversation": {
             "route": "thread"
           }
         }

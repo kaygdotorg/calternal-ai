@@ -1,0 +1,7 @@
+{
+  "definition": "RequestCardRead",
+  "value": {
+    "component": "approval",
+    "request_ref": "request-ref"
+  }
+}

@@ -3,6 +3,6 @@
   "component": "transcript",
   "route": "transcript.page",
   "request": {
-    "thread": "th-1"
+    "conversation": "th-1"
   }
 }

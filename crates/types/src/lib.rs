@@ -17,6 +17,7 @@ mod item_access;
 mod owner;
 mod owner_lifecycle;
 mod page;
+mod plugin_v2;
 mod space_paths;
 /// Strict JSON object-member decoding shared by manifests and settings.
 pub mod unique_json;
@@ -29,6 +30,10 @@ pub use item_access::{ItemAccessChange, begin_item_access_change, item_access_re
 pub use owner::Owner;
 pub use owner_lifecycle::{OwnerLifecycle, OwnerScoped, OwnerStep};
 pub use page::Page;
+pub use plugin_v2::{
+    ContributionId, ContributionIdentity, ExecutionIntentRef, ExecutionRef, HarnessRef, ItemRef,
+    JobId, LeaseRef, PackageId, PlacementRef, ReceiptRef, RequestId, RevisionRef,
+};
 pub use space_paths::{SPACE_INSTRUCTIONS_PATH, is_reserved_space_path};
 
 /// Maximum JSON bytes in a plugin worker frame, excluding its newline (256 KiB).

@@ -12,12 +12,21 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
     },
-    "./verify-package": "./scripts/verify-package.mjs"
+    "./verify-package": "./scripts/verify-package.mjs",
+    "./author-context": {
+      "types": "./scripts/author-context.d.mts",
+      "import": "./scripts/author-context.mjs"
+    },
+    "./contribution-frame": {
+      "types": "./scripts/contribution-frame.d.mts",
+      "import": "./scripts/contribution-frame.mjs"
+    }
   },
   "scripts": {
     "build": "node scripts/generate-author-types.mjs && tsc -p tsconfig.json",
     "test": "npm run build && node --test test/*.test.mjs && npm run test:author",
-    "test:author": "vitest run test/author-v2.test.ts test/build-author-package.test.ts"
+    "test:author": "vitest run test/author-v2.test.ts test/build-author-package.test.ts",
+    "test:broker-types": "tsc --noEmit --strict --module nodenext test/revisioned-broker-types.mts"
   },
   "dependencies": {
     "@calternal/contracts": "*",

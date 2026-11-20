@@ -13,6 +13,9 @@ from textwrap import dedent
 import unittest
 
 from description_events import EventBindings, check_event_binding, walk
+from description_projection_cases import ProjectionCases
+from description_scope_cases import ScopeCases
+from description_review_cases import ReviewCases
 from description_input import MAX_ARTIFACT_BYTES, PackageInput, Validation, VisitLimit, check_unique_ids, load_strict
 from description_verification import CATALOGUE, check, check_window_rows, compile_embedded, load_reply_origins, manifest_schema, parse_manifest, schema
 
@@ -36,7 +39,9 @@ def verifier_cli():
     return verifier
 
 
-class PackageTests(unittest.TestCase):
+class PackageTests(ReviewCases, ProjectionCases, ScopeCases, unittest.TestCase):
+    fixtures = FIXTURES
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -49,6 +54,11 @@ class PackageTests(unittest.TestCase):
 
     def stage(self, name):
         self.template = name + ".json"
+        self.installed = []
+        if name == "threads-nested-catalogue-app":
+            owner = self.package / "installed-conversation-owner.json"
+            shutil.copyfile(FIXTURES / "manifests" / "rev14-threads-owner.json", owner)
+            self.installed = ["--installed-manifest", owner]
         shutil.copyfile(FIXTURES / self.template, self.package / self.template)
         shutil.copyfile(FIXTURES / "manifests" / self.template, self.manifest)
 
@@ -67,7 +77,7 @@ class PackageTests(unittest.TestCase):
                               env=env, capture_output=True, text=True, timeout=15)
 
     def verify(self, *args, failure=None, env=None):
-        result = self.cli("--package", self.package, *args, env=env)
+        result = self.cli("--package", self.package, *self.installed, *args, env=env)
         if failure is None:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         else:
@@ -91,7 +101,8 @@ class PackageTests(unittest.TestCase):
         self.event(invoke("create-blank", form={"title": "text"}), "unknown form field")
 
     def test_window_checks_bind_and_parent_scope(self):
-        self.event({"type": "window", "request": {"bind": "notes", "from": 0, "to": 10}})
+        self.event({"type": "window", "request": {"bind": "notes", "from": 0, "to": 10,
+                                                   "route": {"collection": "opaque"}}})
         self.event({"type": "window", "request": {"bind": "bogus", "from": 0, "to": 10}}, "active description")
         self.event({"type": "window", "request": {"bind": "notes", "parent": "opaque", "from": 0, "to": 10}}, "parent scope")
         self.event({"type": "window", "request": {"bind": "notes", "from": 0, "to": 201}}, "max_request_span")
@@ -102,7 +113,7 @@ class PackageTests(unittest.TestCase):
         self.event(scoped, "parent scope")
 
     def test_selection_checks_bind_and_row_scope(self):
-        self.event({"type": "selection", "bind": "notes", "row": "opaque"})
+        self.event({"type": "selection", "bind": "notes", "row": "opaque", "route": {"collection": "opaque"}})
         self.event({"type": "selection", "bind": "bogus", "row": "opaque"}, "active description")
         self.event({"type": "selection_set", "bind": "bogus", "rows": []}, "active description")
         self.event({"type": "selection_set", "bind": "notes", "rows": []}, "multiple-selection Bind")
@@ -111,8 +122,46 @@ class PackageTests(unittest.TestCase):
         self.event(invoke("trash-selected", rows=["opaque"]))
 
     def test_search_checks_bind_type(self):
-        self.event({"type": "search", "bind": "bogus", "text": "words"}, "active description")
-        self.event({"type": "search", "bind": "notes", "text": "words"}, "not a search bind")
+        self.event({"type": "search", "bind": "bogus", "text": "words", "settle_generation": 1}, "active description")
+        self.event({"type": "search", "bind": "notes", "text": "words", "settle_generation": 1}, "not a search bind")
+
+    def test_installed_provider_id_is_unique_across_packages(self):
+        self.stage("independent-runner-app")
+        manifest = json.loads(self.manifest.read_bytes())
+        provider = manifest["providers"][0]
+        other = {
+            "api_version": 2, "id": "another-runner", "version": "1.0.0",
+            "name": "Another runner", "icon": "puzzle", "network": "none",
+            "apps": [], "kinds": [], "operations": [], "providers": [provider],
+        }
+        installed = self.package / "installed-provider.json"
+        self.installed = ["--installed-manifest", installed]
+        write_json(installed, other)
+        self.verify(failure=f"Duplicate installed provider ID {provider['id']!r}")
+        provider["id"] = "distinct-provider"
+        write_json(installed, other)
+        self.verify()
+
+    def test_standalone_card_requires_its_editor_route_on_open(self):
+        self.replace_template({
+            "version": 2, "kind": "app", "revision": 1, "binds": [],
+            "view": {"root": {"type": "component", "component": {
+                "type": "item-editor", "id": "editor", "config": {"item": {"route": "item"}}
+            }}}
+        })
+        event = {"type": "view_open", "view_ref": "opaque"}
+        self.event(event | {"route": {"item": "note-1"}})
+        self.event(event, "missing required route operand 'item'")
+
+    def test_selection_set_checks_the_same_bind_route_as_windows(self):
+        self.stage("notes-bulk-and-snooze-app")
+        app = json.loads((self.package / self.template).read_bytes())
+        bind = next(bind for bind in app["binds"] if bind["id"] == "notes")
+        bind["source"]["collection"] = {"route": "collection"}
+        self.replace_template(app)
+        event = {"type": "selection_set", "bind": "notes", "rows": ["opaque"]}
+        self.event(event | {"route": {"collection": "opaque"}})
+        self.event(event, "missing required route operand 'collection'")
 
     def test_route_checks_name(self):
         self.event({"type": "route", "id": "item", "row": "opaque"})
@@ -200,7 +249,7 @@ class PackageTests(unittest.TestCase):
         self.event(event)
         self.event({**event, "component": "bogus"}, "unknown component")
         self.event({**event, "component": "composer"}, "cannot use route")
-        self.event({**event, "request": {}}, "missing thread")
+        self.event({**event, "request": {}}, "missing conversation")
 
     def test_composer_options_requires_declared_control(self):
         self.stage("threads-app")
@@ -210,7 +259,7 @@ class PackageTests(unittest.TestCase):
              if component["type"] == "composer")["config"]["controls"] = ["model"]
         self.replace_template(doc)
         event = {"type": "component", "component": "panel-composer", "route": "composer.options",
-                 "request": {"thread": "opaque", "control": "model"}}
+                 "request": {"conversation": "opaque", "control": "model"}}
         self.event(event)
         event["request"]["control"] = "machine"
         self.event(event, "control 'machine' is not configured")
@@ -314,7 +363,7 @@ class PackageTests(unittest.TestCase):
         self.stage("threads-app")
         fixture = FIXTURES / "invalid-catalogue-archive-fullswipe-before-writer.json"
         self.replace_template(json.loads(fixture.read_bytes()))
-        self.verify(failure="fullSwipe is rejected on turns.archive")
+        self.verify(failure="fullSwipe is rejected on host.item.archive")
 
     def test_structure_and_tree_wide_action_ids(self):
         fixture = FIXTURES / "invalid-duplicate-cross-list-action-id.json"
@@ -477,7 +526,7 @@ class InputTests(unittest.TestCase):
                            choices={f"choice-{i}": "invalid" for i in range(extra)})
             check_event_binding(event, bindings, errors, CATALOGUE)
             self.assertEqual((len(errors), errors.visits), (32, 34))
-        origin = ({"id": "all", "fields": ["title"]}, CATALOGUE["kinds"]["threads"], {})
+        origin = ({"id": "all", "fields": ["title"]}, {}, CATALOGUE["generic_item_fields"])
         small = Validation()
         rows = [{"fields": {"title": False}}] * 32
         check_window_rows({"rows": rows}, origin, CATALOGUE, small)

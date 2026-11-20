@@ -1,0 +1,14 @@
+{
+  "definition": "WindowRequest",
+  "value": {
+    "type": "window",
+    "request": {
+      "bind": "collection-notes",
+      "from": 0,
+      "to": 60,
+      "route": {
+        "collection": "collection-ref"
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "definition": "ExecutionStopRequest",
+  "value": {
+    "intent": "intent-1",
+    "request_id": "request-1"
+  }
+}

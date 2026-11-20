@@ -1,0 +1,21 @@
+{
+  "definition": "ViewOpenResult",
+  "value": {
+    "lease": {
+      "lease_ref": "lease",
+      "lease_seconds": 15,
+      "grant_revision": "current",
+      "cache_partition": "personal"
+    },
+    "audience": "member",
+    "activation_contexts": {},
+    "viewer": {
+      "person": "person-1",
+      "role": "reader"
+    },
+    "account": {
+      "name": "Someone",
+      "initial": "S"
+    }
+  }
+}

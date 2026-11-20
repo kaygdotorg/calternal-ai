@@ -1,0 +1,35 @@
+{
+  "view_open": {
+    "lease": {
+      "lease_ref": "lease",
+      "lease_seconds": 15,
+      "grant_revision": "current",
+      "cache_partition": "personal"
+    },
+    "activation_contexts": {
+      "composer.17": "context-send",
+      "composer.18": "context-stop",
+      "composer.19": "context-resume"
+    },
+    "composer_actions": {
+      "panel-composer": {
+        "send": "composer.17",
+        "stop": "composer.18",
+        "resume": "composer.19"
+      }
+    },
+    "audience": "own_space_member"
+  },
+  "event": {
+    "type": "invoke",
+    "action_id": "composer.19",
+    "activation_id": "activation-resume",
+    "activation_context": "context-resume"
+  },
+  "confirmation": {
+    "type": "invoke_confirm",
+    "activation_id": "activation-resume",
+    "resolution_ref": "resolved-resume",
+    "confirmation_challenge": "resume-challenge"
+  }
+}

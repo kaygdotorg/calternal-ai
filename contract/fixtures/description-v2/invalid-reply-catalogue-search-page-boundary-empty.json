@@ -5,5 +5,6 @@
   "result_version": "rv-search-page-boundary",
   "offset": 1,
   "window_ref": "w-search-page-boundary-1",
-  "rows": []
+  "rows": [],
+  "settle_generation": 1
 }

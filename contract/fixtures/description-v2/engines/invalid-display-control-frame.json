@@ -1,0 +1,8 @@
+{
+  "definition": "ExecutionDisplayFrame",
+  "value": {
+    "type": "approval_request",
+    "text": "This cannot mint a card"
+  },
+  "error": "not in"
+}

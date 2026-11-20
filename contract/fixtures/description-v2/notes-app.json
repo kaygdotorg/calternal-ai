@@ -193,7 +193,8 @@
         "icon": {
           "image": {
             "field": "thumbnail",
-            "fallback": "snippet"
+            "fallback": "snippet",
+            "aspect": "portrait"
           }
         }
       },
@@ -282,7 +283,8 @@
         "icon": {
           "image": {
             "field": "thumbnail",
-            "fallback": "snippet"
+            "fallback": "snippet",
+            "aspect": "portrait"
           }
         }
       },
@@ -385,7 +387,8 @@
         "icon": {
           "image": {
             "field": "thumbnail",
-            "fallback": "snippet"
+            "fallback": "snippet",
+            "aspect": "portrait"
           }
         }
       }

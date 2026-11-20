@@ -1,0 +1,35 @@
+{
+  "definition": "ActivationResolution",
+  "challenge_kind": "host.item.share",
+  "checked_facts": [
+    "widens_conversation_audience"
+  ],
+  "value": {
+    "activation_id": "share",
+    "resolution_ref": "resolution",
+    "confirm": "challenge",
+    "confirmation_challenge": "checked",
+    "material": [
+      {
+        "name": "items",
+        "label": "Conversation",
+        "value": "Planning"
+      },
+      {
+        "name": "audience",
+        "label": "New readers",
+        "value": "Space members"
+      },
+      {
+        "name": "permission",
+        "label": "Permission",
+        "value": "Read transcript"
+      },
+      {
+        "name": "transcript_disclosure",
+        "label": "Transcript sharing",
+        "value": "The new readers can read the whole transcript, including anything the agent found or wrote using your own access."
+      }
+    ]
+  }
+}

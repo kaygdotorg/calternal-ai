@@ -1,0 +1,8 @@
+{
+  "definition": "TranscriptBodyRequest",
+  "value": {
+    "body": "pinned",
+    "offset": 0
+  },
+  "error": "unknown field offset"
+}

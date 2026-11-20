@@ -1,0 +1,60 @@
+{
+  "view_open": {
+    "lease": {
+      "lease_ref": "lease",
+      "lease_seconds": 15,
+      "grant_revision": "current",
+      "cache_partition": "personal"
+    },
+    "activation_contexts": {
+      "composer.17": "context-send"
+    },
+    "composer_actions": {
+      "panel-composer": {
+        "send": "composer.17"
+      }
+    },
+    "audience": "own_space_member"
+  },
+  "event": {
+    "type": "invoke",
+    "action_id": "composer.20",
+    "activation_id": "stop-pending",
+    "activation_context": "newly-eligible-stop"
+  },
+  "renewals": [
+    {
+      "request": {
+        "type": "lease_renew",
+        "lease_ref": "lease",
+        "grant_revision": "current",
+        "result_versions": {},
+        "renewal_id": "renewing-2",
+        "cache_partition": "personal"
+      },
+      "result": {
+        "lease": {
+          "lease_ref": "lease",
+          "lease_seconds": 15,
+          "grant_revision": "current",
+          "cache_partition": "personal"
+        },
+        "renewal_id": "superseded",
+        "request_lease_ref": "lease",
+        "cache_partition": "personal",
+        "retained_results": [],
+        "windows": [],
+        "activation_contexts": {
+          "composer.17": "renewed-send",
+          "composer.20": "newly-eligible-stop"
+        },
+        "composer_actions": {
+          "panel-composer": {
+            "send": "composer.17",
+            "stop": "composer.20"
+          }
+        }
+      }
+    }
+  ]
+}

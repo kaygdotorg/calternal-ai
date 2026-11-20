@@ -42,6 +42,30 @@ function bundle(documents) {
       return reference(target, "#" + fragment);
     }
 
+    // The compiler builds union arms independently. In a presence union,
+    // carry the declared object's properties and base requirements into each arm.
+    const presenceUnion = ["anyOf", "oneOf"].find(key =>
+      schema.type === "object" && schema.properties && schema[key]?.length &&
+      schema[key].every(arm => arm && typeof arm === "object" &&
+        Array.isArray(arm.required) && Object.keys(arm).every(field => ["required", "properties", "not"].includes(field)) &&
+        Object.keys(arm.properties ?? {}).every(field => Object.hasOwn(schema.properties, field))),
+    );
+    if (presenceUnion) {
+      const { [presenceUnion]: arms, ...base } = schema;
+      return {
+        [presenceUnion]: arms.map(arm => structural({
+          ...base,
+          required: [...new Set([...(base.required ?? []), ...arm.required])],
+          properties: {
+            ...base.properties,
+            ...Object.fromEntries(Object.entries(arm.properties ?? {}).map(([field, constraint]) =>
+              [field, { allOf: [base.properties[field], constraint] }],
+            )),
+          },
+        }, document)),
+      };
+    }
+
     const output = { ...schema };
     // Conditional and value constraints are checked by the build validators.
     for (const key of ["$id", "$schema", "$defs", "definitions", "if", "then", "else", "not", "dependentRequired"]) {
@@ -81,7 +105,7 @@ function bundle(documents) {
 const options = {
   additionalProperties: false,
   maxItems: -1,
-  bannerComment: "/* Generated from the sealed plugin API schemas. */",
+  bannerComment: "/* Generated from the pinned plugin API schemas. */",
 };
 
 /**
@@ -95,12 +119,55 @@ export async function generateAuthorTypes(directory) {
     manifest: reference(manifest, "#", "ManifestV2"),
     description: reference(description, "#/$defs/AppDescription"),
   };
-  const text = await compile({ type: "object", properties, definitions }, "AuthorContracts", options);
+  const host = documents.get(catalogue);
+  let context = "";
+  if (host.$defs.AuthorInvocationContext) {
+    const methods = {
+      ...host.item_engine,
+      ...host.execution_engines,
+      ...host.extension_points.calls,
+      start_job: host.execution_intents.start_job,
+      alarm_set: host.alarms.set,
+      alarm_cancel: host.alarms.cancel,
+      item_append: host.file_append,
+      item_view_context: host.view_snapshots.context,
+      item_view_publish: host.view_snapshots.publish,
+    };
+    const methodSchemas = Object.fromEntries(Object.entries(methods)
+      .filter(([, method]) => method?.input?.$ref && method?.output?.$ref)
+      .map(([name, method]) => [name, {
+        type: "object", required: ["input", "output"], properties: {
+          input: reference(catalogue, method.input.$ref),
+          output: reference(catalogue, method.output.$ref),
+        },
+      }]));
+    properties.broker = { type: "object", properties: methodSchemas, required: Object.keys(methodSchemas) };
+    properties.author = reference(catalogue, "#/$defs/AuthorInvocationContext");
+    if (host.extension_points.calls.limits) {
+      properties.entry = reference(catalogue, "#/$defs/ContributionEntryInvoke");
+    }
+    properties.job = reference(catalogue, "#/$defs/ExecutionJobContext");
+    properties.alarm = reference(catalogue, "#/$defs/AlarmDelivery");
+    properties.itemViewRead = reference(catalogue, "#/$defs/ItemViewRead");
+    properties.itemViewPage = reference(catalogue, "#/$defs/ItemViewPage");
+    context = `
+/** Stable handler data from an authenticated invocation and its typed host broker. */
+export interface RevisionedAuthorContext {
+  author: NonNullable<AuthorContracts["author"]>;
+  job?: NonNullable<AuthorContracts["job"]>;
+  alarm?: NonNullable<AuthorContracts["alarm"]>;
+  call<K extends keyof NonNullable<AuthorContracts["broker"]>>(
+    method: K, input: NonNullable<AuthorContracts["broker"]>[K]["input"],
+  ): Promise<NonNullable<AuthorContracts["broker"]>[K]["output"]>;
+}
+`;
+  }
+  const text = await compile({ type: "object", properties, definitions }, "AuthorContracts", options) + context;
   const windowSize = documents.get(description).$defs.Bind.properties.window.properties.size.default;
   if (windowSize !== documents.get(catalogue).query.window.default_rows) {
     throw new Error("The description and host catalogue must agree on the default Bind window.");
   }
-  return { text, windowSize };
+  return { text, windowSize, contributionFrameBytes: host.extension_points?.calls?.limits?.encoded_frame_bytes };
 }
 
 /**

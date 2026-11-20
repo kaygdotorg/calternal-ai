@@ -1,0 +1,71 @@
+{
+  "view_open": {
+    "lease": {
+      "lease_ref": "lease",
+      "lease_seconds": 15,
+      "grant_revision": "current",
+      "cache_partition": "personal"
+    },
+    "activation_contexts": {
+      "composer.17": "context-send",
+      "composer.18": "context-stop"
+    },
+    "composer_actions": {
+      "panel-composer": {
+        "send": "composer.17",
+        "stop": "composer.18"
+      }
+    },
+    "audience": "own_space_member"
+  },
+  "event": {
+    "type": "invoke",
+    "action_id": "composer.17",
+    "activation_id": "activation-send",
+    "activation_context": "context-send"
+  },
+  "resolution": {
+    "activation_id": "activation-send",
+    "resolution_ref": "resolved-activation-send",
+    "confirmation_challenge": "challenge-activation-send",
+    "confirm": "challenge",
+    "material": [
+      {
+        "name": "conversation",
+        "label": "Conversation",
+        "value": "Checked"
+      },
+      {
+        "name": "provider",
+        "label": "Provider",
+        "value": "Checked"
+      },
+      {
+        "name": "model",
+        "label": "Model",
+        "value": "Checked"
+      },
+      {
+        "name": "reasoning",
+        "label": "Reasoning",
+        "value": "Checked"
+      },
+      {
+        "name": "permission",
+        "label": "Permission",
+        "value": "Checked"
+      },
+      {
+        "name": "machine",
+        "label": "Machine",
+        "value": "Checked"
+      }
+    ]
+  },
+  "confirmation": {
+    "type": "invoke_confirm",
+    "activation_id": "activation-send",
+    "resolution_ref": "resolved-activation-send",
+    "confirmation_challenge": "challenge-activation-send"
+  }
+}

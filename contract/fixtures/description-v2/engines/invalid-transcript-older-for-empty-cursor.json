@@ -1,0 +1,10 @@
+{
+  "definition": "TranscriptPage",
+  "value": {
+    "records": [],
+    "notices": [],
+    "committed_cursor": null,
+    "older_cursor": "nonexistent-record"
+  },
+  "error": "$.older_cursor: not allowed here"
+}

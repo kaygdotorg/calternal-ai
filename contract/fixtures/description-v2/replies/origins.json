@@ -5,7 +5,8 @@
       "invalid-reply-catalogue-window-ready-zero-rows-at-start.json",
       "reply-catalogue-search-page-boundary-first.json",
       "reply-catalogue-search-page-boundary-next.json",
-      "reply-catalogue-window-search-empty-no-count.json"
+      "reply-catalogue-window-search-empty-no-count.json",
+      "invalid-reply-catalogue-search-missing-generation.json"
     ],
     "all": [
       "invalid-reply-catalogue-window-end-estimate.json",
@@ -20,6 +21,11 @@
   },
   "notes-app.json": {
     "notes": [
+      "invalid-reply-catalogue-window-end-loading-count.json",
+      "invalid-reply-catalogue-window-end-loading-distance.json",
+      "reply-catalogue-window-end-empty.json",
+      "reply-catalogue-window-end-loading.json",
+      "reply-catalogue-window-end-throttled.json",
       "invalid-reply-catalogue-window-empty-estimate.json",
       "invalid-reply-catalogue-window-empty-exact-nonzero.json",
       "invalid-reply-catalogue-window-extra-field.json",
@@ -85,6 +91,17 @@
       "invalid-reply-catalogue-window-cache-bind-mismatch.json",
       "invalid-reply-catalogue-window-cache-window-ref-mismatch.json",
       "invalid-reply-catalogue-window-cache-offset-mismatch.json"
+    ]
+  },
+  "notes-tags-app.json": {
+    "notes": [
+      "reply-catalogue-window-tags.json",
+      "invalid-reply-catalogue-window-tags-string.json",
+      "reply-catalogue-window-stale-preview.json",
+      "invalid-reply-catalogue-window-stale-non-image.json",
+      "invalid-reply-catalogue-guest-image-attribution.json",
+      "invalid-reply-catalogue-public-image-attribution.json",
+      "invalid-reply-catalogue-attribution-without-image-field.json"
     ]
   }
 }

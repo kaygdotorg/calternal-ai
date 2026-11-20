@@ -1,0 +1,9 @@
+{
+  "type": "search",
+  "bind": "note-search",
+  "text": "reasonable",
+  "settle_generation": 3,
+  "route": {
+    "collection": "opaque-coll-1"
+  }
+}

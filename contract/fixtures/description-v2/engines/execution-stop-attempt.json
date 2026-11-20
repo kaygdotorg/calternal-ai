@@ -1,0 +1,7 @@
+{
+  "definition": "ExecutionStopRequest",
+  "value": {
+    "execution": "execution-1",
+    "request_id": "request-2"
+  }
+}

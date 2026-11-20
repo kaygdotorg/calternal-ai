@@ -1,0 +1,24 @@
+{
+  "bind": "notes",
+  "state": "ready",
+  "result_version": "tags-1",
+  "offset": 0,
+  "rows": [
+    {
+      "id": "note-1",
+      "fields": {
+        "title": "Notes",
+        "tags": [
+          "work",
+          "work/q4"
+        ],
+        "thumbnail": "last-authorized-note-preview"
+      },
+      "stale_images": [
+        "tags"
+      ]
+    }
+  ],
+  "window_ref": "tags-window",
+  "audience": "member"
+}

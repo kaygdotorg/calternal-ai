@@ -1,0 +1,25 @@
+{
+  "definition": "RequestCardRecord",
+  "value": {
+    "request_ref": "request-ref",
+    "title": "Approve edit",
+    "state": "open",
+    "material": [
+      {
+        "name": "item",
+        "label": "Item",
+        "value": "Research note"
+      }
+    ],
+    "actions": [
+      {
+        "decision": "deny",
+        "lifetimes": [
+          "once"
+        ]
+      }
+    ],
+    "card_context": "context"
+  },
+  "error": ".lifetimes: not allowed here"
+}

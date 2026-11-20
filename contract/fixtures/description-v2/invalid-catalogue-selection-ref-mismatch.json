@@ -4,10 +4,10 @@
   "revision": 1,
   "binds": [
     {
-      "id": "threads",
+      "id": "collections",
       "source": {
         "type": "list",
-        "kind": "threads"
+        "kind": "collections"
       },
       "fields": [
         "title"
@@ -29,7 +29,7 @@
           "operation": "host.item.rename",
           "inputs": {
             "item": {
-              "selection": "threads"
+              "selection": "collections"
             },
             "title": {
               "prompt": {

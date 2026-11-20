@@ -1,0 +1,6 @@
+{
+  "definition": "ExecutionAttemptChildReply",
+  "value": {
+    "request": "checked-child-request"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "definition": "ExecutionChild",
+  "value": {
+    "parent": "exec-parent",
+    "request_id": "receipt-1",
+    "request": "checked-child",
+    "kind": "another-kind"
+  },
+  "error": "unknown field kind"
+}

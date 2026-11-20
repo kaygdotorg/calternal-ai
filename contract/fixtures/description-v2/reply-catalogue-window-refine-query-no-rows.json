@@ -5,5 +5,6 @@
   "result_version": null,
   "offset": 0,
   "window_ref": null,
-  "rows": []
+  "rows": [],
+  "settle_generation": 1
 }

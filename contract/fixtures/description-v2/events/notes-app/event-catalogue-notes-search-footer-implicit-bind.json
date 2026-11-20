@@ -1,0 +1,8 @@
+{
+  "type": "search",
+  "text": "three search terms",
+  "settle_generation": 4,
+  "route": {
+    "collection": "collection-checked"
+  }
+}

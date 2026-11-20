@@ -39,5 +39,6 @@
       }
     ],
     "proof": "proof-abc"
-  }
+  },
+  "settle_generation": 1
 }

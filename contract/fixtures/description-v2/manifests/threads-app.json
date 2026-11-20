@@ -1,6 +1,6 @@
 {
   "api_version": 2,
-  "id": "threads",
+  "id": "calternal-orchestrator",
   "name": "Threads",
   "version": "1.0.0",
   "icon": "threads",
@@ -10,20 +10,146 @@
       "id": "threads",
       "name": "Threads",
       "icon": "threads",
-      "engine": "turns",
       "description": {
         "id": "app",
         "template": {
           "path": "threads-app.json",
-          "sha256": "61e8ef6bddcca6465e12071da122fa97d58bea6eae4c6ec4380a5ca940c6418d"
+          "sha256": "d7f01a3bb628cf5b12dd6195246b5e26cf752fb597d72c8f7bfaa7ec4c542cc9"
         }
       }
     }
   ],
-  "kinds": [],
+  "kinds": [
+    {
+      "id": "threads",
+      "icon": "puzzle",
+      "title_field": "title",
+      "storage": {
+        "folder": "Threads"
+      },
+      "claimed_text": true,
+      "searchable": true,
+      "conversation": true,
+      "schema": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "provider_label": {
+            "type": "string"
+          }
+        }
+      },
+      "host_create": {
+        "defaults": {
+          "title": "New conversation"
+        }
+      },
+      "composer": {
+        "send": "calternal-orchestrator.send",
+        "steer_live": true,
+        "job": "run"
+      },
+      "indexed_fields": {
+        "state": {
+          "type": "Text",
+          "audience": "member_item"
+        },
+        "provider_label": {
+          "type": "Text",
+          "audience": "shared_projection"
+        }
+      }
+    }
+  ],
   "reads": [
     "requests",
     "threads"
   ],
-  "operations": []
+  "operations": [
+    {
+      "id": "calternal-orchestrator.send",
+      "title": "Send",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "target": {
+        "kind": "threads",
+        "field": "item"
+      },
+      "methods": [
+        "start_job"
+      ]
+    },
+    {
+      "id": "calternal-orchestrator.run",
+      "title": "Run",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "target": {
+        "kind": "threads",
+        "field": "item"
+      },
+      "methods": [
+        "execution_start",
+        "execution_status",
+        "execution_spawn_child",
+        "checkpoint_job",
+        "execution_wait"
+      ]
+    }
+  ],
+  "worker": {
+    "path": "worker.mjs",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "jobs": [
+    {
+      "id": "run",
+      "run_operation": "calternal-orchestrator.run",
+      "replayable": true,
+      "waits": [
+        {
+          "kind": "execution"
+        }
+      ],
+      "execution_intent": true
+    }
+  ]
 }

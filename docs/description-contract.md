@@ -1,13 +1,12 @@
 # Description contract (v2)
 
-Status: **revision 13.18**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.33 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
-The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
-`invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.
+Use the conformance tool release that supports this contract revision to
+check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
+[conformance](plugin-api-v2.md#7-author-sdk-and-conformance).
 
-To verify emitted artifacts, run `python3 contract/verify-description.py --package DIR` or supply `--manifest FILE` with explicit `--app FILE` paths. Replies require an origins file only when present.
-
-A description, manifest, event or reply conforms only if it passes contract/verify-description.py at the pinned revision. The JSON Schemas define necessary structural rules and are insufficient on their own. A schema validator used alone must assert formats, including calendar validity for date-time. Differences in verifier-only rule classes are by design. [Rule classes and enforcement](plugin-api-v2.md#7-author-sdk-and-conformance)
+This text, the Plugin API specification, the host catalogue and their schemas define conformance. The separately versioned Python tool reports conformance evidence. Validators assert formats, including calendar validity for date-time, and apply the specified semantic rules. [Rule classes and enforcement](plugin-api-v2.md#7-author-sdk-and-conformance)
 
 ## 0. What a description is
 
@@ -23,14 +22,14 @@ Everything below is one contract for chrome (sidebar, header, footer, panel) and
 
 | Term | Meaning |
 | --- | --- |
-| **kind** | A type of item a plugin or the host declares (the host's own `threads`, `requests`, `collections`; a plugin's, such as `notes`) with its **indexed fields**; every item kind has the host's generic fields (`id`, `title`, `updated`, `trashed`, `trashed_at`). |
+| **kind** | A type of item a plugin or the host declares (the host's `requests` and `collections`; a package's `notes` or `threads` kind) with its **indexed fields**; every item kind has the host's generic fields (`id`, `title`, `updated`, `archived`, `trashed`, `trashed_at`). |
 | **app description** | One app's `binds` (declared once), its `chrome` (sidebar, header, footer, panel) and its `view` (the card's content). |
 | **bind** | A data-free request: a list window, one item, or a search, with filter, sort and the fields wanted. |
 | **row template** | How an item becomes a row: fields to title, icon, marks and actions. |
 | **row scope** | Inside a row template, `{row: ...}` value sources name the row an action was activated on. |
 | **invoke** | An action: an operation plus named inputs from value sources. |
 | **value source** | Where a value comes from: a literal, the viewer, the route, the selection set, a row, a form, a draft, a prompt, or (in a component's config) a field of another bind's pinned row. |
-| **component** | A rich surface the host draws (item editor, transcript, composer, request card, sealed frame), configured by the description. |
+| **component** | A rich surface the host draws (item editor, request card, sealed frame), configured by the description. |
 
 ## 2. Bind
 
@@ -52,51 +51,75 @@ One definition (`$defs/Bind`):
 * `list`: an index window over a kind's items, optionally one **collection** (a collection id from a literal, the route or the selection, so a collection
   UUID works; it is not a static pattern).
 * `item`: exactly one item by reference from the route or the selection. A literal row is never accepted.
-* `search`: match text from a claimed-text kind whose manifest declares `searchable: true`, or use the Turns-owned search plan in the catalogue. A foreign-kind search takes eligibility from its owning package and requires the requesting package’s `reads`. Search covers all authorized searchable fields by default. An author may narrow it with the catalogue’s optional `source.field_filter`. The footer sends settled text through `EventSearch`. Its optional `match` chooses literal AND terms or a single literal token prefix independently of the field filter. For claimed-text search, `source.collection` selects the authorized manual-collection projection.
+* `search`: match text from a claimed-text kind whose manifest declares `searchable: true`, or name an explicit `source.search_profile` for a plugin-owned ranking or index. A foreign-kind search takes eligibility from its owning package and requires the requesting package’s `reads`. Search covers all authorized searchable fields by default. An author may narrow it with the catalogue’s optional `source.field_filter`. The footer sends settled text through `EventSearch`. Its optional `match` chooses literal AND terms or a single literal token prefix independently of the field filter. For claimed-text search, `source.collection` selects the authorized manual-collection projection.
 
-Threads, trashed items and requests are kinds or indexed fields the host (or Turns) declares: `trashed`, `trashed_at`, `waiting_on`, `pending_for` are host-indexed
-fields, so the Notes Trash and the Threads Inbox are ordinary binds.
+Each app declares its kind and fields. Item lifecycle supplies `trashed` and
+`trashed_at`. An app composes its own Inbox from authorized fields and
+checked request refs.
 
 ### 2.2 Filter and sort
 
-`filter` is up to 16 predicates in `all` and `any` (no nesting) on **declared indexed fields** of the kind in the host catalogue (`contract/host-catalogue-v2.json`):
-`eq ne in lt lte gt gte exists prefix`; `in` takes a homogeneous literal list of at most 32. Values are `FilterValue`s: a literal, `{viewer: person}` (so "waiting on me" is
-`waiting_on eq viewer.person`; `waiting_on` and `pending_for` accept only `self` as an operand), `{route: ...}` or `{selection: ...}`. **Never a field of another bind, a row, a
+`filter` is up to 16 predicates in `all` and `any` (no nesting) on **declared indexed fields** of the kind in the host catalogue (`contract/host-catalogue-v2.json`). A `TextSet` supports `contains` with one Text operand and `exists`. It cannot be sorted.
+`eq ne in lt lte gt gte exists prefix`; `in` takes a homogeneous literal list of at most 32. Values are `FilterValue`s: a literal, `{viewer: person}` (use `pending_for eq viewer.person` on a `requests` Bind to
+list requests for the viewer), `{route: ...}` or `{selection: ...}`. **Never a field of another bind, a row, a
 form or a prompt**: a hidden field of one bind must not steer another bind's query (the cross-bind operand leak). A search takes a `TextSource` (a literal, a form
-field or a composer draft). `{bind, field}` stays legal only in an invoke's inputs and a component's config, where the host reconstructs it. `sort` is at most two
-indexed fields. The host-issued row reference is the implicit last key, so order is total and stable across windows.
+field). `{bind, field}` stays legal only in an invoke's inputs and a component's config, where the host reconstructs it. A `contains` predicate takes one nonempty Text element from a literal
+or a checked route resolved as Text. The viewer and parent operands are
+references. A Bind can return a bounded `TextSet` array only for a
+declared and projected field of that type. `sort` follows the [catalogue’s sort rules](../contract/host-catalogue-v2.json#/query).
 
 ### 2.3 Windows
 
-The native list and the web list both ask for **index windows**, not cursors, because a long list must size its scroll bar from a count and the person walks it with
-the keyboard at 30 rows a second:
+For host-indexed lists, both renderers ask for **index windows**. An exact count sizes the scroll bar, and bounded prefetch supports keyboard navigation at 30 rows a second:
 
 ```
 shell -> host   { type: "window", request: { bind: "notes", from: 120, to: 180, parent?: "<row ref>" } }                 // the catalogue's WindowRequest: the ONE envelope
-host  -> shell  { bind: "notes", audience, parent?, window_ref, state: "ready", result_version, count: {mode, value}, offset: 100,
+host  -> shell  { bind: "notes", audience, parent?, scope_ref, window_ref, state: "ready", result_version, count: {mode, value}, offset: 100,
                   rows: [ { id, fields: {...} }, ... ], activation_contexts: [ { row, contexts: { action_id: token } } ] }   // the catalogue's WindowResult
 ```
 
 The catalogue defines one `WindowRequest` envelope and one `WindowReply` union of `WindowResult` and `WindowPlanError`. The typed refusal carries status 422, code `unsupported_query_plan`, and a reason.
 
-**End-relative windows.** End and near-end jumps use `anchor:"end"` only on non-search Binds with exact count authority. The range counts backward from the last authorized row, with distance zero at that row. Results keep the Bind’s normal order, echo the end anchor, and carry `count.mode: exact`. The offset is the end distance of the returned row nearest the end.
+**List freshness.** After a save, the window engine replays the durable publication intent in the background. An affected Bind returns `loading` without rows, counts, contexts or an end distance until its current authorized generation is verified. Clear affected results and contexts and erase persisted row records when invalidated (§6). Resume the viewport request when the new generation is ready.
 
-**Forward paging.** The host checks search windows against `EventSearchWindow`, the same window envelope restricted to the start anchor.
+**Explicit plugin search.** Decide the path before settle from the
+authenticated view-open audience. A live member view with
+`source.search_profile` uses [`search.plugin`](../contract/host-catalogue-v2.json#/component_routes/search.plugin).
+Guest and public views use default host search even when the template
+names a profile. Use normal host qualification and window defaults.
+An audience change requires a fresh view.
+Apply replies only to the current Bind, generation and lease. A batch
+contains authorized rows and an optional next cursor. A ready batch
+without a cursor ends the chain. Show the Bind’s empty message if that
+chain produced no rows. An empty batch with a cursor continues. Draw no
+total, fixed page indicator or End affordance. Keep an unchanged
+acknowledged chain on renewal under the
+[common retention rule](../contract/host-catalogue-v2.json#/view_result_retention).
+On host `PluginSearchInvalidated`, clear only the page chain matching
+the lease, Bind and settle generation, including buffered pages, selections,
+action contexts and cursors. Ignore later replies for that generation.
+For another search, settle again with a fresh generation. The
+[catalogue’s signal table](../contract/host-catalogue-v2.json#/subscription_catch_up/signals)
+pins the authority and clearing rules for all live subscriptions.
+
+**End-relative windows.** End and near-end jumps use `anchor:"end"` only on non-search Binds with exact count authority. A `loading`, `throttled` or `error` reply on that active request keeps `anchor:"end"` and carries no offset or count. Apply exact count and distance only to ready or empty End results. Search refinement is start-anchored. Follow the [catalogue’s end-anchor and result ordering rules](../contract/host-catalogue-v2.json#/$defs/WindowResult).
+
+**Forward paging.** The host checks default search windows against `EventSearchWindow`, the same window envelope restricted to the start anchor.
 For search Binds or with effective count mode `estimate` or `none`, the host refuses an end anchor with `end_unavailable` and sends no end distance. Search End pages forward. An explicit `anchor:"start"` can cross the 500,000 absolute jump ceiling only at the checked next row of a ready window for the same active view, Bind, parent and result version. Deep start replies omit count and the member cache record. In mode `none` show no scroll extent that implies a total.
 
-**Recovery rule.** After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: "empty"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state.
+**Recovery rule.** After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. For host windows, `state: "empty"` shows the Bind’s empty message for a wholly empty result at `from: 0`. Explicit profiles use the cursor completion rule above. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state.
 Row ids are opaque and stable. No position is an authority reference.
 
 * A window is the half-open range `[from, to)` of at most 200 returned rows. The absolute jump ceiling is 500,000. The host may materialize up to 4,096 rows and,
   separately, skip up to 250,000 entries in an index-only jump from the nearer end of the scoped covering index. Non-search lists use the maintained count for the authorized scope.
-  Claimed-text kinds can count qualified matches with exact-count authority within the separate count-work budget. Threads search uses count mode `none`.
+  Host search counts follow the catalogue.
   See the catalogue’s `query.window` for window sizes and `query.search` for the shared search depth. Beyond that depth, the host serves search windows while both work budgets hold.
 * The renderer prefetches ahead of the visible rows and, when a key or a drag walks past the edge of what it holds, asks for the next window at once (no
   settling), coalesced to at most 4 window **requests** a second; the host may answer with a larger range than asked (`offset` and `rows` say what came back).
-* `result_version` identifies the result set. A new version replaces the window wholesale; the renderer skips a replacement equal to what it draws, so a republish that
+* `scope_ref` identifies the host-checked Bind scope, including its route operands. Match it on pushes and invalidations. The same Bind can have different refs for different routes. `result_version` identifies the result set. A new version replaces the window wholesale; the renderer skips a replacement equal to what it draws, so a republish that
   only moved the selection costs nothing.
 * **Live:** with `live: true` the host pushes a changed window (new `result_version`) while the view is open. While a key repeats the renderer **applies at once every reply to a
-  prefetch for the result version it already drew** (so arrowing never runs into skeleton rows) and **holds only pushes that change the version**, applying the latest when the
+  prefetch for the result version it already drew** (so arrowing never runs into skeleton rows) and **holds only newer window results that change the version**, applying the latest when the
   selection settles (or a few a second). A selection held by the settle window is flushed before any activation is sent, so an action never runs against the previously
   settled row.
 
@@ -110,19 +133,20 @@ parts with ` · ` and omit absent parts and their separators. Date formats
 take timestamps and text takes plain text. The [catalogue’s `Timestamp`](../contract/host-catalogue-v2.json) uses RFC 3339 with seconds 00 to 59 only, and the host records any leap second as second 59 with the fraction clamped.
 The renderer computes relative
 dates at draw time from the local clock and refreshes them without host
-pushes. Rows without `secondary` stay single-line. Row text comes only from
-fields.
+pushes. Rows without `secondary` stay single-line. The header and row title,
+secondary line and search excerpt retain their source’s live field and body
+authority. Use no substitute text from an inaccessible field.
 
-Any plugin may declare a leading icon on a Bind-produced item row. The optional `icon` may name a symbol, derive from a row field or kind, or use the catalogue’s `RowImageIcon` to select a small host-authorized image from a projected `RowImageRef` field. Follow the catalogue’s `query.row_images` read and cache rules. The renderer draws exactly the icons declared by the description. Thread rows use the host-projected `provider_icon` only when the provider mark binding matches the installed contribution. Missing publisher verification, missing mark ownership or a conflicting binding uses the declared generic fallback symbol. A note preview fits a portrait area of about 30 × 36 pt. Note rows declare the current device thumbnail and its `image.fallback` snippet field. While the thumbnail loads or when none is available, draw a simple document miniature from the freshly authorised snippet. If no authorised snippet is available, draw the document miniature without text. Shortcut rows retain their declared icons.
+Any plugin may declare a leading icon on a Bind-produced item row. The optional `icon` may name a symbol, derive from a row field or kind, or use the catalogue’s `RowImageIcon` to select a small host-authorized image from a projected `RowImageRef` field. Follow the catalogue’s `query.row_images` read and cache rules. The renderer draws exactly the icons declared by the description. Eligible harness-associated rows use the host-projected `provider_icon` only when the provider mark binding matches the installed contribution. Missing publisher verification, missing mark ownership or a conflicting binding uses the declared generic fallback symbol. A note preview fits a portrait area of about 30 × 36 pt. Note rows declare the existing `RowImageIcon` portrait aspect and its `image.fallback` snippet field. Keep the last authorized retained image while fresh capture is pending. The host labels it with `stale_images` on the row and rechecks item, source, field and body authority at every fetch. While the thumbnail loads or when none is available, draw a simple document miniature from the freshly authorised snippet. If no authorised snippet is available, draw the document miniature without text. Shortcut rows retain their declared icons.
 `marks` (up to three) are trailing dots, counts, texts or icons, each with an optional `when` predicate and a tone. `leadingActions`, `trailingActions` and `menu` are
 `invoke` definitions; only the first leading or trailing action may set `fullSwipe`. `open` navigates (sets a route parameter to the row id) or invokes.
 Use the host-issued row reference for row identity in selection, events and scope. Item rows use the kind’s row reference. Rows of a repeated section use a `LayoutEntryRef`.
 
 ### 2.5 States
 
-`states.empty`, `loading`, `error` and `refine_query` are small messages (`title`, `detail`, `icon`, an optional action). The description or host provides their text.
+`states.empty`, `loading`, `error` and `refine_query` are small messages (`title`, `detail`, `icon`, an optional action). The description or host provides their text. A state action may use an eligible view context. It cannot use a route source, including a route-dependent prompt prefill. Bind states have no context for those inputs. Row-only operands, including `{context: item}` and `{context: placement}`, require an actual Bind row template. Placement also requires the row to come from a repeated section.
 Show `loading` until the first window arrives and `error` on `state: "error"` or a `WindowPlanError` without an available paging recovery (§2.3).
-For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: "empty"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero.
+For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. For host windows, `state: "empty"` shows the Bind’s empty message for a wholly empty result at `from: 0`. Explicit profiles use the cursor completion rule above.
 At `from: 0`, the host sends `empty` for a wholly empty result. A `ready` reply at offset zero contains rows. An `empty` reply carries an exact count of zero when a count is supplied. Count-free replies omit it. When a `ready` reply carries an exact count, the host checks the returned range against that count under the catalogue’s `WindowResult` rule.
 
 **`refine_query`.** A qualified search that exhausts its posting or row budget returns the catalogue’s `WindowResult` in this state. See `query.search` and `query.live_limits` for limits.
@@ -139,15 +163,16 @@ The description only asks. Before any indexed work the host must:
    **search** and every **output field** against the viewer, the space and, for a guest, the item's grant;
 2. reject a field not declared indexed by the kind, and a field outside the audience's projection (a guest entitled to titles must not be able to infer hidden
    metadata from the count of an `eq` filter or from row order: filters, sorts and counts on a field the audience cannot read are refused, not filtered);
-3. produce **host-owned projections** for guests: rows are built by the host from the item's grant, never by plugin code;
+3. apply the [catalogue’s field delivery policy](../contract/host-catalogue-v2.json#/window_field_delivery) for every window audience, in addition to the viewer’s live authority. The host builds shared rows from checked grants;
 4. authorize the **whole dependency graph** of an app (no bind takes an operand from another; a search is pinned to the audience's corpus; a count is taken over the
    already-authorized projection). A guest gets an `exact` count only over an explicit shared root or child projection with count disclosure enabled. Otherwise its mode is `none`, including nested windows. For search Binds or any audience whose mode is `estimate` or `none`, refuse the end anchor with `end_unavailable` and send no end distance.
 5. bound the work: windows of at most 200 rows, 16 predicates, **16 binds per app** (chrome and view together: there is one list), and absolute jumps up to 500,000, with the contiguous paging exception for views without exact count authority in §2.3. Apply per actor and
    per space caps on open subscriptions, window bytes and invalidations a second, coalesced before querying; pushes are **host-only** and **never wake the space runtime**;
 6. **deliver activation contexts**: with each window (`WindowResult.activation_contexts`, one entry per row and action), with the view when it opens (`ViewOpenResult`, for the header,
-   form and composer actions) and when the subscription lease renews (`LeaseRenewRequest`/`LeaseRenewResult`, one 15-second lease for the subscription and its contexts). The
+   form actions) and when the subscription lease renews (`LeaseRenewRequest`/`LeaseRenewResult`, one 15-second lease for the subscription and its contexts). The
    host reconstructs row, route and selection from a context and never accepts the renderer's value for them. The renderer keeps filled rows in memory after a lease lapses but
    does not paint them as current until a renewal returns the same grant revision and result version (section 6).
+   Apply the same retention rule to plugin search pages and both forms of item view (§2.3).
 
 The renderer never receives a row it was not entitled to; it needs no rule of its own. The host's own duties (authority, engines, projections) are written once, in the
 Plugin API (Part A); this section lists only what the description relies on.
@@ -163,8 +188,8 @@ Plugin API (Part A); this section lists only what the description relies on.
   operations** (`host.layout.move_to`, `host.layout.move_up` and `host.layout.move_down`, and `host.layout.section.create`, `rename`, `remove` for personal sections)
   that a row or section menu names. For a `LayoutEntryRef` input use `{context: "placement"}` in a repeated section row, the bare row id (`{row: "id"}`) in section rows,
   or a matching single-selection operand (`{selection: bind}`) over the section’s rows. The verifier checks the operand against the catalogue input type.
-  In a repeated section a `ThreadRef` input uses `{context: "item"}` from a Threads row. In ordinary Threads rows the bare row id is the thread.
-  `host.layout.move_to` takes either `thread` to add an unplaced thread or `entry` to move a placement, plus a `section` choice (`ChoiceRef`). Move up and Move down
+  In a repeated section an ItemRef input uses `{context: "item"}`. An ordinary item row ID is its ItemRef.
+  `host.layout.move_to` takes either `item` to add an unplaced item or `entry` to move a placement, plus a `section` choice (`ChoiceRef`). Move up and Move down
   take `entry`. The host reconstructs the references from the activation context. Drag is a recorded parity exception, with Move to and Move up/down standing in.
 
 ## 3. Invoke
@@ -189,15 +214,11 @@ what is retried and what is shown come from the host catalogue and the manifest.
 `operation` is a plugin operation id from the manifest, or a **host built-in from the host catalogue** (`contract/host-catalogue-v2.json`, written by the plugins lane:
 exact ids, typed inputs, effect class, `confirm: none | challenge`, authority, whether it may be a generic invoke, whether it may be a full swipe, worker-wake behaviour).
 Built-ins that need no worker run in the host without waking the space runtime; a swipe on a row must not start a runtime. The catalogue, not this document, says which
-operations a description may name; the schema and the verifier reject the ones that belong to a component, an outcome, a sheet or the shell: `host.approval.resolve` (the request
-card), `host.undo` and `host.action.status` (an outcome), `host.panel.ask` (the transcript's quote control), `turns.start` and `host.turn.stop` (the composer),
-`host.trash.purge` and `host.item.share` (protected sheets), `host.route.set` and `host.session.end` (shell controls). A description reaches the Trash and share sheets and the
-shell controls through a `ShellAction` (`shell: {sheet: trash | share}`, `{route}`, `{reload}`, `{signOut}`).
 
-`inputs` maps a name to a value source. There is no literal row and no destination the interface picks at activation. The **host** reconstructs row, route, selection and bind
-sources from the activation context; the **device** sends only what it holds: **form** values (`{form, field}` in that form's own submit), the **draft** of a composer, **prompt**
-answers and a host-issued `selection_ref` for a ticked set. Bind fields are legal only in a component's config (and a header title) and name a row by the stable id the
-context pinned, never by an index.
+operations a description may name. Host approval, Undo, lifecycle status,
+exact-execution control and sheet operations belong to their checked host
+surfaces. A package uses ordinary Invoke for its own controls and forms.
+The catalogue defines the eligible operations and checked inputs.
 
 ### 3.2 Activation: context, resolve, confirm (when required), dispatch
 
@@ -207,7 +228,8 @@ cites them and defines none of its own (`$defs/Event` references them).
 ```
 shell -> host  { type: "invoke", action_id, activation_id, activation_context, interaction?, dispatch?: true }                   // resolve (and dispatch when no confirmation)
 host  -> shell { activation_id, resolution_ref, confirmation_challenge?, material?: [ {name, label, value} ] }                       // or the ActionOutcome when dispatched
-shell -> host  { type: "invoke_confirm", activation_id, resolution_ref, confirmation_challenge }  (composer: final_text)             // only when the host challenged
+shell -> host  { type: "invoke_confirm", activation_id, resolution_ref, confirmation_challenge }             // only when the host challenged
+host  -> shell { activation_id, resolution_ref, confirmation_proof }                                       // accepted confirmation
 shell -> host  { type: "invoke_dispatch", activation_id, resolution_ref, confirmation_proof? }                                       // dispatch
 host  -> shell { activation_id, state: ok | pending | error | stale | refused | unknown, status_ref?, undo?, created?, code?, message? }
 ```
@@ -224,13 +246,14 @@ host  -> shell { activation_id, state: ok | pending | error | stale | refused | 
   **A plugin (worker-backed) operation always takes the ordinary path:** a resolve, then a separate dispatch: **two exchanges**, and **no sheet** unless the host says material requires a
   challenge (a destination, recipient, audience or permission, a bulk set, an irreversible, external or access-widening effect, or an input the manifest declares material): then the host
   answers the resolve with a `confirmation_challenge` and a **material** list **it wrote** (values the person did not edit included: untouched prefills, defaults, autofill), the shell
-  shows it in its own protected sheet, `invoke_confirm` returns the challenge, and the host returns a `confirmation_proof` bound to the normalized input and the `activation_id`
-  (different input: a new challenge); a challenged action is three exchanges. A description cannot add, remove or relabel anything here. **Typing is never consent**: no value counts as
+  checks the catalogue’s required material for that challenge kind and shows it in its own protected sheet, `invoke_confirm` returns the challenge, and the host returns a `confirmation_proof` bound to the normalized input and the `activation_id`
+  (different input: a new challenge); a challenged action is three exchanges.
+  Match the activation ID, resolution ref and challenge to the same
+  accepted resolve. Check a row action against its current authorized
+  window, including a first window before any renewal. The window,
+  Bind, row context, lease, grant and audience must agree.
+  Manifest entries use the `input:<key>` preview name under the catalogue’s confirmation table. A description cannot add, remove or relabel anything here. **Typing is never consent**: no value counts as
   confirmed because it was typed; where a challenge is required, the person's confirmation through the protected step is the consent.
-* **Chat send is one exchange, and the final text is message content only.** The composer pre-resolves only when the prepared material changes (provider, model, machine and other options,
-  attachments, mentions, a quote); the proof binds to that material and not to the text, so one `invoke_confirm` carrying `final_text` (the composer-only arm) confirms and dispatches, and the
-  receipt is bound to the final text (a retry cannot send different words). The host treats `final_text` as inert at admission: **any parser-derived change to recipients, routing, permissions or other
-  prepared material** (an @-mention, a slash command, a destination typed in the text) **invalidates the proof and requires a fresh resolve and preview**. A description names no send operation.
 * **Retry and idempotency are the host's.** A description cannot declare an action retry-safe or waive a check: effect class and idempotency come from the catalogue and the manifest, and
   the host de-duplicates by `activation_id` (a retry after a dropped connection repeats no effect).
 * **Full swipe.** A swipe action may set `fullSwipe` only on the first action of its set **and** only if the catalogue marks its operation `full_swipe: true` (a catalogue entry that commits its effect and Undo together and needs no confirmation: only the entries the catalogue marks); the verifier rejects it on any plugin operation. A full swipe never opens a confirmation.
@@ -254,10 +277,10 @@ An activation names the host-issued **activation context** (an opaque snapshot o
 
 ### 3.4 Outcomes
 
-The host answers a resolve that needs no challenge, and every dispatch, with an `ActionOutcome` (the catalogue's): `ok`, `pending` (with a host-owned `status_ref`, polled through the
+A successful separate resolve returns `ActivationResolution`. A combined resolve and dispatch, a typed refusal, or any dispatch returns an `ActionOutcome` (the catalogue's): `ok`, `pending` (with a host-owned `status_ref`, polled through the
 host's own status control, not by the description), `error`, `refused`, `stale` and `unknown` (the interface shows an unknown outcome instead of retrying a non-idempotent action); on `ok`
 an optional host-owned **undo** `{ref, label, expires_at}` and, when the operation created an item, **`created`** (a host-minted reference an invoke's `then: {route}` opens: a new note,
-a new thread). Error text is written by the host. **Worker payload is never carried to an interface.** A row with an action in flight keeps its place with a quiet progress mark; it leaves the
+a new thread). Error text is written by the host. Draw only validated host replies and checked native descriptions. A row with an action in flight keeps its place with a quiet progress mark; it leaves the
 list only when the host's next window no longer contains it.
 
 ## 4. Chrome and the app description
@@ -274,7 +297,7 @@ list only when the host's next window no longer contains it.
 * **`chrome.header`**: a literal title or a field of an **item** bind (the open item, never a list's first row), and up to two leading and three trailing actions. The sidebar toggle is the shell's.
 * **`chrome.footer`**: `account` (an id, a title and a menu; the shell draws the person's initial from the session, so a persisted template holds no person data), `apps`, `search` (the footer
   search feeds its own search bind and sends the settled text).
-* **`chrome.panel`**: the right panel, built only of host components (the side chat is a transcript above a composer).
+* **`chrome.panel`**: the right panel, built from host components and checked panel contributions.
 * No `appearance`, `scheme`, `accent` or `titleImage` in this first contract: the person's wallpaper and scheme are the shell's own preferences, and the wordmark is the app's name.
 
 How the native renderer draws it (the SwiftUI primitive for each part is in `docs/ios-shell.md`): sections are `Section`s of a `List(selection:)` in the sidebar style
@@ -285,7 +308,9 @@ the system toolbar.
 
 ### 5.0 Content nodes (`$defs/View`, `$defs/ContentNode`)
 
-A **view** is the content of the card for one place, as a sibling of chrome: `{version: 2, kind: "view", revision, title?, binds, root}`. It is data-free like chrome:
+The app description's **`view`** is the content of the card for one
+place, a sibling of `chrome`. It contains `root` and an optional title.
+A content-only app description omits `chrome`. It is data-free:
 binds are requests the host fills; a view never carries a row, a title of a person's item, a message, or HTML. It is drawn with each platform's own controls (Svelte on
 the web, SwiftUI natively); no plugin is written twice, and anything the vocabulary cannot say stays a **host component** (5.1), never plugin-drawn.
 
@@ -302,84 +327,218 @@ the web, SwiftUI natively); no plugin is written twice, and anything the vocabul
 
 * **No free layout.** There are no sizes, colours, fonts, margins or custom controls; spacing, type and motion come from the renderer's tokens, so the web and the
   Mac and iPhone apps stay one product. Anything beyond the vocabulary is a request to extend it, not a hole to draw through.
-* **A `choice` prompt** (`prompt.kind: choice`, options `{bind}`, at most 50 rows) asks for one row of a bind (Move to collection, a tag). **Executable order:** (1) when the action is activated the shell sends the catalogue's `ChoiceOptionsRequest` (`choice_options`, the action's `activation_context` and the prompt's `slot`) and the host answers with `ChoiceOptions`: at most 50 `{ref, label}` pairs, each `ref` a host-issued `ChoiceRef` bound to one eligible row of the authorised option bind, the slot, the viewer and that context; (2) the shell shows the **labels** (its own picker) and the person picks one; (3) the shell submits the picked `ref` in `interaction.choices` under the slot in the resolve. The choice is never a client value: the host resolves the row from the `ChoiceRef` and never accepts a client-supplied collection or item id. Move to collection is `host.collection.move {item | selection_ref, collection}` with the collection as the choice. It is the only way a description offers a choice from data.
+* **A `choice` prompt** (`prompt.kind: choice`, options `{bind}`, at most 50 rows) asks for one row of a bind (Move to collection, a tag). **Executable order:** (1) when the action is activated the shell sends the catalogue's `ChoiceOptionsRequest` (`choice_options`, the action's `activation_context` and the prompt's `slot`) and the host answers with `ChoiceOptions`: at most 50 `{ref, label}` pairs, each `ref` a host-issued `ChoiceRef` bound to one eligible row of the authorised option bind, the slot, the viewer and that context; (2) the shell shows the **labels** (its own picker) and the person picks one; (3) the shell submits the picked `ref` in `interaction.choices` under the slot in the resolve. The choice is never a client value: the host resolves the row from the `ChoiceRef` and never accepts a client-supplied collection or item id. Move to collection is `host.collection.move {item | selection_ref, collection}` with the collection as the choice.
+* **Execution placement** uses the same exchange with a host-owned prompt on a checked execution action, including a composer’s Send. Declare `{prompt: {title: "Run on", kind: "choice", options: {host: "execution_placement"}}}` as a named Invoke input. The shell fetches `choice.options` with the selected `HarnessRef` from the catalogue’s extension choices and the intended `activation_id` in addition to the context and slot. Draw the returned labels and eligible default, page with `next` when present, and send the selected ref under that slot in `interaction.choices`. Accepting the default still sends its ref. A personal machine in a shared space needs an explicit pick. Use the [catalogue’s placement exchange](../contract/host-catalogue-v2.json#/execution_placement) for eligibility, staleness and handoff to the execution job.
 * **Forms** hold their values on the device. A field is checked there (required, length, `url`/`email`/`number`/`date` shape, `choice` among options) and the submit
   is disabled while a required field is empty or invalid and while the action is pending. The values leave the device only inside the submit's resolved inputs
   (`{form: id, field: fieldId}`); the form shows what was typed, and by the rule in 3.2 the host still previews every material field (typing is never consent); a form may present that list in place. After an `ok` outcome the fields clear (`clear: onOk`,
   the default); after `error` or an unknown outcome they keep what was typed. Errors appear in a `notice` above the submit, never as loose text.
-* **Lists** are binds. On every platform, Up and Down move the selection through the rows when `selectable: true`. The route opens when selection settles, about 100 ms after the last key or on key up. Selection and navigation events wait during repeats. Apply prefetch replies for the result version already drawn at once. Hold only version-changing pushes until selection settles. Prefetch requests still cross up to the normal request cap (§8). The web renderer waits 1.6 times the longest gap between repeats in the burst, between 45 and 120 ms. A route load starts only after repeats settle, and a new arrow cancels the previous load.
+* **Lists** are binds. On every platform, Up and Down move the selection through the rows when `selectable: true`. The route opens when selection settles, about 100 ms after the last key or on key up. Selection and navigation events wait during repeats. Apply prefetch replies for the result version already drawn at once. Hold only newer version-changing window results until selection settles. Apply invalidation immediately. Prefetch requests still cross up to the normal request cap (§8). The web renderer waits 1.6 times the longest gap between repeats in the burst, between 45 and 120 ms. A route load starts only after repeats settle, and a new arrow cancels the previous load.
+* **Web keyboard focus.** Each list is one Tab stop. Rows use the list's arrow navigation and do not add sequential Tab stops.
 * **Home, End and Page Up/Down** scroll the list without changing selection on any platform. The renderer requests unloaded windows for the viewport. Home asks for the initial window. On a non-search Bind with exact count authority, End requests the end anchor and Page Up/Down may use it near the tail. Search End and End without exact count authority page forward from the last loaded row. Follow §2.3 during recovery. Count-free views show no extent implying a total.
 * **Search refinement** uses the `refine_query` Bind state in §2.5.
 * **A `list` takes the remaining height of its stack and scrolls itself.** One `list` per scroll region: a `stack` that holds a list does not scroll, and nested scrolling
   regions are refused (a long list inside a scrolling column loses laziness, selection and windows on every platform). The selected row's id is the `selection` source for that bind.
+* **Multiple selection** is declared by `selectionMode: "multiple"` on a
+  content `ListNode`. A sidebar section consuming a Bind supplies navigation.
+  A bulk action that needs ticks uses the content list for its selection set.
+  The `selection.set` route uses the current view lease, checked Bind and
+  stable issued rows. The same route and reply apply to any eligible view.
 * **Selection is not state in the description.** A renderer reads "selected" from the list; a description never carries `selected`.
 * **Budgets** are the host's and the verifier's: at most 16 binds per view, 24 children per stack, depth 6, 200 nodes, 12 form fields, 4 KB per field value.
 
-### 5.1 Host components (`$defs/Component`, five types)
 
-Each is `{type, id, config}` with a typed `config` (a closed object: an unknown key is refused); the host draws it and receives its events directly (no page, no
-plugin code). A description can run a named **invoke** on a component's event only where a config says so (today only `onTitleChange`); every other event, **including a composer's send and stop and a transcript's quote, is the host's alone**.
+### 5.1 Host components and item view snapshots
 
-| Component | Config | Events (typed; handled by the host unless an invoke is named) | Native review |
-| --- | --- | --- | --- |
-| `item-editor` | `item` (route or selection, never a literal id), `mode` edit/read, `showTitle`, `onTitleChange` | `title-change` (the host saves through `host.item.rename`), `link-open`, `presence` (live rooms: an attribute of the item's KIND) | A text view over the item's document (a note's Markdown file directly: no second representation between the editor and the file, an owner rule). A metadata-only save must not rewrite the body. |
-| `turn-transcript` | `thread` (typed thread ref from route or selection), `follow` end/none, `window`, `quote` (boolean: the host's Quote control) | `transcript.page` (the host route: `TranscriptPageRequest` -> `TranscriptPage`, catalogue), `quote` (a host-issued quote reference into a draft), `scrolled-away`, `rendered` | A host-owned windowed list: the screenful at the end is read first and drawn, the rest follows in steps; rows are appended and updated by the host; heavy parts are the host's. |
-| `composer` | `thread` (typed thread ref), `controls` (which host controls appear: `attachments`, `mentions`, `provider`, `model`, `reasoning`, `permission`, `machine`, `stop`), `placeholder` | `draft` (device only), `send` and `stop` (the host's), `attach`, `mention`, `composer.options` (`ComposerOptionRequest` -> `ComposerOptionPage`, catalogue) | The draft is held on the device. The host owns the send: it composes `turns.start` from the thread, `interaction.draft` and `interaction.options` and answers in one exchange; a native composer is a text field with the system keyboard and system pickers. |
-| `request-card` | `request` (typed request ref), `compact` | `resolve` (host.approval.resolve, from the host's own buttons) | One protected record and resolver for a job, a Turn and a host action; the card shows the material arguments (the trusted preview) and cannot be reordered, relabelled or covered by a plugin layout. |
-| `sealed-html-frame` | `frame` (a frame id), `minHeight`, `maxHeight` | `sealed_frame.open`, `sealed_frame.resize` (inside the caps), `sealed_frame.open_link` (a host link id; the host re-authorises), all catalogue routes | A web view with no network and no top navigation; its message channel and sandbox are fixed by the host. |
+The host draws the editor, request card and sealed HTML frame natively
+using the pinned component definitions. Apps compose forms, lists and
+content with checked Invoke actions. An app can declare a panel, row-field
+or action extension point whose installed contributions are validated and
+bound like its other descriptions.
 
-**Shared shapes cited, not copied.** Ticked rows of a multiple-selection list travel as the catalogue's `SelectionSetRequest` and are answered with its `SelectionSetResult` (the
-`selection_ref` actions use); the options of a composer control (provider, model, reasoning, permission, machine) are asked for with `ComposerOptionRequest` and returned as a
-`ComposerOptionPage`: the renderer never lists an option the host did not return.
+For a bound `item-view` component and declared slot, `item_view.open`
+returns the retained newest page without waiting for a wake. Mark a
+stale result as belonging to an earlier revision. When absent show
+the basic shell and loading state. Apply the
+[catalogue’s item-view rule](../contract/host-catalogue-v2.json#/view_snapshots/body_content)
+to every page.
 
-**Rules that hold for all five**
+An eligible member can request a transient `live:true` head and then
+follow the `older` cursor for earlier pages pinned to that revision.
+Only a write-authorized package run can replace the retained page.
+Guest and public views use the retained page alone. If the live head
+supplies a `follow` ref, subscribe with `item_view.follow`. A `changed`
+signal asks the shell to fetch the newest live head. An `invalidated`
+signal clears affected content. The catalogue’s
+[catch-up rule](../contract/host-catalogue-v2.json#/subscription_catch_up)
+also applies to window pushes, search and renewal. Apply the paging and
+follow rules before drawing the next reply.
 
-* A component is **configured, not wrapped**: a description cannot place it inside anything that clips, scales or virtualises it, and cannot draw over a
-  `request-card`. Its size is the card's (the transcript and editor fill it; the composer is at the bottom; the frame reports its height inside the caps).
-* **Refs are typed.** `thread`, `item` and `request` take a value source that resolves to a reference of that type or the host refuses the description; the host
-  authorises the viewer for the ref (a guest's grant included) before anything is read. The description holds no viewer data.
-* **Drafts and options.** The composer's text stays on the device. It reuses the existing host routes for attachment upload and mention lookup. Attachments are held as host-owned `AttachmentRef`s, mentions are account references, a quoted passage is a host-issued quote reference (the catalogue's `Draft`), and the chosen provider, model, reasoning level, permission and machine are opaque option references the host returned (`Interaction.options`). The description names none of them: it says which controls appear. The host checks everything (lengths, counts, that every attachment is the viewer's own, that every option is one it offered for this thread) and composes the send; it never trusts the client. The one-exchange Send treats the final text **solely as message content**: anything the host parses out of it that changes recipients, routing, permissions or other prepared material (a mention, a slash command) needs a fresh preview before it takes effect (3.2). The draft clears only after `ok`; `error` keeps it.
-* **Transcript reads** use the catalogue's `transcript.page` route: a `TranscriptPageRequest` names the thread and an opaque `after` cursor, the `TranscriptPage` returns at most 128 committed events and a `committed_cursor`; every page is reauthorised and bounded (128 KiB); an expired or revoked cursor is refused and the renderer reads again from the end. No description or renderer invents a cursor.
-* **Streaming** is the host's: the transcript's rows grow and change without a description revision; the host caps the update rate, commits a final message at the
-  end, and drops an in-flight load when the viewer moves to another thread (the old transcript load is cancelled, not finished).
-* **First screenful stamp.** When the transcript has drawn its first screenful the host sets `data-thread-rendered=<thread id>` (web), dispatches
-  `calternal:thread-rendered` and records the measure `calternal:thread:open`; the native app has its own equivalent. The budget is 150 ms from the viewer
-  settling on the thread (4x CPU slowdown as the stand-in for a slow device; today's numbers are in `docs/native-feel.md` section 20 and the open defect).
-* **Reduced motion and keyboard** follow `docs/native-feel.md` for everything a component draws.
-* **Events never carry worker payload.** A component event reaches a named invoke only as typed inputs (an id, a selected passage the person chose).
+The native nodes are stack, `snapshot-text`, `snapshot-code`,
+`snapshot-heading`, `snapshot-image` and `snapshot-attachment`. Text,
+code and attribution are literal. The renderer fetches image and
+attachment bytes only through the checked `item_view.asset` route.
+No markup, chrome, confirmation UI or live actions are drawn from a page.
+
+### 5.2 Host surfaces and navigation on the wire
+
+A route-dependent Bind uses the same `route` operands on its window, settled
+selection, explicit selection set and search settle. Supply every distinct
+operand used by the source and both filter groups together. Reject a Bind
+whose required names exceed the catalogue's eight-property cap, counting
+a repeated name once. Window and settled single-selection requests may
+also carry optional route operands used to issue that Bind’s row action
+contexts. At install check each action’s route inputs in union with that
+Bind’s required query operands. They do not change the query scope. An absent action input
+withholds that action’s context. View-open allows operands used by view-level actions
+and components in the header, panel, sidebar (shortcuts and section actions
+and menus), footer and content root. A selector assignment or route target
+alone does not declare an input. Missing optional app operands leave the
+dependent actions or components unavailable. `host.item.create` with an
+omitted optional collection route creates the item without placement.
+A content-only app requires the operands used by its root components and
+must fit those names in the same cap. Every view action or component must
+fit its inputs together with the required open operands. Count a name once
+within each request. Independent optional consumers can use different requests.
+The shell supplies at most eight declared names and opaque refs. The host
+verifies declaration, kind, space, live viewer authority and the specific
+Bind or component before issuing results. Reject undeclared names or a
+missing required value. A change of relevant
+route drops the old selection and opens new view scope for view actions and
+components. Activation carries only its issued context and device material.
+It never carries the raw route values again. After an `ok` outcome,
+`then.route.name` takes the host-issued `created` value if present. A missing
+`created` leaves the route unchanged.
+
+**Package controls.** Use the checked action and form exchange for a
+package’s controls, including composing input and choosing a harness.
+A choice prompt with `options: {extension: "<point>"}` uses
+`extension.choices` on the current app’s lease. The renderer submits the
+short-lived option ref through its prompt slot. When choosing a harness,
+use the accompanying typed `harness_ref` to request placement. The host
+resolves both choices together before dispatch.
+
+Call `execution.control` for the open item-view to request protected Stop
+controls. It returns only eligible contexts for specific jobs or attempts.
+Resolve `host.execution.stop` with that context, show the host challenge,
+confirm and dispatch. A description cannot author this operation.
+
+An authorised renderer calls `request-card.read` for the bound request and
+component within the current view lease. Draw the host record and only its
+offered decisions and approval lifetimes. Use the same record's
+`card_context` with `RequestCardResolve`; Approve and Deny are host decisions
+with no author-defined action ID. Every Approve choice offers a nonempty
+list of allowed lifetimes. Render decisions and lifetimes only from
+the offered actions. Their values cannot come from material entries.
+The material shows exactly the checked effect and its checked named
+inputs under the catalogue's common confirmation checker. Send one offered lifetime. Deny has no
+lifetime. A dismissal-only card offers Deny alone. Keep a closed card
+read-only. Limit each
+delivery to 16 KiB including material. A refusal discloses no card contents.
+
+
+**Item content and actions.** Resolve portable item links with `item.locate`. For a message link, open the checked item view with `live:true` and its opaque `anchor`. Draw the returned anchored leaf or the authorized item’s unavailable-anchor state. For append-only files, the host serves
+revision-pinned bounded ranges without waking the owner. The owning
+plugin supplies the live presentation and its own read cursors and
+record boundaries. It may request an ordinary job or use a protected
+approval via the existing activation protocol. Attachments use generic
+authorized file refs and checked reads. A plugin payload or cached view
+confers no authority on an attachment.
+
+**Editor and frame.** `editor.open` returns an authorised head, revision and
+byte length. The shell reads pinned byte pages and saves with the existing
+range and staged-save engine contracts in the Plugin API. The portable first
+path is a revision-checked whole-document save. A conflict returns the
+current head and keeps the local draft. Live rooms remain a separate
+negotiated transport with edit authorization for eligible kinds.
+Full file reads require body access. Use the format’s allowed writer path for edits.
+An editable item can prepare a device preview after the save ACK through
+`row_images.prepare` on the same item-editor component, echoing its ID in
+the request. The host checks the component, item and exact saved revision
+before issuing the upload grant. Draw a delivered uploader label only
+from the ready member row's `image_attribution` for that image field.
+`sealed_frame.open` returns a
+short-lived same-host content URL, enforced CSP and byte ceiling. Load in an
+isolated, non-persistent sandbox with network denied except for the pinned
+content delivery. Recheck the audience and lease before serving the bytes.
+External navigation uses the existing checked open-link request.
+
+**Host decoration.** A member view can receive `kind_icons`, an opaque
+`viewer.person` and a space `viewer.role`, and the account name and initial
+from view-open. Use a stock symbol if a kind has no supplied icon. Evaluate a
+row's `disabled` from its projected row fields. Compare a `viewer` predicate
+only with the authenticated account ref supplied for that projection. An
+absent required field or viewer value disables the action. `showWhen.minRole`
+uses the current member role and hides the control if none is available. The
+account menu is the host shell's existing space, settings and sign-out
+surface. Guest and public views receive none of these identity fields.
+
+**Search and counts.** The shell increments `settle_generation` for each
+new settled input or scope within the current lease and resolved Bind.
+Send the generation, text, optional `match`, the Bind's checked route
+operands and its `WindowParentRef` when `source.parent` is true to
+`search.settled`. The host checks and pins the collection, parent and full
+ancestry wherever declared before acknowledging. Echo the Bind, generation
+and checked parent when present. Fence older settles and accept only exact
+replay of the current one. A different query, route, collection or parent
+needs a new generation. Clear the old results and selections after the
+matching acknowledgement. For default search request a host window at
+offset zero, including guest and public views. For an eligible member
+profile call `search.plugin` without a cursor. Send the same parent on per-parent windows and selections, and
+the same generation on all search pages, settled selections and
+selection sets. The host checks the exact scope again before issuing rows, counts,
+contexts or set refs. Match the lease, Bind, requested parent scope and
+generation before applying search replies, pushes or plan refusals. Omit
+generation on requests and results for other Bind types. A forged, stale
+or foreign parent yields an opaque refusal. A valid default scope
+without a qualified plan yields `unsupported_plan` on the first window.
+The declared `field_filter` stays in the Bind. Exact counts draw as numbers.
+Estimates draw as “about N”. Omit an unavailable count or badge. Exact empty
+has zero. Explicit selection sets remain limited to 50 stable issued rows.
+The generic renderer omits Select All when more than 50 eligible rows are
+required. Large set actions need an operation-specific protected host selection
+such as Empty Trash.
 
 ## 6. What may be cached on the device
 
-`cache.templates` is `keep` (default) or `none`; `cache.memberRows` is `keep` (default) or `none`; `maxAgeDays` bounds what is kept (1 to 90, default 30; persisted member rows are capped at 14).
+Data-free templates may persist by account. Invariant, start-anchored
+root windows that opted in can also supply signed display-only member
+row records. Check the authenticated lease, account, space, Bind,
+partition, template, signed `scope_ref` and exact window before saving.
+Verify the host signature and scope when loading. Every accepted
+invalidation durably erases all persisted row records of the named
+scope, including offscreen records. It also fences queued writes from
+invalidated results. No reason or separate revocation notice is needed.
+Apply the [cache policy](../contract/host-catalogue-v2.json#/cache_policy/persistent_row_invalidation).
 
-* **Data-free templates persist.** A template is a description with its binds as requests: sections, selectors, titles the author wrote, icons, actions. It holds no row, no title of a
-  person's item, no count, no account initial and no activation context, so it may be stored (one file of at most 4 MB, keyed by the signed-in account, deleted on sign-out and on account
-  switch). `templates: none` keeps nothing.
-* **Q10 (owner decision, 2026-11-19): own-space member rows can persist.** Only opted-in root windows without route-dependent or parent scope are eligible, and only for binds whose query inputs are **invariant**: a `list` source with at most a literal collection and no reference, search text, route, form, selection or parent operand anywhere in the source, filter or sort (account-bound `{viewer: person}` stays invariant); the schema and the verifier refuse `persist` otherwise, no query identity is added to the record, and only start-anchored windows are persisted.
-  Accept only `MemberRowCacheRecord`, the display-only exception to session-only projections. Its host-approved offline display fields exclude every body-derived part. For Notes the cached secondary line keeps the authorised date as `subtitle_timestamp`. Format it from the local clock at draw time using the pinned template. Reserve the same line height until a fresh authorised reply adds the snippet. The authenticated `ViewOpenResult` and `WindowResult` name the audience.
-  The schema permits the record only on ready or empty start-anchored own-space member replies without a parent. Before writing, match it to the authenticated active view and window.
-  On write and load check the schema, host proof, scope, opt-ins and expiry (§4.2 of the Plugin API). Load only into the matching own-space root display.
-  Encrypt with account- and space-bound keys. On an unlocked device paint at launch as unconfirmed, then confirm or correct the rows with the first host answer.
-  Keep for at most 14 days or `maxAgeDays` if shorter. Erase on sign-out, account switch or known revocation. Every action needs a fresh host context.
-  *Sol's recorded objection:* protected rows should be revalidated by the host before they are painted, because a revocation the device has not yet learned of leaves titles visible for the
-  moment before the first answer; the owner accepted that cost knowingly in exchange for an instant first paint. The mitigations are the conditions above (short retention, device lock, key
-  binding, erase on a known revocation).
-* **Everything else filled is session-only.** A guest's or a public view's rows, counts and anything the host filled for them stay in memory, **partitioned by session, space and audience** (a member
-  and a guest of the same account never share a partition), are never written to storage, and are cleared on revocation, on closing a guest link, on sign-out, on account switch and when the
-  session ends. Activation contexts, resolution references, confirmation challenges and proofs are never stored anywhere.
-* **What the person sees at first paint.** The template at once (the sidebar's structure, selectors, section titles the author wrote, the footer, the header), with the member's persisted rows
-  where an eligible root bind opted in (marked as not yet confirmed) and otherwise skeleton rows and the bind's `loading` state; the host's first window answer confirms or corrects them (one round trip). Offline
-  or unauthorised, the person sees the template and the state the host or the shell can say truthfully (`offline`, `sign in again`); a guest or public viewer never sees a title from a past session.
-  A shell that cannot meet these rules (an older client) gets a host fallback that obeys the same authority rules, or the page's own chrome.
-* **"Do not paint" is not "discard".** When a lease lapses or the app is in the background, filled rows stay in memory (same session, space and audience partition) but are not drawn as current. The
-  **lease renewal** is correlated and authenticated: the request carries a `renewal_id`, the `lease_ref`, the `cache_partition` and the held `result_versions` keyed by `window_ref`; the reply
-  (`LeaseRenewResult`) echoes `renewal_id`, `request_lease_ref` and `cache_partition` and names the exact `retained_results` (`window_ref`, `result_version`), and is accepted only from the current
-  session. The renderer repaints **only** the windows named as retained, **ignores a superseded reply** (an older `renewal_id`, another lease or partition) and **keeps rows hidden on timeout or
-  refusal**; a changed grant or version refetches. A longer absence therefore costs a renewal, not a skeleton screen. (First window at offset 0 is a performance gate on the perf VM; see the plugin
-  API build order.)
-* The cache is the shell's, not the page's.
-* **Implementation status:** the apps keep only the frame (`ChromeCache.frame(of:)`: no rows, cards, counts, account initial or item title) of a v1 description until the v2 renderer exists; persisting
-  member rows with encryption and erase-on-revocation is part of the v2 renderer.
+A body-derived field in a persisted row needs a matching checked offline grant. Ordinary row-record
+lifetimes still bound prepaint hints. On any launch, paint immediately
+from the inventory left by the last completed reconciliation. On authenticated
+reconnect start [`device.reconcile`](../contract/host-catalogue-v2.json#/device_reconciliation)
+in parallel, paging the device’s held scope and offline grant refs across
+all spaces. Erase omissions and repaint as replies are applied, even if no
+view was open when access changed. Row records remain unconfirmed until
+a fresh live window arrives.
+
+An authenticated member may download the full readable item, including
+body, granted attachments and their authorized derived views. The
+host-signed download manifest names the device, account, space, authorized
+revisions and expiry policy. All manifest pages for a checked selection
+carry the same grant ref, including a download of all readable items. Check the grant again for each file range.
+Encrypt the local download and derived display and search indexes.
+Follow the same device reconciliation rule on next contact and sign-out.
+Erase expired grants locally.
+By default there is no offline expiry. A space can configure one.
+A disconnected copy cannot be erased remotely.
+
+Bound host windows, item-view pages and plugin search pages in memory
+by authenticated view. Use the [common retention rule](../contract/host-catalogue-v2.json#/view_result_retention)
+for all three. An unchanged exact acknowledged result stays on screen
+through renewal. Clear affected pages on invalidation, lease loss or
+disconnect and reopen under fresh authority.
+Guest and public sessions receive no member download or persisted row grant. Persist
+no live context, action proof or bearer. Every action rechecks live
+authority.
 
 ## 7. Version negotiation
 
@@ -393,6 +552,9 @@ plugin code). A description can run a named **invoke** on a component's event on
 
 ## 8. Native review (SwiftUI)
 
+On iPad use the same host layout as Mac: the left sidebar, floating
+card and right sidebar. Sidebar sections keep their authored placement.
+
 What the renderer needs from the contract, and what it costs:
 
 1. **Windows, not pages**: `List` with `ForEach` over thousands of rows drops frames; the native list holds a window plus spacer rows sized from `count` and a
@@ -402,53 +564,164 @@ What the renderer needs from the contract, and what it costs:
    drawing. (A page may still say which row it selected; the shell treats a later change as a reveal request.)
 3. **Equatable rows**: row values are small and comparable so an unchanged row is skipped when a window is replaced.
 4. **Up and Down move selection. Home, End and Page Up/Down only scroll** on every platform. While an arrow repeats, selection and row events go out once after the key settles (about 100 ms after the last key). Window **requests** for
-   prefetch may cross, coalesced to at most 4 a second; replies to prefetch for the result version already drawn are applied at once and only pushes that change the version are held until the selection settles,
+   prefetch may cross, coalesced to at most 4 a second; replies to prefetch for the result version already drawn are applied at once and only newer window results that change the version are held until the selection settles,
    decoded and compared off the main thread; a held selection is flushed before an activation is sent. A republish that only confirms the selection must not touch the list.
 5. **One title line**, then the declared secondary line in the secondary colour. Ellipsise both lines. Rows without a secondary line stay single-line. Use one aligned icon column where the description supplies leading icons. While a navigation key repeats, defer image fetches and cancel reads in flight. After it settles, fetch only still-visible rows’ current refs. For a note without a current thumbnail, draw the miniature from the authorised snippet, or the document miniature without text before the snippet is available. Use a single neutral accent: the accent is passed only to the unread mark and a prominent action.
 6. **Swipe actions** need `title`, `icon`, `tone` and `fullSwipe` on the invoke; they draw with the system's swipe look, tinted by tone, never by the root tint.
 7. **Haptics and menus** are the shell's: selection feedback on `route` and `selection` events, a system menu for `menu`.
 8. **Touch targets** are 44 pt; the renderer, not the description, sizes controls.
-9. **The first paint** may come from the cache (section 6) before any host is reachable: the template, and a member's persisted rows marked as not yet confirmed (their actions disabled until a fresh context arrives).
+9. **The first paint** may use the data-free template. A launch can immediately show unexpired rows left by the last completed device reconciliation (§6), marked unconfirmed. A connected launch starts reconciliation in parallel. Actions wait for a fresh host context.
 10. **Nested rows and user sections** map to a `List` with `children` (disclosure) and one `Section` per layout row; windows per parent are requested only for expanded rows.
 
 ## 9. Paper exercises
 
-Run `python3 contract/verify-description.py` with the host catalogue. The fixtures in `contract/fixtures/description-v2/` pair each app with its manifest in `manifests/`. The SDK supplies each package’s own reads and the fixtures include the emitted entries. Section 6 governs the optional member rows used by `threads-nested-catalogue-app.json`. The Notes and Threads walks follow §2.4. Threads shows the installed provider contribution’s icon or its fallback symbol. Note rows use the current thumbnail or miniature. Notes collection rows use the kind icon.
+Run the conformance-tool version that supports the contract revision. The fixtures in `contract/fixtures/description-v2/` pair each app with its manifest in `manifests/`. The SDK supplies each package’s own reads and the fixtures include the emitted entries. Section 6 governs the optional member rows used by `threads-nested-catalogue-app.json`. The Notes and Threads walks follow §2.4. An installed harness shows a verified provider mark or its fallback symbol. Note rows use the current thumbnail or miniature. Notes collection rows use the kind icon.
 
 ### 9.1 Community Reading List and author trial
 
 The list binds `reading-item` and shows a title, read mark and empty state. Mark read uses a first full swipe through the host metadata toggle, with one exchange, Undo and no runtime wake. The two-field Add form calls `reading.add` and opens the host-minted `created` ref through `then`. The footer searches all authorized searchable fields of the same opted-in kind. New blank item uses the manifest’s `host_create` defaults through `host.item.create`, commits Undo with the item, and opens it through `then` without waking the plugin.
 
-The reminder form calls `reading.remind`, saves the reminder with `item_save` and enrolls the declared `reading.reminder-due` operation using `schedule_create` with a one-date calendar and `notify_creator`. The example keeps the reminder in the person’s own space. A reminder about a shared item lives there and points to the shared item under §5 of the API. The person filter only controls which reminder rows the list shows. The SDK defaults for a first list and the required author trial are in the API’s §§7–8.
+The reminder form calls `reading.remind`, saves the reminder with `item_save` and enrolls the declared `reading.reminder-due` operation with one `alarm_set` for its declared replayable job. The example keeps the reminder in the person’s own space. A reminder about a shared item lives there and points to the shared item under §5 of the API. The person filter only controls which reminder rows the list shows. The SDK defaults for a first list and the required author trial are in the API’s §§7–8.
 
 ### 9.2 Notes
 
-The windowed sidebar binds a manual collection with an exact count and shows a Collections section and a Trash Bind. Note rows show the updated date and then the host-indexed snippet, bounded by the [catalogue’s `query.body_excerpt`](../contract/host-catalogue-v2.json). Restore uses a full swipe on an eligible single item. Empty Trash uses the host sheet with a Manager visibility rule, and Share uses its host-owned audience sheet. Rename through Notes’ link-rewriting path resolves and dispatches separately, with Undo fetched through the typed outcome/status route. Bulk Trash resolves the checked `selection_ref`, then confirms and dispatches. Move to collection fetches the scoped choice and applies the catalogue’s challenge rule for the destination audience.
+The windowed sidebar binds a manual collection with an exact count and shows a Collections section and a Trash Bind. Note rows show the updated date and then the host-indexed snippet, bounded by the [catalogue’s `query.body_excerpt`](../contract/host-catalogue-v2.json). Restore uses a full swipe on an eligible single item. Empty Trash uses the host sheet with a Manager visibility rule, and Share uses its host-owned audience sheet. Rename through Notes’ link-rewriting path resolves and dispatches separately, with Undo fetched through the typed outcome/status route. The separate bulk content list supplies ticks for Bulk Trash, which resolves the checked `selection_ref`, then confirms and dispatches. Move to collection fetches the scoped choice and applies the catalogue’s challenge rule for the destination audience.
 
-The `item-editor` edits the routed `yjs-v1` item. New note invokes `host.item.create` with the Notes manifest defaults and the current route’s collection when present. It commits the new item, membership and Undo together without waking the plugin or showing a challenge, then opens `created` via `then`. Without a collection route the same invoke creates the note without placement. The footer searches the authorized manual collection through `source.collection`. Window, bulk, snooze and search cases are covered by `notes-app.json`, `notes-bulk-and-snooze-app.json` and the search event fixtures.
+The `item-editor` edits the routed `yjs-v1` item. New note invokes `host.item.create` with the Notes manifest defaults and the current route’s collection when present. This sidebar shortcut takes that checked operand from `view.open`. It commits the new item, membership and Undo together without waking the plugin or showing a challenge, then opens `created` via `then`. Without a collection route the same invoke creates the note without placement. The footer searches the authorized manual collection through `source.collection`. Window, bulk and search cases are covered by `notes-app.json`, `notes-bulk-and-snooze-app.json` and the search event fixtures.
+
 
 ### 9.3 Threads
 
-Inbox filters `waiting_on eq viewer.person` with an exact count on that viewer’s projection. All Threads supports per-parent child windows and personal sections repeated over `layout_sections`. Section rows distinguish the placement address from the underlying thread (§2.7). The host supplies Move to, Move up/down and section create, rename and remove. Drag remains the recorded Q11 parity exception.
+Threads owns the Markdown thread item and its view. Participant IDs,
+message IDs and file encoding are Threads data. The harness owns a separate
+working log. The list binds the app's own item refs and uses the generic
+`archived` predicate. Share, Trash and archive act on the thread. The
+sleeping view shows the authorized last snapshot. A live page follows
+committed appends and can open a stable message anchor. The same view does
+not grant access to the linked working log.
 
-New thread uses `turns.create` and `then`. The composer uses host provider, model, reasoning, permission and machine controls, checked attachments and mentions, and prepared one-exchange Send. The host streams `transcript.page` and live updates and owns the approval card and follow-up. The footer searches authorized titles and messages in one Bind. The catalogue’s optional field filter can restrict that Bind to titles or messages. The API’s Step 2 writer gates control idle archive full swipe with Undo and per-actor snooze. An active archive uses a challenge.
+#### First Send from a fresh renderer
 
-The `threads-app.json` and `threads-nested-catalogue-app.json` fixtures exercise the composer, Bind and layout shapes. The paired `search-page-boundary` fixtures show a full first page followed by a zero-row `ready` window, which preserves the rows on screen. Their later-page `empty` variant is refused. The window reply fixtures also cover exact-count End, a guest refusal, refinement and the member cache record.
+Start from an authenticated shell in the selected space, with an enabled
+app and a checked deep link to the empty, committed Threads-owned item
+`file-1`. This is the first Send for that item. The renderer holds no
+cached template, lease, option, context or result. The installed Threads app declares
+the `harnesses` extension point and a replayable `run` execution job
+whose operation declares `target: {kind: "threads", field: "item"}`.
+The checked placement supplies the destination for `threads.send`
+under the catalogue’s
+[plugin-operation confirmation rule](../contract/host-catalogue-v2.json#/confirmation/material_by_kind/plugin_operation).
+The same installed description serves both spaces.
 
-### 9.4 What this schema needs from the host (authorisation is the plugins lane's)
+Each line below gives the route, complete request body and reply body.
+Use the current authenticated shell and, from `view.open` onward, its active
+view lease. The `item_view.open` body travels in the existing component
+event with `component: "transcript"` and `route: "item_view.open"`. The first
+follow reply shown is the first notification on the open subscription.
+Renew the lease under §6 if needed while awaiting output.
 
-1. Authorise every bind (kind, collection, filters, sorts, search, output fields) and every ref (`item`, `thread`, `request`, `frame`) against the viewer, the space and a guest's
-   grant **before** any indexed work or read, and reject a field the audience cannot read instead of filtering it (counts and order leak otherwise).
-2. Classify each operation as reading, mutating or disclosing from the manifest, and name the material inputs the trusted preview shows; the description may only add.
-3. Reconstruct `{row}`, `{selection}` and route sources from the activation context (never from the event) and read `{form}` and `{prompt}` only as device-held values in `interaction`; answer `stale` when the context no longer holds.
-4. Provide the host built-ins named here (`host.item.rename`, `host.item.trash`, `host.undo`, `host.approval.resolve`, `host.panel.ask`, `host.turn.stop`; `host.route.set` is a shell control, not an operation) so a
-   swipe or a card never wakes a space runtime, and a **checked draft payload** for the composer.
-5. Own the transcript's streaming, appends, rate cap and final commit; and the frame's sandbox.
+**Personal space.** Open the app and item, pick Example harness in the
+composer and keep its short option ref `h-opt`. Use the selected option's
+`harness_ref` for placement and choose Desk machine. The member types
+“Say hello” locally and presses Send. The placement and harness choices
+are submitted only in the Send resolve. The shell displays the host
+challenge and confirms before dispatching.
+
+```jsonl
+{"route":"app.open","request":{"type":"app","id":"threads"},"reply":{"view_ref":"threads-view","description":{"version":2,"kind":"app","revision":1,"view":{"root":{"type":"stack","children":[{"type":"component","component":{"type":"item-view","id":"transcript","config":{"item":{"route":"item"},"slot":"body"}}},{"type":"form","id":"composer","fields":[{"id":"message","label":"Message","input":"multiline","required":true}],"submit":{"id":"send","title":"Send","operation":"threads.send","inputs":{"item":{"route":"item"},"text":{"form":"composer","field":"message"},"harness":{"prompt":{"title":"Harness","kind":"choice","options":{"extension":"harnesses"}}},"placement":{"prompt":{"title":"Run on","kind":"choice","options":{"host":"execution_placement"}}}}}}]}}}}}
+{"route":"view.open","request":{"type":"view_open","view_ref":"threads-view","route":{"item":"file-1"}},"reply":{"lease":{"lease_ref":"lease-1","grant_revision":"grant-1","lease_seconds":15,"cache_partition":"partition-1"},"audience":"own_space_member","activation_contexts":{"send":"send-ctx"}}}
+{"route":"extension.choices","request":{"type":"extension_choices","app":"threads","point":"harnesses","activation_context":"send-ctx","slot":"harness"},"reply":{"options":[{"ref":"h-opt","label":"Example harness","harness_ref":"harness-1","contribution_identity":{"package":"example-harness","contribution":"agent"}}]}}
+{"route":"choice.options","request":{"type":"choice_options","activation_context":"send-ctx","slot":"placement","harness":"harness-1","activation_id":"send-1"},"reply":{"host":"execution_placement","options":[{"ref":"desk","label":"Desk machine · My login"},{"ref":"laptop","label":"Laptop · My login"}],"default_ref":"desk"}}
+{"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"desk"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Thread","value":"New thread"},{"name":"input:placement","label":"Machine and login","value":"Desk machine · My login"}]}}
+{"route":"activation.confirm","request":{"type":"invoke_confirm","activation_id":"send-1","resolution_ref":"send-res","confirmation_challenge":"send-challenge"},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirmation_proof":"send-proof"}}
+{"route":"activation.dispatch","request":{"type":"invoke_dispatch","activation_id":"send-1","resolution_ref":"send-res","confirmation_proof":"send-proof"},"reply":{"activation_id":"send-1","state":"ok"}}
+{"route":"item_view.open","request":{"type":"item_view","item":"file-1","component":"transcript","slot":"body","live":true},"reply":{"state":"live","source_revision":"rev-1","window_ref":"page-1","result_version":"version-1","follow":"tail-1","view":{"content":{"type":"snapshot-text","text":"Starting"}}}}
+{"route":"item_view.follow","request":{"type":"item_view_follow","follow":"tail-1"},"reply":{"type":"item_view_signal","follow":"tail-1","state":"changed"}}
+{"route":"item_view.open","request":{"type":"item_view","item":"file-1","component":"transcript","slot":"body","live":true},"reply":{"state":"live","source_revision":"rev-2","window_ref":"page-2","result_version":"version-2","follow":"tail-2","view":{"content":{"type":"snapshot-text","text":"Hello. I’m working on it."}}}}
+{"route":"execution.control","request":{"type":"execution_control","component":"transcript","item":"file-1"},"reply":{"controls":[{"action_id":"host.execution.stop","activation_context":"stop-ctx","phase":"running"}]}}
+{"route":"activation.resolve","request":{"type":"invoke","action_id":"host.execution.stop","activation_id":"stop-1","activation_context":"stop-ctx"},"reply":{"activation_id":"stop-1","resolution_ref":"stop-res","confirm":"challenge","confirmation_challenge":"stop-challenge","material":[{"name":"item","label":"Thread","value":"New thread"},{"name":"execution","label":"Execution","value":"Running"},{"name":"effect","label":"Effect","value":"Stop this execution"}]}}
+{"route":"activation.confirm","request":{"type":"invoke_confirm","activation_id":"stop-1","resolution_ref":"stop-res","confirmation_challenge":"stop-challenge"},"reply":{"activation_id":"stop-1","resolution_ref":"stop-res","confirmation_proof":"stop-proof"}}
+{"route":"activation.dispatch","request":{"type":"invoke_dispatch","activation_id":"stop-1","resolution_ref":"stop-res","confirmation_proof":"stop-proof"},"reply":{"activation_id":"stop-1","state":"ok"}}
+```
+
+**Shared space.** Start with another empty renderer and repeat every request
+and reply above in the selected shared space, using the independent
+refs issued by that space. Replace the following three lines. The default
+is the space machine and login. The member explicitly picks My laptop for
+this run. Keeping the default instead sends `space-machine` in the same
+placement slot and shows that option's host label in the protected preview.
+
+```jsonl
+{"route":"view.open","request":{"type":"view_open","view_ref":"threads-view","route":{"item":"file-1"}},"reply":{"lease":{"lease_ref":"lease-1","grant_revision":"grant-1","lease_seconds":15,"cache_partition":"partition-1"},"audience":"member","activation_contexts":{"send":"send-ctx"}}}
+{"route":"choice.options","request":{"type":"choice_options","activation_context":"send-ctx","slot":"placement","harness":"harness-1","activation_id":"send-1"},"reply":{"host":"execution_placement","options":[{"ref":"space-machine","label":"Space machine · Space login"},{"ref":"my-laptop","label":"My laptop · My login"}],"default_ref":"space-machine"}}
+{"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"my-laptop"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Thread","value":"New thread"},{"name":"input:placement","label":"Machine and login","value":"My laptop · My login"}]}}
+```
+
+In either space, the host resolves `h-opt` to `harness-1` and gives Send
+the selected placement ref as its named input. The operation forwards the
+ref unchanged when it admits the job. This is the broker request and reply for the
+personal arm. The shared arm replaces `desk` with `my-laptop`, or
+`space-machine` if the member kept the default.
+
+```json
+{"job":"run","item":"file-1","input":{},"contribution_input":{"text":"Say hello"},"harness":"harness-1","placement":"desk"}
+```
+
+The alarm arm uses the same top-level item and omits the placement.
+Its author input also omits the operation's target field.
+
+```json
+{"request_id":"alarm-set-1","job":"run","item":"file-1","input":{},"contribution_input":{"text":"Say hello"},"harness":"harness-1","at":"2026-11-21T00:00:00Z","grace_seconds":30}
+```
+
+On either admission path, the host supplies `input.item: "file-1"` to
+the run operation and the same item in its protected job context. The
+author never supplies `input.item` on either broker request. The job
+gets the pinned `contribution_input` in its protected context. It may store
+its host-stamped logical contribution identity as a participant.
+The checked harness ref still comes from the current host binding.
+
+```json
+{"job_id":"admitted-job-1"}
+```
+
+The host checks the full encoded contribution envelope during admission.
+A frame-limit refusal leaves the file and queue untouched. Send's `ok`
+follows durable admission. The job saves the prompt only after that
+receipt. The first live page precedes any agent output. The Threads job calls `execution_start` for its pinned harness,
+then `contribution_call` with its checked prompt. The host passes that input
+to the qualified contributor. It can return a link to its own working log.
+The Threads job reads the bounded committed contribution frames and appends
+the reply to the Threads item using its own checked writer and the exact
+attempt fence. Here are the broker payloads for one output frame.
+
+```jsonl
+{"method":"execution_start","request":{"request_id":"start-1","harness":"harness-1"},"reply":{"execution":"attempt-1","phase":"starting","transition_cursor":"phase-1"}}
+{"method":"contribution_call","request":{"execution":"attempt-1","contribution":"harness-1","request_id":"call-1","input":{"text":"Say hello"}},"reply":{"call":"call-ref-1"}}
+{"method":"contribution_read","request":{"call":"call-ref-1"},"reply":{"frames":[{"seq":1,"kind":"output","data":{"text":"Hello. I’m working on it.","log":{"space":"space-1","id":"log-1"}}}]}}
+```
+
+Threads records the portable log locator. Opening it requires a separate
+live authority check. On normal completion, the next contribution read
+can return the ordered terminal frame. Threads finalizes its own writes
+before completing the job. In this walk the user stops the running
+attempt after its first output. Already committed output and the harness
+log survive. The host catches up under the registered follow subscription
+and signals the committed revision, including if it landed between open
+and follow. The renderer then requests the new head and
+follows its replacement ref. In a shared space the attempt uses
+whole-audience discovery and the shared tools rule for either placement.
+Stop uses the context for the exact running attempt, and its `ok` follows
+the durable fence. The renderer never supplies an attempt ID.
+
+The earlier Threads paper fixtures exercise legacy component shapes.
+The separately versioned conformance tool and fixtures follow the
+contract revision. Section 8 of the Plugin API governs runtime parity.
 
 ## 10. Open questions and what this contract does not decide
 
 1. [Metadata patch](../contract/host-catalogue-v2.json#/operations/host.item.patch-metadata) uses the metadata arm of `item_save`. [Trash purge](../contract/host-catalogue-v2.json#/operations/host.trash.purge) is a confirmed Manager or Owner job.
-2. Reminders use the scheduler’s [`notify_creator`](../contract/host-catalogue-v2.json#/$defs/ScheduleCreateInput/properties/notify_creator).
+2. Reminders use one-shot [alarms](../contract/host-catalogue-v2.json#/alarms).
 3. **Generic TCP** is outside this contract; the owner's decision is recorded elsewhere and is not a description concern.
 4. **Section repeaters** (one section per row of a bind) and **nested child rows** are in the first contract (owner decision Q11, `Section.repeat`, `RowTemplate.children`); **drag** is a recorded parity exception, with Move to, Move up and Move down standing in.
 5. The **retirement date of v1** is the owner's.

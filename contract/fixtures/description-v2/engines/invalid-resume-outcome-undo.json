@@ -1,0 +1,14 @@
+{
+  "definition": "ResumeOutcome",
+  "value": {
+    "activation_id": "activation-resume",
+    "state": "pending",
+    "status_ref": "starting-resume",
+    "undo": {
+      "ref": "undo",
+      "label": "Undo",
+      "expires_at": "2026-11-21T00:00:00Z"
+    }
+  },
+  "error": "$.undo: not allowed here"
+}

@@ -1,0 +1,53 @@
+{
+  "api_version": 2,
+  "id": "calternal-orchestrator-fixture",
+  "name": "Conversation fixture",
+  "version": "1.0.0",
+  "icon": "threads",
+  "apps": [],
+  "operations": [],
+  "kinds": [
+    {
+      "id": "threads",
+      "icon": "puzzle",
+      "title_field": "title",
+      "storage": {
+        "folder": "Threads"
+      },
+      "claimed_text": true,
+      "searchable": true,
+      "conversation": true,
+      "schema": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "provider_label": {
+            "type": "string"
+          }
+        }
+      },
+      "host_create": {
+        "defaults": {
+          "title": "New conversation"
+        }
+      },
+      "indexed_fields": {
+        "state": {
+          "type": "Text",
+          "audience": "member_item"
+        },
+        "provider_label": {
+          "type": "Text",
+          "audience": "shared_projection"
+        }
+      }
+    }
+  ],
+  "network": "none"
+}

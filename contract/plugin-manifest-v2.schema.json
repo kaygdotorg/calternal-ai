@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 13.7 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 14.33 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -21,9 +21,7 @@
       "type": "array", "maxItems": 64, "uniqueItems": true,
       "items": { "$ref": "host-catalogue-v2.json#/$defs/KindId" }
     },
-    "providers": { "type": "array", "maxItems": 16, "items": { "$ref": "#/definitions/provider" } },
     "jobs": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/job" } },
-    "schedule_eligibility": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/schedule" } },
     "wait_webhooks": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/webhook" } },
     "settings": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/setting" } },
     "secrets": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/secret" } },
@@ -45,15 +43,29 @@
           }
         }
       ]
+    },
+    "contributions": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/definitions/contribution"
+      }
     }
   },
   "if": {
     "anyOf": [
       { "properties": { "operations": { "minItems": 1 } } },
       { "required": ["jobs"], "properties": { "jobs": { "minItems": 1 } } },
-      { "required": ["schedule_eligibility"], "properties": { "schedule_eligibility": { "minItems": 1 } } },
       { "required": ["wait_webhooks"], "properties": { "wait_webhooks": { "minItems": 1 } } },
-      { "required": ["credential_routes"], "properties": { "credential_routes": { "minItems": 1 } } }
+      { "required": ["credential_routes"], "properties": { "credential_routes": { "minItems": 1 } } },
+      {
+        "required": ["contributions"],
+        "properties": {
+          "contributions": {
+            "minItems": 1
+          }
+        }
+      }
     ]
   },
   "then": { "required": ["worker"] },
@@ -82,13 +94,13 @@
   "definitions": {
     "noNetworkBadge": { "$ref": "host-catalogue-v2.json#/$defs/NoNetworkBadgeManifest" },
     "windowRequest": { "$ref": "host-catalogue-v2.json#/$defs/WindowRequest" },
-    "localId": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$", "maxLength": 64 },
-    "operationId": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$", "maxLength": 128 },
+    "localId": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*(?![\\s\\S])", "maxLength": 64 },
+    "operationId": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+(?![\\s\\S])", "maxLength": 128 },
     "label": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "path": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$" },
+    "path": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|(?![\\s\\S])))[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)*(?![\\s\\S])" },
     "asset": {
       "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
-      "properties": { "path": { "$ref": "#/definitions/path" }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+      "properties": { "path": { "$ref": "#/definitions/path" }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])" } }
     },
     "icon": {
       "oneOf": [
@@ -110,28 +122,38 @@
       }
     },
     "app": {
-      "type": "object", "additionalProperties": false, "required": ["id", "name", "icon", "description"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "icon", "description"],
       "properties": {
         "id": { "$ref": "#/definitions/localId" },
         "name": { "$ref": "#/definitions/label" },
         "icon": { "$ref": "#/definitions/icon" },
-        "engine": { "const": "turns" },
-        "description": { "$ref": "#/definitions/description" }
+        "description": { "$ref": "#/definitions/description" },
+        "extension_points": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/definitions/extensionPoint"
+          }
+        }
       }
     },
     "kind": {
-      "type": "object", "additionalProperties": false, "required": ["id", "icon", "title_field", "storage", "claimed_text", "schema"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "icon", "title_field", "storage", "claimed_text", "schema"],
       "properties": {
         "id": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
         "icon": { "$ref": "#/definitions/icon" },
-        "title_field": { "$ref": "#/definitions/localId", "description": "Declared string field exposed as the generated generic title." },
+        "title_field": { "$ref": "#/definitions/localId", "description": "Ordinary string metadata exposed as the generic title. Declare the named property directly in schema.properties on a metadata root without $ref. Its own schema, after resolving references within the same embedded metadata document, must declare type \"string\" or [\"string\"]. Patterns, combinators, conditionals and literals cannot establish the type. Install rejects a body-derived or extractor-owned source, a reserved host projection, or an indexed source with a narrower audience." },
         "storage": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestPlacement" },
         "claimed_text": { "type": "boolean" },
-        "extension": { "type": "string", "pattern": "^[a-z0-9]{1,16}$" },
+        "extension": { "type": "string", "pattern": "^[a-z0-9]{1,16}(?![\\s\\S])" },
         "schema": { "$ref": "#/definitions/embeddedSchema" },
         "searchable": { "type": "boolean", "description": "Opt a claimed-text kind into the host background search projection and the claimed-text plans in query.search of the host catalogue. The host checks current scope and field authority at query time. Omission or false leaves the kind out of search." },
         "indexed_fields": {
-          "description": "Uses only package field names. At install the host rejects any name reserved by generic_item_fields in the host catalogue, including derived declarations.",
+          "description": "Uses only package field names. Each field explicitly declares a catalogue FieldType for queries, sort keys and extractor outputs. Metadata schemas and values do not determine index types. At install the host rejects any name reserved by generic_item_fields in the host catalogue, including derived declarations.",
           "type": "object", "maxProperties": 32,
           "propertyNames": { "$ref": "#/definitions/localId" },
           "additionalProperties": {
@@ -145,21 +167,134 @@
               },
               "body_derived": {
                 "const": true,
-                "description": "Mark a field whose value is derived from the body. The host checks body authority before projecting it and excludes it from all persisted member row display parts."
+                "description": "Mark a field whose value is derived from the body. The host checks body authority before projecting it. Persist a body-derived part only under the catalogue offline_download.row_projections rule."
               }
             },
             "if": { "required": ["source"] },
             "then": { "properties": { "type": { "const": "Text" } } }
           }
         },
+        "extractors": {
+          "description": "Closed selectors over the same claimed-text body. Their outputs must be declared body_derived fields of the types in catalogue query.extractors. Only TextSet outputs may have multiple selectors and all inline selectors for that output must use one separator.",
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "selector",
+                  "output",
+                  "key"
+                ],
+                "properties": {
+                  "selector": {
+                    "const": "frontmatter"
+                  },
+                  "output": {
+                    "$ref": "#/definitions/localId"
+                  },
+                  "key": {
+                    "$ref": "#/definitions/localId"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "selector",
+                  "output",
+                  "blocks",
+                  "max_utf8_bytes"
+                ],
+                "properties": {
+                  "selector": {
+                    "const": "first_blocks"
+                  },
+                  "output": {
+                    "$ref": "#/definitions/localId"
+                  },
+                  "blocks": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3
+                  },
+                  "max_utf8_bytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 256
+                  },
+                  "skip_title": {
+                    "const": true
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "selector",
+                  "output",
+                  "marker",
+                  "separator",
+                  "exclude"
+                ],
+                "properties": {
+                  "selector": {
+                    "const": "inline_tags"
+                  },
+                  "output": {
+                    "$ref": "#/definitions/localId"
+                  },
+                  "marker": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1
+                  },
+                  "separator": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "maxItems": 5,
+                    "items": {
+                      "enum": [
+                        "code",
+                        "links",
+                        "addresses",
+                        "escapes",
+                        "frontmatter"
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "device_row_images": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/localId"
+          },
+          "description": "Declared RowImageRef slots eligible for a checked editing-device snapshot."
+        },
         "live_room": { "enum": ["yjs-v1"] },
         "host_create": {
-          "description": "Opt in to generic host.item.create. Supply schema-valid initial metadata for an empty item. Optional after runs a same-package operation or job after the host commit. At install, resolve a job to run_operation and require the entry operation to target this kind with target.field and accept exactly that one required property in a closed input object. Resolve the property reference to ItemRef through the host registry and ignore schema annotations. The host binds the created ref to target.field as the only input.",
+          "description": "Opt in to generic host.item.create. Supply schema-valid initial metadata for an empty item. Install rejects defaults for each host extractor output, the body_excerpt shorthand and every declared device_row_images slot. The host extracts from the empty source before committing the item. Optional after runs a same-package operation or job after the host commit. At install, resolve a job to run_operation and require the entry operation to target this kind with target.field and accept exactly that one required property in a closed input object. Resolve the property reference to ItemRef through the host registry and ignore schema annotations. The host binds the created ref to target.field as the only input.",
           "type": "object",
           "additionalProperties": false,
           "required": ["defaults"],
           "properties": {
-            "defaults": { "type": "object" },
+            "defaults": { "type": "object", "description": "Package-supplied metadata only. Do not supply a host-derived output, even as null or an empty value." },
             "after": {
               "type": "object",
               "additionalProperties": false,
@@ -167,6 +302,29 @@
               "oneOf": [{ "required": ["operation"] }, { "required": ["job"] }]
             }
           }
+        },
+        "view_snapshots": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/definitions/viewSnapshot"
+          }
+        },
+        "file_format": {
+          "$ref": "#/definitions/fileFormat"
+        },
+        "search_profiles": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/definitions/searchProfile"
+          }
+        },
+        "attempt_discovery": { "const": "item_policy", "description": "Opt into the host-owned per-item fact in catalogue execution_attempt_authority.discovery.item_policy." },
+        "append_file": { "const": true, "description": "Opt into the catalogue file_append rule for the item body." },
+        "execution_target": {
+          "const": true,
+          "description": "An ordinary item kind that may hold an execution job. Allows admission of an execution job. Durable audience-widening protection is an item fact under the catalogue, independent of this declaration."
         }
       },
       "allOf": [
@@ -183,23 +341,51 @@
     },
     "hostMethod": {
       "enum": [
-        "item_head", "item_range", "item_history", "item_save", "item_trash", "item_restore", "item_rename",
-        "item_rename_status", "item_rename_undo", "item_purge", "empty_trash",
-        "collection_create", "collection_membership", "items_list", "items_search", "sharing_check",
-        "start_job", "checkpoint_job", "job_status", "cancel_job", "read_setting", "set_setting",
-        "request_secret_handle", "proxy_request", "credential_call", "turn_start", "turn_status", "turn_cancel",
-        "turn_follow_up", "turn_answer", "schedule_create", "schedule_remove"
+        "item_create",
+        "item_save_begin",
+        "item_save_chunk",
+        "item_save_seal",
+        "contribution_call",
+        "contribution_read",
+        "item_head",
+        "item_range",
+        "item_history",
+        "item_save",
+        "item_trash",
+        "item_restore",
+        "item_rename",
+        "item_rename_status",
+        "item_rename_undo",
+        "item_purge",
+        "empty_trash",
+        "collection_create",
+        "collection_membership",
+        "items_list",
+        "items_search",
+        "sharing_check",
+        "start_job",
+        "checkpoint_job",
+        "job_status",
+        "cancel_job",
+        "read_setting",
+        "set_setting",
+        "request_secret_handle",
+        "proxy_request",
+        "credential_call",
+        "execution_start",
+        "execution_status",
+        "execution_stop",
+        "execution_input",
+        "execution_spawn_child",
+        "execution_wait",
+        "alarm_set",
+        "alarm_cancel",
+        "item_append",
+        "item_view_publish",
+        "execution_session_bind",
+        "item_view_context",
+        "extension_choices"
       ]
-    },
-    "provider": {
-      "type": "object", "additionalProperties": false, "required": ["id", "name", "engine", "adapter"],
-      "properties": {
-        "id": { "$ref": "#/definitions/localId" },
-        "name": { "$ref": "#/definitions/label" },
-        "engine": { "const": "turns" },
-        "icon": { "$ref": "#/definitions/localId", "description": "Optional catalogue symbol. The host exposes a distinctive mark in provider_icon only when its provider_marks rule verifies publisher identity and ownership." },
-        "adapter": { "$ref": "#/definitions/asset", "description": "Pinned executable descriptor for the host's existing provider loader and handshake." }
-      }
     },
     "operation": {
       "type": "object", "additionalProperties": false,
@@ -233,9 +419,9 @@
             }
           ]
         },
-        "creates": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
+        "creates": { "$ref": "host-catalogue-v2.json#/$defs/KindId", "description": "Declare a typed created output under catalogue created_outcome." },
         "material_inputs": {
-          "description": "Labels by input key for extra required material. The host enforces its own required preview fields.",
+          "description": "Labels by original input key for extra required material. The host writes each into the preview key space input:<key>. Host material occupies a separate key space.",
           "type": "object", "maxProperties": 32,
           "propertyNames": { "$ref": "#/definitions/localId" },
           "additionalProperties": { "$ref": "#/definitions/label" }
@@ -259,7 +445,7 @@
     "wait": {
       "type": "object", "additionalProperties": false, "required": ["kind"],
       "properties": {
-        "kind": { "enum": ["question", "approval", "webhook", "deadline"] },
+        "kind": { "enum": ["question", "approval", "webhook", "deadline", "execution"] },
         "schema_operation": { "$ref": "#/definitions/operationId" },
         "route": { "$ref": "#/definitions/localId" }
       },
@@ -271,24 +457,51 @@
       ]
     },
     "job": {
-      "type": "object", "additionalProperties": false, "required": ["id", "run_operation", "replayable"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "run_operation", "replayable"],
       "properties": {
         "id": { "$ref": "#/definitions/localId" },
         "run_operation": { "$ref": "#/definitions/operationId" },
         "placement": { "const": "heavy", "description": "Run this job in the on-demand larger plugin VM under the same isolation rules. Omission uses the small plugin VM." },
         "replayable": { "type": "boolean" },
-        "waits": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/wait" } }
+        "waits": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/wait" } },
+        "execution": {
+          "const": true,
+          "description": "An execution start_job takes ExecutionJobStart including the typed harness operand and the pinned contribution_input. If also scheduled by an alarm, use AlarmSet.harness."
+        },
+        "alarm": {
+          "const": true,
+          "description": "Allow a one-shot alarm. When this job also declares execution:true, AlarmSet requires the top-level harness operand. Other alarm jobs refuse that operand."
+        }
       },
       "if": { "properties": { "replayable": { "const": false } } },
-      "then": { "properties": { "waits": { "maxItems": 0 } } }
-    },
-    "schedule": {
-      "type": "object", "additionalProperties": false, "required": ["id", "operation"],
-      "properties": {
-        "id": { "$ref": "#/definitions/localId" },
-        "operation": { "$ref": "#/definitions/operationId" },
-        "description": { "$ref": "#/definitions/label" }
-      }
+      "then": { "properties": { "waits": { "maxItems": 0 } } },
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "execution"
+                ]
+              },
+              {
+                "required": [
+                  "alarm"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "replayable": {
+                "const": true
+              }
+            }
+          }
+        }
+      ]
     },
     "webhook": {
       "type": "object", "additionalProperties": false, "required": ["id", "schema_operation", "signing_secret"],
@@ -341,8 +554,276 @@
       }
     },
     "hostname": {
-      "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$",
+      "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?![\\s\\S])",
       "description": "Exact DNS name, checked and normalized by netguard."
+    },
+    "fileFormat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/localId"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ]
+    },
+    "extensionPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/localId"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "kind": {
+          "enum": [
+            "harness",
+            "panel",
+            "row_field",
+            "action",
+            "editor"
+          ]
+        },
+        "input_schema": {
+          "$ref": "#/definitions/embeddedSchema"
+        },
+        "output_schema": {
+          "$ref": "#/definitions/embeddedSchema"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "kind",
+        "input_schema",
+        "output_schema"
+      ]
+    },
+    "contribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "app": {
+          "$ref": "host-catalogue-v2.json#/$defs/ExtensionAppId"
+        },
+        "point": {
+          "$ref": "#/definitions/localId"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "id": {
+          "$ref": "#/definitions/localId"
+        },
+        "kind": {
+          "enum": [
+            "harness",
+            "panel",
+            "row_field",
+            "action",
+            "editor"
+          ]
+        },
+        "operation": {
+          "$ref": "#/definitions/operationId"
+        },
+        "harness": {
+          "$ref": "#/definitions/harness"
+        },
+        "editor": {
+          "$ref": "#/definitions/editor"
+        }
+      },
+      "required": [
+        "app",
+        "point",
+        "version",
+        "id",
+        "kind",
+        "operation"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "harness"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "harness"
+            ]
+          },
+          "else": {
+            "properties": {
+              "harness": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "editor"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "editor"
+            ]
+          },
+          "else": {
+            "properties": {
+              "editor": false
+            }
+          }
+        }
+      ]
+    },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "image_source": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]{1,5})?/[a-z0-9._-]+(?:/[a-z0-9._-]+)*(?![\\s\\S])",
+          "description": "OCI registry host and repository, acquired over HTTPS at the pinned image digest. Omit only for an operator-provisioned verified image."
+        },
+        "execution_network": {
+          "$ref": "#/properties/network",
+          "description": "Separately approved harness egress. Omission means none."
+        },
+        "entry": {
+          "$ref": "#/definitions/asset"
+        },
+        "name": {
+          "$ref": "#/definitions/label"
+        },
+        "icon": {
+          "$ref": "#/definitions/localId"
+        },
+        "login_directories": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^(?!\\.{1,2}(?:/|(?![\\s\\S])))[A-Za-z0-9._-]+(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[A-Za-z0-9._-]+)*(?![\\s\\S])"
+          },
+          "description": "Relative login mount paths disclosed at install. Backing storage is personal or space-scoped under the catalogue's provider_login rule."
+        }
+      },
+      "required": [
+        "image",
+        "entry",
+        "name"
+      ],
+      "description": "Pinned harness image, entry asset and disclosed login directories. The host checks reviewed-build approval outside the manifest. The host never interprets provider command options."
+    },
+    "editor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "formats": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/definitions/fileFormat"
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "writes": {
+          "const": true
+        }
+      },
+      "required": [
+        "formats"
+      ]
+    },
+    "searchProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/localId"
+        },
+        "operation": {
+          "$ref": "#/definitions/operationId"
+        },
+        "index_job": {
+          "$ref": "#/definitions/localId"
+        },
+        "mode": {
+          "enum": [
+            "rerank",
+            "index"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "operation",
+        "mode"
+      ],
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "index"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "index_job"
+        ]
+      },
+      "else": {
+        "properties": {
+          "index_job": false
+        }
+      }
+    },
+    "viewSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/localId"
+        },
+        "refresh": {
+          "$ref": "#/definitions/operationId"
+        }
+      },
+      "required": [
+        "id",
+        "refresh"
+      ],
+      "description": "The owning read operation accepts ItemViewRead and returns one transient ItemViewPage for the requesting reader. Only a separate run with live item-write authority may publish this slot under catalogue view_snapshots."
     }
   }
 }

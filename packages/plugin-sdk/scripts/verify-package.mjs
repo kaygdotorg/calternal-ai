@@ -6,14 +6,15 @@ import { fileURLToPath } from "node:url";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 
-const contract = new URL("../generated/contract/", import.meta.url);
-const readSchema = async name => JSON.parse(await readFile(new URL(name, contract), "utf8"));
+import { contractPin } from "./contract-pin.mjs";
+
+const readSchema = async (contract, name) => JSON.parse(await readFile(new URL(name, contract), "utf8"));
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 
-async function metadataValidator() {
-  const manifest = await readSchema("plugin-manifest-v2.schema.json");
-  const { $id, $defs } = await readSchema("host-catalogue-v2.json");
-  const v1 = await readSchema("plugin-manifest-v1.schema.json");
+async function metadataValidator(contract) {
+  const manifest = await readSchema(contract, "plugin-manifest-v2.schema.json");
+  const { $id, $defs } = await readSchema(contract, "host-catalogue-v2.json");
+  const v1 = await readSchema(contract, "plugin-manifest-v1.schema.json");
   // The catalogue is a 2020-12 registry of definitions. Manifest v2 only
   // references its Draft 7-compatible definitions.
   const ajv = new Ajv({ strict: false, allErrors: true });
@@ -30,9 +31,9 @@ async function metadataValidator() {
   return ajv;
 }
 
-async function checkCreateDefaults(kinds) {
+async function checkCreateDefaults(contract, kinds) {
   if (!kinds.some(kind => kind.host_create)) return;
-  const ajv = await metadataValidator();
+  const ajv = await metadataValidator(contract);
   for (const [index, kind] of kinds.entries()) {
     if (!kind.host_create) continue;
     const checkItem = ajv.compile(kind.schema);
@@ -42,7 +43,11 @@ async function checkCreateDefaults(kinds) {
   }
 }
 
-async function readPinned(directory, { path, sha256 }) {
+// Check an asset before copying, including its resolved filesystem boundary.
+export async function readPinned(directory, { path, sha256 }) {
+  if (isAbsolute(path) || path.split("/").some(part => !part || part === "." || part === "..") || path.includes("\\")) {
+    throw new Error(`Unsafe package asset path ${path}.`);
+  }
   const file = await realpath(join(directory, path));
   const inside = relative(directory, file);
   if (!inside || inside === ".." || inside.startsWith(".." + sep) || isAbsolute(inside)) {
@@ -55,12 +60,13 @@ async function readPinned(directory, { path, sha256 }) {
 
 /**
  * Verify emitted package files using the manifest schema, asset digests and
- * sealed description verifier in package mode. Validates create defaults
+ * pinned description verifier in package mode. Validates create defaults
  * and the worker pin, then returns pinned data for authoring checks.
  * A failed check throws with the underlying schema or artifact diagnostic.
  */
 export async function verifyPackage(directory) {
   const root = await realpath(directory);
+  const contract = await contractPin(new URL("../generated/contract/", import.meta.url));
   try {
     const output = execFileSync(
       "python3", ["-B", fileURLToPath(new URL("verify-description.py", contract)), "--package", root],
@@ -74,7 +80,7 @@ export async function verifyPackage(directory) {
   }
 
   const manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
-  await checkCreateDefaults(manifest.kinds);
+  await checkCreateDefaults(contract, manifest.kinds);
   const apps = await Promise.all(manifest.apps.map(async app => ({
     app,
     bytes: await readPinned(root, app.description.template),

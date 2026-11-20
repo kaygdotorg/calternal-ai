@@ -1,0 +1,26 @@
+{
+  "definition": "ActivationResolution",
+  "challenge_kind": "plugin_operation",
+  "material_inputs": [
+    "effect"
+  ],
+  "value": {
+    "activation_id": "plugin",
+    "resolution_ref": "resolved-plugin",
+    "confirmation_challenge": "challenge-plugin",
+    "confirm": "challenge",
+    "material": [
+      {
+        "name": "operation",
+        "label": "Operation",
+        "value": "Send report"
+      },
+      {
+        "name": "effect",
+        "label": "Effect",
+        "value": "External delivery"
+      }
+    ]
+  },
+  "error": "$.material: missing confirmation entry 'input:effect'"
+}

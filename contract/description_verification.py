@@ -9,6 +9,7 @@ from itertools import chain
 from urllib.parse import unquote, urldefrag, urljoin, urlsplit
 
 from description_input import DuplicateKey, VisitLimit, check_unique_ids, load_strict, read_bytes, read_json, resolved_path
+from description_title import declared_title_text
 
 
 root = pathlib.Path(__file__).resolve().parent
@@ -209,7 +210,7 @@ def check(node, value, path, errors, ctx=None, *, depth=0):
         if node.get("format") == "date-time" and not is_date_time(value):
             reject(f"{path}: must be an RFC 3339 date-time with seconds 00 to 59")
         if "pattern" in node and not re.search(node["pattern"], value): reject(f"{path}: {short_value(value)} does not match {node['pattern']}")
-        if "maxLength" in node and len(value.encode()) > node["maxLength"]: reject(f"{path}: longer than {node['maxLength']} bytes")
+        if "maxLength" in node and len(value) > node["maxLength"]: reject(f"{path}: longer than {node['maxLength']} Unicode code points")
         if "minLength" in node and len(value) < node["minLength"]: reject(f"{path}: shorter than {node['minLength']}")
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if "minimum" in node and value < node["minimum"]: reject(f"{path}: below {node['minimum']}")
@@ -325,7 +326,7 @@ def schema_uri(base, ref):
 
 
 def compile_embedded(document, path, errors):
-    """Validate Draft 7 schema shape and link only to registered schema paths."""
+    """Validate Draft 7 shape and retain its resolved schema links."""
     if errors.full:
         return
     before = len(errors)
@@ -353,7 +354,7 @@ def compile_embedded(document, path, errors):
             else:
                 resources[scope] = position
         if "$ref" in node:
-            references.append((scope, node["$ref"]))
+            references.append((id(node), scope, node["$ref"]))
         for pattern in errors.each(chain((node.get("pattern"),), node.get("patternProperties", {}))):
             if pattern is not None:
                 try:
@@ -374,25 +375,35 @@ def compile_embedded(document, path, errors):
                     continue
             pending.append((position + parts, child, scope))
 
-    for scope, ref in errors.each(references):
+    links = {}
+    for node_id, scope, ref in errors.each(references):
         try:
             address = schema_uri(scope, ref)
             document_id, fragment = urldefrag(address)
             if address in resources:
-                local[resources[address]]
+                target, context = local[resources[address]], document
             elif document_id in pinned:
-                pinned[document_id][pointer_tokens(fragment, errors)]
+                target = pinned[document_id][pointer_tokens(fragment, errors)]
+                context = SCHEMA_DOCUMENTS.get(document_id, draft7_meta)
             else:
-                local[resources[document_id] + pointer_tokens(fragment, errors)]
+                target = local[resources[document_id] + pointer_tokens(fragment, errors)]
+                context = document
+            links[node_id] = (target, context)
         except VisitLimit:
             raise
         except (KeyError, ValueError):
             errors.append(f"{path}: unresolvable embedded schema reference {ref[:256]!r}")
+    return links
 
 
 def parse_manifest(text, errors):
     """Validate pinned manifest shape, ID namespaces and schema links before indexing."""
     return validate_manifest(load_strict(text, errors), errors)
+
+
+def reserved_operation(operation, catalogue):
+    """Match reserved operation namespaces from the effective pinned catalogue."""
+    return operation.startswith(tuple((catalogue or {}).get("reserved_operation_prefixes", ())))
 
 
 def validate_manifest(manifest, errors):
@@ -406,10 +417,11 @@ def validate_manifest(manifest, errors):
         keys={"$.settings": "key", "$.secrets": "name"},
     )
     for index, operation in enumerate(errors.each(manifest["operations"])):
-        if operation["id"].startswith(("host.", "turns.")):
+        if reserved_operation(operation["id"], CATALOGUE):
             errors.append(f"$.operations[{index}].id: reserved host operation namespace")
     if errors:
         return None
+    kind_schema_links = {}
     for collection, keys in (
         ("kinds", ("schema",)), ("operations", ("input_schema", "output_schema")),
         ("settings", ("value_schema",)), ("credential_routes", ("input_schema", "output_schema")),
@@ -417,11 +429,13 @@ def validate_manifest(manifest, errors):
         for index, entry in enumerate(errors.each(manifest.get(collection, []))):
             for key in errors.each(keys):
                 if key in entry:
-                    compile_embedded(entry[key], f"$.{collection}[{index}].{key}", errors)
+                    links = compile_embedded(entry[key], f"$.{collection}[{index}].{key}", errors)
+                    if collection == "kinds":
+                        kind_schema_links[entry["id"]] = links
     if errors:
         return None
     checked = normalize_manifest(manifest, errors)
-    check_manifest_install(checked, errors)
+    check_manifest_install(checked, kind_schema_links, errors)
     return None if errors else checked
 
 
@@ -439,7 +453,7 @@ def load_checked_manifest(path, errors):
 SCHEMA_ANNOTATIONS = {"title", "description", "$comment", "default", "examples", "deprecated", "readOnly", "writeOnly"}
 
 
-def is_created_item_input(input_schema, field, errors):
+def is_only_item_input(input_schema, field, errors):
     """Require a closed, one-property object with a registered ItemRef, ignoring annotations."""
     if not isinstance(input_schema, dict):
         return False
@@ -465,28 +479,123 @@ def is_created_item_input(input_schema, field, errors):
     return False
 
 
-def check_manifest_install(manifest, errors):
+def composer_send_operations(manifest, errors):
+    """Resolve this package's operations reserved for host-only prepared Send."""
+    return {kind["composer"]["send"] for kind in errors.each(manifest.get("kinds", {}).values())
+            if "composer" in kind}
+
+
+def check_worker_invocation(frame, manifest, job_id, errors):
+    """Validate a host-frame specimen against the admitted manifest job."""
+    message = frame["message"]
+    job = manifest.get("jobs", {}).get(job_id)
+    if frame["package"] != manifest["id"] or message["operation"] not in manifest["operations"]:
+        errors.append("$.message.operation: invocation must name an operation of the pinned package")
+    if job_id is not None and (job is None or job["run_operation"] != message["operation"]):
+        errors.append("$.message.operation: invocation must match the admitted job entry")
+    if job and job.get("execution") is True:
+        if "job_context" not in message:
+            errors.append("$.message.job_context: required for the admitted execution job")
+    elif "job_context" in message:
+        errors.append("$.message.job_context: allowed only for an admitted execution job")
+    if "alarm" in message and (not job or job.get("alarm") is not True):
+        errors.append("$.message.alarm: allowed only for an admitted alarm job")
+
+
+def check_manifest_install(manifest, kind_schema_links, errors):
     """Check reserved indexed fields and host_create follow-ups at install."""
     if CATALOGUE is None:
         return
     generic = CATALOGUE["generic_item_fields"]
+    provider_projection = CATALOGUE["provider_marks"]["field"]
     operations = manifest.get("operations", {})
     jobs = manifest.get("jobs", {})
+    send_operations = composer_send_operations(manifest, errors)
     for kind_id, kind in errors.each(manifest.get("kinds", {}).items()):
         path = f"$.kinds.{kind_id}"
         for field in errors.each(sorted(field_names(kind, errors) & generic.keys())):
             errors.append(f"{path}.indexed_fields.{field}: reserved host generic field")
-        after = (kind.get("host_create") or {}).get("after")
+        fields = kind.get("fields", {})
+        outputs = {field for field, meta in errors.each(fields.items()) if meta.get("source") == "body_excerpt"}
+        separators = {}
+        for extractor in errors.each(kind.get("extractors", [])):
+            field = extractor["output"]
+            output = fields.get(field)
+            if output is None:
+                errors.append(f"{path}.extractors: output {field!r} requires a declared indexed field type")
+                continue
+            if field in outputs and output.get("type") != "TextSet":
+                errors.append(f"{path}.extractors: repeated output {field!r} requires TextSet")
+            outputs.add(field)
+            if extractor["selector"] == "inline_tags":
+                separator = extractor["separator"]
+                if separators.setdefault(field, separator) != separator:
+                    errors.append(f"{path}.extractors: inline selectors for {field!r} require one hierarchy separator")
+            allowed = CATALOGUE["query"]["extractors"]["output_types"][extractor["selector"]]
+            if kind.get("claimed_text") is not True or output.get("body_derived") is not True:
+                errors.append(f"{path}.extractors: requires a claimed-text source and body_derived output")
+            if output.get("type") not in allowed:
+                errors.append(f"{path}.extractors: {extractor['selector']} cannot produce {output.get('type')!r}")
+        for field in errors.each(kind.get("device_row_images", [])):
+            if fields.get(field, {}).get("type") != "RowImageRef":
+                errors.append(f"{path}.device_row_images: slot must be a declared RowImageRef")
+        title = kind["title_field"]
+        title_meta = fields.get(title, {})
+        if title in outputs or body_derived_field(kind, title, title_meta):
+            errors.append(f"{path}.title_field: generic title cannot use a body-derived source")
+        elif (title == provider_projection
+              or (title in generic and title != "title") or (title_meta and (
+                  title_meta.get("type") != "Text" or title_meta.get("audience") != generic["title"]["audience"]
+              ))):
+            errors.append(f"{path}.title_field: generic title requires an unrestricted metadata source")
+        elif not declared_title_text(kind["schema"], title, kind_schema_links[kind_id], errors):
+            errors.append(f"{path}.title_field: generic title requires a canonical string declaration in schema.properties")
+        host_create = kind.get("host_create") or {}
+        for field in errors.each(host_create.get("defaults", {})):
+            if field in outputs:
+                errors.append(f"{path}.host_create.defaults.{field}: extractor-owned output cannot have a default")
+            elif field in kind.get("device_row_images", []):
+                errors.append(f"{path}.host_create.defaults.{field}: host-owned image slot cannot have a default")
+        after = host_create.get("after")
         if not after:
             continue
         operation_id = after.get("operation")
         if "job" in after:
+            if jobs.get(after["job"], {}).get("execution") is True:
+                errors.append(f"{path}.host_create.after: execution job requires checked execution admission")
             operation_id = jobs.get(after["job"], {}).get("run_operation")
+        if operation_id in send_operations:
+            errors.append(f"{path}.host_create.after: prepared Send is reserved for the host composer")
         operation = operations.get(operation_id, {})
         target = operation.get("target", {})
         field = target.get("field")
-        if not field or target.get("kind") != kind_id or not is_created_item_input(operation.get("input_schema"), field, errors):
+        if not field or target.get("kind") != kind_id or not is_only_item_input(operation.get("input_schema"), field, errors):
             errors.append(f"{path}.host_create.after: entry must accept only the created ItemRef of {kind_id!r} at target.field")
+    for job_id, job in errors.each(jobs.items()):
+        if job.get("execution") is not True:
+            continue
+        run = operations.get(job["run_operation"], {})
+        target = run.get("target", {})
+        if not target.get("field") or not manifest["kinds"].get(target.get("kind"), {}).get("execution_target"):
+            errors.append(f"$.jobs.{job_id}.execution: run operation needs a single item target on an execution_target kind")
+    for operation_id, operation in errors.each(operations.items()):
+        if "creates" not in operation:
+            continue
+        path = f"$.operations.{operation_id}.creates"
+        if operation["creates"] not in manifest["kinds"]:
+            errors.append(f"{path}: must name the package's own created kind")
+        if not is_only_item_input(operation["output_schema"], "created", errors):
+            errors.append(f"{path}: output must be a closed created ItemRef")
+    for entry in errors.each(manifest.get("contributions", [])):
+        if entry["operation"] not in operations:
+            errors.append(f"$.contributions.{entry['id']}.operation: must name a local operation")
+
+
+def project_kind(kind, catalogue):
+    if kind.get("conversation") is not True:
+        return kind
+    projected = (catalogue or {}).get("conversation_capability", {}).get("field_projections", {})
+    return {**kind, "fields": {**kind.get("fields", {}), **projected}}
 
 
 def field_meta(kind, field, generic=None):
@@ -561,14 +670,70 @@ def load_reply_origins(origins, source_dir, sources, catalogue, reply_files, err
                     raise ValueError(f"{description}#{bind_id}: unknown reply filename")
                 if name in resolved:
                     raise ValueError(f"{name}: multiple reply origins")
-                resolved[name] = bind, kind, generic
+                resolved[name] = bind, project_kind(kind, catalogue), generic
     missing = reply_files - resolved.keys()
     if missing:
         raise ValueError(f"Reply origin coverage mismatch. Missing: {sorted(missing)}.")
     return resolved
 
 
-def check_window_rows(reply, origin, catalogue, errors):
+def body_derived_field(kind, field, meta):
+    """Identify every declared body-backed field, including implicit selectors and device images."""
+    return (meta.get("body_derived") is True or meta.get("source") == "body_excerpt"
+            or field in kind.get("device_row_images", ()))
+
+
+def window_field_refusal(kind, field, meta, reply, catalogue, body_allowed):
+    """Find an invalid audience or source restriction visible in a captured reply."""
+    if reply.get("audience") is not None and (audience := meta.get("audience")) is not None:
+        policy = catalogue["window_field_delivery"][audience]
+        if reply["audience"] not in policy["audiences"] or (
+            "state" in policy and reply.get("state") != policy["state"]
+        ):
+            return f"{audience} is unavailable for this window audience or state"
+    if body_allowed is False and body_derived_field(kind, field, meta):
+        return "body-derived field requires current body authority"
+    if meta.get("type") == "RowImageRef" and reply.get("state") != "ready":
+        return "RowImageRef requires a ready window"
+    return None
+
+
+def check_cached_display(reply, bind, kind, generic, catalogue, errors):
+    """Check signed display fields against the traceable, offline-safe live row prefix."""
+    cache_rows = reply["member_cache_record"]["rows"]
+    live_rows = reply["rows"]
+    base = "$.member_cache_record.rows"
+    if len(cache_rows) > len(live_rows):
+        errors.append(f"{base}: cache rows must be a prefix of the paired window")
+        return
+    row_template = bind.get("row", {})
+    title = row_template.get("title", {}).get("field", "title")
+    policy = catalogue["offline_member_display"]
+
+    def eligible(field):
+        meta = field_meta(kind, field, generic)
+        return (field not in policy["excluded_fields"] and meta.get("audience") in policy["field_audiences"]
+                and not body_derived_field(kind, field, meta))
+
+    for index, cached in enumerate(errors.each(cache_rows)):
+        fields = live_rows[index]["fields"]
+        if not eligible(title) or cached["title"] != fields.get(title):
+            errors.append(f"{base}[{index}].title: expected the offline-eligible live title")
+        text = []
+        dates = []
+        for part in errors.each(row_template.get("secondary", [])):
+            field = part["field"]
+            value = fields.get(field)
+            if not eligible(field) or not isinstance(value, str):
+                continue
+            (text if part["format"] == "text" else dates).append(value)
+        if "subtitle" in cached and (not text or cached["subtitle"] != " · ".join(text)):
+            errors.append(f"{base}[{index}].subtitle: expected only offline-eligible live secondary text")
+        if "subtitle_timestamp" in cached and (not dates or cached["subtitle_timestamp"] != dates[0]):
+            errors.append(f"{base}[{index}].subtitle_timestamp: expected an offline-eligible live secondary date")
+
+
+def check_window_rows(reply, origin, catalogue, errors, *, body_allowed=None):
     """Check each returned value against its declared kind field and nullability."""
     bind, kind, generic = origin
     if "bind" in reply and reply["bind"] != bind["id"]:
@@ -578,27 +743,48 @@ def check_window_rows(reply, origin, catalogue, errors):
         if bind.get("persist") is not True:
             errors.append(f"$.member_cache_record: origin Bind {bind['id']!r} does not opt in to persistence")
         record = reply["member_cache_record"]
-        for field in errors.each(("bind", "window_ref", "offset")):
+        for field in errors.each(("bind", "scope_ref", "window_ref", "offset")):
             if record[field] != reply[field]:
                 errors.append(f"$.member_cache_record.{field}: must match its window reply")
+        check_cached_display(reply, bind, kind, generic, catalogue, errors)
+    if reply.get("state") in ("ready", "empty", "refine_query"):
+        filters = bind.get("filter", {})
+        for group, terms in errors.each((("sort", bind.get("sort", [])),
+                ("filter.all", filters.get("all", [])), ("filter.any", filters.get("any", [])))):
+            for term in errors.each(terms):
+                field = term["field"]
+                reason = window_field_refusal(kind, field, field_meta(kind, field, generic),
+                                              reply, catalogue, body_allowed)
+                if reason:
+                    errors.append(f"$.bind.{group}.{field}: {reason}")
     if "rows" not in reply:
         return
     declared_types = catalogue["$defs"]["FieldType"]["enum"]
     for index, row in enumerate(errors.each(reply["rows"])):
+        for decoration in errors.each(("stale_images", "image_attribution")):
+            for field in errors.each(row.get(decoration, [])):
+                if (reply["state"] != "ready" or row["fields"].get(field) is None
+                        or field_meta(kind, field, generic).get("type") != "RowImageRef"):
+                    errors.append(f"$.rows[{index}].{decoration}: must name a delivered RowImageRef in a ready row")
         for field, value in errors.each(row["fields"].items()):
             path = f"$.rows[{index}].fields.{field}"
             meta = field_meta(kind, field, generic)
             field_type = meta.get("type")
             if field_type not in declared_types:
                 errors.append(f"{path}: field is not declared with a catalogue type")
-            elif field not in bind.get("fields", []):
+                continue
+            if field not in bind.get("fields", []):
                 errors.append(f"{path}: field is not projected by Bind {bind['id']!r}")
-            elif value is not None or meta.get("nullable") is not True:
+                continue
+            if reason := window_field_refusal(kind, field, meta, reply, catalogue, body_allowed):
+                errors.append(f"{path}: {reason}")
+                continue
+            if value is not None or meta.get("nullable") is not True:
                 check(catalogue["$defs"][field_type], value, path, errors, catalogue)
 
 
-def validate_reply(doc, origin, errors):
-    """Check reply shape, range and projected values against the originating Bind."""
+def validate_reply(doc, origin, errors, *, body_allowed=None):
+    """Check reply shape, range and projection. A conformance fixture can supply its known body grant."""
     check({"$ref": "#/$defs/WindowReply"}, doc, "$", errors)
     if errors:
         return
@@ -609,4 +795,14 @@ def validate_reply(doc, origin, errors):
         if not rows and offset < total:
             errors.append("$.rows: an exact count still has rows at this offset")
     if origin is not None:
-        check_window_rows(doc, origin, CATALOGUE, errors)
+        bind = origin[0]
+        validate_search_generation(doc, bind, errors)
+        if "state" in doc and ("parent" in doc) != bool(bind["source"].get("parent")):
+            errors.append("$.parent: parent scope must match source.parent")
+        check_window_rows(doc, origin, CATALOGUE, errors, body_allowed=body_allowed)
+
+
+def validate_search_generation(value, bind, errors):
+    """Require the search correlation field precisely on search Bind requests and replies."""
+    if ("settle_generation" in value) != (bind["source"]["type"] == "search"):
+        errors.append("$.settle_generation: required for search Binds only")

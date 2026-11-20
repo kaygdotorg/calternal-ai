@@ -1,0 +1,36 @@
+{
+  "definition": "ActivationResolution",
+  "challenge_kind": "host.item.archive",
+  "checked_facts": [
+    "stops_execution",
+    "retires_grants"
+  ],
+  "value": {
+    "activation_id": "archive",
+    "resolution_ref": "resolution",
+    "confirm": "challenge",
+    "confirmation_challenge": "checked",
+    "material": [
+      {
+        "name": "item",
+        "label": "Conversation",
+        "value": "Planning"
+      },
+      {
+        "name": "effect",
+        "label": "Effect",
+        "value": "Archive"
+      },
+      {
+        "name": "execution_effect",
+        "label": "Execution",
+        "value": "Refuse the pending continuation"
+      },
+      {
+        "name": "audience",
+        "label": "Audience",
+        "value": "Retire the saved guest grant"
+      }
+    ]
+  }
+}
