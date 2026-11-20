@@ -326,7 +326,7 @@ export type {
   OperationContext, OperationHandler, OutputOf,
 } from "./operation.js";
 /** JSON Schema builders whose static types follow the schema. */
-export { array, boolean, integer, literal, object, oneOf, oneOfValues, ref, string } from "./schema.js";
+export { array, integer, literal, object, oneOf, oneOfValues, ref, string } from "./schema.js";
 /** The value type a JSON Schema literal describes. */
 export type {
   AnyOfSchema, ArrayKeywords, ArraySchema, CatalogueName, CatalogueRefSchema, ConstSchema, EnumSchema, IntegerKeywords, ItemsKeyword,

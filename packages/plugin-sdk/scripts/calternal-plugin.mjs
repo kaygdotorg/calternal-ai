@@ -62,13 +62,14 @@ async function buildCommand(positionals, values) {
   const bundled = workerSource && /\.[cm]?ts$/.test(workerSource) ? await bundle(workerSource) : undefined;
   try {
     const { buildPackage } = await import("./build-package.mjs");
+    const { CONTRACT_REVISION } = await import("../dist/generated/broker-methods.js");
     const { manifest, assets, report } = await buildPackage(source, output, bundled?.outfile ?? workerSource);
     const result = {
       package: manifest.id, version: manifest.version, output,
       operations: manifest.operations.length, kinds: manifest.kinds.length, apps: manifest.apps.length,
       worker: manifest.worker ? { path: manifest.worker.path, bytes: assets.find(asset => asset.path === manifest.worker.path).bytes,
         source: workerSource && relative(directory, workerSource), bundled: Boolean(bundled) } : null,
-      assets, checks: { types, contract: "passed" }, report: report.trim().split("\n").filter(Boolean),
+      assets, contract: CONTRACT_REVISION, checks: { types, contract: "passed" }, report: report.trim().split("\n").filter(Boolean),
     };
     if (values.json) return JSON.stringify(result, null, 2);
     return [
@@ -78,7 +79,7 @@ async function buildCommand(positionals, values) {
         ...(result.worker ? [["Worker", `${kib(result.worker.bytes)} ${result.worker.bundled ? `bundled from ${result.worker.source}` : "as given"}`]] : []),
         ["Assets", `${count(assets.length, "file")} pinned by SHA-256`],
         ["Types", types],
-        ["Contract", "manifest, templates, pins and cross-references passed"],
+        ["Contract", `${CONTRACT_REVISION}: manifest, templates, pins and cross-references passed`],
       ]),
       "Next: run your tests against the fake host from @calternal/plugin-sdk/testing.",
     ].join("\n");

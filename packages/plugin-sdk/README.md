@@ -12,7 +12,7 @@ every catalogue and description definition are at
 `@calternal/plugin-sdk/types`.
 
 `defineOperation` declares an operation once. Write its input and output with
-the schema builders (`object`, `ref`, `string`, `integer`, `boolean`,
+the schema builders (`object`, `ref`, `string`, `integer`,
 `oneOfValues`, `literal`, `array`, `oneOf`) or plain `as const` JSON Schema. The
 handler's input and return types follow the schemas, and `ctx.call` accepts
 only the methods listed in `methods`, with catalogue-typed input and reply.
@@ -55,7 +55,7 @@ contract pointer; `LIMIT_SOURCES` names the pointer. `checkLimit`,
 ## Test
 
 `FakeHost` from `@calternal/plugin-sdk/testing` runs packages in process,
-straight from `definePlugin` output or from built `dist` directories. Every
+straight from `definePlugin` output, so tests need no build. Every
 broker call is checked against the pinned catalogue schemas, the operation's
 declarations, request receipts and in-memory item and execution engines
 (items, ranges, spans, attested writes, staged saves, viewer state, view

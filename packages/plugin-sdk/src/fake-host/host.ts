@@ -13,12 +13,9 @@
  * crash recovery, renderer behavior, real harness images, egress, and the
  * host's exact path normalization. Qualify those on the real host.
  */
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import type { AlarmDelivery, ExecutionStopResult, ManifestV2 } from "../../generated/author-types.js";
 import { BROKER_METHODS } from "../generated/broker-methods.js";
-import { authorContext, handlersOf, type BrokerMethod, type ManifestOperation, type OperationContext, type OperationHandler } from "../operation.js";
+import { authorContext, handlersOf, type BrokerMethod, type OperationContext } from "../operation.js";
 import { Execution, type Choice, type HarnessChoice } from "./execution.js";
 import type { Captured, InstalledPackage, Invocation, Job } from "./invocation.js";
 import { Items, type StoredItem } from "./items.js";
@@ -83,13 +80,6 @@ export interface Receipt {
 
 type Failure = "lose_ack" | HostRefusal;
 
-/** Load an emitted package directory: `manifest.json` and the pinned worker module's `handlers` export. */
-export async function loadPackage(directory: string): Promise<InstalledPackage> {
-  const manifest = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8")) as ManifestV2;
-  const worker = manifest.worker ? await import(pathToFileURL(join(directory, manifest.worker.path)).href) as { handlers?: Record<string, OperationHandler> } : {};
-  return { manifest, handlers: worker.handlers ?? {} };
-}
-
 const declaredType = (schema: unknown, expected: string) => {
   const type = (schema as { type?: unknown } | undefined)?.type;
   const matches = (value: unknown) => value === expected || (expected === "number" && value === "integer");
@@ -149,7 +139,7 @@ export class FakeHost {
   private labels = new Map<string, string>();
   private now: string;
 
-  /** Install packages from emitted manifests or straight from `definePlugin` output, which needs no build. */
+  /** Install packages straight from `definePlugin` output, which needs no build, or from a manifest and its handlers. */
   constructor(packages: readonly (InstalledPackage | AuthoredPackage)[], options: FakeHostOptions = {}) {
     this.packages = packages.map(installed);
     const generic = Object.keys(this.schemas.catalogue.generic_item_fields as object);
@@ -160,11 +150,6 @@ export class FakeHost {
     for (const [name, id] of Object.entries(this.people)) this.labels.set(id, name);
     this.items = new Items(prefix => this.id(prefix), () => this.now, this.space);
     this.execution = new Execution(prefix => this.id(prefix), () => this.packages, this.schemas, (job, call, input, choice) => this.entry(job, call, input, choice));
-  }
-
-  /** Load emitted package directories and install them. */
-  static async load(directories: readonly string[], options?: FakeHostOptions): Promise<FakeHost> {
-    return new FakeHost(await Promise.all(directories.map(loadPackage)), options);
   }
 
   private id(prefix: string) { return `${prefix}-${++this.serial}`; }

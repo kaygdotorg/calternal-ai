@@ -146,7 +146,7 @@ export function fixtureWorker(
 }
 
 /** In-process v2 host for plugin tests; see its module comment for what it does not prove. */
-export { FakeHost, loadPackage } from "./fake-host/host.js";
+export { FakeHost } from "./fake-host/host.js";
 /** Options, call records and package shapes for the v2 fake host. */
 export type { AuthoredApp, AuthoredPackage, BrokerCall, FakeHostOptions, InvokeOptions, Receipt } from "./fake-host/host.js";
 /** Harness choices and pending alarms of the v2 fake host. */

@@ -179,11 +179,6 @@ export function integer<const K extends IntegerKeywords = {}>(keywords?: K): Typ
   return { type: "integer", ...keywords } as TypedSchema<"integer", K>;
 }
 
-/** A boolean schema. */
-export function boolean(): TypedSchema<"boolean", {}> {
-  return { type: "boolean" };
-}
-
 /** One of a closed list of literal values. */
 export function oneOfValues<const V extends readonly (string | number | boolean)[]>(...values: V): EnumSchema<V> {
   return { enum: values };
