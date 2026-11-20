@@ -303,6 +303,8 @@ def faults():
                 ch, _ = vm.boot()
                 ch.call('layout', mode=mode, plugins=plugins)
                 res = ch.call('fault', kind=kind, target=0, watch_ms=8000 if kind == 'buffer' else 3000)
+                oom = [l for l in (vm.dir / 'log').read_text(errors='replace').splitlines() if 'Killed process' in l or 'invoked oom-killer' in l]
+                res['guest_oom'] = oom
                 event('fault', mode=mode, fault_kind=res.pop('kind'), **res)
 
 

@@ -51,6 +51,8 @@ const us = t => Number(now() - t) / 1e3;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const events = [];
 const forged = [];
+// Children inherit the host's OOM protection; give plugins back the default.
+const killable = pid => { try { writeFileSync(`/proc/${pid}/oom_score_adj`, '0'); } catch { /* not root */ } };
 const note = (kind, fields) => events.push({ kind, t_ms: Number(now() / 1000000n), ...fields });
 let sequence = 0;
 
@@ -101,6 +103,7 @@ class ProcessTransport {
   constructor(env = {}) { this.env = env; this.procs = new Map(); }
   start(plugin) {
     const child = spawn(NODE, [...PROCESS_FLAGS, ...plugin.spec.args], { stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, ...this.env } });
+    killable(child.pid);
     this.procs.set(plugin, child);
     plugin.alive = true;
     createInterface({ input: child.stdout }).on('line', line => {
@@ -136,6 +139,7 @@ class SharedTransport {
     this.byIndex = new Map();
     this.waiters = new Map();
     this.child = spawn(NODE, [...SHARED_FLAGS, `${F}/shared-runtime.mjs`], { stdio: ['pipe', 'pipe', 'ignore'] });
+    killable(this.child.pid);
     this.child.stdin.on('error', () => {});
     createInterface({ input: this.child.stdout }).on('line', line => {
       let msg;

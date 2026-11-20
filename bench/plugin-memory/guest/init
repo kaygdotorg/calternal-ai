@@ -1,6 +1,9 @@
 #!/bin/busybox sh
 /fixture/mounts || exit 1
 export HOME=/ LANG=C.UTF-8
-/fixture/node --max-old-space-size=128 /fixture/host.mjs &
+# The relay and host stand in for the trusted supervisor: the OOM killer must
+# pick plugin processes, never them.
 /fixture/relay &
+echo -1000 > /proc/$!/oom_score_adj
+/fixture/node --max-old-space-size=128 /fixture/host.mjs &
 wait

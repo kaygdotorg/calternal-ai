@@ -147,7 +147,7 @@ if ev:
     for e in ev:
         s = e['series']
         pick = lambda t: min(s, key=lambda x: abs(x['t_ms'] - t))
-        rows.append([e['mode'], e['runtime'], e['idle_ms'], *(f"{fmt(pick(t)['plugin_pss_mib'], 1)} ({pick(t)['live_threads'] if pick(t)['live_threads'] is not None else pick(t)['live']})" for t in (1000, 10000, 20000, 31000, 40000, 50000, 59000)),
+        rows.append([e['mode'], e['runtime'] if e['mode'] == 'lazy' else '—', e['idle_ms'], *(f"{fmt(pick(t)['plugin_pss_mib'], 1)} ({pick(t).get('live_threads', pick(t)['live'])})" for t in (1000, 10000, 20000, 31000, 40000, 50000, 59000)),
                      fmt(sum(x['plugin_pss_mib'] for x in s) / len(s), 1)])
     table(['Layout', 'Runtime', 'Idle stop ms', '1 s', '10 s', '20 s', '31 s', '40 s', '50 s', '59 s', 'Mean PSS MiB'], rows)
     OUT['timeline'] = [dict(mode=e['mode'], runtime=e['runtime'], idle_ms=e['idle_ms'], series=e['series']) for e in ev]
