@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.17 draft
+# Plugin API v2 · revision 14.18 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -656,8 +656,8 @@ list. Authors write `reads` only for another app’s kinds, including host
 kinds. Check the emitted list before authorizing the viewer and field graph. A package or a field declaration cannot confer authority. A scoped row ID is the host-issued row
 reference. Item rows use the kind’s row reference. Rows of a repeated
 section use a `LayoutEntryRef`. A request row resolves only to an
-authorized `RequestRef`. `waiting_on` and `pending_for` support the
-viewer’s own equality operand only. An eligible item’s protected execution status identifies the nullable `ExecutionRef` for the exact admitted attempt, available only
+authorized `RequestRef`. Filter `requests.pending_for` with equality to
+the viewer’s own account only. An eligible item’s protected execution status identifies the nullable `ExecutionRef` for the exact admitted attempt, available only
 to an eligible execution actor on a ready member reply. The parent edge
 names an `ItemRef`.
 Before admission the host may issue a Stop context for any pending
@@ -864,7 +864,9 @@ with the accepted reply's current scoped contexts. Recheck Stop against
 the exact pending job or admitted attempt. Repaint only exact `retained_results`
 pairs of `window_ref` and `result_version`. Changed grants or versions
 require fresh authorized windows. Ignore superseded replies and keep rows
-hidden on timeout or refusal. Clear live rows on revocation, sign-out,
+hidden on timeout or refusal. Explicit plugin pages always restart on
+accepted renewal under the [profile rule](../contract/host-catalogue-v2.json#/query/search/plugin/renewal).
+Clear live rows on revocation, sign-out,
 account or audience switch, session end or guest link closure.
 
 Data-free templates and signed invariant-root member row records remain
@@ -887,20 +889,20 @@ and attachments. Live actions require fresh host authority.
 **Item view snapshots.** A package writes a ready-made native description
 for a declared item slot, under the catalogue’s
 [view snapshot](../contract/host-catalogue-v2.json#/view_snapshots) rules.
-The catalogued context call derives the exact member audience and source
-revision from the checked item. Apply the catalogue’s bound-item-only
-content rule and validate aggregate size and depth. Apply
-the installed-package trust rule to authored text. Guest and public
-links stay on host-projected fields. Persist the checked package, item, slot,
-source revision and audience with the regenerable snapshot. The renderer
-draws the snapshot at once without waking the plugin. If the current
-revision has moved, label an otherwise authorized retained snapshot stale.
-An admitted view request can wake the plugin and replace it with the
-fresh projection. If absent, show the item title and loading state. There
-is no plain-file substitution for the thread view. Purge or revoke drops
-the matching snapshot. It contains no live action context and is never
-the only copy of item data. Notes’ row images keep their separate size
-and delivery rules. Both reuse revision, audience and stale checks.
+Its authored content follows the same read bound as a write to the item
+file: the package’s declared reads and the acting principal’s live grants.
+The host validates the description and binds it to the source revision
+and item audience. It serves the stored view under the same checked file
+audience, with no independent disclosure authority. The host checks
+shape and scope. The author controls what the text says.
+
+Draw the retained view without waiting for a wake. When the revision
+has moved, mark a still-authorized snapshot stale. A fresh publication
+replaces it. When absent, show the basic item shell and loading state.
+Revoke or purge drops the snapshot. It is regenerable, and its nodes
+cannot draw host chrome or confirmation UI, or carry action context.
+Notes’ row images reuse the revision, audience and stale checks under
+their own size and delivery limits.
 
 Row images use the existing `RowImageIcon` and read route. Notes declares
 a portrait aspect and the existing snippet fallback. An editing device
@@ -1123,7 +1125,8 @@ it to a Reader acting on their own ticket. Host-filled bindings protect
 engine query results, and the installed-plugin trust rule still applies to
 what a worker knew or previously wrote. Run all guest logic in the home
 space charging its quota. Guest outputs and public links are host-rendered
-and grant-checked, with free-form worker output excluded. A public
+and grant-checked. Guest reads never invoke a worker. An eligible retained
+item snapshot is stored authored content and uses the file-read check. A public
 link serves a saved host view and never wakes. Item grants confer no personal-layout access. Layout reads and writes
 require live membership. Shared spaces have no private per-person items.
 Personal items live in the person’s own space and may point to a shared
@@ -1359,9 +1362,11 @@ intentional refusal/retry with an actionable response.
   stale head, machine fencing and restart before and after commit. Verify a
   cold revision range without waking. Open the sleeping item with a valid
   snapshot, then advance the head, change audience, purge and revoke.
-  Require stale marking only under current read authority. Reject a quote
-  from a second item even while both grants are live. A live projection
-  replaces the snapshot. Meter wake separately from first paint.
+  Check the publishing run’s declared reads and live principal. Refuse
+  access through an undeclared read and verify delivery only to eligible
+  file readers. Reject a snapshot carrying chrome or confirmation UI.
+  Require stale marking only under current read authority. A live
+  projection replaces the snapshot. Meter wake separately from first paint.
 - **Execution and widening.** Prove freeze, exact reattachment and teardown
   under transport and server loss. Verify one admitted attempt on replay.
   Attempt widening through direct share, membership, collection and Undo.
@@ -1383,7 +1388,9 @@ intentional refusal/retry with an actionable response.
   separate TextSet budget. Prove the default query remains independent of
   custom ranking and plugin indexes in a slow or denied plugin arm.
   Reject profiles whose unreadable field can influence a match, ordering
-  or continuation. Exercise ragged result batches without counts.
+  or continuation. Exercise default and explicit settle, a cursor chain
+  ending without rows, and renewal that fences every profile page and
+  restarts from a new settle. Reject old cursors, selection and contexts.
 - **Generic idle archive.** Use an ordinary declared kind and the real
   item writer. Under the lifecycle fence check idle eligibility. Crash
   before and after the FULL transaction that commits the archived head,
@@ -1414,6 +1421,13 @@ creation remain open where the generic contract lacks those shapes.
 Hold each affected cutover until its required behavior is pinned and
 qualified. Mention picker and snooze presets or custom date may follow
 as plugin features. Photos product questions wait for that plugin.
+
+Before switching readers, durably record the widening-protection flag
+on every retained legacy thread under the catalogue’s
+[item-record rule](../contract/host-catalogue-v2.json#/attempt_authority_end/actions/item_audience_widening/item_record).
+Check the entire retained inventory, including restorable files. A legacy
+thread with no saved session still needs the whole-file disclosure when
+shared. Verify the flag on restart and preserve the check across rollback.
 
 Drain active attempts before switching writers. Remove native Turns
 and Notes dispatch and authority aliases, the `threads` namespace owner

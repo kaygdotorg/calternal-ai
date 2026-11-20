@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.17 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.18 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -60,8 +60,8 @@ checked request refs.
 ### 2.2 Filter and sort
 
 `filter` is up to 16 predicates in `all` and `any` (no nesting) on **declared indexed fields** of the kind in the host catalogue (`contract/host-catalogue-v2.json`). A `TextSet` supports `contains` with one Text operand and `exists`. It cannot be sorted.
-`eq ne in lt lte gt gte exists prefix`; `in` takes a homogeneous literal list of at most 32. Values are `FilterValue`s: a literal, `{viewer: person}` (so "waiting on me" is
-`waiting_on eq viewer.person`; `waiting_on` and `pending_for` accept only `self` as an operand), `{route: ...}` or `{selection: ...}`. **Never a field of another bind, a row, a
+`eq ne in lt lte gt gte exists prefix`; `in` takes a homogeneous literal list of at most 32. Values are `FilterValue`s: a literal, `{viewer: person}` (use `pending_for eq viewer.person` on a `requests` Bind to
+list requests for the viewer), `{route: ...}` or `{selection: ...}`. **Never a field of another bind, a row, a
 form or a prompt**: a hidden field of one bind must not steer another bind's query (the cross-bind operand leak). A search takes a `TextSource` (a literal, a form
 field). `{bind, field}` stays legal only in an invoke's inputs and a component's config, where the host reconstructs it. A `contains` predicate takes one nonempty Text element from a literal
 or a checked route resolved as Text. The viewer and parent operands are
@@ -85,15 +85,18 @@ The catalogue defines one `WindowRequest` envelope and one `WindowReply` union o
 **Explicit plugin search.** A settled Bind with `source.search_profile`
 uses [`search.plugin`](../contract/host-catalogue-v2.json#/component_routes/search.plugin).
 Apply replies only to the current Bind, generation and lease. A batch
-contains authorized rows and an optional next cursor. Page until that
-cursor is absent. Draw no total, fixed page indicator or End affordance.
+contains authorized rows and an optional next cursor. A ready batch
+without a cursor ends the chain. Show the Bind’s empty message if that
+chain produced no rows. An empty batch with a cursor continues. Draw no
+total, fixed page indicator or End affordance. On renewal discard and
+restart the chain under the [profile rule](../contract/host-catalogue-v2.json#/query/search/plugin/renewal).
 
 **End-relative windows.** End and near-end jumps use `anchor:"end"` only on non-search Binds with exact count authority. A `loading`, `throttled` or `error` reply on that active request keeps `anchor:"end"` and carries no offset or count. Apply exact count and distance only to ready or empty End results. Search refinement is start-anchored. Follow the [catalogue’s end-anchor and result ordering rules](../contract/host-catalogue-v2.json#/$defs/WindowResult).
 
 **Forward paging.** The host checks default search windows against `EventSearchWindow`, the same window envelope restricted to the start anchor.
 For search Binds or with effective count mode `estimate` or `none`, the host refuses an end anchor with `end_unavailable` and sends no end distance. Search End pages forward. An explicit `anchor:"start"` can cross the 500,000 absolute jump ceiling only at the checked next row of a ready window for the same active view, Bind, parent and result version. Deep start replies omit count and the member cache record. In mode `none` show no scroll extent that implies a total.
 
-**Recovery rule.** After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: "empty"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state.
+**Recovery rule.** After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. For host windows, `state: "empty"` shows the Bind’s empty message for a wholly empty result at `from: 0`. Explicit profiles use the cursor completion rule above. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state.
 Row ids are opaque and stable. No position is an authority reference.
 
 * A window is the half-open range `[from, to)` of at most 200 returned rows. The absolute jump ceiling is 500,000. The host may materialize up to 4,096 rows and,
@@ -132,7 +135,7 @@ Use the host-issued row reference for row identity in selection, events and scop
 
 `states.empty`, `loading`, `error` and `refine_query` are small messages (`title`, `detail`, `icon`, an optional action). The description or host provides their text. A state action may use an eligible view context. It cannot use a route source, including a route-dependent prompt prefill. Bind states have no context for those inputs. Row-only operands, including `{context: item}` and `{context: placement}`, require an actual Bind row template. Placement also requires the row to come from a repeated section.
 Show `loading` until the first window arrives and `error` on `state: "error"` or a `WindowPlanError` without an available paging recovery (§2.3).
-For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: "empty"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero.
+For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. For host windows, `state: "empty"` shows the Bind’s empty message for a wholly empty result at `from: 0`. Explicit profiles use the cursor completion rule above.
 At `from: 0`, the host sends `empty` for a wholly empty result. A `ready` reply at offset zero contains rows. An `empty` reply carries an exact count of zero when a count is supplied. Count-free replies omit it. When a `ready` reply carries an exact count, the host checks the returned range against that count under the catalogue’s `WindowResult` rule.
 
 **`refine_query`.** A qualified search that exhausts its posting or row budget returns the catalogue’s `WindowResult` in this state. See `query.search` and `query.live_limits` for limits.
@@ -158,6 +161,7 @@ The description only asks. Before any indexed work the host must:
    form actions) and when the subscription lease renews (`LeaseRenewRequest`/`LeaseRenewResult`, one 15-second lease for the subscription and its contexts). The
    host reconstructs row, route and selection from a context and never accepts the renderer's value for them. The renderer keeps filled rows in memory after a lease lapses but
    does not paint them as current until a renewal returns the same grant revision and result version (section 6).
+   Plugin pages never enter this retention path. Renewed views explicitly restart them under §2.3.
 
 The renderer never receives a row it was not entitled to; it needs no rule of its own. The host's own duties (authority, engines, projections) are written once, in the
 Plugin API (Part A); this section lists only what the description relies on.
@@ -345,8 +349,10 @@ snapshot uses a read-only native-description subset. The renderer shows
 it immediately while the plugin sleeps. A stale reply shows that the
 item's revision moved. A missing reply shows the basic shell and loading
 until the plugin publishes an authorized projection. For an open thread,
-the snapshot is its stored transcript view. Apply the catalogue’s own-item, revision, scope and retention rules. A fresh plugin projection replaces it. Never attach live
-actions to stored snapshot nodes.
+the snapshot is its stored transcript view. Apply the same audience
+check as for the file, with the bound revision. A fresh plugin projection
+replaces it. Snapshot nodes carry neither host chrome nor confirmation
+UI or live actions.
 
 ### 5.2 Host surfaces and navigation on the wire
 
@@ -441,15 +447,16 @@ ancestry wherever declared before acknowledging. Echo the Bind, generation
 and checked parent when present. Fence older settles and accept only exact
 replay of the current one. A different query, route, collection or parent
 needs a new generation. Clear the old results and selections after the
-matching acknowledgement, then request a start-anchored window at offset
-zero. Send the same parent on per-parent windows and selections, and the
-same generation on all search windows, settled selections and selection
-sets. The host checks the exact scope again before issuing rows, counts,
+matching acknowledgement. For default search request a host window at
+offset zero. For an explicit profile call `search.plugin` without a
+cursor. Send the same parent on per-parent windows and selections, and
+the same generation on all search pages, settled selections and
+selection sets. The host checks the exact scope again before issuing rows, counts,
 contexts or set refs. Match the lease, Bind, requested parent scope and
 generation before applying search replies, pushes or plan refusals. Omit
 generation on requests and results for other Bind types. A forged, stale
-or foreign parent yields an opaque refusal. A valid scope without a
-qualified plan yields `unsupported_plan` on the first window.
+or foreign parent yields an opaque refusal. A valid default scope
+without a qualified plan yields `unsupported_plan` on the first window.
 The declared `field_filter` stays in the Bind. Exact counts draw as numbers.
 Estimates draw as “about N”. Omit an unavailable count or badge. Exact empty
 has zero. Explicit selection sets remain limited to 50 stable issued rows.
@@ -480,7 +487,10 @@ A disconnected copy cannot be erased remotely.
 Keep live windows bounded in memory by session, space and audience.
 Hide live rows on lease loss. Repaint only retained exact
 `window_ref` and `result_version` pairs in the reply to the current
-authenticated renewal. A changed grant refetches. Guest and public
+authenticated renewal. A changed grant refetches. Explicit plugin-search
+pages, selections and tokens are discarded on accepted renewal, even
+with the same grant. Re-settle the current query on the renewed view with
+a fresh generation, then call `search.plugin` without a cursor. Guest and public
 sessions receive no member download or persisted row grant. Persist
 no live context, action proof or bearer. Every action rechecks live
 authority.

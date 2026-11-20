@@ -274,7 +274,7 @@
         }
       },
       "additionalProperties": false,
-      "description": "Predicates combined: all of `all` and at least one of `any` (when present). At most 16 predicates, no nesting. Values come from value sources, so `waiting on me` is {field: waiting_on, op: eq, value: {viewer: person}}."
+      "description": "Predicates combined: all of `all` and at least one of `any` (when present). At most 16 predicates, no nesting. Values come from value sources, so a requests Bind lists requests for the viewer with {field: pending_for, op: eq, value: {viewer: person}}."
     },
     "Sort": {
       "type": "array",
@@ -732,7 +732,7 @@
             }
           },
           "additionalProperties": false,
-          "description": "Index windows (not cursors): a request names {from, to} indices into the sorted, filtered list; the host answers with the window state, offset and rows, plus a count when authorized and supported by the plan. The renderer asks for windows as the person scrolls or arrows, with prefetch ahead of the visible rows."
+          "description": "Host index-window sizing and count policy. Explicit plugin search uses the catalogue cursor exchange."
         },
         "row": {
           "$ref": "#/$defs/RowTemplate"
@@ -742,7 +742,7 @@
           "properties": {
             "empty": {
               "$ref": "#/$defs/State",
-              "description": "Show this message only when state is empty. The catalogue reserves that state for a wholly empty result set at from zero, including count-free results."
+              "description": "For host windows show on state:empty. For an explicit plugin profile show when its cursor chain ends without any rows, under query.search.plugin."
             },
             "loading": {
               "$ref": "#/$defs/State"
@@ -980,6 +980,25 @@
                   }
                 }
               }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "required": [
+                  "search_profile"
+                ]
+              }
+            },
+            "required": [
+              "source"
+            ]
+          },
+          "then": {
+            "properties": {
+              "window": false
             }
           }
         }
@@ -2787,7 +2806,7 @@
       "required": [
         "content"
       ],
-      "description": "Read-only native description. Within a checked item snapshot TextNode may carry authorized item text. Host applies aggregate byte, depth and node limits. No interactive context is persisted."
+      "description": "Read-only native description for plugin-authored item content under view_snapshots. The host checks aggregate byte, depth and node limits. Content cannot carry host chrome, a confirmation or action contexts."
     },
     "ExtensionUse": {
       "type": "object",
