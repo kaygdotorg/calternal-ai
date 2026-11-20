@@ -54,10 +54,10 @@ fn plugin_item_exchanges_replay_and_preserve_the_prior_range() {
     let mut declaration = manifest;
     declaration["kinds"][0] = kind;
     declaration["operations"] = json!([operation]);
-    declaration
-        .as_object_mut()
-        .unwrap()
-        .remove("schedule_eligibility");
+    // The fixture's alarm job and schedule name operations this test drops.
+    let object = declaration.as_object_mut().unwrap();
+    object.remove("schedule_eligibility");
+    object.remove("jobs");
     let package = ManifestV2::parse(&serde_json::to_vec(&declaration).unwrap()).unwrap();
     let account = AccountId::new();
     let invocation = RequestId("invocation".to_owned());
