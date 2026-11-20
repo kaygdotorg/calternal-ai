@@ -421,7 +421,12 @@ fn consumed_prefix_retires_payloads_and_returns_window_credit() {
     }
     assert_eq!(
         spool
-            .ingest(call, &json!({"seq":201,"kind":"terminal","state":"ok"}), now, |_| true)
+            .ingest(
+                call,
+                &json!({"seq":201,"kind":"terminal","state":"ok"}),
+                now,
+                |_| true
+            )
             .unwrap(),
         Ingest::Stored
     );
@@ -433,7 +438,10 @@ fn consumed_prefix_retires_payloads_and_returns_window_credit() {
     let mut changed = big(1);
     changed["data"] = json!("y");
     assert_eq!(
-        spool.ingest(call, &changed, now, |_| true).unwrap_err().code,
+        spool
+            .ingest(call, &changed, now, |_| true)
+            .unwrap_err()
+            .code,
         ErrorCode::Conflict
     );
     // Retired output cannot be read or resolved; the cursor is monotone.
@@ -457,7 +465,10 @@ fn consumed_prefix_retires_payloads_and_returns_window_credit() {
     let tx = db.transaction().unwrap();
     let spool = checked(&tx, 1).unwrap();
     let progress = spool.progress(call).unwrap();
-    assert_eq!((progress.committed, progress.consumed, progress.terminal), (201, consumed, true));
+    assert_eq!(
+        (progress.committed, progress.consumed, progress.terminal),
+        (201, consumed, true)
+    );
     spool.consume(call, 201).unwrap();
     assert_eq!(budget(&tx).unwrap().bytes, 0);
     assert_eq!(spool.progress(call).unwrap().credit_bytes, 1_048_576);
