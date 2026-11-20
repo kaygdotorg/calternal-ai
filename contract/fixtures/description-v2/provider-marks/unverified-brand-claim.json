@@ -1,7 +1,7 @@
 {
-  "threads_bind": "waiting",
+  "chats_bind": "waiting",
   "claimed_mark": "claude",
   "verified_publisher": null,
   "trusted_mark_owners": {},
-  "expected_symbol": "threads"
+  "expected_symbol": "chats"
 }

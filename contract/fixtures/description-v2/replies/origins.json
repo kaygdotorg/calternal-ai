@@ -34,7 +34,7 @@
     ]
   },
   "window-projections-catalogue-app.json": {
-    "snoozable-threads": [
+    "snoozable-chats": [
       "invalid-reply-catalogue-window-kind-timestamp.json",
       "reply-catalogue-window-nullable-projection.json"
     ],
@@ -57,7 +57,7 @@
       "invalid-reply-catalogue-window-projected-rowimageref.json",
       "invalid-reply-catalogue-window-projected-scalar-array.json",
       "invalid-reply-catalogue-window-projected-text.json",
-      "invalid-reply-catalogue-window-projected-threadref.json",
+      "invalid-reply-catalogue-window-projected-chatref.json",
       "invalid-reply-catalogue-window-projected-timestamp.json",
       "invalid-reply-catalogue-window-projected-turnref.json",
       "invalid-reply-catalogue-window-projected-undeclared.json",
@@ -65,7 +65,7 @@
       "invalid-reply-catalogue-window-projected-scalar-object.json"
     ]
   },
-  "threads-nested-catalogue-app.json": {
+  "chat-nested-catalogue-app.json": {
     "all": [
       "reply-catalogue-window-member-record.json",
       "invalid-reply-catalogue-window-cache-bind-mismatch.json",
@@ -85,7 +85,7 @@
     ]
   },
   "indexed-items-app.json": {
-    "thread-search": [
+    "chat-search": [
       "invalid-reply-catalogue-search-page-boundary-empty.json",
       "invalid-reply-catalogue-window-ready-zero-rows-at-start.json",
       "reply-catalogue-search-page-boundary-first.json",

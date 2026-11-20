@@ -321,7 +321,7 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                 profile = search["conversation" if conversation_search else "claimed_text"]
                 check(profile["field_filter_schema"], source["field_filter"], f"{path}.field_filter", errors, catalogue)
         if catalogue is not None and kind is None and plugin is None:
-            if manifest is not None or kind_id in ("notes", "threads", "collections", "requests"):
+            if manifest is not None or kind_id in ("notes", "chats", "collections", "requests"):
                 errors.append(f"{path}: kind {kind_id!r} is in neither the host catalogue nor an installed fixture manifest")
             continue
         entry = kind or plugin
@@ -725,13 +725,13 @@ def run_fixtures():
     print("host catalogue: " + ("loaded" if verification.CATALOGUE is not None else "absent (catalogue cases are skipped)"))
     fixture_owners = tuple(
         verification.load_checked_manifest(manifests_dir / name, Validation())
-        for name in ("threads-app.json", "indexed-items-app.json")
+        for name in ("chat-app.json", "indexed-items-app.json")
     ) if verification.CATALOGUE is not None else ()
     if fixture_owners:
-        verification.load_checked_manifest(manifests_dir / "threads-harness.json", Validation())
+        verification.load_checked_manifest(manifests_dir / "chat-harness.json", Validation())
         template = fixture_owners[0]["apps"][0]["description"]["template"]
-        if hashlib.sha256(read_bytes(fixtures_dir / "threads-app.json")).hexdigest() != template["sha256"]:
-            raise ValueError("Threads fixture bytes differ from the emitted manifest's template pin")
+        if hashlib.sha256(read_bytes(fixtures_dir / "chat-app.json")).hexdigest() != template["sha256"]:
+            raise ValueError("Chat fixture bytes differ from the emitted manifest's template pin")
     origins = fixture_origins(fixtures, fixtures_dir, manifests_dir, fixture_owners)
     failed = False
     for file in fixtures:
@@ -849,7 +849,7 @@ def run_fixtures():
         check(schema, indexed_items, "$", errors)
         if not errors:
             case = read_json(file, errors)
-            icon = next(bind["row"]["icon"] for bind in errors.each(indexed_items["binds"]) if bind["id"] == case["threads_bind"])
+            icon = next(bind["row"]["icon"] for bind in errors.each(indexed_items["binds"]) if bind["id"] == case["chats_bind"])
             actual = provider_mark_fixture_symbol(case, icon)
             if actual != case["expected_symbol"]:
                 errors.append(f"expected icon {case['expected_symbol']!r}, got {actual!r}")

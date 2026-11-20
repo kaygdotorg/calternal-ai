@@ -1,9 +1,9 @@
 {
   "type": "window",
   "request": {
-    "bind": "thread-search",
-    "from": 200,
-    "to": 400,
+    "bind": "chat-search",
+    "from": 400,
+    "to": 600,
     "anchor": "start",
     "settle_generation": 1
   }

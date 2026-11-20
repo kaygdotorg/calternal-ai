@@ -7,12 +7,12 @@
       "id": "b",
       "source": {
         "type": "list",
-        "kind": "threads"
+        "kind": "chats"
       },
       "filter": {
         "all": [
           {
-            "field": "thread_parent",
+            "field": "chat_parent",
             "op": "eq",
             "value": {
               "parent": true

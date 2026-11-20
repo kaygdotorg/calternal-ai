@@ -2,7 +2,7 @@
   "definition": "SettledSearchResult",
   "value": {
     "type": "search_settled",
-    "bind": "thread-search"
+    "bind": "chat-search"
   },
   "error": "missing settle_generation"
 }

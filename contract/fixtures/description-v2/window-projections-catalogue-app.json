@@ -16,7 +16,7 @@
         "field_timestamp",
         "field_itemref",
         "field_collectionref",
-        "field_threadref",
+        "field_chatref",
         "field_turnref",
         "field_requestref",
         "field_accountref",
@@ -55,7 +55,7 @@
       }
     },
     {
-      "id": "snoozable-threads",
+      "id": "snoozable-chats",
       "source": {
         "type": "list",
         "kind": "indexed-items"

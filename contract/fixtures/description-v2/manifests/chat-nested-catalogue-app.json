@@ -13,8 +13,8 @@
       "description": {
         "id": "app",
         "template": {
-          "path": "invalid-catalogue-move-to-field-as-thread-app.json",
-          "sha256": "d58c2f689b6dc82e0c5ee2a195e564133d7d8821b231e2c459de3e5c1987ad45"
+          "path": "chat-nested-catalogue-app.json",
+          "sha256": "b9dd02cc2038e607b33ef569f8aae0a83ceaa25154cc7307551e5ed837814675"
         }
       }
     }

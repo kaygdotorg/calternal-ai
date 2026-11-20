@@ -16,8 +16,7 @@
       "fields": [
         "title",
         "provider_icon",
-        "state",
-        "provider_label"
+        "state"
       ],
       "sort": [
         {
@@ -74,7 +73,7 @@
         ],
         "icon": {
           "field": "provider_icon",
-          "name": "threads"
+          "name": "chats"
         }
       },
       "states": {
@@ -134,8 +133,7 @@
                 }
               },
               "item": {
-                "row": "field",
-                "field": "provider"
+                "context": "item"
               }
             }
           },
@@ -156,8 +154,14 @@
         },
         "icon": {
           "field": "provider_icon",
-          "name": "threads"
-        }
+          "name": "chats"
+        },
+        "secondary": [
+          {
+            "field": "provider_label",
+            "format": "text"
+          }
+        ]
       }
     },
     {
@@ -170,8 +174,7 @@
       "fields": [
         "title",
         "provider_icon",
-        "state",
-        "provider_label"
+        "state"
       ],
       "sort": [
         {
@@ -228,7 +231,7 @@
         ],
         "icon": {
           "field": "provider_icon",
-          "name": "threads"
+          "name": "chats"
         }
       }
     },
@@ -255,9 +258,6 @@
       "row": {
         "title": {
           "field": "title"
-        },
-        "icon": {
-          "kindIcon": true
         },
         "menu": [
           {
@@ -301,8 +301,7 @@
       "fields": [
         "title",
         "provider_icon",
-        "state",
-        "provider_label"
+        "state"
       ],
       "window": {
         "size": 60,
@@ -375,7 +374,7 @@
         ],
         "icon": {
           "field": "provider_icon",
-          "name": "threads"
+          "name": "chats"
         }
       }
     }
@@ -399,7 +398,7 @@
             },
             {
               "id": "all",
-              "title": "All Threads"
+              "title": "All Chat"
             }
           ]
         }
@@ -409,13 +408,13 @@
           "id": "shortcuts",
           "rows": [
             {
-              "id": "new-thread",
-              "title": "New thread",
+              "id": "new-chat",
+              "title": "New chat",
               "icon": "plus",
               "open": {
                 "invoke": {
                   "id": "create",
-                  "title": "New thread",
+                  "title": "New chat",
                   "operation": "host.item.create",
                   "inputs": {
                     "kind": {
@@ -437,8 +436,8 @@
           }
         },
         {
-          "id": "threads",
-          "title": "Threads",
+          "id": "chat",
+          "title": "Chat",
           "bind": "all",
           "showWhen": {
             "route": "view",
@@ -474,14 +473,14 @@
       ]
     },
     "header": {
-      "title": "Threads"
+      "title": "Chat"
     },
     "footer": {
       "apps": [
         {
-          "id": "threads",
-          "title": "Threads",
-          "icon": "threads"
+          "id": "chat",
+          "title": "Chat",
+          "icon": "chat"
         },
         {
           "id": "notes",

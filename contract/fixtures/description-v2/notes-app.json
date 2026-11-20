@@ -529,9 +529,9 @@
       },
       "apps": [
         {
-          "id": "threads",
-          "title": "Threads",
-          "icon": "threads"
+          "id": "chat",
+          "title": "Chat",
+          "icon": "chat"
         },
         {
           "id": "notes",

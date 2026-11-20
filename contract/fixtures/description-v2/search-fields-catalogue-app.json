@@ -52,7 +52,7 @@
       "id": "messages",
       "source": {
         "type": "search",
-        "kind": "threads",
+        "kind": "chats",
         "field_filter": "body"
       },
       "fields": [

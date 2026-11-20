@@ -22,7 +22,7 @@
   "kinds": [
     {
       "id": "conversations",
-      "icon": "threads",
+      "icon": "chat",
       "title_field": "title",
       "storage": {
         "folder": "Conversations"

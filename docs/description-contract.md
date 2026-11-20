@@ -22,7 +22,7 @@ Everything below is one contract for chrome (sidebar, header, footer, panel) and
 
 | Term | Meaning |
 | --- | --- |
-| **kind** | A type of item a plugin or the host declares (the host's `requests` and `collections`; a plugin's `notes` or `threads` kind) with its **indexed fields**; every item kind has the host's generic fields (`id`, `title`, `updated`, `archived`, `trashed`, `trashed_at`). |
+| **kind** | A type of item a plugin or the host declares (the host's `requests` and `collections`; a plugin's `notes` or `chats` kind) with its **indexed fields**; every item kind has the host's generic fields (`id`, `title`, `updated`, `archived`, `trashed`, `trashed_at`). |
 | **app description** | One app's `binds` (declared once), its `chrome` (sidebar, header, footer, panel) and its `view` (the card's content). |
 | **bind** | A data-free request: a list window, one item, or a search, with filter, sort and the fields wanted. |
 | **row template** | How an item becomes a row: fields to title, icon, marks and actions. |
@@ -188,7 +188,7 @@ Plugin API (Part A); this section lists only what the description relies on.
 * **Nested child rows.** A row template may declare `children: {bind}`: a bind whose source has `parent: true`. **The declared edge is the mandatory constraint:** every window request on such a bind
   carries `request.parent`, a host-issued `WindowParentRef` taken from the parent row's `parent_refs`, scoped to that edge and its ancestry and checked by the host on every request (a parent bind
   that no edge references is refused by the verifier). `{parent: true}` in a filter is only an optional extra predicate. **A bind is a section's rows OR a children target, never both** (the verifier rejects every dual-edge bind; section rows always present `LayoutEntryRef`, child rows the kind's own row ref). **A per-parent bind is consumed only through its declared edge**: no ordinary section, list, count or header may reference it (the verifier rejects it), and `persist` is refused on it (only ROOT windows may be persisted, section 6). The renderer asks for a parent's children with its own windows, only when the row is expanded; a row with children draws the system's disclosure control (a `List`
-  with `children`/`DisclosureGroup`). Depth is at most 3, counted through the chain; the host checks it and the verifier rejects cycles. Child threads under their parent are this.
+  with `children`/`DisclosureGroup`). Depth is at most 3, counted through the chain; the host checks it and the verifier rejects cycles. Child chats under their parent are this.
 * **User-made sections.** `Section.repeat: {over, rows}` makes one section per row of the bind `over`, which **must read `layout_sections`** (the verifier rejects any other kind; the per-person layout the host stores: the host virtual kind `layout_sections` with
   `id`, `title`, `position`, viewer-only) with each section's rows from the per-parent bind `rows`. The layout is stored and authorized by the host; **Move to, Move up and Move down are host
   operations** (`host.layout.move_to`, `host.layout.move_up` and `host.layout.move_down`, and `host.layout.section.create`, `rename`, `remove` for personal sections)
@@ -319,7 +319,7 @@ An activation names the host-issued **activation context** (an opaque snapshot o
 A successful separate resolve returns `ActivationResolution`. A combined resolve and dispatch, a typed refusal, or any dispatch returns an `ActionOutcome` (the catalogue's): `ok`, `pending` (with a host-owned `status_ref`, polled through the
 host's own status control, not by the description), `error`, `refused`, `stale` and `unknown` (the interface shows an unknown outcome instead of retrying a non-idempotent action). For an interrupted Send, recover the durable receipt before replay from the private submission outbox under the [recovery rule](../contract/host-catalogue-v2.json#/execution_recovery/submissions). Keep a live execution in its working state while its enrolled machine reconnects. On `ok`
 an optional host-owned **undo** `{ref, label, expires_at}` and, when the operation created an item, **`created`** (a host-minted reference an invoke's `then: {route}` opens: a new note,
-a new thread). Error text is written by the host. Draw only validated host replies and checked native descriptions. A row with an action in flight keeps its place with a quiet progress mark; it leaves the
+a new chat). Error text is written by the host. Draw only validated host replies and checked native descriptions. A row with an action in flight keeps its place with a quiet progress mark; it leaves the
 list only when the host's next window no longer contains it.
 
 ## 4. Chrome and the app description
@@ -615,7 +615,7 @@ What the renderer needs from the contract, and what it costs:
 
 ## 9. Paper exercises
 
-Run the conformance-tool version that supports the contract revision. The fixtures in `contract/fixtures/description-v2/` pair each app with its manifest in `manifests/`. The SDK supplies each plugin’s own reads and the fixtures include the emitted entries. Section 6 governs the optional member rows used by `threads-nested-catalogue-app.json`. The Notes and Threads walks follow §2.4. An installed harness shows a verified provider mark or its fallback symbol. Note rows use the current thumbnail or miniature. Notes collection rows use the kind icon.
+Run the conformance-tool version that supports the contract revision. The fixtures in `contract/fixtures/description-v2/` pair each app with its manifest in `manifests/`. The SDK supplies each plugin’s own reads and the fixtures include the emitted entries. Section 6 governs the optional member rows used by `chat-nested-catalogue-app.json`. The Notes and Chat walks follow §2.4. An installed harness shows a verified provider mark or its fallback symbol. Note rows use the current thumbnail or miniature. Notes collection rows use the kind icon.
 
 ### 9.1 Community Reading List and author trial
 
@@ -630,12 +630,12 @@ The windowed sidebar binds a manual collection with an exact count and shows a C
 The `item-editor` edits the routed `yjs-v1` item. New note invokes `host.item.create` with the Notes manifest defaults and the current route’s collection when present. This sidebar shortcut takes that checked operand from `view.open`. It commits the new item, membership and Undo together without waking the plugin or showing a challenge, then opens `created` via `then`. Without a collection route the same invoke creates the note without placement. The footer searches the authorized manual collection through `source.collection`. Window, bulk and search cases are covered by `notes-app.json`, `notes-bulk-and-snooze-app.json` and the search event fixtures.
 
 
-### 9.3 Threads
+### 9.3 Chat
 
-Threads owns the Markdown thread item and its view. Participant IDs,
-message IDs and file encoding are Threads data. The harness owns a separate
+Chat owns the Markdown chat item and its view. Participant IDs,
+message IDs and file encoding are Chat data. The harness owns a separate
 working log. The list binds the app's own item refs and uses the generic
-`archived` predicate. Share, Trash and archive act on the thread. The
+`archived` predicate. Share, Trash and archive act on the chat. The
 sleeping view shows the authorized last snapshot. A live page follows
 committed appends and can open a stable message anchor. The same view does
 not grant access to the linked working log.
@@ -643,12 +643,12 @@ not grant access to the linked working log.
 #### First Send from a fresh renderer
 
 Start from an authenticated shell in the selected space, with an enabled
-app and a checked deep link to the empty, committed Threads-owned item
+app and a checked deep link to the empty, committed Chat-owned item
 `file-1`. This is the first Send for that item. The renderer holds no
-cached template, lease, option, context or result. The installed Threads app declares
+cached template, lease, option, context or result. The installed Chat app declares
 the `harnesses` extension point and a replayable `run` execution job
-whose operation declares `target: {kind: "threads", field: "item"}`.
-The checked placement supplies the destination for `threads.send`
+whose operation declares `target: {kind: "chats", field: "item"}`.
+The checked placement supplies the destination for `chat.send`
 under the catalogue’s
 [plugin-operation confirmation rule](../contract/host-catalogue-v2.json#/confirmation/material_by_kind/plugin_operation).
 The same installed description serves both spaces.
@@ -737,18 +737,18 @@ are submitted only in the Send resolve. The shell displays the host
 challenge and confirms before dispatching.
 
 ```jsonl
-{"route":"app.open","request":{"type":"app","id":"threads"},"reply":{"view_ref":"threads-view","description":{"version":2,"kind":"app","revision":1,"view":{"root":{"type":"stack","children":[{"type":"component","component":{"type":"item-view","id":"transcript","config":{"item":{"route":"item"},"slot":"body"}}},{"type":"form","id":"composer","fields":[{"id":"message","label":"Message","input":"multiline","required":true}],"submit":{"id":"send","title":"Send","operation":"threads.send","inputs":{"item":{"route":"item"},"text":{"form":"composer","field":"message"},"harness":{"prompt":{"title":"Harness","kind":"choice","options":{"extension":"harnesses"}}},"placement":{"prompt":{"title":"Run on","kind":"choice","options":{"host":"execution_placement"}}}}}}]}}}}}
-{"route":"view.open","request":{"type":"view_open","view_ref":"threads-view","route":{"item":"file-1"}},"reply":{"lease":{"lease_ref":"lease-1","grant_revision":"grant-1","lease_seconds":15,"cache_partition":"partition-1"},"audience":"own_space_member","activation_contexts":{"send":"send-ctx"}}}
-{"route":"extension.choices","request":{"type":"extension_choices","app":"threads","point":"harnesses","activation_context":"send-ctx","slot":"harness"},"reply":{"options":[{"ref":"h-opt","label":"Example harness","harness_ref":"harness-1","contribution_identity":{"package":"example-harness","contribution":"agent"}}]}}
+{"route":"app.open","request":{"type":"app","id":"chat"},"reply":{"view_ref":"chat-view","description":{"version":2,"kind":"app","revision":1,"view":{"root":{"type":"stack","children":[{"type":"component","component":{"type":"item-view","id":"transcript","config":{"item":{"route":"item"},"slot":"body"}}},{"type":"form","id":"composer","fields":[{"id":"message","label":"Message","input":"multiline","required":true}],"submit":{"id":"send","title":"Send","operation":"chat.send","inputs":{"item":{"route":"item"},"text":{"form":"composer","field":"message"},"harness":{"prompt":{"title":"Harness","kind":"choice","options":{"extension":"harnesses"}}},"placement":{"prompt":{"title":"Run on","kind":"choice","options":{"host":"execution_placement"}}}}}}]}}}}}
+{"route":"view.open","request":{"type":"view_open","view_ref":"chat-view","route":{"item":"file-1"}},"reply":{"lease":{"lease_ref":"lease-1","grant_revision":"grant-1","lease_seconds":15,"cache_partition":"partition-1"},"audience":"own_space_member","activation_contexts":{"send":"send-ctx"}}}
+{"route":"extension.choices","request":{"type":"extension_choices","app":"chat","point":"harnesses","activation_context":"send-ctx","slot":"harness"},"reply":{"options":[{"ref":"h-opt","label":"Example harness","harness_ref":"harness-1","contribution_identity":{"package":"example-harness","contribution":"agent"}}]}}
 {"route":"choice.options","request":{"type":"choice_options","activation_context":"send-ctx","slot":"placement","harness":"harness-1","activation_id":"send-1"},"reply":{"host":"execution_placement","options":[{"ref":"desk","label":"Desk machine · My login"},{"ref":"laptop","label":"Laptop · My login"}],"default_ref":"desk"}}
-{"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"desk"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Thread","value":"New thread"},{"name":"input:placement","label":"Machine and login","value":"Desk machine · My login"}]}}
+{"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"desk"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Chat","value":"New chat"},{"name":"input:placement","label":"Machine and login","value":"Desk machine · My login"}]}}
 {"route":"activation.confirm","request":{"type":"invoke_confirm","activation_id":"send-1","resolution_ref":"send-res","confirmation_challenge":"send-challenge"},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirmation_proof":"send-proof"}}
 {"route":"activation.dispatch","request":{"type":"invoke_dispatch","activation_id":"send-1","resolution_ref":"send-res","confirmation_proof":"send-proof"},"reply":{"activation_id":"send-1","state":"ok"}}
 {"route":"item_view.open","request":{"type":"item_view","item":"file-1","component":"transcript","slot":"body","live":true},"reply":{"state":"live","source_revision":"rev-1","window_ref":"page-1","result_version":"version-1","follow":"tail-1","view":{"content":{"type":"snapshot-text","text":"Starting"}}}}
 {"route":"item_view.follow","request":{"type":"item_view_follow","follow":"tail-1"},"reply":{"type":"item_view_signal","follow":"tail-1","state":"changed"}}
 {"route":"item_view.open","request":{"type":"item_view","item":"file-1","component":"transcript","slot":"body","live":true},"reply":{"state":"live","source_revision":"rev-2","window_ref":"page-2","result_version":"version-2","follow":"tail-2","view":{"content":{"type":"snapshot-text","text":"Hello. I’m working on it."}}}}
 {"route":"execution.control","request":{"type":"execution_control","component":"transcript","item":"file-1"},"reply":{"controls":[{"action_id":"host.execution.stop","activation_context":"stop-ctx","phase":"running"}]}}
-{"route":"activation.resolve","request":{"type":"invoke","action_id":"host.execution.stop","activation_id":"stop-1","activation_context":"stop-ctx"},"reply":{"activation_id":"stop-1","resolution_ref":"stop-res","confirm":"challenge","confirmation_challenge":"stop-challenge","material":[{"name":"item","label":"Thread","value":"New thread"},{"name":"execution","label":"Execution","value":"Running"},{"name":"effect","label":"Effect","value":"Stop this execution"}]}}
+{"route":"activation.resolve","request":{"type":"invoke","action_id":"host.execution.stop","activation_id":"stop-1","activation_context":"stop-ctx"},"reply":{"activation_id":"stop-1","resolution_ref":"stop-res","confirm":"challenge","confirmation_challenge":"stop-challenge","material":[{"name":"item","label":"Chat","value":"New chat"},{"name":"execution","label":"Execution","value":"Running"},{"name":"effect","label":"Effect","value":"Stop this execution"}]}}
 {"route":"activation.confirm","request":{"type":"invoke_confirm","activation_id":"stop-1","resolution_ref":"stop-res","confirmation_challenge":"stop-challenge"},"reply":{"activation_id":"stop-1","resolution_ref":"stop-res","confirmation_proof":"stop-proof"}}
 {"route":"activation.dispatch","request":{"type":"invoke_dispatch","activation_id":"stop-1","resolution_ref":"stop-res","confirmation_proof":"stop-proof"},"reply":{"activation_id":"stop-1","state":"ok"}}
 ```
@@ -761,9 +761,9 @@ this run. Keeping the default instead sends `space-machine` in the same
 placement slot and shows that option's host label in the protected preview.
 
 ```jsonl
-{"route":"view.open","request":{"type":"view_open","view_ref":"threads-view","route":{"item":"file-1"}},"reply":{"lease":{"lease_ref":"lease-1","grant_revision":"grant-1","lease_seconds":15,"cache_partition":"partition-1"},"audience":"member","activation_contexts":{"send":"send-ctx"}}}
+{"route":"view.open","request":{"type":"view_open","view_ref":"chat-view","route":{"item":"file-1"}},"reply":{"lease":{"lease_ref":"lease-1","grant_revision":"grant-1","lease_seconds":15,"cache_partition":"partition-1"},"audience":"member","activation_contexts":{"send":"send-ctx"}}}
 {"route":"choice.options","request":{"type":"choice_options","activation_context":"send-ctx","slot":"placement","harness":"harness-1","activation_id":"send-1"},"reply":{"host":"execution_placement","options":[{"ref":"space-machine","label":"Space machine · Space login"},{"ref":"my-laptop","label":"My laptop · My login"}],"default_ref":"space-machine"}}
-{"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"my-laptop"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Thread","value":"New thread"},{"name":"input:placement","label":"Machine and login","value":"My laptop · My login"}]}}
+{"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"my-laptop"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Chat","value":"New chat"},{"name":"input:placement","label":"Machine and login","value":"My laptop · My login"}]}}
 ```
 
 In either space, the host resolves `h-opt` to `harness-1` and gives Send
@@ -797,11 +797,11 @@ The checked harness ref still comes from the current host binding.
 The host checks the full encoded contribution envelope during admission.
 A frame-limit refusal leaves the file and queue untouched. Send's `ok`
 follows durable admission. The job saves the prompt only after that
-receipt. The first live page precedes any agent output. The Threads job calls `execution_start` for its pinned harness,
+receipt. The first live page precedes any agent output. The Chat job calls `execution_start` for its pinned harness,
 then `contribution_call` with its checked prompt. The host passes that input
 to the qualified contributor. It can return a link to its own working log.
-The Threads job reads the bounded committed contribution frames and appends
-the reply to the Threads item using its own checked writer and the exact
+The Chat job reads the bounded committed contribution frames and appends
+the reply to the Chat item using its own checked writer and the exact
 attempt fence. Here are the broker payloads for one output frame.
 
 ```jsonl
@@ -810,9 +810,9 @@ attempt fence. Here are the broker payloads for one output frame.
 {"method":"contribution_read","request":{"call":"call-ref-1"},"reply":{"frames":[{"seq":1,"kind":"output","data":{"text":"Hello. I’m working on it.","log":{"space":"space-1","id":"log-1"}}}]}}
 ```
 
-Threads records the portable log locator. Opening it requires a separate
+Chat records the portable log locator. Opening it requires a separate
 live authority check. On normal completion, the next contribution read
-can return the ordered terminal frame. Threads finalizes its own writes
+can return the ordered terminal frame. Chat finalizes its own writes
 before completing the job. In this walk the user stops the running
 attempt after its first output. Already committed output and the harness
 log survive. The host catches up under the registered follow subscription
@@ -823,7 +823,7 @@ whole-audience discovery and the shared tools rule for either placement.
 Stop uses the context for the exact running attempt, and its `ok` follows
 the durable fence. The renderer never supplies an attempt ID.
 
-The earlier Threads paper fixtures exercise legacy component shapes.
+The earlier Chat paper fixtures exercise legacy component shapes.
 The separately versioned conformance tool and fixtures follow the
 contract revision. Section 8 of the Plugin API governs runtime parity.
 

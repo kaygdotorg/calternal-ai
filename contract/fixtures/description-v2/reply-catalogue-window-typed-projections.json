@@ -15,7 +15,7 @@
         "field_timestamp": "2026-11-19T16:10:05.25+05:30",
         "field_itemref": "sample-itemref",
         "field_collectionref": "sample-collectionref",
-        "field_threadref": "sample-threadref",
+        "field_chatref": "sample-chatref",
         "field_turnref": "sample-turnref",
         "field_requestref": "sample-requestref",
         "field_accountref": "sample-accountref",

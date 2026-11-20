@@ -4,14 +4,14 @@
     "v": 1,
     "epoch": "epoch-reconnected",
     "seq": 1,
-    "package": "calternal-threads",
+    "package": "calternal-chat",
     "digest": "3facada978852412c8a148b127e1c337fde35b0cc8527a7fdbc5e52dac347721",
     "ticket": "fresh-replay-ticket",
     "message": {
       "type": "invoke",
-      "operation": "threads.run",
+      "operation": "chat.run",
       "input": {
-        "item": "thread-1"
+        "item": "chat-1"
       },
       "deadline": "2026-11-20T12:00:00Z",
       "author_context": {
@@ -21,7 +21,7 @@
       }
     }
   },
-  "manifest": "threads-app.json",
+  "manifest": "chat-app.json",
   "job": "run",
   "error": "$.message.job_context: required for the admitted execution job"
 }

@@ -7,7 +7,7 @@
       "id": "b",
       "source": {
         "type": "list",
-        "kind": "threads",
+        "kind": "chats",
         "collection": {
           "literal": "col-1"
         }

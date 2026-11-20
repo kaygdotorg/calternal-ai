@@ -3,7 +3,7 @@
   "id": "indexed-items-fixture",
   "name": "Indexed items fixture",
   "version": "1.0.0",
-  "icon": "threads",
+  "icon": "chat",
   "network": "none",
   "apps": [
     {

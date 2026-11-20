@@ -9,7 +9,7 @@
     {
       "id": "fixture-row",
       "fields": {
-        "field_threadref": true
+        "field_chatref": true
       }
     }
   ],

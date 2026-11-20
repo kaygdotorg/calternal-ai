@@ -1,11 +1,11 @@
 {
   "audience": "member",
-  "bind": "thread-search",
+  "bind": "chat-search",
   "state": "ready",
   "result_version": "rv-search-page-boundary",
   "offset": 1,
   "window_ref": "w-search-page-boundary-1",
   "rows": [],
   "settle_generation": 1,
-  "scope_ref": "scope-thread-search"
+  "scope_ref": "scope-chat-search"
 }

@@ -4,22 +4,22 @@
     "v": 1,
     "epoch": "epoch-first",
     "seq": 1,
-    "package": "calternal-threads",
+    "package": "calternal-chat",
     "digest": "3facada978852412c8a148b127e1c337fde35b0cc8527a7fdbc5e52dac347721",
     "ticket": "host-ticket",
     "message": {
       "type": "call",
-      "operation": "threads.run",
+      "operation": "chat.run",
       "input": {
-        "item": "thread-1"
+        "item": "chat-1"
       },
       "deadline": "2026-11-20T12:00:00Z",
       "job_context": {
         "intent": "saved-intent-1",
-        "item": "thread-1",
+        "item": "chat-1",
         "harness": "checked-harness",
         "contribution_identity": {
-          "package": "calternal-threads-claude-code",
+          "package": "calternal-chat-claude-code",
           "contribution": "claude-code"
         },
         "contribution_input": {
@@ -33,7 +33,7 @@
       }
     }
   },
-  "manifest": "threads-app.json",
+  "manifest": "chat-app.json",
   "job": "run",
   "error": "$.message.type: must be 'invoke'"
 }

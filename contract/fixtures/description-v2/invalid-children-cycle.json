@@ -7,7 +7,7 @@
       "id": "a",
       "source": {
         "type": "list",
-        "kind": "threads",
+        "kind": "chats",
         "parent": true
       },
       "row": {
@@ -23,7 +23,7 @@
       "id": "b",
       "source": {
         "type": "list",
-        "kind": "threads",
+        "kind": "chats",
         "parent": true
       },
       "row": {

@@ -1,10 +1,10 @@
 # Plugin API v2 host build plan
 
-Scope is an agent-only Threads app using its own item files and a second installed
-package for the harness. Use the pinned API v2 draft on `lane/v2-host-base` and the [Threads
+Scope is an agent-only Chat app using its own item files and a second installed
+package for the harness. Use the pinned API v2 draft on `lane/v2-host-base` and the [Chat
 spike](https://git.kayg.org/kayg/calternal-ai/src/commit/23471bfa/docs/reviews/threads-plugin-spike-2026-11-20.md).
 The code map is against dev `d3d37a4c`. Estimates are engineering days per lane,
-including focused qualification and excluding review queue time. People-thread consent,
+including focused qualification and excluding review queue time. People-chat consent,
 custody and delivery have their own open gates.
 
 Start registry, content, execution and machine work together once they agree on the
@@ -63,7 +63,7 @@ Implement `execution_intents`, `execution_engines`, the protected Stop context a
 authority checks at promotion and claim, and idempotent Stop. Reuse the Inbox to bind
 approval to the actual effect. Lift the generic attempt fence, exact runtime proof and
 quota accounting from native Turns into the execution engine. Keep application phase and
-title logic in Threads.
+title logic in Chat.
 
 Reuse `crates/server/src/plugins/jobs/{claim.rs,complete.rs,waits.rs}`,
 `plugins/space_ticket.rs`, `turns/{admission.rs,lease.rs,control.rs,
@@ -128,7 +128,7 @@ Send gate. Keep unavailable leaf and asset shapes disabled through their qualifi
 ### 6. Placement and extension choice routes · 2–4 days
 
 Implement `app.open`, `extension.choices`, `choice.options`, activation
-resolve/confirm/dispatch and `execution.control` for the Threads surface. Bind the chosen
+resolve/confirm/dispatch and `execution.control` for the Chat surface. Bind the chosen
 live harness and placement to the exact activation and receipt, and show only
 host-checked confirmation material.
 
@@ -159,7 +159,7 @@ scope/invalidation parts of `cache_policy`. The [window
 lane](https://git.kayg.org/kayg/calternal-ai/src/commit/2afa2a19/docs/reviews/window-engine-2026-11-19.md)
 already implements journal replay and covering reads in
 `crates/content/src/window/{replay.rs,read.rs,runtime.rs}` and the host surface in
-`crates/server/src/api/window_views.rs`. Take its backend gate first. Qualify the Threads
+`crates/server/src/api/window_views.rs`. Take its backend gate first. Qualify the Chat
 kind against the real registry, publication watermark and live route scope. Cover
 archive/Undo, save-to-ready recovery, revoke mid-window and the worst supported scoped
 list plans. Add later draft wire features at that same route boundary.
@@ -214,15 +214,15 @@ output, replay and Stop against the actual server and writer. Follow with the su
 provider and test login. Keep alarm, staged edits, richer view assets, offline, children,
 Resume and people paths disabled until their gates pass. Rollout waits for the fresh
 install requirements in §8 and the measured 500 ms p95 product wake gates. Every
-deploy before the Threads cutover is a fresh install: edit schemas in place, with no
+deploy before the Chat cutover is a fresh install: edit schemas in place, with no
 migration chain, additive-migration requirement or image-pair upgrade check.
 
-The owner permits a fresh production redeploy at the Threads cutover. Qualify freshly
+The owner permits a fresh production redeploy at the Chat cutover. Qualify freshly
 created files and jobs under §8. Slice 3 removes the native Turns job interpreter, admission,
 phases, progress, control, instruction and retry paths after the generic fences take
 over. Slice 4 retires native provider-specific launch and raw output adapters after the
 contribution placements qualify. Keep enrollment, runtime isolation, request approvals
-and generic credential mounting. Slice 7 removes the Threads-specific scheduling dispatch
+and generic credential mounting. Slice 7 removes the native Threads-specific scheduling dispatch
 when alarms replace it.
 
 In the final cutover change owned by 6, remove native Threads and Notes dispatch and

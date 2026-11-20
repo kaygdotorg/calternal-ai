@@ -1,6 +1,6 @@
 {
   "api_version": 2,
-  "id": "calternal-threads-claude-code",
+  "id": "calternal-chat-claude-code",
   "name": "Claude Code",
   "version": "0.1.0",
   "icon": "puzzle",
@@ -31,17 +31,17 @@
   "contributions": [
     {
       "app": {
-        "package": "calternal-threads",
-        "app": "threads"
+        "package": "calternal-chat",
+        "app": "chat"
       },
       "point": "harnesses",
       "version": 1,
       "id": "claude-code",
       "kind": "harness",
-      "operation": "threads-claude-code.run",
+      "operation": "chat-claude-code.run",
       "harness": {
         "image": "sha256:c6fde2d70276d3928a736fe6c26f15b9be1f4e31bcd1516e2a0b7418bdb4f5f7",
-        "image_source": "registry.example.invalid/calternal/threads-claude-code-fixture",
+        "image_source": "registry.example.invalid/calternal/chat-claude-code-fixture",
         "execution_network": "none",
         "entry": {
           "path": "entry-c6fde2d70276d3928a736fe6c26f15b9be1f4e31bcd1516e2a0b7418bdb4f5f7.bin",
@@ -57,7 +57,7 @@
   "network": "none",
   "operations": [
     {
-      "id": "threads-claude-code.run",
+      "id": "chat-claude-code.run",
       "title": "Run Claude Code",
       "required_capability": "plugins.use",
       "risk": "external",

@@ -64,7 +64,7 @@ class ReviewCases:
         self.replace_template(notes)
         self.verify()
 
-        self.stage("threads-nested-catalogue-app")
+        self.stage("chat-nested-catalogue-app")
         self.verify()  # Move up/down and Move to consume placement inside a Section.repeat.
         doc = json.loads((self.package / self.template).read_bytes())
         bind = next(b for b in doc["binds"] if b["id"] == "in-section")
@@ -186,7 +186,7 @@ class ReviewCases:
         self.replace_template(template)
         self.verify()
 
-        self.stage("threads-nested-catalogue-app")
+        self.stage("chat-nested-catalogue-app")
         template = json.loads((self.package / self.template).read_bytes())
         bind = next(b for b in template["binds"] if b["id"] == "in-section")
         bind["sort"] = [{"field": "provider_icon", "direction": "asc"}]
@@ -202,7 +202,7 @@ class ReviewCases:
 
     def test_offline_provider_label_requires_its_paired_text_source(self):
         reply = json.loads((self.fixtures / "reply-catalogue-window-member-record.json").read_bytes())
-        app = json.loads((self.fixtures / "threads-nested-catalogue-app.json").read_bytes())
+        app = json.loads((self.fixtures / "chat-nested-catalogue-app.json").read_bytes())
         bind = next(b for b in app["binds"] if b["id"] == reply["bind"])
         errors = Validation()
         owner = verification.parse_manifest(

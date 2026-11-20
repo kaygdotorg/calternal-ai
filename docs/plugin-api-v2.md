@@ -100,13 +100,13 @@ pinned contribution under live authority at claim. Use the catalogue’s
 [extension points](../contract/host-catalogue-v2.json#/extension_points).
 
 A **harness** is a plugin that runs an agent program such as Claude Code
-or Codex. Threads (`calternal-threads`) declares a harness point. Bundled
+or Codex. Chat (`calternal-chat`) declares a harness point. Bundled
 and community harnesses contribute through the same interface. Another app
 can publish its own point. A contribution names its owner plugin and app,
-point and interface version. **Threads owns the Markdown thread item.**
-A harness keeps a separate working log in its own files. Threads may link
+point and interface version. **Chat owns the Markdown chat item.**
+A harness keeps a separate working log in its own files. Chat may link
 to that log by an authorized item locator and writes replies to its own
-file. Share, Trash and archive target the thread item. They confer no
+file. Share, Trash and archive target the chat item. They confer no
 access to the working log.
 Source authorization applies before rows or counts are computed.
 A base indexed row is available while a contributor sleeps. Fetch optional
@@ -616,10 +616,10 @@ the same live item and revision checks as any other item page. Host job
 and approval controls remain generic. A retained snapshot draws while
 the item owner sleeps (§4.2).
 
-**Threads with people.** Threads owns one Markdown file in the starter’s
+**Chat with people.** Chat owns one Markdown file in the starter’s
 space and records the people and agent participants in that file. Its
-format identifier is `calternal-thread/v<n>` (manifest file format ID
-`calternal-thread`, integer version `n`). The app shares that item with
+format identifier is `calternal-chat/v<n>` (manifest file format ID
+`calternal-chat`, integer version `n`). The app shares that item with
 the other participants with full item privileges, using checked host item
 grants. Those privileges cover this item, including its editing and sharing
 rights, and confer no role in the starter’s space. Participant data alone
@@ -629,7 +629,7 @@ restores access.
 
 A person can belong to several groups. Each group gets its own shared space
 by default under the [afternoon decisions](morning-2026-11-20.md#decisions-of-the-afternoon-owner-2026-11-20).
-Threads picks participants through the [group-scoped people
+Chat picks participants through the [group-scoped people
 primitive][scoped-people]. A conversation between people requires one
 current group they share. Members can create invite links into their own
 groups. Reuse capability checks ([ADR 0058][adr-roles]), checked invites
@@ -644,8 +644,8 @@ share any group, the conversation becomes read-only for all of them.
 They can still read and export its history. New messages and calling in
 an agent are disabled. See the [catalogue’s read-only item rule][scoped-people].
 
-Threads opts into the catalogue’s [per-item discovery rule][item-discovery].
-A person's own agent thread can be `creator_only` and stays discoverable
+Chat opts into the catalogue’s [per-item discovery rule][item-discovery].
+A person's own agent chat can be `creator_only` and stays discoverable
 to their own authorized attempts. A people conversation is `consent_only`
 and stays outside attempt list, search, direct reads and derived output.
 An operation opts in with manifest `write_origins`. For an
@@ -654,7 +654,7 @@ prefix, any checked quote, the exact checked input or attempt output,
 and the plugin's suffix. Prefix and suffix are each at most 512 UTF-8 bytes and are
 attributed to the plugin. The middle is selected by reference to its
 checked source. The host records the full span and the middle attribution
-in the same transaction. Threads stores the message text as plain
+in the same transaction. Chat stores the message text as plain
 paragraphs in that middle span. On reopen the owning plugin reads
 `item_spans` for the exact readable revision, up to 128 spans per
 page. A recorded middle or quote has a person, attempt or host origin.
@@ -678,7 +678,7 @@ said at its checked revision. An edit that supplies no new quote keeps the
 existing quoted bytes even if the source has been edited. An explicit
 re-quote supplies a new checked source. The ordinary record limit and the
 quote budget apply. Delete for everyone removes all checked quotes of the
-message, including quotes in other threads. The delete commit removes
+message, including quotes in other chats. The delete commit removes
 same-item copies and fences all remaining copies. The existing indexed
 rewrite job removes cross-item copies in bounded batches. Readers see
 unaffected content where it can be served safely and ordinary body
@@ -689,10 +689,10 @@ rewritten, the reply and its anchor remain without the quote. Follow the
 A kind declares its [default app and format metadata][format-open].
 Its optional [title binding][title-binding] lets the host update the dated
 folder and the declared title line with the indexed title in the same
-commit. For `calternal-thread/v2` the folder follows the UTC creation date
+commit. For `calternal-chat/v2` the folder follows the UTC creation date
 and title, and the initial frontmatter binds the `title` key.
-`calternal-thread/v2` opens in Threads. A person can explicitly open it
-in a compatible editor such as Notes. The Threads format marks its
+`calternal-chat/v2` opens in Chat. A person can explicitly open it
+in a compatible editor such as Notes. The Chat format marks its
 trailing heading tag beginning with ` {#m-` and ending with `}`.
 It marks the framing comments beginning with `<!-- run-log=` or
 `<!-- consultation=` and ending with ` -->`. Its frontmatter metadata
@@ -707,9 +707,9 @@ Store times in UTC and draw viewer-local time from a typed timestamp.
 An authorized writer can request protection. Only the host can clear it
 on verified provenance. The harness receives selected material through
 the [disclosure boundary][attempt-disclosure] and has no direct read or
-write authority on the people-thread file.
+write authority on the people-chat file.
 
-Threads offers one message, a range or the whole conversation as the
+Chat offers one message, a range or the whole conversation as the
 selection for one call. Each author chooses **Ask each time** or
 **Always** per conversation and may revoke either at any time. The host
 checks short-lived or standing grants per author and binds the checked
@@ -717,17 +717,17 @@ selection to the exact attempt and source revision. The call proceeds
 with a non-answering author’s messages withheld. Later messages require
 another address and a new checked call. Use the catalogue’s
 [disclosed-attempt placement and tools rule][attempt-disclosure].
-Threads owns the selection UI, how a person addresses an agent, and
+Chat owns the selection UI, how a person addresses an agent, and
 applying its result to the item. The host owns the grant and attempt
 fences. A [viewer-private item record][viewer-state] holds a person’s view state
 and preferences. Disclosure authority still comes from the checked grant.
 
-A person may ask one agent to consult another. Threads puts that exchange
+A person may ask one agent to consult another. Chat puts that exchange
 in a separate linked item and posts only its result to the people
 conversation. The existing generic item/link and child-execution
 primitives supply the isolation and ceilings. Authorizing the first
 attempt does not disclose its inputs to the second. Check every receiving
-attempt and the delivery audience. Threads writes and draws the linked
+attempt and the delivery audience. Chat writes and draws the linked
 consultation and decides how to apply its result.
 
 The catalogue’s [OPEN list](../contract/host-catalogue-v2.json#/open_cutover_requirements)
@@ -1510,9 +1510,9 @@ or missing screenshot. It derives the No network access badge using
 
 **Entry evidence.** Paper-walk Reading List (list, two-field Add with
 created/then, Mark read full swipe, search and a one-date reminder), Notes (created ref, room edit, Move to collection,
-bulk Trash and Share), Threads (contributed harness, sleeping view,
+bulk Trash and Share), Chat (contributed harness, sleeping view,
 job admission and protected approval), and Mail (list, sealed body, credentials and new
-arrival). Check revised Reading List, Notes and Threads examples against the
+arrival). Check revised Reading List, Notes and Chat examples against the
 pinned schemas. Include malformed
 fixtures, declared reads, one shared Bind list, and every host surface used.
 The carrier, cold page and atomic save spikes are independently cleared.
@@ -1563,9 +1563,9 @@ competing saves. [Scoped search measurements](https://git.kayg.org/kayg/calterna
 All qualified windows in the Unicode probe measured below 1.9 ms p95.
 [Unicode qualification measurements](https://git.kayg.org/kayg/calternal-ai/src/commit/eac3eecf571c85811c1f6724e257ad19fb40aa00/docs/measurements/plugin-api-v2-step0.md#unicode-qualification).
 
-The [all-field search measurements](measurements/plugin-api-v2-step0.md#follow-up--search-across-all-searchable-fields) record the earlier host-managed search paths at the shared depth. Those samples do not qualify explicit plugin profiles. The earlier separate-field probes measured 5.893 ms p95 for Notes and 1.414 ms p95 for Threads. The Threads probe measured
+The [all-field search measurements](measurements/plugin-api-v2-step0.md#follow-up--search-across-all-searchable-fields) record the earlier host-managed search paths at the shared depth. Those samples do not qualify explicit plugin profiles. The earlier separate-field probes measured 5.893 ms p95 for Notes and 1.414 ms p95 for Chat. The Chat probe measured
 append-to-scoped-publication lag at 46.847 ms p95 idle and 468.095 ms p95
-under 1,916 competing appends. [Threads search and shared depth measurements](https://git.kayg.org/kayg/calternal-ai/src/commit/9a78a43b1cda6a2074df9d1471752f3db5a2a0bb/docs/measurements/plugin-api-v2-step0.md#follow-up--threads-title-and-message-search).
+under 1,916 competing appends. [Chat search and shared depth measurements](https://git.kayg.org/kayg/calternal-ai/src/commit/9a78a43b1cda6a2074df9d1471752f3db5a2a0bb/docs/measurements/plugin-api-v2-step0.md#follow-up--threads-title-and-message-search).
 
 If a gate misses, record the measured failure and change the mechanism or
 reduce the first runtime slice before enabling it. A fixture using separate per-plugin
@@ -1712,8 +1712,8 @@ intentional refusal/retry with an actionable response.
 
 ### Step 3 — Application cutover
 
-Build in order: Threads, Notes, Mail, Files, Photos. Qualify on a fresh
-install. Threads must attach and reopen files through checked refs and
+Build in order: Chat, Notes, Mail, Files, Photos. Qualify on a fresh
+install. Chat must attach and reopen files through checked refs and
 support queued follow-ups. Test restart and replay with newly created
 items and jobs. Notes requires the history browser over revisions
 created on the fresh install, linked-user comments and collection creation. Attachment upload uses the [generic checked file field][entry-views]
@@ -1723,7 +1723,7 @@ Hold each affected cutover until its required behavior is pinned and
 qualified. Mention picker and snooze presets or custom date may follow
 as plugin features. Photos product questions wait for that plugin.
 
-The [Threads spike][threads-spike] records the app and harness fixture.
+The [Chat spike][chats-spike] records the app and harness fixture.
 Qualify the real contribution path with separate plugins. Test a wrong
 plugin, pinned-image mismatch, out-of-order output, lost output ACK,
 Stop between output and append, and replay of the owning job. Require
@@ -1742,7 +1742,7 @@ the bound. Require a 413 before a receipt, prompt append or provider
 start. Admit the next eligible Send once, and refuse a later changed
 contribution input under the same receipt.
 
-The Threads cutover requires measured product wake p95 at or below
+The Chat cutover requires measured product wake p95 at or below
 500 ms for both the plugin and agent placements on the perf VM.
 Measure the actual cold Send path through its acknowledgement and
 first agent output. Report both user-visible intervals separately.
@@ -1752,7 +1752,7 @@ cutover gates.
 
 #### Running execution and update gate
 
-Test with the real Threads plugin, harness and enrolled machine on the
+Test with the real Chat plugin, harness and enrolled machine on the
 product path. Record machine boot, attempt and call identity, producer
 and committed cursors, logical request IDs, applied control receipts
 and the user-visible run state. The [owner decision][running-restart]
@@ -1772,7 +1772,7 @@ Keep this gate distinct from legacy import. Record effect counts and the actual 
 conditions on dev-01. Use the locked perf VM for the separate latency
 gates.
 
-At the Threads cutover, the owner permits wiping and redeploying this
+At the Chat cutover, the owner permits wiping and redeploying this
 project's production deployment and its data. The old Calternal app and
 its userdata are outside that permission. The fresh-install gate has
 no legacy session drain, historical attribution proof, legacy inventory
@@ -1795,7 +1795,7 @@ Delete the transitional `open_cutover_requirements` and
 
 ## Owner decisions and open questions
 
-The [recorded decisions][decisions] govern file custody, the Threads
+The [recorded decisions][decisions] govern file custody, the Chat
 composition, full offline content, search, one-shot alarms, retention
 and identical bundled and community eligibility. The
 [placement decision][placement-decision] sets hosted eligibility for
@@ -1804,7 +1804,7 @@ live-authority discovery rule above remains interim.
 
 Application cutover gates are listed in §8 and the catalogue. Pin the
 linked-user comment shapes, history browsing and collection creation and
-qualify generic uploads before the affected cutover. The Threads app owns
+qualify generic uploads before the affected cutover. The Chat app owns
 queued follow-ups through the generic job contract.
 
 [generic-engines]: https://git.kayg.org/kayg/calternal-ai/src/commit/5abca642/docs/proposals/plugin-api-v2-generic-engines.md
@@ -1814,7 +1814,7 @@ queued follow-ups through the generic job contract.
 
 [placement-decision]: https://git.kayg.org/kayg/calternal-ai/src/commit/a4154906/docs/morning-2026-11-20.md#third-set-of-answers-owner-2026-11-20
 
-[threads-spike]: https://git.kayg.org/kayg/calternal-ai/src/commit/c3c70b73/docs/reviews/threads-plugin-spike-2026-11-20.md
+[chats-spike]: https://git.kayg.org/kayg/calternal-ai/src/commit/c3c70b73/docs/reviews/threads-plugin-spike-2026-11-20.md
 
 [scoped-people]: ../contract/host-catalogue-v2.json#/group_people_scope
 [item-discovery]: ../contract/host-catalogue-v2.json#/execution_attempt_authority/discovery/item_policy

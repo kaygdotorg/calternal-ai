@@ -89,7 +89,7 @@ class ScopeCases:
                    ("item", "collection", "header_item", "section_item", "menu_item", "footer_item")}})
         self.event(event | {"route": {"view": "notes"}}, "undeclared route operand 'view'")
         self.stage("indexed-items-app")
-        self.event(event | {"route": {"thread": "checked-thread"}})
+        self.event(event | {"route": {"chat": "checked-chat"}})
         self.event(event | {"route": {"unrelated": "ref"}}, "undeclared route operand")
 
     def test_row_actions_consume_optional_operands_only_for_their_bind(self):
@@ -241,7 +241,7 @@ class ScopeCases:
                     self.event(bad, "parent scope must match source.parent")
 
     def test_search_parent_edges_and_selection_sets(self):
-        self.stage("threads-nested-catalogue-app")
+        self.stage("chat-nested-catalogue-app")
         doc = json.loads((self.package / self.template).read_bytes())
         for bind in doc["binds"]:
             if bind["id"] in ("children", "in-section"):
@@ -308,14 +308,14 @@ class ScopeCases:
 
     def test_attempt_and_parent_are_distinct_declared_fields(self):
         origin = (
-            {"id": "threads", "source": {"type": "list"}, "fields": ["active_execution", "parent"]},
+            {"id": "chats", "source": {"type": "list"}, "fields": ["active_execution", "parent"]},
             {"fields": { "active_execution": {"type": "ExecutionRef", "audience": "eligible_execution_actor", "nullable": True},
                          "parent": {"type": "ItemRef", "audience": "member_item"} }},
             CATALOGUE["generic_item_fields"],
         )
         reply = {
-            "audience": "member", "bind": "threads", "state": "ready",
-            "result_version": "v1", "offset": 0, "window_ref": "thread-window", "scope_ref": "fixture-scope",
+            "audience": "member", "bind": "chats", "state": "ready",
+            "result_version": "v1", "offset": 0, "window_ref": "chat-window", "scope_ref": "fixture-scope",
             "rows": [{"id": "conversation", "fields": {"parent": "parent-item", "active_execution": "attempt"}}],
         }
         for attempt in ("exact-admitted-attempt", None, {"kind": "intent", "ref": "intent"}):
@@ -341,7 +341,7 @@ class ScopeCases:
                          "parent": {"type": "ItemRef", "audience": "member_item"} },
             "item": CATALOGUE["generic_item_fields"],
         } | {name: kind["fields"] for name, kind in CATALOGUE["kinds"].items()}
-        for name in ("notes-tags-app.json", "threads-app.json", "reading-list-manifest-v2-app.json"):
+        for name in ("notes-tags-app.json", "chat-app.json", "reading-list-manifest-v2-app.json"):
             manifest = json.loads((self.fixtures / "manifests" / name).read_bytes())
             for kind in manifest["kinds"]:
                 fields_by_kind[f"{name}/{kind['id']}"] = kind.get("indexed_fields", {})
@@ -372,11 +372,11 @@ class ScopeCases:
     def test_execution_field_needs_a_ready_reply_in_both_member_audiences(self):
         meta = { "active_execution": {"type": "ExecutionRef", "audience": "eligible_execution_actor", "nullable": True},
                          "parent": {"type": "ItemRef", "audience": "member_item"} }["active_execution"]
-        origin = ({"id": "threads", "source": {"type": "search"}, "fields": ["active_execution"]},
+        origin = ({"id": "chats", "source": {"type": "search"}, "fields": ["active_execution"]},
                   {"fields": {"active_execution": meta}}, {})
         for audience in ("own_space_member", "member", "guest", "public"):
             with self.subTest(audience=audience):
-                reply = {"audience": audience, "bind": "threads", "state": "refine_query",
+                reply = {"audience": audience, "bind": "chats", "state": "refine_query",
                          "result_version": None, "offset": 0, "window_ref": None, "scope_ref": "fixture-scope", "settle_generation": 1,
                          "rows": [{"id": "conversation", "fields": {"active_execution": "ref"}}]}
                 errors = Validation()

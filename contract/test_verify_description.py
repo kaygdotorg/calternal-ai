@@ -55,7 +55,7 @@ class PackageTests(ReviewCases, ProjectionCases, ScopeCases, unittest.TestCase):
     def stage(self, name):
         self.template = name + ".json"
         self.installed = []
-        if name == "threads-nested-catalogue-app":
+        if name == "chat-nested-catalogue-app":
             owner = self.package / "installed-conversation-owner.json"
             shutil.copyfile(FIXTURES / "manifests" / "indexed-items-app.json", owner)
             self.installed = ["--installed-manifest", owner]
@@ -106,7 +106,7 @@ class PackageTests(ReviewCases, ProjectionCases, ScopeCases, unittest.TestCase):
         self.event({"type": "window", "request": {"bind": "bogus", "from": 0, "to": 10}}, "active description")
         self.event({"type": "window", "request": {"bind": "notes", "parent": "opaque", "from": 0, "to": 10}}, "parent scope")
         self.event({"type": "window", "request": {"bind": "notes", "from": 0, "to": 201}}, "max_request_span")
-        self.stage("threads-nested-catalogue-app")
+        self.stage("chat-nested-catalogue-app")
         scoped = json.loads((FIXTURES / "event-catalogue-window-parent.json").read_bytes())
         self.event(scoped)
         del scoped["request"]["parent"]
@@ -221,7 +221,7 @@ class PackageTests(ReviewCases, ProjectionCases, ScopeCases, unittest.TestCase):
         self.event({"type": "layout", "id": "bogus", "width": 320}, "unknown layout")
 
     def test_app_checks_footer(self):
-        self.event({"type": "app", "id": "threads"})
+        self.event({"type": "app", "id": "chat"})
         self.event({"type": "app", "id": "bogus"}, "unknown app")
 
     def test_refresh_checks_optional_bind(self):

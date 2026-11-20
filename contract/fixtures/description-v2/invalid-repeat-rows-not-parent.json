@@ -7,7 +7,7 @@
       "id": "layout",
       "source": {
         "type": "list",
-        "kind": "threads"
+        "kind": "chats"
       },
       "fields": [
         "title"
@@ -17,7 +17,7 @@
       "id": "rows",
       "source": {
         "type": "list",
-        "kind": "threads"
+        "kind": "chats"
       },
       "fields": [
         "title"

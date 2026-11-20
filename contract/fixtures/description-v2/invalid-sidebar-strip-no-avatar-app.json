@@ -45,7 +45,7 @@
         "title": {
           "field": "title"
         },
-        "icon": "threads",
+        "icon": "chat",
         "open": {
           "route": {
             "name": "item",

@@ -74,7 +74,7 @@
           "required": [
             "route"
           ],
-          "description": "A named parameter of the current route (for example the collection or thread in the address). Typed as a reference or string by the field it filters."
+          "description": "A named parameter of the current route (for example the collection or chat in the address). Typed as a reference or string by the field it filters."
         },
         {
           "type": "object",
@@ -311,7 +311,7 @@
         },
         {
           "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/RowActionTarget",
-          "description": "Context-derived operand of a row action: {context: \"item\"} is the underlying item ref of the row (a thread's ItemRef), {context: \"placement\"} is the row's LayoutEntryRef (only inside a Section.repeat row). The host reconstructs both from the activation context; the renderer sends neither."
+          "description": "Context-derived operand of a row action: {context: \"item\"} is the underlying item ref of the row (a chat's ItemRef), {context: \"placement\"} is the row's LayoutEntryRef (only inside a Section.repeat row). The host reconstructs both from the activation context; the renderer sends neither."
         },
         {
           "type": "object",
@@ -469,7 +469,7 @@
         },
         "parent": {
           "const": true,
-          "description": "This bind is windowed PER PARENT ROW: it lists the children of one row of another bind (child threads under their parent) or the rows of one user-made section. **The declared edge (a `RowTemplate.children` or a `Section.repeat`) is the mandatory constraint**: every window request on such a bind carries `request.parent`, a host-issued row ref (`WindowParentRef`, taken from the parent row's `parent_refs`) scoped to that edge and its ancestry, which the host checks on every request. `{parent: true}` in a filter is only an optional extra predicate. A parent bind that no edge references is refused."
+          "description": "This bind is windowed PER PARENT ROW: it lists the children of one row of another bind (child chats under their parent) or the rows of one user-made section. **The declared edge (a `RowTemplate.children` or a `Section.repeat`) is the mandatory constraint**: every window request on such a bind carries `request.parent`, a host-issued row ref (`WindowParentRef`, taken from the parent row's `parent_refs`) scoped to that edge and its ancestry, which the host checks on every request. `{parent: true}` in a filter is only an optional extra predicate. A parent bind that no edge references is refused."
         },
         "field_filter": {
           "enum": [
@@ -1454,7 +1454,7 @@
               "id",
               "title"
             ],
-            "description": "A literal row: a fixed shortcut (New thread, Automations). Literal rows carry no viewer data."
+            "description": "A literal row: a fixed shortcut (New chat, Automations). Literal rows carry no viewer data."
           },
           "maxItems": 24
         },
@@ -2580,7 +2580,7 @@
           "required": [
             "route"
           ],
-          "description": "A named parameter of the current route (for example the collection or thread in the address). Typed as a reference or string by the field it filters."
+          "description": "A named parameter of the current route (for example the collection or chat in the address). Typed as a reference or string by the field it filters."
         },
         {
           "type": "object",

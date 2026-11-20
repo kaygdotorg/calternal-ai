@@ -18,9 +18,9 @@
             }
           ],
           "submit": {
-            "id": "create-thread",
-            "title": "New thread",
-            "operation": "threads.create",
+            "id": "create-chat",
+            "title": "New chat",
+            "operation": "chat.create",
             "inputs": {
               "title": {
                 "form": "create",
@@ -68,7 +68,7 @@
           "submit": {
             "id": "send",
             "title": "Send",
-            "operation": "threads.send",
+            "operation": "chat.send",
             "inputs": {
               "item": {
                 "route": "item"
@@ -110,7 +110,7 @@
             }
           ],
           "submit": {
-            "id": "rename-thread",
+            "id": "rename-chat",
             "title": "Rename",
             "operation": "host.item.rename",
             "inputs": {
@@ -127,7 +127,7 @@
         {
           "type": "button",
           "invoke": {
-            "id": "archive-thread",
+            "id": "archive-chat",
             "title": "Archive",
             "operation": "host.item.archive",
             "inputs": {

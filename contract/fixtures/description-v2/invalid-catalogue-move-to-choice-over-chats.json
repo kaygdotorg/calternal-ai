@@ -19,10 +19,20 @@
       }
     },
     {
+      "id": "others",
+      "source": {
+        "type": "list",
+        "kind": "chats"
+      },
+      "fields": [
+        "title"
+      ]
+    },
+    {
       "id": "rows",
       "source": {
         "type": "list",
-        "kind": "threads",
+        "kind": "chats",
         "parent": true
       },
       "fields": [
@@ -43,12 +53,12 @@
                   "title": "Move to",
                   "kind": "choice",
                   "options": {
-                    "bind": "layout"
+                    "bind": "others"
                   }
                 }
               },
               "item": {
-                "row": "id"
+                "context": "item"
               }
             }
           }

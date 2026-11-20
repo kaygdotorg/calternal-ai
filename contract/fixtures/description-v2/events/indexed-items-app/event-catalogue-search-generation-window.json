@@ -1,7 +1,7 @@
 {
   "type": "window",
   "request": {
-    "bind": "thread-search",
+    "bind": "chat-search",
     "from": 0,
     "to": 20,
     "settle_generation": 7

@@ -7,14 +7,14 @@
       "id": "same",
       "source": {
         "type": "list",
-        "kind": "threads"
+        "kind": "chats"
       }
     },
     {
       "id": "same",
       "source": {
         "type": "list",
-        "kind": "threads"
+        "kind": "chats"
       }
     }
   ]

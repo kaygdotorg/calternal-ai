@@ -36,7 +36,7 @@
     },
     "people_custody": {
       "proposal": "The starter's space holds the canonical item. The checked creation and full item-grant exchange for selected accounts remains OPEN.",
-      "blocks": "Adding a person with file access and delivering a people-thread message.",
+      "blocks": "Adding a person with file access and delivering a people-chat message.",
       "cutover": "Keep this path disabled until a later numbered revision pins the grant and file commit."
     },
     "message_deletion": {
@@ -9451,13 +9451,13 @@
     }
   },
   "application_cutover_requirements": {
-    "deployment": "Qualify a fresh install. The owner permits a fresh redeploy of this project's production installation and data at the Threads cutover, with the old Calternal app and its userdata outside scope. Legacy session migration, historical attribution proof, old-file parity and calternal-thread/v1 import are not gates. Every deploy before the cutover is a fresh install: edit schemas in place, with no migration chain, additive-migration requirement or image-pair upgrade check (owner decision, 2026-11-20).",
+    "deployment": "Qualify a fresh install. The owner permits a fresh redeploy of this project's production installation and data at the Chat cutover, with the old Calternal app and its userdata outside scope. Legacy session migration, historical attribution proof, old-file parity and calternal-thread/v1 import are not gates. Every deploy before the cutover is a fresh install: edit schemas in place, with no migration chain, additive-migration requirement or image-pair upgrade check (owner decision, 2026-11-20).",
     "notes": [
       "History browser over revisions created on the fresh install.",
       "Checked linked-user comments.",
       "Collection creation."
     ],
-    "threads": [
+    "chat": [
       "Attach and reopen files through a generic upload and checked item refs.",
       "Provide queued follow-ups through plugin-owned state and jobs.",
       "Qualify the §8 product wake gates and remove native first-party handling at cutover."

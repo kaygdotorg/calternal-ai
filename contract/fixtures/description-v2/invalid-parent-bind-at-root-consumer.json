@@ -7,7 +7,7 @@
       "id": "top",
       "source": {
         "type": "list",
-        "kind": "threads"
+        "kind": "chats"
       },
       "fields": [
         "title"
@@ -25,7 +25,7 @@
       "id": "kids",
       "source": {
         "type": "list",
-        "kind": "threads",
+        "kind": "chats",
         "parent": true
       },
       "fields": [

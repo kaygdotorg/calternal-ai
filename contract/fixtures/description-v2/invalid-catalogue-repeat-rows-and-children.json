@@ -22,7 +22,7 @@
       "id": "rows",
       "source": {
         "type": "list",
-        "kind": "threads",
+        "kind": "chats",
         "parent": true
       },
       "fields": [
@@ -38,7 +38,7 @@
       "id": "top",
       "source": {
         "type": "list",
-        "kind": "threads"
+        "kind": "chats"
       },
       "fields": [
         "title"

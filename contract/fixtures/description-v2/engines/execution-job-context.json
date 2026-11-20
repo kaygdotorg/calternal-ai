@@ -2,10 +2,10 @@
   "definition": "ExecutionJobContext",
   "value": {
     "intent": "saved-intent-1",
-    "item": "thread-1",
+    "item": "chat-1",
     "harness": "checked-harness",
     "contribution_identity": {
-      "package": "calternal-threads-claude-code",
+      "package": "calternal-chat-claude-code",
       "contribution": "claude-code"
     },
     "contribution_input": {

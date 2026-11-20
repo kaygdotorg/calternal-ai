@@ -1,7 +1,7 @@
 {
   "type": "window",
   "request": {
-    "bind": "thread-search",
+    "bind": "chat-search",
     "from": 1,
     "to": 2,
     "anchor": "start",

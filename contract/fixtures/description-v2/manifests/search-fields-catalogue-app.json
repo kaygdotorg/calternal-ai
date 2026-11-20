@@ -43,6 +43,6 @@
   "operations": [],
   "reads": [
     "notes",
-    "threads"
+    "chats"
   ]
 }

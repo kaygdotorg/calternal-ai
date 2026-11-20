@@ -1,13 +1,13 @@
 {
   "api_version": 2,
-  "id": "calternal-threads",
-  "name": "Threads",
+  "id": "calternal-chat",
+  "name": "Chat",
   "version": "0.1.0",
-  "icon": "threads",
+  "icon": "chat",
   "kinds": [
     {
-      "id": "thread-consultations",
-      "icon": "threads",
+      "id": "chat-consultations",
+      "icon": "chat",
       "title_field": "title",
       "storage": {
         "hidden": true
@@ -29,18 +29,18 @@
       }
     },
     {
-      "id": "threads",
-      "icon": "threads",
+      "id": "chats",
+      "icon": "chat",
       "title_field": "title",
       "storage": {
-        "folder": "Threads"
+        "folder": "Chats"
       },
       "claimed_text": true,
       "searchable": true,
       "file_format": {
-        "id": "calternal-thread",
+        "id": "calternal-chat",
         "version": 2,
-        "default_app": "threads",
+        "default_app": "chat",
         "title_binding": {
           "placement": "utc_date_folder",
           "frontmatter_key": "title"
@@ -100,7 +100,7 @@
       "view_snapshots": [
         {
           "id": "body",
-          "refresh": "threads.refresh"
+          "refresh": "chat.refresh"
         }
       ],
       "schema": {
@@ -161,7 +161,7 @@
   "jobs": [
     {
       "id": "run",
-      "run_operation": "threads.run",
+      "run_operation": "chat.run",
       "replayable": true,
       "execution": true,
       "alarm": true
@@ -173,9 +173,9 @@
       "required_capability": "content.write",
       "risk": "reversible",
       "idempotency": "request_id",
-      "id": "threads.create",
-      "title": "New thread",
-      "creates": "threads",
+      "id": "chat.create",
+      "title": "New chat",
+      "creates": "chats",
       "methods": [
         "item_create",
         "item_view_context",
@@ -215,10 +215,10 @@
       "required_capability": "plugins.use",
       "risk": "external",
       "idempotency": "request_id",
-      "id": "threads.send",
+      "id": "chat.send",
       "title": "Send",
       "target": {
-        "kind": "threads",
+        "kind": "chats",
         "field": "item"
       },
       "methods": [
@@ -267,10 +267,10 @@
       "required_capability": "plugins.use",
       "risk": "external",
       "idempotency": "request_id",
-      "id": "threads.run",
+      "id": "chat.run",
       "title": "Run agent",
       "target": {
-        "kind": "threads",
+        "kind": "chats",
         "field": "item"
       },
       "methods": [
@@ -320,10 +320,10 @@
       "required_capability": "plugins.use",
       "risk": "external",
       "idempotency": "request_id",
-      "id": "threads.arm",
+      "id": "chat.arm",
       "title": "Schedule a run",
       "target": {
-        "kind": "threads",
+        "kind": "chats",
         "field": "item"
       },
       "methods": [
@@ -378,10 +378,10 @@
       "required_capability": "space.read",
       "risk": "reversible",
       "idempotency": "request_id",
-      "id": "threads.state",
-      "title": "Update my thread preferences",
+      "id": "chat.state",
+      "title": "Update my chat preferences",
       "target": {
-        "kind": "threads",
+        "kind": "chats",
         "field": "item"
       },
       "methods": [
@@ -426,10 +426,10 @@
       "required_capability": "space.read",
       "risk": "read",
       "idempotency": "read_only",
-      "id": "threads.refresh",
-      "title": "Read thread page",
+      "id": "chat.refresh",
+      "title": "Read chat page",
       "target": {
-        "kind": "threads",
+        "kind": "chats",
         "field": "item"
       },
       "methods": [
@@ -448,10 +448,10 @@
       "required_capability": "space.read",
       "risk": "read",
       "idempotency": "read_only",
-      "id": "threads.message",
+      "id": "chat.message",
       "title": "Read message",
       "target": {
-        "kind": "threads",
+        "kind": "chats",
         "field": "item"
       },
       "methods": [
@@ -627,14 +627,14 @@
     }
   ],
   "reads": [
-    "thread-consultations",
-    "threads"
+    "chat-consultations",
+    "chats"
   ],
   "apps": [
     {
-      "id": "threads",
-      "name": "Threads",
-      "icon": "threads",
+      "id": "chat",
+      "name": "Chat",
+      "icon": "chat",
       "extension_points": [
         {
           "id": "harnesses",
@@ -677,8 +677,8 @@
       "description": {
         "id": "app",
         "template": {
-          "path": "app-0-618d557179f338801ea36b32f7726df2b5138125a2e34559f79232ad049d3c31.json",
-          "sha256": "618d557179f338801ea36b32f7726df2b5138125a2e34559f79232ad049d3c31"
+          "path": "app-0-78d72d26aeba821ff5717e0138c34f1905f2fcc69cd5721fd4722c439037ef7c.json",
+          "sha256": "78d72d26aeba821ff5717e0138c34f1905f2fcc69cd5721fd4722c439037ef7c"
         }
       }
     }

@@ -2,7 +2,7 @@
   "audience": "member",
   "bind": "notes",
   "state": "empty",
-  "result_version": "rv-thread-search",
+  "result_version": "rv-chat-search",
   "offset": 0,
   "window_ref": "w-notes-empty",
   "rows": [],
