@@ -4,6 +4,8 @@ use std::{collections::BTreeSet, sync::OnceLock};
 use serde::{Deserialize, Deserializer, de};
 use serde_json::Value;
 mod create;
+mod interfaces;
+pub use interfaces::ContributionInterface;
 
 const MANIFEST: &str = include_str!("../../../contract/plugin-manifest-v2.schema.json");
 const V1: &str = include_str!("../../../contract/plugin-manifest-v1.schema.json");
@@ -22,7 +24,7 @@ impl ManifestV2 {
         if bytes.len() > crate::MAX_MANIFEST_BYTES {
             return Err("manifest.json exceeds 256 KiB".into());
         }
-        let manifest = strict_json(bytes).map_err(|e| format!("manifest.json: {e}"))?;
+        let mut manifest = strict_json(bytes).map_err(|e| format!("manifest.json: {e}"))?;
         unsupported(&manifest)?;
         static VALIDATOR: OnceLock<jsonschema::Validator> = OnceLock::new();
         let validator = VALIDATOR.get_or_init(|| {
@@ -30,6 +32,7 @@ impl ManifestV2 {
         });
         validate(validator, &manifest, "v2 manifest")?;
         check_display_labels(&manifest)?;
+        interfaces::check_declarations(&mut manifest)?;
         check_declarations(&manifest)?;
         Ok(Self(manifest))
     }

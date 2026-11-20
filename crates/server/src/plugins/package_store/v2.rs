@@ -159,6 +159,14 @@ fn pins(manifest: &Value) -> impl Iterator<Item = (Asset, &Value)> {
                 .flatten()
                 .map(|provider| (Asset::Worker, &provider["adapter"])),
         )
+        .chain(
+            manifest["contributions"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|contribution| contribution["harness"].get("entry"))
+                .map(|entry| (Asset::Worker, entry)),
+        )
 }
 
 fn pin_path(pin: &Value) -> &str {
@@ -275,12 +283,16 @@ pub(in crate::plugins) fn validate_v2_archive(bytes: &[u8]) -> Result<Arc<Manife
     Ok(Arc::new(archive.validate()?))
 }
 
-pub(in crate::plugins) fn commit_v2(
+/// Insert the checked archive and prepare its catalogue binding at the returned
+/// monotonic revision. A failed preparation rolls back the row. Installation
+/// holds this transaction across preparation to bind the exact durable revision.
+pub(in crate::plugins) fn commit_v2<T>(
     appdata: &Path,
     id: &str,
     archive: &[u8],
     approved: &str,
-) -> Result<(), String> {
+    prepare: impl FnOnce(u32) -> Result<T, String>,
+) -> Result<T, String> {
     if super::super::sha256_hex(archive) != approved {
         return Err("The approval checksum does not match. Review the exact package again.".into());
     }
@@ -296,17 +308,20 @@ pub(in crate::plugins) fn commit_v2(
     if count >= MAX_PACKAGES as i64 {
         return Err("the installation has reached its 128-plugin limit".into());
     }
-    let inserted = tx
-        .execute(
+    let revision = tx
+        .query_row(
             "INSERT INTO installed_plugins (id, archive, checksum, default_enabled, approval)
-         VALUES (?1, ?2, ?3, 0, 0) ON CONFLICT (id) DO NOTHING",
+         VALUES (?1, ?2, ?3, 0, 0) ON CONFLICT (id) DO NOTHING RETURNING revision",
             params![id, archive, approved],
+            |row| row.get(0),
         )
-        .map_err(reason)?;
-    if inserted != 1 {
-        return Err("plugin is already installed".into());
-    }
-    tx.commit().map_err(reason)
+        .map_err(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => "plugin is already installed".into(),
+            other => reason(other),
+        })?;
+    let prepared = prepare(revision)?;
+    tx.commit().map_err(reason)?;
+    Ok(prepared)
 }
 
 #[cfg(test)]

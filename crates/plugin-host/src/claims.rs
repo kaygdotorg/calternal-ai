@@ -119,7 +119,6 @@ impl PackageClaims {
         }
         let mut claims = Self::package(package);
         for (key, category) in [
-            ("apps", Namespace),
             ("kinds", Kind),
             ("operations", Operation),
             ("providers", Provider),
@@ -270,7 +269,8 @@ impl DeclarationIndex {
         self.register(&manifest.id, PackageClaims::v1(manifest))
     }
 
-    /// Register a validated v2 declaration atomically, including package and app namespaces.
+    /// Register a validated v2 declaration atomically, including its package
+    /// namespace and any operation namespace prefixes it uses.
     pub fn register_v2(&mut self, manifest: &ManifestV2) -> Result<(), String> {
         self.register(manifest.id(), PackageClaims::v2(manifest))
     }

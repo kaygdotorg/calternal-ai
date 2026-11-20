@@ -18,7 +18,7 @@ pub mod space_channel;
 mod strict_json;
 pub use claims::{DeclarationIndex, PackageClaims};
 pub use registry::*;
-pub use registry_v2::ManifestV2;
+pub use registry_v2::{ContributionInterface, ManifestV2};
 pub use runtime::*;
 
 /// Safe boundary failure; never includes plugin input or secret values.
