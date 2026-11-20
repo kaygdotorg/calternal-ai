@@ -282,6 +282,47 @@ Stop lives in that run's inbox, so it cannot reach a newer run.
   owner will see: the install sentence and the derived "can send data out"
   word, so an author learns the cost of a grant before shipping.
 
+### 4.9 Drawing, as tested by the spike
+
+The [drawing spike](https://git.kayg.org/kayg/calternal-ai/src/commit/bd880283/docs/reviews/drawing-spike-2026-11-21.md) (`bd880283`) drew Reading List (sidebar, list, board, the Add form,
+Mark read) and the Chat sidebar and transcript (own side, authors, agent
+mark, grouping, date divider, unread line, a quote, edited, a deleted
+record, paging, composer, actions) from the same declarations, with a
+Svelte renderer and a SwiftUI renderer in the iPhone Simulator. About 22
+lines of declaration for both apps; about 650 lines of generic renderer
+per platform; no app-specific drawing code. It holds with these changes,
+which are now part of the design:
+
+**Declarations**
+
+| # | Change |
+| --- | --- |
+| D1 | A kind's row action carries a title, icon, `when` and placement: `actions: { done: { set: { read: true }, title: "Mark read", icon: "check", when: { read: false }, place: "swipe" } }`. These are interface declarations over the kind's write grant, not operations. |
+| D2 | A kind's create form has a title: `create: { title: "Add link", inputs: ["url", "title"] }`. |
+| D3 | Fields carry a label: `url().label("Link")` (and later translations). |
+| D4 | Fields with few values name them: `bool(false).values({ false: "To read", true: "Read" })`; a `choice([...])` field does the same for other types. Boards and group headings show these names. |
+| D5 | A collection may `group` by a field; a board needs it. |
+| D6 | **A quote is a field of the record** (`quote: link()` to the quoted record's anchor), drawn by the record look's `quote` place, not a link at the start of the body. |
+| D7 | An action may set `defaults` (a form's starting values, such as the record's text for Edit) beside fixed `inputs`. |
+| D8 | **Choosing an agent's harness is a pick among the parts filling a slot** (`pick: { harness: "calternal-chat-ai/harness" }`), never a typed field. |
+| D9 | **A composer part says which of its values feeds each input of the operation it calls**: `inputs: { text: "draft", quote: "quote" }`. The target is filled by the host (§4.3). |
+| D10 | Every collection a package declares has an `id`; sidebars link collections by `<plugin>/<id>`. |
+| D11 | A look place may list fallbacks, the first non-empty wins: `title: ["title", "people"]` (a one-to-one chat has no title). A list, not an expression. |
+
+**Wire format and generic components**
+
+| # | Change |
+| --- | --- |
+| W1 | Values carry their type: an instant is `{ "at": "…Z" }`, a person list is `{ "people": [{ id, name, me }] }`; other values are JSON scalars. The client formats times in the viewer's zone. |
+| W2 | A window carries exactly the values the looks and their `when` conditions name, keyed by those names (including derived ones such as `site(url)`, `me.unread`), plus the collection's `group` field. This is how a list draws while its plugin sleeps. |
+| W3 | A records window carries the viewer's position, the unread count and pages with a cursor for paging from the bottom. |
+| W4 | **The host sends quoted records already resolved for the viewer** (`refs: { anchor: { author, excerpt } }`, or `{ gone: true }` for a deleted one), as plain text. The client never fetches another person's record to draw a quote. |
+| W5 | **A stamp carries the run's display name and icon** (`run: { name: "Claude", icon: "claude" }`), so "Claude for you" draws without the plugin. |
+| W6 | The viewer's picks and a slot's eligible parts are sent as values, for `pick:` inputs. |
+| W7 | **A closed icon list**, mapped per platform (the web icon set and SF Symbols); a declaration naming an unknown icon fails at install. |
+| W8 | A mention in a body is a Markdown link with the `person:` scheme (`[@Ana](person:p-ana)`); the composer inserts it from its people picker, and the renderer draws it as a mention. |
+| W9 | **Order in declarations is meaningful** (field order is form order, action order is menu order). The wire format uses arrays for ordered things, because Swift's JSON decoders lose object key order. |
+
 ## 5. Security
 
 One threat table for the whole design. The section files give the detail.
@@ -344,8 +385,8 @@ not recounted after the fixes.
 | Part | How |
 | --- | --- |
 | Kind | `reading`: `url`, `title`, `read`. Row: title and site; card: title, site, image. |
-| Writes | No operations. The kind's write grant lets the interface call the host's create (a form derived from the kind) and set (`{ set: { read: true } }` as a swipe). |
-| Sidebar | Collections "Unread" (`{ kind: reading, where: { read: false } }`) and "All". |
+| Writes | No operations. The kind's write grant lets the interface call the host's create and set: a create form titled "Add link" (D2) and a "Mark read" swipe shown only on unread items (D1). Fields carry labels ("Link", D3). |
+| Sidebar | Collections "Unread" (`{ kind: reading, where: { read: false } }`) and "All", which can be drawn as a board grouped by `read` with columns "To read" and "Read" (D4, D5). Drawn on the web and in the iPhone Simulator by the drawing spike. |
 | Plugin | `calternal-reading-list`, about 10 lines; no box ever starts. |
 
 ### 6.2 Notes
@@ -364,12 +405,12 @@ not recounted after the fixes.
 
 | Part | Plugin | How |
 | --- | --- | --- |
-| The chat | `calternal-chat` | A record kind in `Chats/<name>/`. Each message is a record; only its author edits (48 hours, Chat's rule) or deletes it for everyone. |
+| The chat | `calternal-chat` | A record kind in `Chats/<name>/`. Each message is a record; only its author edits (48 hours, Chat's rule; the Edit form starts from the record's text, D7) or deletes it for everyone. A one-to-one chat's row falls back from its title to its people (D11). |
 | Unread, draft, mute | `calternal-chat` | Per-person state; `read.<chat>` drives `unread`; `muted.<chat>` makes the host drop pushes for that person. |
 | Sidebar | `calternal-chat` | Pinned (a strip view of a personal collection), Groups, People, Cals, Harnesses, Archived; each a collection. |
-| Quotes | `calternal-chat` | A link to the record's anchor, drawn with the reader's rights; a deleted message shows nothing wherever it is quoted. |
-| Composer | `calternal-chat-composer` | Fills the composer slot (picked per person); supplies text, quote and mentions as person references; the host fills the target. |
-| Agents | `calternal-chat-ai` + `calternal-chat-claude-code` | Outbound-capable, so they receive only consented writing. `chat-ai` starts the harness the person picked; the host asks other authors and resolves the start after the consent freeze, and only then is the prompt posted. The run's target is the chat; its reads are the selected records. Replies are fenced calls from the run. Only the actor may steer it; anyone in the chat may Stop it. |
+| Quotes | `calternal-chat` | A `quote` field of the record holding the quoted record's anchor (D6). The host sends it resolved for the viewer (W4); a deleted message shows as gone wherever it is quoted. |
+| Composer | `calternal-chat-composer` | Fills the composer slot (picked per person); declares which of its values feeds each input of `send` (D9); inserts mentions as `person:` links (W8); the host fills the target. |
+| Agents | `calternal-chat-ai` + `calternal-chat-claude-code` | Outbound-capable, so they receive only consented writing. `chat-ai` starts the harness the person picked from the parts filling its slot (D8, W6); the host asks other authors and resolves the start after the consent freeze, and only then is the prompt posted. The run's target is the chat; its reads are the selected records. Replies are fenced calls from the run, drawn with the run's name and icon from the stamp ("Claude for Ana", W5). Only the actor may steer it; anyone in the chat may Stop it. |
 | Notifications | `calternal-chat-notify` | Watches changes, notifies mentioned people; picked per space; the host drops pushes for muted recipients. |
 | Restart | host | The log syncs when the server returns; inputs arrive once; Stop reaches the exact run. |
 
@@ -389,7 +430,8 @@ server. Estimates are rough.
 | Step | Goal | Test | Estimate |
 | --- | --- | --- | --- |
 | 0a | **Files spike**: one hardcoded kind; one file written through the host with a stamp in host state; the actor and request in the call signature from the first call; a directory listing as the query | A test against the real binary in test mode writes a file, reads it from disk and reads its stamp | 1 day |
-| 0b | **Drawing spike**, beside 0a: Reading List and a Chat transcript drawn from declarations only, on the web and in the iPhone Simulator | Both render with native controls; the records view keeps its place when a message arrives | 2–3 days |
+| 0b | ~~Drawing spike~~ **Done** ([drawing spike](https://git.kayg.org/kayg/calternal-ai/src/commit/bd880283/docs/reviews/drawing-spike-2026-11-21.md)): Reading List and the Chat sidebar and transcript drew from the same declarations on the web and in the iPhone Simulator, with the changes in §4.9 | — | done |
+| 0c | **Next drawing step**: what the spike did not draw: live updates while open (a record arriving, "1 new"), the consent sheet, the running-work line and Stop, typing, attachments, mention autocomplete, multi-record selection, web swipe and board drag, iPad and Mac layouts, table, gallery and calendar views, Notes' editor page; then a device check of motion, VoiceOver and keyboard | Each drawn from declarations on web and native; motion checked on a real device | 1 week |
 | 1 | Install a real plugin through the one validator; one call route; the index answers a collection | Reading List installs, its Add form creates a file, "Unread" shows it | 2 days |
 | 2 | Questions: live windows, collections as files, grouping, backlinks | Edit a file by hand; the window updates; delete the index and it rebuilds the same | 3–4 days |
 | 3 | Authority: grants, sharing, the one check, the audit trail | A second person and a guest see only what they may, in results, counts and the feed | 3 days |
@@ -412,6 +454,7 @@ server. Estimates are rough.
 | The warm path of the one check (target: no disk reads) | Step 3 |
 | Change-chain depth and machine batching under load | Running-code limits |
 | The kill-the-server run test | Step 6 |
+| Drawing from declarations on web and SwiftUI | **Done** by the drawing spike (§4.9); not yet checked on a device |
 | Whether V8 isolates can be a boundary | Answered for worker threads by #103: no (a worker thread read files outside its permissions); no design depends on it now |
 
 ## 8. Was and is
@@ -436,7 +479,7 @@ Accepted unless you object.
 | --- | --- | --- |
 | A1 | Host state (stamps, grants, consent, approvals, picks, sign-in, work) is a store beside the files, backed up with them, with a read-only Markdown copy for people to read. A file's kind and ID are host-state facts. | It is the class `auth.db`, history and sharing already are (ADR 0062); a file a share or plugin can edit cannot hold who agreed to what. |
 | A2 | Every plugin, official or not, always runs in the sandbox. | First-party plugins are not special. |
-| A3 | A generic records view (authors, times, edits, deletes, quotes) is in the host's catalogue. | Native system controls first; Chat cannot be drawn natively otherwise. |
+| A3 | A generic records view (authors, times, edits, deletes, quotes) is in the host's catalogue. | Native system controls first. **Shown to work** by the drawing spike: one generic records component per platform drew Chat's transcript on the web and in SwiftUI with no chat words. |
 | A4 | GenUI is deleted; agents show forms through declarations, anything richer in a frame. | One description language; closed drawing. |
 | A5 | Agent replies are fenced calls from the run, never posted by a trigger on its log. | Nothing a run writes after Stop takes effect. |
 | A6 | A message to a running agent is stored once; "arrived" follows the program's own acknowledgement where it has one; the rare helper-crash window is accepted. | Matches bb 0.50.0's "kept, not lost or misapplied". |
@@ -725,12 +768,17 @@ harder rights story.
 *Recommendation:* (a) now, (b) later if wanted.
 
 **D7. Collection fields (a status for each thing in a collection)?**
+*What:* the drawing spike drew a board over one kind grouped by that kind's
+own field (Reading List by `read`), which needs nothing new. A board over
+mixed kinds needs a value that belongs to the item's place in the
+collection, not to the item.
 *Example:* you drag a mail to "Done" on the Lisbon board; "Done" cannot be
 written into the mail, which may be someone else's.
 *Options:* (a) fields stored in the collection file beside each member.
 Cost: a join and a larger file. (b) Kind fields only. Cost: no mixed
 boards.
-*Recommendation:* (a), after the drawing spike shows boards are needed.
+*Recommendation:* (a) when a mixed board is built; single-kind boards
+already work with (b).
 
 #### Interface
 
