@@ -8,6 +8,7 @@
 //! bounded by about 256 KiB in the channel plus 256 KiB here.
 
 mod entry_channel;
+mod entry_tail;
 mod erasure;
 mod lifecycle;
 /// Supervision of the isolated v2 package pipe.
@@ -96,6 +97,7 @@ pub struct Runner {
     discards: Mutex<HashMap<Uuid, bool>>,
     parking: tokio::sync::Mutex<()>,
     entry_capacity: tokio::sync::Semaphore,
+    entries: Mutex<HashMap<Uuid, entry_channel::EntrySlot>>,
     uploads: Arc<()>,
     #[cfg(target_os = "linux")]
     space_runtime_root: Option<std::path::PathBuf>,
@@ -112,6 +114,7 @@ impl Runner {
             discards: Mutex::new(HashMap::new()),
             parking: tokio::sync::Mutex::new(()),
             entry_capacity: tokio::sync::Semaphore::new(max_sandboxes as usize),
+            entries: Mutex::new(HashMap::new()),
             uploads: Arc::new(()),
             #[cfg(target_os = "linux")]
             space_runtime_root: None,

@@ -132,6 +132,39 @@ cancel tickets and checked stage removal. The Podman, Firecracker and provider
 sign-in leak checks passed. Six unrelated registry tests fail on the base's
 legacy reading-list fixture, tracked on [contract issue #78](https://git.kayg.org/kayg/calternal-ai/issues/78).
 
+## Restart and dropped connections
+
+The owner requires an enrolled entry to continue locally while its server is
+unreachable. The machine now owns the checked output independently of the
+carrier. A fresh carrier can attach to the retained space, ticket, installed
+package digest and original launch reservation. The server must persist that
+reservation with the exact attempt and machine boot before dispatch. The
+replacement receives only frames after the host's highest contiguous committed
+sequence. The machine accepts a lost-ACK advance through a submitted frame and
+refuses a cursor that skips unsent output or rewinds behind a previous ACK.
+The machine returns an explicit attachment proof and the highest buffered
+sequence before replay. This bounds catch-up even for a quiet entry.
+Carrier credit and commit acknowledgements have separate meanings.
+
+The private in-memory output log lasts for the machine role's lifetime. It
+retains up to 256 KiB of encoded frame material and 256 frames, including space
+for a failure terminal. When the log fills, the existing exec pipe applies
+backpressure. Writes to this log make zero database reads or flushes and count
+one bounded serialization per producer frame. The independent 60-second
+scripted run deadline remains in force. The proposed upper bound on a continuous
+outage and on completed output awaiting acknowledgement is 24 hours.
+[Recovery handoff and watchdog question](https://git.kayg.org/kayg/calternal-ai/issues/78)
+
+The enrolled recovery fixture drops the machine's HTTPS carrier after the first
+frame, keeps the connection down while the same sandbox completes, then proves
+a new signed session for the same boot. It checks refusal of a different launch
+reservation, the exact ordered suffix after a lost acknowledgement, and cleanup.
+On dev-01 the two output-log tests, the enrolled fixture and leak checks passed.
+The fixture supplies the commit cursor directly. The product server-crash and
+pending-Stop gates require Slice 3's durable runtime binding and Stop delivery
+and Slice 1's committed producer cursor. Those dependencies also govern the
+product thread's state and an updater's idle check.
+
 Build and test only under the dev-01 lane directory with
 `export TMPDIR=$HOME/gate-tmp` before `nix develop`. Use the candidate
 release image and `localhost/calternal-ai:31fb41179460` with
