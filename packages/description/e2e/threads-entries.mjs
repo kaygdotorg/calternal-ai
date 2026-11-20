@@ -263,7 +263,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-strip=pins] [dat
   ok((await p.locator("[data-panel=info]").textContent()).includes("Last activity"), "the right panel draws content nodes");
   ok(!/\d{4}-\d{2}-\d{2}T/.test(await p.locator("[data-panel=info]").textContent()) && /\d{1,2}:\d{2}/.test(await p.locator("[data-panel=info]").textContent()), "a time in the panel is shown in local time, not as stored (UTC)", (await p.locator("[data-panel=info]").textContent()).replace(/\s+/g, " ").slice(0, 80));
   ok((await p.locator("[data-tree] [data-row-id] button.row [data-mark=text]").first().evaluate((e) => e.getBoundingClientRect().width / e.closest("button.row").getBoundingClientRect().width)) <= 0.21, "the time takes about a fifth of a row at most, so the title keeps its room");
-  await p.getByRole("button", { name: "Mute this thread" }).click();
+  await p.getByRole("button", { name: "Mute this chat" }).click();
   await p.waitForSelector("[data-dialog=choose]", { timeout: 5000 });
   const labels = await p.locator("[data-dialog=choose] button[role=option]").allTextContents();
   ok(labels.length === 5 && labels[0] === "1 hour", "mute offers the description's literal choices", labels.join("|"));
@@ -278,7 +278,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-strip=pins] [dat
   const card = p.locator("[data-entry-request]").first();
   ok((await card.textContent()).includes("asks Codex to read your messages 1 to 3") && /Without an answer in \d+ s/.test(await card.textContent()), "the person whose messages are selected sees the request with a countdown");
   const btns = await card.locator("button").allTextContents();
-  ok(btns.join("|") === "Allow once|Always allow in this thread|Decline", "only the decisions the host offered", btns.join("|"));
+  ok(btns.join("|") === "Allow once|Always allow in this chat|Decline", "only the decisions the host offered", btns.join("|"));
   await snap(p, "next-desktop-9-consent");
   await card.getByRole("button", { name: "Decline" }).click(); await p.waitForTimeout(500);
   const rr = (await log(p, "l.route === 'request.resolve'"))[0]?.body;

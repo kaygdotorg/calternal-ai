@@ -146,7 +146,7 @@ export function threadsHost(o: ThreadsHostOptions) {
       view: { content: { type: "stack", children: es } }, quotes, entry_controls: ctrls,
       access: o.scenario === "lapsed" ? { state: "read_only", reason: "lapsed" } : { state: "read_write" },
       reading: { unread: left, mentions: left > 0 ? 1 : 0, ...(left > 0 ? { first_unread: firstUnread, next_mention: A(8) } : {}), version: `rd-${left}` },
-      ...(o.scenario === "consent" ? { requests: [{ anchor: A(8), card: { request_ref: "rq-1", title: "Ada asks Codex to read your messages 1 to 3", detail: "Codex would read the three messages you wrote in this thread.", material: [], state: "open", card_context: "ctx-card", expires_at: new Date(Date.now() + 60000).toISOString(), actions: [{ decision: "approve", lifetimes: ["once", "this_item"] }, { decision: "deny" }] } }] } : {}),
+      ...(o.scenario === "consent" ? { requests: [{ anchor: A(8), card: { request_ref: "rq-1", title: "Ada asks Codex to read your messages 1 to 3", detail: "Codex would read the three messages you wrote in this chat.", material: [], state: "open", card_context: "ctx-card", expires_at: new Date(Date.now() + 60000).toISOString(), actions: [{ decision: "approve", lifetimes: ["once", "this_item"] }, { decision: "deny" }] } }] } : {}),
       activity: [{ label: "Codex is working", kind: "working", expires_at: new Date(Date.now() + 120000).toISOString() }] };
   }
   // ---- scale: a thread of `o.messages` entries served as the contract does, a bounded newest page and a host-issued cursor for each older one (`?scenario=scale&messages=5000`).

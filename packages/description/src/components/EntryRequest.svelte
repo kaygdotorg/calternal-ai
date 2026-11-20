@@ -14,7 +14,7 @@
     const tick = () => { left = Math.max(0, Math.ceil((new Date(card.expires_at!).getTime() - Date.now()) / 1000)); }; tick();
     const h = setInterval(tick, 1000); return () => clearInterval(h);
   });
-  const label = (d: string, l?: string) => d === "deny" ? "Decline" : l === "this_item" ? "Always allow in this thread" : "Allow once";
+  const label = (d: string, l?: string) => d === "deny" ? "Decline" : l === "this_item" ? "Always allow in this chat" : "Allow once";
   async function decide(decision: "approve" | "deny", lifetime?: string) {
     busy = true; message = null;
     try {

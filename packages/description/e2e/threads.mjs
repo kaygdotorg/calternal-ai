@@ -58,7 +58,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   ok(plc?.harness === "harness-codex" && !!plc.activation_id, "the placement request carries the picked harness's typed ref and the activation id");
   ok((await log(p, "l.route === 'entry_composer.draft'")).length >= 1, "the draft was kept for the person through the host");
 }
-for (const [scenario, text] of [["empty", /No threads yet/], ["error", /Threads could not load/]]) {
+for (const [scenario, text] of [["empty", /No chats yet/], ["error", /Chats could not load/]]) {
   const { page: p } = await go(`scenario=${scenario}`, DESK);
   await p.waitForFunction((t) => new RegExp(t).test(document.body.innerText), text.source, { timeout: 15000 }).then(() => ok(true, `the ${scenario} state of the list is drawn: ${text.source}`), () => ok(false, `the ${scenario} state of the list is drawn: ${text.source}`));
   await snap(p, `desktop-state-${scenario}`);

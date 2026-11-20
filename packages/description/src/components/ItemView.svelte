@@ -271,18 +271,18 @@
   // ---- live activity: a row per entry, dropped locally at its expiry
   let now = $state(Date.now()); const tickH = setInterval(() => { now = Date.now(); }, 1000); onDestroy(() => clearInterval(tickH));
   const activity = $derived((reply?.activity ?? []).filter((a) => new Date(a.expires_at).getTime() > now));
-  const reasonText = { lapsed: "You no longer share a group with everyone in this thread. The history stays, but nobody can write in it.", archived: "This thread is archived. Unarchive it to write in it.", trashed: "This thread is in the Trash.", grant: "You can read this thread but not write in it." } as const;
+  const reasonText = { lapsed: "You no longer share a group with everyone in this chat. The history stays, but nobody can write in it.", archived: "This chat is archived. Unarchive it to write in it.", trashed: "This chat is in the Trash.", grant: "You can read this chat but not write in it." } as const;
 </script>
 
 <section class="iv" data-host-component="item-view" data-item={item} data-state={failedOpen ? "error" : reply?.state ?? (item ? "loading" : "idle")} aria-label="Conversation">
-  {#if !item}<p class="msg" data-view-state="idle">Select a thread, or start one.</p>
-  {:else if failedOpen}<p class="msg bad" role="alert" data-view-state="error">This thread could not be opened. It will be tried again when it changes.</p>
-  {:else if reconnecting && !reply?.view}<p class="msg" role="status" data-view-state="reconnecting"><Spinner /> Reconnecting… your agent keeps running. The thread catches up when the connection is back.</p>
-  {:else if reply?.state === "unavailable"}<p class="msg" data-view-state="unavailable">This thread is not available to you.</p>
-  {:else if !reply || reply.state === "loading" || !reply.view}<p class="msg" role="status" data-view-state="loading">Opening the thread…</p>
+  {#if !item}<p class="msg" data-view-state="idle">Select a chat, or start one.</p>
+  {:else if failedOpen}<p class="msg bad" role="alert" data-view-state="error">This chat could not be opened. It will be tried again when it changes.</p>
+  {:else if reconnecting && !reply?.view}<p class="msg" role="status" data-view-state="reconnecting"><Spinner /> Reconnecting… your agent keeps running. The chat catches up when the connection is back.</p>
+  {:else if reply?.state === "unavailable"}<p class="msg" data-view-state="unavailable">This chat is not available to you.</p>
+  {:else if !reply || reply.state === "loading" || !reply.view}<p class="msg" role="status" data-view-state="loading">Opening the chat…</p>
   {:else}
-    {#if reconnecting}<p class="note rc" role="status" data-view-state="reconnecting"><Spinner /> Reconnecting… your agent keeps running. The thread catches up when the connection is back.</p>{/if}
-    {#if reply.state === "stale"}<p class="note" data-view-state="stale">Showing an earlier version. It will update when the thread wakes.</p>{/if}
+    {#if reconnecting}<p class="note rc" role="status" data-view-state="reconnecting"><Spinner /> Reconnecting… your agent keeps running. The chat catches up when the connection is back.</p>{/if}
+    {#if reply.state === "stale"}<p class="note" data-view-state="stale">Showing an earlier version. It will update when the chat wakes.</p>{/if}
     {#if st.readOnly}<p class="note ro" role="status" data-access="read_only" data-reason={st.readOnly.reason}>{reasonText[st.readOnly.reason]}</p>{/if}
     {#if st.selecting}
       <div class="bar" data-selection-bar role="toolbar" aria-label="Select messages">
