@@ -724,6 +724,26 @@ bodies, with separate file placement and subscriber observations. This
 fixture exercises native Notes reads and saves before any v2 window has
 requested a sidecar. It measures the inherited 40 ms p95 save gate.
 
+| First run pair | Release save p50 / p95 (ms) | Candidate save p50 / p95 (ms) | Release / candidate native first-page p95 (ms) |
+| ---: | ---: | ---: | ---: |
+| 0 | 23.161 / 34.192 | 27.957 / 36.769 | 1.609 / 1.563 |
+| 1 | 28.913 / 47.321 | 28.470 / 37.179 | 1.600 / 1.435 |
+| 2 | 23.508 / 38.449 | 27.375 / 47.473 | 1.606 / 1.456 |
+
+Each release breached the save ceiling in one arm, in different pairs.
+Across 300 saves per release, 16 baseline and 17 candidate responses
+exceeded 40 ms. The first-page p95 improved in all three pairs. The
+runner completed all arms with zero file-placement breaches. The plain
+matrix's exit status of 2 indicates that the wider performance suite
+requires separate release commit timing, job and idle probes.
+
+The candidate's median save was higher in pairs 0 and 2. Those pairs
+also saw higher candidate medians in save-to-subscriber delivery and
+acknowledgment-to-placement. The raw samples therefore show differences
+on both sides of the acknowledgment. This comparison has no per-stage
+timing and does not isolate any extra worker scheduling from storage or
+host variation. The evenly alternating repeat uses four warm pairs.
+
 ## Review gate
 
 The background publication candidate is based on `origin/dev` at
