@@ -1,9 +1,9 @@
 //! Checked create and edit through the production content writer.
 use calternal_content::{
-    CheckedItemBody, CheckedItemPlacement, Content, FileFormat, Placement, Request,
+    CheckedItemBody, CheckedItemPlacement, Content, DiscoveryWrite, FileFormat, Placement, Request,
 };
 use calternal_roots::Roots;
-use calternal_types::{AccountId, RevisionRef, SpaceId};
+use calternal_types::{AccountId, ItemRef, RevisionRef, SpaceId};
 use serde_json::json;
 use std::time::Duration;
 
@@ -55,10 +55,11 @@ fn checked_rename_and_append_keep_exact_revisions_and_placement() {
             CheckedItemPlacement::Create {
                 folders: &["Example".into()],
                 name: "Conversation.md",
+                reference: &ItemRef(uuid::Uuid::new_v4().to_string()),
             },
             json!({"title":"Original title"}),
             CheckedItemBody::Replace(b"original"),
-            true,
+            DiscoveryWrite::Protect,
             request(id),
             || Ok(()),
             |_| Ok(()),
@@ -85,7 +86,7 @@ fn checked_rename_and_append_keep_exact_revisions_and_placement() {
         },
         json!({"title":"Forbidden"}),
         CheckedItemBody::Replace(b"forbidden"),
-        true,
+        DiscoveryWrite::Protect,
         request("refused"),
         || Err(calternal_types::Error::forbidden("writer revoked")),
         |_| Ok(()),
@@ -117,7 +118,7 @@ fn checked_rename_and_append_keep_exact_revisions_and_placement() {
             },
             json!({"title":"New title"}),
             CheckedItemBody::Replace(b"replacement"),
-            true,
+            DiscoveryWrite::Protect,
             request("save"),
             || Ok(()),
             |_| Ok(()),
@@ -139,7 +140,7 @@ fn checked_rename_and_append_keep_exact_revisions_and_placement() {
             CheckedItemPlacement::KeepFolder { name: None },
             json!({}),
             CheckedItemBody::Append(b" stale"),
-            true,
+            DiscoveryWrite::Protect,
             request("stale"),
             || Ok(()),
             |_| Ok(()),
@@ -157,7 +158,7 @@ fn checked_rename_and_append_keep_exact_revisions_and_placement() {
             CheckedItemPlacement::KeepFolder { name: None },
             json!({}),
             CheckedItemBody::Append(b" append"),
-            false,
+            DiscoveryWrite::Unmanaged,
             request("append"),
             || Ok(()),
             |_| Ok(()),

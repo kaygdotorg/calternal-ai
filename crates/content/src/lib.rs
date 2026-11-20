@@ -54,7 +54,7 @@ mod rooms;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
 pub use rooms::{LiveEdit, LiveTextEdit, RoomSnapshot};
 mod item_write;
-pub use item_write::{CheckedItemBody, CheckedItemPlacement};
+pub use item_write::{CheckedItemBody, CheckedItemPlacement, DiscoveryWrite};
 mod item_head;
 mod write_placed;
 pub use item_head::{ItemHead, ItemHeadReader};

@@ -91,6 +91,7 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
             (7, crate::trash_job::SCHEMA),
             (8, crate::rename_job::SCHEMA),
             (9, crate::item_write::SCHEMA),
+            (10, crate::item_write::AUTHORSHIP_SCHEMA),
         ],
     )
     .with_compatible_creation(8);

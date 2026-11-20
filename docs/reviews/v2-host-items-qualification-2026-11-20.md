@@ -1,10 +1,11 @@
 # Plugin API v2 item writer qualification
 
 Lane [#95](https://git.kayg.org/kayg/calternal-ai/issues/95) covers Slice 2.
-The host base is draft 14.34 at `b4d0f20d`. The Threads spike at
-`6125ad96` supplies the exchange sequence. The revised contract keeps
-unproven opaque writes consent-only and records separate begin and final
-save identities for replay.
+The host base is draft 14.35 at `36d49713`. The Threads spike at
+`6125ad96` supplies the exchange sequence. The owning package's checked
+invocation or attempt attributes a write to the acting person.
+Unproven writes set protection. Staged receipts retain separate begin
+and final-save identities.
 
 ## Implementation order
 
@@ -130,10 +131,48 @@ tests passed in the same run.
   schema-9 candidate. The bidirectional release proof covers that
   creation path alongside existing-space migration.
 
-The checked writer and page reader are storage entry points for this
-lane's v2 item broker. Slices 3 and 4 supply execution authority. Slices 5
-and 8 supply read delivery and projection qualification. The broker,
-created outcome, discovery read fences and staged save are still pending.
+The release proof passed for `e74c765e` on dev-01 using
+`localhost/calternal-ai:31fb41179460` and candidate image
+`localhost/calternal-ai-items:e74c765e5ec1`. Podman, Firecracker and
+provider sign-in leak checks passed. The proof lives at
+`/home/claude/Developer/lanes/v2-host-items/upgrade-proof-e74c765e5ec1.json`.
+
+## Broker qualification on draft 14.35
+
+The dev-01 item engine test exercised the checked create, head, range,
+save and append exchanges. It used the live content writer with a pinned
+manifest fixture. It verified exact create and append replay, rejected a
+foreign invocation's created claim, and refused delivery after revoke.
+The package kept creator-only discovery through checked writes. A write
+without the owning invocation then fenced direct head reads and delivery
+of an already pinned revision. The broker staged and reconstructed
+2 MiB after head advance and replayed both committed stage identities.
+
+The item response uses a durable opaque ref minted with the create. The
+portable locator carries the independent item UUID. Ref lookup takes one
+indexed space query. The head reader takes one query with an indexed
+version probe for size and a separate lookup for the opaque ref.
+Metadata checks are bounded by the declaration's field limit. A range
+uses one indexed receipt-free version query and up to one BLOB read.
+Attempt discovery adds indexed creator/protection checks at admission
+and delivery. Reads make no flushes.
+
+Staging uses provisional space memory. The limits are two handles per
+actor, four handles and 8 MiB per package, and eight handles and 16 MiB
+per space. Chunks and seal perform no userdata or database writes.
+Seal checks the SHA-256 digest once. The existing writer commits the
+reference or attribution, version and replay data in its ordinary FULL
+content transaction. The inherited journal and placement flushes still
+apply. The author-context evidence row follows its revision's lifetime.
+
+Slices 3 and 4 supply attempt admission and the carrier adapter. Slice 6
+plumbs created outcomes through activation and owns the shared stage
+pool and its idle reclamation. Slices 5 and 8 supply transport egress and
+list/search projection qualification. The new callback test covers the
+broker and writer boundary. The enrolled Threads path, pre-ranking
+discovery filters, scheduler cleanup and the locked performance gate
+still require qualification. Draft 14.36 adds source-byte evidence and is
+required before enabling discovery through the live product path.
 
 ## Simplification opportunities
 
