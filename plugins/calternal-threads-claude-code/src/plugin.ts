@@ -20,6 +20,8 @@ const metadata = {
     operation: "threads-claude-code.run",
     harness: {
       image: `sha256:${sha256}`,
+      image_source: "registry.example.invalid/calternal/threads-claude-code-fixture",
+      execution_network: "none",
       entry: { path: "fixture-entry.mjs", sha256 },
       name: "Claude Code", login_directories: [".claude"],
     },

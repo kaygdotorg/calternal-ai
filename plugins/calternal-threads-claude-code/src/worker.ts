@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { checkedFrame, checkedText, type HarnessInput, type HarnessOutput } from "@calternal/threads/harnesses-v1";
+import { encodeContributionFrame } from "../../calternal-threads/generated/contribution-frame.mjs";
+import { checkedText, type HarnessInput, type HarnessOutput } from "@calternal/threads/harnesses-v1";
 import type { Context } from "../../calternal-threads/src/interface.ts";
 
 type HarnessContext = Pick<Context, "call" | "author"> & {
@@ -20,7 +21,8 @@ async function run({ text }: HarnessInput, ctx: HarnessContext): Promise<Harness
     metadata: { title }, body: Buffer.from(log).toString("base64"),
   });
   const reply = checkedText(await ctx.claude(prompt));
-  const output = checkedFrame({ text: reply, log: saved.locator });
+  const output = { text: reply, log: saved.locator };
+  encodeContributionFrame({ seq: 1, kind: "output", data: output });
   await ctx.call("item_append", {
     item: saved.item, expected_revision: saved.revision, request_id: key("reply"),
     bytes: Buffer.from(`\n## Reply\n\n${reply}\n`).toString("base64"),

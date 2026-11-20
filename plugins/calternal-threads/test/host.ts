@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { AlarmDelivery, AlarmSet, ExecutionJobContext, ExecutionJobStart, ExecutionStatus,
   ExecutionStopRequest, ExecutionStopResult, HostWorkerInvokeFrame, ItemCreate, ItemSave, ItemViewPublish } from "../generated/wire.js";
+import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { authorContext } from "../generated/author-context.mjs";
 import type { ManifestV2 } from "../generated/author.js";
 import type { Context, RunInput } from "../src/interface.ts";
@@ -38,14 +39,14 @@ const exchanges = {
 } as const;
 const trace: [name: string, value: unknown][] = [];
 
-/** Check the fake's revision 14.31 exchanges against the pinned schemas. */
+/** Check the fake's revision 14.32 exchanges against the pinned schemas. */
 export function checkTrace() {
   const check = fileURLToPath(new URL("../check-shapes.py", import.meta.url));
   const contract = fileURLToPath(new URL("../.build/contract/", import.meta.url));
   execFileSync("python3", ["-B", check, contract], { input: JSON.stringify(trace), stdio: ["pipe", "inherit", "inherit"] });
 }
 
-type File = { owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; revision: string; path?: string; archived: boolean; title: string };
+type File = { creator: string; discovery: "creator_only" | "consent_only"; owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; revision: string; path?: string; archived: boolean; title: string };
 type Job = {
   context: ExecutionJobContext;
   input: RunInput;
@@ -59,6 +60,10 @@ type Owner = File["owner"];
 const actor = "019a0000-0000-7000-8000-000000000001";
 const space = "019a0000-0000-7000-8000-000000000010";
 const now = "2026-11-20T12:00:00Z";
+const logicalHarness = {
+  package: contribution.manifest.id,
+  contribution: contribution.manifest.contributions![0].id,
+};
 const checkedPeople = [
   actor, "019a0000-0000-7000-8000-000000000002", "019a0000-0000-7000-8000-000000000003",
 ];
@@ -94,11 +99,22 @@ export class FakeHost {
     assert.deepEqual(operation?.output_schema, point.output_schema);
     trace.push(
       ["RendererExtensionChoiceRequest", { type: "extension_choices", app: app.id, point: point.id, activation_context: "ctx", slot: "harness" }],
-      ["ExtensionChoicePage", { options: [{ ref: "option", label: selected.harness!.name, harness_ref: this.selected.harness }] }],
+      ["ExtensionChoicePage", { options: [{ ref: "option", label: selected.harness!.name, harness_ref: this.selected.harness, contribution_identity: logicalHarness }] }],
       ["ChoiceOptionsRequest", { type: "choice_options", activation_context: "ctx", slot: "placement", harness: this.selected.harness, activation_id: "send" }],
       ["ChoiceOptions", { host: "execution_placement", options: [{ ref: this.selected.placement, label: "Desk" }], default_ref: this.selected.placement }],
     );
     return { ...this.selected };
+  }
+
+  rotateHarness() {
+    this.selected = { ...this.selected, harness: this.id("checked-harness") };
+    return this.choose();
+  }
+
+  discoverAsAttempt(person: string) {
+    return [...this.files.entries()].filter(([, file]) =>
+      file.owner === "threads" && file.creator === person && file.discovery === "creator_only",
+    ).map(([item]) => item);
   }
 
   peopleContext(person: string, request: string): PeopleContext {
@@ -128,7 +144,7 @@ export class FakeHost {
     const { item, scope, consent } = input;
     const invitation = {
       item, scope, consent: [...consent], revision: this.files.get(item)!.revision,
-      inviter: person, harness: this.selected.harness,
+      inviter: person, contribution_identity: logicalHarness,
     };
     return {
       ...ctx, invitation,
@@ -167,8 +183,11 @@ export class FakeHost {
     assert.ok(file?.owner === "threads" && !file.archived, "target unavailable");
     const active = [...this.jobs.values()].filter(job => job.context.item === payload.item && ["pending", "running"].includes(job.state));
     assert.ok(active.length < 2, "pending_limit");
+    assert.ok(!Object.hasOwn(payload.input, "item"), "duplicate target field");
     const intent = this.id("job");
-    this.jobs.set(intent, { context: { intent, item: payload.item, harness: payload.harness }, input: payload.input as RunInput, state: "pending", teardown: true });
+    const context = { intent, item: payload.item, harness: payload.harness, contribution_identity: logicalHarness };
+    const input = { ...payload.input as Omit<RunInput, "item">, item: payload.item };
+    this.jobs.set(intent, { context, input, state: "pending", teardown: true });
     return { job_id: intent };
   }
 
@@ -179,7 +198,7 @@ export class FakeHost {
       assert.ok((declared.methods as readonly string[]).includes(method), "undeclared method");
       const wire = exchanges[method as keyof typeof exchanges];
       if (wire) trace.push([wire[0], input]);
-      const result = await this.call(owner, request, method, input, job);
+      const result = await this.call(owner, request, method, input, job, actor, operation === "threads.create");
       if (wire) trace.push([wire[1], result]);
       return result as never;
     };
@@ -189,7 +208,7 @@ export class FakeHost {
   }
 
   // This dispatch is the only place that unpacks fixture broker method operands.
-  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0], input: unknown, job?: Job, receiptActor = actor): Promise<unknown> {
+  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0], input: unknown, job?: Job, receiptActor = actor, checkedSoleCreator = false): Promise<unknown> {
     if (job) assert.equal(job.state, "running", "attempt retired");
     const args = input as Record<string, string>;
     const file = this.files.get(args.item);
@@ -215,11 +234,17 @@ export class FakeHost {
             ? [root, `${folders[0]} (${suffix})`, ...folders.slice(1), create.name].join("/")
             : [root, `${suffix} ${create.name}`].join("/");
         }
-        this.files.set(item, { owner, revision, history: new Map([[revision, body]]), path, archived: false, title: String(create.metadata.title) });
+        const discovery = create.attempt_discovery ?? "consent_only";
+        if (discovery === "creator_only") {
+          assert.ok(checkedSoleCreator, "unchecked sole creator");
+          assert.equal(application.manifest.kinds.find(kind => kind.id === create.kind)?.attempt_discovery, "item_policy");
+        }
+        this.files.set(item, { owner, creator: receiptActor, discovery, revision, history: new Map([[revision, body]]),
+          path, archived: false, title: String(create.metadata.title) });
         return { item, revision, locator: { space, id: item }, receipt: requestId };
       });
       case "item_save": {
-        const save = input as ItemSave & { item: string; expected: string; body?: string; patch?: { title?: string } };
+        const save = input as ItemSave;
         const target = writable();
         if (save.expected !== target.revision && !this.receipts.has(`${owner}:${receiptActor}:${method}:${requestId}`)) {
           return { status: 409, code: "head_conflict", current: this.head(save.item, target) };
@@ -230,6 +255,7 @@ export class FakeHost {
           target.history.set(revision, body);
           target.revision = revision;
           if (typeof save.patch?.title === "string") target.title = save.patch.title;
+          if (save.attempt_discovery === "consent_only" || receiptActor !== target.creator) target.discovery = "consent_only";
           return { item: save.item, revision, locator: { space, id: save.item }, receipt: requestId };
         });
       }
@@ -259,7 +285,9 @@ export class FakeHost {
         assert.ok(job?.attempt && job.attempt.execution === args.execution && job.context.harness === args.contribution);
         assert.equal(job.contribution, undefined);
         const call = this.id("call");
-        job.contribution = { call, input: (input as { input: HarnessInput }).input };
+        const payload = (input as { input: HarnessInput }).input;
+        encodeContributionFrame({ call, input: payload });
+        job.contribution = { call, input: payload };
         return { call };
       });
       case "contribution_read": {
@@ -318,9 +346,12 @@ export class FakeHost {
         return { source_revision: target.revision, receipt: requestId };
       }
       case "alarm_set": return commit(() => {
-        assert.equal(args.harness, this.selected.harness);
+        const set = input as AlarmSet;
+        assert.equal(set.harness, this.selected.harness);
+        assert.ok(set.item && this.files.get(set.item)?.owner === "threads");
+        assert.ok(!Object.hasOwn(set.input, "item"), "duplicate target field");
         const alarm = this.id("alarm");
-        this.alarms.set(alarm, input as AlarmSet);
+        this.alarms.set(alarm, set);
         return { alarm, receipt: requestId };
       });
     }
@@ -336,6 +367,7 @@ export class FakeHost {
     const head = [...this.jobs.values()].find(candidate => candidate.context.item === job.context.item && ["pending", "running"].includes(candidate.state));
     assert.equal(head, job, "successor must wait for the head");
     assert.equal(job.state, "pending");
+    assert.equal(job.context.harness, this.selected.harness, "stale claimed harness");
     assert.ok([...this.jobs.values()].every(candidate =>
       candidate.context.item !== job.context.item || candidate.teardown), "successor must wait for teardown");
     const frame: HostWorkerInvokeFrame = {
@@ -392,9 +424,9 @@ export class FakeHost {
   deliver(alarm: string, actual_at: string) {
     const armed = this.alarms.get(alarm);
     if (!armed) return;
-    const { job, at, input, harness, grace_seconds } = armed;
-    assert.ok(harness);
-    const delivery = this.admit({ job, item: (input as RunInput).item, input, harness });
+    const { job, item, at, input, harness, grace_seconds } = armed;
+    assert.ok(item && harness);
+    const delivery = this.admit({ job, item, input, harness });
     this.alarms.delete(alarm);
     return this.run(delivery.job_id, { alarm, scheduled_at: at, actual_at, missed: grace_seconds !== undefined && Date.parse(actual_at) > Date.parse(at) + 1000 * grace_seconds });
   }

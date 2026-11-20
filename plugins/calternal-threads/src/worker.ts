@@ -1,15 +1,24 @@
 import type { ItemViewRead, ItemRef, Timestamp } from "../generated/wire.js";
-import { checkedFrame, checkedText, type HarnessOutput } from "./harnesses-v1.ts";
-import { checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, page, step, messageView, type Thread } from "./format.ts";
+import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
+import { checkedText, type HarnessOutput } from "./harnesses-v1.ts";
+import { agentParticipant, checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, page, step, messageView, type Thread } from "./format.ts";
 import type { Context, RunInput, Send } from "./interface.ts";
 import { inlineBody, kind, publish, read } from "./files.ts";
 
 export { peopleHandlers } from "./people.ts";
 
-async function requireAgentThread(ctx: Context, item: ItemRef) {
+function requireAgentThread(thread: Thread, ctx: Context) {
+  if (thread.conversation === "people") throw new Error("This conversation requires an agent invitation.");
+  const people = thread.participants.filter(participant => participant.kind === "person");
+  if (people.length !== 1 || people[0].id !== ctx.author.actor) {
+    throw new Error("Only the sole creator may use ordinary Send in this spike.");
+  }
+}
+
+async function checkSend(ctx: Context, item: ItemRef) {
   const head = await ctx.call("item_head", { item });
   const { thread } = await read(ctx, item, head.revision);
-  if (thread.conversation === "people") throw new Error("This conversation requires an agent invitation.");
+  requireAgentThread(thread, ctx);
 }
 
 async function create({ title }: { title: string }, ctx: Context) {
@@ -22,7 +31,7 @@ async function create({ title }: { title: string }, ctx: Context) {
   };
   const head = await ctx.call("item_create", {
     request_id: step(ctx.author.request_id, "create"),
-    kind, folders: [folder(thread)], name: "Conversation.md",
+    kind, folders: [folder(thread)], name: "Conversation.md", attempt_discovery: "creator_only",
     metadata: { title: thread.title }, body: inlineBody(Buffer.from(encode(thread))),
   });
   await publish(ctx, head.item, head.revision, thread);
@@ -30,8 +39,8 @@ async function create({ title }: { title: string }, ctx: Context) {
 }
 
 async function send({ item, text, harness, placement }: Send, ctx: Context) {
-  await requireAgentThread(ctx, item);
-  return ctx.call("start_job", { job: "run", item, harness, placement, input: { item, text: checkedFrame({ text: checkedText(text) }).text } });
+  await checkSend(ctx, item);
+  return ctx.call("start_job", { job: "run", item, harness, placement, input: { text: checkedText(text) } });
 }
 
 async function rename({ item, title }: { item: ItemRef; title: string }, ctx: Context) {
@@ -58,26 +67,25 @@ async function run(input: RunInput, ctx: Context) {
   const { item, harness } = ctx.job;
   const head = await ctx.call("item_head", { item });
   let { thread, size } = await read(ctx, item, head.revision);
-  if (thread.conversation === "people") throw new Error("This conversation requires an agent invitation.");
-  const agent = { kind: "agent" as const, id: step(thread.id, harness) };
+  requireAgentThread(thread, ctx);
+  const agent = agentParticipant(thread.id, ctx.job.contribution_identity);
   const person = { kind: "person" as const, id: ctx.author.actor };
   const promptId = step(ctx.author.request_id, `prompt-${ctx.author.actor}`);
   const text = checkedText(input.text);
   let revision = head.revision;
   let currentSize = size;
   if (!thread.messages.some(message => message.id === promptId)) {
-    const added = [person, agent].filter(participant => !thread.participants.some(saved =>
-      saved.kind === participant.kind && saved.id === participant.id));
-    if (thread.participants.length + added.length > 64) throw new Error("Thread participant limit reached.");
-    thread.participants.push(...added);
+    const added = !thread.participants.some(participant => participant.id === agent.id);
+    if (added && thread.participants.length >= 64) throw new Error("Thread participant limit reached.");
+    if (added) thread.participants.push(agent);
     const prompt = { id: promptId, author: person, text };
     thread.messages.push(prompt);
-    const body = Buffer.from(added.length ? encode(thread) : encodeMessage(prompt));
-    currentSize = added.length ? body.length : size + body.length;
+    const body = Buffer.from(added ? encode(thread) : encodeMessage(prompt));
+    currentSize = added ? body.length : size + body.length;
     // Reserve one reply and its bounded message metadata before admitting execution.
     if (currentSize + 18 * 1024 > MAX_FILE_BYTES) throw new Error("Thread is full.");
     const request_id = step(ctx.author.request_id, "prompt");
-    if (added.length) {
+    if (added) {
       const saved = await ctx.call("item_save", { request_id, item, expected: revision, body: inlineBody(body) });
       if ("code" in saved) throw new Error(saved.code);
       revision = saved.revision;
@@ -90,10 +98,12 @@ async function run(input: RunInput, ctx: Context) {
   }
   await publish(ctx, item, revision, thread);
   const attempt = await ctx.call("execution_start", { request_id: step(ctx.author.request_id, "start"), harness });
-  const { call } = await ctx.call("contribution_call", {
+  const contribution = {
     request_id: step(ctx.author.request_id, "contribution"), execution: attempt.execution, contribution: harness,
-    input: checkedFrame({ text }),
-  });
+    input: { text },
+  };
+  encodeContributionFrame(contribution);
+  const { call } = await ctx.call("contribution_call", contribution);
   let after: number | undefined;
   while (true) {
     const { frames } = await ctx.call("contribution_read", { call, after, wait_ms: 1000 });
@@ -132,10 +142,10 @@ async function run(input: RunInput, ctx: Context) {
 
 async function arm(input: Omit<Send, "placement"> & { at: Timestamp; if_missed: "run" | "skip"; grace_seconds?: number }, ctx: Context) {
   const { item, harness, at, if_missed, grace_seconds } = input;
-  await requireAgentThread(ctx, item);
+  await checkSend(ctx, item);
   return ctx.call("alarm_set", {
-    request_id: step(ctx.author.request_id, "alarm"), job: "run", at, harness, grace_seconds,
-    input: { item, text: checkedFrame({ text: checkedText(input.text) }).text, if_missed },
+    request_id: step(ctx.author.request_id, "alarm"), job: "run", item, at, harness, grace_seconds,
+    input: { text: checkedText(input.text), if_missed },
   });
 }
 

@@ -232,3 +232,48 @@ test("first contribution output and log survive Stop before the terminal frame",
   assert.equal(host.files.get(item)?.revision, source_revision);
   assert.match(host.markdown(reply.log!.id), /Reply to Say hello/);
 });
+
+test("a fresh checked harness binding reuses the stored logical agent participant", async () => {
+  const { host, item, send, context } = await setup();
+  await host.run((await send("original-binding", "First binding")).job_id);
+  const previous = host.choose();
+  const fresh = host.rotateHarness();
+  assert.notEqual(previous.harness, fresh.harness);
+  await assert.rejects(handlers["threads.send"]({ item, text: "Stale", ...previous },
+    context("old-binding", "threads.send")), /unchecked harness/);
+  const { job_id } = await handlers["threads.send"]({ item, text: "Second binding", ...fresh },
+    context("new-binding", "threads.send"));
+  await host.run(job_id);
+  const agents = decode(host.markdown(item)).participants.filter(person => person.kind === "agent");
+  assert.equal(agents.length, 1);
+  assert.deepEqual(agents[0].contribution, { package: "calternal-threads-claude-code", contribution: "claude-code" });
+  assert.doesNotMatch(host.markdown(item), /checked-harness/);
+});
+
+test("the shared run target is outside both Send and alarm broker payloads", async () => {
+  const { host, item, send, selection, context } = await setup();
+  const { job_id } = await send("single-send-item", "Start");
+  assert.equal(host.jobs.get(job_id)?.context.item, item);
+  await host.run(job_id);
+  const { alarm } = await handlers["threads.arm"]({
+    item, harness: selection.harness, text: "Later", at: "2026-11-21T12:00:00Z", if_missed: "run",
+  }, context("single-alarm-item", "threads.arm"));
+  assert.equal(host.alarms.get(alarm)?.item, item);
+  assert.ok(!Object.hasOwn(host.alarms.get(alarm)!.input, "item"));
+  await host.deliver(alarm, "2026-11-21T12:00:00Z");
+  assert.match(host.markdown(item), /Reply to Later/);
+});
+
+test("the SDK rejects an oversized complete contribution frame before entry dispatch", async () => {
+  const { host, item, send } = await setup();
+  let providerCalls = 0;
+  host.claude = async () => {
+    providerCalls++;
+    return "Unexpected";
+  };
+  const prompt = '"'.repeat(8192);
+  const { job_id } = await send("oversized-encoded-frame", prompt);
+  await assert.rejects(host.run(job_id), { code: "contribution_frame_limit" });
+  assert.equal(providerCalls, 0);
+  assert.deepEqual(decode(host.markdown(item)).messages.map(message => message.text), [prompt]);
+});

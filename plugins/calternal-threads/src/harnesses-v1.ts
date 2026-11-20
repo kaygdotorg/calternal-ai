@@ -21,9 +21,3 @@ export function checkedText(text: string): string {
   }
   return text;
 }
-
-/** Verify the payload fits the contribution frame, including JSON escaping and its envelope. */
-export function checkedFrame<T>(payload: T): T {
-  if (Buffer.byteLength(JSON.stringify(payload)) > 16000) throw new Error("Contribution payload exceeds the frame budget.");
-  return payload;
-}

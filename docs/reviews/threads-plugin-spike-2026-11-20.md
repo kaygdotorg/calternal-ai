@@ -1,8 +1,9 @@
 # Threads plugin spike · 2026-11-20
 
 The lane starts from dev `80864d0d`. The original spike used draft 14.30
-at `b89586dd`. The current package pin is draft 14.31 at
-`00828198318c97f15dfa48c0314a96d39a6fd13e`. It follows the November 20
+at `b89586dd`. The first rerun used draft 14.31 at `00828198`. The
+current package pin is draft 14.32 at
+`3ca1161337d442b3666fc6984d7aefa59b817b89`. It follows the November 20
 decision that Threads owns the conversation file and the selected harness
 owns its working log. The lane issue is [#92](https://git.kayg.org/kayg/calternal-ai/issues/92).
 
@@ -32,10 +33,10 @@ nix develop -c npm test -w @calternal/threads
 nix develop -c npm run conformance -w @calternal/threads
 ```
 
-The build uses the 14.31 revision-aware SDK builder. It pins both
+The build uses the 14.32 revision-aware SDK builder. It pins both
 manifest/worker packages, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-On dev-01, all 15 tests passed and conformance tool 1.1.0 independently
+On dev-01, all 19 tests passed and conformance tool 1.1.0 independently
 accepted both packages. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
@@ -112,7 +113,7 @@ behavior. Real host qualification remains under Needs host.
 | Encoded contribution limits, catalogue `extension_points.calls` and guide | A string allowed by the point's regular JSON Schema can exceed the 16 KiB frame once encoded, especially for emoji or escaping. The spike checks JSON bytes and reserves envelope room before sending. | Expose a shared SDK limit check with the encoded envelope bound and a caller-safe refusal before admission. |
 | Participant identity, catalogue `item_engines.locators` and job context | The app must not persist `HarnessRef`. The spike stores a thread-local derived ID and can preserve that identity while the underlying checked binding stays the same. The job context gives no stable contributor identity across reinstallation or a new binding. | Expose a checked non-authorizing contribution identity to the owner if an agent participant should survive changes to its live handle. |
 
-### Description §9.3 exchange comparison
+### Description §9.3 exchange comparison at 14.31
 
 All 20 JSON Lines records in the personal, shared and broker examples
 parsed and matched their selected 14.31 request and reply schemas on
@@ -135,6 +136,48 @@ behavior and remaining real-host evidence.
 | `item_view.follow` and next `item_view.open` | The fixture tests the changed head, retained page replacement and checked anchor refresh. Renderer subscription delivery, catch-up and lease invalidation still need the host. |
 | `execution.control`, then Stop resolve, confirm and dispatch | Paper shapes match. The fixture exercises the exact attempt Stop while the same job waits for its terminal frame. It preserves already committed text and log. Renderer contexts and protected confirmation are host-owned and unqualified here. |
 | Shared-space replacement lines | All three replacements match their schemas. The fake is a single-space model. Shared default login, explicit personal login, audience intersection and the shared tools fence still need live qualification. |
+
+
+### Revision 14.32 disposition
+
+These statuses cover the 19 initial findings and all six findings from
+the 14.31 rerun. CLOSED means the missing author contract or tool surface
+is present. Live qualification is tracked separately.
+
+| Finding | Status | 14.32 evidence or remaining gap |
+| --- | --- | --- |
+| File custody | **CLOSED** | Threads writes the transcript. A checked contributor writes its own log and returns an independently authorized locator. |
+| Harness ingress and egress | **CLOSED** | The pinned broker calls still supply an ordered stream and exact attempt fence. The Stop and lost-ACK tests pass. |
+| Harness entry and packaging | **CLOSED** | The ABI, asset packing, OCI source and separately approved execution network fields are declared. The lane's fixture source is `registry.example.invalid/calternal/threads-claude-code-fixture` with explicit `execution_network:"none"`. Real image acquisition, executable launch and egress enforcement still need host qualification. |
+| Contribution target identity | **CLOSED** | Both package and app are qualified and the fake checks the two declared interfaces. |
+| Item create, save, range and placement | **CLOSED** | Typed inline and staged methods, conflict result, readable placement and optional checked actor label remain defined. The spike continues to exercise the inline subset. |
+| Rename and lifecycle projection | **PARTLY** | Atomic body/title/leaf rename and the archived predicate remain defined. Moving the folder with a rename is undecided. |
+| Worker context and receipts | **PARTLY** | The adapter exposes the checked author, job and alarm facts, and the generated broker types have improved. Sealed dev worker dispatch still needs the draft carrier adapter for the live host. |
+| Create outcome | **CLOSED** | The tool and catalogue require a checked `{created}` result. The harness creates its log internally without `creates`. |
+| Stable identifiers and message links | **CLOSED** | Log locators, checked anchors and portable logical contribution identity are defined. Message authors keep one local ID across a fresh live harness binding. |
+| Alarm lateness | **CLOSED** | The host records the grace-based missed bit. The worker tests both within-grace and missed runs. |
+| Snapshot text bounds | **CLOSED** | Unicode code-point leaves and the independent aggregate-byte cap remain in use. |
+| SDK and guide | **PARTLY** | The pinned SDK builds, encodes and validates both packages. The draft walkthrough is updated. The installable guide and real-host parity remain separate work. |
+| Conformance tool crash | **CLOSED** | The verifier accepts both packages at the new pin. |
+| People-thread custody and participant refs | **OPEN** | The fixture can provision participants. Production custody, trusted authorship and atomic participant grants still need decisions and checked routes. |
+| People-message edits and tombstones | **PARTLY** | Typed saves and anchors work. Historical content, search and offline/cache deletion propagation remain open. |
+| Private per-person thread state | **OPEN** | An actor-private item-scoped write, compare-and-set and retention policy remain unspecified. |
+| Scope and consent for called-in agents | **PARTLY** | The item policy and checked-disclosure boundary are defined. Trusted selection, proof storage and revocation mechanics remain open. |
+| Called-in agent data and output | **PARTLY** | The kind has a per-item cutoff across discovery and direct reads. The real host still needs the trusted per-author projection and consent path. |
+| Placement for a private people conversation | **PARTLY** | The inviter's own machine and login are specified by policy. A checked invitation placement exchange is still open. |
+| Kind-wide denial of discovery (14.31) | **CLOSED** | The same kind uses `item_policy`. A host-attested `creator_only` thread is discoverable only by attempts acting for its creator, under the normal audience checks. A `consent_only` thread stays out of discovery even after a one-message invitation. The fake verifies both on items of the same kind. |
+| Harness egress and OCI acquisition fields (14.31) | **CLOSED** | The SDK and verifier accept explicit `image_source` and `execution_network` in the contribution. These are distinct from the ordinary worker network declaration. |
+| Generated `ItemSave` and `ItemViewPage` (14.31) | **CLOSED** | The wire types retain the authored fields and union branches. The fake uses the generated `ItemSave` with its previous intersection removed. |
+| First Send target operand (14.31) | **CLOSED** | Send and alarms place the target solely at top-level `item`. The fake refuses duplicate target fields and injects the checked item into the run operation's input and job context. The rewritten §9.3 now matches the broker requests. |
+| Encoded contribution limits (14.31) | **CLOSED** | The SDK checks the complete JSON frame plus LF. The spike applies it to `ContributionCall`, entry delivery and output. An escaped prompt that only exceeds the encoded limit fails before the provider entry is called. |
+| Participant identity (14.31) | **CLOSED** | The host stamps `{package,contribution}` into choices and job context. Threads stores that identity and derives a stable local author ID. The rebind test rejects the old live ref and proves the new checked binding uses the same participant. |
+
+### Findings from the 14.32 rerun
+
+| Status and reference | What the plugin needed | Smallest change |
+| --- | --- | --- |
+| **OPEN** · Preflight for encoded contribution size, catalogue `extension_points.calls` and description §9.3 | The exact encoder correctly protects entry dispatch. A direct Send can still receive a job receipt and persist the human prompt before a contribution frame is rejected. Full-frame validation needs the attempt ref, which the worker receives after admission. The escaped-prompt regression exercises that timing. | Specify a callable preflight or a conservative author input budget before job admission if the composer should reject this case synchronously. Keep the exact frame check at dispatch. |
+| **OPEN** · Provenance for privacy downgrades, catalogue `execution_attempt_authority.discovery.item_policy` and opaque `item_save` / `item_append` | The policy requires downgrading before imported material of unproven authorship becomes discoverable. Writes carry opaque bytes. The host can attest the create and detect another authorized writer, and a caller can explicitly request `consent_only`. The schema carries no trusted import/provenance designation for bytes an owning worker writes on behalf of the creator. The spike creates fresh items under checked creator admission and keeps the people invitation path fixture-only. | Specify how generic imports and unproven authoring paths trigger downgrade in the fenced writer. Pending that rule, require consent-only for such paths. |
 
 ## Needs host
 
@@ -163,7 +206,8 @@ behavior and remaining real-host evidence.
 
 ## People-thread fixture
 
-Five people-thread tests passed on dev-01 on both revisions.
+Five people-thread tests passed on dev-01 at 14.30 and 14.31.
+14.32 adds the per-item discovery regression.
 The emitted worker bundle exposes fixture entry points outside the manifest
 and template. They create a people-only conversation in the existing kind,
 keep message IDs through edits and tombstones, and store per-person state
@@ -191,7 +235,7 @@ require a cross-owner write grant that the design does not provide.
 The package worker code uses no native Threads dispatch, special plugin ID,
 direct package connection, inherited provider credential, or server-owned
 thread format. The fixture provider port stands in for live execution placement. The
-14.31 fake carries replies through the catalogue's checked contribution
+14.32 fake carries replies through the catalogue's checked contribution
 methods. People-thread invitations still use fixture ports. The harness manifest includes
 an image-shaped fixture digest and a pinned entry that fails closed.
 It cannot launch Claude Code. The real image, login mapping and reviewed

@@ -1,13 +1,13 @@
-import type { AccountRef, HarnessRef, ItemRef, RevisionRef } from "../generated/wire.js";
+import type { AccountRef, ContributionIdentity, ItemRef, RevisionRef } from "../generated/wire.js";
 import { inlineBody, kind, publish, read } from "./files.ts";
-import { checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, messageView, step, type Message, type Thread } from "./format.ts";
+import { agentParticipant, checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, messageView, step, type Message, type Thread } from "./format.ts";
 import { checkedText, type HarnessOutput } from "./harnesses-v1.ts";
 import type { Context } from "./interface.ts";
 
 type Target = { item: ItemRef };
 type MessageTarget = Target & { message: string };
 export type Scope = { message: string } | { from: string; through: string } | { whole: true };
-type Invitation = Target & { revision: RevisionRef; inviter: AccountRef; harness: HarnessRef; scope: Scope; consent: readonly string[] };
+type Invitation = Target & { revision: RevisionRef; inviter: AccountRef; contribution_identity: ContributionIdentity; scope: Scope; consent: readonly string[] };
 export type InvitedInput = { prompt: string; messages: { id: string; text: string }[] };
 
 export type PeopleContext = Context & {
@@ -58,7 +58,7 @@ async function create(input: { title: string; participants: AccountRef[] }, ctx:
     participants: ids.map(id => ({ kind: "person", id })), messages: [],
   };
   const head = await ctx.call("item_create", {
-    request_id: step(ctx.author.request_id, "people-create"), kind, folders: [folder(thread)], name: "Conversation.md",
+    request_id: step(ctx.author.request_id, "people-create"), kind, folders: [folder(thread)], name: "Conversation.md", attempt_discovery: "consent_only",
     metadata: { title: thread.title }, body: inlineBody(Buffer.from(encode(thread))),
   });
   await publish(ctx, head.item, head.revision, thread);
@@ -163,7 +163,7 @@ async function callAgent({ item, prompt }: Target & { prompt: string }, ctx: Peo
   const payload = { prompt: checkedText(prompt), messages: readable };
   if (Buffer.byteLength(JSON.stringify(payload)) > 16 * 1024) throw new Error("The invitation exceeds 16 KiB.");
 
-  const agent = { kind: "agent" as const, id: step(thread.id, grant.harness) };
+  const agent = agentParticipant(thread.id, grant.contribution_identity);
   if (!thread.participants.some(p => p.kind === agent.kind && p.id === agent.id)) {
     if (thread.participants.length >= 64) throw new Error("Thread participant limit reached.");
     thread.participants.push(agent);

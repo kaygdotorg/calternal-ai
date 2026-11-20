@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
-import type { ItemSnapshotView, ItemLocator, SnapshotNode } from "../generated/wire.js";
+import type { ContributionIdentity, ItemSnapshotView, ItemLocator, SnapshotNode } from "../generated/wire.js";
 
-export type Participant = { kind: "person" | "agent"; id: string };
+export type Participant = { kind: "person"; id: string } | { kind: "agent"; id: string; contribution: ContributionIdentity };
+
+/** Keep local message authors stable when the host issues a fresh harness binding. */
+export function agentParticipant(thread: string, identity: ContributionIdentity): Extract<Participant, { kind: "agent" }> {
+  const { package: pkg, contribution } = identity;
+  return { kind: "agent", id: step(thread, JSON.stringify([pkg, contribution])), contribution: { package: pkg, contribution } };
+}
 export type Message = { id: string; author: Participant; text: string; log?: ItemLocator; edited?: true; deleted?: true };
 export type Thread = {
   id: string;

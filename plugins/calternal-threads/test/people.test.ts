@@ -90,3 +90,20 @@ test("a grant for the previous body cannot disclose an edit or deleted message",
   await assert.rejects(people.callAgent({ item, prompt: "Read it" }, current), /no readable messages/i);
   assert.deepEqual(host.invitedInputs, []);
 });
+
+test("discovery uses the checked creator policy per item and excludes a people thread", async () => {
+  const { host, item, people, first } = await setup();
+  const { created: ownThread } = await handlers["threads.create"](
+    { title: "My agent conversation" }, host.context("own-agent", "threads.create"),
+  );
+  const { job_id } = await handlers["threads.send"]({ item: ownThread, text: "Hello", ...host.choose() },
+    host.context("own-agent-send", "threads.send"));
+  await host.run(job_id);
+  assert.deepEqual(host.discoverAsAttempt(alice), [ownThread]);
+  assert.deepEqual(host.discoverAsAttempt(bob), []);
+
+  const invite = host.invitedContext(alice, "explicit-invite", { item, scope: { message: first.message }, consent: [] });
+  await people.callAgent({ item, prompt: "Read this selection" }, invite);
+  assert.deepEqual(host.discoverAsAttempt(alice), [ownThread]);
+  assert.deepEqual(host.invitedInputs.map(input => input.messages.map(message => message.text)), [["Alice visible"]]);
+});

@@ -17,7 +17,7 @@ const empty = object({});
 const ifMissed = { enum: ["run", "skip"] };
 const messageResult = {
   id: { type: "string" },
-  author: object({ kind: { enum: ["person", "agent"] }, id: { type: "string" } }, "kind", "id"),
+  author: object({ kind: { enum: ["person", "agent"] }, id: { type: "string" }, contribution: catalogueRef("ContributionIdentity") }, "kind", "id"),
 };
 const itemRoute = { route: "item" };
 const harnessChoice = { prompt: { title: "Harness", kind: "choice", options: { extension: "harnesses" } } } as const;
@@ -48,7 +48,7 @@ const metadata = {
   kinds: [{
     id: "threads", icon: "threads", title_field: "title", storage: { folder: "Threads" },
     claimed_text: true, searchable: true, file_format: { id: "calternal-thread", version: 1 },
-    append_file: true, attempt_discovery: "deny", execution_target: true, view_snapshots: [{ id: "body", refresh: "threads.refresh" }],
+    append_file: true, attempt_discovery: "item_policy", execution_target: true, view_snapshots: [{ id: "body", refresh: "threads.refresh" }],
     schema: object({ title }, "title"),
   }],
   jobs: [{ id: "run", run_operation: "threads.run", replayable: true, execution: true, alarm: true }],

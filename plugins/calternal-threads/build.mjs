@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
-const pin = "00828198318c97f15dfa48c0314a96d39a6fd13e";
+const pin = "3ca1161337d442b3666fc6984d7aefa59b817b89";
 const here = new URL("./", import.meta.url);
 const root = new URL("../../", here);
 const scratch = new URL(".build/", here);
@@ -14,18 +14,22 @@ await mkdir(generated, { recursive: true });
 // Keep draft artifacts outside the sealed SDK tree and out of the package.
 execFileSync("git", ["archive", "-o", fileURLToPath(new URL("contract.tar", scratch)), pin, "contract", "packages/plugin-sdk/scripts", "packages/contracts/scripts/schema-to-types.mjs"], { cwd: root });
 execFileSync("tar", ["-xf", "contract.tar"], { cwd: scratch });
-const sdkContext = new URL("packages/plugin-sdk/scripts/author-context.mjs", scratch);
-await copyFile(sdkContext, new URL("author-context.mjs", generated));
-const adapterTypes = await readFile(new URL("packages/plugin-sdk/scripts/author-context.d.mts", scratch), "utf8");
-await writeFile(new URL("author-context.d.mts", generated), adapterTypes.replace("../generated/author-types.js", "./author.js"));
-const { generateAuthorTypes, generateDescriptionTypes } = await import(new URL("packages/contracts/scripts/schema-to-types.mjs", scratch).href);
-const author = await generateAuthorTypes(contract);
-await writeFile(new URL("author.d.ts", generated), author.text);
+const sdk = new URL("packages/plugin-sdk/scripts/", scratch);
+const sdkGenerated = new URL("../generated/", sdk);
+const env = { ...process.env, CALTERNAL_PLUGIN_CONTRACT: fileURLToPath(contract), CALTERNAL_PLUGIN_CONTRACT_REVISION: "14.32" };
+execFileSync(process.execPath, [fileURLToPath(new URL("generate-author-types.mjs", sdk))], { env, stdio: "inherit" });
+await copyFile(new URL("author-types.d.ts", sdkGenerated), new URL("author.d.ts", generated));
+await copyFile(new URL("contribution-limit.mjs", sdkGenerated), new URL("contribution-limit.mjs", generated));
+for (const module of ["author-context", "contribution-frame"]) {
+  const source = await readFile(new URL(`${module}.mjs`, sdk), "utf8");
+  await writeFile(new URL(`${module}.mjs`, generated), source.replace("../generated/contribution-limit.mjs", "./contribution-limit.mjs"));
+  const types = await readFile(new URL(`${module}.d.mts`, sdk), "utf8");
+  await writeFile(new URL(`${module}.d.mts`, generated), types.replace("../generated/author-types.js", "./author.js"));
+}
+const { generateDescriptionTypes } = await import(new URL("packages/contracts/scripts/schema-to-types.mjs", scratch).href);
 await writeFile(new URL("wire.d.ts", generated), await generateDescriptionTypes(contract));
 execFileSync(fileURLToPath(new URL("node_modules/.bin/tsc", root)), ["-p", fileURLToPath(new URL("tsconfig.json", here))], { stdio: "inherit" });
 
-const sdk = new URL("packages/plugin-sdk/scripts/", scratch);
-const env = { ...process.env, CALTERNAL_PLUGIN_CONTRACT: fileURLToPath(contract), CALTERNAL_PLUGIN_CONTRACT_REVISION: "14.31" };
 const packages = [here, new URL("../calternal-threads-claude-code/", here)];
 for (const [index, plugin] of packages.entries()) {
   const bundled = await build({
