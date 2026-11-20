@@ -644,17 +644,17 @@ Use one queue per host for both guest sizes. Qualify the unloaded wake first and
 
 **Why Node takes 0.9 s.** The same Node binary starts in 20 ms on the perf VM host and 20 ms in a freshly booted guest that has been up for a minute. So running Firecracker inside a virtual machine (nested virtualisation) is not what makes Node slow. In a restored guest the same start takes 877 ms p50 (30 runs), with the same number of page faults, no disk reads and the binary already in the guest's page cache. The guest simply stalls on first use of each page of restored memory: tracing the host's KVM showed about 12,400 nested-page-fault exits per Node launch in a restored guest against about 100 in a warm one, costing roughly 120 to 195 µs each. That first-touch tax is also most of the 317 ms reseed. Whether it would be much cheaper on bare metal is not measured; perf-02 is itself a virtual machine.
 
-**Can a pre-started worker be made safe?** Yes, on the evidence gathered. A trusted launcher starts Node before the snapshot and parks it. After a restore and the kernel reseed acknowledgement, a small native module in the launcher asks Node's own OpenSSL to reseed its random generators from the kernel (`EVP_RAND_reseed` with prediction resistance on the primary, public and private generators) and the launcher drains Node's cached UUID bytes. Only then is the plugin's code loaded. Two restores of the same snapshot gave different `randomBytes`, `randomUUID`, `getRandomValues`, Ed25519 key pair and TLS ClientHello (including its random field). A counter showed three 32-byte kernel reads inside the refresh, after the acknowledgement. Not covered: Math.random and V8's hash seed stay identical across restores (details below), and two checks were not run (generators in worker threads; the addon permission drop).
+**Can a pre-started worker be made safe?** Yes, on the evidence gathered, under the launcher rules listed in the last section. A trusted launcher starts Node before the snapshot and parks it. After a restore and the kernel reseed acknowledgement, a small native module in the launcher asks Node's own OpenSSL to reseed its random generators from the kernel (`EVP_RAND_reseed` with prediction resistance on the primary, public and private generators). The launcher then drains Node's cached UUID bytes, gives V8 a fresh seed for contexts created later, and replaces `Math.random` with a generator backed by the secure source. Only then is the plugin's code loaded. Two restores of the same snapshot gave different `randomBytes`, `randomUUID`, `getRandomValues`, Ed25519 key pair, TLS ClientHello (including its random field) and `Math.random` sequences, and the same held for the plugin's first `vm` context. A counter showed three 32-byte kernel reads inside the refresh, after the acknowledgement. Native modules, worker threads, child processes and file writes are all provably refused after the launcher's own addon is loaded. What cannot be freshened: V8's hash seed (not observable by a plugin) and the identity of the original native `Math.random` function. The first round had a hole: the permission scope is spelled `addon`, and the `addons` I dropped did nothing, so plugin code could still have loaded a native module. That is fixed and now tested on every proof restore.
 
 **The choice.**
 
 | Option | Wake from disk | Memory | Status |
 | --- | ---: | --- | --- |
-| A. Disk wake with the pre-started, refreshed worker | about 0.6 s p50, an estimate: 30 harness wakes reached the worker ready at 890 ms, of which about 400 ms is test-shell overhead that the product path does not pay | none extra | Needs integration into the product path and an end-to-end measurement. Does not reach 500 ms. |
+| A. Disk wake with the pre-started, refreshed worker | about 0.65 s p50, an estimate: 30 harness wakes reached the worker ready at 985 ms, of which about 400 ms is test-shell overhead that the product path does not pay | none extra | Randomness gaps closed and proven. Needs integration into the product path and an end-to-end measurement. Does not reach 500 ms. |
 | B. Disk wake without it | 1.61 s p50 / 2.12 s p95, measured | none extra | Qualified, simplest. |
 | C. Keep recently used spaces running | 5 to 23 ms per call (4.73 / 22.69 ms p50 / p95) | about 130 MiB per space; 10 residents about 1.3 GiB, 100 residents about 12.7 GiB, more than all of perf-02's RAM | Qualified. Cost grows with the number of distinct spaces active in the window. |
 
-**Is 500 ms reachable from disk on this hardware?** Not by anything measured. The best disk wake is about 0.6 s (option A), and 317 ms of that is the reseed exchange, which is bound by the same first-touch cost. Reaching 500 ms would need that cost cut, for example by backing guest memory with huge pages or populating it before the restore. Neither was tried. Only option C (resident) is far inside the gate. A reasonable plan is C for spaces used in the last N minutes and A or B for the rest; A is worth building only if its 0.6 s matters.
+**Is 500 ms reachable from disk on this hardware?** Not by anything measured. The best disk wake is about 0.65 s (option A), and about 320 to 370 ms of that is the reseed exchange, which is bound by the same first-touch cost. Reaching 500 ms would need that cost cut, for example by backing guest memory with huge pages or populating it before the restore. Neither was tried. Only option C (resident) is far inside the gate. A reasonable plan is C for spaces used in the last N minutes and A or B for the rest; A is worth building only if its 0.6 s matters.
 
 Details: [Node startup after restore, and the refreshed worker](#node-startup-after-restore-and-the-refreshed-worker) at the end of this file.
 
@@ -974,7 +974,7 @@ The launcher parks `node --permission` running `standby.cjs` before the snapshot
 - `RAND_get0_primary`, `RAND_get0_public`, `RAND_get0_private`, then
 - `EVP_RAND_reseed(rng, 1, NULL, 0, NULL, 0)` on each (prediction resistance 1, so the generator draws fresh entropy from the operating system).
 
-Node's statically linked OpenSSL does export these to an addon: `dladdr` places `EVP_RAND_reseed` in `/usr/local/bin/node`, and the addon links no libcrypto. The launcher then calls `crypto.randomUUID()` 128 times to flush Node's UUID cache (a batch of 128) and only then loads `/plugin/worker.js`, so everything the plugin does at load time is fresh. Release is refused with `BLOCKED` until the guest's ready marker exists, and the independent Start guard stays in force.
+Node's statically linked OpenSSL does export these to an addon: `dladdr` places `EVP_RAND_reseed` in `/usr/local/bin/node`, and the addon links no libcrypto. The launcher then calls `crypto.randomUUID()` 128 times to flush Node's UUID cache (a batch of 128) and only then loads `/plugin/worker.js`, so everything the plugin does at load time is fresh. Release is refused with `BLOCKED` until the guest's ready marker exists, and the independent Start guard stays in force. (Second round: the launcher also replaces `Math.random` and seeds V8; see the next section.)
 
 Proof, from two restores of the same standby snapshot (memory file sha256 identical before and after, `b0ade8e0...`). Every value below is a SHA-256 of the value, truncated:
 
@@ -994,13 +994,13 @@ What stays identical across restores, as the same two restores showed: the UUID 
 
 | Identical state | Could it hurt a plugin author? |
 | --- | --- |
-| `Math.random` sequence | Yes, if a plugin uses it for ids, sampling or jitter: two wakes of one snapshot produce the same values. Untested mitigation: the launcher replaces `Math.random` with a function backed by `crypto` before loading the plugin. |
+| `Math.random` sequence | Yes, if a plugin uses it for ids, sampling or jitter: two wakes of one snapshot produce the same values. Closed in the second round: the launcher replaces `Math.random` before loading the plugin. |
 | V8 hash seed | Mostly invisible; only affects object and hash table layout and hash-flooding resistance per instance. |
 | Pid and thread ids | No: namespace-local, not identities. |
 | Timers and clocks | Not for a worker that only waits. Timers created by the launcher before the snapshot are the launcher's own. |
 | Module state captured at load | Not for plugin code, which loads after release. It matters for the launcher's own dependencies (`node:crypto`, `node:tls`), which cached nothing found by this test except the UUID batch. |
 
-Not checked: libuv worker threads each have their own OpenSSL generators; OpenSSL children reseed when their parent's reseed counter changes, which should cover them, but async `randomBytes` and key generation across a restore were not run. The launcher's `process.permission.drop('addons')` reports `has('addons') === false` afterwards, but an attempt to load another shared object failed with `ERR_DLOPEN_FAILED`, not `ERR_ACCESS_DENIED`, so enforcement of the drop is unproven.
+The two checks listed as open here, worker-thread generators and the addon permission drop, were run in the second round (next section). The drop check was wrong in the first round: see there.
 
 ### Wake stages, 30 wakes
 
@@ -1025,6 +1025,97 @@ Errors: 0 of 30 refreshed-worker wakes, 0 of 30 restored fresh-Node wakes, no co
 ### Raw evidence
 
 On perf-02 under `/srv/homes/perf/vm-final/`: `full/samples.jsonl` (all arms, 125 records), `full/run.log`, `trace/kvm-trace.jsonl`, `smoke-ok/`, and `full-attempt1/`, a first full run that stopped in the restored arm when the harness's own cache-eviction check found resident pages; the check now retries, never skips. The prepared image (`guest/image.sha256`, root.ext4 `87962b52...`, vmlinux `f5735774...`) was patched twice after the first smoke runs: the launcher's addon-drop assertion was replaced by a logged probe, and in-process timings were added. The image and the reseed addon were built on dev-01 and checksummed before transfer. The addon in the image was not rebuilt from the committed source in this lane, so its identity rests on the previous agent's build log and `SHA256SUMS`.
+
+## Closing the randomness gaps in the pre-started worker (second round, 2026-11-20)
+
+Same host, guest, kernel and Node as above. Harness: [perf/vm-final](../../perf/vm-final). Two launcher variants were parked and snapshotted: **ship**, the designed launcher, and **wide**, a probe that also allows worker threads and child processes and warms the libuv pool before the snapshot (the worst case for per-thread generators). Each variant was restored twice from one snapshot, with the memory file unchanged before and after (ship `b360c31a...`).
+
+### Math.random and other V8 seeds
+
+After the OpenSSL reseed the launcher (1) discards the 128-UUID batch, (2) calls `v8.setFlagsFromString('--random-seed=<31 fresh bits>')`, which V8 reads when a context first draws, so contexts created later start from a fresh seed, and (3) replaces `Math.random` with a function that fills a buffer from `crypto.getRandomValues` and builds 53-bit doubles. All of it runs before any plugin code is loaded; in-process it costs 16.3 / 34.5 ms p50 / p95 (30 wakes). The main context's original generator was already seeded before the snapshot, so the flag alone could not fix it, which is why it is replaced.
+
+| Observed across two restores of one snapshot | Restore 1 | Restore 2 |
+| --- | --- | --- |
+| `Math.random`, four draws, hashed | `be7eaf13e980` | `f22dc15d0f64` |
+| First `Math.random` in a new `vm` context, hashed | `e3c1de3b7cb6` | `d94eff8c6226` |
+| Two `vm` contexts created in one wake give the same value | yes | yes |
+| `Math.random` drawn before the snapshot (saved state) | `0.8455718003335847` | `0.8455718003335847` |
+
+What cannot be made fresh, and what a plugin author could notice:
+
+| Item | Fresh? | Visible to a plugin? |
+| --- | --- | --- |
+| V8 hash seed and identity hashes | No; fixed when the isolate is created, and `--hash-seed` is read only at startup | No: object and `Map` key order is insertion order. Only a timing side channel could tell. |
+| The original native `Math.random` function | Gone from the main realm; a function that prints as non-native replaces it | Only by `Math.random.toString()` or identity checks. |
+| Two `vm` contexts in one wake | Each wake's seed is fresh, but all new contexts of that wake share it, so they produce the same sequence | A plugin that makes several `vm` contexts and compares their `Math.random` values. The seed has 31 bits, so about 46,000 wakes of one snapshot are needed before two share it. |
+| Node internals that captured the original `Math.random` | No | Not by plugins. A search of Node's current source found only the virtual filesystem's temporary names and the test runner's seed. This was not checked on 24.22.3. |
+| Worker isolates, if workers were ever allowed | Fresh per wake (measured, one worker per restore). They should take the same flag seed, so workers of one wake would share a sequence (inferred, not measured) | Not reachable: workers are refused (below). |
+| Timers, process ids, anything a module captured before the snapshot | No | Not for plugin code, which loads after release. The launcher's own state is the only thing captured. |
+
+### Worker threads, pool threads and child processes
+
+Node's idle process has the threads `MainThread`, `DelayedTaskSche`, `SignalInspector` and four `V8Worker`; none runs crypto. libuv pool threads (`libuv-worker`) appear on the first asynchronous crypto, file system, DNS or zlib call. In the ship launcher none existed before the snapshot, checked from outside the worker through its cgroup (the harness fails the arm otherwise). In the wide variant the pool had four threads and had served 16 asynchronous `randomBytes` and a key generation before the snapshot. After restore, reseed and refresh, in both restores:
+
+| Generator | Restore 1 vs restore 2 |
+| --- | --- |
+| 16 concurrent asynchronous `randomBytes(32)` on the warmed pool | all 16 distinct within each restore; no value shared between restores |
+| 4 concurrent asynchronous Ed25519 key generations | all distinct; none shared |
+| `randomBytes`, `randomUUID` and two `Math.random` draws in a new worker thread | all differ |
+| Child process | not startable: `spawnSync` returned `EPERM` even with `--allow-child-process`, because the launcher's seccomp filter refuses process creation. A child would also be a fresh `exec`, but this was not measured. |
+
+So OpenSSL's per-thread generators did pick up the primary's reseed, as its reseed counter propagation predicts, even for pool threads that had already generated. The launcher rule below still forbids pool threads before the snapshot as defence in depth.
+
+### The native-module restriction
+
+The first-round check was wrong. Node's permission scope is `addon`. `process.permission.has('addons')` is always false and `drop('addons')` is accepted and does nothing, so the launcher's own `--allow-addons` stayed in force after the drop, and plugin code could still have loaded any readable `.node` file (the package directory is readable). The earlier `ERR_DLOPEN_FAILED` came from a shared object that was not an addon, loaded because the permission was still granted. With `process.permission.drop('addon')` called right after the launcher loads its module, every restore of both variants showed:
+
+| Attempt after the drop, in the ship launcher | Result |
+| --- | --- |
+| `require()` of a second copy of the addon | `ERR_ACCESS_DENIED` |
+| `process.dlopen` of that copy | `ERR_ACCESS_DENIED` |
+| `new Worker` | `ERR_ACCESS_DENIED` |
+| `child_process.spawnSync` | `ERR_ACCESS_DENIED` |
+| `fs.writeFileSync` | `ERR_ACCESS_DENIED` |
+| `process.binding('natives')` | `ERR_ACCESS_DENIED` |
+
+The launcher asserts all six in the ship variant, so a build that loses a restriction fails its proof. The drop is process state saved in the snapshot. The product's normal worker flags never include `--allow-addons`; only the parked launcher needs it.
+
+### Rebuilding the reseed module
+
+`nix develop .#deploy -c perf/vm-final/build-addon.sh <dir>` builds `reseed.node` from `reseed-addon.c` with the dev shell's musl compiler and Node's headers. `perf/vm-final/update-image.sh <image-dir> <work-dir>` rebuilds the module and the launcher and installs them into a copy of the guest image. Two builds on dev-01 were identical (`0f63170a...`), and equal to the module that the first round shipped, so that module did come from this source. The image tested here (root.ext4 `51ad1fa7...`) holds the rebuilt module.
+
+### Wake stages with the closed launcher, 30 wakes
+
+| Stage, p50 / p95 (ms) | Refreshed worker, second round |
+| --- | ---: |
+| Snapshot cache inspection | 14.8 / 26.5 |
+| VMM start through API ready | 1.5 / 2.6 |
+| Load snapshot | 4.1 / 5.2 |
+| Resume | 0.2 / 0.7 |
+| Reseed through acknowledgement | 369.0 / 409.2 |
+| Arrival through kernel acknowledgement | 392.9 / 431.3 |
+| In-process OpenSSL reseed | 87.5 / 98.4 |
+| Flush UUID cache | 13.9 / 31.4 |
+| V8 seed and `Math.random` replacement | 16.3 / 34.5 |
+| Package module load, in process | 65.2 / 105.0 |
+| **Arrival through worker ready (harness)** | **984.7 / 1,096.7** |
+
+0 errors in 30 wakes, no fallbacks. The in-process work is 124 / 142 ms p50 / p95 before the package loads, against 93 / 168 ms in the first round; the median reseed exchange this run was slower (369 against 317 ms), within the run-to-run spread of this shared host. The harness still reaches the guest through a shell channel that costs about 400 ms of the 985, so the product-path estimate moves from about 0.6 s to about 0.65 s.
+
+### Launcher rules that make it safe
+
+1. The worker is started only through the trusted launcher module, with `--permission`, `--allow-addons` (dropped immediately), `--allow-fs-read` for the launcher directory and the package directory only, and `--disallow-code-generation-from-strings`. Never `--allow-worker`, `--allow-child-process`, `--allow-fs-write`, `--allow-net`, `--allow-wasi` or the inspector.
+2. The launcher's first statements load the reseed module and call `process.permission.drop('addon')`, spelled that way, then assert `process.permission.has('addon') === false`, all before the snapshot. In this fixture the six denials above are asserted after each restore; a product launcher should also run them once before the snapshot.
+3. No threads beyond Node's fixed set before the snapshot: the launcher does no asynchronous crypto, file system, DNS or zlib work, and the host side lists the worker's thread names from outside and refuses to snapshot if any `libuv-worker` exists.
+4. The launcher's seccomp filter, which refuses process creation and sockets, stays in place as the second layer.
+5. The release line reaches only the launcher, and only after the authenticated kernel reseed acknowledgement; release is refused until the guest ready marker exists. The independent Start guard stays in force.
+6. After release and before any plugin code: reseed all three OpenSSL generators with prediction resistance, flush the 128-UUID batch, set a fresh V8 random seed from the secure source, replace `Math.random`. Then load the plugin.
+7. The reseed module in the image is built from the committed source with `build-addon.sh`, and its checksum is recorded with the image.
+
+### Raw evidence, second round
+
+Under `/srv/homes/perf/vm-final/r3/` on perf-02: `full/samples.jsonl` (the proofs, thread lists and 30 wakes), `full/*.serial`, `smoke-failed/` (a first attempt that stopped because a child process cannot be started), and `../r2/` (an earlier attempt that stopped on a 10 s harness timeout in the wide probe). The probe that found the `addon` scope spelling is `/srv/homes/perf/vm-final/probe/`.
+
 
 ## Simplification opportunities
 
