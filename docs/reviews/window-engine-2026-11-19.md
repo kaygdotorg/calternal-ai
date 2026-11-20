@@ -899,6 +899,70 @@ exclude a concurrent lane workload inside that VM during this run.
 They do not identify the cause of every older perf-01 arm or establish
 isolation of the underlying hypervisor storage.
 
+### Passive device wait and same-save syncs
+
+Perf-02 ran ten alternating pairs without a control writer, using
+the same release binaries. The host sampler captured per-device await
+from `/proc/diskstats`. The existing `strace -T` syscall approach
+recorded only the launched server's `fsync` and `fdatasync` calls. Trace
+output went to tmpfs. Monotonic request spans were correlated with
+the trace's wall clock using each arm's preflight offset. The thread
+ID and ordering around the journal commit assign calls to content,
+journal and retirement. This includes foreground checkpoint syncs
+and excludes concurrent placement calls on a different thread.
+
+| Pair | Arm | Save p95 / p99 / max (ms) | Content / journal / retirement sync p95 (ms) | Content / journal / retirement sync max (ms) | Device / flush await (ms) |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 0 | Release | 38.738 / 51.888 / 201.851 | 10.114 / 9.334 / 10.064 | 18.256 / 16.057 / 17.353 | 2.566 / 3.925 |
+| 0 | Candidate | 41.689 / 54.117 / 172.922 | 10.593 / 9.637 / 9.582 | 22.482 / 23.694 / 14.058 | 2.290 / 3.375 |
+| 1 | Release | 37.923 / 44.272 / 181.617 | 10.523 / 8.778 / 9.291 | 18.484 / 15.468 / 13.677 | 2.307 / 3.418 |
+| 1 | Candidate | 39.240 / 50.422 / 184.002 | 12.473 / 8.995 / 9.544 | 16.787 / 14.951 / 20.340 | 2.531 / 3.468 |
+| 2 | Release | 40.959 / 49.444 / 186.598 | 10.946 / 10.792 / 9.069 | 15.544 / 16.357 / 13.932 | 2.902 / 4.069 |
+| 2 | Candidate | 43.234 / 53.748 / 183.510 | 11.347 / 10.055 / 10.147 | 22.214 / 15.194 / 23.410 | 2.324 / 3.411 |
+| 3 | Release | 45.241 / 53.954 / 173.259 | 10.967 / 11.306 / 9.389 | 16.612 / 21.392 / 20.701 | 2.330 / 3.481 |
+| 3 | Candidate | 41.191 / 56.699 / 186.594 | 11.821 / 9.745 / 10.695 | 24.158 / 16.219 / 15.269 | 2.514 / 3.998 |
+| 4 | Release | 45.711 / 64.518 / 185.103 | 15.298 / 13.288 / 12.392 | 18.172 / 21.503 / 31.625 | 2.623 / 3.927 |
+| 4 | Candidate | 41.239 / 52.689 / 175.312 | 10.058 / 10.347 / 9.539 | 14.773 / 16.633 / 23.257 | 2.311 / 3.430 |
+| 5 | Release | 64.199 / 168.707 / 187.331 | 20.638 / 16.907 / 15.289 | 124.277 / 25.523 / 29.755 | 2.993 / 4.828 |
+| 5 | Candidate | 39.694 / 53.901 / 188.158 | 9.901 / 12.012 / 9.387 | 23.449 / 19.135 / 13.068 | 2.516 / 3.914 |
+| 6 | Release | 36.884 / 52.408 / 173.102 | 9.457 / 9.567 / 8.602 | 21.283 / 13.573 / 13.263 | 2.370 / 3.765 |
+| 6 | Candidate | 40.911 / 49.395 / 173.895 | 10.077 / 10.449 / 9.562 | 15.214 / 17.200 / 13.526 | 2.321 / 3.443 |
+| 7 | Release | 39.329 / 53.602 / 181.132 | 9.694 / 9.400 / 8.892 | 15.828 / 19.495 / 13.655 | 2.603 / 3.368 |
+| 7 | Candidate | 43.964 / 74.122 / 180.047 | 11.652 / 14.324 / 8.337 | 22.450 / 21.774 / 21.100 | 2.280 / 3.372 |
+| 8 | Release | 37.636 / 62.597 / 179.414 | 8.810 / 9.575 / 9.481 | 18.902 / 24.906 / 13.413 | 2.284 / 3.346 |
+| 8 | Candidate | 38.743 / 49.692 / 198.410 | 9.326 / 9.126 / 9.146 | 21.418 / 19.197 / 12.976 | 2.233 / 3.281 |
+| 9 | Release | 39.306 / 56.981 / 192.428 | 10.588 / 9.829 / 9.574 | 22.525 / 26.219 / 21.713 | 2.390 / 3.574 |
+| 9 | Candidate | 38.107 / 44.774 / 181.844 | 8.412 / 9.324 / 9.260 | 15.656 / 15.511 / 13.345 | 2.472 / 3.983 |
+
+All 2,000 saves matched. Four release arms and six candidate arms
+missed at p95. Each arm had exactly three saves with a foreground
+checkpoint sync on both binaries. The highest content sync was
+124.277 ms on the running release, in pair 5. Excluding each arm's
+first save for this diagnostic comparison, pooled content, journal
+and retirement sync p95 were 12.617/12.157/11.032 ms on the release
+and 10.439/10.316/9.681 ms on the candidate. The pooled HTTP p95
+for these 990 later saves per release was 42.216 and 40.656 ms.
+
+In later responses above 40 ms, combined median time in the three
+sync stages was 35.780 ms on the release and 33.740 ms on the
+candidate. Ordinary responses spent 20.370 and 20.299 ms there.
+Median time outside those sync calls rose by 0.710 ms and
+1.497 ms respectively. Checkpoints occurred in 23 of 66 and 24
+of 54 later slow responses. The recurring tail is largely in
+the existing sync and checkpoint path shared by both binaries.
+The trace did not find an added candidate sync boundary.
+
+The first save was the maximum in every traced arm. Median first
+save was 183.360 ms on the release and 182.677 ms on the candidate.
+Only 25.333 and 21.870 ms, respectively, were in the measured
+foreground sync stages. The trace does not assign the remainder
+to a stage. Since syscall tracing itself changes the measurement,
+this series diagnoses the tail and does not qualify the untraced
+gate. The controlled comparison showed that the active storage
+probe raised p95, and the locked perf-02 checks found no live
+foreign workload inside that VM. Neither finding explains every
+miss. Keep the branch held.
+
 ## Review gate
 
 The measured poll-only candidate `5370a9d0` was built on dev
