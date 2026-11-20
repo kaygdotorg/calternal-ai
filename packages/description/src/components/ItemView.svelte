@@ -114,7 +114,7 @@
   async function runAction(def: EntryAction["invoke"], context: string | undefined, interaction?: { selection_ref?: string }) {
     const out = await ui.invoker.run(def, { context, interaction: interaction as never });
     if ("state" in out && out.state === "ok") {
-      const comp = (out as ActionOutcome & { composer?: string }).composer ?? (out as ActionOutcome).created;
+      const comp = (out as ActionOutcome & { entry_composer?: string }).entry_composer;
       if ((def.then as { composer?: unknown } | undefined)?.composer && comp) {
         try { const c = await session.exchange<{ mode: "reply" | "edit"; anchor: string; initial?: string }>("entry_composer.open", { type: "entry_composer", composer: comp }); st.composer = { mode: c.mode, anchor: c.anchor, initial: c.initial, ref: comp }; }
         catch { failed("The composer could not be opened."); }

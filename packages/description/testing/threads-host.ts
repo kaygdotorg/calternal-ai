@@ -134,7 +134,7 @@ export function threadsHost(o: ThreadsHostOptions) {
       case "request.resolve": return { activation_id: "x", state: "ok" };
       case "activation.resolve": {
         const m = /^ctx-(reply|edit)-(.+)$/.exec(String(body.activation_context));
-        if (m) return { activation_id: body.activation_id, state: "ok", composer: `c-${m[1]}-${m[2]}` };
+        if (m) return { activation_id: body.activation_id, state: "ok", entry_composer: `c-${m[1]}-${m[2]}` };
         if (body.action_id === "delete" || body.action_id === "call-from-here" || body.action_id === "call-range" || body.action_id === "call-in") return { activation_id: body.activation_id, resolution_ref: "res-x", confirmation_challenge: "chal-x", material: [{ name: "operation", label: "Operation", value: body.action_id === "delete" ? "Delete for everyone" : "Call an agent in" }, { name: "effect", label: "Effect", value: body.action_id === "delete" ? "The message disappears for everyone." : "The agent reads the selected messages. People whose messages are included are asked first." }] };
         if (body.action_id === "send" && !body.interaction?.choices?.harness) { const c = body.interaction?.choices ?? {}; sent.push({ text: String(body.interaction?.form?.composer?.message ?? ""), harness: String(c.harness ?? ""), placement: String(c.placement ?? ""), ...(body.interaction as object) } as never); extra.push({ who: "Ada", text: String(body.interaction?.form?.composer?.message ?? ""), at: Date.now() }); return { activation_id: body.activation_id, state: "ok" }; }
         return undefined;
