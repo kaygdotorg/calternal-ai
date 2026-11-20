@@ -42,7 +42,7 @@ flock -s /tmp/calternal-dev02.lock nix develop -c bash -c '
 The build uses the 14.41 revision-aware SDK builder. It pins both
 plugin manifests and workers, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-All 53 tests and both Conformance tool 1.1.0 plugin checks passed
+All 55 tests and both Conformance tool 1.1.0 plugin checks passed
 on dev-02 at the 14.41 pin under the shared lock. This includes four
 v1 reader tests. The repository
 documentation gate passed in the earlier afternoon run. The verified entry asset still uses scripted
@@ -670,7 +670,15 @@ already logged and suppresses the conversation reply. The two agents
 receive the person's explicit prompt and the private exchange. Passing
 the parent transcript would require its own checked disclosure.
 
-### Read-only v1 reader and cutover findings
+### Optional v1 import
+
+The owner decided on November 20 that the unused Calternal-AI production
+deployment may be redeployed fresh at the Threads cutover. This applies
+only to this project's own deployment and data. The old Calternal app
+and its userdata are outside that scope. Carrying forward Threads and
+Notes, draining historical sessions and proving historical attribution
+are no longer cutover gates. The read-only v1 reader remains available
+for optional import. [Owner decision](https://git.kayg.org/kayg/calternal-ai/src/branch/dev/docs/morning-2026-11-20.md#evening-decisions-owner-2026-11-20)
 
 The Threads worker opens `calternal-thread/v1` through its read operations.
 It reads each exact revision with bounded item ranges, recognizes the v1
@@ -694,17 +702,16 @@ binding. The test compares their parsed transcripts and checks the
 recorded offset, original UUIDs, multibyte text, body delimiter lookalike,
 relative Markdown link and saved tool notices.
 
-| Area and reference | Disposition | What a faithful cutover needs |
+| Area and reference | Disposition | Considerations for optional import |
 | --- | --- | --- |
 | Framed records and headings · dev `threads/document.rs`, `records.rs`, `headings.rs` | **CLOSED** for the plugin reader | Preserve the Markdown and the original label as written, together with the offset-aware instant, UUID and role. Keep the old archive flag, title, created and activity dates in host item metadata and keep the old relative ordering. The old sign-in notices are skipped as managed framing in the current view. |
-| Binding the version 1 file to Threads · API §8 and manifest `file_format` | **OPEN** | One manifest version declares the writer and its title binding. Cutover needs a read-only version-1 binding on retained items while version 2 stays writable. Route directly to the installed Threads app and deny generic editor, relocation and execution mutations for retained v1 items until their treatment is decided. Preserve the old item ID, locators and routes through the switch so a message UUID still resolves under the current reader's grant. Never infer a v2 anchor by shortening a v1 UUID. |
+| Binding the version 1 file to Threads · API §8 and manifest `file_format` | **OPEN** | One manifest version declares the writer and its title binding. An optional import route needs a read-only version-1 binding while version 2 stays writable. Route directly to the installed Threads app and deny generic editor, relocation and execution mutations for retained v1 items until their treatment is decided. Preserve the old item ID, locators and routes through the switch so a message UUID still resolves under the current reader's grant. Never infer a v2 anchor by shortening a v1 UUID. |
 | Historical attribution and private state · API §8 and catalogue `item_spans`, `attempt_disclosure` | **OPEN** | A v1 heading supplies a display name, and a saved agent turn supplies a historical reference. The file cannot prove an account or exact authorized attempt. Retain any protected account evidence the old journal can actually prove. Keep the remaining material `consent_only`, and apply the required widening protection to every retained item, including restorable copies. Strip the private resume binding before granting a plugin raw read, export or offline access. A renderer that skips the comment still leaves the binding in the raw bytes. |
 | Attachments and links · dev `docs/threads.md` under “Identity and exact body bytes” and catalogue `ItemViewAssetRef` | **OPEN** | The reader keeps relative Markdown links verbatim. The v1 writer has no dedicated attachment payload in its records. For referenced files that exist, keep the original base path or resolve relative links from the old placement to stable host locators. Mint checked asset refs against the reader's current rights. Empty text is a valid record and keeps its UUID. |
 | Saved versus live tool output · dev `docs/threads.md` under “Tool steps and the saved output limit” | **PARTLY** | The saved file preserves scrubbed tool statuses and byte counts as Markdown, including a 98,326-byte notice in the sample. The transcript cannot reconstruct the omitted bytes. Retain lawful existing linked run artifacts where available. Future tool output needs a separate bounded, access-checked artifact, with an ordinary link from the message. |
 
 The tests exercise the built plugin against the fake v2 host with the
-server-produced files. Live v2 ownership and native-route replacement
-remain cutover work.
+server-produced files. Native v2 import routing and any old locators are outside the fixture.
 
 ### Host needs from the afternoon decisions
 
@@ -796,7 +803,7 @@ same-title path obtains a numeric suffix in the fake. Titles use a
 and 64 participants. Inline saves stop at 128 KiB. Moving from the fixture
 to durable storage needs scoped receipt retention and bounded history,
 and the per-space snapshot and alarm caps already in the catalogue. The
-spike has no format migration, attachment upload, attested historical authorship,
+spike has no format migration, live attachment upload, attested historical authorship,
 agent-session continuation or provider tools. The people-thread operations are fixture-only.
 
 Send and alarm setup each read the current document to check whether
@@ -874,7 +881,7 @@ scanner are here.
 | Attribution for a host-patched title span | **CLOSED** | The fixture changes the title middle to `{kind: "host"}` on rename and preserves the sender and the original quote on the neighboring records. Moving without a title change preserves the existing origin. |
 | Durable span reads and host substitutions | **CLOSED** for the catalogue exchange | A checked read joins the chunks for one span before decoding it and rejects overlapping host-written ranges. It keeps message boundaries, sender metadata and attempt metadata intact. An empty tombstone middle has no origin. The fixture does not exercise live rewrite or redaction origin transactions. |
 | 14.40 rename and reply edits, checked quotes and redaction | **CLOSED** at their previous scope | Both builds and all exchange tests pass. The prior live rewrite, Undo, provenance durability and latency qualification remains open. |
-| Earlier findings | **UNCHANGED** | The revision adds no further contract findings for the v2 flows. The prior consent, delivery, renderer and SDK work remains. See the v1 cutover findings for remaining host work. |
+| Earlier findings | **UNCHANGED** | The revision adds no further contract findings for the v2 flows. The prior consent, delivery, renderer and SDK work remains. The owner subsequently made the v1 reader an optional import. |
 
 ## Quotes in other threads
 
@@ -883,6 +890,25 @@ scanner are here.
 | Delete quotes in another thread · catalogue `item_engine.quotes.redaction` | **CLOSED** in the fixture | Threads sends a checked source item, revision and span when posting the reply. Delete issues the existing empty-middle replacement on the source. The fixture follows the checked quote index, removes the quote bytes in the second thread in the same receipt, preserves the reply's span and author and shifts later offsets. An older destination revision is withheld and its retained page invalidated. Retrying Delete leaves the second thread's revision unchanged. |
 | Audience and placement checks · catalogue `item_engine.quotes.compose` | **CLOSED** in the fixture | Both threads are in the same space and all destination participants can read the source. The test refuses a wider audience, a separate space and an unchecked reply. Cross-space copies remain outside the catalogue's single-writer transaction. |
 | Live redaction and opaque writes · catalogue `item_engine.quotes.redaction` | **OPEN** | Qualify indexed multi-item commits, stale heads, restart, revoke and history, cache and offline delivery. Preserve live and retained dependencies before admitting any write that replaces an indexed source or destination with opaque bytes. Threads refuses to re-encode a checked cross-thread quote as ordinary text. The fixture also refuses whole-file replacements that would detach the dependency. |
+
+## Files attached to messages
+
+The shared Post fixture and personal Send fixture accept staged upload
+choices from the host. The plugin saves ordinary conversation-relative
+Markdown links under `Attachments/<stable file id>/<name>` after the
+attested text. A queued Send pins its choices to the admitted job. The
+worker publishes and refreshes attachment leaves through checked view
+asset refs. The fixture models file bytes and delivery in memory. The
+14.41 manifest and harness input still carry the original published wire
+shapes.
+
+| Finding and reference | Status | Smallest host change or evidence |
+| --- | --- | --- |
+| Generic item attachment upload · catalogue `open_cutover_requirements.attachment_upload` | **OPEN · NEEDS HOST** | Mint a renderer upload grant scoped to the checked item, actor, and composer. Seal the staged upload as an immutable checked choice. Resolve its portable file identity and safe name for Markdown. Bind selected upload choices atomically to the appended record and receipt under the same item and expected-head fence. Keep staged bytes private until the claim commits. |
+| Files on an admitted Send · §3 and catalogue `start_job`, `contribution_call` | **OPEN · NEEDS HOST** | Pin upload choices to the admitted job under the same preflight and retirement rules as text. Expose the checked choices to its owning worker, and separately authorize immutable file reads for the exact attempt and contribution. The fixture records the link on the prompt, keeps raw file bytes out of worker and harness payloads, and exercises Stop before claim. The current harness receives text only. |
+| File delivery and revocation · catalogue `view_snapshots.assets` and `ItemViewAssetRef` | **PARTLY** | The output schema already has `snapshot-attachment`. A worker still needs a normed way to resolve a portable identity into an authorized input ref for an exact conversation revision and view scope. Verify item and file grants independently at delivery, fence historical and retained reads on deletion and revoke, and keep the ordinary relative link valid on rename, move, export, and an offline copy. |
+| Bounded framing · catalogue `item_engine` attested composition | **OPEN** for the general format | The fixture supports up to four files with nonempty captured text while the generated links fit the 512-byte suffix. It refuses an oversized link footer before Send admission. Pin a bounded host-checked attachment footer if several long filenames must fit, and an attachment-only composition that records the checked action and distinguishes it from a tombstone. |
+| Claims, reopening and edits | **CLOSED** in the fixture | A lost append acknowledgement replays one message and one claim. Another actor or conversation cannot reuse its upload choice. Edits preserve existing files. An independent revoke removes the corresponding view leaf and denies its existing range ref. Deleting the message removes the other attachment link and fences its previously issued read. Opaque whole-file replacement is refused while a live checked attachment depends on a recorded span. |
 
 ## Simplification opportunities
 

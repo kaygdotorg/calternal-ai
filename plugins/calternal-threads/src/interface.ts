@@ -1,3 +1,4 @@
+import type { AttachmentPort } from "./attachments.ts";
 import type { AlarmDelivery, AlarmReceipt, AlarmSet, AuthorInvocationContext, ContributionCall, ContributionCallReceipt,
   ContributionRead, ContributionReadResult, ExecutionJobContext, ExecutionJobReceipt, ExecutionJobStart, ExecutionStart,
   ExecutionStatus, ItemAppend, ItemAppendReceipt, ItemViewContext, ItemViewContextRequest, ItemViewPublish,
@@ -5,7 +6,7 @@ import type { AlarmDelivery, AlarmReceipt, AlarmSet, AuthorInvocationContext, Co
   ItemSave, ItemSaveReply, ItemRef, HarnessRef, ChoiceRef, ItemSpansRequest, ItemSpansPage,
   ItemStageBegin, ItemStageBeginReply, ItemStageChunk, ItemStageChunkAck, ItemStageSeal, ItemStageSealed } from "../generated/wire.js";
 
-export type Send = { item: ItemRef; text: string; harness: HarnessRef; placement: ChoiceRef };
+export type Send = { item: ItemRef; text: string; harness: HarnessRef; placement: ChoiceRef; attachments?: readonly string[] };
 export type RunInput = { item: ItemRef; if_missed?: "run" | "skip" };
 
 type Methods = {
@@ -32,4 +33,5 @@ export interface Context {
   author: AuthorInvocationContext;
   job?: ExecutionJobContext;
   alarm?: AlarmDelivery;
+  attachments?: AttachmentPort;
 }

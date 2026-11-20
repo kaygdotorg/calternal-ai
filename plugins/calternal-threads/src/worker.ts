@@ -1,9 +1,9 @@
 import type { ItemViewRead, ItemRef, Timestamp } from "../generated/wire.js";
 import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { checkedText, type HarnessInput, type HarnessOutput } from "./harnesses-v1.ts";
-import { agentParticipant, attest, checkedTitle, encode, MAX_FILE_BYTES, messageId, messageRecord, page, personParticipant, step, threadHeader, messageView, type Thread } from "./format.ts";
+import { agentParticipant, attest, checkedTitle, encode, MAX_FILE_BYTES, messageId, messageRecord, personParticipant, step, threadHeader, messageView, type Thread } from "./format.ts";
 import type { Context, RunInput, Send } from "./interface.ts";
-import { appendRecord, inlineBody, kind, publish, read, readConversation } from "./files.ts";
+import { appendRecord, conversationPage, inlineBody, kind, prepareFiles, publish, read, readConversation } from "./files.ts";
 import { legacyMessage, legacyPage } from "./legacy.ts";
 
 export { peopleHandlers } from "./people.ts";
@@ -41,9 +41,12 @@ async function create({ title }: { title: string }, ctx: Context) {
   return { created: head.item };
 }
 
-async function send({ item, text, harness, placement }: Send, ctx: Context) {
+async function send({ item, text, harness, placement, attachments = [] }: Send, ctx: Context) {
   await checkSend(ctx, item);
-  return ctx.call("start_job", { job: "run", item, harness, placement, input: {}, contribution_input: { text: checkedText(text) } });
+  const input = { job: "run", item, harness, placement, input: {}, contribution_input: { text: checkedText(text) } };
+  if (!attachments.length) return ctx.call("start_job", input);
+  await prepareFiles(ctx, item, attachments);
+  return ctx.attachments!.startJob(input, attachments);
 }
 
 async function run(input: RunInput, ctx: Context) {
@@ -64,7 +67,9 @@ async function run(input: RunInput, ctx: Context) {
     if (!thread.participants.some(participant => participant.id === agent.id) && thread.participants.length >= 64) {
       throw new Error("Thread participant limit reached.");
     }
-    const prompt = { id: promptId, author: person, text, posted_at: ctx.author.authored_at };
+    const staged = ctx.attachments?.jobFiles;
+    const files = staged?.length ? await prepareFiles(ctx, item, staged) : undefined;
+    const prompt = { id: promptId, author: person, text, posted_at: ctx.author.authored_at, ...(files && { files }) };
     thread.messages.push(prompt);
     const record = messageRecord(prompt, thread.participants);
     // Reserve a reply, its quote of this prompt and bounded message metadata.
@@ -74,7 +79,7 @@ async function run(input: RunInput, ctx: Context) {
     }
     const request_id = step(ctx.author.request_id, "prompt");
     const attested = ctx.alarm ? undefined : attest(record, { kind: "input" });
-    const saved = await appendRecord(ctx, item, revision, request_id, size, thread, record, attested);
+    const saved = await appendRecord(ctx, item, revision, request_id, size, thread, record, attested, staged);
     revision = saved.revision;
     currentSize = saved.end_offset;
     if ("span" in saved && saved.span) spans.set(promptId, saved.span);
@@ -130,7 +135,7 @@ async function run(input: RunInput, ctx: Context) {
 
 const defaultGraceSeconds = 60;
 
-async function arm(input: Omit<Send, "placement"> & { at: Timestamp; if_missed: "run" | "skip"; grace_seconds?: number }, ctx: Context) {
+async function arm(input: Omit<Send, "placement" | "attachments"> & { at: Timestamp; if_missed: "run" | "skip"; grace_seconds?: number }, ctx: Context) {
   const { item, harness, at, if_missed, grace_seconds = defaultGraceSeconds } = input;
   await checkSend(ctx, item);
   return ctx.call("alarm_set", {
@@ -153,7 +158,7 @@ async function refresh(input: ItemViewRead, ctx: Context) {
   if (input.anchor !== undefined && !thread.messages.some(message => message.id === input.anchor && !message.deleted)) {
     return { anchor_unavailable: true as const };
   }
-  return page(thread, input.older, input.anchor);
+  return conversationPage(ctx, input.item, input.source_revision, thread, input.older, input.anchor);
 }
 
 async function message(input: { item: ItemRef; message: string; offset?: number }, ctx: Context) {

@@ -1,5 +1,6 @@
+import { fileLinks, maxMessageFiles, readFileLink, type MessageFile } from "./attachments.ts";
 import { createHash } from "node:crypto";
-import type { AttestedBody, ContributionIdentity, ItemSave, ItemSpansPage, ItemSnapshotView, ItemLocator, SnapshotNode, Timestamp } from "../generated/wire.js";
+import type { AttestedBody, ContributionIdentity, ItemSave, ItemSpansPage, ItemSnapshotView, ItemViewAssetRef, ItemLocator, SnapshotNode, Timestamp } from "../generated/wire.js";
 
 type Person = { kind: "person"; id: string; name: string };
 type Agent = { kind: "agent"; id: string; name: string; contribution: ContributionIdentity };
@@ -38,6 +39,7 @@ export type Message = {
   consultation?: ItemLocator;
   edited?: true;
   deleted?: true;
+  files?: readonly MessageFile[];
 };
 export type Thread = {
   id: string;
@@ -101,12 +103,13 @@ function timestamp(value: string): Timestamp {
 }
 
 type FramedText = { prefix: string; text: string; suffix: string; quote?: string };
-const maxFramingBytes = 512;
+/** Maximum bytes in each plugin-owned attested framing operand. */
+export const MAX_FRAMING_BYTES = 512;
 
 /** Select a host source only when each framing operand fits the host byte bound. */
 export function attest(parts: FramedText, source: AttestedBody["source"], quote?: AttestedBody["quote"]): AttestedBody | undefined {
   const { prefix, suffix } = parts;
-  if (Buffer.byteLength(prefix) > maxFramingBytes || Buffer.byteLength(suffix) > maxFramingBytes ||
+  if (Buffer.byteLength(prefix) > MAX_FRAMING_BYTES || Buffer.byteLength(suffix) > MAX_FRAMING_BYTES ||
       (parts.quote !== undefined && !quote)) return;
   return { source, prefix, suffix, ...(quote && { quote }) };
 }
@@ -142,8 +145,11 @@ export function messageRecord(message: Message, participants: Participant[], inl
     if (link) links.push(`${name}=${encodeURIComponent(link.space)}/${encodeURIComponent(link.id)}`);
   }
   if (links.length) attrs.push("links=1");
+  if (message.files?.length) attrs.push(`files=${message.files.length}`);
+  const tail = [...(message.files?.length ? [fileLinks(message.files)] : []),
+    ...(links.length ? [`<!-- ${links.join(" ")} -->`] : [])];
   return { prefix: `### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n`, quote: message.replyQuote, text: message.text,
-    suffix: links.length ? `\n\n<!-- ${links.join(" ")} -->\n\n` : "\n\n" };
+    suffix: tail.length ? `\n\n${tail.join("\n\n")}\n\n` : "\n\n" };
 }
 
 /** Render the opaque Markdown for a record that cannot use host composition. */
@@ -186,8 +192,8 @@ export function threadHeader(thread: Thread): FramedText {
 
 /** Serialize the transcript in the same format as the append stream. */
 export function encode(thread: Thread): string {
-  if (thread.messages.some(message => message.replyIn && message.replyQuote !== undefined)) {
-    throw new Error("Use a checked write to keep quotes from other threads.");
+  if (thread.messages.some(message => message.files?.length || (message.replyIn && message.replyQuote !== undefined))) {
+    throw new Error("Use a checked write to keep attachments and quotes from other threads.");
   }
   const { prefix, text, suffix } = threadHeader(thread);
   return prefix + text + suffix + thread.messages.map(message => encodeMessage(message, thread.participants)).join("");
@@ -205,7 +211,7 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
   const attrs = new Map<string, string>();
   for (const field of raw.split(" ")) {
     const [key, value] = field.split("=", 2);
-    if (!["by", "reply-to", "quote", "asked-by", "mentions", "links", "agent-plugin"].includes(key) || !value || attrs.has(key)) {
+    if (!["by", "reply-to", "quote", "asked-by", "mentions", "links", "agent-plugin", "files"].includes(key) || !value || attrs.has(key)) {
       throw new Error("Could not read the details after the message heading.");
     }
     attrs.set(key, value);
@@ -260,9 +266,19 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
     }
     end -= 2;
   }
+  const count = Number(attrs.get("files") ?? 0);
+  const files = [];
+  if (attrs.has("files")) {
+    if (!Number.isInteger(count) || count < 1 || count > maxMessageFiles || end - count <= start ||
+        body[end - count - 1] !== "") throw new Error("Could not read the message attachments.");
+    for (const line of body.slice(end - count, end)) files.push(readFileLink(line));
+    if (new Set(files.map(file => file.id)).size !== files.length) throw new Error("Duplicate message attachment.");
+    end -= count + 1;
+  }
   const framingBody = body.slice(start, end).join("\n");
   if (indexed && (framingBody !== "" || !attribution)) throw new Error("Could not read where the message text starts and ends.");
-  const message: Message = { id, author, posted_at, text: indexed?.text ?? escapeBodyHeadings(framingBody, false) };
+  const message: Message = { id, author, posted_at, text: indexed?.text ?? escapeBodyHeadings(framingBody, false),
+    ...(files.length && { files }) };
   const reply = attrs.get("reply-to");
   if (replyQuote !== undefined && !reply) throw new Error("Could not identify the quoted message.");
   const replyLabel = markers.find(marker => marker.startsWith("reply to "));
@@ -432,15 +448,17 @@ export function decodeIndexed(bytes: Buffer, index: readonly IndexedSpan[], prov
 }
 
 /** Resolve a visible message and keep reply context only while its target is visible. */
-export function messageView(thread: Thread, id: string): Omit<Message, "deleted"> {
+export function messageView(thread: Thread, id: string): Omit<Message, "deleted" | "files"> {
   const message = thread.messages.find(entry => entry.id === id);
   if (!message || message.deleted) throw new Error("Message unavailable.");
-  const { replyTo, replyToName, replyQuote, replyIn, deleted, ...fields } = message;
+  const { replyTo, replyToName, replyQuote, replyIn, deleted, files, ...fields } = message;
   const visible = replyIn ? replyQuote !== undefined : replyTo && thread.messages.some(entry => entry.id === replyTo && !entry.deleted);
   return { ...fields, ...(visible && { replyTo, replyToName, ...(replyQuote !== undefined && { replyQuote }), ...(replyIn && { replyIn }) }) };
 }
 
-export function page(thread: Thread, older?: string, anchor?: string): { view: ItemSnapshotView; older?: string; anchor?: string } {
+export async function page(thread: Thread, older?: string, anchor?: string,
+  project?: (files: readonly MessageFile[]) => Promise<readonly { ref: ItemViewAssetRef; label: string }[]>,
+): Promise<{ view: ItemSnapshotView; older?: string; anchor?: string }> {
   if (anchor !== undefined && older !== undefined) throw new Error("Open either a linked message or an older page at a time.");
   const visible = thread.messages.filter(message => !message.deleted);
   const index = anchor === undefined ? -1 : visible.findIndex(message => message.id === anchor);
@@ -460,6 +478,9 @@ export function page(thread: Thread, older?: string, anchor?: string): { view: I
     const text = [...message.text];
     for (let offset = 0; offset < text.length; offset += 2000) {
       nodes.push({ type: "snapshot-text", text: text.slice(offset, offset + 2000).join("") });
+    }
+    if (project && message.files?.length) {
+      for (const file of await project(message.files)) nodes.push({ type: "snapshot-attachment", ...file });
     }
     const next = [...nodes, ...children];
     // Reserve the envelope and cursor overhead within the 64 KiB bound.

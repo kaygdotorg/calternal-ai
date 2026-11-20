@@ -1,5 +1,5 @@
 import type { AccountRef, ContributionIdentity, ItemContentReceipt, ItemCreate, ItemLocator, ItemRef, RevisionRef } from "../generated/wire.js";
-import { appendRecord, inlineBody, kind, publish, read, saveOpaque } from "./files.ts";
+import { appendRecord, inlineBody, kind, prepareFiles, publish, read, saveOpaque } from "./files.ts";
 import { agentParticipant, attest, checkedTitle, encode, MAX_FILE_BYTES, messageId, messageRecord, messageView, personParticipant, step, type Message, type Thread } from "./format.ts";
 import { checkedText, type HarnessOutput } from "./harnesses-v1.ts";
 import type { Context } from "./interface.ts";
@@ -101,8 +101,8 @@ async function create(input: { title: string; participants: AccountRef[] }, ctx:
   return { created: head.item };
 }
 
-async function post({ item, text, replyTo, replyIn, mentions = [] }: Target & {
-  text: string; replyTo?: string; replyIn?: ItemRef; mentions?: AccountRef[];
+async function post({ item, text, replyTo, replyIn, mentions = [], attachments = [] }: Target & {
+  text: string; replyTo?: string; replyIn?: ItemRef; mentions?: AccountRef[]; attachments?: readonly string[];
 }, ctx: PeopleContext) {
   const destination = await writableMember(ctx, item);
   const { thread, revision, size, locator } = destination;
@@ -110,6 +110,7 @@ async function post({ item, text, replyTo, replyIn, mentions = [] }: Target & {
   if (external && replyTo === undefined) throw new Error("Choose a message to quote.");
   const origin = external ? await member(ctx, replyIn) : destination;
   if (origin.locator.space !== locator.space) throw new Error("Quotes must come from the same space.");
+  const files = attachments.length ? await prepareFiles(ctx, item, attachments) : undefined;
   const id = messageId(ctx.author.request_id, `person-${ctx.author.actor}`);
   const recipients = [...new Set(mentions)].sort();
   if (recipients.some(id => !thread.participants.some(person => person.kind === "person" && person.id === id))) {
@@ -119,7 +120,7 @@ async function post({ item, text, replyTo, replyIn, mentions = [] }: Target & {
   if (existing) {
     if (!existing.edited && !existing.deleted && (
       existing.text !== text || existing.replyTo !== replyTo || existing.replyIn?.id !== (external ? origin.locator.id : undefined) ||
-      JSON.stringify(existing.mentions ?? []) !== JSON.stringify(recipients)
+      JSON.stringify(existing.files) !== JSON.stringify(files) || JSON.stringify(existing.mentions ?? []) !== JSON.stringify(recipients)
     )) throw new Error("Conflicting replay.");
     await publish(ctx, item, revision, thread);
     return { message: id };
@@ -129,7 +130,7 @@ async function post({ item, text, replyTo, replyIn, mentions = [] }: Target & {
   const message = {
     id, author: personParticipant(ctx.author.actor, ctx.author.actor_label ?? sender.name), text: checkedText(text), posted_at: ctx.author.authored_at,
     ...(target && { replyTo, replyToName: target.author.name, replyQuote: checkedText(target.text) }),
-    ...(external && { replyIn: origin.locator }), ...(recipients.length && { mentions: recipients }),
+    ...(external && { replyIn: origin.locator }), ...(files && { files }), ...(recipients.length && { mentions: recipients }),
   };
   const record = messageRecord(message, thread.participants);
   const captured = ctx.messageWrite;
@@ -138,7 +139,7 @@ async function post({ item, text, replyTo, replyIn, mentions = [] }: Target & {
   const attested = captured?.item === item && captured.text === text ? attest(record, { kind: "input" }, quote) : undefined;
   if (external && !attested) throw new Error("A quote from another thread requires a checked source and a checked reply.");
   thread.messages.push(message);
-  const saved = await appendRecord(ctx, item, revision, step(ctx.author.request_id, "person-post"), size, thread, record, attested);
+  const saved = await appendRecord(ctx, item, revision, step(ctx.author.request_id, "person-post"), size, thread, record, attested, attachments);
   await publish(ctx, item, saved.revision, thread);
   return { message: id };
 }
@@ -171,6 +172,7 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
     entry.replyQuote = checkedText(target.text);
     quote = { item, revision, span: sourceSpan };
   }
+  const hadFiles = entry.files?.length;
   const quotedBy = text === undefined ? thread.messages.filter(reply => !reply.replyIn && reply.replyTo === message && reply.replyQuote !== undefined) : [];
   if (text === undefined) {
     entry.text = "";
@@ -181,6 +183,7 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
     delete entry.replyIn;
     delete entry.replyQuote;
     delete entry.mentions;
+    delete entry.files;
     for (const reply of quotedBy) delete reply.replyQuote;
   } else {
     entry.text = checkedText(text);
@@ -203,6 +206,7 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
       return;
     }
   }
+  if (hadFiles) throw new Error("Use a checked write to change a message with attachments.");
   if (text !== undefined && entry.replyTo !== undefined) throw new Error("This reply cannot be edited without a checked write.");
   await save(ctx, item, revision, thread, purpose);
 }

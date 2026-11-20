@@ -11,6 +11,7 @@ import type { AlarmDelivery, AlarmSet, AttestedBody, ExecutionJobContext, Execut
 import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { authorContext } from "../generated/author-context.mjs";
 import type { ManifestV2 } from "../generated/author.js";
+import { checkSelection, fileLink, type AttachmentPort, type MessageFile } from "../src/attachments.ts";
 import type { Context, RunInput } from "../src/interface.ts";
 import type { HarnessInput, HarnessOutput } from "../src/harnesses-v1.ts";
 import type { handlers as threadHandlers } from "../src/worker.ts";
@@ -70,6 +71,7 @@ type Job = {
   context: ExecutionJobContext;
   starter: string;
   capturedInput?: CheckedText;
+  stagedFiles?: readonly string[];
   input: RunInput;
   state: "pending" | "running" | "done" | "stopped";
   attempt?: ExecutionStatus;
@@ -77,6 +79,8 @@ type Job = {
   result?: HarnessOutput;
   contribution?: { call: string; input: HarnessInput };
 };
+type UploadedFile = MessageFile & { item: string; owner: string; bytes: Buffer; revoked?: true; job?: string; record?: string };
+type AttachmentView = { item: string; revision: string; viewer: string; id: string };
 type CheckedText = { item?: string; text: string };
 type Owner = File["owner"];
 type Stage = { spec: ItemStageBegin; chunks: Buffer[]; length: number; sealed?: Buffer };
@@ -119,6 +123,8 @@ export class FakeHost {
   files = new Map<string, File>();
   jobs = new Map<string, Job>();
   snapshots = new Map<string, ItemViewPublish>();
+  private uploaded = new Map<string, UploadedFile>();
+  private attachmentViews = new Map<string, AttachmentView>();
   private quoteDestinations = new Map<string, Set<string>>();
   alarms = new Map<string, AlarmSet>();
   receipts = new Map<string, { fingerprint: string; result: unknown }>();
@@ -179,6 +185,75 @@ export class FakeHost {
     return [...this.files.entries()].filter(([, file]) =>
       file.owner === "threads" && file.creator === person && file.discovery === "creator_only",
     ).map(([item]) => item);
+  }
+
+  /** Simulate a renderer upload outside the worker. */
+  upload(item: string, owner: string, name: string, bytes: string) {
+    const file = this.files.get(item);
+    assert.ok(file && (file.people ?? [file.creator]).includes(owner));
+    const id = createHash("sha256").update(this.id("asset")).digest("hex").slice(0, 16);
+    const choice = this.id("upload");
+    const upload = { id, name, item, owner, bytes: Buffer.from(bytes) };
+    fileLink(upload);
+    this.uploaded.set(choice, upload);
+    return choice;
+  }
+
+  /** Fence a file independently of the conversation body. */
+  revokeAttachment(choice: string) {
+    const upload = this.uploaded.get(choice)!;
+    upload.revoked = true;
+    this.snapshots.delete(upload.item);
+  }
+
+  /** Exercise the renderer's scoped immutable asset range. */
+  attachmentRange(ref: string, viewer: string, offset: number, length: number) {
+    const view = this.attachmentViews.get(ref);
+    assert.ok(view && view.viewer === viewer, "Attachment unavailable.");
+    const upload = this.readableAttachment(view);
+    assert.ok(upload && Number.isSafeInteger(offset) && offset >= 0 && Number.isSafeInteger(length) && length > 0 && length <= 65536,
+      "Attachment unavailable.");
+    return upload.bytes.subarray(offset, offset + length);
+  }
+
+  private selectedFiles(item: string, actor: string, staged: readonly string[]) {
+    checkSelection(staged);
+    return staged.map(choice => {
+      const upload = this.uploaded.get(choice);
+      assert.ok(upload && upload.item === item && upload.owner === actor && !upload.revoked, "Attachment unavailable.");
+      return upload;
+    });
+  }
+
+  private readableAttachment({ item, revision, viewer, id }: AttachmentView) {
+    const file = this.files.get(item);
+    if (!file || !(file.people ?? [file.creator]).includes(viewer) || file.withheldRevisions.has(revision)) return;
+    const upload = [...this.uploaded.values()].find(value => value.id === id && value.item === item && !value.revoked && value.record);
+    if (upload && file.spanHistory.get(revision)?.spans.some(span => span.middle_length && file.bindings.get(span.span)?.record === upload.record)) return upload;
+  }
+
+  private attachmentPort(person: string, request: string, captured?: CheckedText, job?: Job): AttachmentPort {
+    const dispatch = async (method: "item_append" | "start_job", input: ItemAppend | ExecutionJobStart, staged: readonly string[]) => {
+      const [before, after] = exchanges[method];
+      trace.push([before, input]);
+      const response = await this.call("threads", request, method, input, job, person, true, undefined, captured, false, staged);
+      trace.push([after, response]);
+      return response;
+    };
+    return {
+      jobFiles: job?.stagedFiles,
+      prepare: async (item, staged) => this.selectedFiles(item, person, staged).map(({ id, name }) => ({ id, name })),
+      append: async (input, staged) => await dispatch("item_append", input, staged) as Awaited<ReturnType<AttachmentPort["append"]>>,
+      startJob: async (input, staged) => await dispatch("start_job", input, staged) as Awaited<ReturnType<AttachmentPort["startJob"]>>,
+      project: async (item, revision, files) => files.flatMap(file => {
+        const binding = { item, revision, viewer: person, id: file.id };
+        const upload = this.readableAttachment(binding);
+        if (!upload || upload.name !== file.name) return [];
+        const ref = this.id("asset-view");
+        this.attachmentViews.set(ref, binding);
+        return [{ ref, label: upload.name }];
+      }),
+    };
   }
 
   /** Read the host's attribution for the current or a specific committed revision. */
@@ -313,6 +388,7 @@ export class FakeHost {
     };
     return {
       author: { request_id: request, actor: person, authored_at, ...(actor_label && { actor_label }) }, call, messageWrite,
+      attachments: this.attachmentPort(person, request, messageWrite),
       canWriteConversation: async item => this.conversationAccess(item, person) === "full",
       visiblePeople: async (ids = directoryAccounts) => ids.filter(id => this.canPickPerson(group, person, id))
         .map(id => ({ id, name: personLabels[id] })),
@@ -479,11 +555,11 @@ export class FakeHost {
       return result as never;
     };
     const author = authorContext(structuredClone(message), call as Parameters<typeof authorContext>[1]);
-    return { ...author, call };
+    return { ...author, call, ...(owner === "threads" && { attachments: this.attachmentPort(person, request, capturedInput ?? job?.capturedInput, job) }) };
   }
 
   // This dispatch is the only place that unpacks fixture broker method operands.
-  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0] | StagingMethod, input: unknown, job?: Job, receiptActor = actor, checkedInvocation = false, shared?: readonly string[], captured?: CheckedText, allowsOutput = false): Promise<unknown> {
+  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0] | StagingMethod, input: unknown, job?: Job, receiptActor = actor, checkedInvocation = false, shared?: readonly string[], captured?: CheckedText, allowsOutput = false, stagedFiles: readonly string[] = []): Promise<unknown> {
     if (job) {
       assert.ok(this.jobs.get(job.context.intent) === job && job.state === "running", "attempt retired");
       assert.equal(job.starter, receiptActor);
@@ -501,7 +577,7 @@ export class FakeHost {
     };
     const requestId = args.request_id ?? request;
     const receiptKey = (name: string) => `${owner}:${receiptActor}:${name}:${requestId}`;
-    const commit = (effect: () => unknown) => this.receipt(receiptKey(method), input, effect);
+    const commit = (effect: () => unknown) => this.receipt(receiptKey(method), stagedFiles.length ? { input, stagedFiles } : input, effect);
     const compose = ({ source, prefix = "", suffix = "", quote }: AttestedBody, retiring?: string) => {
       assert.ok(checkedInvocation);
       assert.ok(Buffer.byteLength(prefix) <= 512 && Buffer.byteLength(suffix) <= 512, "framing exceeds 512 bytes");
@@ -684,6 +760,9 @@ export class FakeHost {
           let body = stage?.sealed ?? (save.body === undefined ? original : Buffer.from(save.body, "base64"));
           let span = {};
           if (stage || save.body !== undefined || (save.attested && !save.replace_span)) {
+            const attachedRecords = new Set([...this.uploaded.values()].filter(upload => upload.item === save.item).map(upload => upload.record));
+            assert.ok([...target.spans.values()].every(entry => !entry.middle_length || !attachedRecords.has(target.bindings.get(entry.span)!.record)),
+              "A whole-file change cannot detach a checked attachment.");
             assert.ok([...target.spans.values()].every(entry => {
               const binding = target.bindings.get(entry.span)!;
               return (!entry.quote || binding.quoteSource?.item === save.item) &&
@@ -799,7 +878,16 @@ export class FakeHost {
         if (next) this.spanPages.set(next, { ...location, after: after + spans.length });
         return { item, revision, body_provenance: index.body_provenance, spans, ...(next && { next }) };
       }
-      case "start_job": return commit(() => this.admit(input as ExecutionJobStart, receiptActor, captured));
+      case "start_job": return commit(() => {
+        const selected = this.selectedFiles(args.item, receiptActor, stagedFiles);
+        assert.ok(!selected.length || (captured?.item === args.item && selected.every(upload => !upload.record && !upload.job)), "Attachment unavailable.");
+        const receipt = this.admit(input as ExecutionJobStart, receiptActor, captured);
+        if (selected.length) {
+          this.jobs.get(receipt.job_id)!.stagedFiles = [...stagedFiles];
+          for (const upload of selected) upload.job = receipt.job_id;
+        }
+        return receipt;
+      });
       case "execution_start": return commit(() => {
         assert.ok(job?.state === "running");
         assert.equal(args.harness, job.context.harness);
@@ -849,6 +937,9 @@ export class FakeHost {
           const revision = this.id("rev");
           const prior = target.history.get(target.revision)!;
           const composed = append.attested && compose(append.attested);
+          const selected = this.selectedFiles(append.item, receiptActor, stagedFiles);
+          assert.ok(!selected.length || (composed?.middleBytes && selected.every(upload => !upload.record && upload.job === job?.context.intent)),
+            "Attachment unavailable.");
           const addition = composed ? composed.bytes : Buffer.from(append.bytes ?? "", "base64");
           assert.ok(addition.length <= 65536);
           const body = Buffer.concat([prior, addition]);
@@ -856,7 +947,9 @@ export class FakeHost {
           target.revision = revision;
           attributeWrite(target, revision, append.attested);
           const span = append.attested && composed ? recordSpan(target, prior.length, composed, append.attested) : {};
-          publishIndex(target, revision, !append.attested);
+          if (span.span) for (const upload of selected) upload.record = target.bindings.get(span.span)!.record;
+          if (!append.attested) target.provenance = "unproven";
+          publishIndex(target, revision);
           return { revision, end_offset: body.length, receipt: requestId,
             ...span };
         });
@@ -929,6 +1022,13 @@ export class FakeHost {
     await this.run(id);
   }
 
+  private releaseUnclaimedFiles(job: Job) {
+    for (const choice of job.stagedFiles ?? []) {
+      const upload = this.uploaded.get(choice)!;
+      if (!upload.record && upload.job === job.context.intent) delete upload.job;
+    }
+  }
+
   stop(item: string, target: { execution: string } | { intent: string }) {
     const input: ExecutionStopRequest = { request_id: this.id("stop"), ...target };
     trace.push(["ExecutionStopRequest", input]);
@@ -936,6 +1036,7 @@ export class FakeHost {
       [...this.jobs.values()].find(candidate => candidate.attempt?.execution === target.execution);
     assert.ok(job?.context.item === item && ["pending", "running"].includes(job.state), "stale Stop");
     job.state = "stopped";
+    this.releaseUnclaimedFiles(job);
     const result: ExecutionStopResult = job.attempt
       ? { ...job.attempt, phase: "stopped", transition_cursor: this.id("transition") }
       : { intent: job.context.intent, phase: "stopped" };
@@ -1068,7 +1169,10 @@ export class FakeHost {
     const file = this.files.get(item)!;
     if (file.people && this.conversationAccess(item, file.creator) !== "full") throw new Error("Conversation is read-only.");
     for (const job of this.jobs.values()) {
-      if (job.context.item === item && ["pending", "running"].includes(job.state)) job.state = "stopped";
+      if (job.context.item === item && ["pending", "running"].includes(job.state)) {
+        job.state = "stopped";
+        this.releaseUnclaimedFiles(job);
+      }
     }
     file.archived = true;
   }

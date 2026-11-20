@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { MAX_V2_FRAME_BYTES } from "@calternal/plugin-sdk";
 import type { AttestedBody, ItemRef, ItemSave, ItemSpansPage, RevisionRef } from "../generated/wire.js";
-import { decode, decodeIndexed, encode, encodeRecord, MAX_FILE_BYTES, type messageRecord, needsOpaqueEscape, page, quoteBlock, step, type Thread } from "./format.ts";
+import { decode, decodeIndexed, encode, encodeRecord, MAX_FILE_BYTES, MAX_FRAMING_BYTES, type messageRecord, needsOpaqueEscape, page, quoteBlock, step, type Thread } from "./format.ts";
 import type { Context } from "./interface.ts";
 import { decodeLegacy, isLegacy } from "./legacy.ts";
+import { checkSelection, fileLinks } from "./attachments.ts";
 
 /** The installed item kind shared by both conversation shapes. */
 export const kind = "threads";
@@ -119,9 +120,25 @@ export async function saveOpaque(ctx: Context, target: Pick<ItemSave, "request_i
   return saved;
 }
 
+/** Resolve staged files with the host without exposing their bytes to Threads. */
+export async function prepareFiles(ctx: Context, item: ItemRef, staged: readonly string[]) {
+  checkSelection(staged);
+  if (!ctx.attachments) throw new Error("File attachments are unavailable.");
+  const files = await ctx.attachments.prepare(item, staged);
+  if (Buffer.byteLength(fileLinks(files)) + 4 > MAX_FRAMING_BYTES) throw new Error("The attachment names are too long for one message.");
+  return files;
+}
+
+/** Resolve a page's attachment leaves through the current reader or publisher scope. */
+export function conversationPage(ctx: Context, item: ItemRef, revision: RevisionRef, thread: Thread, older?: string, anchor?: string) {
+  const port = ctx.attachments;
+  return page(thread, older, anchor, port && (files => port.project(item, revision, files)));
+}
+
 /** Append a record, preserving literal text if an opaque write would discard earlier spans. */
 export async function appendRecord(ctx: Context, item: ItemRef, revision: RevisionRef, request_id: string, size: number,
-  thread: Thread, record: ReturnType<typeof messageRecord>, attested?: AttestedBody) {
+  thread: Thread, record: ReturnType<typeof messageRecord>, attested?: AttestedBody, staged?: readonly string[]) {
+  if (staged?.length && (!ctx.attachments || !attested)) throw new Error("Use a checked message to attach these files.");
   const bytes = Buffer.from(attested ? record.prefix + quoteBlock(record.quote) + record.text + record.suffix : encodeRecord(record));
   if (!attested && thread.messages.slice(0, -1).some(message => needsOpaqueEscape(message.text))) {
     const body = Buffer.from(encode(thread));
@@ -129,9 +146,10 @@ export async function appendRecord(ctx: Context, item: ItemRef, revision: Revisi
     return { revision: saved.revision, end_offset: body.length };
   }
   if (size + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
-  return ctx.call("item_append", {
-    request_id, item, expected_revision: revision, ...(attested ? { attested } : { bytes: bytes.toString("base64"), attempt_discovery: "consent_only" }),
-  });
+  const input = {
+    request_id, item, expected_revision: revision, ...(attested ? { attested } : { bytes: bytes.toString("base64"), attempt_discovery: "consent_only" as const }),
+  };
+  return staged?.length ? ctx.attachments!.append(input, staged) : ctx.call("item_append", input);
 }
 
 /** Publish a page only under a writer scope for the just-read revision. */
@@ -140,6 +158,6 @@ export async function publish(ctx: Context, item: ItemRef, revision: RevisionRef
   if (scope.source_revision !== revision) return;
   await ctx.call("item_view_publish", {
     request_id: step(ctx.author.request_id, `snapshot-${revision}-${scope.audience_scope}`),
-    item, slot, ...scope, ...page(thread),
+    item, slot, ...scope, ...await conversationPage(ctx, item, revision, thread),
   });
 }
