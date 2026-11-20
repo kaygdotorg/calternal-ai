@@ -34,7 +34,7 @@ pub use launch::{Attached, LaunchBinding, Reattach, bind_launch, reattach, verif
 mod writer;
 
 /// Execution tables in the per-space `content.db` baseline. Edited in place
-/// until the Threads cutover; there is no migration chain for them.
+/// until the first application cutover; there is no migration chain for them.
 pub const SCHEMA: &str = include_str!("schema.sql");
 
 /// Host-checked execution bindings retained between admission and dispatch.

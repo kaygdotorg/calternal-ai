@@ -1,5 +1,5 @@
 -- Part of the per-space content.db baseline (no migration chain before the
--- Threads cutover; owner decision 2026-11-20). Settled intents are removed and
+-- first application cutover; owner decision 2026-11-20). Settled intents are removed and
 -- cascade to their attempt, launch binding and control ledger. A fenced head
 -- keeps its slot until verified teardown.
 CREATE TABLE execution_intents (
