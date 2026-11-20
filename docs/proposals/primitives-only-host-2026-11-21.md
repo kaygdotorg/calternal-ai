@@ -229,19 +229,48 @@ outbound-capable readers.
 ### 4.5 Record files
 
 - A record file is a Markdown file of a record kind. Each record begins with
-  a header line the host writes (`**Lee** · 2026-11-20 17:02 ^anchor`);
-  the stamp lives in host state.
+  a header line the host writes, naming the author by person ID with the
+  display name as link text (`[**Lee**](person:p-lee) · 2026-11-20 17:02
+  ^anchor`); the stamp lives in host state. Repair compares the person ID,
+  never the name, so renaming a person does not make old headers look
+  tampered; renderers draw the current name from the stamp.
+- Record offsets are kept relative to the end of the frontmatter, so setting
+  a chat's title (or any frontmatter field) moves no record and updates one
+  number (host spike finding 10).
+- Hashes of records in host state are keyed with a per-space key held in
+  host state and backed up with it (an unkeyed hash of "ok" can be guessed);
+  rotating the key means rehashing.
 - One host rule, not per-kind knobs: **a record's author may edit or delete
   it** (edit within the plugin's own window, such as Chat's 48 hours).
   Whether managers may also delete others' records is owner question D4.
 - Changes from outside (a file share, another editor, a `replace`): a pure
-  append of host-formatted records is accepted and stamped with the writer;
-  **any other byte change becomes a conflict copy** beside the file. The
-  record file stays as it was. No per-record diff is needed: the check is
-  "are the old bytes a prefix of the new ones".
+  append of host-formatted records is accepted and stamped with the writer
+  (or `outside` for a disk edit, whose header the host rewrites to
+  `**outside**` so other readers of the file do not see a claimed name).
+  For any other change the host saves the outside version as a **conflict
+  copy with a new file ID** (never indexed as the original), puts changed
+  **headers** back exactly from their stamps, and treats a changed **body**
+  as fork D5 decides: restored from the ledger's copy of its text, or left
+  with the outside text and flagged `tampered` (shown flagged, left out for
+  agents). No per-record diff is needed to detect it: the check is "are the
+  old bytes a prefix of the new ones", plus keyed hashes per record.
+- The cheap outside-change check (size, change time, inode) misses a
+  same-length edit made within one tick of the file clock after the host's
+  own write. Rule (git's "racy clean"): remember the time of the host's
+  last write; when a file's change time is not older than that, treat the
+  file as unverified on its next touch and hash its last record and length
+  (host spike finding 2).
+- Crash recovery: if the ledger keeps text (D5 a), a failed write rolls
+  forward from it. If it keeps only hashes (D5 b), an append whose bytes
+  are missing rolls back (its stamp and receipt are dropped; the caller
+  never got a reply), a delete rolls forward (`*deleted*` is known), and an
+  edit keeps a short-lived copy of its new text until the write is flushed.
+  A new file whose chosen name was taken from outside between check and
+  rename has its host-state row dropped and the name chosen again.
 - Edit in place: the file shows the latest text; old versions live in
   history, shown to the author. Delete for everyone leaves `*deleted*` and
-  scrubs history and search.
+  scrubs history and search. A record shorter than the marker is padded
+  to the marker's length when appended, so every delete stays in place.
 - **No segments** (measured, [record-files measurement](https://git.kayg.org/kayg/calternal-ai/src/commit/1cf1172d/docs/measurements/record-files-2026-11-21.md); confirm A24): a chat is one record file.
   Append costs the same at every size (13 ms p50 from 1 MiB to 256 MiB:
   two lookups, two flushes). An edit or delete of a recent record is flat.
@@ -251,13 +280,10 @@ outbound-capable readers.
   MiB after it), which Chat's 48-hour window never does; a kind that allows
   growing edits anywhere may cap its file size (64 MiB keeps the worst case
   near 1 s).
-- **A tampered header** (a changed name or a mangled anchor) is a byte
-  change that is not a pure append, so it becomes a conflict copy like any
-  other, and the record file keeps what host state knows. Renderers draw
-  the author's name from the stamp, never from the header line, so a
-  changed name is never shown as the author. Checking a file after an
-  outside edit re-reads it (2.2 s at 256 MiB), so it runs off the request
-  path.
+- **A tampered header** (a changed name or a mangled anchor) is put back
+  from its stamp; renderers draw the author from the stamp, never from the
+  header line. Checking a whole file after an outside edit re-reads it
+  (2.2 s at 256 MiB), so it runs off the request path.
 - What host state keeps of each record (a copy of its text, or only hashes,
   offsets and stamps) is owner question D5.
 
@@ -370,6 +396,7 @@ One threat table for the whole design. The section files give the detail.
 | T22 | Spoofed host screens, clickjacking, phishing forms | One host sheet in the shell's own layer with the host mark; frames clipped and below it; plugin forms carry a header naming the plugin; no password-like field | Drawing |
 | T23 | A frame sends out what it shows | A plugin with a frame is outbound-capable, so it receives only consented writing; the promise is "a frame can read what its plugin can read" (question I1) | Drawing |
 | T24 | A broken shell part locks the person out | Profile, Settings, Plugins and safe mode are host-only and always reachable | Drawing |
+| T26 | A modified client claims a different plugin's identity for a no-code action, or claims an item was opened by the person's own gesture (the reach set) | The host derives the acting plugin from the declaration it served for that window, not from a header the client sends, so the claim is bounded to plugins whose views the client has open; the grant check still limits any action to that plugin's grant, so the risk is wrong attribution, not escalation. The client is the only witness of "opened by the person" (§4.3), which is stated as such | Authority, Drawing |
 | T25 | One space starves another | Per-space queues and writers; no installation-wide lock on the request path | Running code, Files |
 
 ### 5.1 Where the design is not sure it holds
@@ -449,8 +476,8 @@ server. Estimates are rough.
 | 0a | **Files spike**: one hardcoded kind; one file written through the host with a stamp in host state; the actor and request in the call signature from the first call; a directory listing as the query | A test against the real binary in test mode writes a file, reads it from disk and reads its stamp | 1 day |
 | 0b | ~~Drawing spike~~ **Done** ([drawing spike](https://git.kayg.org/kayg/calternal-ai/src/commit/bd880283/docs/reviews/drawing-spike-2026-11-21.md)): Reading List and the Chat sidebar and transcript drew from the same declarations on the web and in the iPhone Simulator, with the changes in §4.9 | — | done |
 | 0c | **Next drawing step**: what the spike did not draw: live updates while open (a record arriving, "1 new"), the consent sheet, the running-work line and Stop, typing, attachments, mention autocomplete, multi-record selection, web swipe and board drag, iPad and Mac layouts, table, gallery and calendar views, Notes' editor page; then a device check of motion, VoiceOver and keyboard | Each drawn from declarations on web and native; motion checked on a real device | 1 week |
-| 1 | Install a real plugin through the one validator; one call route; the index answers a collection | Reading List installs, its Add form creates a file, "Unread" shows it | 2 days |
-| 2 | Questions: live windows, collections as files, grouping, backlinks | Edit a file by hand; the window updates; delete the index and it rebuilds the same | 3–4 days |
+| 1 | ~~Install a real plugin; one call route; the index answers a query~~ **Done as a throwaway spike** ([host spike](https://git.kayg.org/kayg/calternal-ai/src/commit/39016818/docs/reviews/host-spike-2026-11-21.md), 2,224 lines of Rust, 9 tables, 7 handlers, both end-to-end tests pass against the real binary): one call route with a call context in every handler, one `authorize` and an audit row per call, `files.create`, `files.set`, `record.append`, `record.delete`, `record.list`, query by scan and by index (same answers, index rebuilt after deletion), Reading List installed as data with no code; an append costs 2 flushes. Stubbed: sign-in (the person is trusted from a header), sharing, groups, consent, the outbound-capable closure, the reach set, picks, quotas, crash recovery, a watcher, collections as files, live windows, grouping, backlinks, search, history, undo, move, trash, `record.edit` | — | done |
+| 2 | Grow the spike binary into the test-mode host (§4.8), as the spike proposes: decide D5 and build its recovery (roll-forward, or roll-back plus the `tampered` display); the racy-clean rule; offsets relative to the frontmatter; a watcher that feeds the index; collections as files; one live window pushed when its answer changes; move the shared pieces down (`Folder::open_rw` and one frontmatter module into `crates/fsio`, `FileId` into `crates/types`); settle the audit cost (A25) | Edit a file by hand and see the window update; delete the index and it rebuilds the same; kill the host mid-append and recover per D5 | 4–5 days |
 | 3 | Authority: grants, sharing, the one check, the audit trail | A second person and a guest see only what they may, in results, counts and the feed | 3 days |
 | 4 | Running code: plugin box, work table, the three triggers, repeating work | Notes snooze fires once across a restart; unsnooze cancels it; Stop ends a worker | 3–4 days |
 | 5 | Record files: append, edit, delete, conflict copies | A share edit that is not an append becomes a conflict copy; delete scrubs history and search | 2–3 days |
@@ -514,8 +541,9 @@ Accepted unless you object.
 | A18 | Who may send input to a run: only its actor; anyone who may read the target may Stop. | The run carries the actor's login and files. |
 | A19 | Revoking a session revokes the consents and picks it made; a restore from backup starts a new epoch (sessions invalidated, standing consents suspended). | Revocation must not be undone. |
 | A20 | Approval binds a plugin's digest and its program's image digest; the host recomputes every derived install sentence on any update. | The code next to a login is what must be approved. |
-| A21 | Record files accept outside changes only as pure appends; anything else becomes a conflict copy. | Only authors change records. |
-| A22 | Request IDs are derived by the host; authors never write them. | Retries stay exact without author bookkeeping. |
+| A21 | Record files accept outside changes only as pure appends. For any other change the outside version is saved as a conflict copy with a new ID, changed headers are put back from their stamps, and a changed message body is put back if the ledger keeps text (D5 a) or flagged `tampered` and left out for agents if it keeps only hashes (D5 b). | Only authors change records; the host can rebuild a header from its stamp but a body only from a copy of its text. |
+| A22 | Authors never write request IDs. The host derives them: for a run, from its ID and sequence number; for a person's gesture, from a key the client sends once per gesture (without it, a retry is a new request). | Retries stay exact without author bookkeeping; a tap has nothing else stable across a retry (host spike finding 5). |
+| A25 | Writes are audited in the write's own commit (no extra flush). Reads are audited only when outbound-capable code reads other people's writing, batched into a separate audit database written at most every second, kept for full retention; other reads are not audited. | Auditing every read costs a flush of its own (host spike finding 6); the reads that matter for consent are the ones by code that can send data out. |
 | A23 | No shared runtime per publisher: the earlier agreement to try one is answered by measurement. | [#103 measurement](https://git.kayg.org/kayg/calternal-ai/src/branch/lane/plugin-memory/docs/measurements/plugin-split-memory-2026-11-20.md): worker threads in one runtime saved only 10 MiB at seven plugins and cost more at one or two; calls took about twice as long; a native crash or the OOM killer took every plugin in the runtime; one plugin wrote a frame the host accepted as another's reply; and in Node 24.21.0 a worker thread could read any file below the process's current directory regardless of its permissions. |
 | A24 | No monthly segments for record files: a chat is one file. Shrinking changes and deletes are written in place with padding; a kind that allows growing edits of old records may cap its file size (64 MiB keeps the worst case near 1 s). | Measured ([record-files measurement](https://git.kayg.org/kayg/calternal-ai/src/commit/1cf1172d/docs/measurements/record-files-2026-11-21.md)): append is 13 ms p50 at every size from 1 to 256 MiB; only growing an old record costs more (about 16 ms per MiB after it), which Chat's 48-hour edit window never does. |
 
@@ -762,35 +790,38 @@ authors only.
 *Recommendation:* (b).
 
 **D5. Does host state keep a copy of every record's text?**
-*What:* the measured design keeps, beside each record's stamp, a copy of
-its current text in host state (the ledger). It could instead keep only
-what identifies a record: a hash of its bytes, where it sits in the file,
-and its stamp.
-*Why now:* it decides whether chat text lives anywhere except the files,
-against your rule "userdata is strictly files", and how big the ledger is.
-*Example:* Lee edits a chat file directly on the server's disk with Vim and
-rewrites one of Sam's messages; or the disk damages the file.
-*Options:*
-- (a) **The ledger keeps the text.** A damaged or outside-edited file can be
-  repaired from it, and edits can be checked word for word. Cost: the ledger
-  is 1.6 times the size of the chat files (measured); every message is held
-  a second time outside the files; delete for everyone must also scrub the
-  ledger (secure delete plus a WAL truncate: three more flushes), which
-  still does not reach free disk space, snapshots or existing backups.
-- (b) **The ledger keeps only hashes, offsets and stamps.** The files are
-  the only copy. Changes made through Calternal or the file share are still
-  checked before they land, because the host serves the share and has the
-  current file when the write arrives, so it can refuse the change and
-  write a conflict copy. A change made directly on the server's disk is
-  detected (the hash no longer matches): the changed records are stamped
-  `outside` and left out for agents, but the old words can only be restored
-  from a backup. Cost: no repair of direct disk edits or disk damage.
-  History (about 250 bytes per edit, measured) still holds old versions for
-  their author, as history does today.
+*What:* host state can keep, beside each record's stamp, a copy of its
+current text (the ledger), or only what identifies a record: a keyed hash
+of its bytes, its offset and its stamp.
+*Why now:* it decides whether chat text lives anywhere except the files
+(your rule "userdata is strictly files"), what the host can put back after
+someone edits a file behind its back, and how a crashed write recovers.
+The host spike showed the two cannot be had together: a changed header can
+always be rebuilt from its stamp, but a changed message body can only be
+restored from a copy of its text.
+*Example:* Lee opens the family chat file on the server's disk with Vim
+and rewrites one of Sam's messages; or the disk damages the file.
 
-*Recommendation:* (b). The copy only buys repair of edits made on the
-server's own disk, which needs administrator access anyway, and it costs
-1.6 times the space and a second copy of every message outside the files.
+| | (a) The ledger keeps the text | (b) The ledger keeps keyed hashes, offsets and stamps only |
+| --- | --- | --- |
+| A changed header | Put back from the stamp | Put back from the stamp |
+| A changed message body | **Put back**; the outside version is saved as a conflict copy | **Detected, not put back**: the record is flagged `tampered`, shown flagged and left out for agents; the outside version is the file's text; the original words come back only from a backup |
+| An appended record from outside | Accepted, stamped with the writer or `outside` | Same |
+| A crash during append | Rolls forward from the ledger | Rolls back: the record is dropped and the caller, who never got a reply, retries |
+| A crash during edit | Rolls forward | Needs a short-lived copy of the new text until the write is flushed |
+| Disk damage to a record file | Repaired from the ledger | Detected; restored from a backup |
+| Space | Ledger about 1.6 times the chat files (measured) | A few dozen bytes per record |
+| Delete for everyone | Must also scrub the ledger (secure delete plus a WAL truncate: three more flushes); still misses free disk space, snapshots, backups | Nothing extra to scrub in host state |
+| Your rule "userdata is strictly files" | Every message also lives outside the files | Files are the only copy |
+
+Changes made through Calternal or the file share are checked before they
+land in both options, because the host serves the share and still has the
+current file when the write arrives; the difference is only for edits made
+directly on the server's disk and for disk damage.
+*Recommendation:* (b). What (a) adds is putting back message bodies edited
+on the server's own disk, which needs administrator access anyway, or
+damaged by the disk, which backups cover; it costs 1.6 times the space and
+a second copy of every message outside the files.
 
 **D6. Do collections and sidebars span spaces?**
 *What:* a collection is a file in one space; you may want one sidebar
