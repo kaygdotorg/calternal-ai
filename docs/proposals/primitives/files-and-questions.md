@@ -38,6 +38,9 @@ lane's final report (thread `thr_wdjuw3bi6e`).
 - Per-person state (read positions, drafts, pin order, a person's sidebar edits)
   is a small file per person and plugin in a hidden folder, buffered in memory
   and written at most every few seconds.
+- What an app author learns in this area: **file, record, kind, field, link,
+  query, window, collection, person state** (nine words; collection and sidebar
+  are files, not extra machinery).
 
 ## 1. The primitives
 
@@ -118,6 +121,13 @@ Friday works.
 - The anchor is a 16-character Crockford ID, the same module as Notes block IDs
   (ADR 0056). Editors hide it (owner decision for chat files).
 - The header is a **readable copy**. The authority is the stamp in the ledger.
+- Anchors are unique across the space (ADR 0056), so the index resolves any
+  `#^anchor` to its current file even when the file part of a link is stale
+  (a record in last month's segment, a renamed chat).
+- **Crash between ledger and file:** the ledger commit carries the expected file
+  length before the append. Recovery appends the record if the file still has
+  that length and skips it if the record is already there, so an append lands
+  exactly once.
 
 | Operation | Inputs | Result | Fails with | Request path cost |
 | --- | --- | --- | --- | --- |
@@ -214,8 +224,9 @@ whose offset iterator gives the byte range of every link:
 A rename or move:
 
 1. **Foreground (visible at once):** rename the file or folder, write the new
-   path and an alias row `old path → ID` (one row per folder for a folder
-   move), one ledger commit. Cost: 1 indexed read, 1 commit, 1 rename, 2
+   path and a departed-path row `old path → ID` (one row per folder for a folder
+   move; this is ADR 0040's `departed` history row, kept in the ledger), one
+   ledger commit. Cost: 1 indexed read, 1 commit, 1 rename, 2
    directory fsyncs, whatever the number of links. Any link with the old path
    resolves through the alias from this moment.
 2. **Background:** one durable host job reads the referring files from the link
@@ -224,7 +235,10 @@ A rename or move:
    Notes to every Markdown file). A moved file's own relative links are
    rewritten too. A referring file changed since indexing is re-parsed first;
    one changed outside during the job becomes a retained conflict (ADR 0062).
-3. The alias is dropped when the job finishes and no link uses it.
+3. Link text that matched the old title follows the new title (ADR 0024).
+   The departed row stays in history, so a link pasted from outside or made
+   offline with the old path still resolves later (ADR 0040: one index lookup
+   per path, never a walk of the tree).
 
 Obsidian does the same thing (rewrite referring files on rename:
 <https://obsidian.md/help/links>); the difference is that our step 1 makes the
@@ -265,6 +279,18 @@ a value computed for the asking person. A record kind may declare
 the asker's stored anchor, excluding their own) and, if the kind declares a
 `mentions` record field, `mentions_after_position`. Cost per row: 1 indexed seek
 plus 1 indexed range count. This is the only join in the engine.
+
+**Keeping live windows cheap.** The window engine today keeps a stored row set
+per collection, and caps a note at 32 of them (`effective_scope_limit_exceeded`)
+so a save stays inside two covering-key writes per scope. With saved queries
+over any kind, that cap would bite at once. Proposal: a query window is read
+straight from the kind's covering index (no stored row set); only hand-added
+members are stored (they are links, already in the `links` table). After a save,
+the publisher re-evaluates only *watched* windows whose query names the changed
+kind, bounded by a per-space cap on open watches (proposed 256). Cost per save:
+0 on the request path; in the background, one indexed probe per affected watched
+window. This must be measured against the window engine's 40 ms save gate before
+it replaces the stored row sets.
 
 **Index tables** (appdata, per space, WAL): `files` (id, path, kind, revision,
 size, mtime, inode, common fields, trashed), one generated table per kind with
@@ -344,6 +370,40 @@ author and time only, never copied words, so a redacted record leaves nothing
 behind in other chats (owner decision: deleting removes its quotes elsewhere).
 In another editor the quote reads as a link with a name and time.
 
+### 1.13 Search
+
+One FTS5 index per space in appdata, fed from the journal like the window index.
+A kind declares weights for its text fields (`title: 3, body: 1`); record files
+index each record separately, so a hit points at an anchor. Filtering by the
+reader's rights happens before ranking and before snippets, so a rank or a
+snippet never reflects a file the reader cannot open. An agent run's search
+reaches only files every person in its chat may read (owner decision,
+2026-11-20); for that the host intersects the readers' rights once per run, not
+per query. Hidden blocks (ADR 0056) and redacted records are not indexed.
+
+### 1.14 Storage tiers (ADR 0062)
+
+| What | Root |
+| --- | --- |
+| Text of a claimed kind: notes, record files, collections, sidebars, per-person state | SSD userdata tree |
+| Everything else: attachments, photos, unclaimed files | HDD userdata tree (same relative paths) |
+| Host ledger (history, stamps, receipts, departed paths) | SSD state |
+| Index, search, window state | SSD state, rebuildable |
+
+- **A kind declaration is the claim.** ADR 0062 says text is placed by content
+  signature and the format plugin's validation, never by folder or extension.
+  Here a plugin's kind (frontmatter `kind:` plus the kind's schema check) is that
+  validation; files that fail stay on the HDD tree and are reported, as today.
+  Plugins never choose a root.
+- Create, rename, move, trash and restore of a folder apply to both trees as one
+  journaled job (ADR 0062 "mirrored real trees"); the rename job of 1.7 is that
+  job.
+- Record files sit on SSD, so the append's fsync is an SSD fsync. A chat with
+  many attachments keeps its text on SSD and its pictures on HDD in the same
+  folder path.
+- Loss of either disk stops writes (ADR 0062 T-A1); nothing in this design
+  changes that.
+
 ## 2. What plugins can do and cannot do
 
 **Plugins can:**
@@ -408,7 +468,7 @@ In another editor the quote reads as a link with a name and time.
 1. **Direct disk edits** (an administrator, a backup restore, a sync tool on the
    server) are stamped `outside`. If the space owner edits their own files with a
    local tool on the server, their own messages become `outside` and are withheld
-   from agents. Acceptable, but surprising (question 2).
+   from agents. Acceptable, but surprising (question 5).
 2. **Redaction versus copies outside the host:** backups keep the bytes until
    they rotate; a device that is offline keeps them until it syncs; a modified
    client can keep them forever. Telegram has the same limit. The design cannot
@@ -559,7 +619,8 @@ ctx.host.state.set(`read.${chat}`, lastVisibleAnchor);
 | Per-person state "is a small file" | Written every few seconds by every reader; needs batching and a loss window | `state.set` buffered, one write per interval |
 | Delete for everyone not covered | History and search would keep the words | `record.redact` scrubs ledger rows and the text index |
 | Record files may grow without end | Edit cost and readability grow with the file | Segment cap; the plugin rolls over |
-| The host draft's question 3 recommends keeping every version of a record in the file | Deleted words would stay readable in the file; the file reads badly | In-place edit, old versions in the ledger (question 4) |
+| Collections listed as part of primitive 2 | They need no host machinery beyond a file kind and the query engine | A collection is a built-in kind; primitives 1 and 2 stay separate (writing and asking have different costs and checks), but nothing else is needed in this area |
+| The host draft's question 3 recommends keeping every version of a record in the file | Deleted words would stay readable in the file; the file reads badly | In-place edit, old versions in the ledger (question 2) |
 
 ## 7. Questions for the owner
 
@@ -588,23 +649,23 @@ ctx.host.state.set(`read.${chat}`, lastVisibleAnchor);
   "durable state, not rebuildable"); stamps are one more column. It keeps the
   append at two flushes.
 
-### Q2. Who is the author of bytes changed outside Calternal, and may agents read them?
+### Q2. Message edits: rewrite in place, or append the new version?
 
-- **What:** files can be edited by tools that are not Calternal: over the file
-  share (we know the person), or directly on the server's disk (we do not).
-- **Why now:** it decides what an agent sees and whether outside editing stays a
-  first-class way to work.
-- **Example:** the owner fixes a typo in a chat with Vim on the server; that
-  message is now "edited outside".
+- **What:** how an edited or deleted message looks on disk.
+- **Why now:** it is the shape of every record file; the host draft recommends
+  the other option.
+- **Example:** Lee edits a message twice, then deletes another one for everyone.
 - **Options:**
-  - (a) Share edits are stamped with the person; disk edits are `outside` and
-    are withheld from agents until a person re-saves them in Calternal. Safe;
-    outside disk edits feel second-class.
-  - (b) Disk edits are stamped with the space owner. Simple; anyone with server
-    disk access can then speak as the owner to agents.
-- **Recommendation:** (a). Disk access already means administrator trust, but
-  attributing it to the owner would let a backup tool or a sync script consent
-  on the owner's behalf.
+  - (a) **In place:** the file shows the latest text; old versions live in
+    history (shown to the author only); a delete leaves `*deleted*`. Readable,
+    and deleted words leave the file. Cost: an edit rewrites the file, so files
+    are segmented (Chat: one file per month).
+  - (b) **Appended versions:** each edit is a new record pointing at the old
+    one. Appends only. Cost: every version, including deleted words, stays
+    readable in the file, and reading the file in another editor shows all
+    versions.
+- **Recommendation:** (a), because the owner decided that a deleted message
+  "vanishes" and that the product is an interface over readable files.
 
 ### Q3. When a rename rewrites links in files the renamer cannot edit, is that allowed?
 
@@ -623,25 +684,7 @@ ctx.host.state.set(`read.${chat}`, lastVisibleAnchor);
 - **Recommendation:** (a). It is what Obsidian users expect, and the host writes
   only bytes the link index recorded, never content.
 
-### Q4. Message edits: rewrite in place, or append the new version?
-
-- **What:** how an edited or deleted message looks on disk.
-- **Why now:** it is the shape of every record file; the host draft recommends
-  the other option.
-- **Example:** Lee edits a message twice, then deletes another one for everyone.
-- **Options:**
-  - (a) **In place:** the file shows the latest text; old versions live in
-    history (shown to the author only); a delete leaves `*deleted*`. Readable,
-    and deleted words leave the file. Cost: an edit rewrites the file, so files
-    are segmented (Chat: one file per month).
-  - (b) **Appended versions:** each edit is a new record pointing at the old
-    one. Appends only. Cost: every version, including deleted words, stays
-    readable in the file, and reading the file in another editor shows all
-    versions.
-- **Recommendation:** (a), because the owner decided that a deleted message
-  "vanishes" and that the product is an interface over readable files.
-
-### Q5. Does delete for everyone also remove the words from history?
+### Q4. Does delete for everyone also remove the words from history?
 
 - **What:** history normally keeps every version so that Undo and restore work.
 - **Why now:** without scrubbing, "restore the previous version" brings a deleted
@@ -654,6 +697,24 @@ ctx.host.state.set(`read.${chat}`, lastVisibleAnchor);
 - **Recommendation:** (a), with Undo within a few seconds handled by the client
   before the redact is sent. State plainly that backups keep the bytes until they
   rotate.
+
+### Q5. Who is the author of bytes changed outside Calternal, and may agents read them?
+
+- **What:** files can be edited by tools that are not Calternal: over the file
+  share (we know the person), or directly on the server's disk (we do not).
+- **Why now:** it decides what an agent sees and whether outside editing stays a
+  first-class way to work.
+- **Example:** the owner fixes a typo in a chat with Vim on the server; that
+  message is now "edited outside".
+- **Options:**
+  - (a) Share edits are stamped with the person; disk edits are `outside` and
+    are withheld from agents until a person re-saves them in Calternal. Safe;
+    outside disk edits feel second-class.
+  - (b) Disk edits are stamped with the space owner. Simple; anyone with server
+    disk access can then speak as the owner to agents.
+- **Recommendation:** (a). Disk access already means administrator trust, but
+  attributing it to the owner would let a backup tool or a sync script consent
+  on the owner's behalf.
 
 ### Q6. A person's changes to an app's sidebar: a copy or a list of changes?
 
@@ -670,10 +731,11 @@ ctx.host.state.set(`read.${chat}`, lastVisibleAnchor);
 - **Recommendation:** (b), with new sections appended at the end and a short
   notice; the change list is a small readable file.
 
-### Q7. Obsidian-style `[[wiki links]]`: read them, or only standard links?
+### Q7. Obsidian-style `[[wiki links]]` in imported files: read them, or only standard links?
 
-- **What:** Calternal writes standard Markdown links (ADR 0024). Many Obsidian
-  vaults use `[[Note]]` links.
+- **What:** Calternal writes only standard Markdown links and never wiki links
+  on disk (ADR 0024, settled). It does not settle what happens to wiki links
+  already in files that come from elsewhere. Many Obsidian vaults use `[[Note]]`.
 - **Why now:** rename-follows-links must cover whatever links are in the files.
 - **Example:** someone imports an Obsidian vault of 3,000 notes.
 - **Options:** (a) index and rewrite both forms, write only standard links:
