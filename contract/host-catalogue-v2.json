@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Revision 14.20 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
+  "description": "Revision 14.21 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -711,7 +711,7 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": false,
-      "confirmation_when": "After the qualification_gate passes, the eligible atomic_undo_when path uses no challenge. All other admitted paths require confirmation, including retiring grants with head-only Undo. For a live attempt show The running execution will be stopped. Any live attempt or unresolved job challenge pins the exact target and checks the starter or current PluginsManage authority.",
+      "confirmation_when": "After the qualification_gate passes, the eligible atomic_undo_when path uses no challenge. All other admitted paths require confirmation, including retiring grants with head-only Undo. For a live attempt show The running execution will be stopped. A challenge for unresolved execution pins all affected jobs and attempts under execution_intents.stop_and_archive and checks the starter or current PluginsManage authority.",
       "atomic_undo_when": "Use the execution_intents idle predicate under the lifecycle fence. Saved authority requires a challenge unless it consists only of item grants that the Step 2 writer retires in the same FULL item content transaction as archive and that Undo restores together with the item head. Retiring grants with head-only Undo requires a challenge. Check idle eligibility under the commit fence. Execution admission rejects a fresh admission to an archived head under the same fence. Commit the archived head and its unarchive Undo in one FULL item content transaction, with no separate cleanup.",
       "full_swipe_when": "First swipe action, passed qualification_gate and effective confirm:none.",
       "execution_fence": "Apply attempt_authority_end.actions.archive in the FULL archive transaction and preserve that fence across Undo.",
@@ -817,7 +817,7 @@
       },
       "atomic_undo": true,
       "atomic_undo_when": "The destination’s effective audience contains only the actor and the FULL content transaction commits the complete move and its Undo. A move across two collections is ineligible until both membership changes commit together. The shortcut requires no widening under attempt_authority_end.actions.item_audience_widening.",
-      "confirmation_when": "Require a challenge if the destination collection’s effective audience contains anyone other than the actor. Recheck under the commit fence. If the destination becomes shared, require a fresh challenge before dispatch. Apply attempt_authority_end.actions.item_audience_widening when the move adds transcript readers.",
+      "confirmation_when": "Require a challenge if the destination collection’s effective audience contains anyone other than the actor. Recheck under the commit fence. If the destination becomes shared, require a fresh challenge before dispatch. Apply attempt_authority_end.actions.item_audience_widening when the move adds file readers.",
       "audience_widening": "Apply attempt_authority_end.actions.item_audience_widening whenever file access expands."
     },
     "host.layout.move_to": {
@@ -1248,7 +1248,7 @@
         "selection": "An eligible explicitly selected search profile resolves to an installed operation with a declared read contract. Ordinary host search never calls or waits for it. The profile can rerank checked candidates or query a package-owned index built by its declared background job. Rerank mode receives candidates from the checked host query. Index mode declares an owning index job and receives no host candidate list.",
         "authority": "Use only fields the querying person can currently read as input to the index or reranker, and for matching, ranking, and continuation. Apply the same rule to the background index data made available to that query. Keep a profile off unless it can demonstrate this rule. Reauthorize every returned ItemRef before projecting host-owned fields and contexts. Return no counts, fixed page lengths, scores, rejected refs or package-chosen display text.",
         "limits": "Use a checked cursor instead of the host window's offsets and span. Response batches are variable and limited by max_candidates. Bind continuation to the exact query generation, profile, authorized input scope and active lease. Apply worker and query budgets and the checked interactive deadline independently of ordinary host search. Only a ready batch without next ends the cursor chain. If no batch in that generation yielded rows, the renderer shows the Bind's empty message. Otherwise keep the accumulated rows. An empty intermediate batch continues with its cursor. Loading, throttling and failure do not establish an empty result.",
-        "renewal": "A successful view.renew invalidates every plugin search page, cursor, generation, selection and action context on that view, even with the same grant. The host fences their use at renewal. The renderer omits those refs from result_versions, discards them on accepting renewal and ignores replies from the old chain. The host never returns them as retained_results or windows. Restart a still-active eligible member profile by settling its current input with a fresh generation, then calling search.plugin with no cursor.",
+        "renewal": "Apply view_result_retention. An exact acknowledged page keeps its content and cursor chain under the renewed lease, with refreshed row contexts. Re-settle only when its checked search scope or cursor chain is invalidated.",
         "eligibility": "Select the effective search path before settle from the authenticated view audience and the Bind declaration. Only live own_space_member and member views may select an explicit plugin profile. Guest and public views use default host search even if their template names a profile or the signed-in account has another member view. Use the host defaults and normal host query qualification for this path. Recheck the effective audience at settle, query admission and delivery. An audience change invalidates the view and requires a fresh open before another settle."
       }
     },
@@ -2724,7 +2724,7 @@
           "additionalProperties": {
             "$ref": "#/$defs/Ref"
           },
-          "description": "Exact result versions keyed by current host-issued window_ref, including parent-specific windows. Host windows only. Omit explicit plugin-search pages under query.search.plugin.renewal. Item views are outside window retention under view_snapshots.body_content.",
+          "description": "Exact result versions keyed by issued window_ref, including host windows, plugin search pages and item-view pages. Apply view_result_retention.",
           "propertyNames": {
             "$ref": "#/$defs/Ref"
           }
@@ -2761,7 +2761,8 @@
           "items": {
             "$ref": "#/$defs/RetainedResult"
           },
-          "uniqueItems": true
+          "uniqueItems": true,
+          "description": "Exact unchanged results acknowledged under view_result_retention."
         },
         "activation_contexts": {
           "$ref": "#/$defs/ActionContexts"
@@ -2783,7 +2784,7 @@
           "$ref": "#/$defs/CachePartitionRef"
         }
       },
-      "description": "Accept only an authenticated host reply matching the outstanding renewal ID, lease and cache partition. Retain exact result versions authorized under the current grant and replace contexts with the reply's current set. Explicit profiles restart under query.search.plugin.renewal. Item views reopen under view_snapshots.body_content."
+      "description": "Accept only an authenticated reply matching the outstanding renewal ID, lease and cache partition. Retain only the exact results confirmed by view_result_retention. Payload-bearing windows are host windows."
     },
     "UndoRequest": {
       "type": "object",
@@ -3112,6 +3113,14 @@
         },
         "result_version": {
           "$ref": "#/$defs/Ref"
+        },
+        "activation_contexts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RowActivationContexts"
+          },
+          "maxItems": 200,
+          "description": "Replacement row contexts for a retained plugin search page. Omission means none for that page."
         }
       }
     },
@@ -4165,7 +4174,8 @@
       ]
     },
     "HarnessRef": {
-      "$ref": "#/$defs/Ref"
+      "$ref": "#/$defs/Ref",
+      "description": "Durable host-issued binding to the exact installed contribution, extension point and version, build digests, account and space. A job or alarm may retain it across sessions and restart. It grants no authority."
     },
     "ExecutionSessionRef": {
       "$ref": "#/$defs/Ref"
@@ -4260,6 +4270,10 @@
         "view": {
           "$ref": "description-v2.schema.json#/$defs/ItemSnapshotView",
           "description": "Plugin-authored native content subject to the catalogue view_snapshots authority and shape rules."
+        },
+        "older": {
+          "$ref": "#/$defs/Ref",
+          "description": "Optional private continuation for pages before this latest page, on this exact revision."
         }
       },
       "required": [
@@ -4306,6 +4320,10 @@
         "live": {
           "const": true,
           "description": "Request a transient reader view from the pinned refresh operation. Otherwise request the retained snapshot without a wake."
+        },
+        "cursor": {
+          "$ref": "#/$defs/Ref",
+          "description": "Host-issued older-page ref. Only on the live path."
         }
       },
       "required": [
@@ -4313,6 +4331,20 @@
         "item",
         "slot",
         "component"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "cursor"
+            ]
+          },
+          "then": {
+            "required": [
+              "live"
+            ]
+          }
+        }
       ]
     },
     "ItemViewResult": {
@@ -4345,16 +4377,46 @@
             },
             "view": {
               "$ref": "description-v2.schema.json#/$defs/ItemSnapshotView"
+            },
+            "window_ref": {
+              "$ref": "#/$defs/Ref"
+            },
+            "result_version": {
+              "$ref": "#/$defs/Ref"
+            },
+            "older": {
+              "$ref": "#/$defs/Ref"
+            },
+            "follow": {
+              "$ref": "#/$defs/Ref"
             }
           },
           "required": [
             "state",
             "source_revision",
-            "view"
+            "view",
+            "window_ref",
+            "result_version"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "follow"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "state": {
+                    "const": "live"
+                  }
+                }
+              }
+            }
           ]
         }
       ],
-      "description": "ready and stale are retained snapshots. live is a transient reply private to the requesting viewer and lease. Both forms obey view_snapshots.body_content."
+      "description": "ready and stale carry the retained newest page. live carries a reader-scoped page. older is a host-issued continuation for members under the same pinned revision. The host issues follow only for the active live head. Apply view_snapshots.body_content and view_result_retention."
     },
     "OfflineDownloadRequest": {
       "type": "object",
@@ -4607,6 +4669,10 @@
               },
               "label": {
                 "$ref": "#/$defs/Text"
+              },
+              "harness_ref": {
+                "$ref": "#/$defs/HarnessRef",
+                "description": "Present on eligible harness choices. The durable form for use in checked jobs and alarms."
               }
             },
             "required": [
@@ -4720,6 +4786,139 @@
           ]
         }
       ]
+    },
+    "ItemViewPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "view": {
+          "$ref": "description-v2.schema.json#/$defs/ItemSnapshotView"
+        },
+        "older": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "view"
+      ],
+      "description": "Plugin output for one checked page. older is an optional private continuation for the pinned revision. Keep it opaque and never deliver it directly to the renderer."
+    },
+    "ItemViewRead": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "source_revision": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "older": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "item",
+        "source_revision"
+      ],
+      "description": "Host supplies the checked item and source revision and, for a continuation only, the pinned plugin cursor."
+    },
+    "ItemViewFollowRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "item_view_follow"
+        },
+        "follow": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "type",
+        "follow"
+      ],
+      "description": "Subscribe to the authenticated active live head. The host resolves the component, item, source revision and scope from the ref."
+    },
+    "ItemViewSignal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "item_view_signal"
+        },
+        "follow": {
+          "$ref": "#/$defs/Ref"
+        },
+        "state": {
+          "enum": [
+            "changed",
+            "invalidated"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "follow",
+        "state"
+      ],
+      "description": "Host-only signal. It carries no item content. Ignore signals for a replaced follow ref or lease."
+    },
+    "ItemViewAssetRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Checked scoped asset ref. At publication or refresh it resolves an admitted source. Renderer delivery substitutes a host ref pinned to the authorized view and immutable asset."
+    },
+    "ItemViewAssetRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "item_view_asset"
+        },
+        "ref": {
+          "$ref": "#/$defs/ItemViewAssetRef"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        }
+      },
+      "required": [
+        "type",
+        "ref",
+        "offset",
+        "length"
+      ]
+    },
+    "ItemViewAssetResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "type": "string",
+          "maxLength": 87384
+        },
+        "next_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "media_type": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "bytes",
+        "media_type"
+      ],
+      "description": "Standard padded base64 carrying at most 64 KiB of decoded bytes from the checked immutable asset. Omit next_offset at end of file. Never redirect."
     }
   },
   "activation_limits": {
@@ -4913,7 +5112,7 @@
       "output_schema": {
         "$ref": "#/$defs/LeaseRenewResult"
       },
-      "scope": "Authenticate the original session, lease and partition. Retain requested exact result versions only when still authorized and replace current contexts. Always apply query.search.plugin.renewal to explicit plugin profiles. An audience change requires a fresh view. Item views reopen under view_snapshots.body_content."
+      "scope": "Authenticate the original session, lease and partition. Re-confirm requested results and replace contexts under view_result_retention. An audience change requires a fresh view."
     },
     "choice.options": {
       "output_schema": {
@@ -4968,7 +5167,7 @@
       "output_schema": {
         "$ref": "#/$defs/ItemViewResult"
       },
-      "scope": "Check the active view lease, exact bound item-view component and declared slot. Reconstruct item and slot and refuse a different operand. Apply view_snapshots.body_content to both forms. With live omitted, use only retained content. With live:true, apply view_snapshots.live_view. A guest or public view gets the retained path only."
+      "scope": "Check the active view lease, exact bound item-view component and declared slot. Reconstruct item and slot and refuse a different operand. Apply view_snapshots.body_content to both forms. With live omitted, use only retained content. With live:true, apply view_snapshots.live_view. A guest or public view gets the retained path only. Resolve any cursor through view_snapshots.paging. Issue retention refs for the delivered result only."
     },
     "offline.download": {
       "input_schema": {
@@ -4996,6 +5195,24 @@
         "$ref": "#/$defs/PluginSearchPage"
       },
       "scope": "Require a live member audience on the active view and the exact explicit declared profile selected before settle. Check the settled Bind and generation. Apply query.search.plugin at admission and delivery. A guest or public request cannot invoke a plugin, including with a forged member cursor or Bind."
+    },
+    "item_view.follow": {
+      "input_schema": {
+        "$ref": "#/$defs/ItemViewFollowRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/ItemViewSignal"
+      },
+      "scope": "Apply view_snapshots.follow. Bind to the active authenticated view and coalesce notifications. No package wake for the signal."
+    },
+    "item_view.asset": {
+      "input_schema": {
+        "$ref": "#/$defs/ItemViewAssetRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/ItemViewAssetResult"
+      },
+      "scope": "Resolve the host-issued ref and exact current view lease. Apply view_snapshots.assets and body_content before returning a bounded range."
     }
   },
   "generic_item_fields": {
@@ -5271,14 +5488,10 @@
       }
     },
     "provider_login": {
-      "native_profiles": {
-        "Claude Code": ".claude",
-        "Codex": ".codex"
-      },
-      "custody": "The verified harness's provider program can read and refresh its own selected login and directories in the person's eligible sandbox. Provider tools there run as that person and can read those files. These native logins require no broker. Keep the directories out of other accounts, other packages, shared mounts, host-readable output and portable snapshots and backups.",
+      "custody": "Only mount the manifest-declared login directories the acting person has approved for this harness in its eligible sandbox. Each relative path maps to a separate private backing directory for that harness by default, even if another harness declares the same path. Share backing storage between harnesses only when the person expressly chooses them and the exact directories. A name or declaration cannot claim another harness's directory. Check the chosen profile, build and placement on each admission and reattachment. Reject escaping paths, symlinks and overlapping mount paths. Fence access on revocation. Keep login data out of other accounts, output, backups and shared mounts outside the authorized sandbox.",
       "account_switching": "Automatic account switching is deferred.",
       "shared_space": "Apply owner decision 74 in docs/open-questions.md. Keep tools off for the configured shared login until qualification proves a boundary that protects it from tools and other runs. For a shared file, choosing a personal native login or changing permission mode cannot enable tools. Apply attempt_authority_end.actions.item_audience_widening before a personal run's item gains another file reader. Admit a shared execution only when the placement also keeps incompatible saved sessions out of reach.",
-      "disclosure": "At install disclose publisher, image digest, placement, mounted item-data scope, native profile access and approved network egress. Code and tools in a personal profile can read and transmit accessible data through approved routes."
+      "disclosure": "At install disclose the publisher, image digest, placement, mounted item-data scope, each declared login directory and approved network egress. Explain that program code and tools in the person's own sandbox can read and transmit available login data."
     },
     "harness_placement": {
       "approval": "Use the host's recorded approval for the exact reviewed build, pinned to the installed package, harness entry and image digests. Review the build once. A different build needs its own approval for hosted placement. Apply the same approval checks to bundled and community harnesses.",
@@ -5294,15 +5507,16 @@
     "invoke_scope": "Dispatch to the exact admitted package, digest, epoch and ticket. Stamp protected job and alarm metadata as in HostWorkerInvokeFrame. Refuse worker-origin invoke or worker-supplied host metadata."
   },
   "execution_intents": {
-    "admission": "Only a declared replayable job with execution:true and a checked live item whose installed kind declares execution_target. Admit one unresolved execution job or active attempt per item. Pin the audience generation, actor, job, package, harness and effect ceiling. Under the lifecycle fence refuse deleted, archived or retired targets. Reserve quotas once. Replay returns the current receipt without another admission. Resolve the same checked harness choice for the job at admission and every later claim. No caller-supplied host job context.",
-    "stop_and_archive": "Idle archive excludes unresolved execution jobs, live attempts and protected approvals. Protected archive and Stop pin the exact job or attempt, recheck authority under the lifecycle fence and never retarget a replacement.",
-    "cutover": "Fence new admission, drain unresolved execution jobs and verify zero live attempts before switching writers. Retain durable refusals and receipts across rollback."
+    "admission": "Only a declared replayable job with execution:true and a checked live item whose installed kind declares execution_target. Keep one eligible head job or active attempt per item. The successor rule governs queued jobs. Pin the audience generation, actor, job, package, harness and effect ceiling. Under the lifecycle fence refuse deleted, archived or retired targets. Reserve quotas once. Replay returns the current receipt without another admission. Resolve the same checked harness choice for the job at admission and every later claim. No caller-supplied host job context.",
+    "stop_and_archive": "Idle archive excludes unresolved execution jobs, live attempts and protected approvals. Protected archive pins every affected head and successor and requires a fresh challenge if that set changes. Stop pins the exact job or attempt. Recheck both under the lifecycle fence and never retarget a replacement.",
+    "cutover": "Fence new admission, drain unresolved execution jobs and verify zero live attempts before switching writers. Retain durable refusals and receipts across rollback.",
+    "successor": "The existing checked start_job may admit one durable FIFO successor per item while its head job or attempt is active. A queued successor has a receipt and no execution lease. Promote it only after the head is terminal and its attempt authority and teardown are settled. Recheck item, actor, grants, harness and quota at promotion. Replay the receipt without adding a job. At capacity refuse with pending_limit. Stop pins the exact target. Archive, widening and revocation fence any affected queued jobs before publishing the authority change. One item never has two running attempts."
   },
   "attempt_authority_end": {
     "commit_rule": "Make the local fence and the specific recovery work durable before reporting success or allowing any later admission, renewal, effect or egress. Invalidate queued dispatch and scoped references and fence descendants. Where authority spans databases, durably fence affected spaces before publishing the authority change and block work until reconciled. Keep the exact attempt identity, generation and cleanup key. Dispatch no remote work under the fence. Recover committed cleanup after crash before reply or dispatch. Deduplicate remote teardown by exact attempt, and release quota only after verifying it. Earlier committed effects stay committed.",
     "actions": {
       "archive": {
-        "before_reply": "Exact admitted attempt fence or durable pending-intent refusal, archived head, any eligible Undo and deduplicated cleanup record in the same FULL transaction. Undo leaves the fence and refusal in place.",
+        "before_reply": "Exact active attempt fence and durable refusals for all affected pending head and successor jobs, archived head, any eligible Undo and deduplicated cleanup in one FULL transaction. Undo leaves those fences and refusals in place.",
         "after_commit": "Exact-attempt Stop and bounded subtree cleanup. Pending intent without an attempt needs no remote Stop.",
         "ends_authority": true
       },
@@ -5530,7 +5744,7 @@
       "output": {
         "$ref": "#/$defs/ExtensionChoicePage"
       },
-      "rule": "Only the owning app or its checked device interface can request choices. Bind opaque refs to the exact installed contribution, point, version, account and space. Recheck live grants, digest and compatibility at use. A harness choice ref supplies the HarnessRef for a declared execution job."
+      "rule": "Only the owning app or its checked device interface can request choices. Bind the short-lived option to the exact declared point and scope. For an eligible harness option also issue the durable HarnessRef. Reuse the binding for the same exact tuple. Limit stored bindings to the installed contribution inventory and retire them when their pinned digests or enrollment lose eligibility. Recheck membership, placement, publisher approval, installed contribution, digest, point and profile at each job or alarm claim. Refuse a stale ref instead of substituting another build. Receipt replay never reissues or widens authority."
     }
   },
   "alarms": {
@@ -5555,7 +5769,7 @@
       "pending_per_space": 128,
       "input_bytes": 16384
     },
-    "admission": "Only a declared replayable alarm job. Bind the pending alarm to a package generation, creator, checked target and due time. Protect replacement and cancellation by live authority and request receipt. Consume and admit exactly one durable job in the same recovery-visible transaction; delivery or restart replay can only replay that job.",
+    "admission": "Only a declared replayable alarm job. Bind the pending alarm to a package generation, creator, checked target and due time. Protect replacement and cancellation by live authority and request receipt. Consume and admit exactly one durable job in the same recovery-visible transaction; delivery or restart replay can only replay that job. A declared execution alarm may name a durable HarnessRef in its checked input. Re-resolve it for the exact admitted actor, space and target at admission and claim.",
     "late": "An eligible missed alarm is delivered once, late, with the original scheduled_at and the actual admission time actual_at. The plugin decides to run or skip from its own per-schedule setting and computes the next time.",
     "disable": "Persist retirement of pending alarms and fence admitted work when the package is disabled, uninstalled or loses authority. A later enablement does not recreate retired alarms."
   },
@@ -5589,8 +5803,8 @@
       "max_bytes_per_package_per_space": 4194304
     },
     "authority": "Treat the snapshot as plugin-authored item content. The package's declared reads and the acting principal's live read grants bound the inputs, as when writing the item file. Only a run of the installed kind owner with live item-write authority can publish or replace the retained snapshot, normally the run that wrote the file. Check write authority when minting the publish scope and again under the commit fence. Bind publication to actor, package generation, item, slot, exact source revision and the host-derived item audience. Validate the native description. Deliver a retained snapshot only to its bound audience under view_snapshots.body_content.",
-    "state": "Serve the retained native description without a wake. Mark a still-authorized snapshot stale after a head advance. A valid writer publication replaces the slot and invalidates the corresponding open view. Show loading with the basic item shell if absent. Evict retained views within the byte caps and reclaim superseded generations.",
-    "retention": "Regenerable appdata. Apply view_snapshots.body_content on revoke, purge or generation retirement and reclaim in bounded work. No backup dependency. A snapshot is never authoritative or the only copy. It contains no host chrome, confirmation UI, live actions, external frames, arbitrary URLs, leases or tokens.",
+    "state": "Store and serve only the newest page for a snapshot slot without a wake. Mark a still-authorized snapshot stale after a head advance. A valid writer publication replaces the slot and invalidates the corresponding open view. Show loading with the basic item shell if absent. Evict retained views within the byte caps and reclaim superseded generations.",
+    "retention": "Regenerable appdata. Apply view_snapshots.body_content on revoke, purge or generation retirement and reclaim in bounded work. No backup dependency. A snapshot is never authoritative or the only copy. It contains no host chrome, confirmation UI, live actions, external frames, arbitrary URLs or bearer tokens. Store checked asset identities instead of delivery refs.",
     "context": {
       "input": {
         "$ref": "#/$defs/ItemViewContextRequest"
@@ -5600,8 +5814,11 @@
       },
       "scope": "Publish only. Mint the exact host-derived scope for an installed kind owner's write-authorized run. Deny it on the live view path. Apply view_snapshots.body_content."
     },
-    "live_view": "On a separate live item_view.open request, the declared refresh read operation can return ItemSnapshotView for the requesting member only, with state:live. Scope it to the exact viewer, lease, item and checked source revision. Hold the retained view while the refresh runs only as permitted by view_snapshots.body_content. The admitted call may wake the package under the existing runtime rules. Apply pending and payload bounds. Keep its output transient and apply view_snapshots.body_content. A refresh cannot mint or redeem a publish scope or change the retained snapshot, even for a viewer who can edit. Guest and public requests use retained content only and never invoke refresh.",
-    "body_content": "Item views are body content, whether retained, stale or live. Every path that produces or delivers one uses the same live revision-specific body-read check as a file read for that exact item and source revision. Check the acting principal at production admission and again before committing or returning produced content. Check the viewer at open admission and again immediately before delivery. Title access alone is insufficient. On an item, revision, audience or grant invalidation affecting the view, the host fences outstanding delivery and invalidates the view on its authenticated lease. If it cannot signal the affected view, close the lease. The renderer clears displayed and buffered content and ignores superseded replies on any relevant invalidation, lease loss or disconnect. An accepted renewal cannot retain either form. Clear any prior content and reopen the still-open item with a fresh item_view.open on the renewed lease. With no valid lease or successful open, show the basic authorized shell."
+    "live_view": "On a separate live item_view.open request, the declared refresh read operation receives ItemViewRead and returns ItemViewPage for the requesting member only, with state:live. Scope it to the exact viewer, lease, item and checked source revision. Hold the retained view while the refresh runs only as permitted by view_snapshots.body_content. The admitted call may wake the package under the existing runtime rules. Apply pending and payload bounds. Keep its output transient and apply view_snapshots.body_content. A refresh cannot mint or redeem a publish scope or change the retained snapshot, even for a viewer who can edit. Guest and public requests use retained content only and never invoke refresh.",
+    "body_content": "Item views are body content, whether retained, stale or live. Every production and delivery path uses the same live revision-specific body-read check as a file read for that exact item and source revision. Check the acting principal at production admission and again before committing or returning produced content. Check the viewer at open admission and immediately before delivery. Title access alone is insufficient. On a relevant invalidation, fence outstanding delivery and invalidate affected results on the authenticated lease. Close the lease if the host cannot signal invalidation. Clear displayed and buffered content on relevant invalidation, lease loss or disconnect, and ignore superseded replies. Apply view_result_retention on renewal. With no authorized result, show the basic item shell.",
+    "paging": "A snapshot holds the newest page and optionally its private older boundary. An authorized member can request older pages through item_view.open with live:true and the issued cursor. Bind each external cursor to its checked viewer, view, item, slot, source revision, and plugin boundary. Resolve and reauthorize the exact pinned revision before invoking the owner. No offset or count. Absence of older ends the chain. Do not mix revisions in one chain. The plugin supplies older pages when awake, under admitted wake rules. Guest and public views receive the retained newest page alone. Meter each page against the snapshot bounds.",
+    "follow": "The latest live page may give the active member a follow ref. On a committed item change send changed on the authenticated subscription so the renderer requests the latest live head without a cursor. Keep still-authorized pages while refreshing, then replace the chain if the pinned revision changed. On body or asset authority loss, purge, retired source or other relevant invalidation send invalidated and apply body_content before any further output. Bind and fence the follow ref with the result and lease. Keep one follow per open item-view slot under the existing per-view subscription cap. Coalesce signals and meter them with the existing live update cap.",
+    "assets": "Accept only checked immutable image and attachment references at publish or refresh. Bind them to the item-view source, verified asset revision and audience. Omit an inaccessible leaf and its metadata. On delivery mint a scoped ItemViewAssetRef and check both the item body authority and the asset's independent live access again at every range open and delivery. Fence on source or asset revoke. Serve normalized still PNG or JPEG images with at most 512 KiB and 2,048 pixels on either edge. Attachments use the existing file limits and checked ranges. Each response is at most 64 KiB decoded. Treat labels and author lines as plain authored data."
   },
   "offline_download": {
     "request": {
@@ -5622,5 +5839,10 @@
     "retention_days": 30,
     "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action. Start retention at trash commit. No item kind or package overrides the retention period."
   },
-  "exchanges_revision": "14.20"
+  "exchanges_revision": "14.21",
+  "view_result_retention": {
+    "rule": "Host windows, plugin search pages and stored or live item-view pages use the same result_versions and retained_results exchange. On a successful renewal with an unchanged grant revision, re-confirm the exact result ref and version, current audience and checked scope, including the active settle generation for a plugin search, the slot for an item view, and live access to each exact item, asset and source revision represented in the result. Retain each still-authorized unchanged result by acknowledging the exact pair, without rerendering or invoking a plugin. Treat a changed or refused result as an invalidation of that result only. A changed audience requires a new view.",
+    "scope": "Retain only on the same authenticated view, account and cache partition. Rebind the acknowledged result's eligible continuation, follow and item-view asset refs to the renewed lease. Asset reads still apply view_snapshots.assets at admission and delivery. Supply current scoped contexts in retained_results for retained plugin-search pages. A missing context is unavailable. Replace old tokens as a set. Invalidate selections or activities whose originating result or context no longer holds. Acknowledge each exact result at most once under the existing aggregate cap.",
+    "renderer": "Keep confirmed content on screen. Clear the affected result on actual invalidation, lease loss or disconnect. On a fresh authorized view retry a missing item page from its head and re-settle any missing plugin search chain before requesting its first page. An acknowledged unchanged chain continues from its retained cursor without another settle. Resume a partial chain only from a retained boundary; discard a dependent suffix without that boundary. Ignore replies from superseded requests."
+  }
 }

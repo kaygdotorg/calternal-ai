@@ -1663,6 +1663,12 @@
         },
         {
           "$ref": "host-catalogue-v2.json#/$defs/PluginSearchRequest"
+        },
+        {
+          "$ref": "host-catalogue-v2.json#/$defs/ItemViewFollowRequest"
+        },
+        {
+          "$ref": "host-catalogue-v2.json#/$defs/ItemViewAssetRequest"
         }
       ]
     },
@@ -2792,6 +2798,18 @@
         },
         {
           "$ref": "#/$defs/SnapshotStack"
+        },
+        {
+          "$ref": "#/$defs/SnapshotCode"
+        },
+        {
+          "$ref": "#/$defs/SnapshotHeading"
+        },
+        {
+          "$ref": "#/$defs/SnapshotImage"
+        },
+        {
+          "$ref": "#/$defs/SnapshotAttachment"
         }
       ]
     },
@@ -2806,7 +2824,7 @@
       "required": [
         "content"
       ],
-      "description": "Read-only native description for plugin-authored item content. Use SnapshotText for item text. The host checks byte, depth and node limits. No markup, host chrome, confirmation UI or action context."
+      "description": "One read-only native item-view page. Draw only SnapshotNode types. Apply aggregate byte, depth and node bounds. Plain text and code are never interpreted as markup. Asset refs use the checked catalogue route. No host chrome or confirmation UI."
     },
     "ExtensionUse": {
       "type": "object",
@@ -2889,6 +2907,93 @@
         "text"
       ],
       "description": "Plain item content in a checked item view. Draw the string as literal text without markup or host controls."
+    },
+    "SnapshotCode": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "snapshot-code"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 8192
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 32
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "description": "A literal non-executable code block."
+    },
+    "SnapshotHeading": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "snapshot-heading"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 120
+        }
+      },
+      "required": [
+        "type",
+        "title"
+      ],
+      "description": "A plain heading and optional authored attribution. No host identity or chrome authority."
+    },
+    "SnapshotImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "snapshot-image"
+        },
+        "ref": {
+          "$ref": "host-catalogue-v2.json#/$defs/ItemViewAssetRef"
+        },
+        "alt": {
+          "type": "string",
+          "maxLength": 240
+        }
+      },
+      "required": [
+        "type",
+        "ref"
+      ],
+      "description": "A still image resolved only through the checked item-view asset route."
+    },
+    "SnapshotAttachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "snapshot-attachment"
+        },
+        "ref": {
+          "$ref": "host-catalogue-v2.json#/$defs/ItemViewAssetRef"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 120
+        }
+      },
+      "required": [
+        "type",
+        "ref",
+        "label"
+      ],
+      "description": "A checked attachment shown with a plain label."
     }
   }
 }

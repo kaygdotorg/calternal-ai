@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.20 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.21 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -92,8 +92,9 @@ Apply replies only to the current Bind, generation and lease. A batch
 contains authorized rows and an optional next cursor. A ready batch
 without a cursor ends the chain. Show the Bind’s empty message if that
 chain produced no rows. An empty batch with a cursor continues. Draw no
-total, fixed page indicator or End affordance. On renewal discard and
-restart the chain under the [profile rule](../contract/host-catalogue-v2.json#/query/search/plugin/renewal).
+total, fixed page indicator or End affordance. Keep an unchanged
+acknowledged chain on renewal under the
+[common retention rule](../contract/host-catalogue-v2.json#/view_result_retention).
 
 **End-relative windows.** End and near-end jumps use `anchor:"end"` only on non-search Binds with exact count authority. A `loading`, `throttled` or `error` reply on that active request keeps `anchor:"end"` and carries no offset or count. Apply exact count and distance only to ready or empty End results. Search refinement is start-anchored. Follow the [catalogue’s end-anchor and result ordering rules](../contract/host-catalogue-v2.json#/$defs/WindowResult).
 
@@ -165,7 +166,7 @@ The description only asks. Before any indexed work the host must:
    form actions) and when the subscription lease renews (`LeaseRenewRequest`/`LeaseRenewResult`, one 15-second lease for the subscription and its contexts). The
    host reconstructs row, route and selection from a context and never accepts the renderer's value for them. The renderer keeps filled rows in memory after a lease lapses but
    does not paint them as current until a renewal returns the same grant revision and result version (section 6).
-   Plugin pages never enter this retention path. Renewed views explicitly restart them under §2.3.
+   Apply the same retention rule to plugin search pages and both forms of item view (§2.3).
 
 The renderer never receives a row it was not entitled to; it needs no rule of its own. The host's own duties (authority, engines, projections) are written once, in the
 Plugin API (Part A); this section lists only what the description relies on.
@@ -348,24 +349,26 @@ or action extension point whose installed contributions are validated and
 bound like its other descriptions.
 
 For a bound `item-view` component and declared slot, `item_view.open`
-returns the retained `ItemSnapshotView` without waiting for a wake.
-Mark a stale reply as belonging to an earlier revision. When absent,
-show the basic shell and loading state. For an open thread, the snapshot
-is its retained transcript view. Apply the
+returns the retained newest page without waiting for a wake. Mark a
+stale result as belonging to an earlier revision. When absent show
+the basic shell and loading state. Apply the
 [catalogue’s item-view rule](../contract/host-catalogue-v2.json#/view_snapshots/body_content)
-to both forms.
+to every page.
 
-An eligible member view separately requests `live:true` for the open
-item. Keep the retained view while that read is pending only as the
-item-view rule permits. Apply `state:"live"` on the requesting viewer’s
-current lease. It is transient. Only a separate
-write-authorized package run can publish a replacement snapshot. A guest
-or public view uses the retained request alone.
+An eligible member can request a transient `live:true` head and then
+follow the `older` cursor for earlier pages pinned to that revision.
+Only a write-authorized package run can replace the retained page.
+Guest and public views use the retained page alone. If the live head
+supplies a `follow` ref, subscribe with `item_view.follow`. A `changed`
+signal asks the shell to fetch the newest live head. An `invalidated`
+signal clears affected content. Apply the catalogue’s paging and follow
+rules before drawing the next reply.
 
-The `snapshot-text` leaf carries literal item text up to the same
-2,000-character limit as the fixed-copy `TextNode`. It uses native text
-and accepts no markup or host controls. Snapshot nodes carry no host
-chrome, confirmation UI or live actions.
+The native nodes are stack, `snapshot-text`, `snapshot-code`,
+`snapshot-heading`, `snapshot-image` and `snapshot-attachment`. Text,
+code and attribution are literal. The renderer fetches image and
+attachment bytes only through the checked `item_view.asset` route.
+No markup, chrome, confirmation UI or live actions are drawn from a page.
 
 ### 5.2 Host surfaces and navigation on the wire
 
@@ -497,14 +500,11 @@ Wipe on sign-out, configured expiry or next contact after revocation.
 By default there is no offline expiry. A space can configure one.
 A disconnected copy cannot be erased remotely.
 
-Keep live windows bounded in memory by session, space and audience.
-Hide live rows on lease loss. Repaint only retained exact
-`window_ref` and `result_version` pairs in the reply to the current
-authenticated renewal. A changed grant refetches. Explicit plugin-search
-pages, selections and tokens are discarded on accepted renewal, even
-with the same grant. Re-settle the current query on the renewed view with
-a fresh generation, then call `search.plugin` without a cursor. Clear and
-reopen item views under the [item-view rule](../contract/host-catalogue-v2.json#/view_snapshots/body_content).
+Bound host windows, item-view pages and plugin search pages in memory
+by authenticated view. Use the [common retention rule](../contract/host-catalogue-v2.json#/view_result_retention)
+for all three. An unchanged exact acknowledged result stays on screen
+through renewal. Clear affected pages on invalidation, lease loss or
+disconnect and reopen under fresh authority.
 Guest and public sessions receive no member download or persisted row grant. Persist
 no live context, action proof or bearer. Every action rechecks live
 authority.
@@ -566,7 +566,7 @@ rows and counts use source authority. Contributed row fields arrive later
 from the matching extension point. Personal sections use the same layout
 and per-parent window APIs as any app. The harness owns the file and
 live transcript view. A sleeping item opens its checked stored native
-snapshot and can show a transient reader view when the package wakes.
+snapshot. The live view follows committed appends and loads older pages.
 Only a write-authorized run updates the retained view. The app owns Send,
 options, queued follow-ups and continuation. The host owns admission,
 file writes, approval dispatch and widening fences.

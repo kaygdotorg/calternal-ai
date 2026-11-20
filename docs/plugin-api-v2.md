@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.20 draft
+# Plugin API v2 · revision 14.21 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -92,14 +92,17 @@ pins both package generations and intersects the caller’s rights with the
 approved interface. The host validates the resulting native description and
 rechecks the requested item and data scope. No direct connection or implicit
 cross-package grant follows from installation. Use checked extension choices
-for a host-issued harness ref at execution-job admission. Use the catalogue’s
+for a durable host-issued `HarnessRef` at execution-job admission.
+A checked alarm can retain that ref across restarts. Resolve the same
+pinned contribution under live authority at claim. Use the catalogue’s
 [extension points](../contract/host-catalogue-v2.json#/extension_points).
 
 A **harness** is a plugin that runs an agent program such as Claude Code
 or Codex. The orchestrator declares a harness point for its Threads app.
 Bundled and community harnesses contribute through it. Another app can
-declare its own point or reuse the same interface. The orchestrator can
-index one shared list entry kind with checked refs to harness-owned files.
+declare its own point or reuse the same interface. **The harness’s file
+is the thread item.** The orchestrator’s list entry points to that item.
+Share, Trash and archive target the file item through its checked ref.
 Source authorization applies before rows or counts are computed.
 A base indexed row is available while a contributor sleeps. Fetch optional
 plugin fields only for visible rows, with the exact source revision and audience.
@@ -111,8 +114,8 @@ installation, file format and live edit authority. An editor that cannot
 preserve unfamiliar blocks opens read-only. Selection grants no new rights.
 
 A harness declaration pins an image digest and entry asset and discloses
-native-profile access. Install shows image publisher, digest, placement,
-mounted data scope, profile access and egress, under the same rules for
+login directories. Install shows image publisher, digest, placement,
+mounted data scope, each login path and egress, under the same rules for
 all publishers. Distinctive provider marks require a verified publisher
 binding from a signed gallery entry or explicit operator checksum pin.
 The bundled contributions ship signed entries and go through the same
@@ -476,8 +479,10 @@ with their own retention and delivery checks.
 The host admits a declared replayable execution job on the exact item
 of a kind declaring `execution_target`
 with the actor, package digest, admitted harness, placement, audience
-generation, rights and quotas pinned. Under the lifecycle fence allow one
-unresolved execution job or active attempt per target. The authenticated
+generation, rights and quotas pinned. Apply the catalogue’s
+[successor rule](../contract/host-catalogue-v2.json#/execution_intents/successor)
+when an item already has a head job or active attempt. Admit the queued
+follow-up through the checked job path. The authenticated
 job context supplies its target and admitted receipt. `execution_start`
 checks the resolved harness and optional continuation under that fence.
 An authorized retry returns the same admitted attempt. Stop can target
@@ -507,9 +512,15 @@ machine. Do not expose native session IDs. Current authority, compatible
 binding, and reconciliation of uncertain effects are required before
 admission. Section 5 retires incompatible bindings before widening.
 
-The verified program and tools in the person’s own sandbox can access its
-own provider directory and login. Keep credentials out of other accounts,
-packages, shared mounts, output and portable backups. The configured
+A harness declares its relative `login_directories` inside the person’s
+sandbox. The bundled harnesses declare `.claude` and `.codex` by the same
+mechanism. Mount private backing directories for each harness by default.
+Only the person’s explicit choice shares a backing directory between
+selected harnesses. A matching path or name grants no access. Apply
+the catalogue’s [login custody rule](../contract/host-catalogue-v2.json#/execution_attempt_authority/provider_login)
+before mounting. In a personal sandbox the program and its tools may read
+the approved login. Keep credentials out of other accounts, output and
+portable backups. The configured
 shared login has tools off until isolation is proved (owner decision 74).
 A shared run cannot reach former personal session files by path or native
 ID. Apply this to new runs as well as continuation, across every publisher.
@@ -597,8 +608,8 @@ seconds, reclaim within 30 seconds and sweep orphans before restart admission.
 
 **One approval model.** Use the existing protected
 [Inbox requests](../crates/core/src/requests.rs) `Approval` record and
-its answer/approve/deny receipt rules. A job park and a Turn reference
-the same request type and resolver. Approvals bind the material action,
+its answer/approve/deny receipt rules. A parked job and an execution
+use the same request type and resolver. Approvals bind the material action,
 target, grantee and lifetime. Irreversible lifecycle actions use one-use
 confirmation. A stored approval cannot substitute for a live grant.
 
@@ -857,21 +868,13 @@ and pushes never wake a worker.
 
 Keep filled live windows in bounded memory, partitioned by account,
 session, space, audience and view. Hide them on lease expiry or disconnect.
-The host rechecks current authority, grant revision and the exact window
-versions it issued. `LeaseRenewRequest` carries `renewal_id`, `lease_ref`,
-`cache_partition`, `grant_revision` and `result_versions` keyed by
-`window_ref`. Accept `LeaseRenewResult` only from the authenticated host
-session with matching outstanding `renewal_id`, current `request_lease_ref`
-and current `cache_partition`. Replace view and window action contexts
-with the accepted reply's current scoped contexts. Recheck Stop against
-the exact pending job or admitted attempt. Repaint only exact `retained_results`
-pairs of `window_ref` and `result_version`. Changed grants or versions
-require fresh authorized windows. Ignore superseded replies and keep rows
-hidden on timeout or refusal. Explicit plugin pages always restart on
-accepted renewal under the [profile rule](../contract/host-catalogue-v2.json#/query/search/plugin/renewal).
-Item views reopen under the [item-view rule](../contract/host-catalogue-v2.json#/view_snapshots/body_content).
-Clear live rows on revocation, sign-out,
-account or audience switch, session end or guest link closure.
+Use the [common result retention rule](../contract/host-catalogue-v2.json#/view_result_retention)
+for host windows, plugin search pages and item-view pages. Send their
+exact `window_ref` and `result_version` pairs and accept confirmation
+only on the current authenticated renewal. Keep each confirmed unchanged
+result and use its current scoped contexts. Recheck Stop against the
+exact pending job or admitted attempt. Clear affected content on actual
+invalidation, lease loss or disconnect. Refetch under fresh authority.
 
 Data-free templates and signed invariant-root member row records remain
 available for cold launch. Body-derived display fields may persist when
@@ -900,7 +903,7 @@ and item audience. Both retained and live views follow the
 [catalogue’s item-view rule](../contract/host-catalogue-v2.json#/view_snapshots/body_content).
 The host checks shape and scope. The author controls what the text says.
 
-Draw the retained view without waiting for a wake. When the revision
+Draw the retained newest page without waiting for a wake. When the revision
 has moved, mark a still-authorized snapshot stale. When absent, show the
 basic item shell and loading state. Only a run with live item-write
 authority can replace the retained view, normally the run that wrote the
@@ -909,11 +912,18 @@ file. Check that authority at scope admission and commit.
 A member reader may request a live view through the pinned read operation.
 Apply the same item-view rule to the transient reply. Opening or refreshing
 an item never replaces the retained view, even when the reader can edit.
-Guest and public delivery stays on the retained path. Revoke or purge
-drops the stored snapshot. Its `snapshot-text` leaves draw plain text
-inside the checked item view. They carry no markup, host chrome,
-confirmation UI or action context. Notes’ row images reuse the revision,
-audience and stale checks under their own size and delivery limits.
+An eligible member can request older pages through `item_view.open`
+using the checked cursor. Follow the active live head for commit signals.
+On change request the newest live page. On invalidation clear the
+affected content under the item-view rule. Guest and public delivery
+uses only the retained newest page. Revoke or purge drops that snapshot.
+
+Item-view leaves draw literal text, code, a heading with optional authored
+attribution, and checked images or attachments. They carry no markup,
+host chrome, confirmation UI or action context. The
+[catalogue’s asset route](../contract/host-catalogue-v2.json#/component_routes/item_view.asset)
+reauthorizes both body and asset before delivering bytes. Notes’ row
+images keep their own size and delivery limits.
 
 Row images use the existing `RowImageIcon` and read route. Notes declares
 a portrait aspect and the existing snippet fallback. An editing device
@@ -1381,9 +1391,12 @@ intentional refusal/retry with an actionable response.
   that reader’s live view, including when the reader also has edit rights.
   Revoke body access with title access intact before admission and during
   delivery, for retained, stale and live views. Require zero body content.
-  With a view already displayed, invalidate it or cut the lease or connection.
-  Require immediate clearing and a fresh open after renewal. Meter wake
-  separately from first paint.
+  Page beyond one native page and follow new committed output. Revoke
+  an asset grant during a bounded range read. Confirm no further bytes.
+  Renew an unchanged retained page and an unchanged live page. Require
+  neither blanking nor a plugin call. Invalidate an affected view or
+  cut the lease or connection and require immediate clearing. Reopen
+  under fresh authority. Meter wake separately from first paint.
 - **Execution and widening.** Prove freeze, exact reattachment and teardown
   under transport and server loss. Verify one admitted attempt on replay.
   Attempt widening through direct share, membership, collection and Undo.
@@ -1396,7 +1409,11 @@ intentional refusal/retry with an actionable response.
   placement. Refuse an unapproved build there or on another person’s
   enrolled machine, and admit it on the actor’s own eligible enrollment.
   Recheck a changed build and a revoked enrollment. Apply the same
-  checks to community and bundled harnesses.
+  checks to community and bundled harnesses. Try another harness’s
+  login path without and with explicit sharing. Queue a successor,
+  replay its receipt, fill the queue, revoke before promotion and
+  check that two attempts never run on one item. Fire a durable alarm
+  after restart and verify the exact pinned harness.
 - **Lists and search.** Before enabling background list replay, cut power on
   both sides of the save and publication commits. Introduce a backlog.
   Require bounded recovery to live-authority rows and counts, loading without
@@ -1406,8 +1423,9 @@ intentional refusal/retry with an actionable response.
   custom ranking and plugin indexes in a slow or denied plugin arm.
   Reject profiles whose unreadable field can influence a match, ordering
   or continuation. Exercise default and explicit settle, a cursor chain
-  ending without rows, and renewal that fences every profile page and
-  restarts from a new settle. Reject old cursors, selection and contexts.
+  ending without rows and unchanged renewal without a plugin call.
+  Check that invalidated pages restart under a fresh settle. Reject
+  old cursors, selection and contexts from invalidated pages.
   Settle the same template as a member, guest and public viewer. Require
   zero plugin calls for guest or public, including a forged profile cursor.
 - **Generic idle archive.** Use an ordinary declared kind and the real
@@ -1441,6 +1459,14 @@ Hold each affected cutover until its required behavior is pinned and
 qualified. Mention picker and snooze presets or custom date may follow
 as plugin features. Photos product questions wait for that plugin.
 
+The orchestrator cutover requires measured product wake p95 at or below
+500 ms for both the plugin and agent placements on the perf VM.
+Measure the actual cold Send path through its acknowledgement and
+first agent output. Report both user-visible intervals separately.
+Send acknowledgement waits for the plugin wake. First output
+also waits for agent placement. Treat the two wake measurements as
+cutover gates.
+
 Before switching readers, durably record the widening-protection flag
 on every retained legacy thread under the catalogue’s
 [item-record rule](../contract/host-catalogue-v2.json#/attempt_authority_end/actions/item_audience_widening/item_record).
@@ -1453,6 +1479,8 @@ and Notes dispatch and authority aliases, the `threads` namespace owner
 map and lookup, bundled-ID exceptions and native owner routing in startup,
 jobs and turn admission. Installed manifests provide ordinary ownership.
 Keep the generic collision checks, trusted install and additive migrations.
+Delete the transitional `open_cutover_requirements` and
+`application_cutover_requirements` catalogue tables after cutover.
 
 
 ## Owner decisions and open questions

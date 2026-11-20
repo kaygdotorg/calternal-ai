@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 14.20 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 14.21 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -705,8 +705,17 @@
         "icon": {
           "$ref": "#/definitions/localId"
         },
-        "native_profile": {
-          "const": true
+        "login_directories": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^(?!\\.{1,2}(?:/|(?![\\s\\S])))[A-Za-z0-9._-]+(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[A-Za-z0-9._-]+)*(?![\\s\\S])"
+          },
+          "description": "Relative login paths inside the person's sandbox, disclosed at install. The person chooses any backing directory to share under the catalogue's provider_login rule."
         }
       },
       "required": [
@@ -714,7 +723,7 @@
         "entry",
         "name"
       ],
-      "description": "Pinned harness image, entry asset and disclosed native profile access. The host checks reviewed-build approval outside the manifest. The host never interprets provider command options."
+      "description": "Pinned harness image, entry asset and disclosed login directories. The host checks reviewed-build approval outside the manifest. The host never interprets provider command options."
     },
     "editor": {
       "type": "object",
@@ -795,7 +804,7 @@
         "id",
         "refresh"
       ],
-      "description": "The owning read operation builds a transient native view for the requesting reader. Only a separate run with live item-write authority may publish this slot under catalogue view_snapshots."
+      "description": "The owning read operation accepts ItemViewRead and returns one transient ItemViewPage for the requesting reader. Only a separate run with live item-write authority may publish this slot under catalogue view_snapshots."
     }
   }
 }
