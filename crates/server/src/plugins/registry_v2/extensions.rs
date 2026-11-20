@@ -1,10 +1,14 @@
 //! Checked contributions derived from the installed catalogue.
 
 use super::{Catalog, ManifestV2, declared};
+use calternal_content::contribution_spool::{Ingest, Spool};
 use calternal_plugin_host::ContributionInterface;
-use calternal_types::{ContributionId, ContributionIdentity, PackageId};
+use calternal_types::{
+    ContributionId, ContributionIdentity, Error, HarnessRef, PackageId, RequestId, Result,
+};
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
+use uuid::Uuid;
 
 /// One archive's manifest and monotonic installation generation.
 #[derive(Clone, Debug)]
@@ -33,6 +37,66 @@ pub(crate) struct CheckedContribution {
     pub(crate) declaration: Value,
     /// Cached validator for the matching owner and contributor signatures.
     pub(crate) interface: ContributionInterface,
+}
+
+#[allow(
+    dead_code,
+    reason = "Slice 3's contribution broker and Slice 4's producer route consume these hooks"
+)]
+impl CheckedContribution {
+    /// Reserve one call in the owning job's existing receipt transaction.
+    /// The broker supplies the current contribution, checked attempt and
+    /// exact admitted input before the spool may observe a fresh request.
+    /// Cost: bounded preflight and the spool reservation.
+    pub(crate) fn reserve_call(
+        &self,
+        spool: &Spool<'_, '_>,
+        harness: &HarnessRef,
+        admitted: &Value,
+        offered: &Value,
+        now: i64,
+    ) -> Result<Uuid> {
+        if admitted != offered {
+            return Err(Error::request_reused());
+        }
+        self.interface.preflight(harness, admitted)?;
+        spool.reserve(now)
+    }
+
+    /// Claim launch once and return the exact entry frame. Replay returns
+    /// no entry bytes for dispatch. Start the carrier only after commit.
+    /// Cost: one bounded validation, two bounded encodings and one indexed update.
+    pub(crate) fn claim_entry(
+        &self,
+        spool: &Spool<'_, '_>,
+        request: &RequestId,
+        harness: &HarnessRef,
+        call: Uuid,
+        admitted: &Value,
+    ) -> Result<Option<Vec<u8>>> {
+        let wire = self.interface.encode_entry(
+            request,
+            spool.execution(),
+            harness,
+            &call.to_string(),
+            admitted,
+            admitted,
+        )?;
+        Ok(spool.claim_launch(call)?.then_some(wire))
+    }
+
+    /// Validate and persist one producer frame using the checked output
+    /// signature and exact attempt. Acknowledge the result after commit.
+    /// Cost: one bounded output validation for new output and one spool append.
+    pub(crate) fn ingest_frame(
+        &self,
+        spool: &Spool<'_, '_>,
+        call: Uuid,
+        frame: &Value,
+        now: i64,
+    ) -> Result<Ingest> {
+        spool.ingest(call, frame, now, |data| self.interface.accepts_output(data))
+    }
 }
 
 /// Immutable catalogue index. Maximum entries are the installed package cap
@@ -70,7 +134,72 @@ fn id<'a>(value: &'a Value, field: &str) -> &'a str {
         .expect("checked extension declaration")
 }
 
+impl PointKey {
+    fn from_contribution(contribution: &Value) -> Self {
+        let app = &contribution["app"];
+        Self(
+            id(app, "package").into(),
+            id(app, "app").into(),
+            id(contribution, "point").into(),
+            contribution["version"]
+                .as_u64()
+                .expect("checked point version") as u16,
+            id(contribution, "kind").into(),
+        )
+    }
+}
+
 impl Catalog {
+    /// Check the current binding and encoded input before the existing job or
+    /// alarm admission writes its durable pin. Callers resolve the harness
+    /// for this actor, space and target and supply live package enablement.
+    /// A replaced or disabled package cannot invoke the admission callback.
+    /// Cost: two in-memory lookups and bounded preflight, with no storage I/O.
+    #[allow(dead_code, reason = "Slices 3 and 7 own the host admission routes")]
+    pub(crate) fn preflight_admission<T>(
+        &self,
+        owner: &PackageId,
+        selected: &CheckedContribution,
+        harness: &HarnessRef,
+        input: &Value,
+        enabled: impl Fn(&PackageId) -> bool,
+        admit: impl FnOnce(&ContributionIdentity, &Value) -> Result<T>,
+    ) -> Result<T> {
+        if selected.declaration["app"]["package"] != owner.0 {
+            return Err(Error::not_found("The selected contribution is unavailable"));
+        }
+        let current = self.current_contribution(selected, enabled)?;
+        current.interface.preflight(harness, input)?;
+        admit(&current.identity, input)
+    }
+
+    /// Recover a selected contribution only while both original package
+    /// generations are installed and enabled for the checked space.
+    /// Cost: two in-memory lookups and at most two enablement checks.
+    pub(crate) fn current_contribution(
+        &self,
+        selected: &CheckedContribution,
+        enabled: impl Fn(&PackageId) -> bool,
+    ) -> Result<&CheckedContribution> {
+        let point = PointKey::from_contribution(&selected.declaration);
+        let key = (
+            selected.identity.package.0.clone(),
+            selected.identity.contribution.0.clone(),
+        );
+        self.contributions
+            .0
+            .get(&point)
+            .and_then(|choices| choices.get(&key))
+            .filter(|current| {
+                selected.owner_revision == current.owner_revision
+                    && selected.contributor_revision == current.contributor_revision
+                    && enabled(&PackageId(point.0))
+                    && enabled(&current.identity.package)
+            })
+            .map(Arc::as_ref)
+            .ok_or_else(|| Error::not_found("The selected contribution is unavailable"))
+    }
+
     /// List checked contributions for an exact qualified interface. Both
     /// packages must be enabled by the caller's live space predicate.
     /// Cost: one in-memory lookup and one check per candidate, no wake or I/O.
@@ -106,7 +235,7 @@ impl Catalog {
         &self,
         installed: &InstalledV2,
         contribution: &Value,
-    ) -> Result<PendingContribution, String> {
+    ) -> std::result::Result<PendingContribution, String> {
         let target = &contribution["app"];
         let app_package = id(target, "package");
         let app_id = id(target, "app");
@@ -138,13 +267,7 @@ impl Catalog {
             .expect("manifest verifies contribution operation ownership");
         let interface = ContributionInterface::check(point, operation)?;
         Ok((
-            PointKey(
-                app_package.into(),
-                app_id.into(),
-                point_id.into(),
-                version,
-                kind.into(),
-            ),
+            PointKey::from_contribution(contribution),
             Arc::new(CheckedContribution {
                 identity: ContributionIdentity {
                     package: PackageId(installed.manifest.id().into()),
@@ -161,7 +284,7 @@ impl Catalog {
     pub(super) fn check_installed_contributions(
         &self,
         installed: &InstalledV2,
-    ) -> Result<Vec<PendingContribution>, String> {
+    ) -> std::result::Result<Vec<PendingContribution>, String> {
         declared(&installed.manifest, "contributions")
             .map(|contribution| self.check_contribution(installed, contribution))
             .collect()

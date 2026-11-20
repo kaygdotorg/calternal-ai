@@ -28,6 +28,8 @@
 #![deny(missing_docs, rustdoc::broken_intra_doc_links)]
 use crate::types::{internal, missing};
 mod collections;
+/// Bounded contribution calls on the space writer transaction.
+pub mod contribution_spool;
 mod db;
 mod discovery;
 pub use discovery::ItemOrder;

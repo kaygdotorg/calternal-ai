@@ -11,12 +11,14 @@
 
 mod actor;
 mod capability;
+mod contribution_limits;
 mod error;
 mod id;
 mod item_access;
 mod owner;
 mod owner_lifecycle;
 mod page;
+pub use contribution_limits::{ContributionLimits, contribution_limits};
 mod plugin_v2;
 mod space_paths;
 /// Strict JSON object-member decoding shared by manifests and settings.
