@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Revision 14.22 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
+  "description": "Revision 14.23 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -3764,6 +3764,32 @@
       "$ref": "#/$defs/Ref",
       "description": "Opaque exact admitted execution job, pinned to its target item and audience generation."
     },
+    "ExecutionJobStart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "job",
+        "item",
+        "input",
+        "harness"
+      ],
+      "properties": {
+        "job": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "input": {},
+        "harness": {
+          "$ref": "#/$defs/HarnessRef"
+        },
+        "personal_placement": {
+          "$ref": "#/$defs/ChoiceRef",
+          "description": "One checked personal placement choice for this shared-space run. Apply execution_attempt_authority.provider_login.shared_personal_override."
+        }
+      }
+    },
     "ExecutionJobContext": {
       "type": "object",
       "additionalProperties": false,
@@ -4968,7 +4994,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStatus"
       },
-      "scope": "Only the owning job consumes a live checked request. Resolve pinned kind and refs, and recheck exact parent, live caller, eligible target, all ancestor ceilings and reserved tree capacity. Convert the reserved slot to an admitted execution and any declared child item and checked generic parent edge under one fence. A retryable refusal keeps the unexpired reservation. A terminal refusal releases it exactly once. Durable receipt replay adds no child or slot."
+      "scope": "Only the owning job consumes a live checked request. Resolve the kind, refs and exact parent harness pinned at reservation. Recheck that same binding, exact parent, live caller, eligible target, all ancestor ceilings and reserved tree capacity. A child inherits the pinned harness. For a parent using the personal placement override, admit a child only as part of the same selected run, for the same actor in the same isolated sandbox and within the scope of the original checked choice. Convert the reserved slot to an admitted execution and any declared child item and checked generic parent edge under one fence. A retryable refusal keeps the unexpired reservation. A terminal refusal releases it exactly once. Durable receipt replay adds no child or slot."
     },
     "execution_stop": {
       "input": {
@@ -4996,7 +5022,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionAttemptChildReply"
       },
-      "scope": "Check exact current parent, live actor, eligible target, refs and ancestor ceilings under the tree reservation fence. Resolve an existing parent-attempt receipt first. Exact live replay returns the same ref without another transition or reservation. Reject changed input or retired requests. For a fresh receipt atomically reserve pending and aggregate tree capacity before storing the request and its child_requested transition. At capacity return pending_limit without a record, receipt, transition or wake. Release pending capacity once on consumption, expiry or fencing and retire the queued transition. Expiry and fencing survive restart. Recheck authority before returning the reply.",
+      "scope": "Check exact current parent, live actor, eligible target, refs and ancestor ceilings under the tree reservation fence. Resolve an existing parent-attempt receipt first. Exact live replay returns the same ref without another transition or reservation. Reject changed input or retired requests. For a fresh receipt derive the harness and placement from the exact authenticated parent under the same authority checks as execution_spawn_child. Pin them in the reservation and atomically reserve pending and aggregate tree capacity before storing the request and its child_requested transition. At capacity return pending_limit without a record, receipt, transition or wake. Release pending capacity once on consumption, expiry or fencing and retire the queued transition. Expiry and fencing survive restart. Recheck authority before returning the reply.",
       "limits": {
         "per_parent_pending": 1,
         "tree_attempts_including_pending": 8,
@@ -5495,7 +5521,8 @@
       "custody": "Mount only manifest-declared paths from the authorized binding for the space type. Reject escaping paths, symlinks and overlapping mount paths. Check the binding, its live approval, exact build and eligible placement at admission, reattachment and renewal. Fence access and affected work on binding revocation or replacement under attempt_authority_end.actions.grant_change. Keep login data out of unrelated accounts and spaces, output, backups and other mounts.",
       "account_switching": "Automatic account switching is deferred.",
       "personal_space": "Only mount the backing directories the acting person approved for this harness in their eligible personal sandbox. Each declared path maps to private backing storage for the harness by default, even when another harness declares the same path. Share backing storage only when the person explicitly chooses the harnesses and exact directories. A name or declaration confers no access. If the target file has other readers, using a personal login or changing permission mode cannot enable tools.",
-      "shared_space": "The space Owner approves the shared login. The Owner or a Manager configures that approved login for the space. The binding has separate space-scoped backing storage and pins the space, declared directory set and exact installed harness build, including package, entry and image digests. A build or directory change requires fresh Owner approval. A shared-space run can mount only this binding, even on an enrolled machine. It can never mount a person's login directories. If the harness needs a login and has no eligible binding, refuse execution. Keep tools off under owner decision 74 until qualification proves a boundary that protects the login from tools and other runs. Apply attempt_authority_end.actions.item_audience_widening before a personal run's item gains another file reader. Admit a shared execution only when the placement also keeps incompatible saved sessions out of reach.",
+      "shared_space": "The space Owner approves the shared login. The Owner or a Manager configures that approved login for the space. The binding has separate space-scoped backing storage and pins the space, declared directory set and exact installed harness build, including package, entry and image digests. A build or directory change requires fresh Owner approval. Use this binding by default in a shared space. The only alternative is shared_personal_override. If the harness needs a login and the selected binding is ineligible, refuse execution without falling back to another login. Keep tools off for both choices under owner decision 74 until qualification proves a boundary that protects the login from tools and other runs. Apply attempt_authority_end.actions.item_audience_widening before a personal run's item gains another file reader. Admit a shared execution only when the placement also keeps incompatible saved sessions out of reach.",
+      "shared_personal_override": "Under the recorded shared-space machine and provider login decision, an authenticated member can explicitly choose their own enrolled machine and own approved login for one run they start. The host offers this as a protected choice on that run's checked invocation, issuing a ChoiceRef for the actor, space, item, harness build, enrollment, login binding and originating invocation. A package can forward this choice as ExecutionJobStart.personal_placement. A default, job payload, scheduled alarm or another actor cannot supply the choice. Bind it once to the admitted job, including a queued successor chosen explicitly, and allow only exact receipt replay. Recheck its pinned actor, enrollment, profile, build and shared authority at admission, promotion, claim, reattachment and renewal. Launch only in that member's isolated sandbox on their own machine. No other member's run can mount that login. Apply the shared discovery rule before matching, ranking or delivery and the shared tools rule regardless of the chosen profile. Refuse stale, foreign or revoked choices without changing the placement or login.",
       "disclosure": "At install disclose the publisher, image digest, placement, mounted item-data scope, each declared login directory and approved network egress. Explain that program code and tools in the person's own sandbox can read and transmit available login data. At shared login setup show the space and pinned harness build, that eligible space members' runs use the configured login, and the recorded notice that a personal subscription is licensed to one person."
     },
     "harness_placement": {
@@ -5512,10 +5539,16 @@
     "invoke_scope": "Dispatch to the exact admitted package, digest, epoch and ticket. Stamp protected job and alarm metadata as in HostWorkerInvokeFrame. Refuse worker-origin invoke or worker-supplied host metadata."
   },
   "execution_intents": {
-    "admission": "Only a declared replayable job with execution:true and a checked live item whose installed kind declares execution_target. Keep one eligible head job or active attempt per item. The successor rule governs queued jobs. Pin the audience generation, actor, job, package, harness and effect ceiling. Under the lifecycle fence refuse deleted, archived or retired targets. Reserve quotas once. Replay returns the current receipt without another admission. Resolve the same checked harness choice for the job at admission and every later claim. No caller-supplied host job context.",
+    "start_job": {
+      "input": {
+        "$ref": "#/$defs/ExecutionJobStart"
+      },
+      "description": "This request is for the execution arm of start_job. Its job ID resolves one installed declaration. Ordinary jobs refuse harness and personal_placement. Apply admission and provider_login."
+    },
+    "admission": "Only a declared replayable job with execution:true and a checked live item whose installed kind declares execution_target. Keep one eligible head job or active attempt per item. The successor rule governs queued jobs. Pin the audience generation, actor, job, package, exact harness binding, selected placement and profile, and effect ceiling. Use the top-level ExecutionJobStart.harness or the already-pinned alarm binding. Never select a harness or placement from opaque job input. Under the lifecycle fence refuse deleted, archived or retired targets. Reserve quotas once. Exact replay returns the current receipt without another admission. Refuse changed operands under the same receipt. Recheck the same bindings at promotion and claim, without substitution. No caller-supplied host job context.",
     "stop_and_archive": "Idle archive excludes unresolved execution jobs, live attempts and protected approvals. Protected archive pins the entire affected set, including head and successor. Stop pins its exact target and any affected descendants. Both apply attempt_authority_end.retirement_authority. Never retarget a replacement.",
     "cutover": "Fence new admission, drain unresolved execution jobs and verify zero live attempts before switching writers. Retain durable refusals and receipts across rollback.",
-    "successor": "The existing checked start_job may admit one durable FIFO successor per item while its head job or attempt is active. A queued successor has a receipt and no execution lease. Promote it only after the head is terminal and its attempt authority and teardown are settled. Recheck item, actor, grants, harness and quota at promotion. Replay the receipt without adding a job. At capacity refuse with pending_limit. Stop pins the exact target. Archive, widening and revocation fence any affected queued jobs before publishing the authority change. One item never has two running attempts."
+    "successor": "The existing checked start_job may admit one durable FIFO successor per item while its head job or attempt is active. A queued successor has a receipt and no execution lease. Promote it only after the head is terminal and its attempt authority and teardown are settled. Recheck item, actor, grants, pinned harness, placement, profile and quota at promotion. Replay the receipt without adding a job. At capacity refuse with pending_limit. Stop pins the exact target. Archive, widening and revocation fence any affected queued jobs before publishing the authority change. One item never has two running attempts."
   },
   "attempt_authority_end": {
     "retirement_authority": "In addition to the action's own live authority, an actor-initiated action that retires jobs or attempts requires the actor to be the starter of every affected job and attempt, including any queued successor and affected descendants, or to hold current PluginsManage over every affected scope. Resolve and pin the entire set at admission, including for confirmation. Recompute it and recheck authority under the lifecycle fence in the commit that retires work. An unauthorized target refuses the whole action before effects. Require a fresh resolution and confirmation where applicable if the set changes. Mandatory safety fencing on authority loss or runtime failure uses its own fence rule and proceeds independently of starter consent.",
@@ -5775,7 +5808,7 @@
       "pending_per_space": 128,
       "input_bytes": 16384
     },
-    "admission": "Only a declared replayable alarm job. Bind the pending alarm to a package generation, creator, checked target and due time. Protect replacement and cancellation by live authority and request receipt. Consume and admit exactly one durable job in the same recovery-visible transaction; delivery or restart replay can only replay that job. Resolve the installed job declaration. Require the top-level AlarmSet.harness operand for execution:true and refuse it otherwise. It is the sole harness operand. Never select a harness from the opaque job input. Resolve and pin that durable HarnessRef for the exact actor, space and target at alarm set. At due-job admission and claim, re-resolve the same binding and place it in the protected ExecutionJobContext. If it is ineligible, admit no execution and never substitute a harness. Replacement is a new checked admission; receipt replay preserves the exact binding.",
+    "admission": "Only a declared replayable alarm job. Bind the pending alarm to a package generation, creator, checked target and due time. Protect replacement and cancellation by live authority and request receipt. Consume and admit exactly one durable job in the same recovery-visible transaction; delivery or restart replay can only replay that job. Resolve the installed job declaration. Require the top-level AlarmSet.harness operand for execution:true and refuse it otherwise. It is the sole harness operand. Never select a harness from the opaque job input. Resolve and pin that durable HarnessRef for the exact actor, space and target at alarm set. At due-job admission and claim, re-resolve the same binding and place it in the protected ExecutionJobContext. If it is ineligible, admit no execution and never substitute a harness. Execution alarms use the applicable default login binding and cannot opt in to a personal placement in a shared space. Replacement is a new checked admission; receipt replay preserves the exact binding.",
     "late": "An eligible missed alarm is delivered once, late, with the original scheduled_at and the actual admission time actual_at. The plugin decides to run or skip from its own per-schedule setting and computes the next time.",
     "disable": "Persist retirement of pending alarms and fence admitted work when the package is disabled, uninstalled or loses authority. A later enablement does not recreate retired alarms."
   },
@@ -5845,7 +5878,7 @@
     "retention_days": 30,
     "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action. Start retention at trash commit. No item kind or package overrides the retention period."
   },
-  "exchanges_revision": "14.22",
+  "exchanges_revision": "14.23",
   "view_result_retention": {
     "rule": "Host windows, plugin search pages and stored or live item-view pages use the same result_versions and retained_results exchange. On a successful renewal with an unchanged grant revision, re-confirm the exact result ref and version, current audience and checked scope, including the active settle generation for a plugin search, the slot for an item view, and live access to each exact item, asset and source revision represented in the result. Retain each still-authorized unchanged result by acknowledging the exact pair, without rerendering or invoking a plugin. Treat a changed or refused result as an invalidation of that result only. A changed audience requires a new view.",
     "scope": "Retain only on the same authenticated view, account and cache partition. Rebind the acknowledged result's eligible continuation, follow and item-view asset refs to the renewed lease. Asset reads still apply view_snapshots.assets at admission and delivery. Supply current scoped contexts in retained_results for retained plugin-search pages. A missing context is unavailable. Replace old tokens as a set. Invalidate selections or activities whose originating result or context no longer holds. Acknowledge each exact result at most once under the existing aggregate cap.",

@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.22 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.23 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See

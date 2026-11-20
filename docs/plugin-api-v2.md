@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.22 draft
+# Plugin API v2 · revision 14.23 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -455,7 +455,7 @@ its receipt, with long work as a durable job.
 | Items · `item_purge`, `empty_trash`, `collection_create`, `collection_membership` | Purge and Empty Trash are Manager/Owner-only, irreversible and one confirmed durable job over a pinned Trash selection. Reauthorize per batch and resume by receipt. Apply catalogue `trash` for retention. Collection creation and bounded membership changes commit once with expected revision. |
 | Queries · `items_list`, `items_search` | Kind/optional collection, typed indexed metadata predicates, declared sort under the [catalogue’s sort rules](../contract/host-catalogue-v2.json#/query), cursor/window and field set → authorized page with cursor and count/offset where windowed. Unindexed filter/sort is `400`. Use engine-side query and bounded row/byte budget. Apply authority before count. No whole-kind materialization. |
 | Rooms / sharing · `sharing_check` | Item ref plus requested action → permission for the live grant. A room is an attribute of the kind, opened client-to-host using its own bounded protocol. Room membership and events keep fencing the item grant. No plugin hook acknowledgment. |
-| Jobs · `start_job`, `checkpoint_job`, `job_status`, `cancel_job` | Declared job, payload and resolved target/grant → durable job ID. Checkpoint only the owning current run. Status/cancel uses a scoped job ID with opaque `404` for foreign jobs. An execution cancellation uses the same retirement authority as Stop. Bounded checkpoints, live progress and park count per space/package. |
+| Jobs · `start_job`, `checkpoint_job`, `job_status`, `cancel_job` | Declared job, payload and resolved target/grant → durable job ID. Execution admission uses [`ExecutionJobStart`](../contract/host-catalogue-v2.json#/$defs/ExecutionJobStart), including its top-level `harness`. Checkpoint only the owning current run. Status/cancel uses a scoped job ID with opaque `404` for foreign jobs. An execution cancellation uses the same retirement authority as Stop. Bounded checkpoints, live progress and park count per space/package. |
 | Settings / secrets · `read_setting`, `set_setting`, `request_secret_handle` | Declared key or secret purpose → effective value/version or opaque handle. Validate type, compare revision on writes and bind personal values to the actor. One bounded engine operation. Missing authorization is `403` or opaque `404` as appropriate. |
 | Proxy · `proxy_request`, `credential_call` | Approved install line and bounded HTTPS request → bounded response. The host-only sealed content route exposes authorized opaque image refs to the renderer. Unapproved destination is `403`, oversize `413`, quota `429`. Anonymous media keeps the existing 10 MB, three redirects and 16 hosts/minute fixture ceilings. Typed call returns the profile output or `403` without contacting the endpoint. |
 | Execution · `execution_start`, `execution_status`, `execution_input`, `execution_spawn_child`, `execution_stop` | The catalogue types each call. The host issues the admitted intent, resolves provider and placement, and binds every effect to the exact attempt under live authority. Start, input, child and Stop use checked receipts. |
@@ -484,8 +484,9 @@ with the actor, package digest, admitted harness, placement, audience
 generation, rights and quotas pinned. Apply the catalogue’s
 [successor rule](../contract/host-catalogue-v2.json#/execution_intents/successor)
 when an item already has a head job or active attempt. Admit the queued
-follow-up through the checked job path. The authenticated
-job context supplies its target and admitted receipt. `execution_start`
+follow-up through the checked job path. Pin the typed harness binding at
+admission and recheck it at promotion and claim. The authenticated job
+context supplies the target, pinned harness and admitted receipt. `execution_start`
 checks the resolved harness and optional continuation under that fence.
 An authorized retry returns the same admitted attempt. Stop can target
 the exact pending job or admitted attempt using generic host control.
@@ -496,8 +497,9 @@ request or terminal changes. The harness owns provider options, phases
 above that boundary, retries, commands, queued follow-ups and presentation.
 
 An authenticated attempt can request a child reservation for a declared
-kind and checked target refs. Under the tree fence check the exact parent,
-actor and ancestors’ scope and effect ceilings. Reserve before issuing a
+kind and checked target refs. Under the tree fence pin the exact parent’s
+harness and placement and check the actor and ancestors’ scope and effect
+ceilings. Reserve before issuing a
 checked child request; only the owning job can consume it. Apply the
 catalogue's tree, expiry and replay bounds. Any child item and parent
 edge commit through the generic item authority path. `execution_input`
@@ -521,12 +523,15 @@ selected harnesses. A matching path or name grants no access. Apply
 the catalogue’s [login custody rule](../contract/host-catalogue-v2.json#/execution_attempt_authority/provider_login)
 before mounting. In a personal sandbox the program and its tools may read
 the approved login. Keep credentials out of other accounts, output and
-portable backups. In a shared space use the separate space-scoped binding
-approved by the Owner and configured by the Owner or a Manager under
-the catalogue’s shared-space rule. Keep tools off until isolation is proved
-(owner decision 74). A shared-space run cannot reach personal login or
-session files by path or native ID. Apply this to new runs as well as
-continuation, across every publisher.
+portable backups. In a shared space the default is the separate space
+binding approved by the Owner and configured by the Owner or a Manager.
+A member may explicitly choose their own enrolled machine and approved
+login for one run they start, through the catalogue’s
+[protected placement choice](../contract/host-catalogue-v2.json#/execution_attempt_authority/provider_login/shared_personal_override). That run stays in their isolated sandbox and only that
+member’s explicitly selected runs can mount their login. Both choices
+limit discovery to what the whole file audience can read and keep tools
+off until isolation is proved (owner decision 74). Recheck the selected
+profile and session at continuation as well as at admission.
 **Harness placement (owner decision, 2026-11-20).** A harness reviewed
 once and approved for its pinned build can run on any eligible placement,
 including hosted sandboxes. Bundled harnesses go through the same review.
@@ -1414,14 +1419,17 @@ intentional refusal/retry with an actionable response.
   Recheck a changed build and a revoked enrollment. Apply the same
   checks to community and bundled harnesses. Try another harness’s
   login path without and with explicit sharing. Start a shared-space run
-  as another member and verify it uses only the Owner-approved binding,
-  with tools off. Refuse stale builds and revoked bindings. Queue a
-  successor as a different starter. Refuse archive by the head starter
+  as another member. Verify the default space binding and an explicit
+  override to that member’s own enrolled machine and login. Reject
+  another member’s login, a forged override and a revoked enrollment.
+  Require tools off and audience-limited discovery with both bindings.
+  Refuse stale builds and revoked bindings. Queue a successor as a
+  different starter. Refuse archive by the head starter
   alone and refuse dispatch after a successor or authority change. Check
   that Stop of the head alone preserves the successor. Replay the queued
   receipt, fill the queue, revoke before promotion and require at most one
-  running attempt. Fire an execution alarm after restart with conflicting
-  refs in its job input. Require the exact typed harness binding and refuse
+  running attempt. Give `start_job` and a restarted alarm conflicting
+  refs in job input. Recheck the original binding on promotion and claim. Require the exact typed harness binding and refuse
   admission after that binding is revoked.
 - **Lists and search.** Before enabling background list replay, cut power on
   both sides of the save and publication commits. Introduce a backlog.
