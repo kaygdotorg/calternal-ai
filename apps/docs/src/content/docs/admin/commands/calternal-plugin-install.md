@@ -12,6 +12,7 @@ Command output shape registered by the CLI tests. See CLI conventions for global
 
 ```json
 {
+  "api_version?": "integer",
   "id": "string",
   "activation": "string",
   "status": "string"

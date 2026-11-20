@@ -12,6 +12,24 @@ Command output shape registered by the CLI tests. See CLI conventions for global
 
 ```json
 {
+  "api_version?": "integer",
+  "network_summary?": [
+    "string"
+  ],
+  "credential_route_summary?": [
+    [
+      "string"
+    ]
+  ],
+  "jobs?": [
+    "string"
+  ],
+  "schedules?": [
+    "string"
+  ],
+  "wait_webhooks?": [
+    "string"
+  ],
   "id": "string",
   "version": "string",
   "checksum": "string",
