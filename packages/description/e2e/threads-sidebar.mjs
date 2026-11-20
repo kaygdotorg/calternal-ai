@@ -162,6 +162,13 @@ async function drag(p, from, to, steps = 12, hold = 0) {
   const cdp = await ctx.newCDPSession(p);
   await p.goto(`${BASE}/?fixture=threads-next${SC}`); await p.waitForSelector("[data-tree] .sh", { timeout: 30000 }); await p.waitForTimeout(600);
   await snap(p, "sidebar-phone-1");
+  // the list keeps a bottom inset the height of the floating search field and bar: its last row scrolls clear of them
+  await p.locator(".sidebar .scroll").evaluate((e) => { e.scrollTop = e.scrollHeight; }); await p.waitForTimeout(300);
+  const gap = await p.evaluate(() => { const last = [...document.querySelectorAll("[data-sec-head]")].at(-1).getBoundingClientRect(), f = document.querySelector("[data-footer]").getBoundingClientRect(); return { lastBottom: Math.round(last.bottom), footTop: Math.round(f.top) }; });
+  ok(gap.lastBottom <= gap.footTop, "on a phone the last row of the list scrolls clear of the floating search field and bar", JSON.stringify(gap));
+  const under = await p.evaluate(() => { const f = document.querySelector("[data-footer]").getBoundingClientRect(), s = document.querySelector(".sidebar .scroll"); return parseFloat(getComputedStyle(s).paddingBottom) >= Math.round(f.height); });
+  ok(under, "the list's bottom inset is at least as tall as the search field and bar together");
+  await p.locator(".sidebar .scroll").evaluate((e) => { e.scrollTop = 0; });
   const rows = p.locator('[data-in="people"][data-row-id]'), a = await center(rows.nth(0)), b = await center(rows.nth((await rows.count()) - 1));
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: a.x, y: a.y }] });
   await p.waitForTimeout(150); ok((await p.locator("[data-ghost]").count()) === 0, "a short touch does not start a drag");

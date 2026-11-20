@@ -27,6 +27,10 @@
   // DRAFT: a sidebar whose sections have subsections, a strip or customisation is drawn as a tree the person arranges (Tree.svelte); the others as before.
   const tree = $derived((sidebar.sections ?? []).some((s) => { const d = s as unknown as SectionD; return !!d.sections || !!d.presentation || d.customise !== undefined; }));
 
+  // On a phone the search field and the bar float over the foot of the list (it scrolls beneath them, faded); the list keeps a bottom inset the height of both, so its last rows can always be scrolled clear of them.
+  let footEl = $state<HTMLElement>(), footH = $state(0);
+  $effect(() => { const f = footEl; if (!f) return; const ro = new ResizeObserver(() => { footH = Math.round(f.getBoundingClientRect().height); }); ro.observe(f); return () => ro.disconnect(); });
+
   // Search: settled text goes to the host, then the search bind's windows are read again.
   let text = $state(""), timer = 0, sentText = $state(""), seq = 0;
   const searchBind = $derived(footer?.search?.bind);
@@ -54,7 +58,7 @@
   const options = (sel: NonNullable<Sidebar["selectors"]>[number]) => sel.options.map((o) => { const n = counts.get(o.id)?.total; return { value: o.id, label: n ? `${o.title} ${n}` : o.title }; });
 </script>
 
-<nav class="sidebar" aria-label={sidebar.title ?? "Sidebar"} data-sidebar>
+<nav class="sidebar" aria-label={sidebar.title ?? "Sidebar"} data-sidebar style:--foot-h="{footH}px">
   {#if sidebar.title}<h2 class="title">{sidebar.title}</h2>{/if}
   {#each sidebar.selectors ?? [] as sel (sel.id)}
     <div class="sel" data-selector={sel.id}>
@@ -96,7 +100,7 @@
     {/if}
   </div>
   {#if footer}
-    <div class="foot" data-footer>
+    <div class="foot" data-footer bind:this={footEl}>
       {#if footer.search}<SearchField bind:value={text} label={footer.search.placeholder ?? "Search"} placeholder={footer.search.placeholder} oninput={typed} />{/if}
       <div class="bar">
         {#each footer.apps ?? [] as a (a.id)}{@const ic = typeof a.icon === "string" ? knownIcon(a.icon) : undefined}<button type="button" class="app" data-app-entry={a.id} aria-label={a.title} title={a.title} onclick={() => app.openApp?.(a.id)}>{a.title}</button>{/each}
@@ -113,6 +117,11 @@
   .sel { padding: 0 var(--s-4) var(--s-3); }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--s-3) var(--s-6); }
   .sh { margin: var(--s-5) 0 var(--s-2); padding: 0 var(--s-5); font-size: var(--text-section); font-weight: var(--strong-weight); color: var(--ink-3); }
+  @media (max-width: 720px) {
+    .sidebar { position: relative; }
+    .scroll { padding-bottom: calc(var(--foot-h, 0px) + var(--s-2) + var(--s-5) + var(--s-4)); -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--foot-h, 0px) - var(--s-5)), transparent calc(100% - var(--foot-h, 0px))); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--foot-h, 0px) - var(--s-5)), transparent calc(100% - var(--foot-h, 0px))); }
+    .foot { position: absolute; inset-inline: var(--s-2); bottom: var(--s-2); border-radius: var(--r-card); background: rgb(var(--tint) / 0.82); box-shadow: var(--shadow-float); }
+  }
   .foot { display: grid; gap: var(--s-3); padding: var(--s-3) var(--s-4) var(--s-4); }
   .bar { display: flex; align-items: center; gap: var(--s-2); }
   .app { min-height: 44px; padding: 0 var(--s-3); color: var(--ink-2); border-radius: var(--r-select); } .app:hover { background: var(--hover); }
