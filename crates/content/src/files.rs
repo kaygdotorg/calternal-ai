@@ -12,7 +12,7 @@ use std::{
 use uuid::Uuid;
 
 /// The reserved standing-instructions file is never an ordinary kind item.
-fn ensure_item_path(path: &str) -> Result<()> {
+pub(crate) fn ensure_item_path(path: &str) -> Result<()> {
     if calternal_types::is_reserved_space_path(path) {
         Err(Error::forbidden(
             "space instructions require a Manager-only operation",
@@ -95,7 +95,7 @@ pub(crate) fn validate_registration(placement: &Placement, format: &FileFormat) 
         Err(Error::invalid_input("invalid kind file registration"))
     }
 }
-fn folder(placement: &Placement, kind: &str) -> String {
+pub(crate) fn folder(placement: &Placement, kind: &str) -> String {
     match placement {
         Placement::Visible { folder } => folder.clone(),
         Placement::VisibleTree {

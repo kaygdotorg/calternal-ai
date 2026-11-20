@@ -1,5 +1,8 @@
 //! Offline validation for the versioned v2 declaration and its descriptions.
-use std::{collections::BTreeSet, sync::OnceLock};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::{Arc, OnceLock},
+};
 
 use serde::{Deserialize, Deserializer, de};
 use serde_json::Value;
@@ -15,7 +18,7 @@ const CONTRACT: &str = "https://calternal.cloud/contract/";
 
 /// Validated installer declaration. Its fields are data, not runtime permission.
 #[derive(Clone, Debug)]
-pub struct ManifestV2(Value);
+pub struct ManifestV2(Value, Arc<BTreeMap<String, jsonschema::Validator>>);
 
 impl ManifestV2 {
     /// Parse bounded UTF-8 JSON with unique keys, the pinned schema and local
@@ -33,8 +36,8 @@ impl ManifestV2 {
         validate(validator, &manifest, "v2 manifest")?;
         check_display_labels(&manifest)?;
         interfaces::check_declarations(&mut manifest)?;
-        check_declarations(&manifest)?;
-        Ok(Self(manifest))
+        let metadata = check_declarations(&manifest)?;
+        Ok(Self(manifest, Arc::new(metadata)))
     }
 
     /// Package ID from the checked manifest. Cost: one field lookup.
@@ -51,6 +54,47 @@ impl ManifestV2 {
     /// authorization is implied. Cost: at most 64 string comparisons.
     pub fn reads(&self, kind: &str) -> bool {
         entries(&self.0, "reads").any(|entry| entry == kind)
+    }
+
+    /// Validate an owned item's complete metadata with its cached install
+    /// schema. Refuses unknown kinds. No package I/O or schema compilation.
+    pub fn check_item_metadata(&self, kind: &str, value: &Value) -> Result<(), String> {
+        let schema = self
+            .1
+            .get(kind)
+            .ok_or_else(|| "undeclared item kind".to_owned())?;
+        validate(schema, value, "item metadata")
+    }
+
+    /// Validate a broker item operand against the pinned v2 catalogue. The
+    /// process compiles the bounded set of exchange validators once.
+    pub fn check_item_operand(method: &str, value: &Value) -> Result<(), String> {
+        static OPERANDS: OnceLock<BTreeMap<String, jsonschema::Validator>> = OnceLock::new();
+        let validators = OPERANDS.get_or_init(|| {
+            let root = catalogue();
+            let rules = root["item_engine"].as_object().expect("pinned item engine");
+            rules
+                .iter()
+                .chain(std::iter::once((
+                    &"item_append".to_owned(),
+                    &root["file_append"],
+                )))
+                .filter_map(|(method, rule)| {
+                    let reference = rule["input"]["$ref"].as_str()?;
+                    Some((
+                        method.clone(),
+                        validator(&serde_json::json!({
+                            "$ref": format!("{CONTRACT}host-catalogue-v2.json{reference}")
+                        }))
+                        .expect("pinned item operand schema"),
+                    ))
+                })
+                .collect()
+        });
+        let schema = validators
+            .get(method)
+            .ok_or_else(|| "unknown item method".to_owned())?;
+        validate(schema, value, "item operand")
     }
 
     /// Check a pinned template against the companion description schema and
@@ -291,7 +335,8 @@ fn unsupported(manifest: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn check_declarations(manifest: &Value) -> Result<(), String> {
+fn check_declarations(manifest: &Value) -> Result<BTreeMap<String, jsonschema::Validator>, String> {
+    let mut validators = BTreeMap::new();
     semver::Version::parse(str_field(manifest, "version"))
         .map_err(|_| "v2 package version must be a semantic version")?;
     for (list, key) in [
@@ -334,6 +379,7 @@ fn check_declarations(manifest: &Value) -> Result<(), String> {
         let metadata = embedded_schema(&kind["schema"])?;
         check_fields(kind, id)?;
         create::check(manifest, kind, &metadata)?;
+        validators.insert(id.to_owned(), metadata);
     }
     for op in entries(manifest, "operations") {
         let id = str_field(op, "id");
@@ -403,7 +449,7 @@ fn check_declarations(manifest: &Value) -> Result<(), String> {
             return Err("Credential route requires access to servers the person adds".into());
         }
     }
-    Ok(())
+    Ok(validators)
 }
 
 fn check_fields(kind: &Value, id: &str) -> Result<(), String> {

@@ -22,6 +22,7 @@ pub mod broker;
 mod draft_diagnostics;
 pub(crate) mod harness_admin;
 pub(crate) mod installed_diagnostics;
+pub mod item_engine;
 pub mod job_api;
 pub mod job_sql;
 mod job_streams;
