@@ -68,7 +68,7 @@ the newest 1,024 per space. What a run did is kept in its log file, not in this 
 
 **Where it lives.** This table is neither userdata (a person's files) nor appdata
 (rebuildable). It is host state, like people, grants and machine enrollments. The
-thesis has no name for this third store; see §6.1 and question 5.
+thesis has no name for this third store; see §7 and question 5.
 
 ### 1.2 Operations
 
@@ -97,8 +97,8 @@ is `work.start` with `at`. A steer is `work.send`. Reattachment is ordinary sync
 | Trigger | What starts | Bounds (operator defaults) | Delivery rule |
 | --- | --- | --- | --- |
 | **A call** | A plugin operation, from the interface, another plugin, a webhook, or a running program's call record | Per space 32 running and 64 queued calls; per plugin 8 and 16. One call ends within 30 s of wall time; longer work must be `work.start`. Calls made by one call: at most 128. | At most once per request ID while the receipt is kept. |
-| **A time** | `work.start` with `at` | ≤ 1,024 waiting per space. `at` at most one year ahead. A plugin computes its own next time (no recurrence rules in the host, owner decision). | Delivered **once**, possibly late, with `scheduled` and `started` times. The plugin decides to run or skip (owner decision). |
-| **A change** | `watch.start`, or a watch declared in the manifest (created at install) | ≤ 256 watches per plugin. At most one delivery in flight per watch; changes during it are merged into the next. At most one delivery per second per watch. A plugin's own writes never trigger its own watches. A chain of change deliveries stops at depth 4 (the depth travels in the origin stamp). | The op receives `{target, from, to}` revisions and reads the difference itself. Only changes its actor may read now are announced. |
+| **A time** | `work.start` with `at` | ≤ 1,024 waiting per space. `at` at most one year ahead. A plugin computes its own next time (no recurrence rules in the host, owner decision). | Delivered **once**, possibly late, with `scheduled` and `started` times. The plugin decides to run or skip (owner decision). If the host crashed while it ran, it is delivered again once with `retry: 1`; the SDK derives the request IDs of its writes from the work ID, so repeated writes are no-ops. |
+| **A change** | `watch.start`, or a watch declared in the manifest (created at install) | ≤ 256 watches per plugin. At most one delivery in flight per watch; changes during it are merged into the next. At most one delivery per second per watch. A plugin's own writes never trigger its own watches (Chat's parts are separate plugins, so the notify part still sees the core's writes). A chain of change deliveries stops at depth 4 (the depth travels in the origin stamp). | The op receives `{target, from, to}` revisions and reads the difference itself. Only changes its actor may read now are announced. |
 
 Every trigger also counts against a **wake budget** per space (for example 600 wakes an
 hour). A sleeping space wakes only for: an admitted call, a due alarm, a change
@@ -147,7 +147,7 @@ anywhere, including hosted sandboxes. Any other program runs only on a machine
 enrolled by the person the run acts for; the install screen says it gets network
 access and the person's logins. The check is one line at `work.start`:
 `approved(plugin, image digest) or machine.owner == actor`. In a shared space, "the
-space's subscription" means a machine and login the space owner provided; see §3
+space's subscription" means a machine and login the space owner provided; see §4
 row 12 and question 2.
 
 **The box.** On a machine: rootless Podman with no network device, a read-only
@@ -180,9 +180,12 @@ Harnesses/claude-code/Runs/2026-11-21 1830 Plan the move 7f3a/
 
 Each file is a record file (files section): a Markdown block per record, with a
 sequence number and an origin stamp the host keeps where the plugin cannot forge it.
-Record types are the harness plugin's own except four the machine itself writes or
-reads: `stop` (inbox), `call` and `ended` (log), and `applied` / `not_delivered` (log,
-the delivery receipt for an inbox record).
+Record types are the harness plugin's own except the few the host and machine
+themselves write or read: `stop` and `result` (inbox), `call` and `ended` (log), and
+`applied` / `not_delivered` (log, the delivery receipt for an inbox record). Text
+people read (inputs, replies) is Markdown; a program's raw events go in a fenced JSON
+block inside the record, because they are machine output that is rarely read and has
+no Markdown shape.
 
 **Sync.** Each file has one writer, and the other side only reads, so there is nothing
 to merge. On every connect, the machine says "log: I have through n; inbox: I have
@@ -249,7 +252,15 @@ one row: `place == this machine` and `state in (running, stopping)`. That is the
 proof. A machine that rebooted knows its programs are gone (it starts them; it saw
 them die) and writes `ended: interrupted` itself. A forged machine has no key. Another
 machine fails the `place` check. **Holds.** What remains of the old proof: nothing
-beyond the placement column.
+beyond the placement column, plus one rule for lost data:
+
+- If the host holds more of a log than the machine (the machine was restored or its
+  disk damaged), the host keeps its copy and the run ends `interrupted`.
+- If the host was restored from a backup, its sequence numbers could be reused for
+  different records, and a machine would skip them as "already have". So a restore
+  starts a new **host epoch**; a machine that sees a new epoch ends its runs
+  `interrupted` and syncs their logs as history. Every run in flight is lost on a
+  restore, by design.
 
 A run is never restarted by reconnecting. Continuing an interrupted run (for example
 Claude Code's own session resume, as bb's "resume interrupted threads") is a new
@@ -296,7 +307,7 @@ Not contained: while a machine is unreachable, a stopped program on it keeps run
 and keeps reaching its declared destinations (for example the provider's API) until the
 machine reconnects, or its deadline, or the 24-hour rule. On a person's own machine
 this is the person's own program and login; on a hosted sandbox the host kills the box
-directly, because the hosted machine daemon runs on the host.
+directly, because it controls the agent microVM the box runs in.
 
 ### 2.5 The 24-hour rule
 
@@ -382,9 +393,10 @@ do disappear. Three things do not, and the thesis should say so:
 
 **Plugins cannot:**
 
-- Run anything outside its box, or keep running after Stop, its deadline or 24 hours
-  without the server. *Example: a broken harness that ignores Stop is killed by the
-  machine, not asked.*
+- Run anything outside its box, or keep running once Stop reaches its machine, after
+  its deadline, or after 24 hours without the server; and nothing it does after Stop
+  is accepted by the host. *Example: a broken harness that ignores Stop is killed by
+  the machine, not asked.*
 - Reach any address they did not declare, or the local network. *Example: a plugin
   declared for `api.example.com` cannot reach `192.168.1.1`.*
 - Read a secret, a login folder, or another program's files. *Example: a community
@@ -409,6 +421,7 @@ do disappear. Three things do not, and the thesis should say so:
 | 3 | A late or duplicate Stop hits a newer run | Stop lives in one run's inbox | Structural (address = run) |
 | 4 | Replay or injection of output | Sequence numbers with compare-and-set append; machine key; `place` check | Host sync handler |
 | 5 | A machine claims another machine's run | `place` column | Host sync handler |
+| 5b | Host restored from backup reuses sequence numbers | New host epoch ends every run in flight | Machine, at connect |
 | 6 | A program outlives a dead server | Machine-side deadline and 24-hour rule on the boot clock | Machine runner |
 | 7 | A lost machine pins a `running` row forever | Host mirror: 24 h + margin → `ended: unreachable`, fenced | Host timer per space (next-due table) |
 | 8 | Flood: endless alarms, watches, calls, wakes | Row quotas, per-plugin running caps, wake budget, change coalescing, depth 4 | `work.start`, `watch.start`, dispatcher |
@@ -440,17 +453,18 @@ share a process; a V8 bug is an escape to the neighbour).
 | Agents | Native Turns: admission, lease, control, retry, readiness, provider routes | Attempt, one successor per item, one contribution call per attempt, harness ABI | A plugin with a program; run = row + inbox + log |
 | Output | Machine log, relayed by the native turn code | Spool, relay window, credit, per-frame digests, `EntryAttached`, ACK rules | The log file syncs |
 | Steer and Stop | In-memory run controls | Controls ledger, exact Stop per attempt, outbox | Inbox records; fence at Stop |
-| Restart | A running turn may fail | Five-case gate, update fence, held Sends | Sync resumes; no fence |
+| Restart | Native turn recovery, not qualified against the owner's requirement | Five-case gate, update fence, held Sends | Sync resumes; no fence |
 | Alarms | Automation scheduler with recurrence rules (native) | One-shot alarm + grace + missed bit | `work.start` with `at`; delivered once late; plugin decides |
 | Network | Broker egress allow-list, netguard | Same + separate egress socket for entries | `net.fetch` for space code; machine proxy for boxes |
 | Secrets | Secret handles (`request_secret_handle`) | Secret handles + proxy calls | Declared secret used by `net.fetch` |
+| Webhooks | Signed wait webhooks that make a parked job runnable (`plugins/signals/webhook.rs`) | Same | A call from outside to a declared operation; the host checks the signature with a declared secret |
 | Push | Native web push for chat events | Fixed phrase for Threads | `notify` with declared phrases |
 | Logins | Provider homes, shared broker, Claude and Codex routes | Per-harness login folders, personal vs space bindings, a sharing exception | A folder the person picks |
 
 **Deleted:** native Turns (`crates/server/src/turns/*`), automation recurrence rules
 (`automations/scheduling`), the native provider routes and `machine/sandbox/shared_broker*`
 and their exceptions, revision 14's execution tables (5), the update gate, held Sends,
-the contribution spool and its window and rate code, the entry relay wire and its ACK
+the contribution spool and its window (its token bucket survives), the entry relay wire and its ACK
 rules, the separate entry broker socket, alarm grace and missed bits, the receipts table
 as a separate table.
 
@@ -605,8 +619,9 @@ saw it. *Options:* (a) accept that window (milliseconds, only on a helper crash)
 mark "arrived" after the program's own acknowledgement where the program has one
 (Codex, Claude Code's echo): simple, honest in every common case. (b) Require the
 program to acknowledge every input, and refuse harnesses whose programs cannot:
-stronger, but excludes some community harnesses. *Recommendation:* (a); bb 0.50.0
-gives the same guarantee and the rare case is visible.
+stronger, but excludes some community harnesses. *Recommendation:* (a); it gives the outcome bb 0.50.0
+describes (a message that misses its run is kept, not lost or misapplied), and the
+rare case is visible.
 
 **2. Whose machine runs an agent in a shared space, and who may read the run's log?**
 *What:* you decided that in a shared space the space's subscription is used. A
@@ -620,7 +635,8 @@ on hosted sandboxes (approved harnesses), never on a member's machine: nobody's 
 sees others' runs, but costs hosted compute. (c) Always the caller's own machine and
 login, even in a shared space: private, but reverses your decision on subscriptions.
 *Recommendation:* (b) for shared spaces, with (a) as a space owner's explicit setting
-shown in every consent request.
+shown in every consent request. Unapproved harnesses still run only on the caller's
+own machine (your placement decision), which is (c) for them.
 
 **3. Should automatic updates wait for hosted runs, and may the host reboot under them?**
 *What:* runs on people's machines survive any server update. Hosted sandboxes survive
