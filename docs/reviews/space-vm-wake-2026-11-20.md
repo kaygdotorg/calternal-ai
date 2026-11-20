@@ -51,6 +51,10 @@ is under `/srv/homes/perf/vmw1/launcher`.
 
 ## Residency
 
+The idle interval defaults to 900 seconds. Operators can set `idle_seconds`
+and `resident_memory_mib` in the small-VM configuration. The default memory
+ceiling is `memory_mib * max_guests`.
+
 The broker tracks the end of authorized calls on the existing carrier. An
 active call holds a local admission slot. The idle timer and scheduler use
 that same state to fence new calls before sending the existing sleep command.
@@ -184,6 +188,58 @@ tests also passed on this image.
 The final release image `5fe5337cf2a7` passed the additive upgrade script
 against `localhost/calternal-ai:31fb41179460`. The machine worker and CLI
 tests and `scripts/check-docs.sh` passed on dev-01.
+
+### Same-image worker comparison
+
+The locked perf-02 run used the verified guest image for both arms, with
+`prestarted_worker` as the only worker-mode setting changed. It ran the
+same enrolled item-head traffic, one-second idle interval and XFS scratch
+with normal filesystem caching. Each arm completed 30 disk wakes and 30
+resident follow-ups with zero errors and zero cold VM fallbacks. All 30
+standby restores used the refreshed worker, with zero fresh-worker fallbacks
+or refused parks. Each arm also had one cold prime outside the timings.
+Host CPU idle and steal were 78.47% and 0.78% for fresh, and 76.23% and
+0.70% for standby. Raw traces, mode counts and the probe patch are under
+`/srv/homes/perf/vmw3`.
+
+| Stage | Fresh p50 (ms) | Fresh p95 (ms) | Standby p50 (ms) | Standby p95 (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Request through placement decision | 22.50 | 39.59 | 22.45 | 28.98 |
+| Placement decision through machine gate entry | 4.04 | 5.06 | 3.99 | 4.89 |
+| Machine placement gate | 0.017 | 0.022 | 0.017 | 0.024 |
+| Manifest and local setup | 0.20 | 0.38 | 0.20 | 0.43 |
+| Prepare private scratch and control drives | 1.03 | 1.41 | 1.22 | 1.80 |
+| VMM launch through API availability | 4.10 | 17.62 | 3.97 | 23.66 |
+| Snapshot load and file-backed memory mapping | 1.82 | 4.30 | 1.91 | 2.91 |
+| Resume | 0.41 | 1.33 | 0.45 | 1.07 |
+| Kernel reseed through acknowledgement | 352.75 | 507.25 | 317.35 | 698.26 |
+| Inline readiness handoff | 0.021 | 0.029 | 0.021 | 0.029 |
+| Stage the package and reserve its cgroup | 38.58 | 68.68 | 32.98 | 88.82 |
+| Admit first call | 32.12 | 45.09 | 36.35 | 46.98 |
+| Node launch or refresh through first package statement | 873.34 | 1,211.35 | 439.95 | 1,056.84 |
+| First statement through package readiness | 94.19 | 148.38 | 18.93 | 73.81 |
+| Package readiness through first callback | 113.03 | 213.95 | 24.98 | 110.21 |
+| First callback through validated reply | 2.61 | 5.53 | 5.03 | 42.10 |
+| **Disk wake through first validated reply** | **1,609.43** | **2,102.21** | **927.85** | **1,475.73** |
+| **Resident call through validated reply** | **4.79** | **22.80** | **17.16** | **308.31** |
+
+Standby reduced disk-wake p50 by 42% and p95 by 30%. Disk wake still exceeds
+the 500 ms gate. The two slowest standby resident calls took 308 and 420 ms.
+Their callback markers arrived about 14 and 3 ms after server gate exit.
+The trace places most of the delay after those markers and cannot attribute
+it to a specific component in the reply path.
+
+## Review gate
+
+The wake path reuses the typed placement and snapshot authorization, durable
+checkpoint logic, package staging, worker bounds and transport. Server idle
+state is scoped to each carrier. Memory admission uses an atomic semaphore
+with a fence around per-space state. File and process work uses existing async
+or blocking-task boundaries. Production reads and flushes are unchanged for
+resident calls. The small profile adds no retained SQLite state, dependencies
+or compatibility readers. Public capacity fields are documented, wired into
+machine status, and covered by `scripts/check-docs.sh`. Formatting passed.
+The review exception for existing long source files is recorded on issue #97.
 
 ## Simplification opportunities
 
