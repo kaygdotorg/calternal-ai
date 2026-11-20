@@ -166,12 +166,12 @@ async function message(input: { item: ItemRef; message: string; offset?: number 
   const head = await ctx.call("item_head", { item: input.item });
   const saved = await readConversation(ctx, input.item, head.revision);
   if (saved.legacy) return legacyMessage(saved.thread, input.message, input.offset);
-  if (input.offset !== undefined) throw new Error("Message paging is only available for version 1 threads.");
+  if (input.offset !== undefined) throw new Error("Message paging is only available for version 1 chats.");
   return messageView(saved.thread, input.message);
 }
 
 /** Draft application handlers. Protected Stop and archive use host controls. */
 export const handlers = {
-  "threads.create": create, "threads.send": send,
-  "threads.state": viewerState, "threads.run": run, "threads.arm": arm, "threads.refresh": refresh, "threads.message": message,
+  "chat.create": create, "chat.send": send,
+  "chat.state": viewerState, "chat.run": run, "chat.arm": arm, "chat.refresh": refresh, "chat.message": message,
 };

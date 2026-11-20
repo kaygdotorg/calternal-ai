@@ -18,7 +18,7 @@ import type { handlers as threadHandlers } from "../src/worker.ts";
 import { scoped } from "../src/people.ts";
 import { checkedTitle, decode, decodeIndexed } from "../src/format.ts";
 import type { ConsultationTurn, InvitedInput, PeopleContext, Scope, peopleHandlers } from "../src/people.ts";
-import type { handlers as harnessHandlers } from "../../calternal-threads-claude-code/src/worker.ts";
+import type { handlers as harnessHandlers } from "../../calternal-chat-claude-code/src/worker.ts";
 
 async function load<H, E = object>(directory: URL) {
   const manifest: ManifestV2 = JSON.parse(readFileSync(new URL("manifest.json", directory), "utf8"));
@@ -27,7 +27,7 @@ async function load<H, E = object>(directory: URL) {
   return { manifest, ...worker };
 }
 const application = await load<typeof threadHandlers, { peopleHandlers: typeof peopleHandlers }>(new URL("../dist/", import.meta.url));
-const contribution = await load<typeof harnessHandlers>(new URL("../../calternal-threads-claude-code/dist/", import.meta.url));
+const contribution = await load<typeof harnessHandlers>(new URL("../../calternal-chat-claude-code/dist/", import.meta.url));
 export const handlers = application.handlers;
 
 const exchanges = {
@@ -65,7 +65,7 @@ type QuoteSource = NonNullable<AttestedBody["quote"]>;
 type SpanBinding = { record: string; entry?: { anchor: string; ordinal: number }; quotedRecord?: string; quoteSource?: QuoteSource };
 type IndexedLink = { source: string; anchor: string; path: string; item: string };
 type RelocationUndo = { item: string; title: string; folder: string[]; head: string; viewer: string };
-type File = { space: string; people?: readonly string[]; creator: string; discovery: "creator_only" | "consent_only"; owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; authors: Map<string, string>;
+type File = { space: string; people?: readonly string[]; creator: string; discovery: "creator_only" | "consent_only"; owner: "chat" | "claude-code-run"; history: Map<string, Buffer>; authors: Map<string, string>;
   spanHistory: Map<string, SpanIndex>; spans: Map<string, Span>; bindings: Map<string, SpanBinding>;
   withheldRevisions: Set<string>; provenance: SpanIndex["body_provenance"];
   revision: string; path?: string; archived: boolean; title: string; shape?: string; entryOrder: number; createdAt: string };
@@ -167,7 +167,7 @@ export class FakeHost {
     assert.deepEqual(selected.app, { package: application.manifest.id, app: app.id });
     assert.equal(selected.point, point.id);
     assert.equal(selected.version, point.version);
-    assert.equal(selected.operation, "threads-claude-code.run");
+    assert.equal(selected.operation, "chat-claude-code.run");
     const operation = contribution.manifest.operations.find(op => op.id === selected.operation);
     assert.deepEqual(operation?.input_schema, point.input_schema);
     assert.deepEqual(operation?.output_schema, point.output_schema);
@@ -187,7 +187,7 @@ export class FakeHost {
 
   discoverAsAttempt(person: string) {
     return [...this.files.entries()].filter(([, file]) =>
-      file.owner === "threads" && file.creator === person && file.discovery === "creator_only",
+      file.owner === "chat" && file.creator === person && file.discovery === "creator_only",
     ).map(([item]) => item);
   }
 
@@ -240,7 +240,7 @@ export class FakeHost {
     const dispatch = async (method: "item_append" | "start_job", input: ItemAppend | ExecutionJobStart, staged: readonly string[]) => {
       const [before, after] = exchanges[method];
       trace.push([before, input]);
-      const response = await this.call("threads", request, method, input, job, person, true, undefined, captured, false, staged);
+      const response = await this.call("chat", request, method, input, job, person, true, undefined, captured, false, staged);
       trace.push([after, response]);
       return response;
     };
@@ -262,7 +262,7 @@ export class FakeHost {
 
   private reader(item: string, person: string) {
     const file = this.files.get(item);
-    assert.ok(file?.owner === "threads" && (file.people ?? [file.creator]).includes(person), "Private state unavailable.");
+    assert.ok(file?.owner === "chat" && (file.people ?? [file.creator]).includes(person), "Private state unavailable.");
     const key = JSON.stringify([file.space, item, file.owner, person]);
     return { key, file, record: this.personState.get(key) ?? { version: "initial", fields: {} } };
   }
@@ -314,12 +314,12 @@ export class FakeHost {
 
   /** Simulate the host renderer capturing the composer field before Send dispatch. */
   composerContext(request: string, item: string, text: string) {
-    return this.context(request, "threads.send", undefined, undefined, "threads", undefined, { item, text });
+    return this.context(request, "chat.send", undefined, undefined, "chat", undefined, { item, text });
   }
 
   /** Simulate checked new-thread form capture. */
   createContext(request: string, title: string) {
-    return this.context(request, "threads.create", undefined, undefined, "threads", undefined, { text: title });
+    return this.context(request, "chat.create", undefined, undefined, "chat", undefined, { text: title });
   }
 
   /** Return the newest issued span from the fixture writer's receipts. */
@@ -335,7 +335,7 @@ export class FakeHost {
       request_id: this.id("editor"), item, expected: this.files.get(item)!.revision,
       ...(bytes.equals(Buffer.from(text)) ? { attested: { source: { kind: "input" } } } : { body: bytes.toString("base64") }),
     };
-    const result = await this.call("threads", input.request_id, "item_save", input, undefined, actor, true, undefined, { item, text });
+    const result = await this.call("chat", input.request_id, "item_save", input, undefined, actor, true, undefined, { item, text });
     trace.push(["ItemSave", input], ["ItemSaveReply", result]);
     return result;
   }
@@ -346,7 +346,7 @@ export class FakeHost {
     const call = async <T>(method: StagingMethod | "item_save", operand: unknown): Promise<T> => {
       const [before, after] = exchanges[method];
       trace.push([before, operand]);
-      const result = await this.call("threads", request_id, method, operand);
+      const result = await this.call("chat", request_id, method, operand);
       trace.push([after, result]);
       return result as T;
     };
@@ -366,7 +366,7 @@ export class FakeHost {
   }
 
   attemptRestoreDiscovery(item: string) {
-    return this.call("threads", "try-clear-marker", "item_save", {
+    return this.call("chat", "try-clear-marker", "item_save", {
       request_id: "try-clear-marker", item, expected: this.files.get(item)!.revision, attempt_discovery: "creator_only",
     });
   }
@@ -433,7 +433,7 @@ export class FakeHost {
       const wire = exchanges[method as keyof typeof exchanges];
       if (wire) trace.push([wire[0], input]);
       const captured = messageWrite?.text === undefined ? undefined : { item: messageWrite.item, text: messageWrite.text };
-      const result = await this.call("threads", request, method, input, undefined, person, true, undefined, captured);
+      const result = await this.call("chat", request, method, input, undefined, person, true, undefined, captured);
       if (wire) trace.push([wire[1], result]);
       return result as never;
     };
@@ -447,9 +447,9 @@ export class FakeHost {
         if (!people.includes(person) || people.some(id => !this.canPickPerson(group, person, id))) {
           throw new Error("Participants unavailable.");
         }
-        assert.equal(input.kind, "threads");
+        assert.equal(input.kind, "chats");
         trace.push(["ItemCreate", input]);
-        const result = await this.call("threads", request, "item_create", input, undefined, person, true, people);
+        const result = await this.call("chat", request, "item_create", input, undefined, person, true, people);
         trace.push(["ItemContentReceipt", result]);
         return result as ItemContentReceipt;
       },
@@ -515,8 +515,8 @@ export class FakeHost {
         try {
           assert.ok(payload.messages.every(message => readMessage(message.id)), "invitation scope changed");
           this.invitedInputs.push(structuredClone(payload));
-          const harness = this.context(request, "threads-claude-code.run", undefined, undefined, "claude-code-run");
-          const reply = await contribution.handlers["threads-claude-code.run"]({ text: JSON.stringify(payload) }, {
+          const harness = this.context(request, "chat-claude-code.run", undefined, undefined, "claude-code-run");
+          const reply = await contribution.handlers["chat-claude-code.run"]({ text: JSON.stringify(payload) }, {
             ...harness, claude: async () => {
               await this.onInvited({ readMessage });
               assert.ok(payload.messages.every(message => readMessage(message.id)), "invitation consent changed");
@@ -565,7 +565,7 @@ export class FakeHost {
     assert.equal(payload.harness, this.selected.harness, "unchecked harness");
     if (payload.placement !== undefined) assert.equal(payload.placement, this.selected.placement, "unchecked placement");
     const file = this.files.get(payload.item);
-    assert.ok(file?.owner === "threads" && !file.archived, "target unavailable");
+    assert.ok(file?.owner === "chat" && !file.archived, "target unavailable");
     const active = [...this.jobs.values()].filter(job => job.context.item === payload.item && ["pending", "running"].includes(job.state));
     assert.ok(active.length < 2, "pending_limit");
     assert.ok(!Object.hasOwn(payload.input, "item"), "duplicate target field");
@@ -581,13 +581,13 @@ export class FakeHost {
     return { job_id: intent };
   }
 
-  context(request: string, operation: string, job?: Job, alarm?: AlarmDelivery, owner: Owner = "threads", frame?: HostWorkerInvokeFrame["message"], capturedInput?: CheckedText): Context {
-    const declared = (owner === "threads" ? application : contribution).manifest.operations.find(op => op.id === operation);
+  context(request: string, operation: string, job?: Job, alarm?: AlarmDelivery, owner: Owner = "chat", frame?: HostWorkerInvokeFrame["message"], capturedInput?: CheckedText): Context {
+    const declared = (owner === "chat" ? application : contribution).manifest.operations.find(op => op.id === operation);
     assert.ok(declared);
     const person = job?.starter ?? actor;
     const message = frame ?? { author_context: { request_id: request, actor: person, authored_at: now, actor_label: personLabels[person] }, job_context: job?.context, alarm };
     assert.equal(message.author_context?.actor, person);
-    if (capturedInput) assert.equal(declared.write_origins?.host_input, operation === "threads.create" ? "title" : "text");
+    if (capturedInput) assert.equal(declared.write_origins?.host_input, operation === "chat.create" ? "title" : "text");
     const call: Context["call"] = async (method, input) => {
       assert.ok((declared.methods as readonly string[]).includes(method), "undeclared method");
       const wire = exchanges[method as keyof typeof exchanges];
@@ -598,7 +598,7 @@ export class FakeHost {
       return result as never;
     };
     const author = authorContext(structuredClone(message), call as Parameters<typeof authorContext>[1]);
-    return { ...author, call, ...(owner === "threads" && { attachments: this.attachmentPort(person, request, capturedInput ?? job?.capturedInput, job) }) };
+    return { ...author, call, ...(owner === "chat" && { attachments: this.attachmentPort(person, request, capturedInput ?? job?.capturedInput, job) }) };
   }
 
   // This dispatch is the only place that unpacks fixture broker method operands.
@@ -613,7 +613,7 @@ export class FakeHost {
     const writable = () => {
       assert.ok(file?.owner === owner && !file.archived, "target unavailable");
       assert.ok(!file.withheldRevisions.has(file.revision), "revision withheld after redaction");
-      if (owner === "threads" && job) assert.equal(job.context.item, args.item, "wrong attempt target");
+      if (owner === "chat" && job) assert.equal(job.context.item, args.item, "wrong attempt target");
       if (file.people && this.conversationAccess(args.item, receiptActor) !== "full") {
         throw new Error("Conversation is read-only.");
       }
@@ -701,12 +701,12 @@ export class FakeHost {
     switch (method) {
       case "item_create": return commit(() => {
         const create = input as ItemCreate;
-        assert.ok(create.kind === owner || (owner === "threads" && create.kind === "thread-consultations"));
+        assert.ok(create.kind === (owner === "chat" ? "chats" : owner) || (owner === "chat" && create.kind === "chat-consultations"));
         const item = this.id("item");
         const revision = this.id("rev");
         const composed = create.attested && compose(create.attested);
         const body = composed ? composed.bytes : Buffer.from(create.body ?? "", "base64");
-        const root = create.kind === "thread-consultations" ? ".calternal/thread-consultations" : owner === "threads" ? "Threads" : ".calternal";
+        const root = create.kind === "chat-consultations" ? ".calternal/chat-consultations" : owner === "chat" ? "Chats" : ".calternal";
         const binding = application.manifest.kinds.find(kind => kind.id === create.kind)?.file_format?.title_binding;
         const title = String(create.metadata.title);
         if (binding?.frontmatter_key) checkBoundTitle(body, title, binding.frontmatter_key);
@@ -918,8 +918,8 @@ export class FakeHost {
         if (!job.result) {
           const entry = job.contribution;
           trace.push(["ContributionEntryInvoke", entry]);
-          const ctx = this.context(entry.call, "threads-claude-code.run", job, undefined, "claude-code-run");
-          job.result = await contribution.handlers["threads-claude-code.run"](entry.input, {
+          const ctx = this.context(entry.call, "chat-claude-code.run", job, undefined, "claude-code-run");
+          job.result = await contribution.handlers["chat-claude-code.run"](entry.input, {
             ...ctx, claude: async text => {
               const reply = await this.claude(text);
               assert.equal(job.state, "running", "attempt retired");
@@ -955,18 +955,18 @@ export class FakeHost {
           return { revision, end_offset: body.length, receipt: requestId,
             ...span };
         });
-        if (owner === "threads" && this.loseNextAppendAck) {
+        if (owner === "chat" && this.loseNextAppendAck) {
           this.loseNextAppendAck = false;
           throw new Error("Append acknowledgement lost");
         }
         return receipt;
       }
       case "viewer_state_read": {
-        assert.ok(owner === "threads" && checkedInvocation && !job, "Private state unavailable.");
+        assert.ok(owner === "chat" && checkedInvocation && !job, "Private state unavailable.");
         return this.readViewer(args.item, receiptActor);
       }
       case "viewer_state_write": {
-        assert.ok(owner === "threads" && checkedInvocation && !job, "Private state unavailable.");
+        assert.ok(owner === "chat" && checkedInvocation && !job, "Private state unavailable.");
         const { item, expected, patch } = input as ViewerItemStateWrite;
         return commit(() => {
           const { key, record } = this.reader(item, receiptActor);
@@ -998,7 +998,7 @@ export class FakeHost {
       case "alarm_set": return commit(() => {
         const set = input as AlarmSet;
         assert.equal(set.harness, this.selected.harness);
-        assert.ok(set.item && this.files.get(set.item)?.owner === "threads");
+        assert.ok(set.item && this.files.get(set.item)?.owner === "chat");
         assert.ok(!Object.hasOwn(set.input, "item"), "duplicate target field");
         this.preflight(set.harness, set.contribution_input);
         const alarm = this.id("alarm");
@@ -1094,13 +1094,13 @@ export class FakeHost {
       candidate.context.item !== job.context.item || candidate.teardown), "successor must wait for teardown");
     const frame: HostWorkerInvokeFrame = {
       v: 1, epoch: "fake", seq: ++this.serial, package: application.manifest.id, digest: "0".repeat(64), ticket: id,
-      message: { type: "invoke", operation: "threads.run", input: job.input, deadline: now,
+      message: { type: "invoke", operation: "chat.run", input: job.input, deadline: now,
         author_context: { request_id: id, actor: job.starter, authored_at: now, actor_label: personLabels[job.starter] }, job_context: job.context, ...(alarm && { alarm }) },
     };
     trace.push(["HostWorkerInvokeFrame", frame]);
     job.state = "running";
     try {
-      return await handlers["threads.run"](job.input, this.context(id, "threads.run", job, alarm, "threads", frame.message));
+      return await handlers["chat.run"](job.input, this.context(id, "chat.run", job, alarm, "chat", frame.message));
     } finally {
       if (this.jobs.get(id)!.state === "running") {
         job.state = "done";
@@ -1204,13 +1204,13 @@ export class FakeHost {
     const priorTitle = file.title;
     const priorFolders = oldPath.split("/").slice(1, -2);
     const nextFolder = titleFolder(file.createdAt, nextTitle);
-    const root = ["Threads", ...(destination ?? priorFolders), nextFolder].join("/");
+    const root = ["Chats", ...(destination ?? priorFolders), nextFolder].join("/");
     const occupied = new Set([...this.files.entries()].filter(([id]) => id !== item).map(([, sibling]) => sibling.path));
     let nextPath = `${root}/Conversation.md`;
     for (let suffix = 2; occupied.has(nextPath); suffix++) nextPath = `${root} (${suffix})/Conversation.md`;
     const links = this.incomingLinks.get(item) ?? [];
     const original = file.history.get(file.revision)!;
-    const titleKey = application.manifest.kinds.find(kind => kind.id === "threads")?.file_format?.title_binding?.frontmatter_key;
+    const titleKey = application.manifest.kinds.find(kind => kind.id === "chats")?.file_format?.title_binding?.frontmatter_key;
     assert.ok(titleKey, "undeclared title binding");
     checkBoundTitle(original, file.title, titleKey);
     const oldTitleLine = Buffer.from(`\n${titleKey}: ${file.title}\n`);

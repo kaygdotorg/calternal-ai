@@ -79,10 +79,10 @@ test("edit and delete preserve the message link and authorize the original autho
   assert.equal(decode(host.markdown(item)).messages[0].deleted, true);
   assert.equal(decode(host.markdown(item)).messages[0].text, "");
   const source_revision = host.files.get(item)!.revision;
-  assert.deepEqual(await handlers["threads.refresh"]({ item, source_revision, anchor: first.message },
-    host.context("deleted-anchor", "threads.refresh")), { anchor_unavailable: true });
-  assert.deepEqual(await handlers["threads.refresh"]({ item, source_revision: beforeDeletion, anchor: first.message },
-    host.context("superseded-deleted-anchor", "threads.refresh")), { anchor_unavailable: true });
+  assert.deepEqual(await handlers["chat.refresh"]({ item, source_revision, anchor: first.message },
+    host.context("deleted-anchor", "chat.refresh")), { anchor_unavailable: true });
+  assert.deepEqual(await handlers["chat.refresh"]({ item, source_revision: beforeDeletion, anchor: first.message },
+    host.context("superseded-deleted-anchor", "chat.refresh")), { anchor_unavailable: true });
   assert.doesNotMatch(JSON.stringify(host.snapshots.get(item)!.view), /Message deleted|Corrected|Alice visible/);
   assert.doesNotMatch(host.markdown(item), /Corrected|Alice visible/);
   assert.ok(host.markdown(item).includes(`{#m-${first.message} `));
@@ -90,7 +90,7 @@ test("edit and delete preserve the message link and authorize the original autho
 
 test("read position, draft and preferences share one viewer-private version", async () => {
   const { host, item, first, third, ctx } = await setup(true);
-  const read = (actor: string) => handlers["threads.state"]({ item }, ctx(actor, "current-state"));
+  const read = (actor: string) => handlers["chat.state"]({ item }, ctx(actor, "current-state"));
   const before = await read(alice);
   const bobBefore = await read(bob);
   host.markRead(item, alice, third.message);
@@ -101,7 +101,7 @@ test("read position, draft and preferences share one viewer-private version", as
   assert.equal((await read(alice)).version, marked.version);
   host.writeDraft(item, alice, "Alice's private draft", marked.version);
   const drafted = await read(alice);
-  const updated = await handlers["threads.state"]({ item, muted: true, pinned: true, unread_mark: true }, ctx(alice, "preferences"));
+  const updated = await handlers["chat.state"]({ item, muted: true, pinned: true, unread_mark: true }, ctx(alice, "preferences"));
   assert.deepEqual(updated.fields, { draft: "Alice's private draft", muted: true, pinned: true, unread_mark: true, unread: 0, mentions: 0 });
   assert.throws(() => host.writeDraft(item, alice, "", drafted.version), /Private state changed/);
   assert.deepEqual(await read(bob), bobBefore);
@@ -117,8 +117,8 @@ test("an invited agent receives only scoped messages whose authors have consente
     people.callAgent({ item, prompt: "Answer the allowed messages" },
       host.invitedContext(alice, request, { item, scope, consent }));
   await assert.rejects(people.callAgent({ item, prompt: "Try without a grant" }, ctx(alice, "denied")), /invitation/i);
-  await assert.rejects(handlers["threads.send"]({ item, text: "Bypass", ...host.choose() },
-    host.context("ordinary-send", "threads.send")), /invitation/i);
+  await assert.rejects(handlers["chat.send"]({ item, text: "Bypass", ...host.choose() },
+    host.context("ordinary-send", "chat.send")), /invitation/i);
   await run("single-withheld", { message: second.message }, []);
   await run("caller-old-message-withheld", { message: first.message }, []);
   await run("single", { message: third.message }, [cara]);
@@ -143,12 +143,12 @@ test("a grant for the previous body cannot disclose an edit or deleted message",
 
 test("discovery stays per item after a people-thread invitation", async () => {
   const { host, item, people, first } = await setup();
-  const { created: ownThread } = await handlers["threads.create"](
+  const { created: ownThread } = await handlers["chat.create"](
     { title: "My agent conversation" }, host.createContext("own-agent", "My agent conversation"),
   );
   assert.deepEqual(host.discoverAsAttempt(alice), [ownThread]);
   assert.deepEqual(host.discoverAsAttempt(bob), []);
-  const { job_id } = await handlers["threads.send"]({ item: ownThread, text: "Hello", ...host.choose() },
+  const { job_id } = await handlers["chat.send"]({ item: ownThread, text: "Hello", ...host.choose() },
     host.composerContext("own-agent-send", ownThread, "Hello"));
   await host.run(job_id);
   assert.deepEqual(host.discoverAsAttempt(alice), [ownThread]);
@@ -330,14 +330,14 @@ test("checked quotes retain the original author, survive a source edit and are r
 test("host-maintained unread and mention counts are viewer-private and omit deleted entries", async () => {
   const { host, people, item, first, third, ctx } = await setup(true);
   host.markRead(item, alice, third.message);
-  await handlers["threads.state"]({ item, muted: true }, ctx(alice, "mute"));
+  await handlers["chat.state"]({ item, muted: true }, ctx(alice, "mute"));
   const post = (text: string, recipient: string, replyTo?: string) => people.post({ item, text, mentions: [recipient], replyTo },
     host.peopleContext(bob, text, undefined, undefined, undefined, { item, text }));
   const addressed = await post("For Alice", alice, first.message);
   const deleted = await post("Will disappear", alice);
   await post("For Cara", cara);
   await people.remove({ item, message: deleted.message }, ctx(bob, "delete-mention"));
-  const fields = async (person: string) => (await handlers["threads.state"]({ item }, ctx(person, "counts"))).fields;
+  const fields = async (person: string) => (await handlers["chat.state"]({ item }, ctx(person, "counts"))).fields;
   assert.deepEqual(await fields(alice), { unread: 2, mentions: 1, muted: true });
   assert.deepEqual(await fields(cara), { unread: 4, mentions: 1 });
   await people.setPreferences({ receiptsAndTyping: true, push: { enabled: true, iosLocked: true, iosUnlocked: true } },
@@ -388,15 +388,15 @@ test("the conversation file example has two people, one agent and a separate pri
   const privateContext = context(alice, "example-state", "09:07");
   const { version } = await privateContext.call("viewer_state_read", { item });
   host.writeDraft(item, alice, "I’ll bring the gloves.", version);
-  await handlers["threads.state"]({ item, muted: true }, privateContext);
+  await handlers["chat.state"]({ item, muted: true }, privateContext);
 
   const thread = decode(host.markdown(item));
   assert.deepEqual(thread.participants.map(participant => participant.kind), ["person", "person", "agent"]);
   assert.equal(thread.messages[0].edited, true);
   assert.equal(thread.messages[2].deleted, true);
   assert.ok(thread.messages[4].consultation);
-  assert.match(host.markdown(item), /^format: calternal-thread\/v2$/m);
-  assert.match(host.markdown(item), /^agent-p3-plugin: calternal-threads-claude-code\nagent-p3-harness: claude-code$/m);
+  assert.match(host.markdown(item), /^format: calternal-chat\/v2$/m);
+  assert.match(host.markdown(item), /^agent-p3-plugin: calternal-chat-claude-code\nagent-p3-harness: claude-code$/m);
   const privateState = await privateContext.call("viewer_state_read", { item });
   assert.equal(privateState.fields.draft, "I’ll bring the gloves.");
   assert.equal(privateState.fields.muted, true);

@@ -1,5 +1,5 @@
 /**
- * FIXTURE host for the Threads description (the harness page with `?fixture=threads`, the browser suite `e2e/threads.mjs`): a few threads with made-up people and agents, an archive, a search, the committed
+ * FIXTURE host for the Threads description (the harness page with `?fixture=chat`, the browser suite `e2e/chat.mjs`): a few threads with made-up people and agents, an archive, a search, the committed
  * transcript of the open thread as snapshot nodes (a heading and text per message: the vocabulary the contract has today), `item_view.follow`, the harness and placement choices and a confirmation for Send. Everything
  * here is invented for display; nothing is a real conversation, and it decides no authority.
  *
@@ -64,13 +64,13 @@ class ViewContexts extends MockHost {
   override answer(req: Parameters<MockHost["answer"]>[0]) { this.curBind = req.bind; this.curParent = (req as { parent?: string }).parent ?? ""; return super.answer(req); }
   override async post<T>(route: Route, body: unknown): Promise<T> {
     const r = await super.post<T>(route, body);
-    if (route === "view.open") (r as { activation_contexts: Record<string, string> }).activation_contexts = { send: "ctx-send", "archive-open": "ctx-archive-open", "create-thread": "ctx-create-thread", "call-in": "ctx-call-in", "call-range": "ctx-call-range", "mute-thread": "ctx-mute-thread", "pin-thread": "ctx-pin-thread" };
+    if (route === "view.open") (r as { activation_contexts: Record<string, string> }).activation_contexts = { send: "ctx-send", "archive-open": "ctx-archive-open", "create-chat": "ctx-create-chat", "call-in": "ctx-call-in", "call-range": "ctx-call-range", "mute-chat": "ctx-mute-chat", "pin-chat": "ctx-pin-chat" };
     return r;
   }
 }
 
 /** The host: a `MockHost` over the thread lists, plus the item-view, choice and activation routes the Threads description uses. */
-export function threadsHost(o: ThreadsHostOptions) {
+export function chatHost(o: ThreadsHostOptions) {
   const empty = o.scenario === "empty";
   type Th = { id: string; title: string; ago: number };
   // The sidebar of the owner's guidance: pinned conversations on a strip (more than fit, so it scrolls), Groups and People, pinned agents, Cals (each a row that opens its threads), Harnesses, Archived.
@@ -95,10 +95,10 @@ export function threadsHost(o: ThreadsHostOptions) {
       case "contacts": return ALL.filter((t) => !pins.has(t.id) && ex(t.id).shape === "person");
       case "agent-pinned": return ALL.filter((t) => pins.has(t.id) && ex(t.id).shape === "agent");
       case "cals": return CALS;
-      case "cal-threads": return ALL.filter((t) => CAL_OF[t.id] === CALS[pi]?.id && !pins.has(t.id));
+      case "cal-chats": return ALL.filter((t) => CAL_OF[t.id] === CALS[pi]?.id && !pins.has(t.id));
       case "harnesses": return ALL.filter((t) => !pins.has(t.id) && ex(t.id).shape === "agent" && !CAL_OF[t.id]);
       case "archived": case "archived-count": return ARCHIVED;
-      case "thread": return [THREADS[0]!];
+      case "chat": return [THREADS[0]!];
       case "found": return THREADS.slice(0, 3);
       default: return [];
     }
@@ -198,14 +198,14 @@ export function threadsHost(o: ThreadsHostOptions) {
   let opens = 0, pinVer = 1, layoutStore: unknown = {};
   let version = 0; const follows = new Map<string, number>();
   const host: MockHost = new ViewContexts({
-    rows: 1, actionIds: o.actionIds, latencyMs: o.latencyMs, parentBinds: ["cal-threads"],
+    rows: 1, actionIds: o.actionIds, latencyMs: o.latencyMs, parentBinds: ["cal-chats"],
     rowsFor: (b) => listFor(b, (host as ViewContexts).curParent).length,
     fields: (i, b) => {
       const t = rowOf(b, i, (host as ViewContexts).curParent);
       if (!o.next) return { title: t.title, updated: NOW - t.ago, archived: b === "archived" };
       const when = iso(t.ago);
       if (b === "cals") return { title: t.title, updated: when, archived: false };
-      return { title: t.title, updated: when, archived: b === "archived", ...ex(t.id), ...(b === "cal-threads" ? { shape: "agent" } : {}) };
+      return { title: t.title, updated: when, archived: b === "archived", ...ex(t.id), ...(b === "cal-chats" ? { shape: "agent" } : {}) };
     },
     ...(o.next ? { /* the sections of the 14.43 list are filtered by the host; the fixture serves the same seven threads, pinned first */ } : {}),
     intercept: (req) => (o.scenario === "error" && (req.bind === "threads" || req.bind === "all") ? ({ status: 422, code: "unsupported_query_plan", reason: "host_error" } as never) : undefined),
@@ -236,7 +236,7 @@ export function threadsHost(o: ThreadsHostOptions) {
           return { activation_id: body.activation_id, resolution_ref: "res-send", confirmation_challenge: "chal-send", material: [
             { name: "operation", label: "Operation", value: "Send" }, { name: "effect", label: "Effect", value: "Start an agent run" }, { name: "input:placement", label: "Machine and login", value: c.placement === "laptop" ? "Laptop · My login" : "Desk machine · My login" }] };
         }
-        return { activation_id: body.activation_id, state: "ok", ...(body.action_id === "create-thread" ? { created: "t-new" } : {}) };
+        return { activation_id: body.activation_id, state: "ok", ...(body.action_id === "create-chat" ? { created: "t-new" } : {}) };
       }
       if (route === "activation.confirm") return { activation_id: body.activation_id, resolution_ref: body.resolution_ref, confirmation_proof: "proof" };
       if (route === "activation.dispatch") return { activation_id: body.activation_id, state: "ok" };

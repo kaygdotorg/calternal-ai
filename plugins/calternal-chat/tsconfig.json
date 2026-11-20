@@ -7,5 +7,5 @@
     "noEmit": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "../calternal-threads-claude-code/src/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "../calternal-chat-claude-code/src/**/*.ts"]
 }

@@ -1,11 +1,11 @@
-// Windowing on a thread of very uneven message heights (`?fixture=threads-next&scenario=uneven&messages=1500`: one-line replies beside 40-line code blocks and long paragraphs): the DOM holds a window, a jump to the end
-// settles from anywhere, the person's place survives older pages being added above and survives the heights learned while walking, and the keyboard reaches every message in order. Usage: node e2e/threads-window.mjs
+// Windowing on a thread of very uneven message heights (`?fixture=chat-next&scenario=uneven&messages=1500`: one-line replies beside 40-line code blocks and long paragraphs): the DOM holds a window, a jump to the end
+// settles from anywhere, the person's place survives older pages being added above and survives the heights learned while walking, and the keyboard reaches every message in order. Usage: node e2e/chat-window.mjs
 import { launch, open, serve } from "./lib.mjs";
 const stop = await serve(); const browser = await launch();
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const N = 1500;
-const { page: p } = await open(browser, `fixture=threads-next&scenario=uneven&messages=${N}`, { width: 1100, height: 700 });
+const { page: p } = await open(browser, `fixture=chat-next&scenario=uneven&messages=${N}`, { width: 1100, height: 700 });
 const errors = []; p.on("pageerror", (e) => errors.push(String(e)));
 await p.waitForSelector("[data-strip=pins] [data-row-id=t-lunch] button", { timeout: 30000 });
 await p.locator("[data-strip=pins] [data-row-id=t-lunch] button").evaluate((e) => e.click());

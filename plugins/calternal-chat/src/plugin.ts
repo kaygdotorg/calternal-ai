@@ -10,7 +10,7 @@ const placement = catalogueRef("ChoiceRef");
 const title = { type: "string", minLength: 1, maxLength: 120 };
 const writeView = ["item_view_context", "item_view_publish"] as const;
 const readBody = ["item_head", "item_range", "item_spans"] as const;
-const target = { kind: "threads", field: "item" };
+const target = { kind: "chats", field: "item" };
 const write = { required_capability: "content.write", risk: "reversible", idempotency: "request_id" } as const;
 const read = { required_capability: "space.read", risk: "read", idempotency: "read_only" } as const;
 const execute = { required_capability: "plugins.use", risk: "external", idempotency: "request_id" } as const;
@@ -28,18 +28,18 @@ const legacyMessageResult = object({
   next_offset: messageOffset,
 }, "id", "role", "heading", "text", "posted_at");
 const app = {
-  id: "threads", name: "Threads", icon: "threads",
+  id: "chat", name: "Chat", icon: "chat",
   extension_points: [{ id: "harnesses", version: 1, kind: "harness", input_schema: harnessInput, output_schema: harnessOutput }],
 } satisfies Omit<ManifestV2["apps"][number], "description">;
 const metadata = {
-  api_version: 2, id: "calternal-threads", name: "Threads", version: "0.1.0", icon: "threads",
+  api_version: 2, id: "calternal-chat", name: "Chat", version: "0.1.0", icon: "chat",
   kinds: [{
-    id: "thread-consultations", icon: "threads", title_field: "title", storage: { hidden: true },
+    id: "chat-consultations", icon: "chat", title_field: "title", storage: { hidden: true },
     claimed_text: true, schema: object({ title }, "title"),
   }, {
-    id: "threads", icon: "threads", title_field: "title", storage: { folder: "Threads" },
+    id: "chats", icon: "chat", title_field: "title", storage: { folder: "Chats" },
     claimed_text: true, searchable: true, file_format: {
-      id: "calternal-thread", version: 2, default_app: "threads",
+      id: "calternal-chat", version: 2, default_app: "chat",
       title_binding: { placement: "utc_date_folder", frontmatter_key: "title" },
       metadata_tokens: [
         { scope: "frontmatter_key", prefix: "format" },
@@ -54,33 +54,33 @@ const metadata = {
         { scope: "framing_line", prefix: "<!-- reply-in=", suffix: " -->" },
       ],
     },
-    append_file: true, attempt_discovery: "item_policy", execution_target: true, view_snapshots: [{ id: "body", refresh: "threads.refresh" }],
+    append_file: true, attempt_discovery: "item_policy", execution_target: true, view_snapshots: [{ id: "body", refresh: "chat.refresh" }],
     schema: object({ title, shape: { enum: ["person", "group", "agent", "mixed"] } }, "title"),
     indexed_fields: { shape: { type: "Text", audience: "shared_projection" } },
     viewer_fields: viewerFields,
   }],
-  jobs: [{ id: "run", run_operation: "threads.run", replayable: true, execution: true, alarm: true }],
+  jobs: [{ id: "run", run_operation: "chat.run", replayable: true, execution: true, alarm: true }],
   operations: [
-    { ...write, id: "threads.create", title: "New thread", creates: "threads", methods: ["item_create", ...writeView],
+    { ...write, id: "chat.create", title: "New chat", creates: "chats", methods: ["item_create", ...writeView],
       write_origins: { host_input: "title" },
       input_schema: object({ title }, "title"), output_schema: object({ created: item }, "created") },
-    { ...execute, id: "threads.send", title: "Send", target, methods: [...readBody, "start_job"], material_inputs: { placement: "Machine and login" },
+    { ...execute, id: "chat.send", title: "Send", target, methods: [...readBody, "start_job"], material_inputs: { placement: "Machine and login" },
       write_origins: { host_input: "text" },
       input_schema: object({ item, text: textSchema, harness, placement }, "item", "text", "harness", "placement"),
       output_schema: catalogueRef("ExecutionJobReceipt") },
-    { ...execute, id: "threads.run", title: "Run agent", target, methods: [...readBody, "item_append", "item_save",
+    { ...execute, id: "chat.run", title: "Run agent", target, methods: [...readBody, "item_append", "item_save",
       "item_save_begin", "item_save_chunk", "item_save_seal", "execution_start", "contribution_call", "contribution_read", ...writeView],
       write_origins: { attempt_output: "text" },
       input_schema: object({ item, if_missed: ifMissed }, "item"), output_schema: empty },
-    { ...execute, id: "threads.arm", title: "Schedule a run", target, methods: [...readBody, "alarm_set"],
+    { ...execute, id: "chat.arm", title: "Schedule a run", target, methods: [...readBody, "alarm_set"],
       input_schema: object({ item, text: textSchema, harness, at: catalogueRef("Timestamp"), if_missed: ifMissed, grace_seconds: { type: "integer", minimum: 0, maximum: 86400 } },
         "item", "text", "harness", "at", "if_missed"), output_schema: catalogueRef("AlarmReceipt") },
-    { ...write, required_capability: "space.read", id: "threads.state", title: "Update my thread preferences", target,
+    { ...write, required_capability: "space.read", id: "chat.state", title: "Update my thread preferences", target,
       methods: ["viewer_state_read", "viewer_state_write"],
       input_schema: object({ item, ...viewerPatchSchema }, "item"), output_schema: catalogueRef("ViewerItemState") },
-    { ...read, id: "threads.refresh", title: "Read thread page", target, methods: [...readBody],
+    { ...read, id: "chat.refresh", title: "Read thread page", target, methods: [...readBody],
       input_schema: catalogueRef("ItemViewRead"), output_schema: catalogueRef("ItemViewPage") },
-    { ...read, id: "threads.message", title: "Read message", target, methods: [...readBody],
+    { ...read, id: "chat.message", title: "Read message", target, methods: [...readBody],
       input_schema: object({ item, message: { type: "string", pattern: messageIdPattern }, offset: messageOffset }, "item", "message"),
       output_schema: { oneOf: [object({ ...messageResult, text: textSchema, posted_at: catalogueRef("Timestamp"),
         log: catalogueRef("ItemLocator"), consultation: catalogueRef("ItemLocator"), edited: { const: true }, replyTo: { type: "string" }, replyToName: { type: "string" }, replyIn: catalogueRef("ItemLocator"), replyQuote: textSchema,

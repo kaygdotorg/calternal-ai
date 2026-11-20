@@ -5,7 +5,7 @@ import { launch, open, serve } from "./lib.mjs";
 const dir = process.argv[2] ?? "frames"; mkdirSync(dir, { recursive: true });
 const sc = process.env.SCHEME ?? "light";
 const stop = await serve(); const browser = await launch();
-const { page: p } = await open(browser, `fixture=threads-next&scheme=${sc}`, { width: 420, height: 760 });
+const { page: p } = await open(browser, `fixture=chat-next&scheme=${sc}`, { width: 420, height: 760 });
 await p.waitForSelector("[data-tree] .sh"); await p.waitForTimeout(900);
 const shot = async (n) => { await p.waitForTimeout(120); await p.screenshot({ path: `${dir}/${sc}-frame-${n}.png`, clip: { x: 0, y: 0, width: 300, height: 760 } }); };
 const c = async (l) => { const b = await l.boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };

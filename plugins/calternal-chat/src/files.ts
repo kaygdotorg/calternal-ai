@@ -8,7 +8,7 @@ import { decodeLegacy, isLegacy } from "./legacy.ts";
 import { checkSelection, fileLinks } from "./attachments.ts";
 
 /** The installed item kind shared by both conversation shapes. */
-export const kind = "threads";
+export const kind = "chats";
 const slot = "body";
 
 function mergeSpanPage(index: ItemSpansPage["spans"], page: ItemSpansPage) {
@@ -88,7 +88,7 @@ export async function readConversation(ctx: Context, item: ItemRef, revision: Re
 /** Read a writable version 2 document at one exact revision. */
 export async function read(ctx: Context, item: ItemRef, revision: RevisionRef) {
   const bytes = await readBytes(ctx, item, revision);
-  if (isLegacy(bytes)) throw new Error("Version 1 threads are read-only in Threads.");
+  if (isLegacy(bytes)) throw new Error("Version 1 chats are read-only in Chat.");
   return readCurrent(ctx, item, revision, bytes);
 }
 

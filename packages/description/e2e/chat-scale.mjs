@@ -1,7 +1,7 @@
-// The conversation view at scale, measured the way the list suites are (perf.mjs, scale.mjs): a 5,000-message thread from the fixture host (`?fixture=threads-next&scenario=scale&messages=5000`: the newest 60 messages, then
+// The conversation view at scale, measured the way the list suites are (perf.mjs, scale.mjs): a 5,000-message thread from the fixture host (`?fixture=chat-next&scenario=scale&messages=5000`: the newest 60 messages, then
 // a host cursor for every older 60), at 1x and 4x CPU, windowed (only the messages in and near view are drawn, the default); `&nocv` is kept for the browser-skipped comparison, which no longer applies to threads over 120 messages. Reports: the first page painted, how long reading
 // every older page takes as the top is reached, the DOM and heap after, then ArrowUp held through the messages at 30 keys a second (handler, key to the focused message painted) and the wheel at 60 events a second (main-thread
-// heartbeat gaps, layout and style-recalculation counts). Timings on a shared dev VM are reported, not judged: judge on the perf VMs. Usage: node e2e/threads-scale.mjs [messages=5000] [seconds=5]
+// heartbeat gaps, layout and style-recalculation counts). Timings on a shared dev VM are reported, not judged: judge on the perf VMs. Usage: node e2e/chat-scale.mjs [messages=5000] [seconds=5]
 import { launch, open, pct, serve } from "./lib.mjs";
 const N = Number(process.argv[2] ?? 5000), SECS = Number(process.argv[3] ?? 5), RATE = 30;
 const stop = await serve(); const browser = await launch();
@@ -9,7 +9,7 @@ let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 for (const mode of (process.env.MODES ?? "cv,nocv").split(",")) for (const cpu of [1, 4]) {
   const tag = `${mode === "cv" ? "windowed" : "all drawn"} ${cpu}x`;
-  const { page: p, cdp } = await open(browser, `fixture=threads-next&scenario=scale&messages=${N}${mode === "nocv" ? "&nocv=1" : ""}`);
+  const { page: p, cdp } = await open(browser, `fixture=chat-next&scenario=scale&messages=${N}${mode === "nocv" ? "&nocv=1" : ""}`);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: cpu });
   await cdp.send("Performance.enable");
   await p.waitForSelector("[data-strip=pins] [data-row-id=t-lunch] button", { timeout: 60000 });

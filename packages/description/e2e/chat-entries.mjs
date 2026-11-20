@@ -1,7 +1,7 @@
-// The Threads interface at contract 14.43 in a browser over the fixture host (`?fixture=threads-next`; testing/threads-host.ts, invented people): the list with viewer-private counts and quiet marks, pins first and the
+// The Threads interface at contract 14.43 in a browser over the fixture host (`?fixture=chat-next`; testing/chat-host.ts, invented people): the list with viewer-private counts and quiet marks, pins first and the
 // People and Agents selectors, a conversation drawn from entries (grouping, own and agent messages with the host's marks, edited, asked by, queued, quotes with a jump and a back chip, inline Markdown, item links, date
 // and system lines, the unread separator, the activity row), the reading position written only for messages that scrolled into view, per-entry menus, reply and edit through the composer, mentions limited to
-// participants, drafts, range selection for calling an agent in, the consent card, the read-only notice, and the phone layout. Usage: node e2e/threads-entries.mjs [shots-directory]
+// participants, drafts, range selection for calling an agent in, the consent card, the read-only notice, and the phone layout. Usage: node e2e/chat-entries.mjs [shots-directory]
 import { mkdirSync } from "node:fs";
 import { BASE as BASE_URL, launch, open, serve } from "./lib.mjs";
 const shots = process.argv[2]; if (shots) mkdirSync(shots, { recursive: true });
@@ -9,13 +9,13 @@ const stop = await serve(); const browser = await launch();
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const errors = [];
-const go = async (query, size) => { const r = await open(browser, `fixture=threads-next&${query}${process.env.SCHEME ? `&scheme=${process.env.SCHEME}` : ""}`, size); r.page.on("pageerror", (e) => errors.push(String(e))); return r; };
+const go = async (query, size) => { const r = await open(browser, `fixture=chat-next&${query}${process.env.SCHEME ? `&scheme=${process.env.SCHEME}` : ""}`, size); r.page.on("pageerror", (e) => errors.push(String(e))); return r; };
 const snap = async (p, name) => { if (shots) { name = `${process.env.SCHEME ?? "light"}-${name}`; await p.waitForTimeout(500); await p.screenshot({ path: `${shots}/${name}.png` }); } };
 const DESK = { width: 1280, height: 800 }, PHONE = { width: 390, height: 844 };
 const log = (p, f) => p.evaluate((src) => window.__transport.log.filter(new Function("l", `return ${src}`)), f);
 const openFirst = async (p) => { await p.waitForSelector("[data-strip=pins] [data-row-id=t-lunch] button", { timeout: 20000 }); await p.locator("[data-strip=pins] [data-row-id=t-lunch] button").evaluate((e) => e.click()); await p.waitForSelector("[data-entry]", { timeout: 10000 }); };
 
-// ---- the list rows (the sidebar's own arrangement is in threads-sidebar.mjs)
+// ---- the list rows (the sidebar's own arrangement is in chat-sidebar.mjs)
 {
   const { page: p } = await go("", DESK);
   await p.waitForSelector("[data-tree] button.row", { timeout: 20000 });
@@ -207,7 +207,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-strip=pins] [dat
   const ctx = await browser.newContext({ viewport: PHONE, hasTouch: true, isMobile: true });
   const p = await ctx.newPage(); p.on("pageerror", (e) => errors.push(String(e)));
   const cdp = await ctx.newCDPSession(p);
-  await p.goto(`${BASE_URL}/?fixture=threads-next${process.env.SCHEME ? `&scheme=${process.env.SCHEME}` : ""}`);
+  await p.goto(`${BASE_URL}/?fixture=chat-next${process.env.SCHEME ? `&scheme=${process.env.SCHEME}` : ""}`);
   await openFirst(p); await p.waitForTimeout(300);
   const box = await p.locator("[data-anchor=e5] .bub").boundingBox();
   const pt = [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }];
@@ -249,7 +249,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-strip=pins] [dat
   await p.waitForTimeout(500);
   ok(await p.locator("[role=log]").evaluate((e) => e.scrollHeight - e.clientHeight - e.scrollTop < 2), "and arrives");
   const rctx = await browser.newContext({ viewport: { width: 1280, height: 420 }, reducedMotion: "reduce" });
-  const q = await rctx.newPage(); await q.goto(`${BASE_URL}/?fixture=threads-next`); await openFirst(q);
+  const q = await rctx.newPage(); await q.goto(`${BASE_URL}/?fixture=chat-next`); await openFirst(q);
   await q.locator("[role=log]").evaluate((e) => { e.scrollTop = 0; }); await q.waitForTimeout(300);
   await q.locator("[data-jump-latest]").click(); await q.waitForTimeout(80);
   ok(await q.locator("[role=log]").evaluate((e) => e.scrollHeight - e.clientHeight - e.scrollTop < 2), "under reduced motion it is instant");
@@ -268,7 +268,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-strip=pins] [dat
   const labels = await p.locator("[data-dialog=choose] button[role=option]").allTextContents();
   ok(labels.length === 5 && labels[0] === "1 hour", "mute offers the description's literal choices", labels.join("|"));
   await p.locator("[data-dialog=choose] button[role=option]", { hasText: "8 hours" }).click(); await p.waitForTimeout(500);
-  ok((await log(p, "l.route === 'activation.resolve' && l.body.action_id === 'mute-thread'"))[0]?.body.interaction.choices.mute === "mute-8h", "the pick travels as a host-issued ref");
+  ok((await log(p, "l.route === 'activation.resolve' && l.body.action_id === 'mute-chat'"))[0]?.body.interaction.choices.mute === "mute-8h", "the pick travels as a host-issued ref");
 }
 
 // ---- consent, read-only, loading states

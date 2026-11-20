@@ -193,14 +193,14 @@ export function threadHeader(thread: Thread): FramedText {
         `agent-p${index + 1}-harness: ${person.contribution.contribution}`);
     }
   });
-  return { prefix: `---\nformat: calternal-thread/v2\nid: ${id}\ntitle: `, text: title,
+  return { prefix: `---\nformat: calternal-chat/v2\nid: ${id}\ntitle: `, text: title,
     suffix: `\n${header.join("\n")}\n---\n\n` };
 }
 
 /** Serialize the transcript in the same format as the append stream. */
 export function encode(thread: Thread): string {
   if (thread.messages.some(message => message.files?.length || (message.replyIn && message.replyQuote !== undefined))) {
-    throw new Error("Use a checked write to keep attachments and quotes from other threads.");
+    throw new Error("Use a checked write to keep attachments and quotes from other chats.");
   }
   const { prefix, text, suffix } = threadHeader(thread);
   return prefix + text + suffix + thread.messages.map(message => encodeMessage(message, thread.participants)).join("");
@@ -336,7 +336,7 @@ function decodeRecords(frontmatter: string[], records: Iterable<MessageRecord>) 
   const id = fields.get("id");
   const title = fields.get("title");
   const created = fields.get("created");
-  if (fields.get("format") !== "calternal-thread/v2" || !id || !/^[a-f0-9]{32}$/u.test(id) || !title || !created) {
+  if (fields.get("format") !== "calternal-chat/v2" || !id || !/^[a-f0-9]{32}$/u.test(id) || !title || !created) {
     throw new Error("Could not read the conversation details at the top of the file.");
   }
   const people = new Map<string, Participant>();

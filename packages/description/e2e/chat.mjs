@@ -1,6 +1,6 @@
-// The Threads description the plugin ships today (`plugins/calternal-threads/src/description.ts`, what its manifest declares) in a browser over the fixture host (`?fixture=threads`; invented threads and people): the list with its
+// The Threads description the plugin ships today (`plugins/calternal-chat/src/description.ts`, what its manifest declares) in a browser over the fixture host (`?fixture=chat`; invented threads and people): the list with its
 // viewer-private marks, opening a thread draws entries and follows them, the composer sends through the host's agent and placement choices and the protected confirmation with only device-held values on the wire,
-// a phone shows one pane at a time with Back, and the empty, error, stale, loading and unavailable states are drawn in plain words. Usage: node e2e/threads.mjs [shots-directory]
+// a phone shows one pane at a time with Back, and the empty, error, stale, loading and unavailable states are drawn in plain words. Usage: node e2e/chat.mjs [shots-directory]
 import { mkdirSync } from "node:fs";
 import { launch, open, serve } from "./lib.mjs";
 const shots = process.argv[2]; if (shots) mkdirSync(shots, { recursive: true });
@@ -8,7 +8,7 @@ const stop = await serve(); const browser = await launch();
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const errors = [];
-const go = async (query, size) => { const r = await open(browser, `fixture=threads&${query}`, size); r.page.on("pageerror", (e) => errors.push(String(e))); return r; };
+const go = async (query, size) => { const r = await open(browser, `fixture=chat&${query}`, size); r.page.on("pageerror", (e) => errors.push(String(e))); return r; };
 const snap = async (p, name) => { if (shots) { await p.waitForTimeout(500); await p.screenshot({ path: `${shots}/${name}.png` }); } };
 const DESK = { width: 1280, height: 800 }, PHONE = { width: 390, height: 844 };
 const log = (p, f) => p.evaluate((src) => window.__transport.log.filter(new Function("l", `return ${src}`)), f);
@@ -54,7 +54,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   ok(resolve?.interaction?.form?.composer?.message?.startsWith("Book the river") && resolve.interaction.choices.harness === "h-codex" && resolve.interaction.choices.placement === "laptop", "the resolve carries the typed text and the two picked refs", JSON.stringify(resolve?.interaction));
   ok(!JSON.stringify(resolve).match(/"item"|"viewer"|"route"/), "and nothing resolved on the device (no item, viewer or route value)");
   const ext = (await log(p, "l.route === 'extension.choices'"))[0]?.body, plc = (await log(p, "l.route === 'choice.options' && l.body.slot === 'placement'")).at(-1)?.body;
-  ok(ext?.app === "threads" && ext.point === "harnesses", "the extension choice names the app and the harnesses point");
+  ok(ext?.app === "chat" && ext.point === "harnesses", "the extension choice names the app and the harnesses point");
   ok(plc?.harness === "harness-codex" && !!plc.activation_id, "the placement request carries the picked harness's typed ref and the activation id");
   ok((await log(p, "l.route === 'entry_composer.draft'")).length >= 1, "the draft was kept for the person through the host");
 }

@@ -1,6 +1,6 @@
-// The Threads sidebar of the owner's guidance on the fixture host (`?fixture=threads-next`): flat sections only (no subsections, no indentation) in the default order Groups, People, Cals, Harnesses, Archived, with ONE pinned strip of
+// The Threads sidebar of the owner's guidance on the fixture host (`?fixture=chat-next`): flat sections only (no subsections, no indentation) in the default order Groups, People, Cals, Harnesses, Archived, with ONE pinned strip of
 // round thumbnails at the top that scrolls sideways with fades, Cals whose rows open to their threads, one Archived entry at the bottom; and the person's arrangement of all of it (DRAFT shapes, issue #78): fold, reorder sections and rows by drag, pin by dragging onto the strip
-// and unpin by dragging off, hide with a way back, rename, folders to drag rows into, a menu equivalent for every drag, touch, reduced motion, and the frames dropped during a drag at 1x and 4x CPU. Usage: node e2e/threads-sidebar.mjs [shots-dir]
+// and unpin by dragging off, hide with a way back, rename, folders to drag rows into, a menu equivalent for every drag, touch, reduced motion, and the frames dropped during a drag at 1x and 4x CPU. Usage: node e2e/chat-sidebar.mjs [shots-dir]
 import { mkdirSync } from "node:fs";
 import { BASE, launch, open, pct, serve } from "./lib.mjs";
 const shots = process.argv[2]; if (shots) mkdirSync(shots, { recursive: true });
@@ -9,7 +9,7 @@ let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const errors = [];
 const SC = process.env.SCHEME ? `&scheme=${process.env.SCHEME}` : "";
-const go = async (size = { width: 1280, height: 900 }, cpu = 1, extra = "") => { const r = await open(browser, `fixture=threads-next${extra}${SC}`, size); r.page.on("pageerror", (e) => errors.push(String(e))); if (cpu > 1) await r.cdp.send("Emulation.setCPUThrottlingRate", { rate: cpu }); await r.page.waitForSelector("[data-tree] .sh", { timeout: 30000 }); await r.page.waitForTimeout(500); return r; };
+const go = async (size = { width: 1280, height: 900 }, cpu = 1, extra = "") => { const r = await open(browser, `fixture=chat-next${extra}${SC}`, size); r.page.on("pageerror", (e) => errors.push(String(e))); if (cpu > 1) await r.cdp.send("Emulation.setCPUThrottlingRate", { rate: cpu }); await r.page.waitForSelector("[data-tree] .sh", { timeout: 30000 }); await r.page.waitForTimeout(500); return r; };
 const snap = async (p, name) => { if (shots) { await p.waitForTimeout(600); await p.screenshot({ path: `${shots}/${process.env.SCHEME ?? "light"}-${name}.png` }); } };
 const log = (p, f) => p.evaluate((src) => window.__transport.log.filter(new Function("l", `return ${src}`)), f);
 const heads = (p) => p.locator("[data-sec-head] .ttl").allTextContents();
@@ -164,7 +164,7 @@ async function drag(p, from, to, steps = 12, hold = 0) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const p = await ctx.newPage(); p.on("pageerror", (e) => errors.push(String(e)));
   const cdp = await ctx.newCDPSession(p);
-  await p.goto(`${BASE}/?fixture=threads-next${SC}`); await p.waitForSelector("[data-tree] .sh", { timeout: 30000 }); await p.waitForTimeout(600);
+  await p.goto(`${BASE}/?fixture=chat-next${SC}`); await p.waitForSelector("[data-tree] .sh", { timeout: 30000 }); await p.waitForTimeout(600);
   await snap(p, "sidebar-phone-1");
   // the list keeps a bottom inset the height of the floating search field and bar: its last row scrolls clear of them
   await p.locator(".sidebar .scroll").evaluate((e) => { e.scrollTop = e.scrollHeight; }); await p.waitForTimeout(300);
@@ -194,7 +194,7 @@ async function drag(p, from, to, steps = 12, hold = 0) {
 // ---- reduced motion: nothing animates
 {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
-  const p = await ctx.newPage(); await p.goto(`${BASE}/?fixture=threads-next${SC}`); await p.waitForSelector("[data-tree] .sh"); await p.waitForTimeout(500);
+  const p = await ctx.newPage(); await p.goto(`${BASE}/?fixture=chat-next${SC}`); await p.waitForSelector("[data-tree] .sh"); await p.waitForTimeout(500);
   const d = await p.locator('[data-sec="groups"] > .sfold').evaluate((e) => parseFloat(getComputedStyle(e).transitionDuration) * 1000);
   ok(d <= 2, "under reduced motion folding takes no time", `${d} ms`);
   await ctx.close();
