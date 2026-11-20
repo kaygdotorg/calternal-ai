@@ -1,4 +1,4 @@
-import type { ItemViewPage, SnapshotNode, Timestamp } from "../generated/wire.js";
+import type { ItemViewPage, SnapshotNode, Timestamp } from "@calternal/plugin-sdk/types";
 
 const uuid = "[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}";
 const marker = new RegExp(`^<!-- id:(${uuid}) role:(person|agent|automation) bytes:([0-9]+)(?: turn:(${uuid}) meta:(.+))? -->$`, "u");

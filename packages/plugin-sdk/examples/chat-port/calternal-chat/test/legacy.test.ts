@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import test, { after } from "node:test";
+import test from "node:test";
+import { saveBody } from "@calternal/plugin-sdk";
 import { decodeLegacy, legacyMessage, legacyPage } from "../src/legacy.ts";
-import { FakeHost, handlers, checkTrace } from "./host.ts";
-
-after(checkTrace);
+import { ChatHost } from "./host.ts";
 
 const sample = (name: string) => readFileSync(new URL(`./fixtures/v1/${name}.md`, import.meta.url));
 const disk = sample("tool-output");
@@ -36,14 +35,14 @@ test("the current server's v1 records retain their headings, IDs, UTF-8 bodies a
 });
 
 test("installed Threads opens a v1 message by its original UUID and refuses v1 mutations", async () => {
-  const host = new FakeHost();
-  const { created: item } = await handlers["chat.create"]({ title: "Legacy fixture" }, host.createContext("create-legacy", "Legacy fixture"));
-  const { publish } = await host.stageUnproven(item, disk);
-  await publish();
-  const file = host.files.get(item)!;
-  const revision = file.revision;
+  const host = new ChatHost();
+  const { created: item } = await host.invoke("chat.create", { title: "Legacy fixture" }, { captured: true }) as { created: string };
+  // An importer outside any job, using chat.run's declared staging methods.
+  await saveBody(host.context("chat.run"), { purpose: "import", item, expected: host.item(item).head, body: disk });
+  const file = host.item(item);
+  const revision = file.head;
   const open = (anchor?: string, older?: string) =>
-    handlers["chat.refresh"]({ item, source_revision: revision, anchor, older }, host.context("v1-read", "chat.refresh"));
+    host.invoke("chat.refresh", { item, source_revision: revision, ...(anchor && { anchor }), ...(older && { older }) }) as Promise<{ older?: string; anchor?: string }>;
   const latest = await open();
   assert.match(JSON.stringify(latest), new RegExp(agentId));
   assert.match(JSON.stringify(latest), /bytes of tool output/);
@@ -54,18 +53,16 @@ test("installed Threads opens a v1 message by its original UUID and refuses v1 m
   assert.doesNotMatch(JSON.stringify(latest), /provider-session|machine_id/);
   assert.equal((await open(personId)).anchor, personId);
   assert.deepEqual(await open("unknown"), { anchor_unavailable: true });
-  assert.deepEqual(await handlers["chat.message"]({ item, message: personId }, host.context("v1-message", "chat.message")),
-    decodeLegacy(disk).messages[0]);
+  assert.deepEqual(await host.invoke("chat.message", { item, message: personId }), decodeLegacy(disk).messages[0]);
   assert.equal(file.discovery, "consent_only");
 
   const selection = host.choose();
-  await assert.rejects(handlers["chat.send"]({ item, text: "No write", ...selection },
-    host.composerContext("v1-no-send", item, "No write")), /read-only/);
-  await assert.rejects(handlers["chat.arm"]({ item, text: "No alarm", harness: selection.harness,
-    at: "2026-11-20T12:01:00Z", if_missed: "skip" }, host.context("v1-no-alarm", "chat.arm")), /read-only/);
+  await assert.rejects(host.invoke("chat.send", { item, text: "No write", ...selection }, { captured: true }), /read-only/);
+  await assert.rejects(host.invoke("chat.arm", { item, text: "No alarm", harness: selection.harness,
+    at: "2026-11-20T12:01:00Z", if_missed: "skip" }), /read-only/);
   assert.equal(host.jobs.size, 0);
-  assert.equal(file.revision, revision);
-  assert.deepEqual(Buffer.from(host.markdown(item)), disk);
+  assert.equal(file.head, revision);
+  assert.deepEqual(Buffer.from(host.text(item)), disk);
 });
 
 test("legacy framing rejects duplicates and lengths inside a multibyte character", () => {

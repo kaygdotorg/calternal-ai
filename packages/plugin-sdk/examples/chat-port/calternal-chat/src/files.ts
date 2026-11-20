@@ -1,9 +1,7 @@
-import { createHash } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
-import { MAX_V2_FRAME_BYTES } from "@calternal/plugin-sdk";
-import type { AttestedBody, ItemRef, ItemSave, ItemSpansPage, RevisionRef } from "../generated/wire.js";
-import { decode, decodeIndexed, encode, encodeRecord, MAX_FILE_BYTES, MAX_FRAMING_BYTES, type messageRecord, needsOpaqueEscape, page, quoteBlock, step, type Thread } from "./format.ts";
-import type { Context } from "./interface.ts";
+import { appendMessage, checkLimit, publishView, readBody, readSpans, saveBody, type OperationContext } from "@calternal/plugin-sdk";
+import type { AttestedBody, ItemRef, ItemSave, RevisionRef } from "@calternal/plugin-sdk/types";
+import { decode, decodeIndexed, encode, encodeRecord, MAX_FILE_BYTES, MAX_FRAMING_BYTES, type messageRecord, needsOpaqueEscape, page, quoteBlock, type Thread } from "./format.ts";
+import { ports } from "./interface.ts";
 import { decodeLegacy, isLegacy } from "./legacy.ts";
 import { checkSelection, fileLinks } from "./attachments.ts";
 
@@ -11,67 +9,18 @@ import { checkSelection, fileLinks } from "./attachments.ts";
 export const kind = "chats";
 const slot = "body";
 
-function mergeSpanPage(index: ItemSpansPage["spans"], page: ItemSpansPage) {
-  const prior = index.at(-1);
-  const [first, ...remaining] = page.spans;
-  const invalid = () => new Error("The saved message ranges are invalid.");
-  if (page.spans.slice(0, -1).some(span => span.host_ranges_more) || (page.spans.at(-1)?.host_ranges_more && !page.next)) throw invalid();
-  if (prior?.host_ranges_more) {
-    if (!first?.host_ranges?.length || !prior.host_ranges ||
-        first.span !== prior.span || first.offset !== prior.offset || first.length !== prior.length ||
-        first.middle_offset !== prior.middle_offset || first.middle_length !== prior.middle_length ||
-        !isDeepStrictEqual(first.attribution, prior.attribution) ||
-        !isDeepStrictEqual(first.quote, prior.quote)) throw invalid();
-    const { host_ranges_more, ...completed } = first;
-    index[index.length - 1] = { ...completed, host_ranges: prior.host_ranges, ...(host_ranges_more && { host_ranges_more }) };
-    prior.host_ranges.push(...first.host_ranges);
-    index.push(...remaining);
-  } else {
-    index.push(...page.spans);
-  }
-}
+type Read = OperationContext<"item_range" | "item_spans">;
+type Save = OperationContext<"item_save" | "item_save_begin" | "item_save_chunk" | "item_save_seal">;
 
-/** Encode the full Markdown body within the inline broker frame budget. */
+/** Encode the full Markdown body for an inline create. */
 export function inlineBody(body: Buffer): string {
-  if (body.length > MAX_V2_FRAME_BYTES / 2) throw new Error("This edit is too large to save in one step.");
+  checkLimit("ITEM_INLINE_BODY_BYTES", body.length, "This conversation");
   return body.toString("base64");
 }
 
-async function readBytes(ctx: Context, item: ItemRef, revision: RevisionRef) {
-  const chunks: Buffer[] = [];
-  let offset = 0;
-  while (true) {
-    const part = await ctx.call("item_range", { item, revision, offset, length: 65536 });
-    const chunk = Buffer.from(part.bytes, "base64");
-    const end = offset + chunk.length;
-    if (chunk.length > 65536 || end > MAX_FILE_BYTES || (part.next_offset !== undefined && (end <= offset || end !== part.next_offset))) {
-      throw new Error("The conversation file could not be read within its size limit.");
-    }
-    chunks.push(chunk);
-    if (part.next_offset === undefined) return Buffer.concat(chunks, end);
-    offset = part.next_offset;
-  }
-}
-
-async function readCurrent(ctx: Context, item: ItemRef, revision: RevisionRef, bytes: Buffer) {
-  const index: ItemSpansPage["spans"] = [];
-  let provenance: ItemSpansPage["body_provenance"] | undefined;
-  let cursor: string | undefined;
-  let hostRanges = 0;
-  const seen = new Set<string>();
-  do {
-    const page = await ctx.call("item_spans", { item, revision, ...(cursor && { cursor }) });
-    for (const span of page.spans) hostRanges += span.host_ranges?.length ?? 0;
-    if (page.item !== item || page.revision !== revision ||
-        (provenance !== undefined && page.body_provenance !== provenance) ||
-        page.spans.length > 128 || (page.next && (!page.spans.length || seen.has(page.next))) ||
-        index.length + page.spans.length > bytes.length || hostRanges > bytes.length) throw new Error("The saved message ranges are invalid.");
-    mergeSpanPage(index, page);
-    provenance = page.body_provenance;
-    cursor = page.next;
-    if (cursor) seen.add(cursor);
-  } while (cursor);
-  const parsed: ReturnType<typeof decodeIndexed> = index.length || provenance === "attested" ? decodeIndexed(bytes, index, provenance!) : {
+async function readCurrent(ctx: Read, item: ItemRef, revision: RevisionRef, bytes: Buffer) {
+  const { spans, body_provenance } = await readSpans(ctx, item, revision, bytes.length);
+  const parsed: ReturnType<typeof decodeIndexed> = spans.length || body_provenance === "attested" ? decodeIndexed(bytes, spans, body_provenance) : {
     thread: decode(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
     spans: new Map(), quotes: new Set(),
   };
@@ -79,85 +28,69 @@ async function readCurrent(ctx: Context, item: ItemRef, revision: RevisionRef, b
 }
 
 /** Load either supported format, with old transcripts available to read handlers only. */
-export async function readConversation(ctx: Context, item: ItemRef, revision: RevisionRef) {
-  const bytes = await readBytes(ctx, item, revision);
+export async function readConversation(ctx: Read, item: ItemRef, revision: RevisionRef) {
+  const bytes = await readBody(ctx, item, revision);
   if (isLegacy(bytes)) return { legacy: true as const, thread: decodeLegacy(bytes) };
   return { legacy: false as const, ...await readCurrent(ctx, item, revision, bytes) };
 }
 
 /** Read a writable version 2 document at one exact revision. */
-export async function read(ctx: Context, item: ItemRef, revision: RevisionRef) {
-  const bytes = await readBytes(ctx, item, revision);
+export async function read(ctx: Read, item: ItemRef, revision: RevisionRef) {
+  const bytes = await readBody(ctx, item, revision);
   if (isLegacy(bytes)) throw new Error("Version 1 chats are read-only in Chat.");
   return readCurrent(ctx, item, revision, bytes);
 }
 
-/** Commit an opaque replacement, staging large files before the same checked save. */
-export async function saveOpaque(ctx: Context, target: Pick<ItemSave, "request_id" | "item" | "expected" | "patch">, body: Buffer) {
+/** Commit an opaque replacement, inline or staged by size, under the subeffect key for `purpose`. */
+export async function saveOpaque(ctx: Save, purpose: string, target: Pick<ItemSave, "item" | "expected" | "patch">, body: Buffer) {
   if (body.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
-  let content;
-  if (body.length <= MAX_V2_FRAME_BYTES / 2) content = { body: inlineBody(body) };
-  else {
-    const { item, request_id, expected } = target;
-    const begin = await ctx.call("item_save_begin", {
-      item, request_id, expected, length: body.length, sha256: createHash("sha256").update(body).digest("hex"),
-    });
-    if ("code" in begin) throw new Error(begin.code);
-    if ("revision" in begin) return begin;
-    let offset = 0;
-    while (offset < body.length) {
-      const chunk = body.subarray(offset, offset + 65536);
-      const ack = await ctx.call("item_save_chunk", { handle: begin.handle, offset, bytes: chunk.toString("base64") });
-      if (ack.next_offset < offset + chunk.length || ack.next_offset > body.length) {
-        throw new Error("The host could not confirm the saved portion of the conversation.");
-      }
-      offset = ack.next_offset;
-    }
-    content = await ctx.call("item_save_seal", { handle: begin.handle });
-  }
-  const saved = await ctx.call("item_save", { ...target, ...content, attempt_discovery: "consent_only" });
+  const saved = await saveBody(ctx, { purpose, ...target, body, attempt_discovery: "consent_only" });
   if ("code" in saved) throw new Error(saved.code);
   return saved;
 }
 
 /** Resolve staged files with the host without exposing their bytes to Threads. */
-export async function prepareFiles(ctx: Context, item: ItemRef, staged: readonly string[]) {
+export async function prepareFiles(ctx: object, item: ItemRef, staged: readonly string[]) {
   checkSelection(staged);
-  if (!ctx.attachments) throw new Error("File attachments are unavailable.");
-  const files = await ctx.attachments.prepare(item, staged);
+  const { attachments } = ports(ctx);
+  if (!attachments) throw new Error("File attachments are unavailable.");
+  const files = await attachments.prepare(item, staged);
   if (Buffer.byteLength(fileLinks(files)) + 4 > MAX_FRAMING_BYTES) throw new Error("The attachment names are too long for one message.");
   return files;
 }
 
 /** Resolve a page's attachment leaves through the current reader or publisher scope. */
-export function conversationPage(ctx: Context, item: ItemRef, revision: RevisionRef, thread: Thread, older?: string, anchor?: string) {
-  const port = ctx.attachments;
+export function conversationPage(ctx: object, item: ItemRef, revision: RevisionRef, thread: Thread, older?: string, anchor?: string) {
+  const port = ports(ctx).attachments;
   return page(thread, older, anchor, port && (files => port.project(item, revision, files)));
 }
 
 /** Append a record, preserving literal text if an opaque write would discard earlier spans. */
-export async function appendRecord(ctx: Context, item: ItemRef, revision: RevisionRef, request_id: string, size: number,
-  thread: Thread, record: ReturnType<typeof messageRecord>, attested?: AttestedBody, staged?: readonly string[]) {
-  if (staged?.length && (!ctx.attachments || !attested)) throw new Error("Use a checked message to attach these files.");
+export async function appendRecord(ctx: Save & OperationContext<"item_append">, item: ItemRef, revision: RevisionRef, purpose: string,
+  size: number, thread: Thread, record: ReturnType<typeof messageRecord>, attested?: AttestedBody, staged?: readonly string[]) {
+  const { attachments } = ports(ctx);
+  if (staged?.length && (!attachments || !attested)) throw new Error("Use a checked message to attach these files.");
   const bytes = Buffer.from(attested ? record.prefix + quoteBlock(record.quote) + record.text + record.suffix : encodeRecord(record));
-  if (!attested && thread.messages.slice(0, -1).some(message => needsOpaqueEscape(message.text))) {
-    const body = Buffer.from(encode(thread));
-    const saved = await saveOpaque(ctx, { request_id, item, expected: revision }, body);
-    return { revision: saved.revision, end_offset: body.length };
+  const rewrite = !attested && thread.messages.slice(0, -1).some(message => needsOpaqueEscape(message.text));
+  if (!rewrite && size + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
+  if (staged?.length) {
+    // Proposed attachment claim (#78): the port appends with the same checked operand.
+    return attachments!.append({ request_id: ctx.key(purpose), item, expected_revision: revision,
+      attested: { ...attested!, ...(record.anchor && { entry_anchor: record.anchor }) } }, staged);
   }
-  if (size + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
-  const input = {
-    request_id, item, expected_revision: revision, ...(attested ? { attested: { ...attested, ...(record.anchor && { entry_anchor: record.anchor }) } } : { bytes: bytes.toString("base64"), attempt_discovery: "consent_only" as const }),
-  };
-  return staged?.length ? ctx.attachments!.append(input, staged) : ctx.call("item_append", input);
+  return appendMessage(ctx, {
+    purpose, item, expected_revision: revision, prefix: record.prefix, text: record.text, suffix: record.suffix,
+    ...(attested && { source: attested.source, ...(attested.quote && { quote: attested.quote }), ...(record.anchor && { entry_anchor: record.anchor }) }),
+    opaque: () => Buffer.from(encodeRecord(record)),
+    ...(rewrite && { rewrite: () => Buffer.from(encode(thread)) }),
+  });
 }
 
 /** Publish a page only under a writer scope for the just-read revision. */
-export async function publish(ctx: Context, item: ItemRef, revision: RevisionRef, thread: Thread) {
-  const scope = await ctx.call("item_view_context", { item, slot });
-  if (scope.source_revision !== revision) return;
-  await ctx.call("item_view_publish", {
-    request_id: step(ctx.author.request_id, `snapshot-${revision}-${scope.audience_scope}`),
-    item, slot, ...scope, ...await conversationPage(ctx, item, revision, thread),
-  });
+export async function publish(ctx: OperationContext<"item_view_context" | "item_view_publish">, item: ItemRef, revision: RevisionRef, thread: Thread) {
+  await publishView(ctx, { item, slot, revision, render: async () => {
+    const result = await conversationPage(ctx, item, revision, thread);
+    if (!("view" in result) || !result.view) throw new Error("The conversation page is unavailable.");
+    return { view: result.view, ...(result.older && { older: result.older }) };
+  } });
 }

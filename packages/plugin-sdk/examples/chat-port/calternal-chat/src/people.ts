@@ -1,6 +1,6 @@
-import type { AccountRef, ContributionIdentity, ItemContentReceipt, ItemCreate, ItemLocator, ItemRef, RevisionRef } from "../generated/wire.js";
+import type { AccountRef, ContributionIdentity, ItemContentReceipt, ItemCreate, ItemLocator, ItemRef, RevisionRef } from "@calternal/plugin-sdk/types";
 import { appendRecord, inlineBody, kind, prepareFiles, publish, read, saveOpaque } from "./files.ts";
-import { agentParticipant, attest, checkedTitle, encode, MAX_FILE_BYTES, messageId, messageRecord, messageView, personParticipant, step, threadShape, type Message, type Thread } from "./format.ts";
+import { agentParticipant, attest, checkedTitle, encode, MAX_FILE_BYTES, messageId, messageRecord, messageView, personParticipant, threadShape, type Message, type Thread } from "./format.ts";
 import { checkedText, type HarnessOutput } from "./harnesses-v1.ts";
 import type { Context } from "./interface.ts";
 
@@ -71,8 +71,8 @@ function find(thread: Thread, id: string) {
 }
 
 async function save(ctx: Context, item: ItemRef, revision: RevisionRef, thread: Thread, purpose: string) {
-  const saved = await saveOpaque(ctx, {
-    request_id: step(ctx.author.request_id, purpose), item, expected: revision, patch: { title: thread.title, shape: threadShape(thread) },
+  const saved = await saveOpaque(ctx, purpose, {
+    item, expected: revision, patch: { title: thread.title, shape: threadShape(thread) },
   }, Buffer.from(encode(thread)));
   await publish(ctx, item, saved.revision, thread);
 }
@@ -84,12 +84,12 @@ async function create(input: { title: string; participants: AccountRef[] }, ctx:
   const names = new Map((await ctx.visiblePeople(ids)).map(({ id, name }) => [id, name]));
   if (ids.some(id => !names.has(id))) throw new Error("Participants unavailable.");
   const thread: Thread = {
-    id: step(ctx.author.request_id, `thread-${ctx.author.actor}`),
+    id: ctx.key(`thread-${ctx.author.actor}`),
     title: checkedTitle(input.title), created: ctx.author.authored_at, conversation: "people",
     participants: ids.map(id => personParticipant(id, (id === ctx.author.actor ? ctx.author.actor_label : undefined) ?? names.get(id))), messages: [],
   };
   const head = await ctx.createShared({
-    request_id: step(ctx.author.request_id, "people-create"), kind, name: "Conversation.md", attempt_discovery: "consent_only",
+    request_id: ctx.key("people-create"), kind, name: "Conversation.md", attempt_discovery: "consent_only",
     metadata: { title: thread.title, shape: threadShape(thread) }, body: inlineBody(Buffer.from(encode(thread))),
   }, ids);
   await publish(ctx, head.item, head.revision, thread);
@@ -134,7 +134,7 @@ async function post({ item, text, replyTo, replyIn, mentions = [], attachments =
   const attested = captured?.item === item && captured.text === text ? attest(record, { kind: "input" }, quote) : undefined;
   if (external && !attested) throw new Error("A quote from another thread requires a checked source and a checked reply.");
   thread.messages.push(message);
-  const saved = await appendRecord(ctx, item, revision, step(ctx.author.request_id, "person-post"), size, thread, record, attested, attachments);
+  const saved = await appendRecord(ctx, item, revision, "person-post", size, thread, record, attested, attachments);
   await publish(ctx, item, saved.revision, thread);
   return { message: id };
 }
@@ -194,7 +194,7 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
     const framing = !requote && quotes.has(message) ? { ...record, quote: undefined } : record;
     const attested = attest(framing, { kind: text === undefined ? "empty" : "input" }, quote);
     if (attested) {
-      const result = await ctx.call("item_save", { request_id: step(ctx.author.request_id, purpose),
+      const result = await ctx.call("item_save", { request_id: ctx.key(purpose),
         item, expected: revision, replace_span, attested });
       if ("code" in result) throw new Error(result.code);
       await publish(ctx, item, result.revision, thread);
@@ -327,7 +327,7 @@ async function consult({ item, prompt }: Target & { prompt: string }, ctx: Peopl
     `consulted-agent: ${agents.consultant.package}/${agents.consultant.contribution}`, "---", "",
   ].join("\n");
   const saved = await ctx.call("item_create", {
-    request_id: step(ctx.author.request_id, "consultation-file"), kind: "chat-consultations",
+    request_id: ctx.key("consultation-file"), kind: "chat-consultations",
     name: "Consultation.md", metadata: { title }, body: inlineBody(Buffer.from(body)),
   });
   let revision = saved.revision;
@@ -342,7 +342,7 @@ async function consult({ item, prompt }: Target & { prompt: string }, ctx: Peopl
     size += bytes.length;
     if (size > MAX_FILE_BYTES) throw new Error("The consultation log has reached the file size limit.");
     const appended = await ctx.call("item_append", {
-      request_id: step(ctx.author.request_id, `consultation-turn-${++sequence}`),
+      request_id: ctx.key(`consultation-turn-${++sequence}`),
       item: saved.item, expected_revision: revision, bytes: bytes.toString("base64"),
     });
     revision = appended.revision;

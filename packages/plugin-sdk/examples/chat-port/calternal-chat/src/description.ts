@@ -1,4 +1,4 @@
-import type { AppDescription, Filter, NonSwipeInvoke, Predicate, RowTemplate, Sort } from "../generated/wire.js";
+import type { AppDescription, Filter, NonSwipeInvoke, Predicate, RowTemplate, Sort } from "@calternal/plugin-sdk/types";
 
 // The Threads interface as DATA (docs/description-contract.md, 14.43): the host fills every bind under the viewer's rights and each platform draws the result natively. No viewer data, no HTML, no plugin web code.
 // This is what the manifest declares TODAY: the viewer-private fields (`preview unread mentions muted pinned draft`, `shape`), `chat.state`, the composer's draft slot, reading counts, Send with the agent and placement

@@ -1,6 +1,6 @@
 import type {
   ExecutionJobReceipt, ExecutionJobStart, ItemAppend, ItemAppendReceipt, ItemRef, ItemViewAssetRef, RevisionRef,
-} from "../generated/wire.js";
+} from "@calternal/plugin-sdk/types";
 
 /** Limit the number of generated file links per message. The 512-byte framing limit also applies. */
 export const maxMessageFiles = 4;

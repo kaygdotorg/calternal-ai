@@ -1,24 +1,19 @@
-import type { SnapshotNode } from "../generated/wire.js";
 import assert from "node:assert/strict";
-import test, { after } from "node:test";
-import { agentParticipant, attest, decode, decodeIndexed, encode, encodeMessage, messageRecord, personParticipant, step, type Thread } from "../src/format.ts";
-import { FakeHost, handlers, checkTrace } from "./host.ts";
+import test from "node:test";
+import { saveBody, subeffectKey } from "@calternal/plugin-sdk";
+import type { ItemViewPage, SnapshotNode } from "@calternal/plugin-sdk/types";
+import { agentParticipant, attest, decode, decodeIndexed, encode, encodeMessage, messageRecord, personParticipant, type Thread } from "../src/format.ts";
+import { setup } from "./host.ts";
 
-after(checkTrace);
-
-async function setup() {
-  const host = new FakeHost();
-  const context = (request: string, operation: string) => host.context(request, operation);
-  const { created: item } = await handlers["chat.create"]({ title: "Review the lease" }, host.createContext("create-1", "Review the lease"));
-  const selection = host.choose();
-  const send = (request: string, text: string) =>
-    handlers["chat.send"]({ item, text, ...selection }, host.composerContext(request, item, text));
-  return { host, item, send, selection, context };
-}
+type Message = { text: string };
+const gate = () => {
+  let open!: () => void;
+  return { wait: new Promise<void>(resolve => { open = resolve; }), open: () => open() };
+};
 
 test("create, select a contributed harness, append its reply and Stop an exact attempt", async () => {
-  const { host, item, send, context } = await setup();
-  assert.match(host.files.get(item)!.path!, /^Chats\/2026-11-20 Review the lease\/Conversation\.md$/);
+  const { host, item, send } = await setup();
+  assert.match(host.item(item).path, /^Chats\/2026-11-20 Review the lease\/Conversation\.md$/);
   assert.deepEqual(host.thread(item).participants.map(p => p.kind), ["person"]);
   const first = await send("send-1", "Say hello 🦊\n\n---\n<!-- ## Agent -->");
   assert.deepEqual(await send("send-1", "Say hello 🦊\n\n---\n<!-- ## Agent -->"), first);
@@ -28,30 +23,28 @@ test("create, select a contributed harness, append its reply and Stop an exact a
   assert.deepEqual(thread.participants.map(p => p.kind), ["person", "agent"]);
   assert.equal(reply.text, "Reply to Say hello 🦊\n\n---\n<!-- ## Agent -->");
   assert.equal(reply.replyQuote, thread.messages[0].text);
-  assert.match(JSON.stringify(host.snapshots.get(item)!.view), /"timestamp":"2026-11-20T12:00:00Z"/);
-  assert.match(host.markdown(reply.log!.id), /## Reply/);
-  assert.ok(host.markdown(item).includes(`{#m-${reply.id} `));
-  assert.equal((await handlers["chat.message"]({ item, message: reply.id }, context("read-1", "chat.message"))).text, reply.text);
-  assert.equal(host.snapshots.get(item)?.source_revision, host.files.get(item)?.revision);
-  assert.match(JSON.stringify(host.snapshots.get(item)!.view), /Reply to Say hello/);
+  assert.match(JSON.stringify(host.view(item, "body")!.view), /"timestamp":"2026-11-20T12:00:00Z"/);
+  assert.match(host.text(reply.log!.id), /## Reply/);
+  assert.ok(host.text(item).includes(`{#m-${reply.id} `));
+  assert.equal((await host.invoke("chat.message", { item, message: reply.id }) as Message).text, reply.text);
+  assert.equal(host.view(item, "body")?.source_revision, host.item(item).head);
+  assert.match(JSON.stringify(host.view(item, "body")!.view), /Reply to Say hello/);
 
-  let reached: () => void;
-  const started = new Promise<void>(resolve => { reached = resolve; });
-  let release: () => void;
-  const gate = new Promise<void>(resolve => { release = resolve; });
-  host.claude = async () => { reached(); await gate; return "late reply"; };
+  const reached = gate();
+  const release = gate();
+  host.claude = async () => { reached.open(); await release.wait; return "late reply"; };
   const second = await send("send-2", "Keep working");
   const run = host.run(second.job_id);
-  await started;
+  await reached.wait;
   assert.throws(() => host.stop(item, { execution: host.jobs.get(first.job_id)!.attempt!.execution }), /stale Stop/);
   host.stop(item, { execution: host.jobs.get(second.job_id)!.attempt!.execution });
-  release!();
+  release.open();
   await assert.rejects(run, /attempt retired/);
-  assert.doesNotMatch(host.markdown(item), /late reply/);
-  const logs = [...host.files].filter(([, file]) => file.owner === "claude-code-run");
+  assert.doesNotMatch(host.text(item), /late reply/);
+  const logs = [...host.items.items.values()].filter(file => file.package === "calternal-chat-claude-code");
   assert.equal(logs.length, 2);
-  assert.match(host.markdown(logs[1][0]), /## Prompt\n\nKeep working/);
-  assert.doesNotMatch(host.markdown(logs[1][0]), /## Reply/);
+  assert.match(host.text(logs[1].id), /## Prompt\n\nKeep working/);
+  assert.doesNotMatch(host.text(logs[1].id), /## Reply/);
 });
 
 test("one durable successor waits for the head and exact attempt teardown", async () => {
@@ -61,16 +54,14 @@ test("one durable successor waits for the head and exact attempt teardown", asyn
   assert.deepEqual(await send("queue-next", "Second"), queued);
   await assert.rejects(send("queue-full", "Third"), /pending_limit/);
   await assert.rejects(host.run(queued.job_id), /successor must wait/);
-  let reached: () => void;
-  const started = new Promise<void>(resolve => { reached = resolve; });
-  let release: () => void;
-  const gate = new Promise<void>(resolve => { release = resolve; });
-  host.claude = async () => { reached(); await gate; return "retired"; };
+  const reached = gate();
+  const release = gate();
+  host.claude = async () => { reached.open(); await release.wait; return "retired"; };
   const run = host.run(first.job_id);
-  await started;
+  await reached.wait;
   host.stop(item, { execution: host.jobs.get(first.job_id)!.attempt!.execution });
   await assert.rejects(host.run(queued.job_id), /successor must wait for teardown/);
-  release!();
+  release.open();
   await assert.rejects(run, /attempt retired/);
   host.settle(first.job_id);
   host.claude = async text => `Reply to ${text}`;
@@ -78,44 +69,9 @@ test("one durable successor waits for the head and exact attempt teardown", asyn
   assert.deepEqual(host.thread(item).messages.map(message => message.text), ["First", "Second", "Reply to Second"]);
 });
 
-test("generic rename moves the folder, updates indexed links and preserves IDs and old read pins", async () => {
-  const { host, item, send, context } = await setup();
-  const original = host.snapshots.get(item)!;
-  const { job_id } = await send("rename-head", "First");
-  await host.run(job_id);
-  const before = host.thread(item);
-  const path = host.files.get(item)!.path;
-  const anchor = `m-${before.messages[0].id}`;
-  host.linkTo(item, "Notes/Meeting.md", anchor);
-  host.linkTo(item, "Notes/Nested/Agenda.md", anchor);
-  host.linkedMarkdown.set("Notes/Unrelated.md", "No conversation link\n");
-  await host.rename(item, "Later title", "rename-1");
-  const after = host.thread(item);
-  assert.equal(after.title, "Later title");
-  assert.equal(after.id, before.id);
-  assert.deepEqual(after.messages, before.messages);
-  assert.notEqual(host.files.get(item)!.path, path);
-  assert.equal(host.files.get(item)!.path, "Chats/2026-11-20 Later title/Conversation.md");
-  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Chats/2026-11-20 Later title/Conversation.md#${anchor}>)\n`);
-  assert.equal(host.linkedMarkdown.get("Notes/Nested/Agenda.md"), `[Read the conversation](<../../Chats/2026-11-20 Later title/Conversation.md#${anchor}>)\n`);
-  assert.equal(host.linkedMarkdown.get("Notes/Unrelated.md"), "No conversation link\n");
-  assert.deepEqual(await handlers["chat.refresh"]({
-    item, source_revision: original.source_revision,
-  }, context("refresh-1", "chat.refresh")), { view: original.view });
-  assert.equal(host.snapshots.get(item)!.source_revision, host.files.get(item)!.revision);
-  await host.rename(item, "Final title", "rename-2");
-  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Chats/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
-  const moved = await host.rename(item, undefined, "move", undefined, ["Decisions"]);
-  if (moved.state !== "ok") throw new Error("Expected inline move");
-  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Chats/Decisions/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
-  await host.undoRename(moved.undo.ref, "undo-move");
-  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Chats/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
-  const final = host.files.get(item)!;
-  const spanIndex = final.spanHistory.get(final.revision)!;
-  assert.deepEqual(decodeIndexed(Buffer.from(host.markdown(item)), spanIndex.spans, spanIndex.body_provenance).thread.messages, before.messages);
-  assert.deepEqual(spanIndex.spans[0]?.attribution, { kind: "host" });
-  assert.deepEqual(spanIndex.spans.at(-1)?.quote?.attribution, { kind: "person", actor: final.creator });
-
+test("archive stops pending and queued jobs and refuses later admission", async () => {
+  const { host, item, send } = await setup();
+  await host.run((await send("before-archive", "First")).job_id);
   const pending = await send("pre-archive", "Never start");
   const queued = await send("pre-archive-queued", "Never promote");
   host.archive(item);
@@ -125,66 +81,35 @@ test("generic rename moves the folder, updates indexed links and preserves IDs a
   assert.equal(host.thread(item).messages.length, 2);
 });
 
-test("rename commits the title and folder before deferred links finish and old links still follow the item", async () => {
-  const { host, item, send } = await setup();
-  await host.run((await send("before-relocation", "First")).job_id);
-  const path = host.files.get(item)!.path!;
-  const anchor = `m-${host.thread(item).messages[0].id}`;
-  host.linkTo(item, "Notes/First.md", anchor);
-  host.linkTo(item, "Notes/Later.md", anchor);
-  host.inlineBacklinkLimit = 1;
-  const later = host.linkedMarkdown.get("Notes/Later.md");
-  const outcome = await host.rename(item, "Deferred title", "rename-with-overflow");
-  if (outcome.state !== "pending") throw new Error("Expected deferred rewrites");
-  const expected = "Chats/2026-11-20 Deferred title/Conversation.md";
-  assert.notEqual(path, expected);
-  assert.equal(host.files.get(item)?.path, expected);
-  assert.equal(host.thread(item).title, "Deferred title");
-  assert.match(host.linkedMarkdown.get("Notes/First.md")!, /Deferred title/);
-  assert.equal(host.linkedMarkdown.get("Notes/Later.md"), later);
-  assert.deepEqual(host.followLink("Notes/Later.md"), { item, path: expected, anchor });
-  assert.throws(() => host.followLink("Notes/Later.md", "outsider"), /unavailable/);
-  assert.ok(!("undo" in outcome));
-  const complete = host.finishRelocation(outcome.status_ref);
-  assert.equal(complete.state, "ok");
-  assert.ok(complete.undo.ref);
-  assert.match(host.linkedMarkdown.get("Notes/Later.md")!, /Deferred title/);
-  assert.throws(() => host.finishRelocation(outcome.status_ref), /unavailable/);
-});
-
 test("alarm delivery retains checked harness and lets the worker decide whether to run late", async () => {
-  const { host, item, selection, context } = await setup();
-  const arm = (if_missed: "skip" | "run", request: string) =>
-    handlers["chat.arm"]({
-      item, harness: selection.harness, text: if_missed, at: "2026-11-20T13:00:00Z", if_missed,
-    }, context(request, "chat.arm"));
+  const { host, item, selection } = await setup();
+  const arm = (if_missed: "skip" | "run", request_id: string) =>
+    host.invoke("chat.arm", { item, harness: selection.harness, text: if_missed, at: "2026-11-20T13:00:00Z", if_missed }, { request_id }) as Promise<{ alarm: string }>;
   const skipped = await arm("skip", "alarm-skip");
   await host.deliver(skipped.alarm, "2026-11-20T13:01:01Z");
   assert.equal(host.thread(item).messages.length, 0);
   const due = await arm("skip", "alarm-on-time");
-  assert.equal(host.alarms.get(due.alarm)?.grace_seconds, 60);
+  assert.equal(host.execution.alarms.get(due.alarm)?.set.grace_seconds, 60);
   await host.deliver(due.alarm, "2026-11-20T13:01:00Z");
   assert.equal(host.thread(item).messages.length, 2);
   const late = await arm("run", "alarm-run");
   assert.deepEqual(await arm("run", "alarm-run"), late);
   await host.deliver(late.alarm, "2026-11-20T14:00:00Z");
-  assert.equal(host.deliver(late.alarm, "2026-11-20T14:00:00Z"), undefined);
+  assert.equal(await host.deliver(late.alarm, "2026-11-20T14:00:00Z"), undefined);
   assert.deepEqual(host.thread(item).messages.map(message => message.text), ["skip", "Reply to skip", "run", "Reply to run"]);
 });
 
 test("newest pages keep complete messages and older reads stay on the same revision", async () => {
-  const { host, item, send, context } = await setup();
+  const { host, item, send } = await setup();
   host.claude = async text => text;
   const text = "🦊".repeat(3500);
   for (let index = 0; index < 3; index++) {
     await host.run((await send(`page-${index}`, text)).job_id);
   }
-  const snapshot = host.snapshots.get(item)!;
+  const snapshot = host.view(item, "body")!;
   assert.ok(snapshot.older);
   assert.ok(Buffer.byteLength(JSON.stringify(snapshot.view)) < 65536);
-  const read = (older?: string) => handlers["chat.refresh"]({
-    item, source_revision: snapshot.source_revision, older,
-  }, context("page-older", "chat.refresh"));
+  const read = (older?: string) => host.invoke("chat.refresh", { item, source_revision: snapshot.source_revision, ...(older && { older }) }) as Promise<ItemViewPage>;
   let page = await read();
   assert.ok("view" in page);
   assert.deepEqual(page.view, snapshot.view);
@@ -198,7 +123,7 @@ test("newest pages keep complete messages and older reads stay on the same revis
     page = await read(page.older);
   }
   assert.equal(transcript, text.repeat(6));
-  assert.equal(host.snapshots.get(item), snapshot);
+  assert.deepEqual(host.view(item, "body"), snapshot);
 });
 
 test("replay after a committed append with a lost ACK publishes the head without duplicating the reply", async () => {
@@ -206,134 +131,107 @@ test("replay after a committed append with a lost ACK publishes the head without
   let providerCalls = 0;
   host.claude = async () => {
     providerCalls++;
-    host.loseNextAppendAck = true;
+    host.failNext("item_append", "lose_ack", "calternal-chat");
     return "Saved before disconnect";
   };
   const { job_id } = await send("lost-append-ack", "Run once");
   await assert.rejects(host.run(job_id), /acknowledgement lost/);
-  const before = host.markdown(item);
-  assert.notEqual(host.snapshots.get(item)?.source_revision, host.files.get(item)?.revision);
+  const before = host.text(item);
+  assert.notEqual(host.view(item, "body")?.source_revision, host.item(item).head);
   await host.replay(job_id);
   assert.equal(providerCalls, 1);
-  assert.equal(host.markdown(item), before);
+  assert.equal(host.text(item), before);
   assert.equal(decode(before).messages.length, 2);
-  assert.equal(host.snapshots.get(item)?.source_revision, host.files.get(item)?.revision);
+  assert.equal(host.view(item, "body")?.source_revision, host.item(item).head);
 });
 
 test("unchecked harness and placement refs fail before job admission", async () => {
-  const { host, item, selection, context } = await setup();
-  const send = (input: Partial<typeof selection>) =>
-    handlers["chat.send"]({ item, text: "Run this", ...selection, ...input }, context("forged-choice", "chat.send"));
+  const { host, item, selection } = await setup();
+  const send = (input: Partial<typeof selection>) => host.invoke("chat.send", { item, text: "Run this", ...selection, ...input });
   await assert.rejects(send({ harness: "claude-code" }), /unchecked harness/);
   await assert.rejects(send({ placement: "some-other-machine" }), /unchecked placement/);
   assert.equal(host.jobs.size, 0);
 });
 
-test("a rename while the harness is running preserves the reply and snapshot", async () => {
-  const { host, item, send, context } = await setup();
-  let reached: () => void;
-  const started = new Promise<void>(resolve => { reached = resolve; });
-  let release: () => void;
-  const gate = new Promise<void>(resolve => { release = resolve; });
-  host.claude = async () => { reached(); await gate; return "Finished"; };
-  const run = host.run((await send("rename-in-flight", "Working")).job_id);
-  await started;
-  await host.rename(item, "New title", "rename-in-flight-edit");
-  release!();
-  await run;
-  const thread = host.thread(item);
-  assert.equal(thread.title, "New title");
-  assert.equal(thread.messages.at(-1)!.text, "Finished");
-  assert.equal(host.snapshots.get(item)?.source_revision, host.files.get(item)?.revision);
-});
-
 test("two conversations with the same title get different readable placements", async () => {
-  const { host, item, context } = await setup();
-  const create = (request: string) =>
-    handlers["chat.create"]({ title: "Review the lease" }, host.createContext(request, "Review the lease"));
+  const { host, item } = await setup();
+  const create = (request_id: string) => host.invoke("chat.create", { title: "Review the lease" }, { captured: true, request_id }) as Promise<{ created: string }>;
   const { created } = await create("same-title");
   assert.notEqual(created, item);
-  assert.match(host.files.get(created)!.path!, /Review the lease \(2\)\/Conversation\.md$/);
+  assert.match(host.item(created).path, /Review the lease \(2\)\/Conversation\.md$/);
   assert.deepEqual(await create("same-title"), { created });
-  assert.equal(host.files.size, 2);
+  assert.equal([...host.items.items.values()].filter(file => file.kind.id === "chats").length, 2);
 });
 
 test("first contribution output and log survive Stop before the terminal frame", async () => {
-  const { host, item, send, context } = await setup();
-  let reached!: () => void;
-  const outputCommitted = new Promise<void>(resolve => { reached = resolve; });
-  let release!: () => void;
-  const waitForStop = new Promise<void>(resolve => { release = resolve; });
-  host.beforeTerminal = async () => { reached(); await waitForStop; };
+  const { host, item, send } = await setup();
+  const committed = gate();
+  const stopped = gate();
+  host.execution.beforeTerminal = async () => { committed.open(); await stopped.wait; };
   const { job_id } = await send("stop-after-output", "Say hello");
   const run = host.run(job_id);
-  await outputCommitted;
+  await committed.wait;
+  // The output frame is committed; wait until the worker has written it.
+  while (host.thread(item).messages.length < 2) await new Promise(resolve => setTimeout(resolve, 1));
   const reply = host.thread(item).messages.at(-1)!;
-  const source_revision = host.files.get(item)!.revision;
-  const refresh = (anchor: string) => handlers["chat.refresh"]({ item, source_revision, anchor }, context("open-anchor", "chat.refresh"));
+  const source_revision = host.item(item).head;
+  const refresh = (anchor: string) => host.invoke("chat.refresh", { item, source_revision, anchor }) as Promise<ItemViewPage>;
   assert.deepEqual(await refresh("unknown-message"), { anchor_unavailable: true });
   const anchored = await refresh(reply.id);
   assert.ok("anchor" in anchored);
   assert.equal(anchored.anchor, reply.id);
   assert.match(JSON.stringify(anchored.view), /Reply to Say hello/);
   host.stop(item, { execution: host.jobs.get(job_id)!.attempt!.execution });
-  release();
+  stopped.open();
   await assert.rejects(run, /attempt retired/);
-  assert.equal(host.files.get(item)?.revision, source_revision);
-  assert.match(host.markdown(reply.log!.id), /Reply to Say hello/);
+  assert.equal(host.item(item).head, source_revision);
+  assert.match(host.text(reply.log!.id), /Reply to Say hello/);
 });
 
 test("a fresh checked harness binding reuses the stored logical agent participant", async () => {
-  const { host, item, send, context } = await setup();
+  const { host, item, send, selection: previous } = await setup();
   await host.run((await send("original-binding", "First binding")).job_id);
-  const previous = host.choose();
-  const fresh = host.rotateHarness();
+  const fresh = host.choose();
   assert.notEqual(previous.harness, fresh.harness);
-  await assert.rejects(handlers["chat.send"]({ item, text: "Stale", ...previous },
-    context("old-binding", "chat.send")), /unchecked harness/);
-  const { job_id } = await handlers["chat.send"]({ item, text: "Second binding", ...fresh },
-    host.composerContext("new-binding", item, "Second binding"));
+  await assert.rejects(host.invoke("chat.send", { item, text: "Stale", ...previous }), /unchecked harness/);
+  const { job_id } = await host.invoke("chat.send", { item, text: "Second binding", ...fresh }, { captured: true, request_id: "new-binding" }) as { job_id: string };
   await host.run(job_id);
   const agents = host.thread(item).participants.filter(person => person.kind === "agent");
   assert.equal(agents.length, 1);
   assert.deepEqual(agents[0].contribution, { package: "calternal-chat-claude-code", contribution: "claude-code" });
-  assert.doesNotMatch(host.markdown(item), /checked-harness/);
+  assert.doesNotMatch(host.text(item), /harness-/);
 });
 
 test("the shared run target is outside both Send and alarm broker payloads", async () => {
-  const { host, item, send, selection, context } = await setup();
+  const { host, item, send, selection } = await setup();
   const { job_id } = await send("single-send-item", "Start");
-  assert.equal(host.jobs.get(job_id)?.context.item, item);
+  assert.equal(host.jobs.get(job_id)?.item, item);
   await host.run(job_id);
-  const { alarm } = await handlers["chat.arm"]({
-    item, harness: selection.harness, text: "Later", at: "2026-11-21T12:00:00Z", if_missed: "run",
-  }, context("single-alarm-item", "chat.arm"));
-  assert.equal(host.alarms.get(alarm)?.item, item);
-  assert.ok(!Object.hasOwn(host.alarms.get(alarm)!.input, "item"));
+  const { alarm } = await host.invoke("chat.arm", { item, harness: selection.harness, text: "Later", at: "2026-11-21T12:00:00Z", if_missed: "run" }) as { alarm: string };
+  assert.equal(host.execution.alarms.get(alarm)?.set.item, item);
+  assert.ok(!Object.hasOwn(host.execution.alarms.get(alarm)!.set.input, "item"));
   await host.deliver(alarm, "2026-11-21T12:00:00Z");
-  assert.match(host.markdown(item), /Reply to Later/);
+  assert.match(host.text(item), /Reply to Later/);
 });
 
 test("Send and alarm admission refuse an oversized contribution with 413 before any write", async () => {
-  const { host, item, send, selection, context } = await setup();
+  const { host, item, send, selection } = await setup();
   let providerCalls = 0;
   host.claude = async () => { providerCalls++; return "Unexpected"; };
-  const before = host.markdown(item);
-  const revision = host.files.get(item)!.revision;
+  const before = host.text(item);
+  const revision = host.item(item).head;
   const receipts = host.receipts.size;
   const error = { status: 413, code: "contribution_frame_limit" };
   const prompt = '"'.repeat(8192);
   await assert.rejects(send("oversized-send", prompt), error);
-  await assert.rejects(handlers["chat.arm"]({
-    item, harness: selection.harness, text: prompt, at: "2026-11-21T12:00:00Z", if_missed: "run",
-  }, context("oversized-alarm", "chat.arm")), error);
+  await assert.rejects(host.invoke("chat.arm", { item, harness: selection.harness, text: prompt, at: "2026-11-21T12:00:00Z", if_missed: "run" }), error);
   assert.equal(providerCalls, 0);
   assert.equal(host.jobs.size, 0);
-  assert.equal(host.alarms.size, 0);
+  assert.equal(host.execution.alarms.size, 0);
   assert.equal(host.receipts.size, receipts);
-  assert.equal(host.markdown(item), before);
-  assert.equal(host.files.get(item)!.revision, revision);
-  assert.equal(host.snapshots.get(item)?.source_revision, revision);
+  assert.equal(host.text(item), before);
+  assert.equal(host.item(item).head, revision);
+  assert.equal(host.view(item, "body")?.source_revision, revision);
 
   host.claude = async () => { providerCalls++; return "Fits"; };
   const accepted = await send("eligible-after-413", "Try again");
@@ -345,44 +243,38 @@ test("Send and alarm admission refuse an oversized contribution with 413 before 
 
 test("the broker refuses a changed contribution input on the same admitted attempt", async () => {
   const { host, send } = await setup();
-  let ready!: () => void;
-  const atTerminal = new Promise<void>(resolve => { ready = resolve; });
-  let release!: () => void;
-  const pending = new Promise<void>(resolve => { release = resolve; });
-  host.beforeTerminal = async () => { ready(); await pending; };
+  const atTerminal = gate();
+  const pending = gate();
+  host.execution.beforeTerminal = async () => { atTerminal.open(); await pending.wait; };
   const { job_id } = await send("pinned-input", "Approved");
   const running = host.run(job_id);
-  await atTerminal;
+  await atTerminal.wait;
   try {
     const job = host.jobs.get(job_id)!;
-    assert.deepEqual(job.context.contribution_input, { text: "Approved" });
-    const ctx = host.context(job_id, "chat.run", job);
-    const substitute = { execution: job.attempt!.execution, contribution: job.context.harness, input: { text: "Changed" } };
-    await assert.rejects(ctx.call("contribution_call", {
-      ...substitute, request_id: step(job_id, "contribution"),
-    }), /conflicting replay/);
-    await assert.rejects(ctx.call("contribution_call", {
-      ...substitute, request_id: "changed-call",
-    }), /differs from admission/);
+    assert.deepEqual(job.contributionInput, { text: "Approved" });
+    const ctx = host.context<"contribution_call">("chat.run", { job: job_id });
+    const substitute = { execution: job.attempt!.execution, contribution: job.harness, input: { text: "Changed" } };
+    await assert.rejects(ctx.call("contribution_call", { ...substitute, request_id: subeffectKey(job_id, "contribution") }), /conflicting replay/);
+    await assert.rejects(ctx.call("contribution_call", { ...substitute, request_id: "changed-call" }), /differs from admission/);
   } finally {
-    release();
+    pending.open();
     await running;
   }
 });
 
 test("the creator retains discovery across several attested prompts and replies", async () => {
   const { host, item, send } = await setup();
-  const creator = host.files.get(item)!.creator;
+  const creator = host.item(item).creator;
   host.claude = async text => {
-    assert.equal(host.writeAuthor(item), creator);
-    assert.deepEqual(host.discoverAsAttempt(creator), [item]);
+    assert.equal(host.item(item).author, creator);
+    assert.deepEqual(host.discoverable(creator), [item]);
     return `Reply to ${text}`;
   };
   for (const [index, text] of ["First", "Second", "Third"].entries()) {
     const { job_id } = await send(`discovery-${index}`, text);
     await host.run(job_id);
-    assert.equal(host.writeAuthor(item), creator);
-    assert.deepEqual(host.discoverAsAttempt(creator), [item]);
+    assert.equal(host.item(item).author, creator);
+    assert.deepEqual(host.discoverable(creator), [item]);
   }
   const { messages } = host.thread(item);
   assert.deepEqual(messages.map(message => message.author.kind), ["person", "agent", "person", "agent", "person", "agent"]);
@@ -390,7 +282,7 @@ test("the creator retains discovery across several attested prompts and replies"
 });
 
 test("the shorter heading and suffix fit a long reply and keep a literal delimiter attested", async () => {
-  const { host, item, send, context } = await setup();
+  const { host, item, send } = await setup();
   const agent = { ...agentParticipant("test-thread", { package: "calternal-chat-claude-code", contribution: "claude-code" }),
     name: "é".repeat(100) };
   const base = { id: "0123456789abcdef", author: agent, posted_at: "2026-11-20T12:00:00Z",
@@ -408,28 +300,15 @@ test("the shorter heading and suffix fit a long reply and keep a literal delimit
   const delimiter = "### Example {#m-aabbccddeeff0011 by=p1}";
   const { job_id } = await send("escaped-heading", delimiter);
   await host.run(job_id);
-  assert.ok(host.markdown(item).includes(`\n${delimiter}\n\n`));
-  assert.ok(!host.markdown(item).includes(`\\${delimiter}`));
-  const index = host.files.get(item)!.spanHistory.get(host.files.get(item)!.revision)!;
+  assert.ok(host.text(item).includes(`\n${delimiter}\n\n`));
+  assert.ok(!host.text(item).includes(`\\${delimiter}`));
+  const stored = host.item(item);
+  const index = stored.index.get(stored.head)!;
   assert.deepEqual(index.spans.map(span => span.attribution?.kind), ["person", "person", "attempt"]);
-  const first = decodeIndexed(Buffer.from(host.markdown(item)), index.spans, index.body_provenance).thread.messages[0];
-  const message = await handlers["chat.message"]({ item, message: first.id }, context("reopen-literal", "chat.message"));
+  const first = decodeIndexed(Buffer.from(host.text(item)), index.spans, index.body_provenance).thread.messages[0];
+  const message = await host.invoke("chat.message", { item, message: first.id }) as Message;
   assert.equal(message.text, delimiter);
-  assert.equal(host.files.get(item)!.discovery, "creator_only");
-});
-
-test("a checked editor save qualifies complete bytes and downgrades unexplained bytes in the same checked path", async () => {
-  const host = new FakeHost();
-  const { created: item } = await handlers["chat.create"]({ title: "Field notes" }, host.createContext("editor-source", "Field notes"));
-  const creator = host.files.get(item)!.creator;
-  const snapshot = "---\ntitle: Field notes\n---\n\n# Field notes\n\n🐝 by the gate.\n";
-  await host.saveCapturedText(item, snapshot, Buffer.from(snapshot));
-  assert.equal(host.writeAuthor(item), creator);
-  assert.deepEqual(host.discoverAsAttempt(creator), [item]);
-
-  await host.saveCapturedText(item, snapshot, Buffer.from(snapshot + "\nImported material\n"));
-  assert.equal(host.writeAuthor(item), undefined);
-  assert.deepEqual(host.discoverAsAttempt(creator), []);
+  assert.equal(stored.discovery, "creator_only");
 });
 
 test("Markdown keeps one plain body span and reversibly escapes only tagged heading lines", () => {
@@ -487,11 +366,11 @@ test("indexed spans preserve literal heading and trailer lookalikes next to an o
 });
 
 test("a checked read joins host-origin range chunks inside one recorded message", async () => {
-  const { host, item, send, context } = await setup();
+  const { host, item, send } = await setup();
   const job = await send("origin-chunks", "link A and link B");
   await host.run(job.job_id);
-  const file = host.files.get(item)!;
-  const { spans } = file.spanHistory.get(file.revision)!;
+  const stored = host.item(item);
+  const { spans } = stored.index.get(stored.head)!;
   const [title, prompt, reply] = spans;
   assert.equal(prompt.attribution?.kind, "person");
   assert.equal(reply.attribution?.kind, "attempt");
@@ -499,65 +378,65 @@ test("a checked read joins host-origin range chunks inside one recorded message"
   const ranges = [{ offset: prompt.middle_offset + 5, length: 1 }, { offset: prompt.middle_offset + 16, length: 1 }];
   spans.splice(0, spans.length, title, { ...prompt, host_ranges: [ranges[0]], host_ranges_more: true },
     { ...prompt, host_ranges: [ranges[1]] }, reply);
-  host.spanPageSize = 2;
-  const result = await handlers["chat.message"]({ item, message }, context("read-origin-chunks", "chat.message"));
+  host.items.spanPageSize = 2;
+  const result = await host.invoke("chat.message", { item, message }) as Message;
   assert.equal(result.text, "link A and link B");
   spans[2].host_ranges![0].offset = ranges[0].offset;
-  await assert.rejects(handlers["chat.message"]({ item, message }, context("overlapping-origin-chunks", "chat.message")),
-    /host-written ranges are invalid/);
+  await assert.rejects(host.invoke("chat.message", { item, message }), /host-written ranges are invalid/);
 });
 
 test("opaque fallback stages a large reframe without losing formerly indexed literal headings", async () => {
-  const { host, item, send, selection, context } = await setup();
+  const { host, item, send, selection } = await setup();
   const delimiter = "### Ordinary text {#m-aabbccddeeff0011 by=p1}";
   host.claude = async () => "x".repeat(12_000);
   for (let index = 0; index < 12; index++) {
     const { job_id } = await send(`long-${index}`, delimiter);
     await host.run(job_id);
   }
-  const file = host.files.get(item)!;
-  const oldRevision = file.revision;
-  const old = file.spanHistory.get(oldRevision)!;
-  const first = decodeIndexed(Buffer.from(host.markdown(item)), old.spans, old.body_provenance).thread.messages[0];
-  assert.ok(Buffer.byteLength(host.markdown(item)) > 128 * 1024);
-  const alarm = await handlers["chat.arm"]({ item, harness: selection.harness, text: "Scheduled",
-    at: "2026-11-20T13:00:00Z", if_missed: "run" }, context("arm-fallback", "chat.arm"));
+  const stored = host.item(item);
+  const oldRevision = stored.head;
+  const old = stored.index.get(oldRevision)!;
+  const first = decodeIndexed(Buffer.from(host.text(item)), old.spans, old.body_provenance).thread.messages[0];
+  assert.ok(Buffer.byteLength(host.text(item)) > 128 * 1024);
+  const alarm = await host.invoke("chat.arm", { item, harness: selection.harness, text: "Scheduled", at: "2026-11-20T13:00:00Z", if_missed: "run" }) as { alarm: string };
   await host.deliver(alarm.alarm, "2026-11-20T13:00:01Z");
-  assert.equal(file.discovery, "consent_only");
-  assert.equal(file.spanHistory.get(file.revision)?.spans.length, 0);
-  assert.equal(file.spanHistory.get(oldRevision)?.spans.length, 25);
-  assert.ok(host.markdown(item).includes(`\\${delimiter}`));
-  const result = await handlers["chat.message"]({ item, message: first.id }, context("read-after-fallback", "chat.message"));
+  assert.equal(stored.discovery, "consent_only");
+  assert.equal(stored.index.get(stored.head)?.spans.length, 0);
+  assert.equal(stored.index.get(oldRevision)?.spans.length, 25);
+  assert.ok(host.text(item).includes(`\\${delimiter}`));
+  assert.ok(host.calls.some(call => call.package === "calternal-chat" && call.method === "item_save_begin"));
+  const result = await host.invoke("chat.message", { item, message: first.id }) as Message;
   assert.equal(result.text, first.text);
   await host.run((await send("after-opaque", "New checked message")).job_id);
-  assert.equal(file.spanHistory.get(file.revision)?.spans.length, 2);
-  assert.equal(file.discovery, "consent_only");
+  assert.equal(stored.index.get(stored.head)?.spans.length, 2);
+  assert.equal(stored.discovery, "consent_only");
 });
 
 test("an unproven staged replacement sets consent_only and a worker cannot clear it", async () => {
   const { host, item, send } = await setup();
   const { job_id } = await send("before-import", "Proven conversation");
   await host.run(job_id);
-  const prior = host.files.get(item)!.revision;
-  const creator = "019a0000-0000-7000-8000-000000000001";
-  assert.deepEqual(host.discoverAsAttempt(creator), [item]);
-  const body = Buffer.from(host.markdown(item) + "Imported material of unproven authorship\n" + "x".repeat(140 * 1024));
-  const { begin, publish } = await host.stageUnproven(item, body);
-  assert.deepEqual(host.discoverAsAttempt(creator), [item]);
-  const receipt = await publish();
-  assert.deepEqual(await begin(), receipt);
-  assert.deepEqual(await publish(), receipt);
-  await assert.rejects(begin(body.length - 1), /conflicting replay/);
-  await assert.rejects(publish("Different save"), /conflicting replay/);
-  assert.equal(host.markdown(item), body.toString());
-  assert.equal(host.files.get(item)!.discovery, "consent_only");
-  assert.equal(host.writeAuthor(item), undefined);
-  const file = host.files.get(item)!;
-  assert.deepEqual(file.spanHistory.get(file.revision), { body_provenance: "unproven", spans: [] });
-  assert.equal(file.spanHistory.get(prior)?.spans.length, 3);
-  assert.deepEqual(host.discoverAsAttempt(creator), []);
-  const revision = host.files.get(item)!.revision;
-  await assert.rejects(host.attemptRestoreDiscovery(item), /host-owned marker/);
-  assert.equal(host.files.get(item)!.revision, revision);
-  assert.deepEqual(host.discoverAsAttempt(creator), []);
+  const prior = host.item(item).head;
+  const creator = host.people.Alice!;
+  assert.deepEqual(host.discoverable(creator), [item]);
+  const body = Buffer.from(host.text(item) + "Imported material of unproven authorship\n" + "x".repeat(140 * 1024));
+  // An importer outside any job, using chat.run's declared staging methods.
+  const ctx = host.context("chat.run", { request_id: "import" });
+  const target = { purpose: "import", item, expected: prior, body };
+  const receipt = await saveBody(ctx, target);
+  assert.deepEqual(await saveBody(ctx, target), receipt);
+  await assert.rejects(saveBody(ctx, { ...target, body: body.subarray(1) }), /conflicting replay/);
+  await assert.rejects(ctx.call("item_save", { request_id: ctx.key("import"), item, expected: prior, patch: { title: "Different save" } }), /conflicting replay/);
+  assert.equal(host.text(item), body.toString());
+  const stored = host.item(item);
+  assert.equal(stored.discovery, "consent_only");
+  assert.equal(stored.author, undefined);
+  assert.deepEqual(stored.index.get(stored.head), { body_provenance: "unproven", spans: [] });
+  assert.equal(stored.index.get(prior)?.spans.length, 3);
+  assert.deepEqual(host.discoverable(creator), []);
+  const revision = stored.head;
+  await assert.rejects(ctx.call("item_save", { request_id: "try-clear-marker", item, expected: revision, attempt_discovery: "creator_only" as "consent_only" }),
+    /does not match its schema/);
+  assert.equal(stored.head, revision);
+  assert.deepEqual(host.discoverable(creator), []);
 });

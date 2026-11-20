@@ -1,16 +1,14 @@
-import type { ItemLocator } from "../generated/wire.js";
+import { object, ref, string } from "@calternal/plugin-sdk";
+import type { ItemLocator } from "@calternal/plugin-sdk/types";
 
 /** A version 1 harness receives only the checked prompt. */
 export type HarnessInput = { text: string };
 /** A version 1 harness returns reply text and a checked reference to its own run log. */
 export type HarnessOutput = { text: string; log: ItemLocator };
 
-export const catalogueRef = (type: string) => ({ $ref: `host-catalogue-v2.json#/$defs/${type}` });
-export const object = <const P extends Record<string, object>, const K extends (keyof P)[]>(properties: P, ...required: K) =>
-  ({ type: "object" as const, additionalProperties: false, properties, required });
-export const textSchema = { type: "string", minLength: 1, maxLength: 16384 };
+export const textSchema = string({ minLength: 1, maxLength: 16384 });
 export const harnessInput = object({ text: textSchema }, "text");
-export const harnessOutput = object({ text: textSchema, log: catalogueRef("ItemLocator") }, "text", "log");
+export const harnessOutput = object({ text: textSchema, log: ref("ItemLocator") }, "text", "log");
 
 const MAX_TEXT_BYTES = 16 * 1024;
 

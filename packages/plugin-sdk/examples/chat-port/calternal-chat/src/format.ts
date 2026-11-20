@@ -1,6 +1,6 @@
+import { LIMITS, subeffectKey } from "@calternal/plugin-sdk";
 import { fileLinks, maxMessageFiles, readFileLink, type MessageFile } from "./attachments.ts";
-import { createHash } from "node:crypto";
-import type { AttestedBody, ContributionIdentity, ItemSave, ItemSpansPage, ItemSnapshotView, ItemViewAssetRef, ItemLocator, SnapshotNode, Timestamp } from "../generated/wire.js";
+import type { AttestedBody, ContributionIdentity, ItemSave, ItemSpansPage, ItemSnapshotView, ItemViewAssetRef, ItemLocator, SnapshotNode, Timestamp } from "@calternal/plugin-sdk/types";
 
 type Person = { kind: "person"; id: string; name: string };
 type Agent = { kind: "agent"; id: string; name: string; contribution: ContributionIdentity };
@@ -15,7 +15,7 @@ export function personParticipant(id: string, label?: string): Person {
 export function agentParticipant(thread: string, identity: ContributionIdentity): Agent {
   const { package: pkg, contribution } = identity;
   const label = contribution.split(/[-_.]+/u).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
-  return { kind: "agent", id: step(thread, JSON.stringify([pkg, contribution])),
+  return { kind: "agent", id: subeffectKey(thread, JSON.stringify([pkg, contribution])),
     name: displayName(label, "Agent"), contribution: { package: pkg, contribution } };
 }
 
@@ -57,16 +57,11 @@ export function threadShape(thread: Thread): "person" | "group" | "agent" | "mix
   return thread.participants.length > 2 ? "group" : "person";
 }
 
-export const MAX_FILE_BYTES = 2 * 1024 * 1024;
-
-// Request and step together give the same key on delivery replay.
-export function step(request: string, purpose: string): string {
-  return createHash("sha256").update(JSON.stringify([request, purpose])).digest("hex").slice(0, 32);
-}
+export const MAX_FILE_BYTES = LIMITS.ITEM_STAGED_BODY_BYTES;
 
 /** Allocate a compact, thread-scoped Markdown anchor independent of message text. */
 export function messageId(request: string, purpose: string): string {
-  return step(request, purpose).slice(0, 16);
+  return subeffectKey(request, purpose).slice(0, 16);
 }
 
 export function checkedTitle(title: string): string {
@@ -111,7 +106,7 @@ function timestamp(value: string): Timestamp {
 
 type FramedText = { prefix: string; text: string; suffix: string; quote?: string; anchor?: string };
 /** Maximum bytes in each plugin-owned attested framing operand. */
-export const MAX_FRAMING_BYTES = 512;
+export const MAX_FRAMING_BYTES = LIMITS.ATTESTED_FRAMING_CHARACTERS;
 
 /** Select a host source only when each framing operand fits the host byte bound. */
 export function attest(parts: FramedText, source: AttestedBody["source"], quote?: AttestedBody["quote"]): AttestedBody | undefined {
