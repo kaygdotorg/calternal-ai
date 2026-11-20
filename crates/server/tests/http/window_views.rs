@@ -28,6 +28,27 @@ fn call(srv: &Server, token: &str, path: &str, body: Option<Value>, lease: &Valu
     .unwrap()
 }
 
+fn ready(srv: &Server, token: &str, path: &str, body: Value, lease: &Value) -> Resp {
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        let reply = call(srv, token, path, Some(body.clone()), lease);
+        if reply.body["state"] != "loading" && reply.status != 429 {
+            return reply;
+        }
+        if reply.body["state"] == "loading" {
+            assert_eq!(reply.body["rows"], json!([]));
+            assert!(reply.body.get("count").is_none());
+        }
+        assert!(
+            Instant::now() < deadline,
+            "window never published: {}",
+            reply.body
+        );
+        // A cold retry must leave enough count starts for the remaining requests.
+        std::thread::sleep(Duration::from_millis(1050));
+    }
+}
+
 fn requested(bind: &str, anchor: &str) -> Value {
     json!({"type":"window","request":{"bind":bind,"anchor":anchor,"from":0,"to":10}})
 }
@@ -61,11 +82,11 @@ fn sealed_windows_bind_to_the_actor_lease_partition_and_count_policy() {
     let view = format!("/api/v2/spaces/{}/notes-view", srv.personal);
     let window = format!("{view}/window");
     let exact = open(&srv, &view, "exact");
-    let first = call(
+    let first = ready(
         &srv,
         &srv.owner,
         &window,
-        Some(requested("notes", "start")),
+        requested("notes", "start"),
         &exact,
     );
     assert_eq!(first.status, 200, "{}", first.body);
@@ -182,16 +203,37 @@ fn space_revocation_releases_no_live_window_rows_or_count() {
     let lease = &opened.body["lease"];
     let window = format!("{view}/window");
     assert_eq!(
-        call(
+        ready(
             &srv,
             &srv.guest,
             &window,
-            Some(requested("notes", "start")),
+            requested("notes", "start"),
             lease
         )
         .status,
         200
     );
+    let sidecar = rusqlite::Connection::open(
+        dir.0
+            .join("appdata/spaces")
+            .join(&srv.shared)
+            .join("windows-v1.db"),
+    )
+    .unwrap();
+    sidecar.busy_timeout(Duration::from_secs(2)).unwrap();
+    sidecar.execute_batch("BEGIN IMMEDIATE").unwrap();
+    create(&srv, "second-shared-note", &srv.shared, "new body");
+    let stale = call(
+        &srv,
+        &srv.guest,
+        &window,
+        Some(requested("notes", "start")),
+        lease,
+    );
+    assert_eq!(stale.status, 200);
+    assert_eq!(stale.body["state"], "loading");
+    assert_eq!(stale.body["rows"], json!([]));
+    assert!(stale.body.get("count").is_none());
     let revoked = op(
         &srv,
         &srv.owner,
@@ -255,13 +297,13 @@ fn installed_reading_list_serves_only_the_member_list_and_declared_fields() {
     assert_eq!(descriptor.body["description"]["binds"][0]["id"], "items");
     let lease = open(&srv, &personal, "exact");
     let url = format!("{personal}/window");
-    let page = call(
+    let page = ready(
         &srv,
         &srv.owner,
         &url,
-        Some(json!({
+        json!({
             "type":"window","request":{"bind":"items","from":0,"to":2},
-        })),
+        }),
         &lease,
     );
     assert_eq!(page.status, 200, "{}", page.body);

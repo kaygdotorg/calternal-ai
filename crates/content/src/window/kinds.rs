@@ -1,6 +1,5 @@
 //! Host-registered scalar orders and child relations for plugin kinds.
 
-use super::projection_error;
 use crate::{Content, Error, Result, SpaceId, types::internal};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use uuid::Uuid;
@@ -127,8 +126,8 @@ fn field(value: &str) -> bool {
 impl Content {
     /// Provision the one covering order of a live explicit Notes collection.
     /// The host must establish that a member-only order is appropriate before
-    /// replacing the guest-compatible order. Rebuilds at most the collection's
-    /// existing membership in one FULL commit and reads no document bytes.
+    /// replacing the guest-compatible order. Records the definition in one FULL
+    /// commit. The window stays loading while its new generation is published.
     pub fn configure_notes_collection_order(
         &self,
         space: SpaceId,
@@ -137,35 +136,50 @@ impl Content {
     ) -> Result<()> {
         self.with_space(space, |space| {
             let collection = collection.to_string();
-            let live: bool = space.conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM items WHERE id=?1 AND kind='collections'
+            let live: bool = space
+                .conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM items WHERE id=?1 AND kind='collections'
                  AND json_extract(metadata,'$.item_kind')='notes'
                  AND json_extract(metadata,'$.standard_key') IS NULL
                  AND substr(path,1,7)<>'.trash/' AND mat_state NOT IN ('purging','purged'))",
-                [&collection], |row| row.get(0),
-            ).map_err(internal)?;
-            if !live { return Err(crate::types::missing()); }
-            if collection_newest(&space.conn, &collection)? == newest { return Ok(()); }
-            let tx = space.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
-            if newest {
-                tx.execute("INSERT INTO window_collection_newest VALUES(?1)", [&collection]).map_err(internal)?;
-            } else {
-                tx.execute("DELETE FROM window_collection_newest WHERE collection=?1", [&collection]).map_err(internal)?;
+                    [&collection],
+                    |row| row.get(0),
+                )
+                .map_err(internal)?;
+            if !live {
+                return Err(crate::types::missing());
             }
-            tx.execute("DELETE FROM window_rows WHERE collection=?1 AND audience IN ('explicit','explicit_newest')", [&collection]).map_err(internal)?;
-            tx.execute(
-                "INSERT INTO window_rows SELECT collection,audience,key,id FROM window_note_candidates WHERE collection=?1",
-                [&collection],
-            ).map_err(projection_error)?;
+            if collection_newest(&space.conn, &collection)? == newest {
+                return Ok(());
+            }
+            let tx = space
+                .conn
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(internal)?;
+            if newest {
+                tx.execute(
+                    "INSERT INTO window_collection_newest VALUES(?1)",
+                    [&collection],
+                )
+                .map_err(internal)?;
+            } else {
+                tx.execute(
+                    "DELETE FROM window_collection_newest WHERE collection=?1",
+                    [&collection],
+                )
+                .map_err(internal)?;
+            }
             tx.commit().map_err(internal)
-        })
+        })?;
+        self.wake_window(space, false);
+        Ok(())
     }
 
     /// Install an approved scalar ordering and optional parent relation on a
     /// registered claimed-text or built-in kind. The existing order remains
-    /// current until the single replacement commit. Rebuilds this kind's
-    /// bounded-per-item projection once, reading current metadata with no
-    /// file or body reads. Unchanged definitions are one indexed check and
+    /// current until the definition commit. The background worker publishes
+    /// the new ordering using metadata only. Unchanged definitions are one indexed check and
     /// zero flushes. Schedule a changed definition off the async request path.
     pub fn configure_window_kind(
         &self,
@@ -195,17 +209,10 @@ impl Content {
                 "UPDATE window_kind_orders SET title_field=?2,sort_field=?3,parent_field=?4 WHERE kind=?1",
                 params![kind, order.title_field, order.sort_field, order.parent_field],
             ).map_err(internal)?;
-            tx.execute(
-                "DELETE FROM window_rows WHERE item IN (SELECT id FROM items WHERE kind=?1) AND audience IN ('kind','child')",
-                [kind],
-            ).map_err(internal)?;
-            tx.execute(
-                "INSERT INTO window_rows(collection,audience,sort_key,item)
-                 SELECT collection,audience,key,id FROM window_generic_candidates WHERE kind=?1",
-                [kind],
-            ).map_err(projection_error)?;
             tx.commit().map_err(internal)
-        })
+        })?;
+        self.wake_window(space, false);
+        Ok(())
     }
 }
 

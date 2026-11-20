@@ -80,21 +80,22 @@ cannot yet use the server `resolve` wire response: that response requires a
 space ID and has no account-owner alternative. No account ID is substituted for
 a space ID. Account-profile recovery remains the host's responsibility.
 
-Unfiltered `notes.list` uses the ordered window index with its existing
-timestamp and UUID continuation. The content window API also serves explicit
+Unfiltered `notes.list` uses the live Notes heads and keeps its existing
+timestamp and UUID continuation. The content window API serves explicit
 Notes collections in title order or a provisioned member-only newest order.
 Registered claimed-text kinds can publish one scalar order in either
 direction. A registered parent relation gets a separate covering scope for
 each parent. Each space stores a covering key per effective row set and a
-maintained count and version per nonempty scope.
-Item, membership, Trash and restore changes update those rows in the existing
-content commit. Collection grants to people, groups and public links refer
+maintained count and version per nonempty scope. The per-space journal drives
+background updates for item, membership, Trash and restore changes. Collection
+grants to people, groups and public links refer
 to the same explicit collection projection and retain their independent live
 authority checks. A guest window exposes title and a view-scoped row selector.
 Exact counts require explicit disclosure authority.
 
-The content window API takes the catalogue request and returns a ready or
-empty result or a typed plan refusal. Sequential starts seek a checked
+The content window API takes the catalogue request and returns loading while
+the projection catches up, a ready or empty result, or a typed plan refusal.
+Sequential starts seek a checked
 boundary. Arbitrary exact-count jumps walk the covering index from the nearer
 end. The host resolves the Bind and rechecks authority before delivery. See
 the [window engine lane report](../../docs/reviews/window-engine-2026-11-19.md)
@@ -157,6 +158,15 @@ A bounded worker advances its projection and journal watermark outside the
 acknowledgment path. A new generation becomes visible when it has scanned
 the retained heads and caught up. List and ID reads use the retained metadata.
 See [search and palette lookups](../../docs/search.md).
+
+V2 windows use a separate rebuildable per-space WAL database. The shared
+projection worker follows the durable item journal and publishes keys,
+scope totals and an epoch/watermark in one NORMAL transaction. The reader
+checks live authority before storage access and before delivery. A missing
+or lagging publication returns loading without rows, a count or a cursor.
+The native Notes cursor remains a head query. A save adds a best-effort,
+nonblocking wake for existing projections and no synchronous index write
+or flush.
 
 Space plugin settings use a versioned file in userdata. A single durable,
 settings-only intent in the existing per-space database carries the file

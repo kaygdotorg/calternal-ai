@@ -516,6 +516,10 @@ async fn window<D: Directory>(
                 *lease.previous.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(result));
                 encoded
             }
+            WindowReply::Loading(result) => {
+                *lease.previous.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                private(result, StatusCode::OK)
+            }
             WindowReply::PlanError(error) => private(error, StatusCode::UNPROCESSABLE_ENTITY),
         };
         if !lease.valid(&views.revision) {

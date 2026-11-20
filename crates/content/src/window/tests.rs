@@ -11,6 +11,7 @@ fn memory() -> Connection {
     let conn = Connection::open_in_memory().unwrap();
     conn.pragma_update(None, "foreign_keys", true).unwrap();
     calternal_store::migrations::migrate(&conn, SPACE_SCHEMA).unwrap();
+    conn.execute_batch(include_str!("sidecar.sql")).unwrap();
     conn
 }
 
@@ -28,6 +29,15 @@ fn content(dir: &tempfile::TempDir) -> Content {
         |_: FaultPoint| {},
     )
     .unwrap()
+}
+
+fn project(content: &Content, space: SpaceId) {
+    for _ in 0..20 {
+        if !content.advance_window(space, true).unwrap() {
+            return;
+        }
+    }
+    panic!("window publication did not catch up");
 }
 
 fn request(account: AccountId, id: &str) -> Request<'_> {
@@ -66,14 +76,14 @@ fn range(from: u64, to: u64, anchor: WindowAnchor) -> WindowRange {
 fn result(reply: WindowReply) -> WindowResult {
     match reply {
         WindowReply::Result(result) => result,
-        WindowReply::PlanError(error) => panic!("unexpected refusal: {error:?}"),
+        reply => panic!("unexpected result: {reply:?}"),
     }
 }
 
 fn refusal(reply: WindowReply, expected: WindowPlanReason) {
     match reply {
         WindowReply::PlanError(error) => assert_eq!(error.reason, expected),
-        WindowReply::Result(_) => panic!("expected {expected:?}"),
+        reply => panic!("expected {expected:?}, got {reply:?}"),
     }
 }
 
@@ -121,6 +131,9 @@ fn randomized_windows_match_independent_scan_of_mixed_visibility() {
         0,
         true,
     );
+    for n in 1..=900 {
+        replay::item(&conn, &Uuid::from_u128(n).to_string()).unwrap();
+    }
     for (scope, audience, mode) in [
         (
             WindowScope::SpaceNotes,
@@ -238,6 +251,7 @@ fn lost_authority_or_membership_discards_rows_and_count() {
     let window = WindowRequest::Window {
         request: range(0, 10, WindowAnchor::End),
     };
+    project(&content, space);
     let calls = Cell::new(0);
     let denied = content
         .window(space, &window, None, || {
@@ -266,8 +280,12 @@ fn lost_authority_or_membership_discards_rows_and_count() {
             }
             Ok(access.clone())
         })
-        .unwrap_err();
-    assert_eq!(stale.code, ErrorCode::NotFound);
+        .unwrap();
+    let stale = serde_json::to_value(stale).unwrap();
+    assert_eq!(stale["state"], "loading");
+    assert_eq!(stale["rows"], json!([]));
+    assert!(stale.get("count").is_none());
+    project(&content, space);
     let empty = result(
         content
             .window(space, &window, None, || Ok(access.clone()))
@@ -336,20 +354,17 @@ fn scope_33_rolls_back_entire_membership_commit() {
     );
     let journal = content.journal(space).unwrap();
     assert_eq!(journal.len() as u64, cap);
-    content
-        .with_space(space, |space| {
-            let total: i64 = space
-                .conn
-                .query_row(
-                    "SELECT sum(total) FROM window_scopes WHERE audience IN ('space','explicit')",
-                    [],
-                    |row| row.get(0),
-                )
-                .map_err(internal)?;
-            assert_eq!(total as u64, cap);
-            Ok(())
-        })
+    project(&content, space);
+    let source = crate::db::space_path(&content.roots.appdata, space);
+    let total: i64 = replay::reader(&source)
+        .unwrap()
+        .query_row(
+            "SELECT sum(total) FROM window_scopes WHERE audience IN ('space','explicit')",
+            [],
+            |row| row.get(0),
+        )
         .unwrap();
+    assert_eq!(total as u64, cap);
     let trashed = content
         .trash(
             &item,
@@ -361,6 +376,7 @@ fn scope_33_rolls_back_entire_membership_commit() {
         )
         .unwrap();
     let inspect = |scope: WindowScope| {
+        project(&content, space);
         result(
             content
                 .window(
@@ -391,6 +407,35 @@ fn scope_33_rolls_back_entire_membership_commit() {
         .unwrap();
     assert_eq!(inspect(WindowScope::SpaceNotes), 1);
     assert_eq!(inspect(WindowScope::NotesTrash), 0);
+
+    // Model memberships created by a release before scope admission. Opening
+    // such a space preserves the lists, but replay cannot publish a partial set.
+    Connection::open(&source)
+        .unwrap()
+        .execute_batch("DROP TRIGGER window_member_limit")
+        .unwrap();
+    let inherited = content
+        .create_notes_collection(
+            space,
+            "inherited".into(),
+            vec![item.id],
+            request(actor, "inherited"),
+        )
+        .unwrap();
+    let error = content.advance_window(space, true).unwrap_err();
+    assert_eq!(error.code, ErrorCode::EffectiveScopeLimitExceeded);
+    assert_loading(member_window(&content, space));
+    let id = inherited["id"].as_str().unwrap().parse().unwrap();
+    content
+        .set_collection_members(
+            space,
+            id,
+            inherited["revision"].as_str().unwrap(),
+            vec![],
+            request(actor, "repair"),
+        )
+        .unwrap();
+    assert_eq!(inspect(WindowScope::SpaceNotes), 1);
 }
 
 #[test]
@@ -474,8 +519,10 @@ fn guest_titles_ignore_hidden_edits_and_certified_estimates_are_member_only() {
     );
     let scope = WindowScope::NotesCollection(coll);
     let key = scope.key();
+    replay::item(&conn, &note.to_string()).unwrap();
     let old = read::scope(&conn, &key).unwrap();
     conn.execute("UPDATE items SET metadata=json_set(metadata,'$.hidden','New secret'),updated_at='2026-11-19T00:00:10.000Z' WHERE id=?1", [note.to_string()]).unwrap();
+    replay::item(&conn, &note.to_string()).unwrap();
     let new = read::scope(&conn, &key).unwrap();
     assert_eq!(old.version, new.version);
     let request = range(0, 10, WindowAnchor::Start);
@@ -508,6 +555,7 @@ fn deep_starts_require_a_current_boundary_and_end_offsets_exceed_the_start_ceili
     let items = [Uuid::from_u128(1), Uuid::from_u128(2)];
     for id in items {
         insert(&conn, id, "notes", json!({"title":"Same"}), 1, true);
+        replay::item(&conn, &id.to_string()).unwrap();
     }
     let access = WindowAccess {
         scope: WindowScope::SpaceNotes,
@@ -580,4 +628,222 @@ fn deep_starts_require_a_current_boundary_and_end_offsets_exceed_the_start_ceili
     assert_eq!(result.offset, max + 1);
     assert_eq!(result.rows[0].item, items[0]);
     assert_eq!(result.count.unwrap().value, max + 2);
+}
+
+fn member_window(content: &Content, space: SpaceId) -> WindowReply {
+    content
+        .window(
+            space,
+            &WindowRequest::Window {
+                request: range(0, 10, WindowAnchor::Start),
+            },
+            None,
+            || {
+                Ok(WindowAccess {
+                    scope: WindowScope::SpaceNotes,
+                    audience: WindowAudience::Member,
+                    count: WindowCountMode::Exact,
+                    view: Uuid::nil(),
+                })
+            },
+        )
+        .unwrap()
+}
+
+fn assert_loading(reply: WindowReply) {
+    assert!(matches!(&reply, WindowReply::Loading(_)), "{reply:?}");
+    let wire = serde_json::to_value(reply).unwrap();
+    assert_eq!(wire["rows"], json!([]));
+    assert!(wire.get("count").is_none());
+    assert!(wire["result_version"].is_null());
+    assert!(wire["window_ref"].is_null());
+}
+
+fn seed_note(content: &Content, space: SpaceId, actor: AccountId) -> crate::Item {
+    content
+        .register_kind(
+            space,
+            "notes",
+            Placement::Visible {
+                folder: "Notes".into(),
+            },
+            FileFormat::Markdown,
+        )
+        .unwrap();
+    content
+        .write(
+            space,
+            None,
+            "notes",
+            None,
+            json!({"title":"First"}),
+            b"body",
+            request(actor, "first"),
+            |_| json!({}),
+        )
+        .unwrap()
+}
+
+#[test]
+fn sustained_writes_leave_no_exact_count_until_the_last_journal_page() {
+    let dir = tempfile::tempdir().unwrap();
+    let content = content(&dir);
+    let space = SpaceId::new();
+    let actor = AccountId::new();
+    let mut note = seed_note(&content, space, actor);
+    project(&content, space);
+    assert_eq!(
+        result(member_window(&content, space)).count.unwrap().value,
+        1
+    );
+    let mut save = |i| {
+        let key = format!("save-{i}");
+        note = content
+            .write(
+                space,
+                Some(note.id),
+                "notes",
+                Some(&note.revision),
+                json!({"title":"First"}),
+                key.as_bytes(),
+                request(actor, &key),
+                |_| json!({}),
+            )
+            .unwrap();
+    };
+    for i in 1..=260 {
+        save(i);
+    }
+    content
+        .write(
+            space,
+            None,
+            "notes",
+            None,
+            json!({"title":"Second"}),
+            b"body",
+            request(actor, "second"),
+            |_| json!({}),
+        )
+        .unwrap();
+    assert_loading(member_window(&content, space));
+    assert!(content.advance_window(space, true).unwrap());
+    assert_loading(member_window(&content, space));
+    for i in 261..=324 {
+        save(i);
+    }
+    assert!(content.advance_window(space, true).unwrap());
+    assert_loading(member_window(&content, space));
+    assert!(!content.advance_window(space, true).unwrap());
+    let reply = result(member_window(&content, space));
+    assert_eq!(reply.count.unwrap().value, 2);
+    assert_eq!(reply.rows.len(), 2);
+}
+
+#[test]
+fn kill_before_publication_and_lost_sidecar_wal_replay_from_durable_journal() {
+    if let Some(path) = std::env::var_os("CALTERNAL_WINDOW_CRASH_FIXTURE") {
+        let dir = tempfile::TempDir::with_prefix_in("roots", &path).unwrap();
+        let content = content(&dir);
+        let space = SpaceId::new();
+        let actor = AccountId::new();
+        seed_note(&content, space, actor);
+        project(&content, space);
+
+        let source = crate::db::space_path(&content.roots.appdata, space);
+        let sidecar = replay::path(&source);
+        let conn = Connection::open(&sidecar).unwrap();
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+            .unwrap();
+        std::fs::copy(&sidecar, std::path::Path::new(&path).join("checkpoint.db")).unwrap();
+
+        content
+            .write(
+                space,
+                None,
+                "notes",
+                None,
+                json!({"title":"Second"}),
+                b"body",
+                request(actor, "second"),
+                |_| json!({}),
+            )
+            .unwrap();
+        if std::env::var_os("CALTERNAL_WINDOW_DROP_WAL").is_some() {
+            project(&content, space);
+            assert_eq!(
+                result(member_window(&content, space)).count.unwrap().value,
+                2
+            );
+        }
+        std::fs::write(
+            std::path::Path::new(&path).join("ready"),
+            serde_json::to_vec(&(dir.path(), space)).unwrap(),
+        )
+        .unwrap();
+        loop {
+            std::thread::park();
+        }
+    }
+    for drop_wal in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let name = "window::tests::kill_before_publication_and_lost_sidecar_wal_replay_from_durable_journal";
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", name])
+            .env("CALTERNAL_WINDOW_CRASH_FIXTURE", root.path());
+        if drop_wal {
+            command.env("CALTERNAL_WINDOW_DROP_WAL", "1");
+        }
+        let mut child = command.spawn().unwrap();
+        let ready = root.path().join("ready");
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        let (path, space): (std::path::PathBuf, SpaceId) = loop {
+            if let Ok(bytes) = std::fs::read(&ready)
+                && let Ok(value) = serde_json::from_slice(&bytes)
+            {
+                break value;
+            }
+            if child.try_wait().unwrap().is_some() || std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("crash fixture did not commit the second note");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        child.kill().unwrap();
+        assert!(!child.wait().unwrap().success());
+        let roots = Roots {
+            appdata: path.join("appdata"),
+            userdata_ssd: path.join("ssd"),
+            userdata_hdd: path.join("hdd"),
+        };
+        let source = crate::db::space_path(&roots.appdata, space);
+        if drop_wal {
+            let sidecar = replay::path(&source);
+            // Restore only the last checkpointed derivative. The authoritative
+            // content and journal files retain both acknowledged writes.
+            for suffix in ["db-wal", "db-shm"] {
+                match std::fs::remove_file(sidecar.with_extension(suffix)) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => panic!("remove sidecar transient: {error}"),
+                }
+            }
+            std::fs::copy(root.path().join("checkpoint.db"), sidecar).unwrap();
+        }
+        let reopened = Content::open(
+            roots,
+            path.join("secrets"),
+            Duration::ZERO,
+            crate::DEFAULT_RECEIPT_RETENTION,
+            |_| {},
+        )
+        .unwrap();
+        assert_loading(member_window(&reopened, space));
+        project(&reopened, space);
+        let ready = result(member_window(&reopened, space));
+        assert_eq!(ready.count.unwrap().value, 2);
+        assert!(ready.rows.iter().any(|row| row.fields["title"] == "Second"));
+    }
 }

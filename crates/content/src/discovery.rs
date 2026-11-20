@@ -156,9 +156,6 @@ impl Space {
         cursor: Option<&str>,
         limit: usize,
     ) -> Result<Page<Summary>> {
-        if kind == "notes" && matches!(order, ItemOrder::Updated { label: None }) {
-            return self.native_notes_page(cursor, limit);
-        }
         let position: Option<(String, String)> = cursor
             .map(serde_json::from_str)
             .transpose()

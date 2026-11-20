@@ -2,6 +2,7 @@
 
 mod kinds;
 mod read;
+mod replay;
 pub use kinds::{WindowField, WindowKindOrder, WindowOrder, WindowScope};
 
 use crate::{
@@ -194,12 +195,14 @@ pub struct WindowPlanError {
     pub reason: WindowPlanReason,
 }
 
-/// The two reply forms the catalogue allows for a successful authority check.
+/// The catalogue reply after the host checks current authority.
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum WindowReply {
     /// An authorized result or empty window.
     Result(WindowResult),
+    /// The checked projection is catching up. Carries no rows or count.
+    Loading(LoadingWindow),
     /// A request that could not be served by a bounded plan.
     PlanError(WindowPlanError),
 }
@@ -212,6 +215,21 @@ impl From<WindowPlanReason> for WindowReply {
             reason,
         })
     }
+}
+
+/// A caller-safe loading reply for a currently authorized window.
+#[derive(Debug, Serialize)]
+pub struct LoadingWindow {
+    bind: String,
+    state: &'static str,
+    result_version: Option<()>,
+    window_ref: Option<()>,
+    offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent: Option<String>,
+    rows: [(); 0],
+    audience: WindowAudience,
+    anchor: WindowAnchor,
 }
 
 /// A sealed WindowResult plus the private seek boundary owned by the host.
@@ -262,12 +280,11 @@ struct WindowCount {
 }
 
 impl Content {
-    /// Read one bounded ordered window. The host resolves and authorizes the
-    /// Bind, its sort and title field before any content read; the callback is
-    /// checked again before returning rows, count or a plan refusal. A changed
-    /// scope snapshot or authorization discards the entire reply. Pass a previous
-    /// result only from the current host-owned view. No body reads, writes or
-    /// journal calls. Runs on a blocking host thread.
+    /// Read one authorized window from the published journal generation.
+    /// The callback runs before storage access and before delivery. An
+    /// unpublished generation returns loading without rows or a count. A
+    /// ready read uses one sidecar/source snapshot, the journal and source
+    /// freshness fences, and one head probe per returned row. No flushes.
     pub fn window(
         &self,
         space: SpaceId,
@@ -288,76 +305,88 @@ impl Content {
             reauthorize()?;
             return Ok(reason.into());
         }
-        self.window_read(space, |conn| {
-            let scope = access.scope.key();
-            let Some(conn) = conn else {
-                if access.scope.registered_order().is_some() {
-                    reauthorize()?;
-                    return Ok(WindowPlanReason::UnsupportedPlan.into());
-                }
-                let reply = evaluate(
-                    None,
-                    &scope,
-                    &read::Scope::default(),
-                    request,
-                    &access,
-                    previous,
-                )?;
-                reauthorize()?;
-                return Ok(reply);
-            };
-            // A single WAL snapshot couples the scope count, covering keys
-            // and visible title reads. Commit ends the read transaction only.
-            let tx = conn.unchecked_transaction().map_err(internal)?;
-            if let WindowScope::Children { parent, .. } = access.scope
-                && !kinds::parent_live(&tx, parent)?
-            {
-                return Err(missing());
-            }
-            let snapshot = read::scope(&tx, &scope)?;
-            let reply = evaluate(Some(&tx), &scope, &snapshot, request, &access, previous)?;
-            tx.commit().map_err(internal)?;
-            reauthorize()?;
-            if read::scope(conn, &scope)?.version != snapshot.version {
-                return Err(missing());
-            }
-            if let WindowScope::Children { parent, .. } = access.scope
-                && !kinds::parent_live(conn, parent)?
-            {
-                return Err(missing());
-            }
-            self.lifecycle.check(space.as_uuid())?;
-            Ok(reply)
-        })
-    }
-
-    fn window_read<T>(
-        &self,
-        space: SpaceId,
-        query: impl FnOnce(Option<&Connection>) -> Result<T>,
-    ) -> Result<T> {
         let _step = self.lifecycle.step(space.as_uuid())?;
-        let slot = crate::lock(&self.spaces).get(&space).cloned();
-        if let Some(pool) = slot.as_ref().and_then(|slot| slot.visibility.get()) {
-            return pool.read(|conn| Ok(query(Some(conn)))).map_err(internal)?;
+        let loading = || {
+            reauthorize()?;
+            self.wake_window(space, true);
+            Ok(WindowReply::Loading(LoadingWindow {
+                bind: request.bind.clone(),
+                state: "loading",
+                result_version: None,
+                window_ref: None,
+                offset: request.from,
+                parent: request.parent.clone(),
+                rows: [],
+                audience: access.audience,
+                anchor: request.anchor.unwrap_or_default(),
+            }))
+        };
+        let source = crate::db::space_path(&self.roots.appdata, space);
+        if !source.try_exists().map_err(internal)? {
+            let reply = evaluate(
+                None,
+                &access.scope.key(),
+                &read::Scope::default(),
+                request,
+                &access,
+                previous,
+            )?;
+            reauthorize()?;
+            return Ok(reply);
         }
-        let path = crate::db::space_path(&self.roots.appdata, space);
-        match std::fs::metadata(&path) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => query(None),
-            Err(error) => Err(internal(error)),
-            Ok(_) => {
-                let conn = crate::pool::open_reader(&path).map_err(internal)?;
-                let bound: String = conn
-                    .query_row("SELECT value FROM binding WHERE id='space'", [], |row| {
-                        row.get(0)
-                    })
-                    .map_err(internal)?;
-                if bound != space.to_string() {
-                    return Err(internal("wrong window space binding"));
-                }
-                query(Some(&conn))
-            }
+        if !replay::path(&source).try_exists().map_err(internal)? {
+            return loading();
         }
+        let conn = replay::reader(&source)?;
+        let Some(journal) = calternal_store::ProjectionJournal::open(&self.roots.appdata, space)
+            .map_err(internal)?
+        else {
+            return loading();
+        };
+        let tx = conn.unchecked_transaction().map_err(internal)?;
+        let version: i64 = tx
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .map_err(internal)?;
+        if version == 0 {
+            return loading();
+        }
+        let Some(publication) = replay::Publication::read(&tx)? else {
+            return loading();
+        };
+        if journal.head().map_err(internal)? != publication.head
+            || !publication.matches_source(&tx)?
+        {
+            return loading();
+        }
+        let bound: String = tx
+            .query_row(
+                "SELECT value FROM source.binding WHERE id='space'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(internal)?;
+        if bound != space.to_string() {
+            return Err(missing());
+        }
+        if let WindowScope::Children { parent, .. } = access.scope
+            && !kinds::parent_live(&tx, parent)?
+        {
+            return Err(missing());
+        }
+        let scope = access.scope.key();
+        let snapshot = read::scope(&tx, &scope)?;
+        let reply = evaluate(Some(&tx), &scope, &snapshot, request, &access, previous)?;
+        tx.commit().map_err(internal)?;
+        reauthorize()?;
+        // Read the journal after the source fence. A write committed before
+        // that fence is either still pinned by its outbox or already journalled.
+        if !publication.matches_source(&conn)?
+            || journal.head().map_err(internal)? != publication.head
+        {
+            return loading();
+        }
+        self.lifecycle.check(space.as_uuid())?;
+        Ok(reply)
     }
 }
 

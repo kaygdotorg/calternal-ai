@@ -91,7 +91,6 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
             (7, crate::trash_job::SCHEMA),
             (8, crate::rename_job::SCHEMA),
             (9, include_str!("window_index.sql")),
-            (10, include_str!("window_kinds.sql")),
         ],
     );
 
@@ -491,7 +490,7 @@ mod tests {
         migrate_release(&conn, SPACE_SCHEMA, true).unwrap();
         assert_eq!(
             calternal_store::migrations::inspect(&conn, EMPTY_TRASH_RELEASE).unwrap(),
-            10
+            9
         );
         let pending: (String, String, i64) = conn
             .query_row(

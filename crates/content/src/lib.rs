@@ -78,9 +78,9 @@ pub use types::{
 };
 use uuid::Uuid;
 pub use window::{
-    WindowAccess, WindowAnchor, WindowAudience, WindowCountMode, WindowField, WindowKindOrder,
-    WindowOrder, WindowPlanError, WindowPlanReason, WindowRange, WindowReply, WindowRequest,
-    WindowResult, WindowScope,
+    LoadingWindow, WindowAccess, WindowAnchor, WindowAudience, WindowCountMode, WindowField,
+    WindowKindOrder, WindowOrder, WindowPlanError, WindowPlanReason, WindowRange, WindowReply,
+    WindowRequest, WindowResult, WindowScope,
 };
 
 /// Installation content service with bounded per-space connections and idle release.
@@ -91,7 +91,7 @@ pub struct Content {
     roots: Roots,
     search_readers: search::Readers,
     search_writers: search::Writers,
-    search_worker: std::sync::OnceLock<std::sync::mpsc::SyncSender<SpaceId>>,
+    search_worker: std::sync::OnceLock<std::sync::mpsc::SyncSender<(SpaceId, bool)>>,
     lifecycle: calternal_types::OwnerLifecycle,
     index: Mutex<Connection>,
     catalog: ReadPool,

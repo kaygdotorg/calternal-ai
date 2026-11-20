@@ -1,14 +1,8 @@
-//! Covering index locators and native ordered Notes pages.
+//! Covering index locators and bounded row materialization.
 
 use super::{Key, WindowAnchor, WindowPlanReason, limits};
-use crate::{
-    Result,
-    db::Space,
-    types::{Summary, internal},
-};
-use calternal_types::Page;
+use crate::{Result, types::internal};
 use rusqlite::{Connection, OptionalExtension, params};
-use uuid::Uuid;
 
 #[derive(Default)]
 pub(super) struct Scope {
@@ -147,71 +141,6 @@ pub(super) fn keys(
     Ok(keys)
 }
 
-const NATIVE_NOTES_PAGE: &str = "SELECT w.item,i.metadata,i.revision,i.updated_at,i.path
-             FROM window_rows w INDEXED BY window_cover
-             CROSS JOIN items i ON i.id=w.item
-             WHERE (w.collection,w.audience)=(?1,?2) AND (w.sort_key,w.item)>(?4,?5)
-             ORDER BY w.sort_key,w.item LIMIT ?3";
-
-impl Space {
-    /// Native Notes keeps its timestamp/UUID cursor and existing summary fields.
-    /// One statement seeks the covering range and fetches up to limit+1 heads.
-    pub(crate) fn native_notes_page(
-        &self,
-        cursor: Option<&str>,
-        limit: usize,
-    ) -> Result<Page<Summary>> {
-        let (key, id) = cursor
-            .map(parse_native_cursor)
-            .transpose()?
-            .unwrap_or_else(|| (Key::Integer(i64::MIN), String::new()));
-        let scope = super::WindowScope::SpaceNotes.key();
-        let mut stmt = self
-            .conn
-            .prepare_cached(NATIVE_NOTES_PAGE)
-            .map_err(internal)?;
-        let mut records = stmt
-            .query(params![scope.0, scope.1, limit as i64 + 1, key, id])
-            .map_err(internal)?;
-        let mut rows = Vec::with_capacity(limit + 1);
-        while let Some(row) = records.next().map_err(internal)? {
-            let id = row
-                .get_ref(0)
-                .map_err(internal)?
-                .as_str()
-                .map_err(internal)?;
-            let metadata = row
-                .get_ref(1)
-                .map_err(internal)?
-                .as_str()
-                .map_err(internal)?;
-            rows.push(Summary {
-                id: Uuid::parse_str(id).map_err(internal)?,
-                space: self.id,
-                kind: "notes".into(),
-                metadata: serde_json::from_str(metadata).map_err(internal)?,
-                revision: row.get(2).map_err(internal)?,
-                updated_at: row.get(3).map_err(internal)?,
-                path: row.get(4).map_err(internal)?,
-            });
-        }
-        Ok(Page::from_lookahead(rows, limit, |row| {
-            serde_json::json!([row.updated_at, row.id]).to_string()
-        }))
-    }
-}
-
-fn parse_native_cursor(cursor: &str) -> Result<(Key, String)> {
-    let invalid = || crate::Error::invalid_input("invalid page cursor");
-    let (date, id): (String, String) = serde_json::from_str(cursor).map_err(|_| invalid())?;
-    let instant =
-        time::OffsetDateTime::parse(&date, &time::format_description::well_known::Rfc3339)
-            .map_err(|_| invalid())?;
-    let millis = i64::try_from(instant.unix_timestamp_nanos().div_euclid(1_000_000))
-        .map_err(|_| invalid())?;
-    Ok((Key::Integer(-millis), id))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,6 +159,12 @@ mod tests {
              INSERT INTO items
              SELECT printf('%08d',n),'notes','{}','revision',1,'2026-11-19T00:00:00.000Z',
                     printf('%08d',n),printf('%08d',n),NULL,'materialized',NULL FROM seq;",
+        )
+        .unwrap();
+        conn.execute_batch(include_str!("sidecar.sql")).unwrap();
+        conn.execute_batch(
+            "INSERT INTO window_rows
+            SELECT 'notes','space',newest,id,title FROM window_live_notes",
         )
         .unwrap();
         let scope = super::super::WindowScope::SpaceNotes.key();
@@ -289,18 +224,6 @@ mod tests {
                 .unwrap()
                 .collect::<rusqlite::Result<Vec<_>>>()
                 .unwrap();
-            let mut native = conn.prepare(NATIVE_NOTES_PAGE).unwrap();
-            let materialized = native
-                .query_map(
-                    params![scope.0, scope.1, 200, boundary.0, boundary.1],
-                    |row| row.get::<_, String>(0),
-                )
-                .unwrap()
-                .collect::<rusqlite::Result<Vec<_>>>()
-                .unwrap();
-            assert_eq!(materialized, plain);
-            assert_eq!(native.get_status(StatementStatus::FullscanStep), 0);
-            assert_eq!(native.get_status(StatementStatus::Sort), 0);
             assert_eq!(probed, plain);
             assert_eq!(probed.len(), 200);
             assert_eq!(seen.load(Ordering::Relaxed), 200);

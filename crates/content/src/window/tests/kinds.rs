@@ -68,6 +68,7 @@ fn registered_scalar_order_and_checked_parent_scope_follow_child_moves() {
         },
     };
     let run = |scope: WindowScope, anchor, from, to, previous, reference: Option<&str>| {
+        project(&content, space);
         let mut payload = range(from, to, anchor);
         payload.parent = reference.map(str::to_owned);
         content
@@ -256,6 +257,7 @@ fn a_manual_collection_selects_one_order_without_disclosing_hidden_sort_fields()
     .unwrap();
     let view = Uuid::new_v4();
     let read = |scope: WindowScope, audience, count: WindowCountMode| {
+        project(&content, space);
         content
             .window(
                 space,
