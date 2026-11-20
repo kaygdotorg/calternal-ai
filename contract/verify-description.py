@@ -24,6 +24,7 @@ from description_intent_trace import check_attempt_fence_trace, check_discovery_
 from description_input import PackageInput, Validation, check_unique_ids, lexical_path, read_bytes, read_json, resolved_path
 
 from description_events import COMPONENT_TYPES, EventBindings, check_composer_actions, check_composer_invoke, check_event_binding, check_invoke, check_route_capacity, route_operands, validate_component_request, walk
+from description_sidebar import check_sidebar, dropped_ref_type, folder_destination, repeat_over_binds
 import description_verification as verification
 
 from description_verification import (
@@ -81,6 +82,8 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                  for name, kind in errors.each(man_kinds.items())}
     children_edges = {b_id: ((b.get("row") or {}).get("children") or {}).get("bind") for b_id, b in errors.each(binds.items()) if ((b.get("row") or {}).get("children") or {}).get("bind")}
     repeat_rows = {n_["repeat"]["rows"] for _, n_ in walk(doc, errors) if isinstance(n_, dict) and isinstance(n_.get("repeat"), dict) and "id" in n_ and "rows" in n_["repeat"]}
+    over_binds = repeat_over_binds(doc, errors)
+    check_sidebar(doc, errors, binds, binds_list)
     for path, node in walk(doc, errors, skip_literals=True):
         if isinstance(node, dict) and node.get("type") == "form" and "id" in node: forms[node["id"]] = (path, {field.get("id") for field in errors.each(node.get("fields", [])) if isinstance(field, dict)})
         if isinstance(node, dict) and node.get("type") == "composer" and "id" in node: composers[node["id"]] = path
@@ -140,6 +143,14 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                         owner_in_repeat = (owner_bind or {}).get("id") in repeat_rows
                         for name, source in errors.each(given.items()):
                             declared_type = ((schema_in.get(name) or {}).get("$ref") or "").rsplit("/", 1)[-1]
+                            input_path = f"{path}.inputs.{name}"
+                            dropped_types = dropped_ref_type(source, input_path)
+                            if dropped_types is not None:
+                                if declared_type in ("ItemRef", "LayoutEntryRef", "LayoutSectionRef") and declared_type not in dropped_types:
+                                    errors.append(f"{path}: {json.dumps(source, sort_keys=True)} gives a {'/'.join(sorted(dropped_types))} and cannot fill the {declared_type} input {name!r} of {op}")
+                                continue
+                            if (op, name) == ("host.layout.move_to", "section") and source == {"row": "id"} and folder_destination(input_path, binds_list, over_binds):
+                                continue   # a folder hook's own folder row is the destination
                             if op == "host.item.create" and name == "kind":
                                 kind_id = source.get("literal") if isinstance(source, dict) else None
                                 kind = man_kinds.get(kind_id) if isinstance(kind_id, str) else None
@@ -338,6 +349,12 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                 meta = field_meta(entry, fallback, generic)
                 if fallback not in bind.get("fields", []) or meta.get("type") != "Text" or meta.get("source") != "body_excerpt":
                     errors.append(f"$.binds[{index}].row.icon: fallback {fallback!r} must project a body_excerpt Text field")
+        avatar = row_icon.get("avatar") if isinstance(row_icon, dict) else None
+        if isinstance(avatar, dict):
+            for key, want in (("initials", "Text"), ("image", "RowImageRef")):
+                field = avatar.get(key)
+                if isinstance(field, str) and (field not in bind.get("fields", []) or field_meta(entry, field, generic).get("type") != want):
+                    errors.append(f"$.binds[{index}].row.icon.avatar: {key} {field!r} must project a {want} field")
         for f in errors.each(used):
             if f not in known: errors.append(f"{path}: field {f!r} is not a field of kind {kind_id!r}")
         for sort in errors.each(sorts):

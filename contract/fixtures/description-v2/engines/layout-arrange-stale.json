@@ -1,0 +1,10 @@
+{
+  "definition": "LayoutArrangeResult",
+  "value": {
+    "state": "stale",
+    "arrangement": {
+      "revision": "rev-2",
+      "entries": []
+    }
+  }
+}

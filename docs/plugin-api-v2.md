@@ -991,6 +991,11 @@ The loader checks both and rejects any Bind used for section rows and as
 a children target. Section rows present `LayoutEntryRef`. Child rows
 present their kind’s row reference. Only live space members may read
 their own layout, scoped to space and app. Layout membership grants no item access.
+Flat sections, pinned strips, round avatar marks, the person's sidebar
+arrangement and drag hooks follow [description §2.8](description-contract.md#28-strips-arrangement-and-drag)
+and the catalogue's [sidebar arrangement][sidebar-arrangement]. The
+arrangement record sits in the same personal layout store; per-item order
+uses a viewer-private `layout_order` field.
 
 Default ranking and paging always run in the host index. Resolve the
 effective search path before settle from the authenticated view audience.
@@ -1304,6 +1309,8 @@ membership and item and parent access. For item row actions
 Move to accepts the item to add an unplaced item or the placement to move
 it. It resolves the destination ChoiceRef for the protected preview.
 Removing a section changes only the personal layout.
+`host.layout.unplace` takes a row out of one of the person's own sections and `host.viewer.reorder`
+writes the person's own `layout_order` value for one item.
 
 For every eligible case below, commit the complete effect and the protected
 Undo ref with its inverse data in the named transaction. Publish the ref
@@ -1318,6 +1325,8 @@ revisions of all affected resources and refuses if any dependency moved.
 | `host.collection.move` | Use the catalogue's confirmation rule for the checked destination. Apply §5 whenever the move adds file readers. On an eligible shortcut, the FULL content transaction commits the complete move and Undo in one exchange. A two-collection move is ineligible for the shortcut until both membership changes commit together. |
 | `host.layout.move_to`, `host.layout.move_up`, `host.layout.move_down` | The per-person layout revision transaction records the complete placement or ordering edit and Undo for the actor, space and app. Move to still previews its destination. |
 | `host.layout.section.create` | The per-person layout revision transaction creates the section and commits Undo that removes it. |
+| `host.layout.unplace` | The per-person layout revision transaction removes the placement and commits Undo that restores it at its position. |
+| `host.viewer.reorder` | One viewer-item-state compare-and-set writes the new order value (renumbering that person's bounded order for the field when no gap remains) and Undo with the prior value. |
 | `host.layout.section.rename` | The same layout transaction commits the title change and its prior title for Undo. |
 | `host.layout.section.remove` | One per-person layout revision transaction retires the section and its placement generation and records Undo naming that generation. Retired generations are excluded from reads. Undo rechecks live membership and the post-effect layout revision and reactivates the exact generation in one transaction before its expiry. Reactivation grants no item access. Reclaim expired retired generations in bounded background batches. Removal and Undo perform no per-placement work. |
 | `host.item.archive` | Use the catalogue’s checked idle predicate, qualification gate and execution fence. A protected archive binds the whole affected set and uses the catalogue’s retirement authority rule. Undo that adds file readers goes through §5. |
@@ -1531,6 +1540,7 @@ and zero-effect assertions must hold on every repetition.
 | **Phone activation exchanges** | In the same Chromium phone link fixture measure eligible host swipe, ordinary plugin resolve/dispatch and protected challenge separately. Check stale contexts, lost replies and exact replay. A widening Undo returns a disclosure preview before confirm dispatch. |
 | **Keyboard windowing** | 5,000 rows with seeded authorized thumbnails and 30 keys/sec on the phone fixture. During repeat, assert zero new image GETs and cancellation of in-flight image fetches. After settling, fetch only current refs for the visible rows. Record image request counts and bytes. At most four window requests in any second and zero selection/navigation events during repeat on every run. Report p95 request rate. After the first real rows paint, capture each viewport frame during the repeat burst. Require zero skeleton-row frames during the steady 30 Hz segment on every run. Same-version prefetch applies while keys repeat; an activation waits for the context of its drawn target. Delay a context for A until B is drawn and verify the activation cannot use A. |
 | **Nested rows and user sections** | On the real item and layout engines, expand two parents and page their children independently. Check depth, ancestry, revocation and a forged parent ref. Create, rename and remove personal sections and Move to, Move up and Move down. Undo each committed edit, verify placement and order, refuse stale Undo, and prove a second member’s layout is unaffected. |
+| **Sidebar arrangement and drag** | Apply the catalogue's [sidebar arrangement qualification][sidebar-arrangement] with two members and two devices: fold, hide, rename and reorder sections including the person's own, a stale two-device write, pin, unpin and reorder by drag and by menu with identical outcomes and Undo, exclusive placement withheld from the other sections' windows and counts, and no effect on the other member. |
 | **Persisted member rows** | Use an authenticated eligible root Bind. Verify device ciphertext and account/space key separation, reject expired or forged records and erase on known revocation, sign-out and account switch. On unlocked launch paint eligible rows from the last completed reconciliation in the first frame. Start reconciliation in parallel on authenticated reconnect, erase omissions as each current page arrives and verify the displayed rows are corrected without waiting for a new window. For a cached Notes timestamp, advance the device clock across a relative-date boundary and verify that the label updates before a fresh window. Check that unconfirmed rows have no executable actions and that guest and public windows leave no record. |
 | **Phone cold launch** | Restart the client with an authorized account and a cold connection, with and without an eligible member row record. Start at launch intent and time first paint and first confirmed or corrected rows on the phone link. Require confirmed rows p95 ≤600 ms in both cases. Use TLS resumption and pipeline authentication, `view.open` and the first windows in one application flight. The host handles them in that order. Start paged `device.reconcile` in parallel on authentication. Delay reconciliation beyond first paint. The initial frame uses the local template and unconfirmed rows left by the last completed reconciliation, or loading without records. In the cached arm, omit one held scope or offline grant from the reconciliation response. Require its affected records to be erased and disappear when reconciliation completes, with unrelated records preserved. Confirm no action can run before fresh host context. |
 | **Snapshot randomness** | Independently restore the same snapshot twice and sample the guest kernel and each restored process’s crypto RNG, including Node. Require different bytes for both restores at both layers and require fresh kernel and process randomness before any plugin code. Refuse admission if reseed or fresh process reinitialization cannot establish that. Include reseed time in measured wake. |
@@ -1827,6 +1837,7 @@ queued follow-ups through the generic job contract.
 [fresh-cutover]: https://git.kayg.org/kayg/calternal-ai/src/commit/ee88c9f60c5256d3cc5b9adbce3c0e5036854c99/docs/morning-2026-11-20.md
 [entry-views]: ../contract/host-catalogue-v2.json#/item_views_entries
 [viewer-state]: ../contract/host-catalogue-v2.json#/viewer_item_state
+[sidebar-arrangement]: ../contract/host-catalogue-v2.json#/sidebar_arrangement
 [quote-redaction]: ../contract/host-catalogue-v2.json#/item_engine/quotes/redaction
 [title-binding]: ../contract/host-catalogue-v2.json#/item_engine/title_binding
 [format-open]: ../contract/host-catalogue-v2.json#/item_engine/format_open

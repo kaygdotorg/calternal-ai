@@ -1,0 +1,412 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "pinned",
+      "source": {
+        "type": "list",
+        "kind": "conversations"
+      },
+      "fields": [
+        "title",
+        "shape",
+        "pinned",
+        "pin_order",
+        "updated"
+      ],
+      "filter": {
+        "all": [
+          {
+            "field": "pinned",
+            "op": "eq",
+            "value": {
+              "literal": true
+            }
+          }
+        ]
+      },
+      "sort": [
+        {
+          "field": "pin_order",
+          "direction": "asc"
+        },
+        {
+          "field": "updated",
+          "direction": "desc"
+        }
+      ],
+      "window": {
+        "size": 60,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "avatar": {
+            "initials": "title"
+          }
+        },
+        "open": {
+          "route": {
+            "name": "item",
+            "value": "id"
+          }
+        }
+      }
+    },
+    {
+      "id": "groups",
+      "source": {
+        "type": "list",
+        "kind": "conversations"
+      },
+      "fields": [
+        "title",
+        "shape",
+        "pinned",
+        "pin_order",
+        "updated"
+      ],
+      "filter": {
+        "all": [
+          {
+            "field": "pinned",
+            "op": "eq",
+            "value": {
+              "literal": false
+            }
+          },
+          {
+            "field": "shape",
+            "op": "eq",
+            "value": {
+              "literal": "group"
+            }
+          }
+        ]
+      },
+      "sort": [
+        {
+          "field": "updated",
+          "direction": "desc"
+        }
+      ],
+      "window": {
+        "size": 60,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "avatar": {
+            "initials": "title"
+          }
+        },
+        "open": {
+          "route": {
+            "name": "item",
+            "value": "id"
+          }
+        }
+      }
+    },
+    {
+      "id": "people",
+      "source": {
+        "type": "list",
+        "kind": "conversations"
+      },
+      "fields": [
+        "title",
+        "shape",
+        "pinned",
+        "pin_order",
+        "updated"
+      ],
+      "filter": {
+        "all": [
+          {
+            "field": "pinned",
+            "op": "eq",
+            "value": {
+              "literal": false
+            }
+          },
+          {
+            "field": "shape",
+            "op": "eq",
+            "value": {
+              "literal": "person"
+            }
+          }
+        ]
+      },
+      "sort": [
+        {
+          "field": "updated",
+          "direction": "desc"
+        }
+      ],
+      "window": {
+        "size": 60,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "avatar": {
+            "initials": "title"
+          }
+        },
+        "open": {
+          "route": {
+            "name": "item",
+            "value": "id"
+          }
+        }
+      }
+    },
+    {
+      "id": "own",
+      "source": {
+        "type": "list",
+        "kind": "layout_sections"
+      },
+      "fields": [
+        "title",
+        "position"
+      ],
+      "sort": [
+        {
+          "field": "position",
+          "direction": "asc"
+        }
+      ],
+      "window": {
+        "size": 32,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "menu": [
+          {
+            "id": "rename-own",
+            "title": "Rename section",
+            "icon": "edit",
+            "operation": "host.layout.section.rename",
+            "inputs": {
+              "entry": {
+                "row": "id"
+              },
+              "title": {
+                "prompt": {
+                  "title": "Section name"
+                }
+              }
+            }
+          },
+          {
+            "id": "remove-own",
+            "title": "Remove section",
+            "icon": "trash",
+            "role": "destructive",
+            "operation": "host.layout.section.remove",
+            "inputs": {
+              "entry": {
+                "row": "id"
+              }
+            }
+          }
+        ],
+        "drop": {
+          "id": "drop-into-own",
+          "title": "Move here",
+          "icon": "folder",
+          "operation": "host.layout.move_to",
+          "inputs": {
+            "item": {
+              "dropped": "item"
+            },
+            "section": {
+              "row": "id"
+            }
+          }
+        },
+        "reorder": {
+          "id": "reorder-in-own",
+          "title": "Move",
+          "icon": "folder",
+          "operation": "host.layout.move_to",
+          "inputs": {
+            "entry": {
+              "dropped": "placement"
+            },
+            "section": {
+              "row": "id"
+            },
+            "before": {
+              "dropped": "before"
+            }
+          }
+        },
+        "dragOut": {
+          "id": "out-of-own",
+          "title": "Remove from section",
+          "icon": "folder",
+          "operation": "host.layout.unplace",
+          "inputs": {
+            "entry": {
+              "dropped": "placement"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "in-own",
+      "source": {
+        "type": "list",
+        "kind": "conversations",
+        "parent": true
+      },
+      "fields": [
+        "title",
+        "updated"
+      ],
+      "window": {
+        "size": 60,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "avatar": {
+            "initials": "title"
+          }
+        }
+      }
+    }
+  ],
+  "chrome": {
+    "sidebar": {
+      "open": true,
+      "title": "Conversations",
+      "sections": [
+        {
+          "id": "pins",
+          "title": "Pinned",
+          "presentation": "strip",
+          "bind": "pinned",
+          "drop": {
+            "id": "pin-by-drop",
+            "title": "Pin",
+            "icon": "spark",
+            "operation": "conversations.pin",
+            "inputs": {
+              "item": {
+                "dropped": "item"
+              },
+              "pinned": {
+                "literal": true
+              }
+            }
+          },
+          "reorder": {
+            "id": "reorder-pins",
+            "title": "Move",
+            "icon": "spark",
+            "operation": "host.viewer.reorder",
+            "inputs": {
+              "item": {
+                "dropped": "item"
+              },
+              "field": {
+                "literal": "pin_order"
+              },
+              "before": {
+                "dropped": "before"
+              }
+            }
+          },
+          "dragOut": {
+            "id": "unpin-by-drag",
+            "title": "Unpin",
+            "icon": "spark",
+            "operation": "conversations.pin",
+            "inputs": {
+              "item": {
+                "dropped": "item"
+              },
+              "pinned": {
+                "literal": false
+              }
+            }
+          }
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "bind": "groups",
+          "collapsed": false,
+          "arrange": {
+            "move": true,
+            "hide": true,
+            "rename": true
+          },
+          "actions": [
+            {
+              "id": "new-section",
+              "title": "New section",
+              "icon": "plus",
+              "operation": "host.layout.section.create",
+              "inputs": {
+                "title": {
+                  "prompt": {
+                    "title": "Section name"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "people",
+          "title": "People",
+          "bind": "people",
+          "collapsed": false,
+          "arrange": {
+            "move": true,
+            "hide": true,
+            "rename": true
+          }
+        },
+        {
+          "id": "mine",
+          "repeat": {
+            "over": "own",
+            "rows": "in-own",
+            "exclusive": true
+          },
+          "arrange": {
+            "move": true
+          }
+        }
+      ]
+    },
+    "header": {
+      "title": "Conversations"
+    }
+  }
+}

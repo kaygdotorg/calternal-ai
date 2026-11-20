@@ -1,0 +1,16 @@
+{
+  "type": "invoke",
+  "action_id": "pin-by-drop",
+  "activation_id": "case",
+  "activation_context": "opaque",
+  "interaction": {
+    "dropped": {
+      "bind": "people",
+      "row": "row-1"
+    },
+    "before": {
+      "bind": "people",
+      "row": "row-2"
+    }
+  }
+}

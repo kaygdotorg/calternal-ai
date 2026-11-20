@@ -891,6 +891,10 @@
               "item": {
                 "$ref": "#/$defs/ItemRef",
                 "description": "Adds the underlying item if no placement exists in the layout."
+              },
+              "before": {
+                "$ref": "#/$defs/LayoutEntryRef",
+                "description": "Optional: place before this placement of the destination section; absent appends. Supplied by an own section's reorder hook as {dropped: before}."
               }
             }
           },
@@ -908,11 +912,15 @@
               },
               "section": {
                 "$ref": "#/$defs/LayoutSectionRef"
+              },
+              "before": {
+                "$ref": "#/$defs/LayoutEntryRef",
+                "description": "Optional: place before this placement of the destination section; absent appends. Supplied by an own section's reorder hook as {dropped: before}."
               }
             }
           }
         ],
-        "description": "The destination comes from the scoped ChoiceRef and requires a protected preview. Host reconstructs the item or entry from the checked action context."
+        "description": "The destination is a scoped ChoiceRef with a protected preview (Move to), or the own section of a checked drop or reorder hook, which the host binds from that section row's activation context (no preview: the gesture shows the destination). Host reconstructs the item or entry from the checked action context or interaction.dropped."
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
@@ -1015,7 +1023,8 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": true,
-      "atomic_undo_when": "Commit the new section and Undo that removes it in one per-person layout revision transaction."
+      "atomic_undo_when": "Commit the new section and Undo that removes it in one per-person layout revision transaction.",
+      "description": "Create one of the person's own sections in the description's repeat. Refuse at sidebar_arrangement.limits.own_sections."
     },
     "host.layout.section.rename": {
       "engine": "personal layout rename section",
@@ -1088,6 +1097,84 @@
       },
       "atomic_undo": true,
       "atomic_undo_when": "One per-person layout revision transaction retires the section and its placement generation and commits Undo for that generation. Until Undo expires, retain the generation and exclude it from reads. Undo rechecks live membership and the post-effect layout revision and reactivates the exact generation atomically. Reactivation grants no item access. Reclaim expired retired generations in bounded background batches. Removal and Undo perform no per-placement work."
+    },
+    "host.layout.unplace": {
+      "engine": "personal layout remove placement without changing item content or access",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Live space membership and the actor’s own space/app layout, with context-pinned layout revision and live item and parent access for placements.",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "entry"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entry"
+        ],
+        "properties": {
+          "entry": {
+            "$ref": "#/$defs/LayoutEntryRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "Remove the placement and commit Undo that restores it at its position in one per-person layout revision transaction.",
+      "description": "Take a row out of one of the person's own sections; it returns to the sections whose binds match it. Used by an own section's dragOut hook and a Remove from section menu action."
+    },
+    "host.viewer.reorder": {
+      "engine": "viewer-private order write with complete effect and Undo committed together",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Live space membership and live item access for the acting person, under viewer_item_state.authority.",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "item"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item",
+          "field"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/$defs/ItemRef"
+          },
+          "field": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,47}(?![\\s\\S])",
+            "description": "A viewer field of the item's kind declared with source layout_order."
+          },
+          "before": {
+            "$ref": "#/$defs/ItemRef",
+            "description": "Place before this item in the same order; absent appends after the last ordered item."
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "Write the new order value and Undo carrying the prior value in one viewer_item_state compare-and-set.",
+      "description": "Write the acting person's own order for one item: the host picks a finite Number strictly between the neighbours' values (renumbering that person's ordered items for the field in one bounded transaction when no gap remains, at most sidebar_arrangement.limits.ordered_items_per_field). Changes no other viewer's order, count or activity. Used by a reorder hook over a Bind sorted by that field."
     }
   },
   "planned_operation_replacements": {},
@@ -1453,6 +1540,40 @@
             },
             "maxItems": 16
           }
+        },
+        "dropped": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bind",
+            "row"
+          ],
+          "properties": {
+            "bind": {
+              "$ref": "#/$defs/ActionId"
+            },
+            "row": {
+              "$ref": "#/$defs/Ref"
+            }
+          },
+          "description": "The dragged row for a drop, reorder or dragOut hook: its Bind and host-issued row reference as drawn. Check the row in the current authorized window of that Bind under the lease, as for a settled selection, and reconstruct its item or placement. Accept only a row of the hook section's own row kind, or any item row for a drop on one of the person's own sections."
+        },
+        "before": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bind",
+            "row"
+          ],
+          "properties": {
+            "bind": {
+              "$ref": "#/$defs/ActionId"
+            },
+            "row": {
+              "$ref": "#/$defs/Ref"
+            }
+          },
+          "description": "For a reorder hook only: the row the dragged row now precedes, from the hook section's own Bind (the repeat's rows Bind for an own section). Absent means the end. Check it like dropped."
         }
       }
     },
@@ -3049,6 +3170,10 @@
               "pattern": "^[A-Za-z0-9_-]{43}(?![\\s\\S])"
             }
           }
+        },
+        "arrangement": {
+          "$ref": "#/$defs/SidebarArrangement",
+          "description": "The person's sidebar arrangement for this space and app, present for a member view. Draw the sidebar from it on first paint."
         }
       },
       "allOf": [
@@ -3066,7 +3191,8 @@
           "then": {
             "properties": {
               "viewer": false,
-              "account": false
+              "account": false,
+              "arrangement": false
             }
           }
         }
@@ -3598,6 +3724,217 @@
       "$ref": "#/$defs/Ref",
       "description": "Host-issued ref for a section in the current actor’s personal layout."
     },
+    "SidebarArrangement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "entries"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/Ref",
+          "description": "Compare-and-set version of this person's arrangement for this space and app."
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "section": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}(?![\\s\\S])",
+                "description": "An authored Section.id of the pinned app description, top-level or subsection."
+              },
+              "own": {
+                "$ref": "#/$defs/LayoutSectionRef",
+                "description": "One of the person's own sections (a layout_sections row)."
+              },
+              "position": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1023,
+                "description": "Order among the sidebar's top-level sections, authored and the person's own, in one list. Entries without a position keep declared order."
+              },
+              "collapsed": {
+                "type": "boolean",
+                "description": "The person's fold. Only for a section that declares `collapsed`, or an own section."
+              },
+              "hidden": {
+                "type": "boolean",
+                "description": "Only for a section whose `arrange.hide` is true."
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1,
+                "maxLength": 60,
+                "description": "The person's own title for an authored section whose `arrange.rename` is true; null restores the authored title. An own section is renamed with host.layout.section.rename."
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "section"
+                ]
+              },
+              {
+                "required": [
+                  "own"
+                ]
+              }
+            ]
+          },
+          "description": "Only what the person changed from the description's defaults. At most one entry per section."
+        }
+      },
+      "description": "The person's own sidebar arrangement for one space and app. Apply sidebar_arrangement."
+    },
+    "LayoutArrangeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "lease_ref",
+        "expected",
+        "set"
+      ],
+      "properties": {
+        "type": {
+          "const": "layout_arrange"
+        },
+        "lease_ref": {
+          "$ref": "#/$defs/Ref",
+          "description": "The live view's lease_ref."
+        },
+        "expected": {
+          "$ref": "#/$defs/Ref",
+          "description": "The arrangement revision the change was made against."
+        },
+        "set": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "section": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}(?![\\s\\S])",
+                "description": "An authored Section.id of the pinned app description, top-level or subsection."
+              },
+              "own": {
+                "$ref": "#/$defs/LayoutSectionRef",
+                "description": "One of the person's own sections (a layout_sections row)."
+              },
+              "position": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1023,
+                "description": "Order among the sidebar's top-level sections, authored and the person's own, in one list. Entries without a position keep declared order."
+              },
+              "collapsed": {
+                "type": "boolean",
+                "description": "The person's fold. Only for a section that declares `collapsed`, or an own section."
+              },
+              "hidden": {
+                "type": "boolean",
+                "description": "Only for a section whose `arrange.hide` is true."
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1,
+                "maxLength": 60,
+                "description": "The person's own title for an authored section whose `arrange.rename` is true; null restores the authored title. An own section is renamed with host.layout.section.rename."
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "section"
+                ]
+              },
+              {
+                "required": [
+                  "own"
+                ]
+              }
+            ]
+          },
+          "description": "Entries to merge: each named property replaces the stored one for that section; omitted properties stay."
+        },
+        "sentAt": {
+          "type": "number",
+          "description": "Optional telemetry. Never used for authorization or ordering."
+        }
+      },
+      "description": "Write part of the person's sidebar arrangement. The renderer applies the change at once and sends it after the gesture settles (at most one write in flight per view)."
+    },
+    "LayoutArrangeResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "arrangement"
+          ],
+          "properties": {
+            "state": {
+              "const": "ok"
+            },
+            "arrangement": {
+              "$ref": "#/$defs/SidebarArrangement"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "arrangement"
+          ],
+          "properties": {
+            "state": {
+              "const": "stale"
+            },
+            "arrangement": {
+              "$ref": "#/$defs/SidebarArrangement",
+              "description": "The current arrangement. Reapply the unsent change on top of it and retry once with its revision."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "code"
+          ],
+          "properties": {
+            "state": {
+              "const": "refused"
+            },
+            "code": {
+              "enum": [
+                "not_arrangeable",
+                "unknown_section",
+                "bounds"
+              ]
+            }
+          }
+        }
+      ]
+    },
     "SettledSelectionRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -3875,6 +4212,35 @@
         }
       },
       "description": "The description names a projected field of type RowImageRef. The renderer reads it as specified by query.row_images. Use the optional fallback according to query.row_images."
+    },
+    "RowAvatarIcon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "avatar"
+      ],
+      "properties": {
+        "avatar": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "initials"
+          ],
+          "properties": {
+            "initials": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,47}(?![\\s\\S])",
+              "description": "Projected Text field the initials come from (usually the row title)."
+            },
+            "image": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,47}(?![\\s\\S])",
+              "description": "Optional projected RowImageRef field: a small picture of the person, group or agent, read as specified by query.row_images and drawn round (centre square crop)."
+            }
+          }
+        }
+      },
+      "description": "A round leading mark: the image when one is authorized and loaded, otherwise initials on a colour. Initials are the first grapheme of each of the first two whitespace-separated words of the initials field (one word: its first grapheme), upper-cased in the device locale. With no usable text draw the kind icon on the colour. The colour is avatar palette entry (FNV-1a 32-bit of the UTF-8 row ID) mod 8, so web and native agree; the eight entries are renderer tokens with legible contrast in light and dark. Usable in any row and required by a strip."
     },
     "SearchWindowRequest": {
       "$ref": "#/$defs/WindowRequest",
@@ -8202,6 +8568,15 @@
         "$ref": "#/$defs/ViewOpenRequest"
       }
     },
+    "layout.arrange": {
+      "input_schema": {
+        "$ref": "#/$defs/LayoutArrangeRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/LayoutArrangeResult"
+      },
+      "scope": "Authenticate the live member view and lease. Apply sidebar_arrangement.write. No worker wake, Undo or item access."
+    },
     "view.renew": {
       "input_schema": {
         "$ref": "#/$defs/LeaseRenewRequest"
@@ -8664,6 +9039,18 @@
       "host.layout.section.remove": {
         "required": [
           "entry",
+          "effect"
+        ]
+      },
+      "host.layout.unplace": {
+        "required": [
+          "entry",
+          "effect"
+        ]
+      },
+      "host.viewer.reorder": {
+        "required": [
+          "item",
           "effect"
         ]
       },
@@ -9225,9 +9612,26 @@
   "viewer_item_state": {
     "storage": "One private record keyed by space, item, installed owner and acting account, shared by declared viewer fields, draft slots and read positions. It survives restart and device changes. Omit absent declared values. Keep at most 16 declared scalars and one 4,096 UTF-8-byte draft per item and account per declared multiline slot, with at most four slots. The host validates Text (4,096 UTF-8 bytes), finite Number, Boolean and canonical Timestamp against the declaration. Install rejects clashes with shared and generic field IDs and incompatible reuse of a slot. Drop when the item/account is purged or the plugin is uninstalled. Invalidate delivery on loss of membership or item access.",
     "authority": "Only a current signed-in member with live item access may read or mutate their own state. A declared owning-plugin operation for that acting person may call viewer_state_read or viewer_state_write under the same check. Derive the actor from the admitted interactive invocation. No overrides, impersonation, unattended jobs, requests from another plugin, guest or public viewer, cross-view aggregation or shared-file writes. A read-only item may still accept its own read position, but never a composer send or edit. Draft writes additionally require current send or edit authority. After revoke, omit the values and clear affected device rows, drafts and private contexts.",
-    "write": "Use one row compare-and-set with a version and checked request receipt. For declared fields, null clears the value. Host-maintained reading positions and drafts use the same store and are unavailable to a declared field patch. Refuse writes to fields with a declared entry count source. Reject unknown fields or cross-type updates. A draft's declared slot may project its plain own-account preview through an explicitly declared private Text field whose ID equals the slot. Keep only the latest value for that slot and cap its preview by the field budget.",
+    "write": "Use one row compare-and-set with a version and checked request receipt. For declared fields, null clears the value. Host-maintained reading positions and drafts use the same store and are unavailable to a declared field patch. Refuse writes to fields with a declared entry count source or the layout_order source; only host.viewer.reorder writes layout_order. Reject unknown fields or cross-type updates. A draft's declared slot may project its plain own-account preview through an explicitly declared private Text field whose ID equals the slot. Keep only the latest value for that slot and cap its preview by the field budget.",
     "bind": "Fields carry viewer_self. A ready authorized member projection may use them in fields, marks, conditions, filters and sorts through the actor's scoped index. Apply the window replay/loading and plan gates. Do not expose their presence or values in other viewers' projections, totals, rank, exports, logs, offline download, and persisted shared or device row records. An absent field contributes no value. Qualify a rejected unsupported_plan rather than scanning.",
     "qualification": "Use two members, a guest and two devices. Check independent values and order for a shared item, stale compare-and-set, replay, purge and revoke during read and index publication. Updating one person's fields must change no result, count or activity for any other viewer. Restart and verify persisted private state."
+  },
+  "sidebar_arrangement": {
+    "storage": "One private record per account, space and app in the existing personal layout store, beside the person's own sections (layout_sections) and placements. It holds only the person's changes: position among the top-level sections, fold, hidden and title override. Per-item state (a pin, its order) stays in viewer_item_state. Drop the record with the layout on loss of membership, app uninstall or account purge. Entries naming a section the pinned description no longer declares, or an own section that no longer exists, are ignored on read and dropped on the next write.",
+    "authority": "Only a current signed-in member reads or writes their own arrangement, under audiences.personal_layout. No guest or public view, no plugin read or write, no other person, unattended job or cross-space aggregation. The arrangement grants no item access and is never projected into another viewer's windows, counts, exports, logs or persisted shared rows.",
+    "write": "Check the expected revision; on mismatch return stale with the current record. Otherwise check every entry against the pinned app description: section IDs must be declared, position needs arrange.move (the person's own sections need a repeat that declares arrange.move), hidden needs arrange.hide, title needs arrange.rename and a declared title, collapsed needs a declared collapsed (own sections always). Refuse the whole set as not_arrangeable, unknown_section or bounds. Merge and commit with a new revision in one row compare-and-set. No Undo: every change is reversed the same way it was made, and hidden sections stay listed in the Hidden entry.",
+    "draw": "Sections are flat: there are no subsections and no indentation. Order all top-level sections, authored and the person's own, by position in one list; entries without a position keep declared order, and own sections without one follow at the repeat's declared place in their layout order. Use the person's title where set. A hidden section is not drawn and requests no windows. When anything is hidden the shell draws one Hidden entry after the last section listing each hidden section by its current title; choosing one writes hidden false. The shell draws the header arrangement controls only where allowed: Move up and Move down (and header drag), Hide, Rename, and the fold chevron. Animate every move with the motion tokens.",
+    "drag": "A drag starts on a row or a section header. While dragging, the renderer highlights only targets that accept the row: a section whose drop accepts the row's kind, an own section whose repeat.over row template declares drop, or a new position in the same section when it declares reorder. Dropping onto another section runs that section's drop; within the same section runs its reorder with dropped and before; anywhere else runs the source section's dragOut, if declared; otherwise the row returns to its place. Dragging a section header within its siblings writes position through layout.arrange when arrange.move allows. One gesture runs at most one hook. The row keeps its place with a quiet progress mark until the outcome; a refused or failed outcome animates it back.",
+    "keyboard_and_menu": "Every drag has a non-drag equivalent drawn by the shell: each row's context menu lists the drop hooks of other drawn sections that accept it (titled by the hook, with the section's current title for own sections), its own section's dragOut, and Move up and Move down when the section declares reorder (keyboard: Option-Command-Up and Down on Apple platforms, Alt-Shift-Up and Down on the web). Move up passes the row above as before; Move down passes the row two below, or nothing at the end. Section headers offer Move up, Move down, Hide and Rename where allowed.",
+    "limits": {
+      "arrangement_entries": 128,
+      "own_sections": 32,
+      "placements_per_layout": 4096,
+      "ordered_items_per_field": 1024,
+      "writes_per_minute_per_view": 60
+    },
+    "qualification": "Use two members and two devices on one shared space. Fold, hide, rename and reorder sections, including own sections on one device, restart, and check the other device and the other member see nothing of it. Race two devices on one revision and check stale, merge and one retry. Pin, unpin and reorder by drag and by menu and check identical outcomes, Undo and no change for the other member. With repeat.exclusive, place a row in an own section and check the other sections' windows and counts withhold it; unplace returns it. Drop a row of the wrong kind and check no target accepts it.",
+    "own_sections": "A description declares at most one Section.repeat; each of its rows is one of the person's own sections, drawn as an ordinary top-level section. host.layout.section.create adds one, host.layout.section.rename and remove change it, and its order and fold live in the arrangement. With repeat.exclusive, rows placed in own sections are withheld from the app's other bind sections over the same kind for that person (windows and counts, under the plan gate), so a row is in one place; host.layout.unplace returns it."
   },
   "item_views_entries": {
     "entries": "Use immutable recorded spans at one checked source revision. Validate each entry anchor and order against the owning app's checked item revision and span/anchor index. Check live body access at admission and delivery. The owning writer may declare an item-local entry_anchor on ItemCreate or ItemAppend. Bind it once to the new recorded span and immutable order in the same commit as that span. A replace keeps the anchor and order, with deletion retiring it. Replays return the original binding and collisions fail before effects. Read entry associations from that index. Retire affected index entries with the opaque-write fence. Entry display names, edited_at, asked_by and pending state are application content; grouping keys are opaque within this item and cannot establish identity. Author ownership and distinctive contribution marks are host projections obtained from ItemRecordedSpan origins and the verified provider mark policy. Do not infer identity from display names or accept a plugin-supplied claim of viewer ownership. One entry owns at most one quote. Apply ordinary item-view node/depth/byte and worker frame caps to the aggregate page, checked details included.",

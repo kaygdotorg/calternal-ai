@@ -180,6 +180,26 @@ class EventBindings:
         return bind
 
 
+def check_arrangement(event, bindings, errors):
+    """Check each arrangement entry against what its authored section allows (catalogue sidebar_arrangement.write)."""
+    if bindings.sidebar is None:
+        errors.append("$: the active description has no sidebar")
+        return
+    for index, entry in enumerate(errors.each(event["set"])):
+        if "section" not in entry:
+            continue
+        section = bindings.sections.get(entry["section"])
+        path = f"$.set[{index}]"
+        if section is None:
+            errors.append(f"{path}.section: unknown section {entry['section']!r} in the active description")
+            continue
+        arrange = section.get("arrange") or {}
+        for key, allowed in (("position", arrange.get("move")), ("hidden", arrange.get("hide")),
+                             ("title", arrange.get("rename")), ("collapsed", "collapsed" in section)):
+            if key in entry and not allowed:
+                errors.append(f"{path}.{key}: section {entry['section']!r} does not allow the person to change {key}")
+
+
 def check_composer_actions(bindings, reply, audience, errors):
     """Check the complete composer action map in one accepted host reply."""
     issued = {}
@@ -245,6 +265,11 @@ def check_invoke(event, bindings, errors):
         operand.get("set") is True and operand.get("selection") in bindings.multiple for operand in errors.each(operands)
     ):
         errors.append("$.interaction: row selection requires this action's multiple-selection Bind")
+    dropped = {operand.get("dropped") for operand in errors.each(operands) if isinstance(operand, dict) and operand.keys() == {"dropped"}}
+    if "dropped" in interaction and not dropped & {"item", "placement"}:
+        errors.append("$.interaction.dropped: a dragged row is accepted only by a drop, reorder or dragOut hook")
+    if "before" in interaction and "before" not in dropped:
+        errors.append("$.interaction.before: a drop position is accepted only by a reorder hook")
     if {"draft", "options"} & interaction.keys() and not any("draft" in operand for operand in errors.each(operands)):
         errors.append("$.interaction: draft and options require this action's composer")
 
@@ -351,9 +376,8 @@ def check_event_binding(event, bindings, errors, catalogue):
         elif ("row" in event and event["id"] not in bindings.row_routes
               and event["row"] not in bindings.route_values.get(event["id"], ())):
             errors.append("$.row: route has no matching row scope, selector option or shortcut value")
-    elif event_type == "section":
-        if event["id"] not in bindings.sections:
-            errors.append(f"$.id: unknown section {event['id']!r} in the active description")
+    elif event_type == "layout_arrange":
+        check_arrangement(event, bindings, errors)
     elif event_type == "layout":
         panel = (bindings.panel or {}).get("id")
         if not (event["id"] == panel or (event["id"] == "sidebar" and bindings.sidebar is not None)):

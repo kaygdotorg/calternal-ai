@@ -1,0 +1,16 @@
+{
+  "type": "invoke",
+  "action_id": "reorder-pins",
+  "activation_id": "case",
+  "activation_context": "opaque",
+  "interaction": {
+    "dropped": {
+      "bind": "pinned",
+      "row": "row-1"
+    },
+    "before": {
+      "bind": "pinned",
+      "row": "row-2"
+    }
+  }
+}

@@ -329,6 +329,23 @@
             "entry"
           ],
           "description": "Use anchor inside a checked entry action, selection in actions bound to this item view, or composer on the matching reply/edit form submit. The host reconstructs and types the operand."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "dropped": {
+              "enum": [
+                "item",
+                "placement",
+                "before"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "dropped"
+          ],
+          "description": "Inside a `drop`, `reorder` or `dragOut` hook only: the row the person dragged (`item` its item, `placement` its LayoutEntryRef in one of the person's own sections) or the row it now precedes (`before`). The shell sends the host-issued row references in `interaction.dropped` and `interaction.before`; the host checks both against the current authorized windows and reconstructs the operands."
         }
       ]
     },
@@ -678,6 +695,9 @@
             },
             {
               "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/RowImageIcon"
+            },
+            {
+              "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/RowAvatarIcon"
             }
           ]
         },
@@ -772,6 +792,18 @@
             "$ref": "#/$defs/ExtensionUse"
           },
           "description": "Optional fields supplied for visible rows by declared row-field points. They cannot affect base membership, sort, filter, counts or stable identity."
+        },
+        "drop": {
+          "$ref": "#/$defs/Invoke",
+          "description": "Only in the row template of a `repeat.over` bind (the header of one of the person's own sections): run when the person drops an item row from elsewhere onto this section. `{row: id}` is that section's LayoutSectionRef and `{dropped: item}` the dragged row's item. Typically host.layout.move_to."
+        },
+        "reorder": {
+          "$ref": "#/$defs/Invoke",
+          "description": "Only in the row template of a `repeat.over` bind: run when the person drags a row within this section or uses Move up or Move down on it. `{dropped: placement}` is the row's placement and `{dropped: before}` the placement it now precedes (absent at the end). Typically host.layout.move_to with `before`."
+        },
+        "dragOut": {
+          "$ref": "#/$defs/Invoke",
+          "description": "Only in the row template of a `repeat.over` bind: run when the person drops a row of this section where no `drop` accepts it. `{dropped: placement}` is the row's placement. Typically host.layout.unplace."
         }
       },
       "additionalProperties": false,
@@ -1389,11 +1421,11 @@
         "title": {
           "type": "string",
           "maxLength": 60,
-          "description": "Absent: the section has no header, and therefore no header actions."
+          "description": "Absent: the section has no header, and therefore no header actions, arrangement menu or rename. A strip uses its title only as the accessible label."
         },
         "collapsed": {
           "type": "boolean",
-          "description": "Present only if the section folds (a chevron is drawn); the value is its initial state."
+          "description": "Present only if the section folds (a chevron is drawn); the value is the fold until the person changes it. The person's fold is then kept in their sidebar arrangement (catalogue sidebar_arrangement) and wins over this value."
         },
         "rows": {
           "type": "array",
@@ -1491,6 +1523,10 @@
             },
             "rows": {
               "$ref": "#/$defs/Id"
+            },
+            "exclusive": {
+              "type": "boolean",
+              "description": "When true, a row the person places in one of their own sections is withheld, for that person, from the app's other bind sections over the same kind, so a row is in one place; host.layout.unplace returns it. Absent or false: placing withholds nothing."
             }
           },
           "additionalProperties": false,
@@ -1498,7 +1534,43 @@
             "over",
             "rows"
           ],
-          "description": "User-made sections: one section per row of the bind `over` (the per-person layout the host stores: its title is the row's title, its order the person's order), each section's rows from the per-parent bind `rows` (`source.parent: true`; the declared edge is the mandatory constraint and a `{parent: true}` filter is only an optional extra predicate). The host stores and authorizes the layout; moving a row or a section is a host operation (Move to, Move up, Move down in the catalogue), never a description. A per-parent bind is consumed ONLY through its edge: no ordinary section, list or count may reference it, and a bind is a section's rows OR a children target, never both (section rows present LayoutEntryRef, child rows the kind's own row ref)."
+          "description": "The person's own sections: one top-level section per row of the bind `over`, ordered among the authored sections by the person's arrangement (the per-person layout the host stores: its title is the row's title, its order the person's order), each section's rows from the per-parent bind `rows` (`source.parent: true`; the declared edge is the mandatory constraint and a `{parent: true}` filter is only an optional extra predicate). The host stores and authorizes the layout; moving a row or a section is a host operation (Move to, Move up, Move down in the catalogue), never a description. A per-parent bind is consumed ONLY through its edge: no ordinary section, list or count may reference it, and a bind is a section's rows OR a children target, never both (section rows present LayoutEntryRef, child rows the kind's own row ref)."
+        },
+        "presentation": {
+          "const": "strip",
+          "description": "Draw the bind's rows as one horizontal strip of round marks that scrolls sideways, with the renderer's edge fade at each end, instead of a list. Needs a `bind` whose row icon is a RowAvatarIcon; no literal `rows`, `repeat`, row `children`, `secondary` or swipe actions. The row title is the mark's accessible label and pointer tooltip. The strip is one Tab stop; Left and Right move the selection."
+        },
+        "arrange": {
+          "type": "object",
+          "properties": {
+            "move": {
+              "type": "boolean",
+              "description": "The person may move this section among its siblings."
+            },
+            "hide": {
+              "type": "boolean",
+              "description": "The person may hide this section; the shell's Hidden entry brings it back."
+            },
+            "rename": {
+              "type": "boolean",
+              "description": "The person may give this section their own title. Needs a `title`."
+            }
+          },
+          "additionalProperties": false,
+          "minProperties": 1,
+          "description": "What the person may change about this section in their own sidebar arrangement. Absent: nothing (folding is governed by `collapsed`). The shell draws the controls (header menu, drag of the header, keyboard); the host stores the result per person (catalogue sidebar_arrangement)."
+        },
+        "drop": {
+          "$ref": "#/$defs/Invoke",
+          "description": "Run when the person drops an item row from another section onto this section (or chooses this action from that row's menu). The dragged row is `{dropped: item}`. Accepted only for rows of this section's own bind kind. Example: pin by dropping onto the pinned strip."
+        },
+        "reorder": {
+          "$ref": "#/$defs/Invoke",
+          "description": "Run when the person drags a row of this section to a new place within it, or uses Move up or Move down on it. The row is `{dropped: item}` and the row it now precedes is `{dropped: before}` (absent at the end). Example: host.viewer.reorder over a viewer-private order field the bind sorts by."
+        },
+        "dragOut": {
+          "$ref": "#/$defs/Invoke",
+          "description": "Run when the person drops a row of this section where no section's `drop` accepts it (or chooses this action from the row's menu). The row is `{dropped: item}`. Example: unpin by dragging out of the pinned strip."
         }
       },
       "additionalProperties": false,
@@ -1788,9 +1860,6 @@
           "$ref": "#/$defs/EventSearch"
         },
         {
-          "$ref": "#/$defs/EventSection"
-        },
-        {
           "$ref": "#/$defs/EventSidebar"
         },
         {
@@ -1852,6 +1921,9 @@
         },
         {
           "$ref": "host-catalogue-v2.json#/$defs/DeviceReconcileRequest"
+        },
+        {
+          "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/LayoutArrangeRequest"
         }
       ]
     },
@@ -2709,30 +2781,6 @@
     },
     "EventSearch": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SettledSearchRequest"
-    },
-    "EventSection": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "const": "section"
-        },
-        "id": {
-          "$ref": "#/$defs/Id"
-        },
-        "collapsed": {
-          "type": "boolean"
-        },
-        "sentAt": {
-          "type": "number"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "id",
-        "collapsed"
-      ],
-      "description": "A section was folded or unfolded."
     },
     "EventSidebar": {
       "type": "object",

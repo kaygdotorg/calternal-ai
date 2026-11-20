@@ -1,0 +1,17 @@
+{
+  "definition": "SidebarArrangement",
+  "value": {
+    "revision": "rev-1",
+    "entries": [
+      {
+        "section": "people",
+        "position": 0,
+        "collapsed": true
+      },
+      {
+        "own": "own-ref-1",
+        "collapsed": false
+      }
+    ]
+  }
+}

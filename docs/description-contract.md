@@ -137,7 +137,7 @@ pushes. Rows without `secondary` stay single-line. The header and row title,
 secondary line and search excerpt retain their source’s live field and body
 authority. Use no substitute text from an inaccessible field.
 
-Any plugin may declare a leading icon on a Bind-produced item row. The optional `icon` may name a symbol, derive from a row field or kind, or use the catalogue’s `RowImageIcon` to select a small host-authorized image from a projected `RowImageRef` field. Follow the catalogue’s `query.row_images` read and cache rules. The renderer draws exactly the icons declared by the description. Eligible harness-associated rows use the host-projected `provider_icon` only when the provider mark binding matches the installed contribution. Missing publisher verification, missing mark ownership or a conflicting binding uses the declared generic fallback symbol. A note preview fits a portrait area of about 30 × 36 pt. Note rows declare the existing `RowImageIcon` portrait aspect and its `image.fallback` snippet field. Keep the last authorized retained image while fresh capture is pending. The host labels it with `stale_images` on the row and rechecks item, source, field and body authority at every fetch. While the thumbnail loads or when none is available, draw a simple document miniature from the freshly authorised snippet. If no authorised snippet is available, draw the document miniature without text. Shortcut rows retain their declared icons.
+Any plugin may declare a leading icon on a Bind-produced item row. The optional `icon` may name a symbol, derive from a row field or kind, or use the catalogue’s `RowImageIcon` to select a small host-authorized image from a projected `RowImageRef` field, or the round `RowAvatarIcon` (2.8). Follow the catalogue’s `query.row_images` read and cache rules. The renderer draws exactly the icons declared by the description. Eligible harness-associated rows use the host-projected `provider_icon` only when the provider mark binding matches the installed contribution. Missing publisher verification, missing mark ownership or a conflicting binding uses the declared generic fallback symbol. A note preview fits a portrait area of about 30 × 36 pt. Note rows declare the existing `RowImageIcon` portrait aspect and its `image.fallback` snippet field. Keep the last authorized retained image while fresh capture is pending. The host labels it with `stale_images` on the row and rechecks item, source, field and body authority at every fetch. While the thumbnail loads or when none is available, draw a simple document miniature from the freshly authorised snippet. If no authorised snippet is available, draw the document miniature without text. Shortcut rows retain their declared icons.
 `marks` (up to three) are trailing dots, counts, texts or icons, each with an optional `when` predicate and a tone. `leadingActions`, `trailingActions` and `menu` are
 `invoke` definitions; only the first leading or trailing action may set `fullSwipe`. `open` navigates (sets a route parameter to the row id) or invokes.
 Use the host-issued row reference for row identity in selection, events and scope. Item rows use the kind’s row reference. Rows of a repeated section use a `LayoutEntryRef`.
@@ -196,7 +196,40 @@ Plugin API (Part A); this section lists only what the description relies on.
   or a matching single-selection operand (`{selection: bind}`) over the section’s rows. The verifier checks the operand against the catalogue input type.
   In a repeated section an ItemRef input uses `{context: "item"}`. An ordinary item row ID is its ItemRef.
   `host.layout.move_to` takes either `item` to add an unplaced item or `entry` to move a placement, plus a `section` choice (`ChoiceRef`). Move up and Move down
-  take `entry`. The host reconstructs the references from the activation context. Drag is a recorded parity exception, with Move to and Move up/down standing in.
+  take `entry`. The host reconstructs the references from the activation context.
+
+### 2.8 Strips, arrangement and drag
+
+Any plugin may use these; nothing here is specific to one app. The host rules are the catalogue's
+[`sidebar_arrangement`](../contract/host-catalogue-v2.json#/sidebar_arrangement).
+
+* **Flat sections.** Sidebar sections do not nest and are never indented (owner decision, 2026-11-20). A description declares at most one
+  `Section.repeat`; each of its rows is **one of the person's own sections**, drawn as an ordinary top-level section and ordered among the
+  authored ones. With `repeat.exclusive: true` a row the person places in an own section is withheld, for that person, from the app's
+  other sections over the same kind (a row is in one place); `host.layout.unplace` returns it.
+* **Strip.** `presentation: "strip"` draws a section's bind as one horizontal row of round marks that scrolls sideways with the renderer's
+  edge fade (a pinned strip). The bind's row icon is a `RowAvatarIcon`; the row has no children, secondary line or swipe actions; the
+  title is the accessible label and tooltip. The strip is one Tab stop and Left and Right move the selection.
+* **Avatar marks.** A row icon `{avatar: {initials, image?}}` (catalogue `RowAvatarIcon`) is round: the authorized picture from a
+  `RowImageRef` field when loaded, otherwise initials of a Text field on one of eight palette colours chosen from the row ID, so web and
+  native agree. Any row may use it.
+* **The person's arrangement.** `Section.arrange: {move, hide, rename}` says what the person may change; `collapsed` (present) lets them
+  fold. The host keeps the person's changes (one order over all top-level sections including their own, fold, hidden, own title) in one
+  record per account, space and app, returns it in `view.open` as `arrangement`, and takes changes through the `layout.arrange` route
+  with a compare-and-set revision. Nobody else sees it. A hidden section is listed in the shell's **Hidden** entry after the last section,
+  where choosing it shows it again. The fold is no longer an event: the person's fold is part of the arrangement.
+* **Drag hooks.** A section with a bind may declare three invokes: `drop` (a row from another section lands on it; for example pin through
+  the plugin's own operation), `reorder` (a row moves within it; for example `host.viewer.reorder` over a viewer-private
+  `layout_order` field the bind sorts by first) and `dragOut` (a row of it lands where no `drop` accepts it; for example unpin). The
+  person's own sections declare the same hooks in the row template of the `repeat.over` bind, where `{row: id}` is that section:
+  `drop` and `reorder` use `host.layout.move_to` (with `before`), `dragOut` uses `host.layout.unplace`. Inside a hook
+  `{dropped: item}` is the dragged row's item, `{dropped: placement}` its placement in an own section and `{dropped: before}` (reorder
+  only) the row it now precedes; the shell sends the host-issued row references in `interaction.dropped` and `interaction.before` and
+  the host checks them against its live windows. A drop accepts only rows of the target's own row kind (any item row for an own
+  section). One gesture runs at most one hook.
+* **Every drag has a keyboard and menu equivalent**, drawn by the shell: a row's context menu lists the drop hooks of other drawn sections
+  that accept it, its own section's `dragOut`, and Move up and Move down where the section declares `reorder`; section headers offer
+  Move up, Move down, Hide and Rename where `arrange` allows. Every move animates with the motion tokens and is interruptible.
 
 ## 3. Invoke
 
@@ -297,7 +330,7 @@ list only when the host's next window no longer contains it.
 * **`binds`**: every bind of the app, by id (at most 16, chrome and view together); sidebar sections, selector counts, the footer search, the header title and components reference them by
   id, so a reference is never ambiguous and a bind is declared once.
 * **`chrome.sidebar`**: `selectors`, `sections`, `title`, `width`, `refresh`. A **section** has literal `rows` (fixed shortcuts), a `bind`, or both (literal first), `actions` and `menu` in
-  its header, a `collapsed` flag only when it folds, a `repeat` (user-made sections, 2.7) instead of `bind`/`rows`, and `showWhen` (a route parameter's value, or `minRole` so Empty Trash is not offered to an Editor). A section without a `title` draws
+  its header, a `collapsed` flag only when it folds, a `repeat` (user-made sections, 2.7) instead of `bind`/`rows`, `presentation`, `arrange` and drag hooks (2.8), and `showWhen` (a route parameter's value, or `minRole` so Empty Trash is not offered to an Editor). A section without a `title` draws
   no header and therefore no header actions. A shortcut's literal route value, including one set by its shell action, must be an `Id` that the renderer can send in `EventRoute.row`. There are no cards: a shortcut row or a `ShellAction` row covers what a card did; an approval is the `request-card` component.
 * **`selectors`**: a segmented control whose options set a route parameter; an option's `count` is a bind with `count: "exact"`, so Inbox 4 is a bind.
 * **`chrome.header`**: a literal title or a field of an **item** bind (the open item, never a list's first row), and up to two leading and three trailing actions. The sidebar toggle is the shell's.
@@ -578,6 +611,7 @@ What the renderer needs from the contract, and what it costs:
 8. **Touch targets** are 44 pt; the renderer, not the description, sizes controls.
 9. **The first paint** may use the data-free template. A launch can immediately show unexpired rows left by the last completed device reconciliation (§6), marked unconfirmed. A connected launch starts reconciliation in parallel. Actions wait for a fresh host context.
 10. **Nested rows and user sections** map to a `List` with `children` (disclosure) and one `Section` per layout row; windows per parent are requested only for expanded rows.
+11. **Strips and drag** (2.8): sections stay flat (no `DisclosureGroup` nesting); a strip is a horizontal `ScrollView` of round marks with a gradient mask at each edge; drag uses `draggable` and `dropDestination` (with `onMove` for reorder), and every hook also appears in the row's `contextMenu` and as keyboard Move up and Move down.
 
 ## 9. Paper exercises
 
@@ -798,7 +832,7 @@ contract revision. Section 8 of the Plugin API governs runtime parity.
 1. [Metadata patch](../contract/host-catalogue-v2.json#/operations/host.item.patch-metadata) uses the metadata arm of `item_save`. [Trash purge](../contract/host-catalogue-v2.json#/operations/host.trash.purge) is a confirmed Manager or Owner job.
 2. Reminders use one-shot [alarms](../contract/host-catalogue-v2.json#/alarms).
 3. **Generic TCP** is outside this contract; the owner's decision is recorded elsewhere and is not a description concern.
-4. **Section repeaters** (one section per row of a bind) and **nested child rows** are in the first contract (owner decision Q11, `Section.repeat`, `RowTemplate.children`); **drag** is a recorded parity exception, with Move to, Move up and Move down standing in.
+4. **Section repeaters** (one section per row of a bind) and **nested child rows** are in the first contract (owner decision Q11, `Section.repeat`, `RowTemplate.children`); flat sections, strips, the person's arrangement and **drag** are pinned in 2.8 (revision 14.45).
 5. The **retirement date of v1** is the owner's.
 
 ## 11. Review record

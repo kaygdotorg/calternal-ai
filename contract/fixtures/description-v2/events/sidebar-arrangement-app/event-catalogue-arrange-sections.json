@@ -1,0 +1,23 @@
+{
+  "type": "layout_arrange",
+  "lease_ref": "lease-1",
+  "expected": "rev-1",
+  "set": [
+    {
+      "section": "groups",
+      "position": 1,
+      "collapsed": true,
+      "title": null
+    },
+    {
+      "section": "people",
+      "hidden": true,
+      "title": "Friends"
+    },
+    {
+      "own": "own-ref-1",
+      "position": 0,
+      "collapsed": false
+    }
+  ]
+}

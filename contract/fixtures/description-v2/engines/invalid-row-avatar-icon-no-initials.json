@@ -1,0 +1,9 @@
+{
+  "definition": "RowAvatarIcon",
+  "value": {
+    "avatar": {
+      "image": "picture"
+    }
+  },
+  "error": "initials"
+}

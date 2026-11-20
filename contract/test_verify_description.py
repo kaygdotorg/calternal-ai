@@ -204,8 +204,10 @@ class PackageTests(ReviewCases, ProjectionCases, ScopeCases, unittest.TestCase):
         self.assertLess(peak_rss, max_mib)
         print(f"4 MiB null-array refusal: {elapsed:.3f} s, {peak_rss:.1f} MiB peak RSS")
 
-    def test_section_checks_sidebar_declaration(self):
-        self.event({"type": "section", "id": "bogus", "collapsed": True}, "unknown section")
+    def test_arrangement_checks_sidebar_declaration(self):
+        arrange = {"type": "layout_arrange", "lease_ref": "lease-1", "expected": "rev-1"}
+        self.event({**arrange, "set": [{"section": "bogus", "collapsed": True}]}, "unknown section")
+        self.event({"type": "section", "id": "bogus", "collapsed": True}, "unsupported discriminator 'section'")
 
     def test_sidebar_checks_surface(self):
         self.event({"type": "sidebar", "open": True})

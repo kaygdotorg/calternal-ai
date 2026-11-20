@@ -1,0 +1,11 @@
+{
+  "type": "layout_arrange",
+  "lease_ref": "lease-1",
+  "expected": "rev-1",
+  "set": [
+    {
+      "section": "pins",
+      "hidden": true
+    }
+  ]
+}

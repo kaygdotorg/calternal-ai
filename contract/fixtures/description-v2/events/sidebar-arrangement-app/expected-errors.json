@@ -1,0 +1,5 @@
+{
+  "invalid-event-catalogue-arrange-hide-strip.json": "does not allow the person to change hidden",
+  "invalid-event-catalogue-drop-with-before.json": "a drop position is accepted only by a reorder hook",
+  "invalid-event-catalogue-dropped-on-menu.json": "a dragged row is accepted only by"
+}

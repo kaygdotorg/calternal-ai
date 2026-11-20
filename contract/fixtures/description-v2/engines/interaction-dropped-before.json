@@ -1,0 +1,13 @@
+{
+  "definition": "Interaction",
+  "value": {
+    "dropped": {
+      "bind": "pinned",
+      "row": "row-1"
+    },
+    "before": {
+      "bind": "pinned",
+      "row": "row-2"
+    }
+  }
+}

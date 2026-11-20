@@ -160,12 +160,12 @@
             "type": "object", "additionalProperties": false, "required": ["type"],
             "properties": {
               "type": {"enum": ["Boolean", "Number", "Text", "Timestamp"]},
-              "source": {"enum": ["entry_unread", "entry_mentions"]}
+              "source": {"enum": ["entry_unread", "entry_mentions", "layout_order"]}
             },
             "if": {"required": ["source"]},
             "then": {"properties": {"type": {"const": "Number"}}}
           },
-          "description": "Declare viewer-private scalar fields. Their audience is always viewer_self. The optional entry source projects a host-maintained count against the viewer's own reading position. Apply catalogue viewer_item_state."
+          "description": "Declare viewer-private scalar fields. Their audience is always viewer_self. The optional entry source projects a host-maintained count against the viewer's own reading position; layout_order is the viewer's own order, written only by host.viewer.reorder. Apply catalogue viewer_item_state."
         },
         "indexed_fields": {
           "description": "Uses only package field names. Each field explicitly declares a catalogue FieldType for queries, sort keys and extractor outputs. Metadata schemas and values do not determine index types. At install the host rejects any name reserved by generic_item_fields in the host catalogue, including derived declarations.",

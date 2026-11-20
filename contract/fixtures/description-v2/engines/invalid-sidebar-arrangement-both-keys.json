@@ -1,0 +1,13 @@
+{
+  "definition": "SidebarArrangement",
+  "value": {
+    "revision": "rev-1",
+    "entries": [
+      {
+        "section": "people",
+        "own": "own-ref-1"
+      }
+    ]
+  },
+  "error": "oneOf"
+}

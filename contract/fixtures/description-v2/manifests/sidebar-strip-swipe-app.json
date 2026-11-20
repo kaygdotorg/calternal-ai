@@ -1,0 +1,111 @@
+{
+  "api_version": 2,
+  "id": "sidebar-fixture",
+  "name": "Sidebar fixture",
+  "version": "1.0.0",
+  "icon": "folder",
+  "network": "none",
+  "apps": [
+    {
+      "id": "conversations",
+      "name": "Conversations",
+      "icon": "folder",
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "sidebar-strip-swipe-app.json",
+          "sha256": "be8d451cb6ed65da27f9501eb59665907ef1135244803f568fcc940043908a92"
+        }
+      }
+    }
+  ],
+  "kinds": [
+    {
+      "id": "conversations",
+      "icon": "threads",
+      "title_field": "title",
+      "storage": {
+        "folder": "Conversations"
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "shape": {
+            "enum": [
+              "person",
+              "group"
+            ]
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "indexed_fields": {
+        "shape": {
+          "type": "Text",
+          "audience": "shared_projection"
+        }
+      },
+      "viewer_fields": {
+        "pinned": {
+          "type": "Boolean"
+        },
+        "pin_order": {
+          "type": "Number",
+          "source": "layout_order"
+        }
+      }
+    }
+  ],
+  "operations": [
+    {
+      "required_capability": "space.read",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "id": "conversations.pin",
+      "title": "Pin or unpin for me",
+      "target": {
+        "kind": "conversations",
+        "field": "item"
+      },
+      "methods": [
+        "viewer_state_write"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "item",
+          "pinned"
+        ]
+      },
+      "output_schema": {
+        "$ref": "host-catalogue-v2.json#/$defs/ViewerItemState"
+      }
+    }
+  ],
+  "reads": [
+    "conversations",
+    "layout_sections"
+  ],
+  "worker": {
+    "path": "worker-0000000000000000000000000000000000000000000000000000000000000000.mjs",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

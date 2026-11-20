@@ -1,0 +1,15 @@
+{
+  "type": "invoke",
+  "action_id": "rename-own",
+  "activation_id": "case",
+  "activation_context": "opaque",
+  "interaction": {
+    "dropped": {
+      "bind": "people",
+      "row": "row-1"
+    },
+    "prompt": {
+      "title": "x"
+    }
+  }
+}
