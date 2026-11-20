@@ -118,7 +118,8 @@ interface Calls { call<O>(name: string, input: object): Promise<O> }           /
 // Per-person fields use me.: me.unread (= after_position), me.<state key>.
 declare function slot(s: { effect: "viewer" | "others"; recommended: string; gives?: string[]; may?: string[] }): Slot;
 type Part = { composer?: object; page?: Page; form?: string; actions?: Record<string, Action> };
-type Action = { op: string; inputs?: Record<string, string>; when?: string; confirm?: string; place?: "menu" | "swipe" | "primary" };
+type Action = ({ op: string; inputs?: Record<string, string> } | { compose: Record<string, string> })
+  & { when?: string; confirm?: string; place?: "menu" | "swipe" | "primary" };
 
 // ── 7. The outside ───────────────────────────────────────────────────────
 interface Outside {
@@ -256,13 +257,13 @@ export default plugin({
     folder: "Chats",
     row: { title: "title", leading: { avatar: "people" }, detail: ["last.excerpt"], trailing: ["last.at", { count: "me.unread", quiet: "me.muted" }] },
     page: { records: { composer: "composer", actions: {
-      reply: { op: "calternal-chat/send", inputs: { chat: "this", quote: "record" }, place: "menu" },
+      reply: { compose: { quote: "record" }, place: "menu" },                 // fills the composer, sends nothing
       edit: { op: "calternal-chat/edit", inputs: { chat: "this", anchor: "record" }, when: "own" },
       delete: { op: "calternal-chat/delete", inputs: { chat: "this", anchor: "record" }, when: "own", confirm: "Delete for everyone?" },
       ask: { op: "calternal-chat-ai/call", inputs: { chat: "this", range: "records.selection" } },
     } } },
   }) },
-  slots: { composer: slot({ effect: "viewer", recommended: "calternal-chat-composer", gives: ["this", "draft"], may: ["calternal-chat/send"] }) },
+  slots: { composer: slot({ effect: "viewer", recommended: "calternal-chat-composer", gives: ["this", "draft", "quote"], may: ["calternal-chat/send"] }) },
   operations: {
     create: operation({ title: "New chat", input: { title: text(), people: list(person()) },
       async handler({ title, people }, ctx) {
@@ -280,9 +281,9 @@ export default plugin({
         return { anchor };
       } }),
     reply: operation({ title: "Agent reply", public: true, input: { chat: link(), call: text(), text: text() },
-      // Called by a run from its log (running section 2.7); the stamp names the run and the person it acts for.
+      // Called by a run from its log (running section 2.7), once per log record, so ctx.request is unique per reply.
       handler: ({ chat, call, text }, ctx) =>
-        ctx.records.append(chat, { body: `[↩](<#^${call}>)\n${text}`, request: ctx.key(`reply:${call}`) }) }),
+        ctx.records.append(chat, { body: `[↩](<#^${call}>)\n${text}`, request: ctx.request }) }),
     edit: operation({ title: "Edit", input: { chat: link(), anchor: text(), text: text() },
       async handler({ chat, anchor, text }, ctx) {
         const [rec] = await ctx.records.read(chat, { anchors: [anchor] });
@@ -383,9 +384,9 @@ export default plugin({
   depends: [{ plugin: "calternal-chat", version: "^2" }],
   grant: { calls: ["calternal-chat/send"] },
   operations: {
-    send: operation({ title: "Send", input: { chat: link(), text: text() },
-      handler: ({ chat, text }, ctx) =>
-        ctx.call("calternal-chat/send", { chat, text: text.replace(/\/\w+/g, word => SNIPPETS[word] ?? word) }) }),
+    send: operation({ title: "Send", input: { chat: link(), text: text(), quote: text().optional() },
+      handler: ({ chat, text, quote }, ctx) =>
+        ctx.call("calternal-chat/send", { chat, quote, text: text.replace(/\/\w+/g, word => SNIPPETS[word] ?? word) }) }),
   },
   fills: { "calternal-chat/composer": { composer: { send: "acme-composer/send", draft: true, mention: "this.people",
     insert: Object.keys(SNIPPETS) } } },
