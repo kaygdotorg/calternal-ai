@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import type { ItemViewPage, SnapshotNode } from "../generated/wire.js";
+import type { ItemSnapshotView, ItemLocator, SnapshotNode } from "../generated/wire.js";
 
 export type Participant = { kind: "person" | "agent"; id: string };
-export type Message = { id: string; author: Participant; text: string; log?: string; edited?: true; deleted?: true };
+export type Message = { id: string; author: Participant; text: string; log?: ItemLocator; edited?: true; deleted?: true };
 export type Thread = {
   id: string;
   title: string;
@@ -29,7 +29,11 @@ export function checkedTitle(title: string): string {
 
 export function folder(thread: Thread): string {
   const readable = thread.title.replace(/[^\p{L}\p{N} -]/gu, "_");
-  const short = [...readable].slice(0, 40).join("");
+  let short = "";
+  for (const character of [...readable].slice(0, 40)) {
+    if (Buffer.byteLength(short + character) > 109) break;
+    short += character;
+  }
   return `${thread.created.slice(0, 10)} ${short}`;
 }
 
@@ -74,8 +78,11 @@ export function messageView({ text, ...message }: Message): Omit<Message, "text"
   return message.deleted ? message : { ...message, text };
 }
 
-export function page(thread: Thread, older?: string): ItemViewPage {
-  const end = older === undefined ? thread.messages.length : Number(older);
+export function page(thread: Thread, older?: string, anchor?: string): { view: ItemSnapshotView; older?: string; anchor?: string } {
+  if (anchor !== undefined && older !== undefined) throw new Error("An anchored page cannot use a cursor.");
+  const index = anchor === undefined ? -1 : thread.messages.findIndex(message => message.id === anchor);
+  if (anchor !== undefined && index === -1) throw new Error("Message unavailable.");
+  const end = anchor !== undefined ? index + 1 : older === undefined ? thread.messages.length : Number(older);
   if (!Number.isSafeInteger(end) || end < 0 || end > thread.messages.length) {
     throw new Error("Invalid thread page.");
   }
@@ -84,21 +91,12 @@ export function page(thread: Thread, older?: string): ItemViewPage {
   while (start > 0 && end - start < 10) {
     const message = thread.messages[start - 1];
     const nodes: SnapshotNode[] = [
-      { type: "snapshot-heading", title: (message.author.kind === "person" ? "Person" : "Agent") + (message.edited && !message.deleted ? " (edited)" : "") },
+      { type: "snapshot-heading", anchor: message.id, title: (message.author.kind === "person" ? "Person" : "Agent") + (message.edited && !message.deleted ? " (edited)" : "") },
     ];
-    let text = "";
-    let length = 0;
-    for (const character of message.deleted ? "[Message deleted]" : message.text) {
-      const width = Buffer.byteLength(character);
-      if (length + width > 2000) {
-        nodes.push({ type: "snapshot-text", text });
-        text = "";
-        length = 0;
-      }
-      text += character;
-      length += width;
+    const text = [...(message.deleted ? "[Message deleted]" : message.text)];
+    for (let offset = 0; offset < text.length; offset += 2000) {
+      nodes.push({ type: "snapshot-text", text: text.slice(offset, offset + 2000).join("") });
     }
-    if (text) nodes.push({ type: "snapshot-text", text });
     const next = [...nodes, ...children];
     // Reserve the envelope and cursor overhead within the 64 KiB bound.
     if (next.length > 24 || Buffer.byteLength(JSON.stringify(next)) > 65000) break;
@@ -109,5 +107,6 @@ export function page(thread: Thread, older?: string): ItemViewPage {
   return {
     view: { content: first ? { type: "stack", children: [first, ...rest] } : { type: "snapshot-text", text: "" } },
     ...(start ? { older: String(start) } : {}),
+    ...(anchor !== undefined && { anchor }),
   };
 }

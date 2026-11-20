@@ -1,16 +1,16 @@
-import type { ItemRef } from "../generated/wire.js";
+import type { ItemLocator } from "../generated/wire.js";
 
 /** A version 1 harness receives only the checked prompt. */
 export type HarnessInput = { text: string };
 /** A version 1 harness returns reply text and a checked reference to its own run log. */
-export type HarnessOutput = { reply: string; log: ItemRef };
+export type HarnessOutput = { text: string; log: ItemLocator };
 
 export const catalogueRef = (type: string) => ({ $ref: `host-catalogue-v2.json#/$defs/${type}` });
 export const object = <const P extends Record<string, object>, const K extends (keyof P)[]>(properties: P, ...required: K) =>
   ({ type: "object" as const, additionalProperties: false, properties, required });
 export const textSchema = { type: "string", minLength: 1, maxLength: 16384 };
 export const harnessInput = object({ text: textSchema }, "text");
-export const harnessOutput = object({ reply: textSchema, log: catalogueRef("ItemRef") }, "reply", "log");
+export const harnessOutput = object({ text: textSchema, log: catalogueRef("ItemLocator") }, "text", "log");
 
 const MAX_TEXT_BYTES = 16 * 1024;
 
@@ -20,4 +20,10 @@ export function checkedText(text: string): string {
     throw new Error("Enter nonblank text of up to 16 KiB without control characters.");
   }
   return text;
+}
+
+/** Verify the payload fits the contribution frame, including JSON escaping and its envelope. */
+export function checkedFrame<T>(payload: T): T {
+  if (Buffer.byteLength(JSON.stringify(payload)) > 16000) throw new Error("Contribution payload exceeds the frame budget.");
+  return payload;
 }

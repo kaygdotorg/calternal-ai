@@ -16,7 +16,7 @@ const metadata = {
     schema: object({ title: { type: "string" } }, "title"),
   }],
   contributions: [{
-    app: "threads", point: "harnesses", version: 1, id: "claude-code", kind: "harness",
+    app: { package: "calternal-threads", app: "threads" }, point: "harnesses", version: 1, id: "claude-code", kind: "harness",
     operation: "threads-claude-code.run",
     harness: {
       image: `sha256:${sha256}`,
@@ -27,7 +27,7 @@ const metadata = {
   operations: [{
     id: "threads-claude-code.run", title: "Run Claude Code",
     required_capability: "plugins.use", risk: "external", idempotency: "request_id",
-    creates: "claude-code-run", methods: ["item_save", "item_append"], input_schema: harnessInput, output_schema: harnessOutput,
+    methods: ["item_create", "item_append"], input_schema: harnessInput, output_schema: harnessOutput,
   }],
 } satisfies Omit<ManifestV2, "apps" | "worker" | "network">;
 const authored = definePlugin({ ...metadata, apps: [] } as unknown as Parameters<typeof definePlugin>[0]);

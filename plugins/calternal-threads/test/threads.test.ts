@@ -1,3 +1,4 @@
+import type { SnapshotNode } from "../generated/wire.js";
 import assert from "node:assert/strict";
 import test, { after } from "node:test";
 import { decode } from "../src/format.ts";
@@ -26,7 +27,7 @@ test("create, select a contributed harness, append its reply and Stop an exact a
   const reply = thread.messages[1];
   assert.deepEqual(thread.participants.map(p => p.kind), ["person", "agent"]);
   assert.equal(reply.text, "Reply to Say hello 🦊\n\n---\n<!-- ## Agent -->");
-  assert.match(host.markdown(reply.log!), /## Reply/);
+  assert.match(host.markdown(reply.log!.id), /## Reply/);
   assert.match(host.markdown(item), new RegExp(`id="message-${reply.id}"`));
   assert.equal((await handlers["threads.message"]({ item, message: reply.id }, context("read-1", "threads.message"))).text, reply.text);
   assert.equal(host.snapshots.get(item)?.source_revision, host.files.get(item)?.revision);
@@ -106,13 +107,13 @@ test("alarm delivery retains checked harness and lets the worker decide whether 
   const { host, item, selection, context } = await setup();
   const arm = (if_missed: "skip" | "run", request: string) =>
     handlers["threads.arm"]({
-      item, harness: selection.harness, text: if_missed, at: "2026-11-20T13:00:00Z", if_missed,
+      item, harness: selection.harness, text: if_missed, at: "2026-11-20T13:00:00Z", if_missed, grace_seconds: 30,
     }, context(request, "threads.arm"));
   const skipped = await arm("skip", "alarm-skip");
   await host.deliver(skipped.alarm, "2026-11-20T14:00:00Z");
   assert.equal(decode(host.markdown(item)).messages.length, 0);
   const due = await arm("skip", "alarm-on-time");
-  await host.deliver(due.alarm, "2026-11-20T13:00:00Z");
+  await host.deliver(due.alarm, "2026-11-20T13:00:01Z");
   assert.equal(decode(host.markdown(item)).messages.length, 2);
   const late = await arm("run", "alarm-run");
   assert.deepEqual(await arm("run", "alarm-run"), late);
@@ -124,7 +125,7 @@ test("alarm delivery retains checked harness and lets the worker decide whether 
 test("newest pages keep complete messages and older reads stay on the same revision", async () => {
   const { host, item, send, context } = await setup();
   host.claude = async text => text;
-  const text = "🦊".repeat(4096);
+  const text = "🦊".repeat(3900);
   for (let index = 0; index < 3; index++) {
     await host.run((await send(`page-${index}`, text)).job_id);
   }
@@ -135,10 +136,12 @@ test("newest pages keep complete messages and older reads stay on the same revis
     item, source_revision: snapshot.source_revision, older,
   }, context("page-older", "threads.refresh"));
   let page = await read();
+  assert.ok("view" in page);
   assert.deepEqual(page.view, snapshot.view);
   let transcript = "";
   while (true) {
-    const root = page.view.content;
+    assert.ok("view" in page);
+    const root: SnapshotNode = page.view.content;
     assert.equal(root.type, "stack");
     transcript += root.children.flatMap(node => node.type === "snapshot-text" ? [node.text] : []).join("");
     if (!page.older) break;
@@ -203,4 +206,29 @@ test("two conversations with the same title get different readable placements", 
   assert.match(host.files.get(created)!.path!, /Review the lease \(2\)\/Conversation\.md$/);
   assert.deepEqual(await create("same-title"), { created });
   assert.equal(host.files.size, 2);
+});
+
+test("first contribution output and log survive Stop before the terminal frame", async () => {
+  const { host, item, send, context } = await setup();
+  let reached!: () => void;
+  const outputCommitted = new Promise<void>(resolve => { reached = resolve; });
+  let release!: () => void;
+  const waitForStop = new Promise<void>(resolve => { release = resolve; });
+  host.beforeTerminal = async () => { reached(); await waitForStop; };
+  const { job_id } = await send("stop-after-output", "Say hello");
+  const run = host.run(job_id);
+  await outputCommitted;
+  const reply = decode(host.markdown(item)).messages.at(-1)!;
+  const source_revision = host.files.get(item)!.revision;
+  const refresh = (anchor: string) => handlers["threads.refresh"]({ item, source_revision, anchor }, context("open-anchor", "threads.refresh"));
+  assert.deepEqual(await refresh("unknown-message"), { anchor_unavailable: true });
+  const anchored = await refresh(reply.id);
+  assert.ok("anchor" in anchored);
+  assert.equal(anchored.anchor, reply.id);
+  assert.match(JSON.stringify(anchored.view), /Reply to Say hello/);
+  host.stop(item, { execution: host.jobs.get(job_id)!.attempt!.execution });
+  release();
+  await assert.rejects(run, /attempt retired/);
+  assert.equal(host.files.get(item)?.revision, source_revision);
+  assert.match(host.markdown(reply.log!.id), /Reply to Say hello/);
 });
