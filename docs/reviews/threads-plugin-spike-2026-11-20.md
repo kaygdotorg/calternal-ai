@@ -2,8 +2,9 @@
 
 The lane starts from dev `80864d0d`. The spike has rerun against
 14.30 (`b89586dd`), 14.31 (`00828198`), 14.32 (`3ca11613`) and
-14.33 (`47024c0f`) and 14.34 (`b4d0f20d`). The current pin for both
-packages is draft 14.35 at `36d49713164ee0c56b8c1d3ffebfc844fd8b44cf`
+14.33 (`47024c0f`), 14.34 (`b4d0f20d`) and 14.35 (`36d49713`).
+The current pin for both packages is draft 14.36 at
+`1c38c21d37f5d5ecc7b32b52e1a9986ce7d7919d`
 on `origin/lane/v2-host-base`. It follows the November 20
 decision that the Threads app (`calternal-threads`) owns the conversation file and the selected harness
 owns its working log. The lane issue is [#92](https://git.kayg.org/kayg/calternal-ai/issues/92).
@@ -37,11 +38,11 @@ flock -s /tmp/calternal-dev02.lock nix develop -c bash -c '
 '
 ```
 
-The build uses the 14.35 revision-aware SDK builder. It pins both
+The build uses the 14.36 revision-aware SDK builder. It pins both
 manifest/worker packages, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-All 38 tests and both Conformance tool 1.1.0 package checks passed
-on dev-02 at the 14.35 pin under the shared lock. The repository
+All 40 tests and both Conformance tool 1.1.0 package checks passed
+on dev-02 at the 14.36 pin under the shared lock. The repository
 documentation gate passed in the earlier afternoon run. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
@@ -309,6 +310,85 @@ owning-package invocation as an authored write, the catalogue does not
 pin how the host distinguishes the two. Pin the generic checked source
 of that classification, including imported content assembled by a
 worker, and test that omitting the marker cannot preserve discovery.
+
+### Revision 14.36 disposition
+
+| Finding | Status | Evidence or remaining gap |
+| --- | --- | --- |
+| Classify imports even in a checked invocation (14.35) | **CLOSED** at the contract and fixture level | `item_policy.authorship.byte_check` requires complete evidence. In the same checked editor path the fixture preserves discovery for an exact Markdown snapshot and removes it when unexplained bytes are added. A staged import still downgrades at publication. |
+| Personal discovery after normal writes | **OPEN** again for the actual format | The otherwise valid checked composer and attempt sources lack a qualified record encoding. An initial populated frontmatter write, the first full Save, and later prompt and reply appends remain opaque. All three Sends and replies complete on the fake host with the item kept `consent_only`. |
+| Shared write attribution | **PARTLY** | The transcript writes the authenticated participant's stable ID, including when their display name matches the starter's. Checked source capture and complete encoding are required for host-side attribution. Per-message disclosure proof is a separate open exchange. |
+| SDK and guide | **PARTLY** | The pinned builder can emit `write_origins`. `threads.send` opts in to captured `text` and `threads.run` opts in to delivered output `text`. The existing generic contribution and conditional alarm typing gap remains. |
+| Remaining 14.35 findings | **Unchanged** | The 14.35 table carries forward the individual dispositions, including group separation, grants, receipts, private state, deletion, placement, tools, notifications, and the v1 reader. |
+
+#### New finding · account for every byte in a formatted write
+
+**OPEN**, API §3, description §§9.2–9.3 and catalogue
+`execution_attempt_authority.discovery.item_policy.authorship.byte_check`.
+
+The actual record begins with a blank line, then a heading such as
+`### Alice · 2026-11-20 12:00 UTC {#m-0123456789abcdef by=p1}`.
+A blank line separates the heading from the body. The encoder splits
+the message at LF, writes `> ` before each nonempty line and `>` for
+each empty line, and ends with LF. A multiline composer submission
+therefore need not exist as a contiguous byte span in the file.
+The encoding vector compares the real encoder with those bytes,
+including UTF-8, blank lines, a heading-shaped line and trailing LF.
+It also reconstructs the first Save from the prior frontmatter,
+new pinned harness participant lines and the complete prompt record.
+It also shows that a record with unrelated content appended still
+passes a substring check. A size cap alone leaves that channel open.
+
+**Smallest generic rule.** Keep exact whole-source equality as the
+default. For formatted bytes, let the installed package declare one
+bounded, deterministic byte recipe per supported write shape. The
+worker can select a permitted recipe and identify the checked source
+and previous-revision ranges it uses. The host reconstructs and compares
+the *entire* decoded append or replacement, including staged publication.
+Allow only these inputs to the reconstruction:
+
+- Exact captured editor/composer text or the delivered, validated output
+  field of the exact live attempt, with a small host-implemented transform.
+  The only new transform the message body needs is LF-line quoting with
+  fixed prefixes. Freeze any newline normalization before capture, or
+  explicitly specify it once in the recipe.
+- Bounded installed literals and deterministic renderings of host-checked
+  scalars. For this heading those are the escaped profile label, host
+  time in UTC, an anchor minted or deterministically derived from the
+  checked request or output sequence, and a participant slot bound to the
+  checked identity. The reply's optional log locator comes from the
+  validated output and must pass the item-ref check. Derive or check each
+  value; even a short worker-supplied label, anchor or prefix can carry data.
+- Exact, ordered, nonoverlapping slices of the checked expected revision
+  for unchanged data in a full save. Require preserved provenance for
+  those slices. Reconstruct changes from checked sources, then compare
+  the final bytes. Creation must reconstruct any populated frontmatter
+  from fixed literals and checked title, IDs, profile and time. The first
+  Send currently rewrites it to add the harness participant, so that
+  insertion must come from the pinned harness identity and the checked
+  participant slot. Agreement on a body span alone cannot qualify that save.
+
+Bind the recipe to its installed generation and permitted operation.
+Bind source evidence to the actor, item or checked create scope, request
+or exact attempt/call/output sequence, expected revision, and the write
+and replay identity. Recheck under the existing writer fence. Bound
+segment count, scalar/line/byte lengths and total output. On any
+unexplained byte, missing proof or opaque import path, keep or set
+`consent_only`. This requires a generic byte reconstructor and checked
+source values. It requires no Threads Markdown parser on the host.
+
+**Notes uses the same equality path.** The portable editor can supply
+the complete checked UTF-8 Markdown snapshot, including any frontmatter
+it actually edits, and save that exact snapshot. When only a range was
+edited, the host can splice checked replacement text into unchanged
+bytes of the expected revision using the same recipe. For the separate
+`yjs-v1` editor path, use the host's qualified Markdown projection of
+the checked edit and revision as the snapshot source. Any generated
+envelope uses the same fixed literals and checked scalars. A raw
+whole-file replacement or bulk-import route supplies no qualifying
+editor capture, even if its bytes happen to match. An ordinary editor
+save preserves any existing `consent_only` state. This avoids giving
+plugins an author-assertion bit or teaching the broker either format.
 
 ### Messaging decisions fixture
 
@@ -600,7 +680,7 @@ require a cross-owner write grant that the design does not provide.
 The package worker code uses no native Threads dispatch, special plugin ID,
 direct package connection, inherited provider credential, or server-owned
 thread format. The fixture provider port stands in for live execution placement. The
-14.35 fake carries replies through the catalogue's checked contribution
+14.36 fake carries replies through the catalogue's checked contribution
 methods. People-thread invitations still use fixture ports. The harness manifest includes
 an image-shaped fixture digest and a pinned entry that fails closed.
 It cannot launch Claude Code. The real image, login mapping and reviewed
@@ -675,3 +755,6 @@ when visibility changes before confirmation. [ADR 0060][adr0060]
 - Put shared broker request and result shapes in the catalogue once and
   derive worker typings, fake validation and author examples from them.
   That removes the spike's fixture declarations and draft packaging script.
+- Use the same complete-byte proof for exact editor snapshots, checked
+  splices and formatted appends. Exact editor saves need only identity
+  encoding. Threads adds deterministic framing and quoting.

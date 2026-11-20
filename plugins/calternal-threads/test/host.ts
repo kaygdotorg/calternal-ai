@@ -47,7 +47,7 @@ const exchanges = {
 } as const;
 const trace: [name: string, value: unknown][] = [];
 
-/** Check the fake's revision 14.35 exchanges against the pinned schemas. */
+/** Check the fake's revision 14.36 exchanges against the pinned schemas. */
 export function checkTrace() {
   const check = fileURLToPath(new URL("../check-shapes.py", import.meta.url));
   const contract = fileURLToPath(new URL("../.build/contract/", import.meta.url));
@@ -58,6 +58,7 @@ type File = { space: string; people?: readonly string[]; creator: string; discov
 type Job = {
   context: ExecutionJobContext;
   starter: string;
+  capturedInput?: CheckedText;
   input: RunInput;
   state: "pending" | "running" | "done" | "stopped";
   attempt?: ExecutionStatus;
@@ -65,6 +66,7 @@ type Job = {
   result?: HarnessOutput;
   contribution?: { call: string; input: HarnessInput };
 };
+type CheckedText = { item: string; text: string };
 type Owner = File["owner"];
 type Stage = { spec: ItemStageBegin; chunks: Buffer[]; length: number; sealed?: Buffer };
 type StagingMethod = "item_save_begin" | "item_save_chunk" | "item_save_seal";
@@ -141,6 +143,32 @@ export class FakeHost {
   /** Read the host's attribution for the current or a specific committed revision. */
   writeAuthor(item: string, revision = this.files.get(item)!.revision) {
     return this.files.get(item)!.authors.get(revision);
+  }
+
+  /** Simulate the host renderer capturing the composer field before Send dispatch. */
+  composerContext(request: string, item: string, text: string) {
+    return this.context(request, "threads.send", undefined, undefined, "threads", undefined, { item, text });
+  }
+
+  /** Seed checked empty bytes for import tests independently of the app's formatted create. */
+  async createEmptyCreatorItem() {
+    const input: ItemCreate = {
+      request_id: this.id("empty"), kind: "threads", name: "Empty.md", metadata: { title: "Empty" },
+      attempt_discovery: "creator_only",
+    };
+    const result = await this.call("threads", input.request_id, "item_create", input, undefined, actor, true) as ItemContentReceipt;
+    trace.push(["ItemCreate", input], ["ItemContentReceipt", result]);
+    return result;
+  }
+
+  /** Exercise a synthetic checked editor save with independent capture and write bytes. */
+  async saveCapturedText(item: string, text: string, bytes: Buffer) {
+    const input: ItemSave = {
+      request_id: this.id("editor"), item, expected: this.files.get(item)!.revision, body: bytes.toString("base64"),
+    };
+    const result = await this.call("threads", input.request_id, "item_save", input, undefined, actor, true, undefined, { item, text });
+    trace.push(["ItemSave", input], ["ItemSaveReply", result]);
+    return result;
   }
 
   async stageUnproven(item: string, bytes: Buffer) {
@@ -349,7 +377,7 @@ export class FakeHost {
     }
   }
 
-  private admit(payload: ExecutionJobStart, starter = actor) {
+  private admit(payload: ExecutionJobStart, starter = actor, capturedInput?: CheckedText) {
     assert.equal(payload.harness, this.selected.harness, "unchecked harness");
     if (payload.placement !== undefined) assert.equal(payload.placement, this.selected.placement, "unchecked placement");
     const file = this.files.get(payload.item);
@@ -358,24 +386,31 @@ export class FakeHost {
     assert.ok(active.length < 2, "pending_limit");
     assert.ok(!Object.hasOwn(payload.input, "item"), "duplicate target field");
     this.preflight(payload.harness, payload.contribution_input);
+    if (capturedInput) {
+      assert.equal(capturedInput.item, payload.item);
+      assert.deepEqual(payload.contribution_input, { text: capturedInput.text });
+    }
     const intent = this.id("job");
     const context = { intent, item: payload.item, harness: payload.harness, contribution_identity: logicalHarness, contribution_input: structuredClone(payload.contribution_input) };
     const input = { ...payload.input as Omit<RunInput, "item">, item: payload.item };
-    this.jobs.set(intent, { context, input, starter, state: "pending", teardown: true });
+    this.jobs.set(intent, { context, input, starter, capturedInput, state: "pending", teardown: true });
     return { job_id: intent };
   }
 
-  context(request: string, operation: string, job?: Job, alarm?: AlarmDelivery, owner: Owner = "threads", frame?: HostWorkerInvokeFrame["message"]): Context {
+  context(request: string, operation: string, job?: Job, alarm?: AlarmDelivery, owner: Owner = "threads", frame?: HostWorkerInvokeFrame["message"], capturedInput?: CheckedText): Context {
     const declared = (owner === "threads" ? application : contribution).manifest.operations.find(op => op.id === operation);
     assert.ok(declared);
     const person = job?.starter ?? actor;
     const message = frame ?? { author_context: { request_id: request, actor: person, authored_at: now, actor_label: personLabels[person] }, job_context: job?.context, alarm };
     assert.equal(message.author_context?.actor, person);
+    if (capturedInput) assert.equal(declared.write_origins?.host_input, "text");
     const call: Context["call"] = async (method, input) => {
       assert.ok((declared.methods as readonly string[]).includes(method), "undeclared method");
       const wire = exchanges[method as keyof typeof exchanges];
       if (wire) trace.push([wire[0], input]);
-      const result = await this.call(owner, request, method, input, job, person, true);
+      const captured = capturedInput ?? (declared.write_origins?.attempt_output === "text" && job?.attempt && job.result
+        ? { item: job.context.item, text: job.result.text } : job?.capturedInput);
+      const result = await this.call(owner, request, method, input, job, person, true, undefined, captured);
       if (wire) trace.push([wire[1], result]);
       return result as never;
     };
@@ -384,7 +419,7 @@ export class FakeHost {
   }
 
   // This dispatch is the only place that unpacks fixture broker method operands.
-  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0] | StagingMethod, input: unknown, job?: Job, receiptActor = actor, checkedInvocation = false, shared?: readonly string[]): Promise<unknown> {
+  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0] | StagingMethod, input: unknown, job?: Job, receiptActor = actor, checkedInvocation = false, shared?: readonly string[], captured?: CheckedText): Promise<unknown> {
     if (job) {
       assert.ok(this.jobs.get(job.context.intent) === job && job.state === "running", "attempt retired");
       assert.equal(job.starter, receiptActor);
@@ -403,9 +438,10 @@ export class FakeHost {
     const requestId = args.request_id ?? request;
     const receiptKey = (name: string) => `${owner}:${receiptActor}:${name}:${requestId}`;
     const commit = (effect: () => unknown) => this.receipt(receiptKey(method), input, effect);
-    const writeAuthor = checkedInvocation ? receiptActor : undefined;
-    const attributeWrite = (target: File, revision: string) => {
-      const author = job?.attempt ? job.starter : writeAuthor;
+    // No installed generic encoding exists at this pin. Only exact source bytes qualify here.
+    const attributeWrite = (target: File, revision: string, bytes: Buffer) => {
+      const author = checkedInvocation && captured?.item === args.item && bytes.equals(Buffer.from(captured.text))
+        ? receiptActor : undefined;
       if (author !== undefined) target.authors.set(revision, author);
       if (author !== target.creator || args.attempt_discovery === "consent_only") target.discovery = "consent_only";
     };
@@ -425,13 +461,13 @@ export class FakeHost {
             ? [root, `${folders[0]} (${suffix})`, ...folders.slice(1), create.name].join("/")
             : [root, `${suffix} ${create.name}`].join("/");
         }
-        const discovery = create.attempt_discovery ?? "consent_only";
-        if (discovery === "creator_only") {
-          assert.ok(writeAuthor && !shared, "unchecked sole creator");
+        const discovery = create.attempt_discovery === "creator_only" && checkedInvocation && !shared && body.length === 0
+          ? "creator_only" : "consent_only";
+        if (create.attempt_discovery === "creator_only") {
           assert.equal(application.manifest.kinds.find(kind => kind.id === create.kind)?.attempt_discovery, "item_policy");
         }
         this.files.set(item, { owner, space: this.personalSpace(receiptActor), people: shared && [...shared], creator: receiptActor, discovery, revision, history: new Map([[revision, body]]),
-          authors: new Map(writeAuthor ? [[revision, writeAuthor]] : []),
+          authors: new Map(),
           path, archived: false, title: String(create.metadata.title) });
         return { item, revision, locator: { space: this.personalSpace(receiptActor), id: item }, receipt: requestId };
       });
@@ -485,7 +521,7 @@ export class FakeHost {
           target.history.set(revision, body);
           target.revision = revision;
           if (typeof save.patch?.title === "string") target.title = save.patch.title;
-          if (stage || save.body !== undefined) attributeWrite(target, revision);
+          if (stage || save.body !== undefined) attributeWrite(target, revision, body);
           if (save.attempt_discovery === "consent_only") target.discovery = "consent_only";
           const result = { item: save.item, revision, locator: { space: target.space, id: save.item }, receipt: requestId };
           if (stage) this.receipts.get(receiptKey("item_save_begin"))!.result = result;
@@ -506,7 +542,7 @@ export class FakeHost {
         const next = offset + page.length;
         return { bytes: page.toString("base64"), ...(next < body.length && { next_offset: next }) };
       }
-      case "start_job": return commit(() => this.admit(input as ExecutionJobStart, receiptActor));
+      case "start_job": return commit(() => this.admit(input as ExecutionJobStart, receiptActor, captured));
       case "execution_start": return commit(() => {
         assert.ok(job?.state === "running");
         assert.equal(args.harness, job.context.harness);
@@ -559,7 +595,7 @@ export class FakeHost {
           const body = Buffer.concat([prior, addition]);
           target.history.set(revision, body);
           target.revision = revision;
-          attributeWrite(target, revision);
+          attributeWrite(target, revision, addition);
           return { revision, end_offset: body.length, receipt: requestId };
         });
         if (owner === "threads" && this.loseNextAppendAck) {
