@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.37 draft
+# Plugin API v2 · revision 14.38 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -454,6 +454,7 @@ its receipt, with long work as a durable job.
 | Engine / methods | Input → output, refusal and bound |
 | --- | --- |
 | Items · `item_create`, `item_head`, `item_range`, `item_history` | Apply the [catalogue item schemas](../contract/host-catalogue-v2.json#/item_engine). Create returns a checked item, revision, portable locator and receipt. Range is pinned and bounded. History uses the existing cursor and authorized revision summaries. |
+| Items · `item_spans` | Exact readable item revision and optional cursor → ordered recorded byte ranges, middle attribution and span refs. See the [catalogue’s span read][item-spans]. |
 | Items · `item_save` | The owner commits body, declared metadata, including its indexed title, and an optional leaf rename in one receipt. The creation directory stays fixed. Use the typed `head_conflict` reply to reread and reapply an edit on a checked newer head. Metadata-only changes preserve the room checkpoint. Large writes use the typed staged protocol below. |
 | Items · `item_trash`, `item_restore` | Editor or higher. Trash records a tombstone. Restore from Trash uses the current trashed head and restores a live placement. Restore from history takes a source revision and expected live head and appends that version as a new revision. No history restore against a trashed item. Stale heads give `409`. |
 | Items · `item_rename`, `item_rename_status`, `item_rename_undo` | Rename accepts ref, expected head and name and returns a durable action ID. Status uses that ID and checks live item authority. Completion can return a protected Undo action bound to the result and expected revisions. Undo is a fresh receipt-backed operation, with conflict if affected heads moved. Publish progress and actions through the host result route, with no worker payload. |
@@ -475,7 +476,7 @@ A kind’s owning package writes its files and defines their encoding. The
 host maintains item identity, revisions, file placement and authority.
 Apply the catalogue’s [file append rule](../contract/host-catalogue-v2.json#/file_append).
 `item_append` checks the exact head, write authority and, when issued under an attempt, its live execution and
-audience fence. Commit the bounded opaque append, revision, byte boundary
+audience fence. Commit the bounded append, revision, byte boundary
 and receipt recoverably before ACK, using staged writes and the outbox.
 Retry a lost ACK by receipt. Checked revision-pinned range reads work
 while the space sleeps. Recheck at delivery and fence on revoke or purge.
@@ -631,11 +632,17 @@ suffix. Prefix and suffix are each at most 512 UTF-8 bytes and are
 attributed to the package. The middle is selected by reference to its
 checked source. The host records the full span and the middle attribution
 in the same transaction. Threads stores the message text as plain
-paragraphs in that middle span. One message edit replaces one recorded
-span, and deletion replaces it with an empty middle. Notes can save a
+paragraphs in that middle span. On reopen the owning package reads
+`item_spans` for the exact readable revision, up to 128 spans per
+page. The durable byte ranges supply the message boundaries even
+when the middle includes a heading-shaped line. Keep the captured
+text byte-for-byte, including those lines. One message edit replaces
+one recorded span, and deletion replaces it with an empty middle. Notes can save a
 complete host-captured editor snapshot with empty framing. Plugin-built
-whole bodies and imports remain opaque. Follow the
-[catalogue's authorship rule][item-authorship] for discovery.
+whole bodies and imports remain opaque. Any opaque body write,
+including an append, invalidates the prior live spans and makes the
+new revision unproven. Follow the [catalogue's span read][item-spans]
+and [authorship rule][item-authorship].
 An authorized writer can request protection. Only the host can clear it
 on verified provenance. The harness receives selected material through
 the [disclosure boundary][attempt-disclosure] and has no direct read or
@@ -1714,3 +1721,4 @@ and queued follow-ups are owned by the app and harness contract.
 [adr-contacts]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0064-contacts-sync-over-carddav.md
 [item-authorship]: ../contract/host-catalogue-v2.json#/execution_attempt_authority/discovery/item_policy/authorship
 [attested-write]: ../contract/host-catalogue-v2.json#/item_engine/attested_write
+[item-spans]: ../contract/host-catalogue-v2.json#/item_engine/item_spans

@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.37 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.38 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -625,7 +625,10 @@ checked composer field. The host binds that submission to the admitted
 job. The owning job appends it using an attested body with source kind
 `input`. Each reply uses source kind `output` and its checked sequence.
 The host composes and records each contiguous message under the
-[catalogue’s authorship rule][write-authorship].
+[catalogue’s authorship rule][write-authorship]. On reopen the owning
+package uses `item_spans` and `item_range` for the same revision. Byte
+ranges mark the message and its exact middle, including any line that
+looks like a heading.
 
 **Personal space.** Open the app and item, pick Example harness in the
 composer and keep its short option ref `h-opt`. Use the selected option's
