@@ -1,5 +1,5 @@
-#!/usr/bin/env node
-// Offline entry point for the SDK's build command. Never starts the package worker.
+// Emit one plugin package offline: manifest, pinned templates, worker and
+// harness entries, verified before publication. Never starts the worker.
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -9,23 +9,25 @@ import { readPinned, verifyPackage } from "./verify-package.mjs";
 const bytesOf = value => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 
-async function build(source, output, workerPath) {
-  if (!source || !output || process.argv.length > 5) {
-    throw new Error("Usage: node build-author-package.mjs <plugin.ts> <output-dir> [bundled-worker.mjs]");
-  }
+/**
+ * Build the package that `source` default-exports through `definePlugin` into
+ * `output`. `worker`, when given, is the already bundled worker module. Writes
+ * into a staging directory, verifies it, then renames the files into place.
+ * Returns the emitted manifest, the asset list and the verifier's report.
+ */
+export async function buildPackage(source, output, worker) {
   const { default: plugin } = await import(pathToFileURL(resolve(source)).href);
+  if (!plugin?.metadata || !Array.isArray(plugin.apps)) throw new Error(`${source} must default-export the result of definePlugin.`);
   const apps = plugin.apps.map(({ metadata, template }, index) => {
     const bytes = bytesOf(template);
     const sha256 = digest(bytes);
     const asset = { path: `app-${index}-${sha256}.json`, sha256 };
-    const app = { ...metadata, description: { id: "app", template: asset } };
-    return { app, asset, bytes };
+    return { app: { ...metadata, description: { id: "app", template: asset } }, asset, bytes };
   });
-  const worker = workerPath && await readFile(workerPath);
-  const workerHash = worker && digest(worker);
-  const workerAsset = workerHash && { path: `worker-${workerHash}.mjs`, sha256: workerHash };
+  const workerBytes = worker && await readFile(worker);
+  const workerAsset = workerBytes && { path: `worker-${digest(workerBytes)}.mjs`, sha256: digest(workerBytes) };
   const assets = apps.map(({ asset, bytes }) => ({ path: asset.path, bytes }));
-  if (workerAsset) assets.push({ path: workerAsset.path, bytes: worker });
+  if (workerAsset) assets.push({ path: workerAsset.path, bytes: workerBytes });
   const sourceDirectory = await realpath(dirname(resolve(source)));
   const entries = new Map();
   const contributions = plugin.metadata.contributions && await Promise.all(
@@ -39,26 +41,19 @@ async function build(source, output, workerPath) {
     }),
   );
   assets.push(...entries.values());
-  const manifest = bytesOf({ ...plugin.metadata, apps: apps.map(entry => entry.app), worker: workerAsset, contributions });
-  // Validate the emitted bytes before publishing the manifest.
+  const manifest = { ...plugin.metadata, apps: apps.map(entry => entry.app), worker: workerAsset, contributions };
   await mkdir(output, { recursive: true });
   const staging = await mkdtemp(join(output, ".author-build-"));
   try {
     await Promise.all([
       ...assets.map(asset => writeFile(join(staging, asset.path), asset.bytes)),
-      writeFile(join(staging, "manifest.json"), manifest),
+      writeFile(join(staging, "manifest.json"), bytesOf(manifest)),
     ]);
-    await verifyPackage(staging);
+    const { report } = await verifyPackage(staging);
     for (const asset of assets) await rename(join(staging, asset.path), join(output, asset.path));
     await rename(join(staging, "manifest.json"), join(output, "manifest.json"));
+    return { manifest: JSON.parse(bytesOf(manifest)), assets: assets.map(({ path, bytes }) => ({ path, bytes: bytes.length })), report };
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
-}
-
-try {
-  await build(...process.argv.slice(2));
-} catch (error) {
-  console.error(error.message);
-  process.exitCode = 1;
 }

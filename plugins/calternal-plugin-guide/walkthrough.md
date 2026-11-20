@@ -49,12 +49,11 @@ export default definePlugin({
 
 <!-- END GENERATED first-list -->
 
-From the plugin directory, check the TypeScript declarations and build the
-plugin.
+From the plugin directory, build the plugin. The command type-checks it
+when the directory has a `tsconfig.json`, then emits and verifies the package.
 
 ```sh
-npx tsc --noEmit --strict --skipLibCheck --module nodenext --target es2022 src/plugin.ts
-npx --no-install calternal-build-plugin src/plugin.ts dist
+npx --no-install calternal-plugin build src/plugin.ts dist
 ```
 
 Open `dist/manifest.json` and the app template named in its `apps` entry. The
@@ -196,8 +195,8 @@ export default definePlugin({
 
 <!-- END GENERATED gear-list -->
 
-Save this as `worker.mjs`. Supply it as the third argument to
-`calternal-build-plugin src/plugin.ts dist worker.mjs`. The SDK adds the
+Save this as `worker.mjs`. Supply it with
+`calternal-plugin build src/plugin.ts dist --worker worker.mjs`. The SDK adds the
 plugin-level worker reference and digest. Each form selects its operation
 by ID. The offline placeholder exits with failure if started.
 

@@ -59,20 +59,21 @@ export async function readPinned(directory, { path, sha256 }) {
 }
 
 /**
- * Verify emitted package files using the manifest schema, asset digests and
- * pinned description verifier in package mode. Validates create defaults
- * and the worker pin, then returns pinned data for authoring checks.
- * A failed check throws with the underlying schema or artifact diagnostic.
+ * Verify emitted package files using the pinned description verifier in
+ * package mode (manifest schema, templates and cross-references), asset
+ * digests, create defaults and the worker and harness entry pins. Returns the
+ * pinned data and the verifier's report. A failed check throws with the
+ * underlying schema or artifact diagnostic.
  */
 export async function verifyPackage(directory) {
   const root = await realpath(directory);
   const contract = await contractPin(new URL("../generated/contract/", import.meta.url));
+  let report;
   try {
-    const output = execFileSync(
+    report = execFileSync(
       "python3", ["-B", fileURLToPath(new URL("verify-description.py", contract)), "--package", root],
       { encoding: "utf8" },
     );
-    process.stdout.write(output);
   } catch (error) {
     const diagnostic = [error.stdout, error.stderr].filter(Boolean).join("").trim();
     if (diagnostic) throw new Error(diagnostic, { cause: error });
@@ -86,5 +87,8 @@ export async function verifyPackage(directory) {
     bytes: await readPinned(root, app.description.template),
   })));
   if (manifest.worker) await readPinned(root, manifest.worker);
-  return { manifest, apps: apps.map(({ app, bytes }) => ({ app, template: JSON.parse(bytes) })) };
+  for (const contribution of manifest.contributions ?? []) {
+    if (contribution.harness) await readPinned(root, contribution.harness.entry);
+  }
+  return { manifest, apps: apps.map(({ app, bytes }) => ({ app, template: JSON.parse(bytes) })), report };
 }

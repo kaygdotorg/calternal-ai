@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "docs:examples": "node scripts/generate-examples.mjs",
-    "build": "node scripts/generate-examples.mjs --check && tsc --noEmit && node --check examples/gear-worker.mjs && calternal-build-plugin examples/first-list.ts dist/first-list && calternal-build-plugin examples/gear-list.ts dist/gear-list examples/gear-worker.mjs && esbuild src/worker.ts --bundle --platform=node --format=esm --target=node22 --minify --loader:.md=text --outfile=dist/worker.js",
+    "build": "node scripts/generate-examples.mjs --check && tsc --noEmit && node --check examples/gear-worker.mjs && calternal-plugin build examples/first-list.ts dist/first-list --no-check && calternal-plugin build examples/gear-list.ts dist/gear-list --worker examples/gear-worker.mjs --no-check && esbuild src/worker.ts --bundle --platform=node --format=esm --target=node22 --minify --loader:.md=text --outfile=dist/worker.js",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {

@@ -1,7 +1,7 @@
 # Calternal Plugin API v2
 
 Use the TypeScript SDK to declare a plugin, then validate its manifest and
-host-drawn templates with `calternal-build-plugin`. Begin with the
+host-drawn templates with `calternal-plugin build`. Begin with the
 [walkthrough](walkthrough.md). The manifest lists what the plugin asks
 to do. The host evaluates the caller, space and declared authority for
 each operation.

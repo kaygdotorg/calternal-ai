@@ -21,21 +21,22 @@
   "scripts": {
     "build": "node scripts/generate-author-types.mjs && tsc -p tsconfig.json",
     "test": "npm run build && node --test test/*.test.mjs && npm run test:types && npm run test:author",
-    "test:author": "vitest run test/author-v2.test.ts test/build-author-package.test.ts test/fake-host.test.ts",
+    "test:author": "vitest run test/author-v2.test.ts test/calternal-plugin.test.ts test/fake-host.test.ts",
     "test:broker-types": "tsc --noEmit --strict --module nodenext test/revisioned-broker-types.mts",
     "test:types": "tsc --noEmit --strict --target es2022 --module esnext --moduleResolution bundler --skipLibCheck test/types/operation-types.ts test/fixtures/sample-plugins.ts"
   },
   "dependencies": {
     "@calternal/contracts": "*",
     "ajv": "^8.17.1",
-    "ajv-formats": "^3.0.1"
+    "ajv-formats": "^3.0.1",
+    "esbuild": "^0.25.5",
+    "typescript": "^5.9.3"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
-    "typescript": "^5.9.3",
     "vitest": "^5.0.4"
   },
   "bin": {
-    "calternal-build-plugin": "./scripts/build-author-package.mjs"
+    "calternal-plugin": "./scripts/calternal-plugin.mjs"
   }
 }

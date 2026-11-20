@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && calternal-build-plugin src/plugin.ts dist src/authoring-only.mjs",
+    "build": "calternal-plugin build --worker src/authoring-only.mjs",
     "test": "npm run build && vitest run"
   },
   "dependencies": {

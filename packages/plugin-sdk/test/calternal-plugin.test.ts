@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, expect, it } from "vitest";
 import { verifyPackage } from "../scripts/verify-package.mjs";
 
-const cli = fileURLToPath(new URL("../scripts/build-author-package.mjs", import.meta.url));
+const cli = fileURLToPath(new URL("../scripts/calternal-plugin.mjs", import.meta.url));
 const sdk = new URL("../dist/index.js", import.meta.url).href;
 const scratch: string[] = [];
 
@@ -23,7 +23,7 @@ function setup() {
   const manifestPath = join(output, "manifest.json");
   const run = (source: string) => {
     writeFileSync(entry, `import { definePlugin, defineApp, defineView, defineKind } from ${JSON.stringify(sdk)};\n${source}`);
-    return spawnSync(process.execPath, [cli, entry, output], { encoding: "utf8" });
+    return spawnSync(process.execPath, [cli, "build", entry, output, "--no-check", "--json"], { encoding: "utf8", cwd: directory });
   };
   return { output, manifestPath, run };
 }
@@ -51,7 +51,9 @@ it("verifies the emitted template with the generated manifest and pins its bytes
   const result = run(firstList);
   expect(result.stderr).toBe("");
   expect(result.status).toBe(0);
-  expect(result.stdout).toMatch(/ok\s+app-0-[a-f0-9]{64}\.json/);
+  const summary = JSON.parse(result.stdout);
+  expect(summary).toMatchObject({ package: "links", operations: 0, apps: 1, worker: null, checks: { contract: "passed" } });
+  expect(summary.report.join("\n")).toMatch(/ok\s+app-0-[a-f0-9]{64}\.json/);
 
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   expect(manifest).toMatchObject({ api_version: 2, reads: ["link"], network: "none", operations: [] });
@@ -90,4 +92,17 @@ it("refuses host-create defaults that do not satisfy the kind metadata schema", 
   const result = run(firstList.replace("claimed_text: true,", "claimed_text: true, host_create: { defaults: { title: 42 } },"));
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/host_create\/defaults.*must be string/);
+});
+
+it("prints a readable summary, and every limit with its source", () => {
+  const { run } = setup();
+  const json = run(firstList);
+  expect(json.status).toBe(0);
+  const human = spawnSync(process.execPath, [cli, "limits"], { encoding: "utf8" });
+  expect(human.stdout).toMatch(/ITEM_APPEND_BYTES\s+65536 bytes/);
+  const sources = JSON.parse(spawnSync(process.execPath, [cli, "limits", "--json"], { encoding: "utf8" }).stdout);
+  expect(sources.CONTRIBUTION_FRAME_BYTES).toEqual({ value: 16384, unit: "bytes", source: "catalogue#/extension_points/calls/limits/encoded_frame_bytes" });
+  const unknown = spawnSync(process.execPath, [cli, "bundle"], { encoding: "utf8" });
+  expect(unknown.status).toBe(1);
+  expect(unknown.stderr).toMatch(/Unknown command bundle[\s\S]*Usage:/);
 });
