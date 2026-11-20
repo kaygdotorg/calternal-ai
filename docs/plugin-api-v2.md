@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.38 draft
+# Plugin API v2 · revision 14.39 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -15,7 +15,7 @@ is absent and uses the existing fallback. The renderer formats RFC 3339
 timestamps locally using the device time zone and locale.
 
 The [owner’s rescope decisions][decisions] move file formats, application
-behavior and transcript presentation to packages. This draft specifies
+behavior and transcript presentation to plugins. This draft specifies
 the generic file, execution and authority boundaries. The sealed
 [generic engines proposal][generic-engines] remains background for those
 boundaries. The existing engine serves current clients until parity and
@@ -29,7 +29,7 @@ placement qualification pass.
 | [Interface proposal](plugin-interface-proposal.md) | **What a plugin can contribute**, **App switcher entries**, **Sealed components**, **Stateful generated views**, **The shell decision**, **Plugin worker placement and network access** (including **Brokered network capabilities**), **Swift clients**, **Notes and Threads as ordinary plugins**, and **Can official plugins use the same contract?** as statements of the v2 interface, placement, dispatch and migration order. |
 | [Plugin workers](plugin-workers.md) | Preamble through edited revision readiness and **Placement and unresolved contracts** as statements of the v2 runtime. **Development and tests** still describes the current container adapter. |
 
-Today the server has [per-package workers](../crates/server/src/plugins/worker/transport.rs)
+Today the server has [per-plugin workers](../crates/server/src/plugins/worker/transport.rs)
 and [broker adapters](../crates/server/src/plugins/broker.rs), container
 isolation for no-KVM, durable jobs/waits, revisions, receipts, diagnostics,
 provider adapters, Notes/collection sharing, anonymous media and the trial
@@ -37,7 +37,7 @@ kit. Reuse them. Add the space supervisor, commit fences, bindings and SDK.
 Mail has a data layer and fixture UI. Real mailbox access waits for reviewed
 mail ingestion and credential custody.
 
-## 1. Package and install
+## 1. Plugin installation
 
 [Manifest v2](../contract/plugin-manifest-v2.schema.json) has apps with one pinned
 AppDescription (shared Bind list, chrome and content), kinds with metadata/index declarations and an
@@ -68,7 +68,7 @@ cannot establish an index type.
 A kind’s optional `host_create` declaration opts its schema-valid item
 defaults into the generic host create (§4.4). The optional checked
 collection placement belongs to the same host transaction. At install, resolve any
-`host_create.after` option to the same package’s operation or the job’s
+`host_create.after` option to the same plugin’s operation or the job’s
 `run_operation`. Require `target: {kind, field}` for the created kind and
 a closed input object declaring exactly that one required property as the
 catalogue’s `ItemRef` reference. Resolve it through the host registry and
@@ -85,13 +85,13 @@ to see onto items as declared fields.
 
 
 An app may declare typed, versioned extension points in its manifest.
-Another package contributes through the same manifest mechanism for
+Another plugin contributes through the same manifest mechanism for
 harnesses, panels, row fields, actions and editors. The host resolves the
 exact app, point, version and installed operation, checks both declarations,
-pins both package generations and intersects the caller’s rights with the
+pins both plugin generations and intersects the caller’s rights with the
 approved interface. The host validates the resulting native description and
 rechecks the requested item and data scope. No direct connection or implicit
-cross-package grant follows from installation. Use checked extension choices
+cross-plugin grant follows from installation. Use checked extension choices
 for a durable host-issued `HarnessRef` at execution-job admission. A fresh
 renderer gets eligible contributions through the scoped
 [`extension.choices` route](../contract/host-catalogue-v2.json#/component_routes/extension.choices).
@@ -102,7 +102,7 @@ pinned contribution under live authority at claim. Use the catalogue’s
 A **harness** is a plugin that runs an agent program such as Claude Code
 or Codex. Threads (`calternal-threads`) declares a harness point. Bundled
 and community harnesses contribute through the same interface. Another app
-can publish its own point. A contribution names its owner package and app,
+can publish its own point. A contribution names its owner plugin and app,
 point and interface version. **Threads owns the Markdown thread item.**
 A harness keeps a separate working log in its own files. Threads may link
 to that log by an authorized item locator and writes replies to its own
@@ -113,9 +113,8 @@ A base indexed row is available while a contributor sleeps. Fetch optional
 plugin fields only for visible rows, with the exact source revision and audience.
 
 Kinds declare file format and version. Editors can contribute support for
-an agreed Markdown format, and packages can declare their own formats.
-The person picks a preferred editor when several support the format. Check
-installation, file format and live edit authority. An editor that cannot
+an agreed Markdown format. Use the [format’s default app rule][format-open].
+Check installation, file format and live edit authority. An editor that cannot
 preserve unfamiliar blocks opens read-only. Selection grants no new rights.
 
 A harness declaration pins an image digest and entry asset and discloses
@@ -129,11 +128,11 @@ confers no execution or credential authority.
 
 A kind with `claimed_text: true` and `searchable: true` opts into the
 host’s background text index. The host checks installed declarations,
-package reads and live field scope before querying. A kind may separately
+plugin reads and live field scope before querying. A kind may separately
 declare plugin search profiles, including a background index job. See §4.1.
 
 Reject unknown or inconsistent declarations before launch. Reserve the prefixes in the pinned [host catalogue](../contract/host-catalogue-v2.json#/reserved_operation_prefixes). Check unique IDs,
-package operation namespace, references, schema compilation offline, pinned
+plugin operation namespace, references, schema compilation offline, pinned
 assets and digests, indexed field types, and cross-reference constraints.
 Each operation lists its host methods once. Derive the install summary by
 union and constrain each call by that operation’s capability and risk.
@@ -144,14 +143,14 @@ automatically retry a non-idempotent external action.
 
 Install shows kinds, declared Bind reads, methods, capabilities, risks,
 settings and secrets, contributions, alarm jobs and outbound disclosures. Gallery installs take one tap. Source
-installs warn. Pin the digest. Members see packages, grants and destinations. Check and probe agent-authored code
+installs warn. Pin the digest. Members see plugins, grants and destinations. Check and probe agent-authored code
 in the space without broker authority, then enable the exact digest and
 grant the Owner confirmed. Verify updates before fencing/draining the old
 revision. Permission widening needs the Owner except for the network
 installation approvals below. Resuming an old job under a
 new digest requires compatible migration and current grants. Use the
 [upgrade process](upgrades.md). Disable/remove fences triggers, tickets and
-scoped views, stops the package and preserves host-owned items and share
+scoped views, stops the plugin and preserves host-owned items and share
 fallbacks.
 
 ## 2. Space runtime
@@ -159,7 +158,7 @@ fallbacks.
 Hosted spaces use per-space microVM isolation. The space has three VM
 kinds with separate lifecycles.
 
-- The small plugin VM serves taps and light jobs, with each enabled package
+- The small plugin VM serves taps and light jobs, with each enabled plugin
   in its own process with OS permissions, read-only code and resource accounting.
 - The larger plugin VM starts on demand for heavy jobs. The manifest job
   declares `placement: "heavy"`. It uses the same plugin image and sandbox
@@ -171,12 +170,12 @@ kinds with separate lifecycles.
 
 Plugin code and agents never share a VM. No userdata tree is mounted into
 any VM. Plugins and agents reach items only through checked broker calls
-under their own scoped authority. Official and community packages use the
+under their own scoped authority. Official and community plugins use the
 same API and limits. Self-hosting with KVM uses the same VM arrangement.
 Without KVM, plugins run in sandboxed processes and agents run in rootless
 Podman containers. Label both as sharing the machine kernel.
 
-The trusted plugin supervisor can impersonate packages using tickets it can
+The trusted plugin supervisor can impersonate plugins using tickets it can
 see in its space. It gets a revocable, single-space lease. Machine enrollment,
 placement authority, the host broker and provider logins stay outside the
 plugin wall. A plugin cannot open another process’s files or pipes, read
@@ -186,12 +185,12 @@ host databases or credentials, select a space root or use raw network sockets.
 | --- | --- |
 | Asleep | Serve authorized engine reads and saved templates. An admitted logic call, runnable job, due alarm or agent start wakes its assigned placement if asleep. A signed wait webhook wakes only via a winning signal that makes a job runnable. Cache misses, page reads, public links and rejected requests do not wake. |
 | Waking | Coalesce concurrent admissions into one wake and lease per placement: small plugin VM, heavy plugin VM or agent VM. A tap and a due heavy job in a sleeping space wake two placements. Reserve capacity first. Recheck queued authority before first dispatch. Late startup after cancellation discards the old work. |
-| Awake | Reuse processes between calls. After the separate wake allowance, the host publishes a result or `pending` at the interactive cutoff below. A pending call keeps its original ticket, request receipt and status ref. It may continue until that ticket expires. Long work uses a durable job with progress. A package crash retires that process and its tickets. Other packages continue. |
+| Awake | Reuse processes between calls. After the separate wake allowance, the host publishes a result or `pending` at the interactive cutoff below. A pending call keeps its original ticket, request receipt and status ref. It may continue until that ticket expires. Long work uses a durable job with progress. A plugin crash retires that process and its tickets. Other plugins continue. |
 | Draining → going to sleep | Stop admissions to the current epoch, drain within the placement bound, cancel/fence the remainder and retain committed engine effects and checkpoints. Close I/O, stop with acknowledged teardown or durable placement revocation, then sleep. A racing wake coalesces after shutdown. |
 
 Nothing in memory is required to survive sleep. First release proves clean
 boot only. A later snapshot restore must consume one host-side,
-single-use runtime epoch bound to space, wall image, supervisor and package
+single-use runtime epoch bound to space, wall image, supervisor and plugin
 digests. Restore cannot reuse inherited tickets, handles, descriptors,
 credits or random state. On every plugin VM wake, before plugin code runs, initialize the guest kernel
 and in-process random generators from fresh host entropy. The no-KVM path
@@ -209,12 +208,12 @@ work by receipt or checkpoint, and return a safe interruption for work
 that cannot be replayed.
 
 The Owner’s plan buys compute and apps and sets space quotas. Exact mapping
-is pending. Bound and charge per space and package before decode (including
+is pending. Bound and charge per space and plugin before decode (including
 malformed frames), DNS, launch or snapshot I/O. Account for RSS, CPU,
 processes, queued bytes, calls, traffic and parked work. Reserve teardown
 capacity until confirmed. Bound shared queues and use fair dispatch so a
 saturated space cannot starve a second. Suggested spike limits are 64 queued
-and 32 active calls per space, 16 queued and 8 active per package, 128 callbacks
+and 32 active calls per space, 16 queued and 8 active per plugin, 128 callbacks
 per invocation. Admissions beyond quota get `429` with a retry hint.
 
 Wall measurements qualify the tested configuration. Measure all selected
@@ -243,7 +242,7 @@ with the full workload before enabling that placement. [Wall A measurements](htt
 
 Each awake plugin runtime placement has one bidirectional authenticated
 channel over the enrolled machine carrier. Handshake agrees one major and credits, binds lease to space
-and starts a new epoch. A trusted endpoint stamps the package and pinned
+and starts a new epoch. A trusted endpoint stamps the plugin and pinned
 digest. Use strict UTF-8 NDJSON, one object per LF, with a 256 KiB encoded
 object cap (fixture). Charge capacity before parsing. Bound the line buffer
 and reject invalid UTF-8, duplicate keys at any level, more than 32 nested
@@ -263,11 +262,11 @@ after fencing. The worker sends `ready` during readiness. Credit and
 back-pressure control remain independent of callback completion. These
 are qualification targets for the live carrier (§8).
 
-Both directions give each package byte credits and a bounded queue. Debit
+Both directions give each plugin byte credits and a bounded queue. Debit
 encoded bytes before enqueue and return credit on receiver release. Keep a
 bounded reserved control queue/credit window for cancel, grants, credit and
 fencing. Dispatch callbacks independently of reads and fairly across
-packages. The writer assigns consecutive direction-local `seq` at dequeue.
+plugins. The writer assigns consecutive direction-local `seq` at dequeue.
 Control overtakes unsent data only. A blocked physical write prevents all
 later traffic on that stream. A host-local cancel or revocation must fence
 effects immediately without sending a frame. A write watchdog closes an
@@ -278,7 +277,7 @@ frames. Replay is a new admission with the same durable request ID where
 permitted. Wire and author payload limits are independent.
 
 The two authority counters are **runtime epoch** for the lease and **grant
-revision** for permissions, access and policy. Digests identify packages.
+revision** for permissions, access and policy. Digests identify plugins.
 Wire and page ordinals only order data. The `ticket` is the ephemeral invocation reference (see §4.3). Receipts use the request ID within actor/space. Subeffect keys
 derive from that request and its step or checkpoint position.
 
@@ -286,18 +285,18 @@ derive from that request and its step or checkpoint position.
 
 1. **Space by channel.** Resolve resources in the lease-bound space. Request
    input cannot select a different space or machine-placement authority.
-2. **Package by capability.** Resolve the stamped package and pinned digest.
+2. **Plugin by capability.** Resolve the stamped plugin and pinned digest.
    Check declared and approved operation/method/capability and its effect
    ceiling. Refuse wider risk, targets or egress.
 3. **Person by ticket.** The host mints after admission and stores actor,
-   session or delegation, package/digest, operation, target, allowed effects,
+   session or delegation, plugin/digest, operation, target, allowed effects,
    approval, audience, epoch, grant revision and expiry. Compare the bound
-   package and live authority on every callback and before delivery. Tickets
+   plugin and live authority on every callback and before delivery. Tickets
    expire after 60 seconds or earlier on terminal, cancel or revocation.
    Persist principal, scope and delegation. Mint a fresh ticket from the
    creator’s current rights for each job run or admitted alarm.
 4. **Attempt by execution lease.** An agent gets a distinct principal and
-   lease for the exact attempt, separate from the package invocation
+   lease for the exact attempt, separate from the plugin invocation
    ticket and the person’s own session. When the sender asks the agent to find things,
    that request grants bounded space search and listing in the target item’s
    space under the active permission mode. Full access and the default
@@ -311,7 +310,7 @@ derive from that request and its step or checkpoint position.
    Raw enumeration, bulk exports and delegated tickets cannot widen the
    grant. Child execution keeps the existing ancestor ceilings. Recheck
    the exact attempt, runtime fence, live session or alarm principal,
-   grant, package generation
+   grant, plugin generation
    and placement on renewal, broker effects and egress. Revocation fences
    effect and delivery immediately and stops renewal.
 
@@ -362,7 +361,7 @@ such and replay only against an explicitly idempotent endpoint.
 
 
 An alarm wakes a declared replayable job at one absolute time. Pin the
-creator, target, package generation and checked input. The catalogue
+creator, target, plugin generation and checked input. The catalogue
 [alarms](../contract/host-catalogue-v2.json#/alarms) set the pending
 counts and bytes. Commit consumption and job admission together. Replay
 the admitted job by receipt without a second firing, including after
@@ -370,10 +369,10 @@ restart. An eligible missed alarm is delivered once, late, with
 `scheduled_at` and `actual_at`. The plugin owns the schedule, decides
 whether to run or skip from the person’s setting, and computes its next
 alarm. Disable or uninstall retires outstanding alarms and fences
-admitted work. A re-enabled package can arm fresh alarms.
+admitted work. A re-enabled plugin can arm fresh alarms.
 
 Notifications use the authorized item title and a fixed host phrase.
-Packages never supply push text containing body content.
+Plugins never supply push text containing body content.
 
 Signed wait webhooks deliver a typed signal to one parked job. Verify the
 enrolled route, signed correlation and replay identity, and revalidate the
@@ -393,7 +392,7 @@ most these three, in plain language, and omit unused lines.
 
 An update that adds a line or expands the listed fixed sites asks again
 under the applicable role. Unchanged lines retain consent. People can
-remove their configured hosts independently of package installation.
+remove their configured hosts independently of plugin installation.
 Direct sockets and private-network access stay disabled. TCP comes later
 as “Servers you add” with a port.
 
@@ -401,15 +400,15 @@ Declare `network: "none"` for the explicit **No network access** worker tier.
 Install and gallery use the manifest schema’s `noNetworkBadge` predicate:
 `network == "none"` and `content_fetch` absent. With content fetch, say “No plugin
 network access. Loads remote images anonymously.” Adding a network line
-removes the badge and asks for approval. Every package process has no ambient
+removes the badge and asks for approval. Every plugin process has no ambient
 socket route and has only its own supervisor endpoint. The host checks
-that endpoint’s package identity/digest and current installed policy on
+that endpoint’s plugin identity/digest and current installed policy on
 every broker egress entry, including delegated jobs and credential
-routes. A package with `network: "none"` cannot obtain a worker proxy or credential
-route, even in a space with a network-enabled package. Refuse before DNS,
-connection or proxy-cache lookup. Cross-package IPC cannot borrow egress.
+routes. A plugin with `network: "none"` cannot obtain a worker proxy or credential
+route, even in a space with a network-enabled plugin. Refuse before DNS,
+connection or proxy-cache lookup. Cross-plugin IPC cannot borrow egress.
 
-Render remote images only if the package declares `content_fetch: true`.
+Render remote images only if the plugin declares `content_fetch: true`.
 The declaration grants no worker egress. It withholds the No network badge
 because rendering image URLs still contacts their destinations. If absent, load no remote images. If present, the
 authorized host renderer may fetch through the anonymous proxy with one
@@ -438,7 +437,7 @@ responses or secret bytes to the worker.
 
 Refusals return 4xx, code, plain message and optional path or next step.
 Foreign resources give opaque `404`. Audit records include time, space,
-package/digest, actor/delegation, operation/method, safe target ID, request
+plugin/digest, actor/delegation, operation/method, safe target ID, request
 ID, outcome, grant revision, cost and latency. Omit values, tokens, URLs
 with data and output. Reserve bounded audit capacity before effects. Refuse when it is exhausted. Read
 audits batch asynchronously with zero read-path flushes. Record crash gaps.
@@ -455,13 +454,13 @@ its receipt, with long work as a durable job.
 | --- | --- |
 | Items · `item_create`, `item_head`, `item_range`, `item_history` | Apply the [catalogue item schemas](../contract/host-catalogue-v2.json#/item_engine). Create returns a checked item, revision, portable locator and receipt. Range is pinned and bounded. History uses the existing cursor and authorized revision summaries. |
 | Items · `item_spans` | Exact readable item revision and optional cursor → ordered recorded byte ranges, middle attribution and span refs. See the [catalogue’s span read][item-spans]. |
-| Items · `item_save` | The owner commits body, declared metadata, including its indexed title, and an optional leaf rename in one receipt. The creation directory stays fixed. Use the typed `head_conflict` reply to reread and reapply an edit on a checked newer head. Metadata-only changes preserve the room checkpoint. Large writes use the typed staged protocol below. |
+| Items · `item_save` | The owner commits body, declared metadata, including its indexed title, and an optional relocation in one receipt. Apply the generic relocation rule to any path change. Use the typed `head_conflict` reply to reread and reapply an edit on a checked newer head. Metadata-only changes preserve the room checkpoint. Large writes use the typed staged protocol below. |
 | Items · `item_trash`, `item_restore` | Editor or higher. Trash records a tombstone. Restore from Trash uses the current trashed head and restores a live placement. Restore from history takes a source revision and expected live head and appends that version as a new revision. No history restore against a trashed item. Stale heads give `409`. |
-| Items · `item_rename`, `item_rename_status`, `item_rename_undo` | Rename accepts ref, expected head and name and returns a durable action ID. Status uses that ID and checks live item authority. Completion can return a protected Undo action bound to the result and expected revisions. Undo is a fresh receipt-backed operation, with conflict if affected heads moved. Publish progress and actions through the host result route, with no worker payload. |
+| Items · `item_rename`, `item_rename_status`, `item_rename_undo` | Rename or move accepts the checked item, expected head, and title or destination folder. It commits placement, link rewrites and Undo together. Status for a pending operation checks live item authority. Completion can return a protected Undo action bound to the result and expected revisions. Undo is a fresh receipt-backed operation, with conflict if affected heads moved. Publish progress and actions through the host result route, with no worker payload. |
 | Items · `item_purge`, `empty_trash`, `collection_create`, `collection_membership` | Purge and Empty Trash are Manager/Owner-only, irreversible and one confirmed durable job over a pinned Trash selection. Reauthorize per batch and resume by receipt. Apply catalogue `trash` for retention. Collection creation and bounded membership changes commit once with expected revision. |
 | Queries · `items_list`, `items_search` | Kind/optional collection, typed indexed metadata predicates, declared sort under the [catalogue’s sort rules](../contract/host-catalogue-v2.json#/query), cursor/window and field set → authorized page with cursor and count/offset where windowed. Unindexed filter/sort is `400`. Use engine-side query and bounded row/byte budget. Apply authority before count. No whole-kind materialization. |
 | Rooms / sharing · `sharing_check` | Item ref plus requested action → permission for the live grant. A room is an attribute of the kind, opened client-to-host using its own bounded protocol. Room membership and events keep fencing the item grant. No plugin hook acknowledgment. |
-| Jobs · `start_job`, `checkpoint_job`, `job_status`, `cancel_job` | Declared job, payload and resolved target/grant → durable job ID. Execution admission uses [`ExecutionJobStart`](../contract/host-catalogue-v2.json#/$defs/ExecutionJobStart), including its top-level `harness`. Checkpoint only the owning current run. Status/cancel uses a scoped job ID with opaque `404` for foreign jobs. An execution cancellation uses the same retirement authority as Stop. Bounded checkpoints, live progress and park count per space/package. |
+| Jobs · `start_job`, `checkpoint_job`, `job_status`, `cancel_job` | Declared job, payload and resolved target/grant → durable job ID. Execution admission uses [`ExecutionJobStart`](../contract/host-catalogue-v2.json#/$defs/ExecutionJobStart), including its top-level `harness`. Checkpoint only the owning current run. Status/cancel uses a scoped job ID with opaque `404` for foreign jobs. An execution cancellation uses the same retirement authority as Stop. Bounded checkpoints, live progress and park count per space/plugin. |
 | Settings / secrets · `read_setting`, `set_setting`, `request_secret_handle` | Declared key or secret purpose → effective value/version or opaque handle. Validate type, compare revision on writes and bind personal values to the actor. One bounded engine operation. Missing authorization is `403` or opaque `404` as appropriate. |
 | Proxy · `proxy_request`, `credential_call` | Approved install line and bounded HTTPS request → bounded response. The host-only sealed content route exposes authorized opaque image refs to the renderer. Unapproved destination is `403`, oversize `413`, quota `429`. Anonymous media keeps the existing 10 MB, three redirects and 16 hosts/minute fixture ceilings. Typed call returns the profile output or `403` without contacting the endpoint. |
 | Execution · `execution_start`, `execution_status`, `execution_input`, `execution_spawn_child`, `execution_stop` | The catalogue types each call. The host issues the admitted intent, resolves provider and placement, and binds every effect to the exact attempt under live authority. Start, input, child and Stop use checked receipts. |
@@ -472,8 +471,17 @@ its receipt, with long work as a durable job.
 
 ### Generic item files and execution
 
-A kind’s owning package writes its files and defines their encoding. The
+A kind’s owning plugin writes its files and defines their encoding. The
 host maintains item identity, revisions, file placement and authority.
+
+The generic [relocation operation][relocate] renames or moves the file
+or its dedicated folder. A backlink index locates affected Markdown
+files. The host moves the item and rewrites links in one transaction.
+Host-made link changes preserve recorded attribution and adjust span
+offsets. The catalogue gives the work limits and the required perf
+measurement. Existing Notes evidence covers a deferred rewrite, so the
+generic atomic path still needs qualification. [Evening decisions][evening]
+
 Apply the catalogue’s [file append rule](../contract/host-catalogue-v2.json#/file_append).
 `item_append` checks the exact head, write authority and, when issued under an attempt, its live execution and
 audience fence. Commit the bounded append, revision, byte boundary
@@ -486,7 +494,7 @@ with their own retention and delivery checks.
 
 The host admits a declared replayable execution job on the exact item
 of a kind declaring `execution_target`
-with the actor, package digest, admitted harness, placement, audience
+with the actor, plugin digest, admitted harness, placement, audience
 generation, rights and quotas pinned. Apply the catalogue’s
 [successor rule](../contract/host-catalogue-v2.json#/execution_intents/successor)
 when an item already has a head job or active attempt. Admit the queued
@@ -539,7 +547,7 @@ restart only with exact live execution proof, safe transport and fresh
 renewal. Failed reattachment durably retires the attempt. The plugin may
 offer continuation in a fresh job through an opaque placement-owned
 binding issued by `execution_session_bind`. The host pins the item and
-audience generation, actor, package and harness digest, profile and
+audience generation, actor, plugin and harness digest, profile and
 machine. Do not expose native session IDs. Current authority, compatible
 binding, and reconciliation of uncertain effects are required before
 admission. Section 5 retires incompatible bindings before widening.
@@ -611,9 +619,9 @@ primitive][scoped-people]. A conversation between people requires one
 current group they share. Members can create invite links into their own
 groups. Reuse capability checks ([ADR 0058][adr-roles]), checked invites
 ([ADR 0059][adr-invites]), and live group visibility ([ADR 0060][adr-groups]).
-Keep the protected management directory separate from package lookup.
+Keep the protected management directory separate from plugin lookup.
 The generic host holds membership, scoped lookup, group invitation, space
-bootstrap and item grants. Contacts will settle the package-facing people
+bootstrap and item grants. Contacts will settle the plugin-facing people
 and group flows using the existing group and contact decisions
 ([ADR 0064][adr-contacts]). These exchanges stay OPEN. ADR 0060 ends
 group-derived visibility with membership. If the participants no longer
@@ -626,13 +634,13 @@ A person's own agent thread can be `creator_only` and stays discoverable
 to their own authorized attempts. A people conversation is `consent_only`
 and stays outside attempt list, search, direct reads and derived output.
 An operation opts in with manifest `write_origins`. For an
-[attested write][attested-write], the host concatenates the package's
-prefix, the exact checked input or attempt output, and the package's
-suffix. Prefix and suffix are each at most 512 UTF-8 bytes and are
-attributed to the package. The middle is selected by reference to its
+[attested write][attested-write], the host concatenates the plugin's
+prefix, any checked quote, the exact checked input or attempt output,
+and the plugin's suffix. Prefix and suffix are each at most 512 UTF-8 bytes and are
+attributed to the plugin. The middle is selected by reference to its
 checked source. The host records the full span and the middle attribution
 in the same transaction. Threads stores the message text as plain
-paragraphs in that middle span. On reopen the owning package reads
+paragraphs in that middle span. On reopen the owning plugin reads
 `item_spans` for the exact readable revision, up to 128 spans per
 page. The durable byte ranges supply the message boundaries even
 when the middle includes a heading-shaped line. Keep the captured
@@ -643,6 +651,30 @@ whole bodies and imports remain opaque. Any opaque body write,
 including an append, invalidates the prior live spans and makes the
 new revision unproven. Follow the [catalogue's span read][item-spans]
 and [authorship rule][item-authorship].
+
+A reply can name a [checked quote][quotes] by item, revision and span.
+The host writes the quoted block and records the original attribution
+separately from the reply. The ordinary record limit and the quote budget
+apply. Deleting the original removes its quotes in the same commit and
+leaves the other messages and reply anchors. The interim policy removes
+copies in other items too wherever that atomic path is qualified. The
+[cross-item question](morning-decisions.md#cross-item-quote-deletion--2026-11-20)
+remains with the owner.
+
+A kind declares its [default app and format metadata][format-open].
+`calternal-thread/v2` opens in Threads. A person can explicitly open it
+in a compatible editor such as Notes. The Threads format marks its
+trailing heading tag beginning with ` {#m-` and ending with `}`.
+It marks the framing comments beginning with `<!-- run-log=` or
+`<!-- consultation=` and ending with ` -->`. Its frontmatter metadata
+covers the `id` and `format` keys, the `participants:` line and
+participant rows beginning with `  - p`, and keys beginning with
+`agent-p` and ending with `-plugin` or `-harness`. The block editor
+hides these declared tokens and preserves the on-disk bytes. The file stays plain
+Markdown. Author names, dates, edit and reply markers, and quotes stay
+visible. Use `agent-p3-plugin` for an agent's plugin identity on disk.
+Store times in UTC and draw viewer-local time from a typed timestamp.
+
 An authorized writer can request protection. Only the host can clear it
 on verified provenance. The harness receives selected material through
 the [disclosure boundary][attempt-disclosure] and has no direct read or
@@ -679,7 +711,7 @@ agents-only implementation path available.
 
 #### Declarative extraction and retention
 
-A package may declare bounded frontmatter, first-block or inline-tag
+A plugin may declare bounded frontmatter, first-block or inline-tag
 selectors in `extractors`. The host reads only declared content of the
 same committed claimed-text body. Each selector’s output is a declared
 `body_derived` field of one of the selector’s types in catalogue
@@ -697,14 +729,14 @@ Charge the element, set and index-work limits to the merged result and
 publish it with the source commit. Notes preserves the shipped scanner's
 spelling and case. The host has no Notes defaults. The existing body_excerpt declaration is
 the shorthand for the checked preview text selector. Notes declares its shipped grammar and
-uses its package for tag rename and link rewrite. Reject `host_create.defaults`
+uses its plugin for tag rename. Item relocation uses the generic host backlink index. Reject `host_create.defaults`
 for every extractor output, including `body_excerpt`, and for every declared
 device image slot. On generic create run the host extractors on the empty
 source in the FULL transaction. Follow the [catalogue’s extraction
 initialization](../contract/host-catalogue-v2.json#/query/extractors/initialization). Project an
 authorized empty set as `[]` and omit absent scalars, including an empty
 summary or excerpt. A new image slot has no ref. Validate the resulting
-state with the allowed package defaults before commit.
+state with the allowed plugin defaults before commit.
 
 A `TextSet` filter uses `contains` with one nonempty Text element within
 the set’s element limit. Use a literal or a checked route that resolves to
@@ -733,7 +765,7 @@ live invocation and fence chunks and commit. Verify length and digest,
 seal staged bytes immutably, then recheck seal, authority and head under
 §3’s fence. Replay a committed receipt without a new stage. Fixture caps
 are 2 MiB/upload, 64 KiB/chunk, two handles/actor, four handles and 8 MiB
-per package, eight handles and 16 MiB per space. Reserve before writing or
+per plugin, eight handles and 16 MiB per space. Reserve before writing or
 return `429`. On invalidation retire handles and queue bounded cleanup.
 An authorized retry can restage uncommitted input. Expire after 60 idle
 seconds, reclaim within 30 seconds and sweep orphans before restart admission.
@@ -793,10 +825,10 @@ Reject extractor outputs, including `body_excerpt`, other body-derived
 fields, host-owned aliases and an indexed source with narrower delivery
 than the generic title. Use the same provenance for title search and
 offline title display.
-The manifest’s `reads` names every kind a package’s Bind may access,
-including its own. The SDK fills the package’s own kinds into the emitted
+The manifest’s `reads` names every kind a plugin’s Bind may access,
+including its own. The SDK fills the plugin’s own kinds into the emitted
 list. Authors write `reads` only for another app’s kinds, including host
-kinds. Check the emitted list before authorizing the viewer and field graph. A package or a field declaration cannot confer authority. A scoped row ID is the host-issued row
+kinds. Check the emitted list before authorizing the viewer and field graph. A plugin or a field declaration cannot confer authority. A scoped row ID is the host-issued row
 reference. Item rows use the kind’s row reference. Rows of a repeated
 section use a `LayoutEntryRef`. A request row resolves only to an
 authorized `RequestRef`. Filter `requests.pending_for` with equality to
@@ -810,7 +842,7 @@ Compile one dependency graph per view, including chrome and content.
 Check unique in-scope IDs, declared kinds and types, and all binding edges
 before opening subscriptions. Reject cycles, ambiguous multi-row operands,
 out-of-scope action inputs and references to undeclared binds or actions.
-At query execution and delivery authorize the package and viewer, kind,
+At query execution and delivery authorize the plugin and viewer, kind,
 collection, each field of every input or output, each filter/sort,
 body and any upstream Bind field. Check source provenance before any
 projection, including a header or row title, secondary text, search excerpt,
@@ -937,8 +969,8 @@ effective search path before settle from the authenticated view audience.
 An explicit profile is available only to a live member view. Guest and
 public views use default host search and its normal qualification, even
 when the template names a profile. An eligible member profile can call its
-package’s read operation independently. It can rerank checked
-candidates or consult its own index built by the package’s background job.
+plugin’s read operation independently. It can rerank checked
+candidates or consult its own index built by the plugin’s background job.
 Apply the catalogue’s [plugin search rule](../contract/host-catalogue-v2.json#/query/search/plugin)
 to index inputs, matching, ranking and delivery. Use the explicit
 cursor exchange. Profiles that cannot demonstrate pre-ranking authority
@@ -1034,11 +1066,11 @@ A space may configure an offline expiry. A disconnected device with a
 previous copy cannot be wiped remotely. Export starts with authorized files
 and attachments. Live actions require fresh host authority.
 
-**Item view snapshots.** A package writes a ready-made native description
+**Item view snapshots.** A plugin writes a ready-made native description
 for a declared item slot, under the catalogue’s
 [view snapshot](../contract/host-catalogue-v2.json#/view_snapshots) rules.
 Its authored content follows the same read bound as a write to the item
-file: the package’s declared reads and the acting principal’s live grants.
+file: the plugin’s declared reads and the acting principal’s live grants.
 The host validates the description and binds it to the source revision
 and item audience. Both retained and live views follow the
 [catalogue’s item-view rule](../contract/host-catalogue-v2.json#/view_snapshots/body_content).
@@ -1185,10 +1217,10 @@ only against the issued context, never its current selection.
    `ResolveActivation{dispatch:true}` resolves and dispatches in one
    exchange. Otherwise return a resolution without running the operation.
    Dispatch returns an ActionOutcome and may include a checked created ref,
-   status ref or Undo ref. A package-created ref uses the catalogue’s
+   status ref or Undo ref. A plugin-created ref uses the catalogue’s
    [created convention](../contract/host-catalogue-v2.json#/created_outcome).
 
-A replay checks actor, space, package digest, action, activation and
+A replay checks actor, space, plugin digest, action, activation and
 normalized input fingerprint plus current delivery authority. Retry
 mutations/disclosures only with the same receipt where the checked
 operation allows `request_id`. Changed input conflicts. A lost reply after
@@ -1246,7 +1278,7 @@ revisions of all affected resources and refuses if any dependency moved.
 | --- | --- |
 | `host.item.create` | Under one FULL content transaction’s fence, check live creation authority, optional collection-membership edit authority and the normal item and membership quotas. Then commit the empty item with its permitted defaults and the host’s empty-source extraction, requested membership and Undo together. An omitted route parameter skips placement. A supplied ref that is absent, foreign, unreadable or not editable returns the same opaque `collection_unavailable` outcome. Quota refusal returns `create_limit_reached` with no item, membership or Undo committed. Undo rechecks live authority and the item head, its membership and sharing revisions and the introduced membership revision, if any. Refuse on any change. On success remove the item and its introduced membership together. Return the created ref with no runtime wake or challenge, even in a shared collection. Any declared follow-up receives only the created ref under §1 after commit. |
 | `host.item.trash`, `host.item.restore` | The FULL content transaction records the item revision, recoverable placement and Undo. Full swipe covers eligible single-item Trash and restore from Trash. Apply §5 to restores that add file readers. Trash paths with separate lifecycle cleanup are ineligible. |
-| `host.item.rename` | The FULL content transaction records the new head, placement and Undo for a single-item rename without deferred link rewrites. The current Notes job commits inbound-link changes in later transactions, so that path remains ineligible. |
+| `host.item.rename` | Use the [catalogue’s relocation rule][relocate]. One FULL content transaction records the placement, every affected head, link bytes and Undo. |
 | `host.collection.move` | Use the catalogue's confirmation rule for the checked destination. Apply §5 whenever the move adds file readers. On an eligible shortcut, the FULL content transaction commits the complete move and Undo in one exchange. A two-collection move is ineligible for the shortcut until both membership changes commit together. |
 | `host.layout.move_to`, `host.layout.move_up`, `host.layout.move_down` | The per-person layout revision transaction records the complete placement or ordering edit and Undo for the actor, space and app. Move to still previews its destination. |
 | `host.layout.section.create` | The per-person layout revision transaction creates the section and commits Undo that removes it. |
@@ -1310,7 +1342,7 @@ path. Explicit Prompt remains a product grant, off by default with a warning
 and Owner approvals, and ships disabled until the tool/machine path is
 proven.
 “Continue in my space” copies the permitted item and attachments under the
-receiving space's rights and quota. If the package is missing, offer
+receiving space's rights and quota. If the plugin is missing, offer
 authorized install or refuse with a plain reason. Exclude credentials,
 grants, approvals and run state.
 
@@ -1323,8 +1355,8 @@ revoked entries and media from subsequent views.
 
 ## 6. Deliberate cuts
 
-The same generic engines serve bundled and community packages. A
-package owns its transcript, composer, provider selection, mention
+The same generic engines serve bundled and community plugins. A
+plugin owns its transcript, composer, provider selection, mention
 picker, snooze policy and calendar logic. The host owns
 [space Trash](../contract/host-catalogue-v2.json#/trash). Private
 scratch, Photos-scale I/O, direct sockets, brokered TCP and arbitrary
@@ -1362,7 +1394,7 @@ be an `Id` that the renderer can send in `EventRoute.row`.
 | Fixture origins | The conformance tool uses fixture origins as evidence. Resolve the originating description and Bind and compare with the reply. |
 | Cross-value and tree-wide invariants | Apply the semantic bounds. Check window span, returned rows against exact count, duplicate action IDs and the aggregate node cap. |
 
-`defineApp`, `defineKind`, `defineOperation` and declarative package
+`defineApp`, `defineKind`, `defineOperation` and declarative plugin
 metadata generate a checked manifest, method inventory and immutable
 asset/digest index. `defineChrome` and `defineView` author templates against
 the renderer-owned shared schema when exercised. Typed `ctx` methods derive
@@ -1373,10 +1405,10 @@ defaults and the shell’s empty, loading and error messages. It defaults the
 row title to the generated `title` field. Authors may declare a leading
 row icon. `defineChrome` uses the same Bind and title defaults for sidebar sections.
 The SDK defaults `title_field` to a declared string `title`, adds the
-package’s own kinds to `reads`, and emits `network: "none"` and an empty
+plugin’s own kinds to `reads`, and emits `network: "none"` and an empty
 `operations` list when omitted. Window and count defaults follow the
 description schema and catalogue. A first list takes about eight author
-concepts: package, app, kind, placement, item schema, Bind, list and sidebar
+concepts: plugin, app, kind, placement, item schema, Bind, list and sidebar
 section. Add explicit author choices for actions, fields and presentation as
 the app needs them.
 
@@ -1402,7 +1434,7 @@ and receipt rules, with deterministic clock, actors, revocation and scripted
 effects/failures. It needs no machine, credentials or VM and must pass a
 shared real/fake fixture suite. An undeclared method or kind returns
 `403 not_declared`, an exact manifest field path and the change to make.
-Foreign resources keep their opaque response. Authorized package authors
+Foreign resources keep their opaque response. Authorized plugin authors
 get bounded development diagnostics with the actual reason and no foreign
 values. Ship a scaffold, check/test diagnostics and public-guide-only
 small-model trial for the Reading List paper walk in description §9.1, a durable wait and refusal/retry.
@@ -1412,7 +1444,7 @@ description, screenshots, age rating, and a plain statement of what the
 plugin connects to and why. Keep listing metadata in the submissions
 repository. Private and agent-authored plugins need none of it. The
 plugin guide skill and SDK must generate the listing from a checked
-package, capture screenshots from fixtures and check completeness.
+plugin, capture screenshots from fixtures and check completeness.
 Before enabling submissions, a public-guide-only author must produce a
 Reading List trial plugin and complete listing from the scaffold. The validator must accept
 it, reject an omitted required field and flag a stale connection statement
@@ -1421,10 +1453,10 @@ or missing screenshot. It derives the No network access badge using
 
 | Case | Assertion |
 | --- | --- |
-| Wire, quotas and control | Invalid UTF-8, duplicates, deep or oversized JSON, unknown fields, forged package/epoch, frame replay and wrong direction have no effect. Saturate one package and one space while another makes progress and controls arrive or the stalled carrier fences by its watchdog. |
+| Wire, quotas and control | Invalid UTF-8, duplicates, deep or oversized JSON, unknown fields, forged plugin/epoch, frame replay and wrong direction have no effect. Saturate one plugin and one space while another makes progress and controls arrive or the stalled carrier fences by its watchdog. |
 | Independent permission matrix | Exercise Owner, Manager, Editor, Reader, foreign account, guest View/Comment and revoked ticket across methods and deliveries. Match expected capability/target outcomes from independent fixtures. A compromised supervisor reaches neither a second space nor machine control. |
 | Commit and recovery | Race role/session/plugin revocation with effect commit and egress dispatch. Crash before and after save/park and reconnect with the same receipt. Race answer/deadline/cancel and assert one winning effect. Reject stale handles and changed agent-authored digest. |
-| Scoped render and egress | Seed a warm worker with privileged data and assert the guest sees only host-bound fields. Check counts/windows, empty/load/error, selection coalescing and no wake on a cold read. Refuse disallowed URL/DNS/redirect without connection or foreign media. Test Manager approval of fixed sites, Owner-only Any website, actor-only account servers, added-line reapproval and No network badge/filter changes. A No network package in the same space as an enabled neighbor must make zero DNS, connection or proxy-cache requests via raw sockets, broker calls, credentials, jobs or forged package routing. Test anonymous images with and without `content_fetch` and the viewer setting. The worker gets no bytes in any case. Verify audit redaction. |
+| Scoped render and egress | Seed a warm worker with privileged data and assert the guest sees only host-bound fields. Check counts/windows, empty/load/error, selection coalescing and no wake on a cold read. Refuse disallowed URL/DNS/redirect without connection or foreign media. Test Manager approval of fixed sites, Owner-only Any website, actor-only account servers, added-line reapproval and No network badge/filter changes. A No network plugin in the same space as an enabled neighbor must make zero DNS, connection or proxy-cache requests via raw sockets, broker calls, credentials, jobs or forged plugin routing. Test anonymous images with and without `content_fetch` and the viewer setting. The worker gets no bytes in any case. Verify audit redaction. |
 | Lifecycle and migration | Coalesce wake, bound drain, replace after fault, verify clean boot and exhausted admission. Verify upgrade, remove, active job fences and real/fake parity. Test that parked jobs and signed wait signals survive restart. |
 
 ## 8. Build order and gates
@@ -1453,8 +1485,8 @@ and zero-effect assertions must hold on every repetition.
 
 | Spike | Injections and pass condition |
 | --- | --- |
-| **One enrolled channel** | Two real package processes on one enrolled channel in Space A, plus Space B. Block A’s carrier receiver until its actual writer stalls mid-frame. Hold a slow callback for two seconds. With a writable carrier, control and the other callback complete p95 ≤500 ms. While stalled, local fencing p95 ≤500 ms, close p95 ≤2 s and Space B progress p95 ≤2 s. No old-lease effect after local fencing. Remote stops within 5 s of its last authenticated renewal on every run. Reconnect rejects the old epoch and authorized replay commits once. |
-| **Cold indexed page** | 100,000 mixed-visibility rows. During grant/content churn test manual collection + ACL + sort from offset 0 through its last full authorized range and last visible row (at most 10,000 members, so the last full 200-row range starts at most at offset 9,800). Use a dense dynamic collection for offsets 10,000 and 90,000. Exercise search under the scoped search gate. In the cold Notes page arm, seed authorized thumbnails and record first row paint, visible thumbnail completion, image GET count and transferred bytes separately from indexed page latency. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms. Seed enough authorized rows for every requested range and assert the exact authorized rows in order. Empty or refused replies fail. Meter materialized rows and skipped covering-index entries separately against their bounds. In a larger authorized scope, also request a range whose nearer-end jump exceeds the skip cap. Assert `skip_limit` followed by paging that returns the same authorized rows. Test End on a scope beyond the absolute offset ceiling using `anchor:"end"` and assert the last authorized rows. For stable-ID lookup assert one bounded indexed lookup and scoped authority check for a present, missing and unauthorized ID. For standalone exact counts assert one maintained-count lookup and the exact authorized total after grant churn. Exercise scalar-order saves at the 32-effective-scope cap and assert at most two covering-index keys touched per scope. Separately replace multiple indexed tags in one scope so replay touches more than two keys. Meter TextSet replay against `query.text_set.max_total_index_keys`, compare rows and counts with the live-authority oracle, and refuse an over-budget ordinary save before commit. Refuse a grant or membership that would create scope 33 with the typed limit error. Require save ACK p95 ≤40 ms with replay under load. Report save-to-ready lag separately and apply the Step 2 power-cut and backlog gate. Reject table scans and full candidate sorts, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
+| **One enrolled channel** | Two real plugin processes on one enrolled channel in Space A, plus Space B. Block A’s carrier receiver until its actual writer stalls mid-frame. Hold a slow callback for two seconds. With a writable carrier, control and the other callback complete p95 ≤500 ms. While stalled, local fencing p95 ≤500 ms, close p95 ≤2 s and Space B progress p95 ≤2 s. No old-lease effect after local fencing. Remote stops within 5 s of its last authenticated renewal on every run. Reconnect rejects the old epoch and authorized replay commits once. |
+| **Cold indexed page** | 100,000 mixed-visibility rows. During grant/content churn test manual collection + ACL + sort from offset 0 through its last full authorized range and last visible row (at most 10,000 members, so the last full 200-row range starts at most at offset 9,800). Use a dense dynamic collection for offsets 10,000 and 90,000. Exercise search under the scoped search gate. In the cold Notes page arm, seed authorized thumbnails and record first row paint, visible thumbnail completion, image GET count and transferred bytes separately from indexed page latency. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms. Seed enough authorized rows for every requested range and assert the exact authorized rows in order. Empty or refused replies fail. Meter materialized rows and skipped covering-index entries separately against their bounds. In a larger authorized scope, also request a range whose nearer-end jump exceeds the skip cap. Assert `skip_limit` followed by paging that returns the same authorized rows. Test End on a scope beyond the absolute offset ceiling using `anchor:"end"` and assert the last authorized rows. For stable-ID lookup assert one bounded indexed lookup and scoped authority check for a present, missing and unauthorized ID. For standalone exact counts assert one maintained-count lookup and the exact authorized total after grant churn. Exercise scalar-order saves at the 32-effective-scope cap and assert at most two covering-index keys touched per scope. Separately replace multiple indexed tags in one scope so replay touches more than two keys. Meter TextSet replay against `query.text_set.max_total_index_keys`, compare rows and counts with the live-authority oracle, and refuse an over-budget ordinary save before commit. Refuse a grant or membership that would create scope 33 with the typed limit error. Apply the [save gate][save-gate] with replay under load. Report save-to-ready lag separately and apply the Step 2 power-cut and backlog gate. Reject table scans and full candidate sorts, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
 | **Scoped search** | Check default ranking and explicit plugin search independently. Verify scoped rank, bounded postings, unchanged default behavior with a stalled plugin, per-result authority and revoke before delivery. |
 | **Atomic large save** | Stage an escape-heavy 2 MiB body and reconstruct it by revision-pinned ranges after the head moves, p95 ≤5 s. The 60 s range pin is invalidated by purge or revoke. Race duplicate begin, lost chunk ACK, conflicting bytes, cancel and orphan cleanup. Race revoke, epoch loss, enrollment removal and run replacement on both sides of commit and inject crashes before publication and before reply. No partial edit or success receipt before commit. After commit recover one revision and receipt. |
 | **Durable file append** | Stall a reader, cut after append commit before ACK and restart. Verify the exact pinned byte boundary, one committed append, a replayed receipt and zero bytes on revoked reconnect. Control requests remain independent. |
@@ -1490,7 +1522,7 @@ append-to-scoped-publication lag at 46.847 ms p95 idle and 468.095 ms p95
 under 1,916 competing appends. [Threads search and shared depth measurements](https://git.kayg.org/kayg/calternal-ai/src/commit/9a78a43b1cda6a2074df9d1471752f3db5a2a0bb/docs/measurements/plugin-api-v2-step0.md#follow-up--threads-title-and-message-search).
 
 If a gate misses, record the measured failure and change the mechanism or
-reduce the first runtime slice before enabling it. A fixture using separate per-package
+reduce the first runtime slice before enabling it. A fixture using separate per-plugin
 transport or an in-memory broker is not evidence for the carrier spike.
 
 ### Step 1 — Qualify reviewed schemas
@@ -1590,8 +1622,7 @@ intentional refusal/retry with an actionable response.
 - **Lists and search.** Before enabling background list replay, cut power on
   both sides of the save and publication commits. Introduce a backlog.
   Require bounded recovery to live-authority rows and counts, loading without
-  a count while behind, correct End replies, zero worker wakes and save ACK
-  p95 ≤40 ms on the perf VM. Apply the two-key scalar-order cap and the
+  a count while behind, correct End replies, zero worker wakes and the [save gate][save-gate]. Apply the two-key scalar-order cap and the
   separate TextSet budget. Prove the default query remains independent of
   custom ranking and plugin indexes in a slow or denied plugin arm.
   Reject profiles whose unreadable field can influence a match, ordering
@@ -1647,8 +1678,8 @@ qualified. Mention picker and snooze presets or custom date may follow
 as plugin features. Photos product questions wait for that plugin.
 
 The [Threads spike][threads-spike] records the app and harness fixture.
-Qualify the real contribution path with separate packages. Test a wrong
-package, pinned-image mismatch, out-of-order output, lost output ACK,
+Qualify the real contribution path with separate plugins. Test a wrong
+plugin, pinned-image mismatch, out-of-order output, lost output ACK,
 Stop between output and append, and replay of the owning job. Require
 zero unauthorized writes, no repeated provider start and one append per
 accepted publication receipt. On one opted-in kind, test a creator-only
@@ -1722,3 +1753,8 @@ and queued follow-ups are owned by the app and harness contract.
 [item-authorship]: ../contract/host-catalogue-v2.json#/execution_attempt_authority/discovery/item_policy/authorship
 [attested-write]: ../contract/host-catalogue-v2.json#/item_engine/attested_write
 [item-spans]: ../contract/host-catalogue-v2.json#/item_engine/item_spans
+[relocate]: ../contract/host-catalogue-v2.json#/item_engine/relocate
+[quotes]: ../contract/host-catalogue-v2.json#/item_engine/quotes
+[format-open]: ../contract/host-catalogue-v2.json#/item_engine/format_open
+[save-gate]: ../contract/host-catalogue-v2.json#/item_engine/save_qualification
+[evening]: https://git.kayg.org/kayg/calternal-ai/src/commit/340c0472f846b5855f0824765a019d177a9763b0/docs/morning-2026-11-20.md#evening-decisions-owner-2026-11-20

@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 14.38 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 14.39 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -585,6 +585,76 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65535
+        },
+        "default_app": {
+          "$ref": "#/definitions/localId"
+        },
+        "metadata_tokens": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "scope": {
+                "enum": [
+                  "frontmatter_key",
+                  "frontmatter_line",
+                  "framing_line",
+                  "framing_suffix"
+                ]
+              },
+              "prefix": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[^\\r\\n]+(?![\\s\\S])"
+              },
+              "suffix": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[^\\r\\n]+(?![\\s\\S])"
+              }
+            },
+            "required": [
+              "scope",
+              "prefix"
+            ],
+            "if": {
+              "properties": {
+                "scope": {
+                  "const": "framing_suffix"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "suffix"
+              ]
+            }
+          },
+          "description": "Bounded literal token selectors. Match frontmatter_key against the entire key before the first colon when suffix is absent. With a suffix require the key to begin and end with the declared literals. A line selector matches the complete line beginning with prefix and, if present, ending with suffix. A framing_suffix selector hides the single trailing token delimited by prefix and suffix in checked framing. Apply catalogue item_engine.format_open."
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "default_app"
+      ]
+    },
+    "fileFormatRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/localId"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
         }
       },
       "required": [
@@ -769,7 +839,7 @@
           "type": "array",
           "maxItems": 16,
           "items": {
-            "$ref": "#/definitions/fileFormat"
+            "$ref": "#/definitions/fileFormatRef"
           },
           "uniqueItems": true,
           "minItems": 1

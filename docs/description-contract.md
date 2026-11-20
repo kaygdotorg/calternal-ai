@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.38 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.39 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -22,7 +22,7 @@ Everything below is one contract for chrome (sidebar, header, footer, panel) and
 
 | Term | Meaning |
 | --- | --- |
-| **kind** | A type of item a plugin or the host declares (the host's `requests` and `collections`; a package's `notes` or `threads` kind) with its **indexed fields**; every item kind has the host's generic fields (`id`, `title`, `updated`, `archived`, `trashed`, `trashed_at`). |
+| **kind** | A type of item a plugin or the host declares (the host's `requests` and `collections`; a plugin's `notes` or `threads` kind) with its **indexed fields**; every item kind has the host's generic fields (`id`, `title`, `updated`, `archived`, `trashed`, `trashed_at`). |
 | **app description** | One app's `binds` (declared once), its `chrome` (sidebar, header, footer, panel) and its `view` (the card's content). |
 | **bind** | A data-free request: a list window, one item, or a search, with filter, sort and the fields wanted. |
 | **row template** | How an item becomes a row: fields to title, icon, marks and actions. |
@@ -51,7 +51,7 @@ One definition (`$defs/Bind`):
 * `list`: an index window over a kind's items, optionally one **collection** (a collection id from a literal, the route or the selection, so a collection
   UUID works; it is not a static pattern).
 * `item`: exactly one item by reference from the route or the selection. A literal row is never accepted.
-* `search`: match text from a claimed-text kind whose manifest declares `searchable: true`, or name an explicit `source.search_profile` for a plugin-owned ranking or index. A foreign-kind search takes eligibility from its owning package and requires the requesting package’s `reads`. Search covers all authorized searchable fields by default. An author may narrow it with the catalogue’s optional `source.field_filter`. The footer sends settled text through `EventSearch`. Its optional `match` chooses literal AND terms or a single literal token prefix independently of the field filter. For claimed-text search, `source.collection` selects the authorized manual-collection projection.
+* `search`: match text from a claimed-text kind whose manifest declares `searchable: true`, or name an explicit `source.search_profile` for a plugin-owned ranking or index. A foreign-kind search takes eligibility from its owning plugin and requires the requesting plugin’s `reads`. Search covers all authorized searchable fields by default. An author may narrow it with the catalogue’s optional `source.field_filter`. The footer sends settled text through `EventSearch`. Its optional `match` chooses literal AND terms or a single literal token prefix independently of the field filter. For claimed-text search, `source.collection` selects the authorized manual-collection projection.
 
 Each app declares its kind and fields. Item lifecycle supplies `trashed` and
 `trashed_at`. An app composes its own Inbox from authorized fields and
@@ -159,7 +159,7 @@ While the authorized row-and-field projection is behind or stale after revocatio
 
 The description only asks. Before any indexed work the host must:
 
-1. authorize the **kind** (a package binds only kinds in its manifest `reads`: the SDK fills a package's own kinds into `reads` automatically, so an author writes `reads` only for another app's kinds), the **collection**, every **filter field**, every **sort field**, the
+1. authorize the **kind** (a plugin binds only kinds in its manifest `reads`: the SDK fills a plugin's own kinds into `reads` automatically, so an author writes `reads` only for another app's kinds), the **collection**, every **filter field**, every **sort field**, the
    **search** and every **output field** against the viewer, the space and, for a guest, the item's grant;
 2. reject a field not declared indexed by the kind, and a field outside the audience's projection (a guest entitled to titles must not be able to infer hidden
    metadata from the count of an `eq` filter or from row order: filters, sorts and counts on a field the audience cannot read are refused, not filtered);
@@ -217,7 +217,7 @@ Built-ins that need no worker run in the host without waking the space runtime; 
 
 operations a description may name. Host approval, Undo, lifecycle status,
 exact-execution control and sheet operations belong to their checked host
-surfaces. A package uses ordinary Invoke for its own controls and forms.
+surfaces. A plugin uses ordinary Invoke for its own controls and forms.
 The catalogue defines the eligible operations and checked inputs.
 
 ### 3.2 Activation: context, resolve, confirm (when required), dispatch
@@ -365,7 +365,7 @@ to every page.
 
 An eligible member can request a transient `live:true` head and then
 follow the `older` cursor for earlier pages pinned to that revision.
-Only a write-authorized package run can replace the retained page.
+Only a write-authorized plugin run can replace the retained page.
 Guest and public views use the retained page alone. If the live head
 supplies a `follow` ref, subscribe with `item_view.follow`. A `changed`
 signal asks the shell to fetch the newest live head. An `invalidated`
@@ -410,8 +410,8 @@ It never carries the raw route values again. After an `ok` outcome,
 `then.route.name` takes the host-issued `created` value if present. A missing
 `created` leaves the route unchanged.
 
-**Package controls.** Use the checked action and form exchange for a
-package’s controls, including composing input and choosing a harness.
+**Plugin controls.** Use the checked action and form exchange for a
+plugin’s controls, including composing input and choosing a harness.
 A choice prompt with `options: {extension: "<point>"}` uses
 `extension.choices` on the current app’s lease. The renderer submits the
 short-lived option ref through its prompt slot. When choosing a harness,
@@ -575,7 +575,7 @@ What the renderer needs from the contract, and what it costs:
 
 ## 9. Paper exercises
 
-Run the conformance-tool version that supports the contract revision. The fixtures in `contract/fixtures/description-v2/` pair each app with its manifest in `manifests/`. The SDK supplies each package’s own reads and the fixtures include the emitted entries. Section 6 governs the optional member rows used by `threads-nested-catalogue-app.json`. The Notes and Threads walks follow §2.4. An installed harness shows a verified provider mark or its fallback symbol. Note rows use the current thumbnail or miniature. Notes collection rows use the kind icon.
+Run the conformance-tool version that supports the contract revision. The fixtures in `contract/fixtures/description-v2/` pair each app with its manifest in `manifests/`. The SDK supplies each plugin’s own reads and the fixtures include the emitted entries. Section 6 governs the optional member rows used by `threads-nested-catalogue-app.json`. The Notes and Threads walks follow §2.4. An installed harness shows a verified provider mark or its fallback symbol. Note rows use the current thumbnail or miniature. Notes collection rows use the kind icon.
 
 ### 9.1 Community Reading List and author trial
 
@@ -626,9 +626,12 @@ job. The owning job appends it using an attested body with source kind
 `input`. Each reply uses source kind `output` and its checked sequence.
 The host composes and records each contiguous message under the
 [catalogue’s authorship rule][write-authorship]. On reopen the owning
-package uses `item_spans` and `item_range` for the same revision. Byte
+plugin uses `item_spans` and `item_range` for the same revision. Byte
 ranges mark the message and its exact middle, including any line that
-looks like a heading.
+looks like a heading. A quote adds a separate attributed range.
+Provide a heading's `timestamp` as a typed instant. The renderer formats
+it in the viewer's time zone and locale. The plugin reads UTC from its
+own file format. A renderer uses the typed value to draw the time.
 
 **Personal space.** Open the app and item, pick Example harness in the
 composer and keep its short option ref `h-opt`. Use the selected option's

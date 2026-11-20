@@ -2997,7 +2997,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "anchor": {"$ref": "host-catalogue-v2.json#/$defs/ItemAnchor"},
+        "anchor": {
+          "$ref": "host-catalogue-v2.json#/$defs/ItemAnchor"
+        },
         "type": {
           "const": "snapshot-heading"
         },
@@ -3008,6 +3010,10 @@
         "author": {
           "type": "string",
           "maxLength": 120
+        },
+        "timestamp": {
+          "$ref": "host-catalogue-v2.json#/$defs/Timestamp",
+          "description": "Typed UTC instant to display in the viewer's local time."
         }
       },
       "required": [

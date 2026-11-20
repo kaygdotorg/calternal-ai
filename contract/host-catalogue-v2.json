@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Revision 14.38 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
+  "description": "Revision 14.39 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -48,7 +48,7 @@
       "cutover": "Keep this path disabled until a later numbered revision pins the grant and file commit."
     },
     "message_deletion": {
-      "proposal": "Message deletion through history, search, display caches and offline replicas is OPEN.",
+      "proposal": "The writer redaction and immediate withholding rule is item_engine.quotes.redaction. Safe historical projections after the withholding fence and qualification of search, display-cache and offline reconciliation remain OPEN.",
       "blocks": "Deleting a people message and promising its removal on those surfaces.",
       "cutover": "Keep deletion disabled until pinned."
     },
@@ -267,8 +267,7 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "item",
-          "title"
+          "item"
         ],
         "properties": {
           "item": {
@@ -278,14 +277,34 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 256
+          },
+          "folder": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "$ref": "#/$defs/ReadablePathSegment"
+            },
+            "description": "Optional destination under the checked kind root. Empty selects that root. The host checks placement and destination authority."
           }
-        }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "title"
+            ]
+          },
+          {
+            "required": [
+              "folder"
+            ]
+          }
+        ]
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": true,
-      "atomic_undo_when": "Single-item rename in the FULL content transaction with its Undo and no deferred inbound-link rewrites."
+      "atomic_undo_when": "Use item_engine.relocate. Commit the placement, every link rewrite and Undo together. A stale dependency or a change beyond the bound refuses the whole action."
     },
     "host.item.trash": {
       "engine": "item_trash",
@@ -4210,7 +4229,8 @@
         "grace_seconds": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 86400
+          "maximum": 86400,
+          "default": 60
         },
         "item": {
           "$ref": "#/$defs/ItemRef",
@@ -4273,6 +4293,83 @@
       "$ref": "#/$defs/Ref",
       "description": "Opaque host-issued ref to a recorded write span. Replace only if it is still live at the checked head under current owner and writer authority."
     },
+    "ItemQuoteSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "revision": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "span": {
+          "$ref": "#/$defs/ItemWriteSpanRef"
+        }
+      },
+      "required": [
+        "item",
+        "revision",
+        "span"
+      ]
+    },
+    "ItemQuoteRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "attribution": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "const": "person"
+                },
+                "actor": {
+                  "$ref": "#/$defs/AccountRef"
+                }
+              },
+              "required": [
+                "kind",
+                "actor"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "const": "attempt"
+                },
+                "attempt": {
+                  "$ref": "#/$defs/ExecutionRef"
+                }
+              },
+              "required": [
+                "kind",
+                "attempt"
+              ]
+            }
+          ]
+        }
+      },
+      "required": [
+        "offset",
+        "length",
+        "attribution"
+      ]
+    },
     "AttestedBody": {
       "type": "object",
       "additionalProperties": false,
@@ -4333,11 +4430,28 @@
           "type": "string",
           "maxLength": 512,
           "description": "Optional package framing, at most 512 UTF-8 bytes. Omission is empty."
+        },
+        "quote": {
+          "$ref": "#/$defs/ItemQuoteSource"
         }
       },
       "required": [
         "source"
-      ]
+      ],
+      "not": {
+        "required": [
+          "quote"
+        ],
+        "properties": {
+          "source": {
+            "properties": {
+              "kind": {
+                "const": "empty"
+              }
+            }
+          }
+        }
+      }
     },
     "ItemAppend": {
       "type": "object",
@@ -5688,6 +5802,18 @@
                 }
               }
             }
+          },
+          {
+            "required": [
+              "attested"
+            ],
+            "properties": {
+              "attested": {
+                "required": [
+                  "quote"
+                ]
+              }
+            }
           }
         ]
       }
@@ -5912,6 +6038,11 @@
               "suffix": {
                 "maxLength": 0
               }
+            },
+            "not": {
+              "required": [
+                "quote"
+              ]
             }
           }
         }
@@ -6052,6 +6183,9 @@
             }
           ],
           "description": "Attribution of the middle, for display and record association. The surrounding bytes are owned by the package."
+        },
+        "quote": {
+          "$ref": "#/$defs/ItemQuoteRange"
         }
       }
     },
@@ -7712,7 +7846,7 @@
       "contribution_calls_per_view": 2
     },
     "rows": "Publish the basic indexed row without a wake. Resolve optional fields only for visible rows, coalesce work, and deliver only for the same checked source ref, lease, audience and revision. Failures omit that field. If an app uses a list entry with a checked source ref, maintain visibility by source authority before pagination or counts. A personal entry grants no rights on its source.",
-    "files": "A kind declares a file format ID and version. Multiple editor contributions may opt into the same format. The person chooses a preferred eligible editor for that format; store the choice per account. Recheck live item write authority and format compatibility at each save. Fall back to an eligible read-only view if the preferred editor is absent or cannot preserve its input.",
+    "files": "Use item_engine.format_open. Editor contributions declare eligible format IDs and versions. The person can explicitly select one without changing the owning format's default. Fall back to an eligible read-only view when preservation or write compatibility is unavailable.",
     "harnesses": "Images and entry assets are pinned. Only an admitted execution job may invoke a selected harness contribution. Use identical placement, signature, native-profile, authority and disclosure checks for bundled and community code. An app may publish another harness interface. There is no bundled namespace owner.",
     "choices": {
       "input": {
@@ -7797,7 +7931,7 @@
       "input_bytes": 16384
     },
     "admission": "Only a declared replayable alarm job. Bind the pending alarm to a package generation, creator, checked target and due time. Protect replacement and cancellation by live authority and request receipt. Consume and admit exactly one durable job in the same recovery-visible transaction; delivery or restart replay can only replay that job. Resolve the installed job declaration. Require the top-level AlarmSet.harness operand for execution:true and refuse it otherwise. It is the sole harness operand. Never select a harness from the opaque job input. Resolve and pin that durable HarnessRef for the exact actor, space and target at alarm set. At due-job admission and claim, re-resolve the same binding and place it in the protected ExecutionJobContext. If it is ineligible, admit no execution and never substitute a harness. Execution alarms use the applicable default login binding and cannot opt in to a personal placement in a shared space. Replacement is a new checked admission; receipt replay preserves the exact binding. Apply execution_intents.target_operand at set, admission and claim. An execution alarm requires item as well as harness. Require contribution_input for execution alarms and refuse it for other alarm jobs. Apply extension_points.calls.preflight before accepting or replacing the alarm. Recheck the same pinned input when admitting its execution job.",
-    "late": "An eligible missed alarm is still delivered once at durable job admission. The host stamps scheduled_at, actual_at and missed into that receipt and replays them unchanged. missed is true only when AlarmSet.grace_seconds is supplied and actual_at is strictly later than scheduled_at plus that grace. Omission reports false. This measures admitted delay, including a slow queue, rather than inferring an outage. The plugin decides whether to skip and computes its next time.",
+    "late": "An eligible missed alarm is still delivered once at durable job admission. The host stamps scheduled_at, actual_at and missed into that receipt and replays them unchanged. Pin the effective grace at alarm admission, using AlarmSet.grace_seconds or its single schema default when omitted. missed is true only when actual_at is strictly later than scheduled_at plus the pinned grace. Equality is on time. This measures admitted delay, including a slow queue, rather than inferring an outage. The plugin decides whether to skip and computes its next time.",
     "disable": "Persist retirement of pending alarms and fence admitted work when the package is disabled, uninstalled or loses authority. A later enablement does not recreate retired alarms."
   },
   "file_append": {
@@ -7868,7 +8002,7 @@
     "retention_days": 30,
     "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action. Start retention at trash commit. No item kind or package overrides the retention period."
   },
-  "exchanges_revision": "14.38",
+  "exchanges_revision": "14.39",
   "view_result_retention": {
     "rule": "Host windows, plugin search pages and stored or live item-view pages use the same result_versions and retained_results exchange. On a successful renewal with an unchanged grant revision, re-confirm the exact result ref and version, current audience and checked scope, including the active settle generation for a plugin search, the slot for an item view, and live access to each exact item, asset and source revision represented in the result. Retain each still-authorized unchanged result by acknowledging the exact pair, without rerendering or invoking a plugin. Treat a changed or refused result as an invalidation of that result only. A changed audience requires a new view. Apply subscription_catch_up to each retained subscription and its result check.",
     "scope": "Retain only on the same authenticated view, account and cache partition. Rebind the acknowledged result's eligible continuation, follow and item-view asset refs to the renewed lease. Asset reads still apply view_snapshots.assets at admission and delivery. Supply current scoped contexts in retained_results for retained plugin-search pages. A missing context is unavailable. Replace old tokens as a set. Invalidate selections or activities whose originating result or context no longer holds. Acknowledge each exact result at most once under the existing aggregate cap. Reuse the recorded window scope_ref for an unchanged checked scope, and use the exact omitted result's scope for persisted row erasure.",
@@ -7954,11 +8088,37 @@
     "launch": "On any launch paint immediately from the inventory left by the last completed reconciliation, within local expiry and after local signature and scope checks. Pending reconnect work has no first-paint dependency. Do not treat cached display as live authority. Remove anything already erased or pending durable erasure before prepaint. Fresh verified downloads and signed records accepted after reconciliation join that session's reconciled inventory. Before publishing staged acquisitions to this inventory, recheck their live authority under the current authenticated session."
   },
   "item_engine": {
+    "relocate": {
+      "limits": {
+        "affected_files": 64,
+        "rewritten_bytes": 4194304,
+        "link_edits": 4096
+      },
+      "rule": "The same generic operation renames or moves any item within its checked space. Use the kind's ordinary placement for the physical file or dedicated folder and update the host title and any already declared host-writable title slot. Maintain the reverse index of resolved Markdown destinations and the moved item's outbound relative links at write time. Follow both endpoints of relative links. Use the index to stage only the moved item and affected linking files, with inline and reference-style paths, URL encoding, visible labels and fragment anchors preserved according to the link contract. Stable item locators need no path rewrite. Charge all files, complete staged body bytes and link edits to limits. Refuse link_rewrite_limit before effects on overflow or incomplete index coverage. Never return a partial success or scan the space.",
+      "commit": "Resolve expected heads, checked destination and current authority for the move and host structural rewrites, including any disclosure and room fence. Use the existing per-space content writer and recoverable publication intent. Commit the move, link bytes, backlinks, affected heads, span offsets, receipt and Undo in one FULL transaction. Refuse a stale or ineligible dependency without disclosing hidden linking files. Undo repeats the checks on the exact inverse. An old readable revision keeps its ordinary pin. Existing live executions keep the item identity and recheck the new head before writing. A cross-space move stays unavailable until an atomic implementation qualifies.",
+      "spans": "Both a rename and a relative-link rebase change references through host-generated byte patches. Under the writer fence, shift or resize affected full, middle and quote ranges in every rewritten file and retain original attribution and live record identities. Newly changed destination bytes have host provenance. Keep untouched bytes and existing discovery protection. A patch that cannot be mapped without crossing a record or attribution boundary refuses the entire relocation. Raw plugin replacements still use the opaque rule.",
+      "qualification": "Use a perf VM under perf-lock. Seed 100,000 mixed-authority items and run file and folder rename and move at zero links and the limits. Require p95 at most 40 ms to commit with Undo for the zero-link case and 100 ms for the capped case, and no regression against the running release on equivalent cases. Measure at least 100 operations per arm. Count index reads, file writes, commits and flushes. Assert that only the affected files are touched, all backlinks and rebased outbound links resolve, authors and spans survive, and a crash or bound refusal cannot publish any partial move. No qualifying live result is recorded yet."
+    },
+    "quotes": {
+      "limits": {
+        "copies_per_source": 64,
+        "bytes_per_quote": 65536
+      },
+      "compose": "An attested record may carry one ItemQuoteSource. Resolve the exact currently available recorded middle at the checked source revision. Check live source body read, destination write and source access for the entire destination audience before commit and at delivery. Use no caller-supplied quote bytes. The host emits Markdown blockquote lines using > plus a space and a blank line after the block. The original middle bytes are kept in order. Track the emitted quote range and original author or attempt separately from the replying middle and plugin framing. Quote bytes count against the ordinary record budget and the quote cap, independently of the framing cap. Refuse ineligible, empty or retired sources. Do not quote the source's framing or its quoted copies.",
+      "redaction": "Index each copy under the durable identity of the original record across edits, including exact source revision and the dependent range. Refuse creation above the copy limit so deletion can finish. Replacing the original with an empty middle atomically removes its text and the associated quote bytes in that item. Preserve other records, reply anchors and attributable middle bytes, and shift the ranges with the same commit. Until the owner decides, remove copies in other items too. Admit cross-item copies only within the same per-space writer and after atomic removal and audience and revoke gates qualify. Refuse cross-space copies. Withhold affected historical reads and retained projections until they can be delivered with redaction, invalidate affected caches, and apply offline reconciliation at next contact. Treat quotes as source-dependent body content on every delivery path. Fence affected destination bodies and projections before publishing a source grant loss or broader destination audience until the quote is redacted or its access is re-established."
+    },
+    "format_open": {
+      "rule": "The owning kind declares file format identity and version, its installed default_app and any metadata_tokens. Check default_app against the owning plugin's installed apps. Open there by default. The person's explicit Open in choice may select an eligible editor contribution for the same format and version. Recheck current body authority and format compatibility for every open and write.",
+      "metadata": "Only the owning format declaration specifies hideable tokens. A compatible alternate editor hides those tokens in the block view, preserves their exact stored bytes and anchors on a save, and retains access in raw view or export. Apply literal token rules only to their declared context. Frontmatter rules operate inside the initial frontmatter. Framing rules operate only on recorded framing, never on submitted middle or quote text. Author, timestamp, edit/delete and reply markers, and quotes stay visible unless the owning format explicitly declares other hideable metadata. Refuse a write if the alternate editor cannot preserve unedited metadata."
+    },
+    "save_qualification": {
+      "rule": "For each save-gate workload take at least five independent runs on the locked perf VM. Compute p95 save ACK latency for each run. The median of candidate run p95s must be at most 40 ms and no slower than the median for the running release on the same workload and machine. Report every run and report save-to-ready lag separately."
+    },
     "attested_write": {
       "framing_bytes_each": 512,
-      "compose": "Under the ordinary item writer and live authority fence, the host concatenates UTF-8 prefix, the exact selected middle, and UTF-8 suffix in that order. Omitted framing is empty. Reject framing over framing_bytes_each by encoded byte length, and apply the ordinary body, append and frame bounds. Prefix and suffix are literal package-authored framing. Apply the owning package's declared reads and destination authority to them. Track their provenance separately from the middle. Do not parse or transform any part. Refuse an ineligible source or span before publishing. Do not silently convert a refused attested write to an opaque write.",
-      "placement": "ItemAppend appends the single composed record at the checked head and ItemCreate can compose the initial body. Reject an empty record on either path. An empty create with no body adds no authored material. ItemSave with replace_span replaces exactly that one recorded span, including its old framing, in the checked current revision. Resolve the span with current item, package and write authority. Caller offsets are not accepted. For an edit use a newly captured input; for a delete use source kind empty, optionally with package framing for a tombstone. ItemSave without replace_span accepts attested content only for a complete checked editor snapshot, with source kind input and empty framing. Its body is exactly the captured snapshot. An opaque body or stage uses the ordinary save path and cannot be paired with attested.",
-      "record": "Commit the new head, publication intent, body, protection state, receipt and span evidence in the same writer transaction. Record the entire nonempty composed span and its middle subrange, with package attribution for framing, captured actor or exact attempt for the middle, and source and revision binding. Return its ItemWriteSpanRef in the receipt. Replacements retire the prior span and leave unaffected spans addressable at the new head. A zero-byte replacement retires the span and issues no replacement ref. Whole-body writes retire all previous live span refs. Read committed spans through item_spans for as long as the exact revision is retained and readable. Retain recorded attribution with the revision, independent of receipt expiry, restart and package worker lifetime. Refs do not grant write authority and are not portable. Preserve ordinary historical revision and range pins. Exact replay returns the original receipt after live authorization with no repeated write or new evidence. Bind the fingerprint to the source, framing, target span and expected revision.",
+      "compose": "Under the ordinary item writer and live authority fence, the host concatenates UTF-8 prefix, the optional checked quote block, the exact selected middle, and UTF-8 suffix in that order. Omitted framing is empty. Reject framing over framing_bytes_each by encoded byte length, and apply the ordinary body, append and frame bounds. Prefix and suffix are literal package-authored framing. Apply the owning package's declared reads and destination authority to them. Track their provenance separately from the middle. The separate quote rule governs its block. Copy the middle bytes unchanged. Refuse an ineligible source or span before publishing. Do not silently convert a refused attested write to an opaque write.",
+      "placement": "ItemAppend appends the single composed record at the checked head and ItemCreate can compose the initial body. Reject an empty record on either path. An empty create with no body adds no authored material. ItemSave with replace_span replaces exactly that one recorded span, including its old framing and quote, in the checked current revision. Resolve the span with current item, package and write authority. Caller offsets are not accepted. For an edit use a newly captured input. For a delete use source kind empty, optionally with plugin framing for a tombstone, and apply quotes.redaction. ItemSave without replace_span accepts attested content only for a complete checked editor snapshot, with source kind input and empty framing. Its body is exactly the captured snapshot. An opaque body or stage uses the ordinary save path and cannot be paired with attested.",
+      "record": "Commit the new head, publication intent, body, protection state, receipt and span evidence in the same writer transaction. Record the entire nonempty composed span and its middle subrange, with package attribution for framing, captured actor or exact attempt for the middle, and source and revision binding. Return its ItemWriteSpanRef in the receipt. Replacements retire the prior span and leave unaffected spans addressable at the new head. A zero-byte replacement retires the span and issues no replacement ref. Whole-body writes retire all previous live span refs. Read committed spans through item_spans for as long as the exact revision is retained and readable. Retain recorded attribution with the revision, independent of receipt expiry, restart and package worker lifetime. Refs do not grant write authority and are not portable. Preserve ordinary historical revision and range pins. Exact replay returns the original receipt after live authorization with no repeated write or new evidence. Bind the fingerprint to the source, framing, quote source, target span and expected revision.",
       "opaque": "Any opaque body write, including a raw append or a staged import at publication, makes the new head unproven and sets consent_only at commit. In the same commit invalidate all prior live spans, even if the old bytes still occur in the new body. The new revision starts with an empty span list. Old immutable revision entries stay readable only through the historical revision pin and never restore write eligibility. Later attested writes may record new ranges, with existing protection and the unproven body state preserved under the item discovery rule. A host-captured complete editor snapshot is the zero-framing case. A metadata-only save leaves body provenance and spans unchanged. Successfully composed framing is attributed to the package and does not, by itself, require setting consent_only."
     },
     "item_create": {
@@ -7997,7 +8157,7 @@
       },
       "scope": "Only a live declared read by the owning package. Recheck the acting principal and exact revision body-read authority at admission and at delivery, including any attempt fence. Use the item range pin, retention, purge and revoke rules. Refuse forged, expired or mismatched cursors and unavailable revisions. No returned ranges or attribution on a refusal.",
       "paging": "Return at most the ItemSpansPage.spans maxItems, ordered by increasing absolute UTF-8 byte offset. Seek after the last returned span with an opaque cursor bound to the package, acting principal, exact item and revision, and the same authorized read scope. Echo the item and revision and omit next at the end. Head advance cannot alter this revision’s pages. The full spans are nonempty and nonoverlapping within their revision, so their count is bounded by its body byte length. Span evidence expires with the retained revision. An attested empty body or an untouched opaque revision can return an empty page.",
-      "boundaries": "The full span and the exact middle must fit the checked revision bytes, with the middle contained in the full span. A heading-shaped line in the middle is ordinary submitted text. Use the recorded spans for boundaries when reading the body; do not escape, rewrite or infer delimiters from the middle. A tombstone with package framing has an empty middle. Historical span refs and attribution identify records only and cannot authorize edits, impersonation, consent or execution control."
+      "boundaries": "The full span, the exact middle and any quote must fit the checked revision bytes. The middle and the separately attributed quote are disjoint ranges within the full span. A heading-shaped line in the middle is ordinary submitted text. Use the recorded spans for boundaries when reading the body; do not escape, rewrite or infer delimiters from the middle. A tombstone with package framing has an empty middle. Historical span refs and attribution identify records only and cannot authorize edits, impersonation, consent or execution control."
     },
     "item_save": {
       "input": {
@@ -8006,7 +8166,7 @@
       "output": {
         "$ref": "#/$defs/ItemSaveReply"
       },
-      "scope": "Check live item writer, expected head and receipt. Body or checked sealed stage replaces the body opaquely. Use attested for a recorded-span replace or a complete editor snapshot. Omit these operands for a metadata-only change. Apply patch to declared metadata. The owner can commit body, title metadata and an optional leaf rename as one existing content transaction, including intent and receipt; keep the creation folder. Stale expected head yields head_conflict with the separately authorized current head. Reuse the room fence and preserve live checkpoints for metadata-only changes. Apply attested_write to the attested alternative and the item discovery policy to opaque writes."
+      "scope": "Check live item writer, expected head and receipt. Body or checked sealed stage replaces the body opaquely. Use attested for a recorded-span replace or a complete editor snapshot. Omit these operands for a metadata-only change. Apply patch to declared metadata. The owner can commit body, title metadata and a permitted relocation in one writer transaction, including intent and receipt. Apply relocate to any path change, including a leaf-only rename. Stale expected head yields head_conflict with the separately authorized current head. Reuse the room fence and preserve live checkpoints for metadata-only changes. Apply attested_write to the attested alternative and the item discovery policy to opaque writes."
     },
     "item_save_begin": {
       "input": {
@@ -8035,7 +8195,7 @@
       },
       "scope": "Check exact length and digest before sealing. The author passes staged to item_save; sealing publishes no item. Recheck expected head and authority at commit."
     },
-    "placement": "The kind declares the root. Name and optional child folders are checked single human-readable components, at most 120 UTF-8 bytes each after normalization. Reject traversal, symlinks, empty or platform-reserved names and path separators. Normalize under the host file writer's collision rules. Reserve each final path atomically with item creation, suffixing collisions deterministically as 2, 3 and so on. Probe at most 32 candidates, then refuse with path_conflict before publishing. Exact replay retains its reserved path. A folder is not an item ref or an authorization boundary. Use author-provided title/date and only an audience-checked actor_label from AuthorInvocationContext; neither account display name nor raw account ref is a default. The earliest slice can use title and date alone. A leaf rename keeps the folder. Moving folders on title edit is OPEN.",
+    "placement": "The kind declares the root. Name and optional child folders are checked single human-readable components, at most 120 UTF-8 bytes each after normalization. Reject traversal, symlinks, empty or platform-reserved names and path separators. Normalize under the host file writer's collision rules. Reserve each final path atomically with item creation, suffixing collisions deterministically as 2, 3 and so on. Probe at most 32 candidates, then refuse with path_conflict before publishing. Exact replay retains its reserved path. A folder is not an item ref or an authorization boundary. Use author-provided title/date and only an audience-checked actor_label from AuthorInvocationContext; neither account display name nor raw account ref is a default. The earliest slice can use title and date alone. Apply item_engine.relocate to every change of a published file or folder path.",
     "locators": "ItemLocator is a stable space and item identity suitable for files, links and export. Resolve only through item.locate against current membership and item authority. Export keeps it as provenance; imports elsewhere use an explicit identity map if available. Never use it as a checked operand. Live ItemRef, HarnessRef, ChoiceRef, leases, receipts and provider session refs are not portable; regenerate or resolve them. App-owned stable message and participant IDs and a checked ContributionIdentity may be stored but confer no host authority."
   },
   "created_outcome": "A manifest operation with creates declares a closed output object with exactly one required field, created typed ItemRef. This declaration governs activation navigation. Internal own-item writes, including log files, use the declared item_create method without creates. Output maps to ActionOutcome.created only if the broker recorded that exact new item of the declared kind for this authenticated invocation, or an exact replay of it. Check live delivery authority before exposing the ref. Do not accept a foreign, old or unrecorded ref or a create claim from an undeclared operation. Dispatch then.route uses only the host-confirmed outcome.",

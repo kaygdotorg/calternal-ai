@@ -97,7 +97,7 @@ const chrome = defineChrome({
   footer: { search: { bind: "gear-search", placeholder: "Search gear" } },
 });
 
-// App and package assembly
+// App and plugin assembly
 export default definePlugin({
   api_version: 2,
   id: "gear-list",

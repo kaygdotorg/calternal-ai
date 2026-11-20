@@ -4,7 +4,7 @@ From a Calternal checkout, install the workspace dependencies with `npm ci`
 and build the SDK with `npm run build -w @calternal/plugin-sdk`. Use Node 24
 and Python 3.
 
-Create a directory under `plugins/` for your package. Give it a `package.json`
+Create a directory under `plugins/` for your plugin. Give it a `package.json`
 with `"type": "module"` and `"@calternal/plugin-sdk": "*"` in `dependencies`.
 Run `npm install` from the checkout root to link the new workspace. Save the
 following example as `src/plugin.ts` in that directory.
@@ -50,7 +50,7 @@ export default definePlugin({
 <!-- END GENERATED first-list -->
 
 From the plugin directory, check the TypeScript declarations and build the
-package.
+plugin.
 
 ```sh
 npx tsc --noEmit --strict --skipLibCheck --module nodenext --target es2022 src/plugin.ts
@@ -58,12 +58,12 @@ npx --no-install calternal-build-plugin src/plugin.ts dist
 ```
 
 Open `dist/manifest.json` and the app template named in its `apps` entry. The
-manifest includes the package’s own kind in `reads`, a generated title
+manifest includes the plugin’s own kind in `reads`, a generated title
 mapping, no network, and no worker operations. The template asks for 60 rows
 and an exact count subject to host authority. It names the row title and
 kind icon and includes empty, loading, and error messages.
 
-The example has eight authoring concepts. The **package** groups declarations.
+The example has eight authoring concepts. The **plugin** groups declarations.
 The **app** is the entry in the host shell. Its **kind** names a class of items.
 **Placement** controls where they are stored. The **item schema** describes
 their metadata. A **Bind** names the query that supplies rows. A **list** shows
@@ -72,7 +72,7 @@ those rows. The **sidebar section** refers to the same Bind by ID.
 ## Complete gear list
 
 Save this as `src/plugin.ts`. The labeled comments locate the kind and
-indexes, operation, list and swipes, form, search, and package assembly.
+indexes, operation, list and swipes, form, search, and plugin assembly.
 Both swipes patch the current row's item using `{ row: "id" }`. For an
 action that reads a projected value, use `{ row: "field", field: "packed" }`.
 Keep action objects inline in `defineView` so TypeScript preserves their
@@ -181,7 +181,7 @@ const chrome = defineChrome({
   footer: { search: { bind: "gear-search", placeholder: "Search gear" } },
 });
 
-// App and package assembly
+// App and plugin assembly
 export default definePlugin({
   api_version: 2,
   id: "gear-list",
@@ -198,7 +198,7 @@ export default definePlugin({
 
 Save this as `worker.mjs`. Supply it as the third argument to
 `calternal-build-plugin src/plugin.ts dist worker.mjs`. The SDK adds the
-package-level worker reference and digest. Each form selects its operation
+plugin-level worker reference and digest. Each form selects its operation
 by ID. The offline placeholder exits with failure if started.
 
 <!-- BEGIN GENERATED gear-worker -->

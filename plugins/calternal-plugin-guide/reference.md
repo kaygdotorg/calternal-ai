@@ -1,16 +1,16 @@
 # Calternal Plugin API v2
 
-Use the TypeScript SDK to declare a package, then validate its manifest and
+Use the TypeScript SDK to declare a plugin, then validate its manifest and
 host-drawn templates with `calternal-build-plugin`. Begin with the
-[walkthrough](walkthrough.md). The manifest lists what the package asks
+[walkthrough](walkthrough.md). The manifest lists what the plugin asks
 to do. The host evaluates the caller, space and declared authority for
 each operation.
 
-## Packages and templates
+## Plugins and templates
 
 - `definePlugin` collects apps, kinds, external reads, and optional operations.
-  Package ID and version identify the release. App and kind IDs identify
-  entries within it. The SDK emits the package's own kinds as readable.
+  Plugin ID and version identify the release. App and kind IDs identify
+  entries within it. The SDK emits the plugin's own kinds as readable.
 - `defineKind` accepts a metadata schema and placement. It maps the declared
   string `title` property to the host's generic title field. Set
   `title_field` for a different string property. A searchable kind opts in
@@ -40,7 +40,7 @@ invoking the operation.
 
 An undeclared method or kind returns `403 not_declared`. For authorized
 authors the host diagnostic includes the manifest field to change. Check the
-operation's `methods` or the package's `reads`, review the requested authority,
+operation's `methods` or the plugin's `reads`, review the requested authority,
 and rebuild the manifest. Foreign targets return an opaque response. A stale
 write needs a fresh head and a new decision before attempting a new effect.
 The offline author build verifies declarations and does not run these flows.
