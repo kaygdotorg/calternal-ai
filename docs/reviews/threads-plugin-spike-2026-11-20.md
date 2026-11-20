@@ -36,7 +36,7 @@ nix develop -c npm run conformance -w @calternal/threads
 The build uses the 14.33 revision-aware SDK builder. It pins both
 manifest/worker packages, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-On dev-01, all 26 tests and the repository documentation gate passed. Conformance tool 1.1.0 independently
+On dev-01, all 28 tests and the repository documentation gate passed. Conformance tool 1.1.0 independently
 accepted both packages. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
@@ -267,12 +267,29 @@ still requires the host.
 
 ### Conversation and private state on disk
 
-The package worker emitted these contents on dev-01. The fake host
-wrote its committed buffers directly to the files shown below. Alice
-and Bob are synthetic accounts ending in `0001` and `0002`. The
-called-in harness used scripted output and its own separate log. The
-private path is the fixture's account namespace. Product private custody
-is still open.
+The files below are the exact bytes the package worker wrote through
+the fake host on dev-01. Alice and Bob are synthetic accounts. The
+called-in Claude Code harness uses scripted output and owns a separate
+log. The private path is the fixture's account namespace.
+
+The format uses plain frontmatter and one participant per line. Aliases
+such as `p1` resolve to stable IDs in the list. Names on its entries are
+captured when participants join. Each message heading preserves the
+audience-checked name and UTC time from when it was posted. New messages
+reflect a later checked display name without rewriting the earlier
+headings or changing the participant ID. The agent label is derived from
+the contribution's local name until the host supplies an approved
+presentation label. Contribution identity stays in the frontmatter.
+Names are for display. The host still determines authority.
+
+A message ends at the next unquoted `###` heading with a `{#m-…}` anchor.
+Edit body text on the `>` lines, or add ordinary unquoted text or
+Markdown between headings. Quote any line that itself looks like a
+message delimiter. There is no length to update. The worker reads
+hand-edited body text under the same anchor. Such a file edit is an
+opaque import for the host's provenance rules and cannot impersonate an
+in-app edit or acquire consent. Deletion leaves only the heading on
+disk. Conversation views omit it.
 
 `Threads/2026-11-20 Community Garden/Conversation.md`
 
@@ -280,42 +297,37 @@ is still open.
 ---
 format: calternal-thread-1
 id: e5119471e0af708b988694a46ffdd4a9
-title: "Community Garden"
-created: 2026-11-20T09:00:00Z
-participants: [{"kind":"person","id":"019a0000-0000-7000-8000-000000000001"},{"kind":"person","id":"019a0000-0000-7000-8000-000000000002"},{"kind":"agent","id":"a2816f2fd78322bbae0b8609cf0ed511","contribution":{"package":"calternal-threads-claude-code","contribution":"claude-code"}}]
+title: Community Garden
+created: 2026-11-20 09:00 UTC
 conversation: people
+participants:
+  - p1 | Alice | person | 019a0000-0000-7000-8000-000000000001
+  - p2 | Bob | person | 019a0000-0000-7000-8000-000000000002
+  - p3 | Claude Code | agent | a2816f2fd78322bbae0b8609cf0ed511
+agent-p3-package: calternal-threads-claude-code
+agent-p3-contribution: claude-code
 ---
 
-<a id="message-b31395e111a687c4b5eeed95e646a295"></a>
-## Person
-<!-- {"id":"b31395e111a687c4b5eeed95e646a295","author":{"kind":"person","id":"019a0000-0000-7000-8000-000000000001"},"posted_at":"2026-11-20T09:01:00Z","edited":true,"length":40} -->
+### Alice · 2026-11-20 09:01 UTC · edited {#m-b31395e111a687c4 by=p1}
 
-Can we meet by the garden gate at 10:30?
+> Can we meet by the garden gate at 10:30?
 
-<a id="message-eaa58816884f249237fd993ae7a10732"></a>
-## Person
-<!-- {"id":"eaa58816884f249237fd993ae7a10732","author":{"kind":"person","id":"019a0000-0000-7000-8000-000000000002"},"posted_at":"2026-11-20T09:02:00Z","replyTo":"b31395e111a687c4b5eeed95e646a295","mentions":["019a0000-0000-7000-8000-000000000001"],"length":24} -->
+### Bob · 2026-11-20 09:02 UTC · reply to Alice {#m-eaa58816884f2492 by=p2 re=m-b31395e111a687c4 to=p1}
 
-Yes, I’ll bring the key.
+> Yes, I’ll bring the key.
 
-<a id="message-264b5e3f491fd782606620f01394bb09"></a>
-## Person
-<!-- {"id":"264b5e3f491fd782606620f01394bb09","author":{"kind":"person","id":"019a0000-0000-7000-8000-000000000002"},"posted_at":"2026-11-20T09:03:00Z","deleted":true,"length":0} -->
+### Bob · 2026-11-20 09:03 UTC · deleted {#m-264b5e3f491fd782 by=p2}
 
-[Message deleted]
+### Claude Code · 2026-11-20 09:06 UTC · asked by Alice {#m-4daee5fd2fb71be4 by=p3 ask=p1 log=019a0000-0000-7000-8000-000000000010/item-14}
 
-<a id="message-4daee5fd2fb71be42f941c076569e8a8"></a>
-## Agent
-<!-- {"id":"4daee5fd2fb71be42f941c076569e8a8","author":{"kind":"agent","id":"a2816f2fd78322bbae0b8609cf0ed511","contribution":{"package":"calternal-threads-claude-code","contribution":"claude-code"}},"posted_at":"2026-11-20T09:06:00Z","log":{"space":"019a0000-0000-7000-8000-000000000010","id":"item-14"},"length":30} -->
-
-Reply to the permitted context
+> Reply to the permitted context
 ````
 
 `.calternal-private/019a0000-0000-7000-8000-000000000001/threads/item-1.md`
 
 ````markdown
 ---
-read-through: "b31395e111a687c4b5eeed95e646a295"
+read-through: "b31395e111a687c4"
 draft: "I’ll bring the gloves."
 muted: true
 ---

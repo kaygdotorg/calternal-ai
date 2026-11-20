@@ -28,7 +28,7 @@ test("create, select a contributed harness, append its reply and Stop an exact a
   assert.deepEqual(thread.participants.map(p => p.kind), ["person", "agent"]);
   assert.equal(reply.text, "Reply to Say hello 🦊\n\n---\n<!-- ## Agent -->");
   assert.match(host.markdown(reply.log!.id), /## Reply/);
-  assert.match(host.markdown(item), new RegExp(`id="message-${reply.id}"`));
+  assert.ok(host.markdown(item).includes(`{#m-${reply.id} `));
   assert.equal((await handlers["threads.message"]({ item, message: reply.id }, context("read-1", "threads.message"))).text, reply.text);
   assert.equal(host.snapshots.get(item)?.source_revision, host.files.get(item)?.revision);
   assert.match(JSON.stringify(host.snapshots.get(item)!.view), /Reply to Say hello/);

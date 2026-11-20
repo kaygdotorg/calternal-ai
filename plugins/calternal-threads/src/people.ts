@@ -1,6 +1,6 @@
 import type { AccountRef, ContributionIdentity, ItemRef, RevisionRef } from "../generated/wire.js";
 import { inlineBody, kind, publish, read } from "./files.ts";
-import { agentParticipant, checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, messageView, step, type Message, type Thread } from "./format.ts";
+import { agentParticipant, checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, messageId, messageView, personParticipant, step, type Message, type Thread } from "./format.ts";
 import { checkedText, type HarnessOutput } from "./harnesses-v1.ts";
 import type { Context } from "./interface.ts";
 
@@ -13,6 +13,7 @@ export type InvitedInput = { prompt: string; messages: { id: string; text: strin
 export type PeopleContext = Context & {
   // Fixture ports for checked participants, account-private storage and invocation.
   checkedPeople?: readonly AccountRef[];
+  personLabels?: Readonly<Record<AccountRef, string>>;
   privateState?: {
     read(item: ItemRef): Promise<string | undefined>;
     write(item: ItemRef, body: string, expected: string | undefined): Promise<void>;
@@ -64,7 +65,7 @@ async function create(input: { title: string; participants: AccountRef[] }, ctx:
   const thread: Thread = {
     id: step(ctx.author.request_id, `thread-${ctx.author.actor}`),
     title: checkedTitle(input.title), created: ctx.author.authored_at, conversation: "people",
-    participants: ids.map(id => ({ kind: "person", id })), messages: [],
+    participants: ids.map(id => personParticipant(id, id === ctx.author.actor ? ctx.author.actor_label : ctx.personLabels?.[id])), messages: [],
   };
   const head = await ctx.call("item_create", {
     request_id: step(ctx.author.request_id, "people-create"), kind, folders: [folder(thread)], name: "Conversation.md", attempt_discovery: "consent_only",
@@ -78,7 +79,7 @@ async function post({ item, text, replyTo, mentions = [] }: Target & {
   text: string; replyTo?: string; mentions?: AccountRef[];
 }, ctx: PeopleContext) {
   const { thread, revision, size } = await member(ctx, item);
-  const id = step(ctx.author.request_id, `person-${ctx.author.actor}`);
+  const id = messageId(ctx.author.request_id, `person-${ctx.author.actor}`);
   const recipients = [...new Set(mentions)].sort();
   if (recipients.some(id => !thread.participants.some(person => person.kind === "person" && person.id === id))) {
     throw new Error("Mention unavailable.");
@@ -91,12 +92,13 @@ async function post({ item, text, replyTo, mentions = [] }: Target & {
     await publish(ctx, item, revision, thread);
     return { message: id };
   }
-  if (replyTo !== undefined) messageView(thread, replyTo);
+  const target = replyTo === undefined ? undefined : messageView(thread, replyTo);
+  const sender = thread.participants.find(person => person.id === ctx.author.actor)!;
   const message = {
-    id, author: { kind: "person" as const, id: ctx.author.actor }, text: checkedText(text), posted_at: ctx.author.authored_at,
-    ...(replyTo !== undefined && { replyTo }), ...(recipients.length && { mentions: recipients }),
+    id, author: personParticipant(ctx.author.actor, ctx.author.actor_label ?? sender.name), text: checkedText(text), posted_at: ctx.author.authored_at,
+    ...(target && { replyTo, replyToName: target.author.name }), ...(recipients.length && { mentions: recipients }),
   };
-  const bytes = Buffer.from(encodeMessage(message));
+  const bytes = Buffer.from(encodeMessage(message, thread.participants));
   if (size + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
   const saved = await ctx.call("item_append", {
     request_id: step(ctx.author.request_id, "person-post"), item, expected_revision: revision, bytes: bytes.toString("base64"),
@@ -130,6 +132,7 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
     entry.deleted = true;
     delete entry.edited;
     delete entry.replyTo;
+    delete entry.replyToName;
     delete entry.mentions;
   } else {
     entry.text = checkedText(text);
@@ -251,11 +254,13 @@ async function callAgent({ item, prompt }: Target & { prompt: string }, ctx: Peo
     if (thread.participants.length >= 64) throw new Error("Thread participant limit reached.");
     thread.participants.push(agent);
   }
-  const id = step(ctx.author.request_id, `invited-${ctx.author.actor}`);
+  const id = messageId(ctx.author.request_id, `invited-${ctx.author.actor}`);
   // Refuse before dispatch when the fixture cannot save the reply inline.
   inlineBody(Buffer.concat([Buffer.from(encode(thread)), Buffer.alloc(18 * 1024)]));
   const result = await ctx.runInvited(grant, payload);
-  thread.messages.push({ id, author: agent, text: checkedText(result.text), posted_at: ctx.author.authored_at, log: result.log });
+  const inviter = thread.participants.find(participant => participant.id === ctx.author.actor)!;
+  const askedBy = personParticipant(ctx.author.actor, ctx.author.actor_label ?? inviter.name);
+  thread.messages.push({ id, author: agent, text: checkedText(result.text), posted_at: ctx.author.authored_at, askedBy, log: result.log });
   await save(ctx, item, revision, thread, "invited-reply");
   return { message: id };
 }

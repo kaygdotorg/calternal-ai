@@ -75,6 +75,7 @@ const logicalHarness = {
 const checkedPeople = [
   actor, "019a0000-0000-7000-8000-000000000002", "019a0000-0000-7000-8000-000000000003",
 ];
+const personLabels: Record<string, string> = Object.fromEntries(checkedPeople.map((id, index) => [id, ["Alice", "Bob", "Cara"][index]]));
 const peopleMethods = new Set(["item_create", "item_head", "item_range", "item_save", "item_append", "item_view_context", "item_view_publish"]);
 
 /** One in-memory space. Validates package ownership, exact revisions and
@@ -154,7 +155,7 @@ export class FakeHost {
     });
   }
 
-  peopleContext(person: string, request: string, authored_at = now): PeopleContext {
+  peopleContext(person: string, request: string, authored_at = now, actor_label = personLabels[person]): PeopleContext {
     const call: Context["call"] = async (method, input) => {
       assert.ok(peopleMethods.has(method));
       const wire = exchanges[method as keyof typeof exchanges];
@@ -164,7 +165,7 @@ export class FakeHost {
       return result as never;
     };
     return {
-      author: { request_id: request, actor: person, authored_at }, checkedPeople, call,
+      author: { request_id: request, actor: person, authored_at, ...(actor_label && { actor_label }) }, checkedPeople, personLabels, call,
       privateState: {
         read: async item => this.personState.get(JSON.stringify([person, item])),
         write: async (item, body, expected) => {
@@ -261,7 +262,7 @@ export class FakeHost {
       if (wire) trace.push([wire[1], result]);
       return result as never;
     };
-    const message = frame ?? { author_context: { request_id: request, actor, authored_at: now }, job_context: job?.context, alarm };
+    const message = frame ?? { author_context: { request_id: request, actor, authored_at: now, actor_label: personLabels[actor] }, job_context: job?.context, alarm };
     const author = authorContext(structuredClone(message), call as Parameters<typeof authorContext>[1]);
     return { ...author, call };
   }
@@ -471,7 +472,7 @@ export class FakeHost {
     const frame: HostWorkerInvokeFrame = {
       v: 1, epoch: "fake", seq: ++this.serial, package: application.manifest.id, digest: "0".repeat(64), ticket: id,
       message: { type: "invoke", operation: "threads.run", input: job.input, deadline: now,
-        author_context: { request_id: id, actor, authored_at: now }, job_context: job.context, ...(alarm && { alarm }) },
+        author_context: { request_id: id, actor, authored_at: now, actor_label: personLabels[actor] }, job_context: job.context, ...(alarm && { alarm }) },
     };
     trace.push(["HostWorkerInvokeFrame", frame]);
     job.state = "running";

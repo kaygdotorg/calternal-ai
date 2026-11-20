@@ -1,7 +1,7 @@
 import type { ItemViewRead, ItemRef, Timestamp } from "../generated/wire.js";
 import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { checkedText, type HarnessInput, type HarnessOutput } from "./harnesses-v1.ts";
-import { agentParticipant, checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, page, step, messageView, type Thread } from "./format.ts";
+import { agentParticipant, checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, messageId, page, personParticipant, step, messageView, type Thread } from "./format.ts";
 import type { Context, RunInput, Send } from "./interface.ts";
 import { inlineBody, kind, publish, read } from "./files.ts";
 
@@ -26,7 +26,7 @@ async function create({ title }: { title: string }, ctx: Context) {
     id: step(ctx.author.request_id, `thread-${ctx.author.actor}`),
     title: checkedTitle(title),
     created: ctx.author.authored_at,
-    participants: [{ kind: "person", id: ctx.author.actor }],
+    participants: [personParticipant(ctx.author.actor, ctx.author.actor_label)],
     messages: [],
   };
   const head = await ctx.call("item_create", {
@@ -69,8 +69,8 @@ async function run(input: RunInput, ctx: Context) {
   let { thread, size } = await read(ctx, item, head.revision);
   requireAgentThread(thread, ctx);
   const agent = agentParticipant(thread.id, ctx.job.contribution_identity);
-  const person = { kind: "person" as const, id: ctx.author.actor };
-  const promptId = step(ctx.author.request_id, `prompt-${ctx.author.actor}`);
+  const person = personParticipant(ctx.author.actor, ctx.author.actor_label ?? thread.participants.find(p => p.id === ctx.author.actor)?.name);
+  const promptId = messageId(ctx.author.request_id, `prompt-${ctx.author.actor}`);
   const pinnedInput = ctx.job.contribution_input as HarnessInput;
   const text = checkedText(pinnedInput.text);
   let revision = head.revision;
@@ -81,7 +81,7 @@ async function run(input: RunInput, ctx: Context) {
     if (added) thread.participants.push(agent);
     const prompt = { id: promptId, author: person, text, posted_at: ctx.author.authored_at };
     thread.messages.push(prompt);
-    const body = Buffer.from(added ? encode(thread) : encodeMessage(prompt));
+    const body = Buffer.from(added ? encode(thread) : encodeMessage(prompt, thread.participants));
     currentSize = added ? body.length : size + body.length;
     // Reserve one reply and its bounded message metadata before admitting execution.
     if (currentSize + 18 * 1024 > MAX_FILE_BYTES) throw new Error("Thread is full.");
@@ -115,7 +115,7 @@ async function run(input: RunInput, ctx: Context) {
         if (frame.state !== "ok") throw new Error(`Contribution ${frame.state}.`);
         return {};
       }
-      const id = step(ctx.author.request_id, `reply-${call}-${frame.seq}`);
+      const id = messageId(ctx.author.request_id, `reply-${call}-${frame.seq}`);
       // Another actor may have renamed the thread while the contributor was running.
       const latest = await ctx.call("item_head", { item });
       if (latest.revision !== revision) {
@@ -127,7 +127,7 @@ async function run(input: RunInput, ctx: Context) {
       // The contribution broker validates the data against both manifests.
       const output = frame.data as HarnessOutput;
       const message = { id, author: agent, text: checkedText(output.text), posted_at: ctx.author.authored_at, log: output.log };
-      const bytes = Buffer.from(encodeMessage(message));
+      const bytes = Buffer.from(encodeMessage(message, thread.participants));
       if (currentSize + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
       const saved = await ctx.call("item_append", {
         request_id: step(ctx.author.request_id, `append-${call}-${frame.seq}-${revision}`),

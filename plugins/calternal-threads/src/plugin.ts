@@ -17,7 +17,7 @@ const empty = object({});
 const ifMissed = { enum: ["run", "skip"] };
 const messageResult = {
   id: { type: "string" },
-  author: object({ kind: { enum: ["person", "agent"] }, id: { type: "string" }, contribution: catalogueRef("ContributionIdentity") }, "kind", "id"),
+  author: object({ kind: { enum: ["person", "agent"] }, id: { type: "string" }, name: { type: "string" }, contribution: catalogueRef("ContributionIdentity") }, "kind", "id", "name"),
 };
 const itemRoute = { route: "item" };
 const harnessChoice = { prompt: { title: "Harness", kind: "choice", options: { extension: "harnesses" } } } as const;
@@ -68,9 +68,10 @@ const metadata = {
     { ...read, id: "threads.refresh", title: "Read thread page", target, methods: [...readBody],
       input_schema: catalogueRef("ItemViewRead"), output_schema: catalogueRef("ItemViewPage") },
     { ...read, id: "threads.message", title: "Read message", target, methods: [...readBody],
-      input_schema: object({ item, message: { type: "string", pattern: "^[0-9a-f]{32}$" } }, "item", "message"),
+      input_schema: object({ item, message: { type: "string", pattern: "^[0-9a-f]{16}$" } }, "item", "message"),
       output_schema: object({ ...messageResult, text: textSchema, posted_at: catalogueRef("Timestamp"),
-        log: catalogueRef("ItemLocator"), edited: { const: true }, replyTo: { type: "string" },
+        log: catalogueRef("ItemLocator"), edited: { const: true }, replyTo: { type: "string" }, replyToName: { type: "string" },
+        askedBy: object({ kind: { const: "person" }, id: { type: "string" }, name: { type: "string" } }, "kind", "id", "name"),
         mentions: { type: "array", items: catalogueRef("AccountRef") } }, "id", "author", "text", "posted_at") },
   ],
 } satisfies Omit<ManifestV2, "apps" | "worker" | "network">;

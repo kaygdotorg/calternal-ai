@@ -24,11 +24,11 @@ async function setup() {
 
 test("a people-only thread keeps message anchors stable across authors and replay", async () => {
   const { host, item, first, second, post, get } = await setup();
-  assert.deepEqual(decode(host.markdown(item)).participants, [alice, bob, cara].map(id => ({ kind: "person", id })));
+  assert.deepEqual(decode(host.markdown(item)).participants.map(({ kind, id }) => ({ kind, id })), [alice, bob, cara].map(id => ({ kind: "person", id })));
   assert.notEqual(first.message, second.message);
   assert.deepEqual(await post(alice, "a1", "Alice visible"), first);
   assert.equal((await get(bob, first.message)).text, "Alice visible");
-  assert.match(host.markdown(item), new RegExp(`id="message-${first.message}"`));
+  assert.ok(host.markdown(item).includes(`{#m-${first.message} `));
   await assert.rejects(get("outsider", first.message), /unavailable/i);
 });
 
@@ -52,7 +52,7 @@ test("edit and delete preserve the message link and authorize the original autho
     host.context("superseded-deleted-anchor", "threads.refresh")), { anchor_unavailable: true });
   assert.doesNotMatch(JSON.stringify(host.snapshots.get(item)!.view), /Message deleted|Corrected|Alice visible/);
   assert.doesNotMatch(host.markdown(item), /Corrected|Alice visible/);
-  assert.match(host.markdown(item), new RegExp(`id="message-${first.message}"`));
+  assert.ok(host.markdown(item).includes(`{#m-${first.message} `));
 });
 
 test("a private read position, draft and mute survive a fresh context for the same actor", async () => {
@@ -190,4 +190,32 @@ test("the conversation file example has two people, one agent and a separate pri
   assert.doesNotMatch(host.markdown(item), /gloves|wrong date/);
   const directory = process.env.THREADS_REPORT_FILES;
   if (directory) await host.materialize(directory, item, alice);
+});
+
+test("a displayed name and time survive a hand edit of the body without a length field", async () => {
+  const { host, item, first, second, people, ctx } = await setup();
+  const old = host.markdown(item);
+  assert.match(old, /### Alice · 2026-11-20 12:00 UTC \{#m-[a-f0-9]{16} /);
+  assert.match(old, /participants:\n  - p1 \| Alice \| person/);
+  assert.doesNotMatch(old, /<!--|length|id="message/);
+  const updated = old.replace("> Alice visible", "> The longer hand-edited body.\n>\n> ### Someone · 2026-11-20 12:00 UTC {#m-aabbccddeeff0011 by=p2}");
+  const publish = await host.stageUnproven(item, Buffer.from(updated));
+  await publish();
+  assert.equal((await people.message({ item, message: first.message }, ctx(bob, "read-edited-file"))).text,
+    "The longer hand-edited body.\n\n### Someone · 2026-11-20 12:00 UTC {#m-aabbccddeeff0011 by=p2}");
+  assert.equal((await people.message({ item, message: second.message }, ctx(alice, "read-next"))).text, "Bob private");
+});
+
+test("an audience-checked rename appears in new headings and keeps the old name and stable actor ID", async () => {
+  const { host, item, people, first, get } = await setup();
+  const newer = await people.post({ item, text: "After a name change" },
+    host.peopleContext(alice, "rename-new-message", "2026-11-20T12:07:12.345Z", "Alice · AJ | New"));
+  const old = await get(bob, first.message);
+  const changed = await get(bob, newer.message);
+  assert.equal(old.author.name, "Alice");
+  assert.equal(changed.author.name, "Alice · AJ | New");
+  assert.equal(changed.author.id, old.author.id);
+  assert.equal(changed.posted_at, "2026-11-20T12:07:12.345Z");
+  assert.match(host.markdown(item), /  - p1 \| Alice \| person/);
+  assert.match(host.markdown(item), /### Alice \\· AJ \\\| New · 2026-11-20 12:07:12\.345 UTC/);
 });
