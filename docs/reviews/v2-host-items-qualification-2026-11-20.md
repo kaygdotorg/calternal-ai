@@ -69,10 +69,9 @@ that locator in place of a checked item ref does not grant access.
   idle expiry, reclamation within 30 seconds, startup orphan cleanup, head
   advance and live revoke. Seal publishes nothing. Save consumes the stage
   under the writer fence and a lost ACK replays the committed receipt.
-- Build and run the release upgrade proof on dev-01 with
-  `scripts/verify-additive-upgrade.sh` and previous image
-  `localhost/calternal-ai:31fb41179460`. Record both image digests and
-  preserve the proof outside the repository.
+- The release upgrade proof is retired. Owner decision, 2026-11-20 (#78):
+  production is unused and every deploy before the Threads cutover is a
+  fresh install, so schemas are edited in place with no migration chain.
 - Run the 2 MiB latency gate on a perf VM under
   `/usr/local/bin/perf-lock.sh`, using the verified development build
   artifact. Reconstruct the saved bytes after advancing the head, under a
@@ -87,10 +86,10 @@ that locator in place of a checked item ref does not grant access.
   the existing content rename engine when requested.
 - Durability uses the existing per-space content revision and outbox
   transaction, journal writer, and pending materialization recovery.
-  Any schema addition uses the existing additive migration gate.
+  Slice 2's tables are one content schema step, edited in place.
   The existing `restart_finishes_content_commit_before_file_placement_and_receipt`
   test supplies the recovery fixture. Include the ordinary file lifecycle
-  and release upgrade in the dev gate.
+  in the dev gate.
 - Locking uses the existing per-space writer and lifecycle permits. The
   broker runs synchronous storage work on its blocking worker.
 - Validation reuses kind/file registration, bounded content encoding and
@@ -126,16 +125,9 @@ tests passed in the same run.
   content engine's revision retention. Protection occupies at most one
   row per item and the outbox receipt uses the configured seven-day
   default retention.
-- The migration uses the existing compatible-creation marker so the
-  previous schema-8 writer can open a space first created by the
-  schema-9 candidate. The bidirectional release proof covers that
-  creation path alongside existing-space migration.
-
-The release proof passed for `e74c765e` on dev-01 using
-`localhost/calternal-ai:31fb41179460` and candidate image
-`localhost/calternal-ai-items:e74c765e5ec1`. Podman, Firecracker and
-provider sign-in leak checks passed. The proof lives at
-`/home/claude/Developer/lanes/v2-host-items/upgrade-proof-e74c765e5ec1.json`.
+- Slice 2 adds one content schema step (9). The compatible-creation
+  marker and the release-pair proof that it needed were removed with the
+  owner's fresh-install decision.
 
 ## Broker qualification on draft 14.35
 
@@ -174,8 +166,105 @@ discovery filters, scheduler cleanup and the locked performance gate
 still require qualification. Draft 14.36 adds source-byte evidence and is
 required before enabling discovery through the live product path.
 
+## Live enablement and checked sources on 14.44
+
+Rebased on `lane/v2-host-base` 3e62ca07 (revision 14.44).
+
+**Activation.** `plugins.enable` and `plugins.disable` accept an installed
+v2 package. Enable registers the package's declared kinds through
+`Store::provision_plugin`, the same path v1 uses. Both record the plugin
+control row and its receipt. The item engine fences every commit on that
+exact control value inside the content writer. Disable commits under the
+same space lock, so a write cannot commit after a disable that came first.
+Disable then fences the package's awake placements. Reads and deliveries
+recheck the control row.
+
+**Dispatch.** A declared v2 operation in an enabled space goes to
+`space_broker::package::invoke`. It checks the person session, the
+operation's `required_capability`, `space.read` and `plugins.use`. It
+validates the author input against the install-cached schema, wakes or
+reuses the package placement, and mints a ticket. The ticket checks the
+same capability on its grant revision. The carrier `invoke` now carries
+the contract's `author_context` (request ID, actor, authored time) through
+the machine to the worker pipe. Each item callback (`item_create`,
+`item_head`, `item_range`, `item_spans`, `item_save`, `item_save_begin`,
+`item_save_chunk`, `item_save_seal`, `item_append`) runs through an owned
+`ItemEngine` on a blocking worker. The engine moves between callbacks, so
+no thread waits on the worker. Terminal output is validated against the
+declared output schema and the created-outcome rule. Staged saves use one
+pool per space. A cold wake reads the pinned worker from the installed
+archive once and rechecks its digest.
+
+**Checked sources (14.36–14.38).** An attested write composes package
+framing (at most 512 bytes each) around a middle the host selects:
+
+- `input`: the text a checked composer or editor route bound to the
+  operation's `write_origins.host_input` field, passed to `invoke` as
+  `captured`. It must equal that input field and is scoped to the target
+  item or the create.
+- `output`: the resolver the execution runtime attaches for the exact
+  attempt (`with_attempt_outputs`). It is not wired yet (slices 1 and 3).
+
+An ineligible source is refused with `ineligible_source` and is never
+turned into an opaque write. The writer records the full span, middle,
+origin and optional entry anchor in the same transaction as the revision.
+A reused live anchor conflicts before any effect. The receipt carries the
+span ref, and the fingerprint binds the digest of the selected middle.
+Raw plugin bytes, including creates with a body, appends and staged saves,
+set `consent_only` (`DiscoveryWrite::Protect`). A trigger on `versions`
+retires every live span and marks the body unproven for any other body
+change to a checked item. That includes other host writers that do not
+maintain spans yet. `item_spans` pages up to 128 spans of a pinned
+revision with an HMAC cursor bound to package, actor, space, item and
+revision.
+
+Not yet implemented: `replace_span` edits and deletes, checked quotes,
+`host_ranges` from host rewrites (link rewriting currently retires spans,
+which fails closed), and the attempt-output resolver.
+
+**Append hot path** (warm placement, one attested or raw append; counted
+from the code, not measured). SQLite reads: item ref resolve 1, receipt
+lookup 2 (engine replay check and writer), activation control 2 (in-lock
+fence and delivery), item header 1, current version body 1 (the whole
+body is read and rewritten as the new version), creator check 1, anchor
+check 1, trigger probes 2. Userdata: one full read and hash of the item
+file (`check_header`). If the previous revision's file is still pending,
+it is placed first (file write, file and directory fsync). Flushes on the
+request path: one FULL content commit, plus the publication path's journal
+commit and outbox retirement (two further FULL commits). File placement
+for the new revision is deferred to the lifecycle worker.
+
+**Qualification on dev-01.**
+`enrolled_package_writes_and_reads_items_through_live_callbacks` installs
+the package through the real archive path and enables it through
+`plugins.enable`. It dispatches through the router entry, over the TLS
+carrier, to an enrolled runner with a Node child worker. The worker
+creates, appends, reads the head and a pinned range, and is refused an
+uncaptured attested source. A captured attested create returns one
+recorded span with the person origin and anchor, and stays creator-only
+discoverable. The raw item is protected and unproven. An exact retry
+replays every subeffect without a new revision. A capture that differs
+from the input is refused. After disable the operation is not found. The
+engine tests cover attested create and append spans, cursor forgery, a
+capture-bound fingerprint conflict, anchor reuse, foreign-target captures,
+and an opaque staged save that retires spans while the earlier revision
+keeps its own.
+
 ## Simplification opportunities
 
-Use the immutable version BLOB range reader for both ordinary pinned pages
-and existing adjacent-version callers. Keep a single readable placement and
-outbox recovery path for create, save and append.
+- Use the immutable version BLOB range reader for both ordinary pinned
+  pages and existing adjacent-version callers. Keep a single readable
+  placement and outbox recovery path for create, save and append.
+- Retire the operator-approved item-head profile (`ApprovedItemHead`,
+  `Registry::with_space_item_heads`). It has no production caller, and the
+  package path serves `item_head` through the engine. Its carrier and KVM
+  product tests should move onto the package path first.
+- An append reads and rewrites the whole current body as a new version
+  row. A delta or chunked version store would make append cost
+  independent of thread length.
+- Every deploy is now a fresh install, so the space `content.db` steps 4–9
+  could collapse into the initial batch. This lane owns that list, but the
+  steps carry other lanes' tables, so it is left for a separate change
+  after the coordinator confirms.
+- The engine checks the receipt before the writer, and the writer checks
+  it again. One of the two lookups can go.
