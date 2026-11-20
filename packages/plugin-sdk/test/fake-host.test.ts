@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
-  checkItemView, defineOperation, encodeContributionFrame, formField, LimitError, LIMITS, object, readBody, readSpans, ref, saveBody,
+  checkItemView, defineOperation, encodeContributionFrame, formField, LimitError, LIMITS, object, readBody, readSpans, ref, saveBody, string,
 } from "../src/index.js";
 import { FakeHost, HostRefusal } from "../src/testing.js";
 import { create, echoHarness, logApp, post } from "./fixtures/sample-plugins.js";
@@ -58,6 +58,13 @@ describe("fake host", () => {
     expect(refusal).toBeInstanceOf(HostRefusal);
     expect(refusal).toMatchObject({ status: 403, code: "not_declared", path: "operations[2].methods" });
     expect(refusal.message).toMatch(/Add "item_head" to the methods of log.ask/);
+  });
+
+  test("refuses to install a kind whose indexed field type the schema does not declare", () => {
+    const kind = { ...logApp.metadata.kinds[0]!, indexed_fields: { title: undefined, mood: { type: "Text", audience: "member_item" } },
+      schema: object({ title: string(), mood: { enum: ["calm", "busy"] } }, "title") };
+    const broken = { ...logApp, metadata: { ...logApp.metadata, kinds: [{ ...kind, indexed_fields: { mood: kind.indexed_fields.mood } }] } };
+    expect(() => new FakeHost([broken as typeof logApp, echoHarness])).toThrow(/Indexed field mood does not match kind logs's metadata schema/);
   });
 
   test("schema-checks broker inputs and operation inputs", async () => {

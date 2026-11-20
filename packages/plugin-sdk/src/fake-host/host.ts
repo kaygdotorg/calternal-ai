@@ -90,6 +90,37 @@ export async function loadPackage(directory: string): Promise<InstalledPackage> 
   return { manifest, handlers: worker.handlers ?? {} };
 }
 
+const declaredType = (schema: unknown, expected: string) => {
+  const type = (schema as { type?: unknown } | undefined)?.type;
+  const matches = (value: unknown) => value === expected || (expected === "number" && value === "integer");
+  return matches(type) || (Array.isArray(type) && type.some(matches));
+};
+
+/**
+ * The install checks the host applies to each kind's metadata schema: a
+ * string title field, no reserved generic field, and indexed fields whose
+ * declared type matches the schema. Throws `400 install_refused` with the path.
+ */
+function checkInstall(manifest: ManifestV2, generic: readonly string[]): void {
+  for (const [index, kind] of manifest.kinds.entries()) {
+    const properties = (kind.schema as { properties?: Record<string, unknown> } | undefined)?.properties ?? {};
+    const title = kind.title_field ?? "title";
+    const refuse = (path: string, message: string) => new HostRefusal(400, "install_refused", message, `kinds[${index}].${path}`);
+    if (!declaredType(properties[title], "string")) throw refuse("schema", `Kind ${kind.id} must declare its title field as a string.`);
+    for (const name of generic) {
+      if (name !== title && name in properties) throw refuse("schema", `Kind ${kind.id} uses reserved generic metadata field ${name}.`);
+    }
+    for (const [field, declaration] of Object.entries((kind.indexed_fields ?? {}) as Record<string, { type?: string; source?: string }>)) {
+      if (generic.includes(field)) throw refuse(`indexed_fields.${field}`, `Kind ${kind.id} uses reserved generic indexed field ${field}.`);
+      if (declaration.source === "body_excerpt" || declaration.type === "RowImageRef") continue;
+      const type = declaration.type === "Number" ? "number" : declaration.type === "Boolean" ? "boolean" : "string";
+      if (!declaredType(properties[field], type)) {
+        throw refuse(`indexed_fields.${field}`, `Indexed field ${field} does not match kind ${kind.id}'s metadata schema: declare "type": "${type}" on it.`);
+      }
+    }
+  }
+}
+
 function installed(entry: InstalledPackage | AuthoredPackage): InstalledPackage {
   if ("manifest" in entry) return entry;
   const apps = entry.apps.map(app => ({ ...app.metadata, description: { id: "app", template: { path: "unbuilt.json", sha256: "0".repeat(64) } } }));
@@ -121,6 +152,8 @@ export class FakeHost {
   /** Install packages from emitted manifests or straight from `definePlugin` output, which needs no build. */
   constructor(packages: readonly (InstalledPackage | AuthoredPackage)[], options: FakeHostOptions = {}) {
     this.packages = packages.map(installed);
+    const generic = Object.keys(this.schemas.catalogue.generic_item_fields as object);
+    for (const pkg of this.packages) checkInstall(pkg.manifest, generic);
     this.now = options.now ?? "2026-11-20T12:00:00Z";
     const names = options.people ?? ["Alice", "Bob", "Cara"];
     this.people = Object.fromEntries(names.map((name, index) => [name, `019a0000-0000-7000-8000-${String(index + 1).padStart(12, "0")}`]));
