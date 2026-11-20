@@ -277,7 +277,7 @@ impl Space {
             .map_err(internal)
     }
 
-    fn checkpoint(&self, id: Uuid, seq: i64) -> Result<Option<Checkpoint>> {
+    pub(crate) fn checkpoint(&self, id: Uuid, seq: i64) -> Result<Option<Checkpoint>> {
         self.conn
             .prepare_cached("SELECT lineage,state FROM room_checkpoints WHERE item=?1 AND seq=?2")
             .map_err(internal)?

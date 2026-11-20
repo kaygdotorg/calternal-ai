@@ -64,6 +64,7 @@ impl Content {
             None,
             || Ok(()),
             |_| Ok(()),
+            None,
         )?;
         Ok(true)
     }
