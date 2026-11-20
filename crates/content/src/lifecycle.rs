@@ -17,6 +17,8 @@ pub(crate) struct Slot {
     /// Published after lazy recovery. Visibility reads use WAL snapshots
     /// without waiting for the writer to retire its already published outbox.
     pub(crate) visibility: OnceLock<crate::ReadPool>,
+    /// Cached readers and worker state for the rebuildable window projection.
+    pub(crate) windows: crate::window::runtime::Runtime,
     /// Idle-retirement clock, updated after each completed operation.
     pub(crate) last_used: Mutex<Instant>,
 }

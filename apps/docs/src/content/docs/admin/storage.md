@@ -125,6 +125,27 @@ cannot yet use the server `resolve` wire response: that response requires a
 space ID and has no account-owner alternative. No account ID is substituted for
 a space ID. Account-profile recovery remains the host's responsibility.
 
+Unfiltered `notes.list` uses the live Notes heads and keeps its existing
+timestamp and UUID continuation. The content window API serves explicit
+Notes collections in title order or a provisioned member-only newest order.
+Registered claimed-text kinds can publish one scalar order in either
+direction. A registered parent relation gets a separate covering scope for
+each parent. Each space stores a covering key per effective row set and a
+maintained count and version per nonempty scope. The per-space journal drives
+background updates for item, membership, Trash and restore changes. Collection
+grants to people, groups and public links refer
+to the same explicit collection projection and retain their independent live
+authority checks. A guest window exposes title and a view-scoped row selector.
+Exact counts require explicit disclosure authority.
+
+The content window API takes the catalogue request and returns loading while
+the projection catches up, a ready or empty result, or a typed plan refusal.
+Sequential starts seek a checked
+boundary. Arbitrary exact-count jumps walk the covering index from the nearer
+end. The host resolves the Bind and rechecks authority before delivery. See
+the window engine lane report
+for statement counts and rollout requirements.
+
 Main modules are `types` (plain boundary values), `db` (bound metadata/history),
 `files` (registered placement and checked materialization), `journal` (direct
 calls into each space's inherited journal store), `pool` (pooled read connections),
@@ -182,6 +203,28 @@ A bounded worker advances its projection and journal watermark outside the
 acknowledgment path. A new generation becomes visible when it has scanned
 the retained heads and caught up. List and ID reads use the retained metadata.
 See [search and palette lookups](/docs/dev/search/).
+
+V2 windows use a separate rebuildable per-space WAL database. The shared
+projection worker follows the durable item journal and publishes keys,
+scope totals and an epoch/watermark in one NORMAL transaction. The reader
+checks live authority before storage access and before delivery. A missing
+or relevant lagging publication returns loading without rows, a count or a
+cursor. A root Notes window can keep serving exact results across up to 128
+proved unrelated journal entries. The native Notes cursor remains a head
+query. Published heads stay in memory independently of SQLite handles.
+Each space can retain one writer pair and two reader pairs. Across the
+content service, at most eight of each pair are retained, for up to five
+idle seconds. A full cache still allows on-demand reads and replay.
+Bootstrap, epoch reset and collection replay use bounded
+resumable pages. A broken sidecar produces typed unavailability while the
+worker retries with backoff. Confirmed sidecar corruption and incompatible
+schemas rebuild from the journal. Other failures retain the existing file
+and stop after five failed attempts. Once a rebuild publishes, the ordinary
+freshness checks apply even while replay is catching up. An inherited
+over-limit note keeps its Notes or Trash row and is omitted from explicit
+collections until repaired. The private `window-status` command reports the
+omission count, failure category and retry state. A Notes save adds zero
+synchronous projection reads, queue requests or flushes.
 
 Space plugin settings use a versioned file in userdata. A single durable,
 settings-only intent in the existing per-space database carries the file

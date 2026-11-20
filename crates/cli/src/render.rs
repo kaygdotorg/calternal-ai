@@ -237,6 +237,7 @@ pub fn api_error(error: ApiError, request_id: Option<String>) -> CliError {
         ErrorCode::InvalidInput => {
             "Fix the input named in the message and run the command again; `--help` shows the options."
         }
+        ErrorCode::EffectiveScopeLimitExceeded => "Remove a collection membership before retrying.",
         ErrorCode::TooLarge => "Shorten the input, then run the command again.",
         ErrorCode::RetryAfter => "Wait briefly, then try again.",
         ErrorCode::Unavailable => "Check that the server is running at --base-url, then retry.",
@@ -257,6 +258,9 @@ pub fn api_error(error: ApiError, request_id: Option<String>) -> CliError {
         ErrorCode::InvalidInput => {
             "Fix the input named in the message, then run the command again; use `--help` for examples."
         }
+        ErrorCode::EffectiveScopeLimitExceeded => {
+            "Remove a collection membership for the item, then try again."
+        }
         ErrorCode::TooLarge => "Shorten the input, then try again.",
         ErrorCode::RetryAfter => "Wait briefly, then try again.",
         ErrorCode::Unavailable => "Check `--base-url` and the server's status, then try again.",
@@ -271,6 +275,7 @@ pub fn api_error(error: ApiError, request_id: Option<String>) -> CliError {
         ErrorCode::NotFound => format!("We couldn't find that item: {}", error.message),
         ErrorCode::Conflict => format!("The saved version has changed: {}", error.message),
         ErrorCode::InvalidInput => format!("The server couldn't use that input: {}", error.message),
+        ErrorCode::EffectiveScopeLimitExceeded => error.message.clone(),
         ErrorCode::TooLarge => format!("That input is too large: {}", error.message),
         ErrorCode::RetryAfter => error.message.clone(),
         ErrorCode::Unavailable => format!("The server is unavailable: {}", error.message),

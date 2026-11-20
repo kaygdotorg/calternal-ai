@@ -58,6 +58,7 @@ pub use item_head::{ItemHead, ItemHeadReader};
 mod trash;
 mod trash_job;
 mod types;
+mod window;
 use calternal_roots::Roots;
 use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 pub use collections::StoredCollection;
@@ -76,6 +77,11 @@ pub use types::{
     Summary,
 };
 use uuid::Uuid;
+pub use window::{
+    LoadingWindow, WindowAccess, WindowAnchor, WindowAudience, WindowCountMode, WindowField,
+    WindowKindOrder, WindowOrder, WindowPlanError, WindowPlanReason, WindowProjectionStatus,
+    WindowRange, WindowReply, WindowRequest, WindowResult, WindowScope,
+};
 
 /// Installation content service with bounded per-space connections and idle release.
 /// The host retains root locks; opening two services for the same roots is unsupported.
@@ -83,9 +89,10 @@ pub struct Content {
     // Drop the placement worker before the stores and their root guards.
     sweeper: lifecycle::Sweeper,
     roots: Roots,
+    window_handles: window::runtime::HandleBudget,
     search_readers: search::Readers,
     search_writers: search::Writers,
-    search_worker: std::sync::OnceLock<std::sync::mpsc::SyncSender<SpaceId>>,
+    search_worker: std::sync::OnceLock<std::sync::mpsc::SyncSender<(SpaceId, bool)>>,
     lifecycle: calternal_types::OwnerLifecycle,
     index: Mutex<Connection>,
     catalog: ReadPool,
@@ -188,6 +195,7 @@ impl Content {
         let journals = Journals::open(roots.appdata.clone(), secrets, receipt_retention)?;
         let catalog = ReadPool::new(catalog_path);
         let content = Self {
+            window_handles: window::runtime::HandleBudget::default(),
             search_readers: search::Readers::default(),
             search_writers: search::Writers::default(),
             search_worker: std::sync::OnceLock::new(),
@@ -227,6 +235,7 @@ impl Content {
                     let slot = Arc::new(Slot {
                         space: Mutex::new(None),
                         visibility: Default::default(),
+                        windows: Default::default(),
                         last_used: Mutex::new(Instant::now()),
                     });
                     map.insert(id, slot.clone());

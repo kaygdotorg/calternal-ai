@@ -23,6 +23,8 @@ pub enum ErrorCode {
     Conflict,
     /// Input violates the contract (HTTP 400 in operation errors).
     InvalidInput,
+    /// The change would put an item in too many effective query scopes (HTTP 422).
+    EffectiveScopeLimitExceeded,
     /// The serialized body or document exceeds its byte budget (HTTP 413).
     TooLarge,
     /// A short-lived condition prevents this attempt. Retry after the advised delay (HTTP 429).
@@ -42,6 +44,7 @@ impl ErrorCode {
             Self::NotFound => 404,
             Self::Conflict => 409,
             Self::InvalidInput => 400,
+            Self::EffectiveScopeLimitExceeded => 422,
             Self::TooLarge => 413,
             Self::RetryAfter => 429,
             Self::Unavailable => 503,
