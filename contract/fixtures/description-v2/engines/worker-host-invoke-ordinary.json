@@ -14,7 +14,12 @@
         "title": "Example article",
         "url": "https://example.test/"
       },
-      "deadline": "2026-11-20T12:00:00Z"
+      "deadline": "2026-11-20T12:00:00Z",
+      "author_context": {
+        "request_id": "admit-1",
+        "actor": "member-1",
+        "authored_at": "2026-11-20T11:59:00Z"
+      }
     }
   },
   "manifest": "reading-list-app.json"

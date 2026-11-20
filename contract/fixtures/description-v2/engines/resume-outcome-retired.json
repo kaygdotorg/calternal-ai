@@ -1,9 +1,0 @@
-{
-  "definition": "ResumeOutcome",
-  "value": {
-    "activation_id": "activation-resume",
-    "state": "refused",
-    "code": "previous_session_unavailable",
-    "message": "Previous session unavailable. Start a new session."
-  }
-}

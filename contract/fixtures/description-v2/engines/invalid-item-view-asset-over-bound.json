@@ -1,0 +1,10 @@
+{
+  "definition": "ItemViewAssetRequest",
+  "value": {
+    "type": "item_view_asset",
+    "ref": "asset-1",
+    "offset": 0,
+    "length": 65537
+  },
+  "error": "above 65536"
+}

@@ -26,5 +26,6 @@
     }
   ],
   "window_ref": "tags-window",
-  "audience": "public"
+  "audience": "public",
+  "scope_ref": "scope-notes"
 }

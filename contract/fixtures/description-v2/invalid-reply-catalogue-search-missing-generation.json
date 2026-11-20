@@ -12,5 +12,6 @@
         "title": "Storage layout"
       }
     }
-  ]
+  ],
+  "scope_ref": "scope-thread-search"
 }

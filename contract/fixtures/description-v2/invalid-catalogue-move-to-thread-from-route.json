@@ -22,7 +22,8 @@
       "id": "t",
       "source": {
         "type": "list",
-        "kind": "threads"
+        "kind": "threads",
+        "parent": true
       },
       "fields": [
         "title"
@@ -46,7 +47,7 @@
                   }
                 }
               },
-              "conversation": {
+              "item": {
                 "route": "thread"
               }
             }
@@ -54,5 +55,18 @@
         ]
       }
     }
-  ]
+  ],
+  "chrome": {
+    "sidebar": {
+      "sections": [
+        {
+          "id": "by-section",
+          "repeat": {
+            "over": "layout",
+            "rows": "t"
+          }
+        }
+      ]
+    }
+  }
 }

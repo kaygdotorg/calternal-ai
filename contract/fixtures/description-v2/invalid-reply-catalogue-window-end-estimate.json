@@ -23,5 +23,6 @@
   "count": {
     "mode": "estimate",
     "value": 4900
-  }
+  },
+  "scope_ref": "scope-all"
 }

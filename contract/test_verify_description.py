@@ -57,7 +57,7 @@ class PackageTests(ReviewCases, ProjectionCases, ScopeCases, unittest.TestCase):
         self.installed = []
         if name == "threads-nested-catalogue-app":
             owner = self.package / "installed-conversation-owner.json"
-            shutil.copyfile(FIXTURES / "manifests" / "rev14-threads-owner.json", owner)
+            shutil.copyfile(FIXTURES / "manifests" / "indexed-items-app.json", owner)
             self.installed = ["--installed-manifest", owner]
         shutil.copyfile(FIXTURES / self.template, self.package / self.template)
         shutil.copyfile(FIXTURES / "manifests" / self.template, self.manifest)
@@ -125,23 +125,6 @@ class PackageTests(ReviewCases, ProjectionCases, ScopeCases, unittest.TestCase):
         self.event({"type": "search", "bind": "bogus", "text": "words", "settle_generation": 1}, "active description")
         self.event({"type": "search", "bind": "notes", "text": "words", "settle_generation": 1}, "not a search bind")
 
-    def test_installed_provider_id_is_unique_across_packages(self):
-        self.stage("independent-runner-app")
-        manifest = json.loads(self.manifest.read_bytes())
-        provider = manifest["providers"][0]
-        other = {
-            "api_version": 2, "id": "another-runner", "version": "1.0.0",
-            "name": "Another runner", "icon": "puzzle", "network": "none",
-            "apps": [], "kinds": [], "operations": [], "providers": [provider],
-        }
-        installed = self.package / "installed-provider.json"
-        self.installed = ["--installed-manifest", installed]
-        write_json(installed, other)
-        self.verify(failure=f"Duplicate installed provider ID {provider['id']!r}")
-        provider["id"] = "distinct-provider"
-        write_json(installed, other)
-        self.verify()
-
     def test_standalone_card_requires_its_editor_route_on_open(self):
         self.replace_template({
             "version": 2, "kind": "app", "revision": 1, "binds": [],
@@ -168,7 +151,7 @@ class PackageTests(ReviewCases, ProjectionCases, ScopeCases, unittest.TestCase):
         self.event({"type": "route", "id": "bogus", "row": "opaque"}, "unknown route")
 
     def test_route_checks_selector_options(self):
-        self.stage("threads-app")
+        self.stage("indexed-items-app")
         self.event({"type": "route", "id": "view", "row": "inbox"})
         self.event({"type": "route", "id": "view", "row": "bogus"}, "no matching row scope")
 
@@ -244,25 +227,13 @@ class PackageTests(ReviewCases, ProjectionCases, ScopeCases, unittest.TestCase):
         self.event({"type": "refresh", "bind": "bogus"}, "active description")
 
     def test_component_checks_route_and_request_shape(self):
-        self.stage("threads-app")
-        event = json.loads((FIXTURES / "event-catalogue-transcript-page.json").read_bytes())
+        self.stage("indexed-items-app")
+        event = {"type": "component", "component": "entries", "route": "item_view.open",
+                 "request": {"type": "item_view", "component": "entries", "item": "checked", "slot": "body"}}
         self.event(event)
         self.event({**event, "component": "bogus"}, "unknown component")
-        self.event({**event, "component": "composer"}, "cannot use route")
-        self.event({**event, "request": {}}, "missing conversation")
-
-    def test_composer_options_requires_declared_control(self):
-        self.stage("threads-app")
-        path = self.package / self.template
-        doc = json.loads(path.read_bytes())
-        next(component for component in doc["chrome"]["panel"]["components"]
-             if component["type"] == "composer")["config"]["controls"] = ["model"]
-        self.replace_template(doc)
-        event = {"type": "component", "component": "panel-composer", "route": "composer.options",
-                 "request": {"conversation": "opaque", "control": "model"}}
-        self.event(event)
-        event["request"]["control"] = "machine"
-        self.event(event, "control 'machine' is not configured")
+        self.event({**event, "component": "approval"}, "cannot use route")
+        self.event({**event, "request": {}}, "missing item")
 
     def test_empty_shortcut_route_fails_structure_before_event_indexing(self):
         path = self.package / self.template
@@ -360,7 +331,7 @@ class PackageTests(ReviewCases, ProjectionCases, ScopeCases, unittest.TestCase):
         self.assertIn("not allowed with argument --package", result.stderr)
 
     def test_catalogue_eligibility_rejects_unavailable_swipe(self):
-        self.stage("threads-app")
+        self.stage("indexed-items-app")
         fixture = FIXTURES / "invalid-catalogue-archive-fullswipe-before-writer.json"
         self.replace_template(json.loads(fixture.read_bytes()))
         self.verify(failure="fullSwipe is rejected on host.item.archive")

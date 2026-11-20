@@ -10,7 +10,7 @@
       "id": "t-1",
       "fields": {
         "title": "Split store.rs by concern",
-        "snoozed_until": null
+        "trashed_at": null
       }
     },
     {
@@ -23,5 +23,6 @@
   "count": {
     "mode": "exact",
     "value": 2
-  }
+  },
+  "scope_ref": "scope-snoozable-threads"
 }

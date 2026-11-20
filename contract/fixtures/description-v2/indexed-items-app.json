@@ -1,0 +1,348 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "waiting",
+      "source": {
+        "type": "list",
+        "kind": "indexed-items"
+      },
+      "fields": [
+        "title",
+        "provider_icon",
+        "state",
+        "updated"
+      ],
+      "sort": [
+        {
+          "field": "updated",
+          "direction": "desc"
+        }
+      ],
+      "window": {
+        "size": 60,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "marks": [
+          {
+            "kind": "dot",
+            "when": {
+              "field": "state",
+              "op": "eq",
+              "value": {
+                "literal": "waiting"
+              }
+            }
+          },
+          {
+            "kind": "icon",
+            "icon": "warning",
+            "tone": "bad",
+            "when": {
+              "field": "state",
+              "op": "eq",
+              "value": {
+                "literal": "failed"
+              }
+            }
+          }
+        ],
+        "open": {
+          "route": {
+            "name": "thread",
+            "value": "id"
+          }
+        },
+        "trailingActions": [
+          {
+            "id": "archive",
+            "title": "Archive",
+            "icon": "trash",
+            "operation": "host.item.archive",
+            "inputs": {
+              "item": {
+                "row": "id"
+              }
+            },
+            "role": "destructive"
+          }
+        ],
+        "icon": {
+          "field": "provider_icon",
+          "name": "threads"
+        }
+      },
+      "states": {
+        "empty": {
+          "title": "Nothing is waiting on you"
+        }
+      }
+    },
+    {
+      "id": "all",
+      "source": {
+        "type": "list",
+        "kind": "indexed-items"
+      },
+      "fields": [
+        "title",
+        "provider_icon",
+        "state",
+        "updated",
+        "provider_label"
+      ],
+      "sort": [
+        {
+          "field": "updated",
+          "direction": "desc"
+        }
+      ],
+      "window": {
+        "size": 60,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "marks": [
+          {
+            "kind": "dot",
+            "when": {
+              "field": "state",
+              "op": "eq",
+              "value": {
+                "literal": "waiting"
+              }
+            }
+          }
+        ],
+        "open": {
+          "route": {
+            "name": "thread",
+            "value": "id"
+          }
+        },
+        "icon": {
+          "field": "provider_icon",
+          "name": "threads"
+        },
+        "secondary": [
+          {
+            "field": "provider_label",
+            "format": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "requests",
+      "source": {
+        "type": "list",
+        "kind": "requests"
+      },
+      "fields": [
+        "title"
+      ],
+      "filter": {
+        "all": [
+          {
+            "field": "pending_for",
+            "op": "eq",
+            "value": {
+              "viewer": "person"
+            }
+          }
+        ]
+      },
+      "window": {
+        "size": 3,
+        "count": "exact"
+      }
+    },
+    {
+      "id": "thread",
+      "source": {
+        "type": "item",
+        "kind": "indexed-items",
+        "ref": {
+          "route": "thread"
+        }
+      },
+      "fields": [
+        "title"
+      ]
+    },
+    {
+      "id": "thread-search",
+      "source": {
+        "type": "search",
+        "kind": "indexed-items"
+      },
+      "fields": [
+        "title"
+      ]
+    }
+  ],
+  "cache": {
+    "maxAgeDays": 14,
+    "templates": "keep"
+  },
+  "chrome": {
+    "sidebar": {
+      "open": true,
+      "title": "Calternal",
+      "selectors": [
+        {
+          "id": "filter",
+          "route": "view",
+          "selected": "inbox",
+          "options": [
+            {
+              "id": "inbox",
+              "title": "Inbox",
+              "count": {
+                "bind": "waiting"
+              }
+            },
+            {
+              "id": "all",
+              "title": "All Threads"
+            }
+          ]
+        }
+      ],
+      "sections": [
+        {
+          "id": "shortcuts",
+          "rows": [
+            {
+              "id": "new-thread",
+              "title": "New thread",
+              "icon": "plus",
+              "open": {
+                "invoke": {
+                  "id": "create",
+                  "title": "New thread",
+                  "operation": "host.item.create",
+                  "inputs": {
+                    "kind": {
+                      "literal": "indexed-items"
+                    }
+                  },
+                  "then": {
+                    "route": {
+                      "name": "thread"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "inbox",
+          "title": "Waiting on you",
+          "bind": "waiting",
+          "showWhen": {
+            "route": "view",
+            "equals": "inbox"
+          }
+        },
+        {
+          "id": "threads",
+          "title": "Threads",
+          "bind": "all",
+          "showWhen": {
+            "route": "view",
+            "equals": "all"
+          }
+        }
+      ]
+    },
+    "header": {
+      "title": {
+        "bind": "thread",
+        "field": "title"
+      }
+    },
+    "footer": {
+      "account": {
+        "id": "account",
+        "title": "Account"
+      },
+      "apps": [
+        {
+          "id": "threads",
+          "title": "Threads",
+          "icon": "threads"
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "icon": "notes"
+        }
+      ],
+      "search": {
+        "placeholder": "Search threads",
+        "bind": "thread-search"
+      }
+    },
+    "panel": {
+      "id": "side-chat",
+      "title": "Side chat",
+      "open": true,
+      "components": [
+        {
+          "type": "request-card",
+          "id": "approval-card",
+          "config": {
+            "request": {
+              "bind": "requests",
+              "field": "id"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "view": {
+    "root": {
+      "type": "stack",
+      "children": [
+        {
+          "type": "component",
+          "component": {
+            "type": "item-view",
+            "id": "entries",
+            "config": {
+              "item": {
+                "route": "thread"
+              },
+              "slot": "body"
+            }
+          }
+        },
+        {
+          "type": "component",
+          "component": {
+            "type": "request-card",
+            "id": "approval",
+            "config": {
+              "request": {
+                "bind": "requests",
+                "field": "id"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

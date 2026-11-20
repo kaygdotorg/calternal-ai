@@ -1,9 +1,0 @@
-{
-  "definition": "TranscriptPageRequest",
-  "value": {
-    "conversation": "item-1",
-    "before": "older-1",
-    "after": "cursor-1"
-  },
-  "error": "forbidden shape"
-}

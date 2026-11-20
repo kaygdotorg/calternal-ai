@@ -6,5 +6,6 @@
   "result_version": null,
   "window_ref": null,
   "rows": [],
-  "offset": 12
+  "offset": 12,
+  "scope_ref": "scope-notes"
 }

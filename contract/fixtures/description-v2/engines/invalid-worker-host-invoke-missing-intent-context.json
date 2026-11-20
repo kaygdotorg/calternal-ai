@@ -4,19 +4,24 @@
     "v": 1,
     "epoch": "epoch-reconnected",
     "seq": 1,
-    "package": "calternal-orchestrator",
-    "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "package": "calternal-threads",
+    "digest": "3facada978852412c8a148b127e1c337fde35b0cc8527a7fdbc5e52dac347721",
     "ticket": "fresh-replay-ticket",
     "message": {
       "type": "invoke",
-      "operation": "calternal-orchestrator.run",
+      "operation": "threads.run",
       "input": {
-        "item": "conversation-1"
+        "item": "thread-1"
       },
-      "deadline": "2026-11-20T12:00:00Z"
+      "deadline": "2026-11-20T12:00:00Z",
+      "author_context": {
+        "request_id": "admit-1",
+        "actor": "member-1",
+        "authored_at": "2026-11-20T11:59:00Z"
+      }
     }
   },
   "manifest": "threads-app.json",
   "job": "run",
-  "error": "$.message.job_context: required for the composer intent job"
+  "error": "$.message.job_context: required for the admitted execution job"
 }

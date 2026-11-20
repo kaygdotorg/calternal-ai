@@ -1,0 +1,10 @@
+{
+  "definition": "AlarmSet",
+  "value": {
+    "request_id": "alarm-request",
+    "job": "reminder-due",
+    "at": "2026-11-20T11:00:00Z",
+    "input": {},
+    "item": "item-1"
+  }
+}

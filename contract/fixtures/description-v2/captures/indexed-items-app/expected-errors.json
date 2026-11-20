@@ -1,0 +1,13 @@
+{
+  "invalid-event-catalogue-host-archive-confirmation-activation_id.json": "$.confirmation.activation_id: must match the originating resolution",
+  "invalid-event-catalogue-host-archive-confirmation-resolution_ref.json": "$.confirmation.resolution_ref: must match the originating resolution",
+  "invalid-event-catalogue-host-archive-confirmation-confirmation_challenge.json": "$.confirmation.confirmation_challenge: must match the originating resolution",
+  "invalid-event-catalogue-host-archive-confirmation-final-text.json": "$.confirmation: unknown field final_text",
+  "invalid-event-catalogue-host-archive-view-context-for-row.json": "$.activation_context: must match the issued host action context",
+  "invalid-event-catalogue-host-archive-first-window-lease.json": "must match the last accepted view lease",
+  "invalid-event-catalogue-host-archive-first-window-grant.json": "must match the last accepted view lease",
+  "invalid-event-catalogue-host-archive-first-window-bind.json": "result must match the originating window Bind and scope",
+  "invalid-event-catalogue-host-archive-first-window-audience.json": "must match the last accepted view lease",
+  "invalid-event-catalogue-host-archive-first-window-row.json": "must match the issued host action context",
+  "invalid-event-catalogue-host-archive-first-window-row-alias.json": "must match the issued host action context"
+}

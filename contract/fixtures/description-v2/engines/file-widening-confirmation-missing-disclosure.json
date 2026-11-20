@@ -1,0 +1,31 @@
+{
+  "definition": "ActivationResolution",
+  "challenge_kind": "host.item.share",
+  "checked_facts": [
+    "widens_item_audience"
+  ],
+  "value": {
+    "activation_id": "share",
+    "resolution_ref": "resolution",
+    "confirm": "challenge",
+    "confirmation_challenge": "checked",
+    "material": [
+      {
+        "name": "items",
+        "label": "Item",
+        "value": "Planning"
+      },
+      {
+        "name": "audience",
+        "label": "New readers",
+        "value": "Space members"
+      },
+      {
+        "name": "permission",
+        "label": "Permission",
+        "value": "Read file"
+      }
+    ]
+  },
+  "error": "missing confirmation entry 'file_disclosure'"
+}

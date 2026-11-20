@@ -1,0 +1,8 @@
+{
+  "definition": "ItemViewSignal",
+  "value": {
+    "type": "item_view_signal",
+    "follow": "follow-1",
+    "state": "invalidated"
+  }
+}

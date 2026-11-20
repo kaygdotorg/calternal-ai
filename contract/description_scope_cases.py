@@ -15,7 +15,7 @@ class ScopeCases:
             for state in ("ready", "empty", "loading", "throttled", "error", "refine_query"):
                 with self.subTest(anchor=anchor, state=state):
                     reply = {"bind": "notes", "state": state, "audience": "member",
-                             "window_ref": None, "result_version": None, "rows": []}
+                             "window_ref": None, "scope_ref": "fixture-scope", "result_version": None, "rows": []}
                     if anchor is not None:
                         reply["anchor"] = anchor
                     if anchor != "end" or state in ("ready", "empty"):
@@ -38,98 +38,39 @@ class ScopeCases:
                                 self.assertTrue(any(f"$.{name}: not allowed here" in error for error in errors),
                                                 list(errors))
 
-    def test_every_composer_renewal_uses_the_latest_authority(self):
-        self.stage("threads-app")
-        fixture = self.fixtures / "events/threads-app/event-catalogue-composer-chain-changed-grant-and-lease.json"
+    def test_every_renewal_uses_the_latest_authority(self):
+        self.stage("indexed-items-app")
+        fixture = self.fixtures / "captures/indexed-items-app/event-catalogue-host-archive-confirmation.json"
+
         def capture():
             case = json.loads(fixture.read_bytes())
-            renewal = case["renewals"][-1]
-            return case, renewal["request"], renewal["result"]
+            prior = case["renewals"][0]
+            earlier = json.loads(json.dumps(prior))
+            earlier["request"]["renewal_id"] = "earlier"
+            earlier["result"]["renewal_id"] = "earlier"
+            earlier["result"]["lease"]["lease_ref"] = "earlier-lease"
+            prior["request"]["lease_ref"] = "earlier-lease"
+            prior["result"]["request_lease_ref"] = "earlier-lease"
+            case["renewals"].insert(0, earlier)
+            return case, prior["request"], prior["result"]
 
-        case, request, result = capture()
-        request["result_versions"]["w"] = "result"
-        result["retained_results"].append({"window_ref": "w", "result_version": "result"})
+        case, _, _ = capture()
         self.event(case)
-
-        for field, value in (("lease_ref", "lease"), ("grant_revision", "current"),
-                             ("cache_partition", "another")):
-            with self.subTest(request=field):
-                case, request, _ = capture()
-                request[field] = value
-                self.event(case, "last accepted reply")
-
-        for field, value in (("request_lease_ref", "lease"), ("renewal_id", "renewing-2"),
-                             ("cache_partition", "another")):
-            with self.subTest(response=field):
-                case, _, result = capture()
-                result[field] = value
-                self.event(case, "last accepted reply")
-
-        for name, reason in (
-            ("reuse-id", "renewal ID was already used"),
-            ("reply-lease-partition", "last accepted reply"),
-            ("missing-intermediate-context", "missing issued context"),
-            ("retired-id", "expected a composer action issued"),
-            ("replaced-context", "must match the issued composer action context"),
-            ("omitted-map", "expected a composer action issued"),
-            ("unrequested-window", "requested exact result under the unchanged grant"),
-            ("revoked-grant-window", "requested exact result under the unchanged grant"),
-            ("reissued-token", "reused composer context from a different lease or grant"),
+        for surface, field, value in (
+            ("request", "lease_ref", "lease"),
+            ("request", "grant_revision", "wrong-grant"),
+            ("request", "cache_partition", "wrong-partition"),
+            ("result", "request_lease_ref", "lease"),
+            ("result", "cache_partition", "wrong-partition"),
         ):
-            with self.subTest(edge=name):
+            with self.subTest(surface=surface, field=field):
                 case, request, result = capture()
-                if name == "reuse-id":
-                    request["renewal_id"] = case["renewals"][-2]["request"]["renewal_id"]
-                elif name == "reply-lease-partition":
-                    result["lease"]["cache_partition"] = "another"
-                elif name == "missing-intermediate-context":
-                    case["renewals"][2]["result"]["activation_contexts"].clear()
-                elif name == "retired-id":
-                    case["event"]["action_id"] = "composer.stop.5"
-                elif name == "replaced-context":
-                    case["event"]["activation_context"] = "stop-context-5"
-                elif name == "omitted-map":
-                    del result["composer_actions"]
-                elif name == "reissued-token":
-                    issue = case["event"]["action_id"]
-                    result["activation_contexts"][issue] = "context-send"
-                    case["event"]["activation_context"] = "context-send"
-                elif name == "unrequested-window":
-                    result["retained_results"].append({"window_ref": "w", "result_version": "result"})
-                else:
-                    renewal = case["renewals"][3]
-                    renewal["request"]["result_versions"]["w"] = "result"
-                    renewal["result"]["retained_results"].append({"window_ref": "w", "result_version": "result"})
-                self.event(case, reason)
+                (request if surface == "request" else result)[field] = value
+                self.event(case, "last accepted reply")
 
-    def test_composer_context_has_one_binding_across_renewals(self):
-        self.stage("threads-app")
-        app = json.loads((self.package / self.template).read_bytes())
-        panel = app["chrome"]["panel"]["components"]
-        panel.append(next(component for component in panel if component["id"] == "panel-composer")
-                     | {"id": "other-composer"})
-        self.replace_template(app)
-        fixture = self.fixtures / "events/threads-app/event-catalogue-composer-starting-stop-after-renewal.json"
-        for component, purpose, action, failure in (
-            ("panel-composer", "send", "composer.17", None),
-            ("other-composer", "send", "composer.17", "rebound"),
-            ("panel-composer", "stop", "composer.17", "rebound"),
-            ("panel-composer", "send", "composer.changed", "rebound"),
-            ("panel-composer", "stop", "composer.changed", "rebound"),
-        ):
-            with self.subTest(component=component, purpose=purpose, action=action):
-                case = json.loads(fixture.read_bytes())
-                result = case["renewals"][0]["result"]
-                result["lease"] = case["view_open"]["lease"]
-                result["composer_actions"] = {component: {purpose: action}}
-                result["activation_contexts"] = {action: "context-send"}
-                case["event"].update(action_id=action, activation_context="context-send")
-                self.event(case, f"composer context was {failure}" if failure else None)
-
-        case = json.loads(fixture.read_bytes())
-        case["view_open"]["composer_actions"]["panel-composer"]["stop"] = "composer.added-stop"
-        case["view_open"]["activation_contexts"]["composer.added-stop"] = "context-send"
-        self.event(case, "composer context was rebound")
+        case, request, _ = capture()
+        request["renewal_id"] = "earlier"
+        self.event(case, "renewal ID was already used")
 
     def test_open_accepts_each_chrome_and_root_operand(self):
         doc = json.loads((self.package / self.template).read_bytes())
@@ -147,7 +88,7 @@ class ScopeCases:
         self.event(event | {"route": {name: "ref" for name in
                    ("item", "collection", "header_item", "section_item", "menu_item", "footer_item")}})
         self.event(event | {"route": {"view": "notes"}}, "undeclared route operand 'view'")
-        self.stage("threads-app")
+        self.stage("indexed-items-app")
         self.event(event | {"route": {"thread": "checked-thread"}})
         self.event(event | {"route": {"unrelated": "ref"}}, "undeclared route operand")
 
@@ -220,7 +161,7 @@ class ScopeCases:
             ("sidebar", lambda action: {"sections": [{"menu": [action], "actions": [action],
                                                        "rows": [{"open": {"invoke": action}}]}]}),
             ("footer", lambda action: {"account": {"menu": [action]}}),
-            ("panel", lambda action: {"components": [{"type": "composer", "config": action["inputs"]}]}),
+            ("panel", lambda action: {"components": [{"type": "item-view", "config": action["inputs"]}]}),
         ):
             with self.subTest(surface=surface):
                 for count in (8, 9):
@@ -299,7 +240,7 @@ class ScopeCases:
                         bad["parent"] = "unscoped"
                     self.event(bad, "parent scope must match source.parent")
 
-    def test_conversation_search_parent_edges_and_selection_sets(self):
+    def test_search_parent_edges_and_selection_sets(self):
         self.stage("threads-nested-catalogue-app")
         doc = json.loads((self.package / self.template).read_bytes())
         for bind in doc["binds"]:
@@ -365,15 +306,16 @@ class ScopeCases:
                 self.assertTrue(any(".host_create.defaults.tags: extractor-owned output" in e for e in errors),
                                 list(errors))
 
-    def test_conversation_attempt_and_parent_are_distinct_projected_fields(self):
+    def test_attempt_and_parent_are_distinct_declared_fields(self):
         origin = (
             {"id": "threads", "source": {"type": "list"}, "fields": ["active_execution", "parent"]},
-            {"fields": CATALOGUE["conversation_capability"]["field_projections"]},
+            {"fields": { "active_execution": {"type": "ExecutionRef", "audience": "eligible_execution_actor", "nullable": True},
+                         "parent": {"type": "ItemRef", "audience": "member_item"} }},
             CATALOGUE["generic_item_fields"],
         )
         reply = {
             "audience": "member", "bind": "threads", "state": "ready",
-            "result_version": "v1", "offset": 0, "window_ref": "thread-window",
+            "result_version": "v1", "offset": 0, "window_ref": "thread-window", "scope_ref": "fixture-scope",
             "rows": [{"id": "conversation", "fields": {"parent": "parent-item", "active_execution": "attempt"}}],
         }
         for attempt in ("exact-admitted-attempt", None, {"kind": "intent", "ref": "intent"}):
@@ -395,7 +337,8 @@ class ScopeCases:
 
     def test_every_catalogue_window_audience_against_projected_fields(self):
         fields_by_kind = {
-            "conversation": CATALOGUE["conversation_capability"]["field_projections"],
+            "conversation": { "active_execution": {"type": "ExecutionRef", "audience": "eligible_execution_actor", "nullable": True},
+                         "parent": {"type": "ItemRef", "audience": "member_item"} },
             "item": CATALOGUE["generic_item_fields"],
         } | {name: kind["fields"] for name, kind in CATALOGUE["kinds"].items()}
         for name in ("notes-tags-app.json", "threads-app.json", "reading-list-manifest-v2-app.json"):
@@ -415,7 +358,7 @@ class ScopeCases:
                         origin = ({"id": "rows", "source": {"type": "list"}, "fields": [field]},
                                   {"fields": fields}, {})
                         reply = {"audience": audience, "bind": "rows", "state": "ready",
-                                 "result_version": "v1", "offset": 0, "window_ref": "window",
+                                 "result_version": "v1", "offset": 0, "window_ref": "window", "scope_ref": "fixture-scope",
                                  "rows": [{"id": "ref", "fields": {field: values.get(meta["type"], "ref")}}]}
                         errors = Validation()
                         validate_reply(reply, origin, errors)
@@ -427,13 +370,14 @@ class ScopeCases:
         self.assertEqual(tested, set(CATALOGUE["$defs"]["FieldAudience"]["enum"]))
 
     def test_execution_field_needs_a_ready_reply_in_both_member_audiences(self):
-        meta = CATALOGUE["conversation_capability"]["field_projections"]["active_execution"]
+        meta = { "active_execution": {"type": "ExecutionRef", "audience": "eligible_execution_actor", "nullable": True},
+                         "parent": {"type": "ItemRef", "audience": "member_item"} }["active_execution"]
         origin = ({"id": "threads", "source": {"type": "search"}, "fields": ["active_execution"]},
                   {"fields": {"active_execution": meta}}, {})
         for audience in ("own_space_member", "member", "guest", "public"):
             with self.subTest(audience=audience):
                 reply = {"audience": audience, "bind": "threads", "state": "refine_query",
-                         "result_version": None, "offset": 0, "window_ref": None, "settle_generation": 1,
+                         "result_version": None, "offset": 0, "window_ref": None, "scope_ref": "fixture-scope", "settle_generation": 1,
                          "rows": [{"id": "conversation", "fields": {"active_execution": "ref"}}]}
                 errors = Validation()
                 validate_reply(reply, origin, errors)
@@ -447,7 +391,7 @@ class ScopeCases:
         origin = ({"id": "notes", "source": {"type": "list"}, "fields": list(types)}, kind, {})
         values = {"tags": [], "flag": False, "number": 0}
         reply = {"audience": "own_space_member", "bind": "notes", "state": "ready", "result_version": "v1",
-                 "offset": 0, "window_ref": "window", "rows": [{"id": "row", "fields": values}]}
+                 "offset": 0, "window_ref": "window", "scope_ref": "fixture-scope", "rows": [{"id": "row", "fields": values}]}
         errors = Validation()
         validate_reply(reply, origin, errors)
         self.assertFalse(errors, list(errors))

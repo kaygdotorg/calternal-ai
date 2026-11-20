@@ -1,0 +1,35 @@
+{
+  "definition": "ActivationResolution",
+  "challenge_kind": "host.undo",
+  "checked_facts": [
+    "widens_item_audience"
+  ],
+  "value": {
+    "activation_id": "share",
+    "resolution_ref": "resolution",
+    "confirm": "challenge",
+    "confirmation_challenge": "checked",
+    "material": [
+      {
+        "name": "items",
+        "label": "Item",
+        "value": "Planning"
+      },
+      {
+        "name": "audience",
+        "label": "New readers",
+        "value": "Space members"
+      },
+      {
+        "name": "permission",
+        "label": "Permission",
+        "value": "Read file"
+      },
+      {
+        "name": "file_disclosure",
+        "label": "File sharing",
+        "value": "The new readers can read the whole committed file, including anything the agent found or wrote using your own access."
+      }
+    ]
+  }
+}

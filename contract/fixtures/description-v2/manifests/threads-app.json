@@ -1,155 +1,690 @@
 {
   "api_version": 2,
-  "id": "calternal-orchestrator",
+  "id": "calternal-threads",
   "name": "Threads",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "icon": "threads",
-  "network": "none",
-  "apps": [
-    {
-      "id": "threads",
-      "name": "Threads",
-      "icon": "threads",
-      "description": {
-        "id": "app",
-        "template": {
-          "path": "threads-app.json",
-          "sha256": "d7f01a3bb628cf5b12dd6195246b5e26cf752fb597d72c8f7bfaa7ec4c542cc9"
-        }
-      }
-    }
-  ],
   "kinds": [
     {
+      "id": "thread-consultations",
+      "icon": "threads",
+      "title_field": "title",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "title"
+        ]
+      }
+    },
+    {
       "id": "threads",
-      "icon": "puzzle",
+      "icon": "threads",
       "title_field": "title",
       "storage": {
         "folder": "Threads"
       },
       "claimed_text": true,
       "searchable": true,
-      "conversation": true,
+      "file_format": {
+        "id": "calternal-thread",
+        "version": 2,
+        "default_app": "threads",
+        "title_binding": {
+          "placement": "utc_date_folder",
+          "frontmatter_key": "title"
+        },
+        "metadata_tokens": [
+          {
+            "scope": "frontmatter_key",
+            "prefix": "format"
+          },
+          {
+            "scope": "frontmatter_key",
+            "prefix": "id"
+          },
+          {
+            "scope": "frontmatter_line",
+            "prefix": "participants:"
+          },
+          {
+            "scope": "frontmatter_line",
+            "prefix": "  - p"
+          },
+          {
+            "scope": "frontmatter_key",
+            "prefix": "agent-p",
+            "suffix": "-plugin"
+          },
+          {
+            "scope": "frontmatter_key",
+            "prefix": "agent-p",
+            "suffix": "-harness"
+          },
+          {
+            "scope": "framing_suffix",
+            "prefix": " {#m-",
+            "suffix": "}"
+          },
+          {
+            "scope": "framing_line",
+            "prefix": "<!-- run-log=",
+            "suffix": " -->"
+          },
+          {
+            "scope": "framing_line",
+            "prefix": "<!-- consultation=",
+            "suffix": " -->"
+          },
+          {
+            "scope": "framing_line",
+            "prefix": "<!-- reply-in=",
+            "suffix": " -->"
+          }
+        ]
+      },
+      "append_file": true,
+      "attempt_discovery": "item_policy",
+      "execution_target": true,
+      "view_snapshots": [
+        {
+          "id": "body",
+          "refresh": "threads.refresh"
+        }
+      ],
       "schema": {
         "type": "object",
-        "required": [
-          "title"
-        ],
         "additionalProperties": false,
         "properties": {
           "title": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
           },
-          "provider_label": {
-            "type": "string"
+          "shape": {
+            "enum": [
+              "person",
+              "group",
+              "agent",
+              "mixed"
+            ]
           }
-        }
-      },
-      "host_create": {
-        "defaults": {
-          "title": "New conversation"
-        }
-      },
-      "composer": {
-        "send": "calternal-orchestrator.send",
-        "steer_live": true,
-        "job": "run"
+        },
+        "required": [
+          "title"
+        ]
       },
       "indexed_fields": {
-        "state": {
-          "type": "Text",
-          "audience": "member_item"
-        },
-        "provider_label": {
+        "shape": {
           "type": "Text",
           "audience": "shared_projection"
+        }
+      },
+      "viewer_fields": {
+        "preview": {
+          "type": "Text"
+        },
+        "unread": {
+          "type": "Number",
+          "source": "entry_unread"
+        },
+        "mentions": {
+          "type": "Number",
+          "source": "entry_mentions"
+        },
+        "muted": {
+          "type": "Boolean"
+        },
+        "pinned": {
+          "type": "Boolean"
+        },
+        "draft": {
+          "type": "Text"
+        },
+        "unread_mark": {
+          "type": "Boolean"
         }
       }
     }
   ],
-  "reads": [
-    "requests",
-    "threads"
-  ],
-  "operations": [
-    {
-      "id": "calternal-orchestrator.send",
-      "title": "Send",
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "item"
-        ],
-        "properties": {
-          "item": {
-            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
-          }
-        }
-      },
-      "output_schema": {
-        "type": "object"
-      },
-      "required_capability": "content.write",
-      "risk": "reversible",
-      "idempotency": "request_id",
-      "target": {
-        "kind": "threads",
-        "field": "item"
-      },
-      "methods": [
-        "start_job"
-      ]
-    },
-    {
-      "id": "calternal-orchestrator.run",
-      "title": "Run",
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "item"
-        ],
-        "properties": {
-          "item": {
-            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
-          }
-        }
-      },
-      "output_schema": {
-        "type": "object"
-      },
-      "required_capability": "content.write",
-      "risk": "reversible",
-      "idempotency": "request_id",
-      "target": {
-        "kind": "threads",
-        "field": "item"
-      },
-      "methods": [
-        "execution_start",
-        "execution_status",
-        "execution_spawn_child",
-        "checkpoint_job",
-        "execution_wait"
-      ]
-    }
-  ],
-  "worker": {
-    "path": "worker.mjs",
-    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
-  },
   "jobs": [
     {
       "id": "run",
-      "run_operation": "calternal-orchestrator.run",
+      "run_operation": "threads.run",
       "replayable": true,
-      "waits": [
+      "execution": true,
+      "alarm": true
+    }
+  ],
+  "network": "none",
+  "operations": [
+    {
+      "required_capability": "content.write",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "id": "threads.create",
+      "title": "New thread",
+      "creates": "threads",
+      "methods": [
+        "item_create",
+        "item_view_context",
+        "item_view_publish"
+      ],
+      "write_origins": {
+        "host_input": "title"
+      },
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "created": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
+          }
+        },
+        "required": [
+          "created"
+        ]
+      }
+    },
+    {
+      "required_capability": "plugins.use",
+      "risk": "external",
+      "idempotency": "request_id",
+      "id": "threads.send",
+      "title": "Send",
+      "target": {
+        "kind": "threads",
+        "field": "item"
+      },
+      "methods": [
+        "item_head",
+        "item_range",
+        "item_spans",
+        "start_job"
+      ],
+      "material_inputs": {
+        "placement": "Machine and login"
+      },
+      "write_origins": {
+        "host_input": "text"
+      },
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "harness": {
+            "$ref": "host-catalogue-v2.json#/$defs/HarnessRef"
+          },
+          "placement": {
+            "$ref": "host-catalogue-v2.json#/$defs/ChoiceRef"
+          }
+        },
+        "required": [
+          "item",
+          "text",
+          "harness",
+          "placement"
+        ]
+      },
+      "output_schema": {
+        "$ref": "host-catalogue-v2.json#/$defs/ExecutionJobReceipt"
+      }
+    },
+    {
+      "required_capability": "plugins.use",
+      "risk": "external",
+      "idempotency": "request_id",
+      "id": "threads.run",
+      "title": "Run agent",
+      "target": {
+        "kind": "threads",
+        "field": "item"
+      },
+      "methods": [
+        "item_head",
+        "item_range",
+        "item_spans",
+        "item_append",
+        "item_save",
+        "item_save_begin",
+        "item_save_chunk",
+        "item_save_seal",
+        "execution_start",
+        "contribution_call",
+        "contribution_read",
+        "item_view_context",
+        "item_view_publish"
+      ],
+      "write_origins": {
+        "attempt_output": "text"
+      },
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
+          },
+          "if_missed": {
+            "enum": [
+              "run",
+              "skip"
+            ]
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "required_capability": "plugins.use",
+      "risk": "external",
+      "idempotency": "request_id",
+      "id": "threads.arm",
+      "title": "Schedule a run",
+      "target": {
+        "kind": "threads",
+        "field": "item"
+      },
+      "methods": [
+        "item_head",
+        "item_range",
+        "item_spans",
+        "alarm_set"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "harness": {
+            "$ref": "host-catalogue-v2.json#/$defs/HarnessRef"
+          },
+          "at": {
+            "$ref": "host-catalogue-v2.json#/$defs/Timestamp"
+          },
+          "if_missed": {
+            "enum": [
+              "run",
+              "skip"
+            ]
+          },
+          "grace_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400
+          }
+        },
+        "required": [
+          "item",
+          "text",
+          "harness",
+          "at",
+          "if_missed"
+        ]
+      },
+      "output_schema": {
+        "$ref": "host-catalogue-v2.json#/$defs/AlarmReceipt"
+      }
+    },
+    {
+      "required_capability": "space.read",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "id": "threads.state",
+      "title": "Update my thread preferences",
+      "target": {
+        "kind": "threads",
+        "field": "item"
+      },
+      "methods": [
+        "viewer_state_read",
+        "viewer_state_write"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
+          },
+          "pinned": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "muted": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "unread_mark": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
+      "output_schema": {
+        "$ref": "host-catalogue-v2.json#/$defs/ViewerItemState"
+      }
+    },
+    {
+      "required_capability": "space.read",
+      "risk": "read",
+      "idempotency": "read_only",
+      "id": "threads.refresh",
+      "title": "Read thread page",
+      "target": {
+        "kind": "threads",
+        "field": "item"
+      },
+      "methods": [
+        "item_head",
+        "item_range",
+        "item_spans"
+      ],
+      "input_schema": {
+        "$ref": "host-catalogue-v2.json#/$defs/ItemViewRead"
+      },
+      "output_schema": {
+        "$ref": "host-catalogue-v2.json#/$defs/ItemViewPage"
+      }
+    },
+    {
+      "required_capability": "space.read",
+      "risk": "read",
+      "idempotency": "read_only",
+      "id": "threads.message",
+      "title": "Read message",
+      "target": {
+        "kind": "threads",
+        "field": "item"
+      },
+      "methods": [
+        "item_head",
+        "item_range",
+        "item_spans"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
+          },
+          "message": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2097152
+          }
+        },
+        "required": [
+          "item",
+          "message"
+        ]
+      },
+      "output_schema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "author": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "person",
+                      "agent"
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "contribution": {
+                    "$ref": "host-catalogue-v2.json#/$defs/ContributionIdentity"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id",
+                  "name"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16384
+              },
+              "posted_at": {
+                "$ref": "host-catalogue-v2.json#/$defs/Timestamp"
+              },
+              "log": {
+                "$ref": "host-catalogue-v2.json#/$defs/ItemLocator"
+              },
+              "consultation": {
+                "$ref": "host-catalogue-v2.json#/$defs/ItemLocator"
+              },
+              "edited": {
+                "const": true
+              },
+              "replyTo": {
+                "type": "string"
+              },
+              "replyToName": {
+                "type": "string"
+              },
+              "replyIn": {
+                "$ref": "host-catalogue-v2.json#/$defs/ItemLocator"
+              },
+              "replyQuote": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16384
+              },
+              "askedBy": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "person"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id",
+                  "name"
+                ]
+              },
+              "mentions": {
+                "type": "array",
+                "items": {
+                  "$ref": "host-catalogue-v2.json#/$defs/AccountRef"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "author",
+              "text",
+              "posted_at"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "role": {
+                "enum": [
+                  "person",
+                  "agent",
+                  "automation"
+                ]
+              },
+              "heading": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 8000
+              },
+              "posted_at": {
+                "$ref": "host-catalogue-v2.json#/$defs/Timestamp"
+              },
+              "turn": {
+                "type": "string"
+              },
+              "next_offset": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2097152
+              }
+            },
+            "required": [
+              "id",
+              "role",
+              "heading",
+              "text",
+              "posted_at"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "reads": [
+    "thread-consultations",
+    "threads"
+  ],
+  "apps": [
+    {
+      "id": "threads",
+      "name": "Threads",
+      "icon": "threads",
+      "extension_points": [
         {
-          "kind": "execution"
+          "id": "harnesses",
+          "version": 1,
+          "kind": "harness",
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16384
+              }
+            },
+            "required": [
+              "text"
+            ]
+          },
+          "output_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16384
+              },
+              "log": {
+                "$ref": "host-catalogue-v2.json#/$defs/ItemLocator"
+              }
+            },
+            "required": [
+              "text",
+              "log"
+            ]
+          }
         }
       ],
-      "execution_intent": true
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "app-0-618d557179f338801ea36b32f7726df2b5138125a2e34559f79232ad049d3c31.json",
+          "sha256": "618d557179f338801ea36b32f7726df2b5138125a2e34559f79232ad049d3c31"
+        }
+      }
     }
-  ]
+  ],
+  "worker": {
+    "path": "worker-3facada978852412c8a148b127e1c337fde35b0cc8527a7fdbc5e52dac347721.mjs",
+    "sha256": "3facada978852412c8a148b127e1c337fde35b0cc8527a7fdbc5e52dac347721"
+  }
 }

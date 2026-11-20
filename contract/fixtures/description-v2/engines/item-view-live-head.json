@@ -1,0 +1,33 @@
+{
+  "definition": "ItemViewResult",
+  "value": {
+    "state": "live",
+    "source_revision": "head-1",
+    "window_ref": "view-1",
+    "result_version": "view-v1",
+    "older": "page-2",
+    "follow": "follow-1",
+    "view": {
+      "content": {
+        "type": "snapshot-entry",
+        "anchor": "entry-1",
+        "author": {
+          "key": "author-1",
+          "name": "Member"
+        },
+        "timestamp": "2026-11-20T10:00:00Z",
+        "children": [
+          {
+            "type": "snapshot-text",
+            "text": "Checked text"
+          },
+          {
+            "type": "snapshot-attachment",
+            "label": "Reference",
+            "ref": "asset-1"
+          }
+        ]
+      }
+    }
+  }
+}

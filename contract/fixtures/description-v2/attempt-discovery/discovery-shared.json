@@ -1,9 +1,5 @@
 {
   "sender": "sender",
-  "transcript_readers": [
-    "sender",
-    "other_reader"
-  ],
   "input_readers": {
     "common_title": [
       "sender",
@@ -26,5 +22,9 @@
     "list": [
       "common_title"
     ]
-  }
+  },
+  "file_readers": [
+    "sender",
+    "other_reader"
+  ]
 }

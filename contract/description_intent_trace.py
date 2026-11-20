@@ -3,18 +3,18 @@
 
 def check_discovery_audience(case, errors, catalogue):
     """Compare the discovery inputs against the fixture's live read grants."""
-    policy = catalogue["execution_attempt_authority"]["discovery"]["transcript_audience"]
-    reader_sets = {"sender": [case["sender"]], "transcript_readers": case["transcript_readers"]}
+    policy = catalogue["execution_attempt_authority"]["discovery"]["file_audience"]
+    reader_sets = {"sender": [case["sender"]], "file_readers": case["file_readers"]}
     required = {reader for name in policy["required_reader_sets"] for reader in reader_sets[name]}
     visible = sorted(name for name, readers in case["input_readers"].items() if required <= set(readers))
     for operation in catalogue["execution_attempt_authority"]["discovery"]["operations"]:
         if sorted(case["observed"][operation]) != visible:
-            errors.append(f"$.observed.{operation}: discovery exceeds or omits the checked transcript audience")
+            errors.append(f"$.observed.{operation}: discovery exceeds or omits the checked file audience")
 
 
 def check_intent_trace(trace, errors, catalogue):
     """Verify that the recorded outcomes obey the same fence for either origin."""
-    if trace["origin"] not in catalogue["execution_intents"]["origins"]:
+    if trace["origin"] != "start_job" or "start_job" not in catalogue["execution_intents"]:
         errors.append("$.origin: unknown execution intent origin")
         return
     archived = False

@@ -97,8 +97,7 @@
       ],
       "device_row_images": [
         "thumbnail"
-      ],
-      "trash_retention_days": 30
+      ]
     }
   ],
   "reads": [

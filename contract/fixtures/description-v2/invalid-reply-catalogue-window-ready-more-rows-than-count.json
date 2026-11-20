@@ -24,5 +24,6 @@
   "count": {
     "mode": "exact",
     "value": 1
-  }
+  },
+  "scope_ref": "scope-notes"
 }

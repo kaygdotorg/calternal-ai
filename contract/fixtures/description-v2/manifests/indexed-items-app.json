@@ -1,0 +1,69 @@
+{
+  "api_version": 2,
+  "id": "indexed-items-fixture",
+  "name": "Indexed items fixture",
+  "version": "1.0.0",
+  "icon": "threads",
+  "network": "none",
+  "apps": [
+    {
+      "id": "indexed-items",
+      "name": "Indexed items fixture",
+      "icon": "folder",
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "indexed-items-app.json",
+          "sha256": "34eb9606a6856721d1db3210c9020969df60dc6aff758927e879a182568e827e"
+        }
+      }
+    }
+  ],
+  "kinds": [
+    {
+      "id": "indexed-items",
+      "icon": "puzzle",
+      "title_field": "title",
+      "storage": {
+        "folder": "Indexed Items"
+      },
+      "claimed_text": true,
+      "searchable": true,
+      "schema": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "provider_label": {
+            "type": "string"
+          }
+        }
+      },
+      "host_create": {
+        "defaults": {
+          "title": "New conversation"
+        }
+      },
+      "indexed_fields": {
+        "state": {
+          "type": "Text",
+          "audience": "member_item"
+        },
+        "provider_label": {
+          "type": "Text",
+          "audience": "shared_projection"
+        }
+      }
+    }
+  ],
+  "reads": [
+    "indexed-items",
+    "requests"
+  ],
+  "operations": []
+}

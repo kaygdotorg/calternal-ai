@@ -9,39 +9,6 @@ from description_verification import CATALOGUE, check, parse_manifest, validate_
 class ProjectionCases:
     """Exercise the same install, event and reply checks used by the verifier."""
 
-    def test_composer_context_cannot_alias_any_view_or_row_action(self):
-        self.stage("threads-app")
-        root = self.fixtures / "events/threads-app"
-        open_case = json.loads((root / "event-catalogue-composer-issued-send.json").read_bytes())
-        renew_case = json.loads((root / "event-catalogue-composer-starting-stop-after-renewal.json").read_bytes())
-        for stage in ("open", "prior-view", "renewed-view", "renewed-row", "same-id-renewed-row"):
-            with self.subTest(stage=stage):
-                case = json.loads(json.dumps(open_case if stage == "open" else renew_case))
-                action = case["event"]["action_id"]
-                token = case["event"]["activation_context"]
-                # An opaque host action may be outside the composer map even if the
-                # declaration does not expose its name to this fixture.
-                if stage == "open":
-                    case["view_open"]["activation_contexts"]["rename"] = token
-                elif stage == "prior-view":
-                    case["view_open"]["activation_contexts"]["authored"] = token
-                else:
-                    renewed = case["renewals"][0]["result"]
-                    if stage == "renewed-view":
-                        renewed["activation_contexts"]["shell"] = token
-                    else:
-                        renewed["windows"] = [{
-                            "audience": "own_space_member", "bind": "all", "state": "ready",
-                            "result_version": "result", "offset": 0, "window_ref": "window",
-                            "rows": [{"id": "row", "fields": {"title": "Visible"}}],
-                            "activation_contexts": [{"row": "row", "contexts": {
-                                action if stage == "same-id-renewed-row" else "row-rename": token,
-                            }}],
-                        }]
-                self.event(case, "composer context aliases a non-composer action")
-        self.event(open_case)
-        self.event(renew_case)
-
     def test_bind_state_actions_cannot_take_direct_or_prefill_route_inputs(self):
         original = (self.package / self.template).read_bytes()
         for state in ("empty", "loading", "error", "refine_query"):
@@ -126,7 +93,7 @@ class ProjectionCases:
         manifest["kinds"][0]["indexed_fields"]["provider_icon"] = {"type": "Text", "audience": "shared_projection"}
         errors = Validation()
         parse_manifest(json.dumps(manifest), errors)
-        self.assertTrue(any("provider_icon: reserved host provider projection" in msg for msg in errors), list(errors))
+        self.assertTrue(any("provider_icon: reserved host generic field" in msg for msg in errors), list(errors))
 
         original = (self.package / self.template).read_bytes()
         for source in ("leading", "trailing icon", "trailing field"):
@@ -157,7 +124,7 @@ class ProjectionCases:
         kind = {"fields": fields, "device_row_images": ["preview"]}
         projected = {"title": "Visible title"}
         reply = {"audience": "guest", "bind": "notes", "state": "ready", "result_version": "v1",
-                 "offset": 0, "window_ref": "w", "rows": [{"id": "row", "fields": projected}]}
+                 "offset": 0, "window_ref": "w", "scope_ref": "fixture-scope", "rows": [{"id": "row", "fields": projected}]}
         for use, field, source in (
             ("header title", "restricted", "item"),
             ("row title", "excerpt_alt", "list"),
@@ -250,10 +217,10 @@ class ProjectionCases:
                 else:
                     self.assertFalse(errors, list(errors))
 
-    def test_notifications_accept_only_opt_in_for_host_text(self):
-        args = {"operation": "notes.remind", "input": {}, "calendar": {"type": "once", "at": "2026-11-20T00:00:00Z"},
-                "time_zone": "UTC", "notify_creator": True}
-        definition = CATALOGUE["$defs"]["ScheduleCreateInput"]
+    def test_alarm_does_not_accept_host_notification_text(self):
+        args = {"request_id": "alarm-request", "job": "reminder", "input": {},
+                "at": "2026-11-20T00:00:00Z"}
+        definition = CATALOGUE["$defs"]["AlarmSet"]
         errors = Validation()
         check(definition, args, "$", errors, CATALOGUE)
         self.assertFalse(errors, list(errors))

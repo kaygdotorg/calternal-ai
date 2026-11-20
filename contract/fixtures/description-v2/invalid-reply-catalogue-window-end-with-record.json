@@ -39,10 +39,12 @@
         "title": "Review the storage change"
       }
     ],
-    "proof": "proof-abc"
+    "proof": "proof-abc",
+    "scope_ref": "scope-all"
   },
   "count": {
     "mode": "exact",
     "value": 5000
-  }
+  },
+  "scope_ref": "scope-all"
 }

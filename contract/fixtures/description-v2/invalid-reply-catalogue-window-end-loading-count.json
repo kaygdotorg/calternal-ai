@@ -9,5 +9,6 @@
   "count": {
     "mode": "exact",
     "value": 18
-  }
+  },
+  "scope_ref": "scope-notes"
 }

@@ -47,7 +47,7 @@
                   }
                 }
               },
-              "conversation": {
+              "item": {
                 "row": "id"
               }
             }

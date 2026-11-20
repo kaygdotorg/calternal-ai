@@ -38,7 +38,9 @@
         "title": "Review the storage change"
       }
     ],
-    "proof": "proof-abc"
+    "proof": "proof-abc",
+    "scope_ref": "scope-note-search"
   },
-  "settle_generation": 1
+  "settle_generation": 1,
+  "scope_ref": "scope-note-search"
 }

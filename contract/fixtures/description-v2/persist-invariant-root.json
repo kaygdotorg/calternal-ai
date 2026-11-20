@@ -7,7 +7,7 @@
       "id": "b",
       "source": {
         "type": "list",
-        "kind": "threads"
+        "kind": "requests"
       },
       "fields": [
         "title"
@@ -16,7 +16,7 @@
       "filter": {
         "all": [
           {
-            "field": "waiting_on",
+            "field": "pending_for",
             "op": "eq",
             "value": {
               "viewer": "person"

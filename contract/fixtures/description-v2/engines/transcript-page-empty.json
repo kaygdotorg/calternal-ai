@@ -1,8 +1,0 @@
-{
-  "definition": "TranscriptPage",
-  "value": {
-    "records": [],
-    "notices": [],
-    "committed_cursor": null
-  }
-}

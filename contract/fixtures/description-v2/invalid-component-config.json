@@ -6,14 +6,13 @@
     "root": {
       "type": "component",
       "component": {
-        "type": "composer",
+        "type": "item-view",
         "id": "c",
         "config": {
-          "send": {
-            "id": "s",
-            "title": "Send",
-            "operation": "a.b"
+          "item": {
+            "route": "item"
           },
+          "slot": "body",
           "html": "<b>hi</b>"
         }
       }

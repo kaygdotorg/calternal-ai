@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "search-fields-catalogue-app.json",
-          "sha256": "d8be2083104556a10f612dac768f07834f460e64a9705b392aceb98e638f51c8"
+          "sha256": "47a78ccae9ab83c83d6d3e0984e86e2133a93431a0b1af4ae70b34fbee0ded17"
         }
       }
     }

@@ -137,6 +137,6 @@ def check_confirmation_table(errors, catalogue):
     policy = catalogue["confirmation"]
     challenged = set(policy["material_by_kind"])
     exempt = set(policy["no_challenge_kinds"])
-    expected = set(catalogue["operations"]) | {"composer.send", "plugin_operation"}
+    expected = set(catalogue["operations"]) | {"plugin_operation"}
     if challenged & exempt or challenged | exempt != expected:
         errors.append("$.confirmation: classify each host operation exactly once")

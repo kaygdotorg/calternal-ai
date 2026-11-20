@@ -1,8 +1,0 @@
-{
-  "type": "component",
-  "component": "transcript",
-  "route": "transcript.page",
-  "request": {
-    "conversation": "th-1"
-  }
-}

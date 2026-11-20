@@ -23,5 +23,6 @@
     "mode": "exact",
     "value": 2
   },
-  "settle_generation": 1
+  "settle_generation": 1,
+  "scope_ref": "scope-note-search"
 }

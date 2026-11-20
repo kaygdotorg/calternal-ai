@@ -1,8 +1,5 @@
 {
   "sender": "sender",
-  "transcript_readers": [
-    "sender"
-  ],
   "input_readers": {
     "common_title": [
       "sender",
@@ -29,5 +26,8 @@
       "sender_only_body",
       "sender_private_note"
     ]
-  }
+  },
+  "file_readers": [
+    "sender"
+  ]
 }

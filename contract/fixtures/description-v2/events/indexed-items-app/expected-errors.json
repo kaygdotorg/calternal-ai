@@ -1,0 +1,4 @@
+{
+  "invalid-event-catalogue-search-missing-generation.json": "required for search Binds only",
+  "invalid-event-catalogue-component-request-card-read.json": "'entries' cannot use route 'request-card.read'"
+}

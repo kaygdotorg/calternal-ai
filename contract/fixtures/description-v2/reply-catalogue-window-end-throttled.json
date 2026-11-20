@@ -5,5 +5,6 @@
   "anchor": "end",
   "result_version": null,
   "window_ref": null,
-  "rows": []
+  "rows": [],
+  "scope_ref": "scope-notes"
 }

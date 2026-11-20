@@ -10,52 +10,32 @@ it("matches the Reading List fixture with the draft create and alarm declaration
   const emitted = readJson(new URL("manifest.json", root));
   const installer = readJson(new URL("manifests/reading-list-installer-v2-app.json", fixture));
   expect(emitted).toEqual(installer);
-  const sealed = readJson(new URL("manifests/reading-list-manifest-v2-app.json", fixture));
+  const draft = readJson(new URL("manifests/reading-list-manifest-v2-app.json", fixture));
   expect(emitted.id).toBe("calternal-reading-list");
   for (const asset of [emitted.worker, emitted.apps[0].description.template]) {
     const bytes = readFileSync(new URL(asset.path, root));
     expect(createHash("sha256").update(bytes).digest("hex")).toBe(asset.sha256);
   }
 
-  const { schedule_eligibility: [due], ...original } = sealed;
-  const createdOutput = {
-    type: "object",
-    additionalProperties: false,
-    required: ["created"],
-    properties: { created: { $ref: "host-catalogue-v2.json#/$defs/ItemRef" } },
-  };
-
   expect({
     ...emitted,
-    id: sealed.id,
-    worker: sealed.worker,
+    id: draft.id,
+    worker: draft.worker,
     apps: emitted.apps.map((app: typeof emitted.apps[number], index: number) => ({
       ...app,
-      description: { ...app.description, template: sealed.apps[index].description.template },
+      description: { ...app.description, template: draft.apps[index].description.template },
     })),
-  }).toEqual({
-    ...original,
-    jobs: [{ id: due.id, run_operation: due.operation, replayable: true, alarm: true }],
-    operations: original.operations.map((operation: typeof original.operations[number]) => {
-      if (operation.id === "reading.add") {
-        return { ...operation, methods: ["item_create"], output_schema: createdOutput };
-      }
-      if (operation.id === "reading.remind") {
-        return { ...operation, methods: ["item_create", "alarm_set"], output_schema: createdOutput };
-      }
-      return operation;
-    }),
-  });
+  }).toEqual(draft);
 });
 
-it("matches the sealed app with the SDK's window and message defaults", () => {
+it("matches the authored app with the SDK's window and message defaults", () => {
   const manifest = readJson(new URL("manifest.json", root));
   const emitted = readJson(new URL(manifest.apps[0].description.template.path, root));
   expect(emitted).toEqual(readJson(new URL("reading-list-installer-v2-app.json", fixture)));
-  const sealed = readJson(new URL("reading-list-manifest-v2-app.json", fixture));
+  const authored = readJson(new URL("reading-list-manifest-v2-app.json", fixture));
   expect(emitted).toEqual({
-    ...sealed,
-    binds: sealed.binds.map((bind: typeof sealed.binds[number]) => {
+    ...authored,
+    binds: authored.binds.map((bind: typeof authored.binds[number]) => {
       const search = bind.source.type === "search";
       return {
         ...bind,

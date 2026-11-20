@@ -1,6 +1,7 @@
 {
   "definition": "ExecutionStart",
   "value": {
-    "request_id": "request-1"
+    "request_id": "request-1",
+    "harness": "checked-harness"
   }
 }

@@ -2,18 +2,15 @@
 
 from description_verification import check, validate_search_generation
 
-COMPONENT_TYPES = {"item-editor", "conversation-transcript", "composer", "request-card", "sealed-html-frame"}
+COMPONENT_TYPES = {"item-editor", "item-view", "request-card", "sealed-html-frame"}
 TYPED_ROUTES = {
-    "transcript.page": "conversation-transcript",
-    "composer.options": "composer",
+    "item_view.open": "item-view",
+    "item_view.follow": "item-view",
+    "item_view.asset": "item-view",
     "request_resolve": "request-card",
     "request-card.read": "request-card",
-    "transcript.quote": "conversation-transcript",
-    "transcript.body": "conversation-transcript",
-    "transcript.attachment": "conversation-transcript",
     "editor.open": "item-editor",
     "row_images.prepare": "item-editor",
-    "transcript.follow": "conversation-transcript",
     "sealed_frame.open": "sealed-html-frame",
     "sealed_frame.resize": "sealed-html-frame",
     "sealed_frame.open_link": "sealed-html-frame",
@@ -294,10 +291,6 @@ def check_component(event, bindings, errors, catalogue):
         allowed = component is not None and component["type"] == TYPED_ROUTES[route]
         if allowed and route == "row_images.prepare" and component["config"].get("mode") == "read":
             errors.append("$.component: row_images.prepare requires an editable item editor")
-        if allowed and route == "composer.options":
-            controls = component["config"].get("controls", [])
-            if request["control"] not in errors.each(controls):
-                errors.append(f"$.request.control: control {request['control']!r} is not configured for {ident!r}")
     elif route == "choice.options":
         allowed = action is not None and prompt_slots(action, errors).get(request["slot"]) == "choices"
     elif route in ("share_sheet", "trash_sheet"):

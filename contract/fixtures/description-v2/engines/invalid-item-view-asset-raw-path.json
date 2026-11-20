@@ -1,0 +1,12 @@
+{
+  "definition": "ItemViewAssetRequest",
+  "value": {
+    "type": "item_view_asset",
+    "ref": {
+      "path": "files/a"
+    },
+    "offset": 0,
+    "length": 65536
+  },
+  "error": "expected string"
+}

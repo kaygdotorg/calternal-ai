@@ -1,6 +1,15 @@
 {
   "definition": "ExecutionJobContext",
   "value": {
-    "intent": "intent-1"
+    "intent": "saved-intent-1",
+    "item": "thread-1",
+    "harness": "checked-harness",
+    "contribution_identity": {
+      "package": "calternal-threads-claude-code",
+      "contribution": "claude-code"
+    },
+    "contribution_input": {
+      "text": "Check the saved note."
+    }
   }
 }

@@ -714,23 +714,27 @@ def check_cached_display(reply, bind, kind, generic, catalogue, errors):
         return
     row_template = bind.get("row", {})
     title = row_template.get("title", {}).get("field", "title")
-    policy = catalogue["offline_member_display"]
 
-    def eligible(field):
+    def eligible(field, cached):
         meta = field_meta(kind, field, generic)
-        return (field not in policy["excluded_fields"] and meta.get("audience") in policy["field_audiences"]
-                and not body_derived_field(kind, field, meta))
+        if field == catalogue["provider_marks"]["field"]:
+            return False
+        audience = meta.get("audience")
+        if audience == "shared_projection" and not body_derived_field(kind, field, meta):
+            return True
+        # Fixture shape checks require the reference. Live delivery verifies the exact signed grant.
+        return audience in ("member_item", "shared_projection") and "offline_grant" in cached
 
     for index, cached in enumerate(errors.each(cache_rows)):
         fields = live_rows[index]["fields"]
-        if not eligible(title) or cached["title"] != fields.get(title):
+        if not eligible(title, cached) or cached["title"] != fields.get(title):
             errors.append(f"{base}[{index}].title: expected the offline-eligible live title")
         text = []
         dates = []
         for part in errors.each(row_template.get("secondary", [])):
             field = part["field"]
             value = fields.get(field)
-            if not eligible(field) or not isinstance(value, str):
+            if not eligible(field, cached) or not isinstance(value, str):
                 continue
             (text if part["format"] == "text" else dates).append(value)
         if "subtitle" in cached and (not text or cached["subtitle"] != " · ".join(text)):

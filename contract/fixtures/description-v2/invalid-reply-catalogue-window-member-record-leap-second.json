@@ -35,6 +35,8 @@
         "subtitle_timestamp": "2016-12-31T23:59:60Z"
       }
     ],
-    "proof": "proof-abc"
-  }
+    "proof": "proof-abc",
+    "scope_ref": "scope-all-own-space-notes"
+  },
+  "scope_ref": "scope-all-own-space-notes"
 }

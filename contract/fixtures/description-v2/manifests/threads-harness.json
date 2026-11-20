@@ -1,0 +1,111 @@
+{
+  "api_version": 2,
+  "id": "calternal-threads-claude-code",
+  "name": "Claude Code",
+  "version": "0.1.0",
+  "icon": "puzzle",
+  "kinds": [
+    {
+      "id": "claude-code-run",
+      "icon": "puzzle",
+      "title_field": "title",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "append_file": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      }
+    }
+  ],
+  "contributions": [
+    {
+      "app": {
+        "package": "calternal-threads",
+        "app": "threads"
+      },
+      "point": "harnesses",
+      "version": 1,
+      "id": "claude-code",
+      "kind": "harness",
+      "operation": "threads-claude-code.run",
+      "harness": {
+        "image": "sha256:c6fde2d70276d3928a736fe6c26f15b9be1f4e31bcd1516e2a0b7418bdb4f5f7",
+        "image_source": "registry.example.invalid/calternal/threads-claude-code-fixture",
+        "execution_network": "none",
+        "entry": {
+          "path": "entry-c6fde2d70276d3928a736fe6c26f15b9be1f4e31bcd1516e2a0b7418bdb4f5f7.bin",
+          "sha256": "c6fde2d70276d3928a736fe6c26f15b9be1f4e31bcd1516e2a0b7418bdb4f5f7"
+        },
+        "name": "Claude Code",
+        "login_directories": [
+          ".claude"
+        ]
+      }
+    }
+  ],
+  "network": "none",
+  "operations": [
+    {
+      "id": "threads-claude-code.run",
+      "title": "Run Claude Code",
+      "required_capability": "plugins.use",
+      "risk": "external",
+      "idempotency": "request_id",
+      "methods": [
+        "item_create",
+        "item_append"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "log": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemLocator"
+          }
+        },
+        "required": [
+          "text",
+          "log"
+        ]
+      }
+    }
+  ],
+  "reads": [
+    "claude-code-run"
+  ],
+  "apps": [],
+  "worker": {
+    "path": "worker-5b1f6a703f564735a2550728f7493d72b30ac8776969457df3053c7c04bd073c.mjs",
+    "sha256": "5b1f6a703f564735a2550728f7493d72b30ac8776969457df3053c7c04bd073c"
+  }
+}

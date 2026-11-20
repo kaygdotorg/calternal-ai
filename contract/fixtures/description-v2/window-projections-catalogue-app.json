@@ -58,11 +58,11 @@
       "id": "snoozable-threads",
       "source": {
         "type": "list",
-        "kind": "threads"
+        "kind": "indexed-items"
       },
       "fields": [
         "title",
-        "snoozed_until"
+        "trashed_at"
       ]
     }
   ],

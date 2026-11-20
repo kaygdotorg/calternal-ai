@@ -89,16 +89,34 @@
       "risk": "reversible",
       "idempotency": "request_id",
       "methods": [
-        "schedule_create"
+        "alarm_set"
       ],
       "target": {
         "kind": "notes",
         "field": "item"
       }
+    },
+    {
+      "id": "notes.reminder-due",
+      "title": "Deliver reminder",
+      "risk": "read",
+      "idempotency": "read_only",
+      "required_capability": "space.read",
+      "input_schema": {},
+      "output_schema": {},
+      "methods": []
     }
   ],
   "worker": {
     "path": "dist/fixture.js",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
-  }
+  },
+  "jobs": [
+    {
+      "id": "reminder-due",
+      "run_operation": "notes.reminder-due",
+      "replayable": true,
+      "alarm": true
+    }
+  ]
 }

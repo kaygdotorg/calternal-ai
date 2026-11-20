@@ -2,7 +2,8 @@
   "definition": "ExecutionStart",
   "value": {
     "request_id": "request-1",
-    "intent": "sibling-intent"
+    "intent": "sibling-intent",
+    "harness": "checked-harness"
   },
   "error": "unknown field intent"
 }

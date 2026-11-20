@@ -1,9 +1,5 @@
 {
   "sender": "sender",
-  "transcript_readers": [
-    "sender",
-    "other_reader"
-  ],
   "input_readers": {
     "common_title": [
       "sender",
@@ -28,5 +24,9 @@
       "common_title"
     ]
   },
-  "error": "$.observed.search: discovery exceeds or omits the checked transcript audience"
+  "error": "$.observed.search: discovery exceeds or omits the checked file audience",
+  "file_readers": [
+    "sender",
+    "other_reader"
+  ]
 }

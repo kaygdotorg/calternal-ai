@@ -1,24 +1,4 @@
 {
-  "threads-app.json": {
-    "thread-search": [
-      "invalid-reply-catalogue-search-page-boundary-empty.json",
-      "invalid-reply-catalogue-window-ready-zero-rows-at-start.json",
-      "reply-catalogue-search-page-boundary-first.json",
-      "reply-catalogue-search-page-boundary-next.json",
-      "reply-catalogue-window-search-empty-no-count.json",
-      "invalid-reply-catalogue-search-missing-generation.json"
-    ],
-    "all": [
-      "invalid-reply-catalogue-window-end-estimate.json",
-      "invalid-reply-catalogue-window-end-no-count.json",
-      "invalid-reply-catalogue-window-end-with-record.json",
-      "invalid-reply-catalogue-window-guest-record.json",
-      "invalid-reply-catalogue-window-nested-record.json",
-      "invalid-reply-catalogue-window-public-record.json",
-      "reply-catalogue-window-end-result.json",
-      "invalid-reply-catalogue-window-cache-from-nonpersistent-bind.json"
-    ]
-  },
   "notes-app.json": {
     "notes": [
       "invalid-reply-catalogue-window-end-loading-count.json",
@@ -102,6 +82,26 @@
       "invalid-reply-catalogue-guest-image-attribution.json",
       "invalid-reply-catalogue-public-image-attribution.json",
       "invalid-reply-catalogue-attribution-without-image-field.json"
+    ]
+  },
+  "indexed-items-app.json": {
+    "thread-search": [
+      "invalid-reply-catalogue-search-page-boundary-empty.json",
+      "invalid-reply-catalogue-window-ready-zero-rows-at-start.json",
+      "reply-catalogue-search-page-boundary-first.json",
+      "reply-catalogue-search-page-boundary-next.json",
+      "reply-catalogue-window-search-empty-no-count.json",
+      "invalid-reply-catalogue-search-missing-generation.json"
+    ],
+    "all": [
+      "invalid-reply-catalogue-window-end-estimate.json",
+      "invalid-reply-catalogue-window-end-no-count.json",
+      "invalid-reply-catalogue-window-end-with-record.json",
+      "invalid-reply-catalogue-window-guest-record.json",
+      "invalid-reply-catalogue-window-nested-record.json",
+      "invalid-reply-catalogue-window-public-record.json",
+      "reply-catalogue-window-end-result.json",
+      "invalid-reply-catalogue-window-cache-from-nonpersistent-bind.json"
     ]
   }
 }

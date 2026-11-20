@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "threads-nested-catalogue-app.json",
-          "sha256": "b2466bdacaf87421b5961afcd3ebd1f93acb7add862d42cf6dfbcea02040c262"
+          "sha256": "0dfd7b1eb3c777da2ef15244b2370b3c2f3781045b2b488ec45caa746fd800d4"
         }
       }
     }
@@ -22,7 +22,7 @@
   "kinds": [],
   "operations": [],
   "reads": [
-    "threads",
+    "indexed-items",
     "layout_sections"
   ]
 }

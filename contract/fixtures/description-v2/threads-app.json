@@ -2,407 +2,137 @@
   "version": 2,
   "kind": "app",
   "revision": 1,
-  "binds": [
-    {
-      "id": "waiting",
-      "source": {
-        "type": "list",
-        "kind": "threads"
-      },
-      "fields": [
-        "title",
-        "provider_icon",
-        "state",
-        "updated"
-      ],
-      "filter": {
-        "all": [
-          {
-            "field": "waiting_on",
-            "op": "eq",
-            "value": {
-              "viewer": "person"
-            }
-          }
-        ]
-      },
-      "sort": [
-        {
-          "field": "updated",
-          "direction": "desc"
-        }
-      ],
-      "window": {
-        "size": 60,
-        "count": "exact"
-      },
-      "row": {
-        "title": {
-          "field": "title"
-        },
-        "marks": [
-          {
-            "kind": "dot",
-            "when": {
-              "field": "state",
-              "op": "eq",
-              "value": {
-                "literal": "waiting"
-              }
-            }
-          },
-          {
-            "kind": "icon",
-            "icon": "warning",
-            "tone": "bad",
-            "when": {
-              "field": "state",
-              "op": "eq",
-              "value": {
-                "literal": "failed"
-              }
-            }
-          }
-        ],
-        "open": {
-          "route": {
-            "name": "thread",
-            "value": "id"
-          }
-        },
-        "trailingActions": [
-          {
-            "id": "archive",
-            "title": "Archive",
-            "icon": "trash",
-            "operation": "host.item.archive",
-            "inputs": {
-              "item": {
-                "row": "id"
-              }
-            },
-            "role": "destructive"
-          }
-        ],
-        "icon": {
-          "field": "provider_icon",
-          "name": "threads"
-        }
-      },
-      "states": {
-        "empty": {
-          "title": "Nothing is waiting on you"
-        }
-      }
-    },
-    {
-      "id": "all",
-      "source": {
-        "type": "list",
-        "kind": "threads"
-      },
-      "fields": [
-        "title",
-        "provider_icon",
-        "state",
-        "updated",
-        "provider_label"
-      ],
-      "sort": [
-        {
-          "field": "updated",
-          "direction": "desc"
-        }
-      ],
-      "window": {
-        "size": 60,
-        "count": "exact"
-      },
-      "row": {
-        "title": {
-          "field": "title"
-        },
-        "marks": [
-          {
-            "kind": "dot",
-            "when": {
-              "field": "state",
-              "op": "eq",
-              "value": {
-                "literal": "waiting"
-              }
-            }
-          }
-        ],
-        "open": {
-          "route": {
-            "name": "thread",
-            "value": "id"
-          }
-        },
-        "icon": {
-          "field": "provider_icon",
-          "name": "threads"
-        },
-        "secondary": [
-          {
-            "field": "provider_label",
-            "format": "text"
-          }
-        ]
-      }
-    },
-    {
-      "id": "requests",
-      "source": {
-        "type": "list",
-        "kind": "requests"
-      },
-      "fields": [
-        "title",
-        "conversation_ref"
-      ],
-      "filter": {
-        "all": [
-          {
-            "field": "pending_for",
-            "op": "eq",
-            "value": {
-              "viewer": "person"
-            }
-          }
-        ]
-      },
-      "window": {
-        "size": 3,
-        "count": "exact"
-      }
-    },
-    {
-      "id": "thread",
-      "source": {
-        "type": "item",
-        "kind": "threads",
-        "ref": {
-          "route": "thread"
-        }
-      },
-      "fields": [
-        "title"
-      ]
-    },
-    {
-      "id": "thread-search",
-      "source": {
-        "type": "search",
-        "kind": "threads"
-      },
-      "fields": [
-        "title"
-      ]
-    }
-  ],
-  "cache": {
-    "maxAgeDays": 14,
-    "templates": "keep"
-  },
-  "chrome": {
-    "sidebar": {
-      "open": true,
-      "title": "Calternal",
-      "selectors": [
-        {
-          "id": "filter",
-          "route": "view",
-          "selected": "inbox",
-          "options": [
-            {
-              "id": "inbox",
-              "title": "Inbox",
-              "count": {
-                "bind": "waiting"
-              }
-            },
-            {
-              "id": "all",
-              "title": "All Threads"
-            }
-          ]
-        }
-      ],
-      "sections": [
-        {
-          "id": "shortcuts",
-          "rows": [
-            {
-              "id": "new-thread",
-              "title": "New thread",
-              "icon": "plus",
-              "open": {
-                "invoke": {
-                  "id": "create",
-                  "title": "New thread",
-                  "operation": "host.item.create",
-                  "inputs": {
-                    "kind": {
-                      "literal": "threads"
-                    }
-                  },
-                  "then": {
-                    "route": {
-                      "name": "thread"
-                    }
-                  }
-                }
-              }
-            }
-          ]
-        },
-        {
-          "id": "inbox",
-          "title": "Waiting on you",
-          "bind": "waiting",
-          "showWhen": {
-            "route": "view",
-            "equals": "inbox"
-          }
-        },
-        {
-          "id": "threads",
-          "title": "Threads",
-          "bind": "all",
-          "showWhen": {
-            "route": "view",
-            "equals": "all"
-          }
-        }
-      ]
-    },
-    "header": {
-      "title": {
-        "bind": "thread",
-        "field": "title"
-      }
-    },
-    "footer": {
-      "account": {
-        "id": "account",
-        "title": "Account"
-      },
-      "apps": [
-        {
-          "id": "threads",
-          "title": "Threads",
-          "icon": "threads"
-        },
-        {
-          "id": "notes",
-          "title": "Notes",
-          "icon": "notes"
-        }
-      ],
-      "search": {
-        "placeholder": "Search threads",
-        "bind": "thread-search"
-      }
-    },
-    "panel": {
-      "id": "side-chat",
-      "title": "Side chat",
-      "open": true,
-      "components": [
-        {
-          "type": "conversation-transcript",
-          "id": "panel-transcript",
-          "config": {
-            "conversation": {
-              "route": "thread"
-            }
-          }
-        },
-        {
-          "type": "request-card",
-          "id": "approval-card",
-          "config": {
-            "request": {
-              "bind": "requests",
-              "field": "id"
-            }
-          }
-        },
-        {
-          "type": "composer",
-          "id": "panel-composer",
-          "config": {
-            "controls": [
-              "attachments",
-              "mentions",
-              "provider",
-              "model",
-              "reasoning",
-              "permission",
-              "machine",
-              "stop"
-            ],
-            "placeholder": "Ask about this thread",
-            "conversation": {
-              "route": "thread"
-            }
-          }
-        }
-      ]
-    }
-  },
   "view": {
     "root": {
       "type": "stack",
       "children": [
         {
+          "type": "form",
+          "id": "create",
+          "fields": [
+            {
+              "id": "title",
+              "label": "Title",
+              "input": "text",
+              "required": true
+            }
+          ],
+          "submit": {
+            "id": "create-thread",
+            "title": "New thread",
+            "operation": "threads.create",
+            "inputs": {
+              "title": {
+                "form": "create",
+                "field": "title"
+              }
+            },
+            "then": {
+              "route": {
+                "name": "item"
+              }
+            }
+          }
+        },
+        {
           "type": "component",
           "component": {
-            "type": "conversation-transcript",
+            "type": "item-view",
             "id": "transcript",
             "config": {
-              "follow": "end",
-              "quote": true,
-              "conversation": {
-                "route": "thread"
+              "item": {
+                "route": "item"
+              },
+              "slot": "body"
+            }
+          }
+        },
+        {
+          "type": "form",
+          "id": "composer",
+          "entry_context": {
+            "component": "transcript"
+          },
+          "fields": [
+            {
+              "id": "message",
+              "label": "Message",
+              "input": "multiline",
+              "required": true,
+              "maxLength": 4000,
+              "draft": {
+                "slot": "draft"
+              }
+            }
+          ],
+          "submit": {
+            "id": "send",
+            "title": "Send",
+            "operation": "threads.send",
+            "inputs": {
+              "item": {
+                "route": "item"
+              },
+              "text": {
+                "form": "composer",
+                "field": "message"
+              },
+              "harness": {
+                "prompt": {
+                  "title": "Agent",
+                  "kind": "choice",
+                  "options": {
+                    "extension": "harnesses"
+                  }
+                }
+              },
+              "placement": {
+                "prompt": {
+                  "title": "Run on",
+                  "kind": "choice",
+                  "options": {
+                    "host": "execution_placement"
+                  }
+                }
               }
             }
           }
         },
         {
-          "type": "component",
-          "component": {
-            "type": "request-card",
-            "id": "approval",
-            "config": {
-              "request": {
-                "bind": "waiting",
-                "field": "id"
+          "type": "form",
+          "id": "rename",
+          "fields": [
+            {
+              "id": "title",
+              "label": "Title",
+              "input": "text",
+              "required": true
+            }
+          ],
+          "submit": {
+            "id": "rename-thread",
+            "title": "Rename",
+            "operation": "host.item.rename",
+            "inputs": {
+              "item": {
+                "route": "item"
+              },
+              "title": {
+                "form": "rename",
+                "field": "title"
               }
             }
           }
         },
         {
-          "type": "component",
-          "component": {
-            "type": "composer",
-            "id": "composer",
-            "config": {
-              "controls": [
-                "attachments",
-                "mentions",
-                "provider",
-                "model",
-                "reasoning",
-                "permission",
-                "machine",
-                "stop"
-              ],
-              "placeholder": "Message",
-              "conversation": {
-                "route": "thread"
+          "type": "button",
+          "invoke": {
+            "id": "archive-thread",
+            "title": "Archive",
+            "operation": "host.item.archive",
+            "inputs": {
+              "item": {
+                "route": "item"
               }
             }
           }

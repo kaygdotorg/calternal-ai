@@ -145,14 +145,20 @@
       "output_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [],
-        "properties": {}
+        "required": [
+          "created"
+        ],
+        "properties": {
+          "created": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
+          }
+        }
       },
       "required_capability": "content.write",
       "risk": "reversible",
       "idempotency": "request_id",
       "methods": [
-        "item_save"
+        "item_create"
       ],
       "creates": "reading-item"
     },
@@ -186,15 +192,21 @@
       "output_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": [],
-        "properties": {}
+        "required": [
+          "created"
+        ],
+        "properties": {
+          "created": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef"
+          }
+        }
       },
       "required_capability": "content.write",
       "risk": "reversible",
       "idempotency": "request_id",
       "methods": [
-        "schedule_create",
-        "item_save"
+        "item_create",
+        "alarm_set"
       ],
       "target": {
         "kind": "reading-item",
@@ -240,10 +252,12 @@
     "path": "dist/fixture.js",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
-  "schedule_eligibility": [
+  "jobs": [
     {
       "id": "reminder-due",
-      "operation": "reading.reminder-due"
+      "run_operation": "reading.reminder-due",
+      "replayable": true,
+      "alarm": true
     }
   ]
 }

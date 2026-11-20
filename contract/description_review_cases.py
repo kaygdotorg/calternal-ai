@@ -193,7 +193,7 @@ class ReviewCases:
         self.replace_template(template)
         self.verify(failure="sort field 'provider_icon' requires a declared indexed field type")
 
-        self.stage("threads-app")
+        self.stage("indexed-items-app")
         template = json.loads((self.package / self.template).read_bytes())
         bind = next(b for b in template["binds"] if b["source"]["kind"] == "requests")
         bind["sort"] = [{"field": "title", "direction": "asc"}]
@@ -206,9 +206,9 @@ class ReviewCases:
         bind = next(b for b in app["binds"] if b["id"] == reply["bind"])
         errors = Validation()
         owner = verification.parse_manifest(
-            (self.fixtures / "manifests/rev14-threads-owner.json").read_text(), errors)
+            (self.fixtures / "manifests/indexed-items-app.json").read_text(), errors)
         self.assertFalse(errors, list(errors))
-        kind = verification.project_kind(owner["kinds"]["threads"], verification.CATALOGUE)
+        kind = verification.project_kind(owner["kinds"]["indexed-items"], verification.CATALOGUE)
         origin = (bind, kind, verification.CATALOGUE["generic_item_fields"])
         self.assertEqual(reply["member_cache_record"]["rows"][0]["subtitle"], "Claude Code")
         verification.validate_reply(reply, origin, errors)

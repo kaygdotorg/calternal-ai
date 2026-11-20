@@ -42,6 +42,8 @@
         "title": "Review the storage change"
       }
     ],
-    "proof": "proof-abc"
-  }
+    "proof": "proof-abc",
+    "scope_ref": "scope-all"
+  },
+  "scope_ref": "scope-all"
 }

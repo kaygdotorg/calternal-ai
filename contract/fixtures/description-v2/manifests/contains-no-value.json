@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "notes-tags-app.json",
-          "sha256": "195687e629df55a441c96ab56a04aa2a90de8e037390d469eb1c2321faac547e"
+          "sha256": "6ae5a43d117d31c17046331374914519c654283c1d6e89bb5c90beac0e7e1d8b"
         }
       }
     }
@@ -76,8 +76,7 @@
       "extractors": [],
       "device_row_images": [
         "thumbnail"
-      ],
-      "trash_retention_days": 30
+      ]
     }
   ],
   "reads": [

@@ -4,18 +4,32 @@
     "v": 1,
     "epoch": "epoch-first",
     "seq": 1,
-    "package": "calternal-orchestrator",
-    "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "package": "calternal-threads",
+    "digest": "3facada978852412c8a148b127e1c337fde35b0cc8527a7fdbc5e52dac347721",
     "ticket": "host-ticket",
     "message": {
       "type": "call",
-      "operation": "calternal-orchestrator.run",
+      "operation": "threads.run",
       "input": {
-        "item": "conversation-1"
+        "item": "thread-1"
       },
       "deadline": "2026-11-20T12:00:00Z",
       "job_context": {
-        "intent": "saved-intent-1"
+        "intent": "saved-intent-1",
+        "item": "thread-1",
+        "harness": "checked-harness",
+        "contribution_identity": {
+          "package": "calternal-threads-claude-code",
+          "contribution": "claude-code"
+        },
+        "contribution_input": {
+          "text": "Check the saved note."
+        }
+      },
+      "author_context": {
+        "request_id": "admit-1",
+        "actor": "member-1",
+        "authored_at": "2026-11-20T11:59:00Z"
       }
     }
   },

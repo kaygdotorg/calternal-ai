@@ -11,25 +11,13 @@
       "id": "waiting",
       "source": {
         "type": "list",
-        "kind": "threads"
+        "kind": "indexed-items"
       },
       "fields": [
         "title",
         "provider_icon",
-        "state",
-        "waiting_on"
+        "state"
       ],
-      "filter": {
-        "all": [
-          {
-            "field": "waiting_on",
-            "op": "eq",
-            "value": {
-              "viewer": "person"
-            }
-          }
-        ]
-      },
       "sort": [
         {
           "field": "updated",
@@ -66,7 +54,7 @@
                   }
                 }
               },
-              "conversation": {
+              "item": {
                 "context": "item"
               }
             }
@@ -98,7 +86,7 @@
       "id": "all",
       "source": {
         "type": "list",
-        "kind": "threads"
+        "kind": "indexed-items"
       },
       "fields": [
         "title",
@@ -144,7 +132,7 @@
                   }
                 }
               },
-              "conversation": {
+              "item": {
                 "context": "item"
               }
             }
@@ -180,7 +168,7 @@
       "id": "children",
       "source": {
         "type": "list",
-        "kind": "threads",
+        "kind": "indexed-items",
         "parent": true
       },
       "fields": [
@@ -224,7 +212,7 @@
                   }
                 }
               },
-              "conversation": {
+              "item": {
                 "context": "item"
               }
             }
@@ -307,7 +295,7 @@
       "id": "in-section",
       "source": {
         "type": "list",
-        "kind": "threads",
+        "kind": "indexed-items",
         "parent": true
       },
       "fields": [
@@ -430,7 +418,7 @@
                   "operation": "host.item.create",
                   "inputs": {
                     "kind": {
-                      "literal": "threads"
+                      "literal": "indexed-items"
                     }
                   }
                 }
@@ -500,21 +488,6 @@
           "icon": "notes"
         }
       ]
-    }
-  },
-  "view": {
-    "title": "Thread",
-    "root": {
-      "type": "component",
-      "component": {
-        "type": "conversation-transcript",
-        "id": "transcript",
-        "config": {
-          "conversation": {
-            "route": "thread"
-          }
-        }
-      }
     }
   }
 }

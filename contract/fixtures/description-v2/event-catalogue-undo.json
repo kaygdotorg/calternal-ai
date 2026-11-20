@@ -1,4 +1,5 @@
 {
   "type": "undo",
-  "undo_ref": "u-3"
+  "undo_ref": "u-3",
+  "activation_id": "undo-1"
 }

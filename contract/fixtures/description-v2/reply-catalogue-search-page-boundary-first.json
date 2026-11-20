@@ -13,5 +13,6 @@
       }
     }
   ],
-  "settle_generation": 1
+  "settle_generation": 1,
+  "scope_ref": "scope-thread-search"
 }

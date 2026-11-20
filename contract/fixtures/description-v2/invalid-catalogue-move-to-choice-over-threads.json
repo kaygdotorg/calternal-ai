@@ -57,7 +57,7 @@
                   }
                 }
               },
-              "conversation": {
+              "item": {
                 "context": "item"
               }
             }

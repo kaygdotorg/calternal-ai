@@ -155,12 +155,6 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                             layout_selection = isinstance(source, dict) and "selection" in source and not source.get("set") and source["selection"] in repeat_rows
                             layout_bare = owner_in_repeat and isinstance(source, dict) and source == {"row": "id"}
                             if declared_type == "LayoutEntryRef" and ctx_kind != "placement" and not layout_selection and not layout_bare: errors.append(f"{path}: input {name!r} of {op} is a LayoutEntryRef: it takes {{context: placement}}")
-                            conversation_input = (entry.get("kind_capability") == "conversation" and name == "item") or (op, name) == ("host.layout.move_to", "conversation")
-                            if conversation_input and owner_in_repeat and ctx_kind != "item":
-                                errors.append(f"{path}: in the rows of a Section.repeat the row id is a placement (LayoutEntryRef): the ItemRef input {name!r} of {op} must be {{context: item}}, not the bare row id")
-                            if conversation_input and owner_kind and (ctx_kind == "item" or source == {"row": "id"}):
-                                if not man_kinds.get(owner_kind, {}).get("conversation"):
-                                    errors.append(f"{path}: {{context: item}} requires a conversation kind, not {owner_kind!r}")
                             if ctx_kind == "placement" and declared_type not in ("LayoutEntryRef", ""): errors.append(f"{path}: {{context: placement}} fills a LayoutEntryRef, not {declared_type}")
                             if ctx_kind == "item" and declared_type == "LayoutEntryRef": errors.append(f"{path}: {{context: item}} cannot fill the LayoutEntryRef input {name!r}")
                             REF_TYPES = {k.get("row_ref") for k in errors.each(cat_kinds.values()) if k.get("row_ref")} | {"ItemRef", "LayoutEntryRef"}   # every ref a row can be or give
@@ -168,9 +162,8 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                             row_ref_of_owner = (cat_kinds.get(owner_kind) or {}).get("row_ref") if owner_kind in cat_kinds else ("ItemRef" if owner_kind else None)
                             if declared_type in REF_TYPES and ctx_kind == "item" and declared_type != row_ref_of_owner and not move_to_destination:
                                 errors.append(f"{path}: {{context: item}} gives the row's own {row_ref_of_owner} and cannot fill the {declared_type} input {name!r} of {op}")
-                            strict_conversation = (op, name) == ("host.layout.move_to", "conversation")
-                            if strict_conversation and not (ctx_kind == "item" or (isinstance(source, dict) and source == {"row": "id"})):
-                                errors.append(f"{path}: the `conversation` of host.layout.move_to takes only {{context: item}} or the bare id of a conversation row, not {json.dumps(source, sort_keys=True)}")
+                            if owner_in_repeat and (op, name) == ("host.layout.move_to", "item") and isinstance(source, dict) and "route" in source:
+                                errors.append(f"{path}: a repeated section row takes its item from {{context: item}}")
                             if declared_type in REF_TYPES and ctx_kind is None and not move_to_destination:
                                 bare_id = isinstance(source, dict) and source == {"row": "id"}
                                 from_route = isinstance(source, dict) and source.keys() == {"route"}
@@ -188,7 +181,6 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                                     sel_ref = (cat_kinds.get(sel_kind) or {}).get("row_ref") if sel_kind in cat_kinds else ("ItemRef" if sel_kind else None)
                                     if source["selection"] in repeat_rows: sel_ref = "LayoutEntryRef"   # a Section.repeat.rows bind presents the placement as its row id
                                     selection_ok = sel_ref == declared_type
-                                if strict_conversation: from_route = choice_ok = selection_ok = False
                                 bare_ok = bare_id and ((owner_in_repeat and declared_type == "LayoutEntryRef") or (not owner_in_repeat and row_ref == declared_type))
                                 if not (from_route or choice_ok or selection_ok or bare_ok):
                                     errors.append(f"{path}: the {declared_type} input {name!r} of {op} takes only a source of that ref type ({{context}}, a bare row id of a row of that type, or a route), not {json.dumps(source, sort_keys=True)}")
@@ -669,15 +661,15 @@ def validate_event(doc, bindings, errors):
             check_event_binding(doc, checked_origin, errors, verification.CATALOGUE)
 
 
-def fixture_scope(file, manifests_dir, engine_owner, errors):
-    """Supply the installed conversation owner for local conformance fixtures."""
+def fixture_scope(file, manifests_dir, fixture_owners, errors):
+    """Supply installed kind owners alongside an app's local manifest."""
     manifest, installed = load_fixture_manifest(file, manifests_dir, errors)
-    if engine_owner and "threads" not in (manifest or {}).get("kinds", {}) and not any("threads" in owner.get("kinds", {}) for owner in installed):
-        installed += (engine_owner,)
+    known = {kind for owner in (*installed, manifest or {}) for kind in owner.get("kinds", {})}
+    installed += tuple(owner for owner in fixture_owners if not known.intersection(owner["kinds"]))
     return manifest, installed
 
 
-def fixture_origins(fixtures, fixtures_dir, manifests_dir, engine_owner=None):
+def fixture_origins(fixtures, fixtures_dir, manifests_dir, fixture_owners=()):
     reply_files = {file.name for file in fixtures if is_reply_fixture(file)}
     if verification.CATALOGUE is None or not reply_files:
         return {}
@@ -691,7 +683,7 @@ def fixture_origins(fixtures, fixtures_dir, manifests_dir, engine_owner=None):
             check(schema, app, "$", errors)
             if errors:
                 raise ValueError(f"{file}: {'; '.join(errors)}")
-            sources[file.resolve()] = app, *fixture_scope(file, manifests_dir, engine_owner, errors)
+            sources[file.resolve()] = app, *fixture_scope(file, manifests_dir, fixture_owners, errors)
     return load_reply_origins(origins, fixtures_dir, sources, verification.CATALOGUE, reply_files, errors)
 
 
@@ -707,14 +699,23 @@ def run_fixtures():
     """Run the checked-in positive, negative and paper verification cases."""
     fixtures_dir = root / "fixtures" / "description-v2"
     manifests_dir = fixtures_dir / "manifests"
-    fixtures = sorted(file for file in [*fixtures_dir.glob("*.json"), *fixtures_dir.glob("events/*/*.json")]
+    fixtures = sorted(file for file in [*fixtures_dir.glob("*.json"), *fixtures_dir.glob("events/*/*.json"),
+                                         *fixtures_dir.glob("captures/*/*.json")]
                       if file.name != "expected-errors.json")
     install_fixtures = sorted(file for file in (manifests_dir / "install").glob("*.json")
                               if file.name != "expected-errors.json")
     expected = expected_errors(fixtures + install_fixtures)
     print("host catalogue: " + ("loaded" if verification.CATALOGUE is not None else "absent (catalogue cases are skipped)"))
-    engine_owner = verification.load_checked_manifest(manifests_dir / "rev14-threads-owner.json", Validation()) if verification.CATALOGUE is not None else None
-    origins = fixture_origins(fixtures, fixtures_dir, manifests_dir, engine_owner)
+    fixture_owners = tuple(
+        verification.load_checked_manifest(manifests_dir / name, Validation())
+        for name in ("threads-app.json", "indexed-items-app.json")
+    ) if verification.CATALOGUE is not None else ()
+    if fixture_owners:
+        verification.load_checked_manifest(manifests_dir / "threads-harness.json", Validation())
+        template = fixture_owners[0]["apps"][0]["description"]["template"]
+        if hashlib.sha256(read_bytes(fixtures_dir / "threads-app.json")).hexdigest() != template["sha256"]:
+            raise ValueError("Threads fixture bytes differ from the emitted manifest's template pin")
+    origins = fixture_origins(fixtures, fixtures_dir, manifests_dir, fixture_owners)
     failed = False
     for file in fixtures:
         manifest_path = manifests_dir / file.name.removeprefix("invalid-")
@@ -726,7 +727,7 @@ def run_fixtures():
             doc = read_json(file, errors)
             if file.name.startswith(("event-", "invalid-event-")):
                 app = None
-                if file.parent.parent == fixtures_dir / "events":
+                if file.parent.parent.name in ("events", "captures"):
                     app = lambda: fixture_event_origin(fixtures_dir / f"{file.parent.name}.json", manifests_dir, errors)
                 validate_event(doc, app, errors)
             elif is_reply_fixture(file):
@@ -738,7 +739,7 @@ def run_fixtures():
                 ):
                     print(f"skip {file.name}  (search qualification needs the host catalogue)")
                     continue
-                manifest, installed = fixture_scope(file, manifests_dir, engine_owner, errors)
+                manifest, installed = fixture_scope(file, manifests_dir, fixture_owners, errors)
                 validate_description(doc, manifest, installed, errors)
         except (DuplicateKey, ValueError) as error:
             errors.append(str(error))
@@ -766,22 +767,14 @@ def run_fixtures():
         case = read_json(file, errors)
         if not errors:
             check({"$ref": f"#/$defs/{case['definition']}"}, case["value"], "$", errors, verification.CATALOGUE)
-        if not errors and case["definition"] in ("ActivationResolution", "ResumeResolution"):
-            kind = "host.execution.resume" if case["definition"] == "ResumeResolution" else case.get("challenge_kind")
+        if not errors and case["definition"] == "ActivationResolution":
+            kind = case.get("challenge_kind")
             if case["value"].get("confirm") == "challenge" or kind is not None:
                 check_confirmation_material(case["value"], kind, case.get("checked_facts", ()),
                                             errors, verification.CATALOGUE, inputs=case.get("material_inputs", ()))
         if not errors and case["definition"] == "RequestCardRecord":
             check_request_card_material(case["value"], errors, verification.CATALOGUE,
                                         checked=case.get("checked_effect"))
-        if not errors and case["definition"] in ("TranscriptPage", "TranscriptUpdate"):
-            records_key = "records" if case["definition"] == "TranscriptPage" else "upserts"
-            for record in errors.each(case["value"][records_key]):
-                refs = [attachment["ref"] for attachment in errors.each(record.get("attachments", []))]
-                if len(set(refs)) != len(refs):
-                    errors.append(f"$.{records_key}: attachment refs must be distinct within the record")
-                if "attachment_projection" in case and refs != case["attachment_projection"].get(record["record_id"], []):
-                    errors.append(f"$.{records_key}: attachment projection differs from checked record authority")
         if not errors and case["definition"] == "HostWorkerInvokeFrame":
             manifest = verification.load_checked_manifest(manifests_dir / case["manifest"], errors)
             verification.check_worker_invocation(case["value"], manifest, case.get("job"), errors)
@@ -833,13 +826,13 @@ def run_fixtures():
         if required != covered:
             print(f"FAIL attempt fences missing passing crash traces: {sorted(required - covered)}")
             failed = True
-    threads = read_json(fixtures_dir / "threads-app.json")
+    indexed_items = read_json(fixtures_dir / "indexed-items-app.json")
     for file in sorted((fixtures_dir / "provider-marks").glob("*.json")):
         errors = Validation()
-        check(schema, threads, "$", errors)
+        check(schema, indexed_items, "$", errors)
         if not errors:
             case = read_json(file, errors)
-            icon = next(bind["row"]["icon"] for bind in errors.each(threads["binds"]) if bind["id"] == case["threads_bind"])
+            icon = next(bind["row"]["icon"] for bind in errors.each(indexed_items["binds"]) if bind["id"] == case["threads_bind"])
             actual = provider_mark_fixture_symbol(case, icon)
             if actual != case["expected_symbol"]:
                 errors.append(f"expected icon {case['expected_symbol']!r}, got {actual!r}")

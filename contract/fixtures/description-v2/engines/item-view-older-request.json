@@ -1,0 +1,11 @@
+{
+  "definition": "ItemViewRequest",
+  "value": {
+    "type": "item_view",
+    "item": "item-1",
+    "component": "entries",
+    "slot": "body",
+    "live": true,
+    "cursor": "page-2"
+  }
+}

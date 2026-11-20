@@ -27,19 +27,6 @@
                 "context": "item"
               }
             }
-          },
-          {
-            "id": "snooze",
-            "title": "Clear snooze",
-            "operation": "host.item.snooze",
-            "inputs": {
-              "item": {
-                "context": "item"
-              },
-              "until": {
-                "literal": null
-              }
-            }
           }
         ]
       }
@@ -64,41 +51,17 @@
   },
   "view": {
     "root": {
-      "type": "stack",
-      "children": [
-        {
-          "type": "component",
-          "component": {
-            "type": "conversation-transcript",
-            "id": "messages",
-            "config": {
-              "conversation": {
-                "route": "item"
-              },
-              "follow": "end",
-              "quote": true
-            }
-          }
-        },
-        {
-          "type": "component",
-          "component": {
-            "type": "composer",
-            "id": "message",
-            "config": {
-              "conversation": {
-                "route": "item"
-              },
-              "controls": [
-                "provider",
-                "model",
-                "machine",
-                "stop"
-              ]
-            }
-          }
+      "type": "component",
+      "component": {
+        "type": "item-view",
+        "id": "messages",
+        "config": {
+          "item": {
+            "route": "item"
+          },
+          "slot": "body"
         }
-      ]
+      }
     }
   }
 }

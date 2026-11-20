@@ -4,7 +4,8 @@
     "request_id": "request-1",
     "job_context": {
       "intent": "saved-intent-1"
-    }
+    },
+    "harness": "checked-harness"
   },
   "error": "unknown field job_context"
 }

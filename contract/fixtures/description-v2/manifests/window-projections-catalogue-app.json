@@ -6,9 +6,9 @@
   "icon": "folder",
   "network": "none",
   "reads": [
-    "projection-values",
     "notes",
-    "threads"
+    "projection-values",
+    "indexed-items"
   ],
   "apps": [
     {
@@ -19,7 +19,7 @@
         "id": "app",
         "template": {
           "path": "window-projections-catalogue-app.json",
-          "sha256": "ef925fa3c5ce19846062e5d2dbfd5104f80d2cf2d4afbbe5e12d2882e3d9aab9"
+          "sha256": "0f0ebc534773f1fcdad36fb38fbc42d48f743d5a19e16acad8ade08319443155"
         }
       }
     }

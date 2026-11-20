@@ -1,5 +1,7 @@
 {
   "definition": "ExecutionStart",
-  "value": {},
+  "value": {
+    "harness": "checked-harness"
+  },
   "error": "missing request_id"
 }

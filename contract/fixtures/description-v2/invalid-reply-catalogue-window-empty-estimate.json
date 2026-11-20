@@ -9,5 +9,6 @@
   "count": {
     "mode": "estimate",
     "value": 0
-  }
+  },
+  "scope_ref": "scope-notes"
 }

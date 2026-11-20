@@ -17,7 +17,7 @@
         "id": "main",
         "template": {
           "path": "independent-runner-app.json",
-          "sha256": "b6151b1b68423effea3f376e429e54c9df68d60b22c619948df50622aee9f8e4"
+          "sha256": "e0229e8050a09213f22e4750c749783c958ab8b611869cd5b82dd07bbb5d4dbc"
         }
       }
     }
@@ -40,7 +40,6 @@
       },
       "claimed_text": true,
       "searchable": true,
-      "conversation": true,
       "schema": {
         "type": "object",
         "required": [
@@ -58,17 +57,19 @@
           "title": "New conversation"
         }
       },
-      "composer": {
-        "send": "lantern.send",
-        "steer_live": true,
-        "job": "run"
-      },
       "indexed_fields": {
         "state": {
           "type": "Text",
           "audience": "member_item"
         }
-      }
+      },
+      "execution_target": true,
+      "view_snapshots": [
+        {
+          "id": "body",
+          "refresh": "lantern.refresh"
+        }
+      ]
     }
   ],
   "operations": [
@@ -133,22 +134,17 @@
         "checkpoint_job",
         "execution_wait"
       ]
-    }
-  ],
-  "providers": [
+    },
     {
-      "id": "lantern-model",
-      "name": "Lantern Model",
-      "adapter": {
-        "path": "lantern-adapter",
-        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
-      },
-      "image": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "models": [
-        {
-          "id": "lantern-small",
-          "label": "Lantern Small"
-        }
+      "id": "lantern.refresh",
+      "title": "Render item",
+      "risk": "read",
+      "idempotency": "read_only",
+      "required_capability": "space.read",
+      "input_schema": {},
+      "output_schema": {},
+      "methods": [
+        "item_range"
       ]
     }
   ],
@@ -162,7 +158,7 @@
           "kind": "execution"
         }
       ],
-      "execution_intent": true
+      "execution": true
     }
   ]
 }
