@@ -142,13 +142,14 @@ impl Link {
 
     pub(crate) async fn upgrade_space(
         &self,
-        channel: &crate::protocol::SpaceChannelAssignment,
+        space: calternal_types::SpaceId,
+        assignment: uuid::Uuid,
     ) -> Result<(reqwest::Upgraded, watch::Receiver<Option<Arc<str>>>)> {
         let invalid =
             || Error::Protocol("space carrier requires a current enrolled TLS origin".into());
         let url = reqwest::Url::parse(&format!(
             "{}/api/v1/machine/spaces/{}/channels/{}",
-            self.base, channel.space, channel.assignment,
+            self.base, space, assignment,
         ))
         .map_err(|_| invalid())?;
         if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {

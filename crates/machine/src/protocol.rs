@@ -1,4 +1,4 @@
-//! Wire protocol between the server role and the machine role, version 4.
+//! Versioned wire protocol between the server role and the machine role.
 //!
 //! The machine always connects out; the server never opens a connection to a
 //! machine. Everything is plain JSON over HTTP(S) requests the machine makes:
@@ -31,7 +31,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Protocol version spoken by this build; the server refuses other versions.
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
+
+/// First machine protocol supporting a dedicated contributed entry carrier.
+pub const ENTRY_PROTOCOL_VERSION: u32 = 9;
 
 /// First machine protocol that supports a broker and distinct tool sandbox.
 pub const SHARED_TOOLS_PROTOCOL_VERSION: u32 = 8;
@@ -456,6 +459,18 @@ pub struct SpaceChannelAssignment {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Down {
+    /// Open an enrolled carrier reserved for one checked execution attempt.
+    OpenEntryChannel {
+        /// Space that owns the checked attempt and its carrier.
+        space: SpaceId,
+        /// Single-use enrolled channel reservation.
+        assignment: Uuid,
+        /// Contribution package and installed digest pinned for this attempt.
+        package: calternal_plugin_host::space_channel::PackagePin,
+        /// Exact attempt ticket accepted on the new carrier.
+        ticket: Uuid,
+    },
+
     /// Open the isolated v2 data channel on an existing package placement.
     OpenSpaceChannel {
         /// Exact placement and single-use reservation.

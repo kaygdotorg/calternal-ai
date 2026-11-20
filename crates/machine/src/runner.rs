@@ -7,6 +7,8 @@
 //! the process (see [`crate::sandbox`]). Memory per running exec is therefore
 //! bounded by about 256 KiB in the channel plus 256 KiB here.
 
+mod entry_channel;
+mod entry_tail;
 mod erasure;
 mod lifecycle;
 /// Supervision of the isolated v2 package pipe.
@@ -94,6 +96,8 @@ pub struct Runner {
     slots: Mutex<HashMap<Uuid, Arc<Slot>>>,
     discards: Mutex<HashMap<Uuid, bool>>,
     parking: tokio::sync::Mutex<()>,
+    entry_capacity: tokio::sync::Semaphore,
+    entries: Mutex<HashMap<Uuid, entry_channel::EntrySlot>>,
     uploads: Arc<()>,
     #[cfg(target_os = "linux")]
     space_runtime_root: Option<std::path::PathBuf>,
@@ -109,6 +113,8 @@ impl Runner {
             slots: Mutex::new(HashMap::new()),
             discards: Mutex::new(HashMap::new()),
             parking: tokio::sync::Mutex::new(()),
+            entry_capacity: tokio::sync::Semaphore::new(max_sandboxes as usize),
+            entries: Mutex::new(HashMap::new()),
             uploads: Arc::new(()),
             #[cfg(target_os = "linux")]
             space_runtime_root: None,
@@ -303,6 +309,19 @@ impl Runner {
     /// assignment can reuse the same workspace.
     pub async fn handle(self: &Arc<Self>, message: Down) {
         match message {
+            Down::OpenEntryChannel {
+                space,
+                assignment,
+                package,
+                ticket,
+            } => {
+                let runner = self.clone();
+                tokio::spawn(async move {
+                    runner
+                        .open_entry_channel(space, assignment, package, ticket)
+                        .await
+                });
+            }
             Down::OpenSpaceChannel { channel } => {
                 let runner = self.clone();
                 tokio::spawn(async move { runner.open_space_channel(channel).await });

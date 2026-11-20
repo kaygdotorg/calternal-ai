@@ -26,6 +26,31 @@ pub enum SpaceMethod {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SpaceMessage {
+    /// Host launches one checked entry on an execution carrier.
+    StartEntry {
+        /// Pinned image, executable asset and checked input.
+        program: crate::entry::EntryProgram,
+    },
+    /// Attach a checked carrier to an already-started machine entry.
+    ResumeEntry {
+        /// Original carrier assignment recorded before dispatch.
+        origin: Uuid,
+        /// Last consecutively committed producer sequence, or zero.
+        after: u64,
+    },
+    /// Runtime proof that the original entry was retained on this machine.
+    EntryAttached {
+        /// Original launch reservation found in the live runner.
+        origin: Uuid,
+        /// Highest producer sequence present at attachment. Earlier frames
+        /// after the committed cursor are replay traffic.
+        buffered_through: u64,
+    },
+    /// Advance the committed cursor of the entry on this ticket.
+    EntryAck {
+        /// Last consecutively committed producer sequence.
+        through: u64,
+    },
     /// Host dispatches an operation within its invocation deadline.
     Invoke {
         /// Pinned operation name.
@@ -85,6 +110,7 @@ impl SpaceMessage {
         matches!(
             self,
             Self::Cancel {}
+                | Self::EntryAck { .. }
                 | Self::Ready {}
                 | Self::Credit { .. }
                 | Self::Renew {}
@@ -95,6 +121,10 @@ impl SpaceMessage {
 
     pub(super) fn permits(&self, host: bool) -> bool {
         match self {
+            Self::StartEntry { .. } => host,
+            Self::ResumeEntry { origin, .. } => host && !origin.is_nil(),
+            Self::EntryAttached { origin, .. } => !host && !origin.is_nil(),
+            Self::EntryAck { through } => host && *through != 0,
             Self::Credit { bytes, frames } => *bytes > 0 && *frames > 0,
             Self::Invoke {
                 operation,

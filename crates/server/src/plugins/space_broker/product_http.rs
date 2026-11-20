@@ -16,6 +16,12 @@ use crate::{auth::StoredDirectory, machines::MachineService};
 
 /// Enroll the fixture machine through the real one-time code and challenge flow.
 pub(super) fn enroll(service: &MachineService, owner: Owner) -> (Uuid, String) {
+    let (machine, key) = enroll_key(service, owner);
+    (machine, session(service, machine, &key, Uuid::new_v4()))
+}
+
+/// Enroll and retain the machine key for reconnect qualification.
+pub(super) fn enroll_key(service: &MachineService, owner: Owner) -> (Uuid, MachineKey) {
     let (code, _) = service.issue_code(owner).unwrap();
     let key = MachineKey::generate().unwrap();
     let machine = service
@@ -29,20 +35,29 @@ pub(super) fn enroll(service: &MachineService, owner: Owner) -> (Uuid, String) {
         })
         .unwrap()
         .machine_id;
+    (machine, key)
+}
+
+/// Prove a fresh session with the enrolled key and the same machine boot.
+pub(super) fn session(
+    service: &MachineService,
+    machine: Uuid,
+    key: &MachineKey,
+    boot: Uuid,
+) -> String {
     let challenge = service.session_start(machine).unwrap();
-    let token = service
+    service
         .session_finish(&SessionFinish {
             machine_id: machine,
             signature: key.sign_session(machine, &challenge),
             challenge,
-            boot_id: Uuid::new_v4(),
+            boot_id: boot,
             protocol: PROTOCOL_VERSION,
             backend: "podman".into(),
             guest_memory_mib: None,
         })
         .unwrap()
-        .token;
-    (machine, token)
+        .token
 }
 
 /// A second owner and their enrolled machine for cross-binding checks.

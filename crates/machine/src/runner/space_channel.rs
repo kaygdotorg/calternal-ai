@@ -46,7 +46,11 @@ impl Runner {
     }
 
     async fn supervise_channel(&self, binding: &SpaceChannelAssignment, slot: &Slot) -> bool {
-        let Ok((io, mut session)) = self.link.upgrade_space(binding).await else {
+        let Ok((io, mut session)) = self
+            .link
+            .upgrade_space(binding.space, binding.assignment)
+            .await
+        else {
             return false;
         };
         let Ok(mut channel) = SpaceChannel::runtime(io, binding.space, binding.assignment).await

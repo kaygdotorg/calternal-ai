@@ -94,6 +94,11 @@ bounded JSON object. Sending writes a sequenced object and flushes the stream,
 with a grant check on each guarded socket poll. The channel performs no
 storage reads or flushes. See the [space channel report](../../docs/reviews/space-channel-2026-11-19.md).
 
+The contributed entry codec checks stdin and stdout against the embedded
+catalogue schemas. Each line is limited to 16 KiB including LF. The private
+launch message travels on the enrolled carrier and the entry receives only
+its checked call and input. The broker that owns the contribution call remains
+responsible for output interface validation and durable publication.
 
 The optional `slots` field declares up to 32 contributions. A contribution
 has its own ID and accessible label. Generated renderers name a declared,
