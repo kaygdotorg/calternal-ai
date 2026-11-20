@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.23 draft
+# Plugin API v2 · revision 14.24 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -527,11 +527,17 @@ portable backups. In a shared space the default is the separate space
 binding approved by the Owner and configured by the Owner or a Manager.
 A member may explicitly choose their own enrolled machine and approved
 login for one run they start, through the catalogue’s
-[protected placement choice](../contract/host-catalogue-v2.json#/execution_attempt_authority/provider_login/shared_personal_override). That run stays in their isolated sandbox and only that
+[placement choice](../contract/host-catalogue-v2.json#/execution_placement). That run stays in their isolated sandbox and only that
 member’s explicitly selected runs can mount their login. Both choices
 limit discovery to what the whole file audience can read and keep tools
 off until isolation is proved (owner decision 74). Recheck the selected
 profile and session at continuation as well as at admission.
+
+The same host choice offers eligible machines in a personal space. Any
+app can request it in a checked execution action using the description’s
+choice prompt. The renderer requests and submits the host choice under
+the catalogue’s exchange. The worker receives only the opaque ref and
+forwards it as `ExecutionJobStart.placement`.
 **Harness placement (owner decision, 2026-11-20).** A harness reviewed
 once and approved for its pinned build can run on any eligible placement,
 including hosted sandboxes. Bundled harnesses go through the same review.
@@ -1014,7 +1020,7 @@ only against the issued context, never its current selection.
    activation. For a Choice prompt, fetch `ChoiceOptionsRequest` for the
    context and slot before showing the returned labels. Submit the picked
    ref in `interaction.choices`. Resolve that host-issued ChoiceRef against
-   the checked prompt and Bind versions.
+   the checked prompt and option source. Use the catalogue’s placement exchange for a host-owned execution choice.
 2. **Derive confirmation.** `confirm:none` permits the shortcut for host
    catalogue reads and for catalogue mutations with `atomic_undo: true`
    whose engine commits the complete effect and its Undo in one
@@ -1423,6 +1429,10 @@ intentional refusal/retry with an actionable response.
   override to that member’s own enrolled machine and login. Reject
   another member’s login, a forged override and a revoked enrollment.
   Require tools off and audience-limited discovery with both bindings.
+  Use the same declared prompt in a personal space with two eligible
+  machines. Fetch, select and dispatch through the renderer exchanges.
+  Verify the worker receives only the ref, that another activation or
+  harness cannot use it, and that choosing a revoked option admits no job.
   Refuse stale builds and revoked bindings. Queue a successor as a
   different starter. Refuse archive by the head starter
   alone and refuse dispatch after a successor or authority change. Check

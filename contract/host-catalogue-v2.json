@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Revision 14.23 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
+  "description": "Revision 14.24 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -2910,40 +2910,69 @@
     },
     "ChoiceRef": {
       "$ref": "#/$defs/Ref",
-      "description": "Host-issued choice bound to one eligible row, option Bind result, owning prompt slot, viewer and activation context."
+      "description": "Host-issued choice bound to its checked source, slot, viewer and activation context. An option Bind ref pins a row and result version. An execution placement ref follows execution_placement."
     },
-    "ChoiceOptions": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "bind",
-        "options"
-      ],
-      "properties": {
-        "bind": {
-          "$ref": "#/$defs/ActionId"
-        },
-        "options": {
-          "type": "array",
-          "maxItems": 50,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "ref",
-              "label"
-            ],
-            "properties": {
-              "ref": {
-                "$ref": "#/$defs/ChoiceRef"
-              },
-              "label": {
-                "$ref": "#/$defs/Text"
-              }
-            }
+    "ChoiceOptionList": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ref",
+          "label"
+        ],
+        "properties": {
+          "ref": {
+            "$ref": "#/$defs/ChoiceRef"
+          },
+          "label": {
+            "$ref": "#/$defs/Text"
           }
         }
       }
+    },
+    "ChoiceOptions": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bind",
+            "options"
+          ],
+          "properties": {
+            "bind": {
+              "$ref": "#/$defs/ActionId"
+            },
+            "options": {
+              "$ref": "#/$defs/ChoiceOptionList"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "host",
+            "options"
+          ],
+          "properties": {
+            "host": {
+              "const": "execution_placement"
+            },
+            "options": {
+              "$ref": "#/$defs/ChoiceOptionList"
+            },
+            "default_ref": {
+              "$ref": "#/$defs/ChoiceRef"
+            },
+            "next": {
+              "$ref": "#/$defs/Ref"
+            }
+          }
+        }
+      ]
     },
     "ViewOpenRequest": {
       "type": "object",
@@ -2981,9 +3010,30 @@
         },
         "slot": {
           "$ref": "#/$defs/ActionId"
+        },
+        "harness": {
+          "$ref": "#/$defs/HarnessRef"
+        },
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
+        },
+        "cursor": {
+          "$ref": "#/$defs/Ref"
         }
       },
-      "description": "Fetch scoped options before displaying the prompt. The host reconstructs the option Bind from the activation context and slot. Show the returned labels, then submit only the picked ref under that slot in interaction.choices."
+      "description": "Use the scoped activation context and slot. For an option Bind send neither harness, activation_id nor cursor. For execution placement send the currently selected HarnessRef and the activation_id reserved for this resolve. A cursor continues that exact placement lookup. The host derives the option source from the checked description.",
+      "dependentRequired": {
+        "harness": [
+          "activation_id"
+        ],
+        "activation_id": [
+          "harness"
+        ],
+        "cursor": [
+          "harness",
+          "activation_id"
+        ]
+      }
     },
     "ShareSheetResult": {
       "type": "object",
@@ -3784,9 +3834,9 @@
         "harness": {
           "$ref": "#/$defs/HarnessRef"
         },
-        "personal_placement": {
+        "placement": {
           "$ref": "#/$defs/ChoiceRef",
-          "description": "One checked personal placement choice for this shared-space run. Apply execution_attempt_authority.provider_login.shared_personal_override."
+          "description": "Forward the opaque host execution placement choice from the checked activation, when present. Apply execution_placement."
         }
       }
     },
@@ -5148,7 +5198,7 @@
       "output_schema": {
         "$ref": "#/$defs/ChoiceOptions"
       },
-      "scope": "Context-bound prompt and authorized option Bind; never accepts a raw client target",
+      "scope": "Use the checked activation, declared prompt slot and live lease. For a Bind, reauthorize the bounded option rows. For the execution_placement source apply execution_placement. Reject operands for another source and never accept a raw machine, login or target.",
       "input_schema": {
         "$ref": "#/$defs/ChoiceOptionsRequest"
       }
@@ -5521,8 +5571,7 @@
       "custody": "Mount only manifest-declared paths from the authorized binding for the space type. Reject escaping paths, symlinks and overlapping mount paths. Check the binding, its live approval, exact build and eligible placement at admission, reattachment and renewal. Fence access and affected work on binding revocation or replacement under attempt_authority_end.actions.grant_change. Keep login data out of unrelated accounts and spaces, output, backups and other mounts.",
       "account_switching": "Automatic account switching is deferred.",
       "personal_space": "Only mount the backing directories the acting person approved for this harness in their eligible personal sandbox. Each declared path maps to private backing storage for the harness by default, even when another harness declares the same path. Share backing storage only when the person explicitly chooses the harnesses and exact directories. A name or declaration confers no access. If the target file has other readers, using a personal login or changing permission mode cannot enable tools.",
-      "shared_space": "The space Owner approves the shared login. The Owner or a Manager configures that approved login for the space. The binding has separate space-scoped backing storage and pins the space, declared directory set and exact installed harness build, including package, entry and image digests. A build or directory change requires fresh Owner approval. Use this binding by default in a shared space. The only alternative is shared_personal_override. If the harness needs a login and the selected binding is ineligible, refuse execution without falling back to another login. Keep tools off for both choices under owner decision 74 until qualification proves a boundary that protects the login from tools and other runs. Apply attempt_authority_end.actions.item_audience_widening before a personal run's item gains another file reader. Admit a shared execution only when the placement also keeps incompatible saved sessions out of reach.",
-      "shared_personal_override": "Under the recorded shared-space machine and provider login decision, an authenticated member can explicitly choose their own enrolled machine and own approved login for one run they start. The host offers this as a protected choice on that run's checked invocation, issuing a ChoiceRef for the actor, space, item, harness build, enrollment, login binding and originating invocation. A package can forward this choice as ExecutionJobStart.personal_placement. A default, job payload, scheduled alarm or another actor cannot supply the choice. Bind it once to the admitted job, including a queued successor chosen explicitly, and allow only exact receipt replay. Recheck its pinned actor, enrollment, profile, build and shared authority at admission, promotion, claim, reattachment and renewal. Launch only in that member's isolated sandbox on their own machine. No other member's run can mount that login. Apply the shared discovery rule before matching, ranking or delivery and the shared tools rule regardless of the chosen profile. Refuse stale, foreign or revoked choices without changing the placement or login.",
+      "shared_space": "The space Owner approves the shared login. The Owner or a Manager configures that approved login for the space. The binding has separate space-scoped backing storage and pins the space, declared directory set and exact installed harness build, including package, entry and image digests. A build or directory change requires fresh Owner approval. Use this binding by default in a shared space. Allow a member's personal override only when explicitly selected under execution_placement. If the harness needs a login and the selected binding is ineligible, refuse execution without falling back to another login. Keep tools off for both choices under owner decision 74 until qualification proves a boundary that protects the login from tools and other runs. Apply attempt_authority_end.actions.item_audience_widening before a personal run's item gains another file reader. Admit a shared execution only when the placement also keeps incompatible saved sessions out of reach.",
       "disclosure": "At install disclose the publisher, image digest, placement, mounted item-data scope, each declared login directory and approved network egress. Explain that program code and tools in the person's own sandbox can read and transmit available login data. At shared login setup show the space and pinned harness build, that eligible space members' runs use the configured login, and the recorded notice that a personal subscription is licensed to one person."
     },
     "harness_placement": {
@@ -5538,14 +5587,21 @@
     },
     "invoke_scope": "Dispatch to the exact admitted package, digest, epoch and ticket. Stamp protected job and alarm metadata as in HostWorkerInvokeFrame. Refuse worker-origin invoke or worker-supplied host metadata."
   },
+  "execution_placement": {
+    "source": "Any app may declare a choice prompt with options.host:execution_placement for a single-item execution action, including its composer's Send action. Permit one placement slot per action. Resolve the live member, target item and action from the activation context. Validate the supplied HarnessRef against the installed contribution, requested item and activation's app and scope under the extension and placement rules. Read the eligible binding inventory on the host without waking a plugin.",
+    "options": "In a shared space put its eligible configured space binding first and mark it default. Also offer the acting member's own live enrolled machines paired with their own eligible approved login for this harness, in an isolated sandbox. In a personal space use the same enrollment and login options and the established eligible personal default when configured, including eligible hosted placement. Never offer another person's enrollment or login. Filter by live grants, exact build, enrollment, profile and placement eligibility before paging. Use the existing 50-option cap and an opaque next cursor pinned to the same authorized option set. Labels identify the machine and whose login will be used, using safe profile display names where needed. Omit default_ref if there is no eligible default. Only the first page can name a default, and it must equal a ref in that page's options.",
+    "request_and_submit": "The authenticated renderer calls choice.options with the checked context, placement slot, selected HarnessRef and the activation_id it will use for resolve. Request another page with the returned next cursor, if present. Render only the host labels and default. Submit the selected ChoiceRef under that slot in ResolveActivation.interaction.choices, with the same activation ID and context. When the slot is declared this ref is required, including when accepting the returned default. A shared-space personal choice requires explicit selection for this run and is never the default. With no selected eligible option, the action stays unavailable. Discard options and cursors on context or harness change, lease loss or disconnect and fetch fresh options. Reject stale or foreign choices and return to the picker without dispatch.",
+    "dispatch": "Bind each choice to the actor, space, lease, action, slot, activation ID, item, harness build, exact machine and login binding. Pin the selected choice when resolving activation and recheck at dispatch. Give the checked worker operation only the opaque ChoiceRef as that named input. Forward it as ExecutionJobStart.placement with the same harness on the same checked dispatch, including an authorized contribution invoked under its checked scope. Require the exact ref when that activation supplied one. Reject a ref from any other input, invocation or receipt. Consume it once when admitting the job, bind the resolved placement to the receipt and allow exact replay. Never grant a plugin access to option labels, cursors, enrollment IDs, login identity or paths through this exchange. Protected preview material, when required, uses the host label and is renderer-only.",
+    "default_and_fence": "For a job admitted without a placement slot and for a scheduled alarm use the applicable eligible default under provider_login. Refuse a missing or stale checked choice without substituting a default. Recheck the pinned binding at admission, promotion, claim, reattachment and renewal. Do not silently fall back if a pinned binding loses eligibility. Shared runs, including a personal override, use whole-file-audience discovery and the shared tools rule. An override uses only the acting member's isolated sandbox and login. No unrelated run can use that login via this choice."
+  },
   "execution_intents": {
     "start_job": {
       "input": {
         "$ref": "#/$defs/ExecutionJobStart"
       },
-      "description": "This request is for the execution arm of start_job. Its job ID resolves one installed declaration. Ordinary jobs refuse harness and personal_placement. Apply admission and provider_login."
+      "description": "This request is for the execution arm of start_job. Its job ID resolves one installed declaration. Ordinary jobs refuse harness and placement. Apply admission and provider_login."
     },
-    "admission": "Only a declared replayable job with execution:true and a checked live item whose installed kind declares execution_target. Keep one eligible head job or active attempt per item. The successor rule governs queued jobs. Pin the audience generation, actor, job, package, exact harness binding, selected placement and profile, and effect ceiling. Use the top-level ExecutionJobStart.harness or the already-pinned alarm binding. Never select a harness or placement from opaque job input. Under the lifecycle fence refuse deleted, archived or retired targets. Reserve quotas once. Exact replay returns the current receipt without another admission. Refuse changed operands under the same receipt. Recheck the same bindings at promotion and claim, without substitution. No caller-supplied host job context.",
+    "admission": "Only a declared replayable job with execution:true and a checked live item whose installed kind declares execution_target. Keep one eligible head job or active attempt per item. The successor rule governs queued jobs. Pin the audience generation, actor, job, package, exact harness binding, selected placement and profile, and effect ceiling. Use the top-level ExecutionJobStart.harness or the already-pinned alarm binding. Apply execution_placement to the StartJob placement operand. Never select a harness or placement from opaque job input. Under the lifecycle fence refuse deleted, archived or retired targets. Reserve quotas once. Exact replay returns the current receipt without another admission. Refuse changed operands under the same receipt. Recheck the same bindings at promotion and claim, without substitution. No caller-supplied host job context.",
     "stop_and_archive": "Idle archive excludes unresolved execution jobs, live attempts and protected approvals. Protected archive pins the entire affected set, including head and successor. Stop pins its exact target and any affected descendants. Both apply attempt_authority_end.retirement_authority. Never retarget a replacement.",
     "cutover": "Fence new admission, drain unresolved execution jobs and verify zero live attempts before switching writers. Retain durable refusals and receipts across rollback.",
     "successor": "The existing checked start_job may admit one durable FIFO successor per item while its head job or attempt is active. A queued successor has a receipt and no execution lease. Promote it only after the head is terminal and its attempt authority and teardown are settled. Recheck item, actor, grants, pinned harness, placement, profile and quota at promotion. Replay the receipt without adding a job. At capacity refuse with pending_limit. Stop pins the exact target. Archive, widening and revocation fence any affected queued jobs before publishing the authority change. One item never has two running attempts."
@@ -5878,7 +5934,7 @@
     "retention_days": 30,
     "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action. Start retention at trash commit. No item kind or package overrides the retention period."
   },
-  "exchanges_revision": "14.23",
+  "exchanges_revision": "14.24",
   "view_result_retention": {
     "rule": "Host windows, plugin search pages and stored or live item-view pages use the same result_versions and retained_results exchange. On a successful renewal with an unchanged grant revision, re-confirm the exact result ref and version, current audience and checked scope, including the active settle generation for a plugin search, the slot for an item view, and live access to each exact item, asset and source revision represented in the result. Retain each still-authorized unchanged result by acknowledging the exact pair, without rerendering or invoking a plugin. Treat a changed or refused result as an invalidation of that result only. A changed audience requires a new view.",
     "scope": "Retain only on the same authenticated view, account and cache partition. Rebind the acknowledged result's eligible continuation, follow and item-view asset refs to the renewed lease. Asset reads still apply view_snapshots.assets at admission and delivery. Supply current scoped contexts in retained_results for retained plugin-search pages. A missing context is unavailable. Replace old tokens as a set. Invalidate selections or activities whose originating result or context no longer holds. Acknowledge each exact result at most once under the existing aggregate cap.",

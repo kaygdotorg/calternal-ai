@@ -172,26 +172,62 @@
                     "choice"
                   ],
                   "default": "text",
-                  "description": "text: a text field; date or datetime: a picker; choice: one row of a bind (Move to collection, a tag). A choice is NOT a client value: the shell asks the host to issue a `ChoiceRef` for the picked option row and sends it in `interaction.choices` under the prompt's slot; the host resolves the row from the authorised option bind and never accepts a client-supplied id as the choice."
+                  "description": "text: a text field; date or datetime: a picker; choice: one option from the checked Bind or a host-owned source. The shell asks the host for options and sends only the picked ChoiceRef in interaction.choices under the prompt slot."
                 },
                 "options": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "bind"
-                  ],
-                  "properties": {
-                    "bind": {
-                      "$ref": "#/$defs/Id",
-                      "description": "The bind whose rows are the options (at most 50); authorised like any other bind, so a viewer never sees an option they may not read."
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "bind"
+                      ],
+                      "properties": {
+                        "bind": {
+                          "$ref": "#/$defs/Id",
+                          "description": "The bind whose rows are the options (at most 50); authorised like any other bind, so a viewer never sees an option they may not read."
+                        }
+                      },
+                      "description": "Options drawn from a checked Bind."
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "host"
+                      ],
+                      "properties": {
+                        "host": {
+                          "const": "execution_placement"
+                        }
+                      },
+                      "description": "Host-owned placement options for a checked execution action. Apply the catalogue's execution_placement exchange."
                     }
-                  },
-                  "description": "For kind `choice`: the options, as the rows of a bind."
+                  ]
                 }
               },
               "additionalProperties": false,
               "required": [
                 "title"
+              ],
+              "allOf": [
+                {
+                  "if": {
+                    "required": ["options"],
+                    "properties": {
+                      "options": {
+                        "required": ["host"]
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": ["kind"],
+                    "properties": {
+                      "kind": {"const": "choice"}
+                    },
+                    "not": {"required": ["initial"]}
+                  }
+                }
               ]
             }
           },
