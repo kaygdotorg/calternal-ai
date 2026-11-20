@@ -4,7 +4,6 @@ import { checkedText, type HarnessInput, type HarnessOutput } from "./harnesses-
 import { agentParticipant, attest, checkedTitle, encode, folder, MAX_FILE_BYTES, messageId, messageRecord, page, personParticipant, step, threadHeader, messageView, type Thread } from "./format.ts";
 import type { Context, RunInput, Send } from "./interface.ts";
 import { appendRecord, inlineBody, kind, publish, read } from "./files.ts";
-import { requireConversationWrite, type PeopleContext } from "./people.ts";
 
 export { peopleHandlers } from "./people.ts";
 
@@ -46,25 +45,6 @@ async function send({ item, text, harness, placement }: Send, ctx: Context) {
   return ctx.call("start_job", { job: "run", item, harness, placement, input: {}, contribution_input: { text: checkedText(text) } });
 }
 
-async function rename({ item, title }: { item: ItemRef; title: string }, ctx: PeopleContext) {
-  const { revision } = await ctx.call("item_head", { item });
-  const { thread } = await read(ctx, item, revision);
-  if (thread.conversation === "people") await requireConversationWrite(ctx, item);
-  const nextTitle = checkedTitle(title);
-  if (thread.title === nextTitle) {
-    await publish(ctx, item, revision, thread);
-    return {};
-  }
-  thread.title = nextTitle;
-  const saved = await ctx.call("item_save", {
-    request_id: step(ctx.author.request_id, "rename"), item, expected: revision,
-    patch: { title: thread.title }, body: inlineBody(Buffer.from(encode(thread))),
-  });
-  if ("code" in saved) throw new Error(saved.code);
-  await publish(ctx, item, saved.revision, thread);
-  return {};
-}
-
 async function run(input: RunInput, ctx: Context) {
   if (!ctx.job || ctx.job.item !== input.item) throw new Error("This agent run is unavailable.");
   if (ctx.alarm?.missed && input.if_missed === "skip") return {};
@@ -86,8 +66,9 @@ async function run(input: RunInput, ctx: Context) {
     const prompt = { id: promptId, author: person, text, posted_at: ctx.author.authored_at };
     thread.messages.push(prompt);
     const record = messageRecord(prompt, thread.participants);
-    // Reserve one reply and its bounded message metadata before admitting execution.
-    if (size + Buffer.byteLength(record.prefix + record.text + record.suffix) + 18 * 1024 > MAX_FILE_BYTES) {
+    // Reserve a reply, its quote of this prompt and bounded message metadata.
+    const quoteBytes = Buffer.byteLength(text) + 2 * text.split("\n").length + 2;
+    if (size + Buffer.byteLength(record.prefix + record.text + record.suffix) + quoteBytes + 18 * 1024 > MAX_FILE_BYTES) {
       throw new Error("Thread is full.");
     }
     const request_id = step(ctx.author.request_id, "prompt");
@@ -126,7 +107,9 @@ async function run(input: RunInput, ctx: Context) {
       // The contribution broker validates the data against both manifests.
       const output = frame.data as HarnessOutput;
       if (!thread.participants.some(participant => participant.id === agent.id)) thread.participants.push(agent);
-      const message = { id, author: agent, text: checkedText(output.text), posted_at: ctx.author.authored_at, log: output.log };
+      const prompt = thread.messages.find(entry => entry.id === promptId && !entry.deleted);
+      const message = { id, author: agent, text: checkedText(output.text), posted_at: ctx.author.authored_at, log: output.log,
+        ...(prompt && { replyTo: prompt.id, replyToName: prompt.author.name, replyQuote: text }) };
       const record = messageRecord(message, thread.participants, true);
       const attested = attest(record, { kind: "output", seq: frame.seq });
       thread.messages.push(message);
@@ -139,8 +122,10 @@ async function run(input: RunInput, ctx: Context) {
   }
 }
 
+const defaultGraceSeconds = 60;
+
 async function arm(input: Omit<Send, "placement"> & { at: Timestamp; if_missed: "run" | "skip"; grace_seconds?: number }, ctx: Context) {
-  const { item, harness, at, if_missed, grace_seconds } = input;
+  const { item, harness, at, if_missed, grace_seconds = defaultGraceSeconds } = input;
   await checkSend(ctx, item);
   return ctx.call("alarm_set", {
     request_id: step(ctx.author.request_id, "alarm"), job: "run", item, at, harness, grace_seconds,
@@ -171,6 +156,6 @@ async function message(input: { item: ItemRef; message: string }, ctx: Context) 
 
 /** Draft application handlers. Protected Stop and archive use host controls. */
 export const handlers = {
-  "threads.create": create, "threads.send": send, "threads.rename": rename,
+  "threads.create": create, "threads.send": send,
   "threads.run": run, "threads.arm": arm, "threads.refresh": refresh, "threads.message": message,
 };

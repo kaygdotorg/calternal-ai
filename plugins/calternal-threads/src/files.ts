@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { MAX_V2_FRAME_BYTES } from "@calternal/plugin-sdk";
-import type { AttestedBody, ItemRef, ItemSpansPage, RevisionRef } from "../generated/wire.js";
+import type { AttestedBody, ItemRef, ItemSave, ItemSpansPage, RevisionRef } from "../generated/wire.js";
 import { decode, decodeIndexed, encode, encodeRecord, MAX_FILE_BYTES, type messageRecord, needsOpaqueEscape, page, step, type Thread } from "./format.ts";
 import type { Context } from "./interface.ts";
 
@@ -53,35 +53,41 @@ export async function read(ctx: Context, item: ItemRef, revision: RevisionRef) {
   }
 }
 
+/** Commit an opaque replacement, staging large files before the same checked save. */
+export async function saveOpaque(ctx: Context, target: Pick<ItemSave, "request_id" | "item" | "expected" | "patch">, body: Buffer) {
+  if (body.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
+  let content;
+  if (body.length <= MAX_V2_FRAME_BYTES / 2) content = { body: inlineBody(body) };
+  else {
+    const { item, request_id, expected } = target;
+    const begin = await ctx.call("item_save_begin", {
+      item, request_id, expected, length: body.length, sha256: createHash("sha256").update(body).digest("hex"),
+    });
+    if ("code" in begin) throw new Error(begin.code);
+    if ("revision" in begin) return begin;
+    let offset = 0;
+    while (offset < body.length) {
+      const chunk = body.subarray(offset, offset + 65536);
+      const ack = await ctx.call("item_save_chunk", { handle: begin.handle, offset, bytes: chunk.toString("base64") });
+      if (ack.next_offset < offset + chunk.length || ack.next_offset > body.length) {
+        throw new Error("The host could not confirm the saved portion of the conversation.");
+      }
+      offset = ack.next_offset;
+    }
+    content = await ctx.call("item_save_seal", { handle: begin.handle });
+  }
+  const saved = await ctx.call("item_save", { ...target, ...content, attempt_discovery: "consent_only" });
+  if ("code" in saved) throw new Error(saved.code);
+  return saved;
+}
+
 /** Append a record, preserving literal text if an opaque write would discard earlier spans. */
 export async function appendRecord(ctx: Context, item: ItemRef, revision: RevisionRef, request_id: string, size: number,
   thread: Thread, record: ReturnType<typeof messageRecord>, attested?: AttestedBody) {
   const bytes = Buffer.from(attested ? record.prefix + record.text + record.suffix : encodeRecord(record));
   if (!attested && thread.messages.slice(0, -1).some(message => needsOpaqueEscape(message.text))) {
     const body = Buffer.from(encode(thread));
-    if (body.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
-    const target = { request_id, item, expected: revision };
-    let content;
-    if (body.length <= MAX_V2_FRAME_BYTES / 2) content = { body: inlineBody(body) };
-    else {
-      const begin = await ctx.call("item_save_begin", {
-        ...target, length: body.length, sha256: createHash("sha256").update(body).digest("hex"),
-      });
-      if ("code" in begin) throw new Error(begin.code);
-      if ("revision" in begin) return { revision: begin.revision, end_offset: body.length };
-      let offset = 0;
-      while (offset < body.length) {
-        const chunk = body.subarray(offset, offset + 65536);
-        const ack = await ctx.call("item_save_chunk", { handle: begin.handle, offset, bytes: chunk.toString("base64") });
-        if (ack.next_offset < offset + chunk.length || ack.next_offset > body.length) {
-          throw new Error("The host could not confirm the saved portion of the conversation.");
-        }
-        offset = ack.next_offset;
-      }
-      content = await ctx.call("item_save_seal", { handle: begin.handle });
-    }
-    const saved = await ctx.call("item_save", { ...target, ...content, attempt_discovery: "consent_only" });
-    if ("code" in saved) throw new Error(saved.code);
+    const saved = await saveOpaque(ctx, { request_id, item, expected: revision }, body);
     return { revision: saved.revision, end_offset: body.length };
   }
   if (size + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");

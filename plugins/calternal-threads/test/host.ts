@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AlarmDelivery, AlarmSet, AttestedBody, ExecutionJobContext, ExecutionJobStart, ExecutionStatus,
   ExecutionStopRequest, ExecutionStopResult, HostWorkerInvokeFrame, ItemAppend, ItemContentReceipt, ItemCreate, ItemSave,
@@ -15,7 +15,7 @@ import type { Context, RunInput } from "../src/interface.ts";
 import type { HarnessInput, HarnessOutput } from "../src/harnesses-v1.ts";
 import type { handlers as threadHandlers } from "../src/worker.ts";
 import { scoped } from "../src/people.ts";
-import { decode, decodeIndexed } from "../src/format.ts";
+import { checkedTitle, decode, decodeIndexed, folder } from "../src/format.ts";
 import type { ConsultationTurn, InvitedInput, PeopleContext, Scope, peopleHandlers } from "../src/people.ts";
 import type { handlers as harnessHandlers } from "../../calternal-threads-claude-code/src/worker.ts";
 
@@ -102,13 +102,19 @@ export class FakeHost {
   private stages = new Map<string, Stage>();
   private scopes = new Map<string, { item: string; revision: string }>();
   private spanPages = new Map<string, { item: string; revision: string; viewer: string; owner: Owner; after: number }>();
+  private incomingLinks = new Map<string, { source: string; anchor: string }[]>();
+  linkedMarkdown = new Map<string, string>();
   private serial = 0;
   private selected = { harness: "checked-harness", placement: "checked-desk" };
   loseNextAppendAck = false;
   spanPageSize = 128;
   invitedInputs: InvitedInput[] = [];
+  consentWaits: { authors: readonly string[]; seconds: number }[] = [];
+  onConsentWait = async (_authors: readonly string[], _seconds: number): Promise<{ author: string; after: number }[]> => [];
   onInvited = async (_tools: { readMessage(id: string): { id: string; text: string } | undefined }) => {};
   consultationTurns: ConsultationTurn[] = [];
+  consultationExchanges = 1;
+  onConsultationTurn = async (_turn: ConsultationTurn) => {};
   private consent = new Map<string, { generation: number; always: boolean }>();
   invitationClock = (authoredAt: string) => Date.parse(authoredAt);
   private personState = new Map<string, string>();
@@ -253,16 +259,26 @@ export class FakeHost {
     this.consent.set(key, { generation: (previous?.generation ?? 0) + 1, always });
   }
 
-  consultationContext(person: string, request: string, authored_at = now): PeopleContext {
+  consultationContext(person: string, request: string, authored_at = now, signal = new AbortController().signal): PeopleContext {
+    const host = this;
     return {
       ...this.peopleContext(person, request, authored_at),
       consultation: {
         lead: logicalHarness, consultant: { package: "fixture-codex", contribution: "codex" },
-        invoke: async (role, _prompt, prior) => {
-          assert.deepEqual(prior, this.consultationTurns);
-          const text = role === "summary" ? "Agreed recommendation" : `Private exchange ${prior.length + 1}`;
-          this.consultationTurns.push({ role, text });
-          return text;
+        signal,
+        async *run() {
+          for (let exchange = 0; exchange < host.consultationExchanges; exchange++) {
+            for (const role of ["lead", "consultant"] as const) {
+              const turn = { role, text: `Private exchange ${host.consultationTurns.length + 1}` };
+              host.consultationTurns.push(turn);
+              yield turn;
+              await host.onConsultationTurn(turn);
+              signal.throwIfAborted();
+            }
+          }
+          const result = { role: "summary" as const, text: "Agreed recommendation" };
+          host.consultationTurns.push(result);
+          yield result;
         },
       },
     };
@@ -335,6 +351,16 @@ export class FakeHost {
     };
     return {
       ...ctx, invitation, canDisclose,
+      waitForConsent: async (grant, authors, seconds) => {
+        assert.equal(grant, invitation);
+        this.consentWaits.push({ authors, seconds });
+        const began = this.invitationClock(authored_at);
+        for (const { author, after } of await this.onConsentWait(authors, seconds)) {
+          if (authors.includes(author) && after >= 0 && after <= seconds) {
+            grants.set(author, { ...permission(author), until: began + (after + 5 * 60) * 1000 });
+          }
+        }
+      },
       runInvited: async (grant, payload) => {
         assert.equal(state, "ready", "invitation already used");
         assert.equal(grant, invitation, "unchecked invitation");
@@ -790,6 +816,65 @@ export class FakeHost {
     const job = this.jobs.get(id)!;
     assert.equal(job.state, "stopped");
     job.teardown = true;
+  }
+
+  /** Register one indexed Markdown link for the generic rename fixture. */
+  linkTo(item: string, source: string, anchor: string) {
+    const destination = this.files.get(item)!.path!;
+    this.linkedMarkdown.set(source, `[Read the conversation](<${posix.relative(posix.dirname(source), destination)}#${anchor}>)\n`);
+    const incoming = this.incomingLinks.get(item) ?? [];
+    incoming.push({ source, anchor });
+    this.incomingLinks.set(item, incoming);
+  }
+
+  /** Model folder placement and indexed link updates behind the generic host action. */
+  async rename(item: string, title: string, activation_id: string, viewer = actor) {
+    const file = this.files.get(item)!;
+    if (file.people && this.conversationAccess(item, viewer) !== "full") throw new Error("Conversation is read-only.");
+    const nextTitle = checkedTitle(title);
+    const thread = this.thread(item);
+    const oldPath = file.path!;
+    const nextFolder = folder({ ...thread, title: nextTitle });
+    const occupied = new Set([...this.files.entries()].filter(([id]) => id !== item).map(([, sibling]) => sibling.path));
+    let nextPath = `Threads/${nextFolder}/Conversation.md`;
+    for (let suffix = 2; occupied.has(nextPath); suffix++) nextPath = `Threads/${nextFolder} (${suffix})/Conversation.md`;
+    const rewrites = (this.incomingLinks.get(item) ?? []).map(({ source, anchor }) => {
+      const oldHref = `<${posix.relative(posix.dirname(source), oldPath)}#${anchor}>`;
+      const newHref = `<${posix.relative(posix.dirname(source), nextPath)}#${anchor}>`;
+      const markdown = this.linkedMarkdown.get(source)!;
+      assert.ok(markdown.includes(oldHref), "outdated incoming link");
+      return [source, markdown.replace(oldHref, newHref)] as const;
+    });
+    const original = file.history.get(file.revision)!;
+    const oldTitleLine = Buffer.from(`\ntitle: ${file.title}\n`);
+    const newTitleLine = Buffer.from(`\ntitle: ${nextTitle}\n`);
+    const start = original.indexOf(oldTitleLine);
+    assert.ok(start >= 0, "missing title field");
+    const delta = newTitleLine.length - oldTitleLine.length;
+    const bytes = Buffer.concat([original.subarray(0, start), newTitleLine, original.subarray(start + oldTitleLine.length)]);
+    for (const span of file.spans.values()) {
+      if (span.offset === 0) {
+        span.length += delta;
+        span.middle_length += delta;
+      } else {
+        span.offset += delta;
+        span.middle_offset += delta;
+      }
+    }
+    const revision = this.id("rev");
+    file.history.set(revision, bytes);
+    file.spanHistory.set(revision, {
+      body_provenance: file.provenance, spans: structuredClone([...file.spans.values()].sort((a, b) => a.offset - b.offset)),
+    });
+    file.revision = revision;
+    file.path = nextPath;
+    file.title = nextTitle;
+    for (const [source, markdown] of rewrites) this.linkedMarkdown.set(source, markdown);
+    const snapshot = this.snapshots.get(item);
+    if (snapshot) this.snapshots.set(item, { ...snapshot, source_revision: revision });
+    const outcome = { activation_id, state: "ok" };
+    trace.push(["ActionOutcome", outcome]);
+    return outcome;
   }
 
   archive(item: string) {

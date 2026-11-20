@@ -16,7 +16,7 @@ message anchors, with the harness-owned log reference on the reply. Send
 admits the checked harness and placement through one replayable job. Send
 while a job is active uses the same admission for the single successor.
 The background handler appends the reply. Stop and archive go through
-generic host controls. Rename updates the document and indexed title.
+generic host controls. Rename invokes the generic host action.
 Snapshots contain complete messages within the native description limits.
 The live read uses the requested revision and a private older-page cursor.
 An execution alarm keeps the checked harness and takes the default
@@ -41,7 +41,7 @@ flock -s /tmp/calternal-dev02.lock nix develop -c bash -c '
 The build uses the 14.38 revision-aware SDK builder. It pins both
 plugin manifests and workers, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-All 43 tests and both Conformance tool 1.1.0 plugin checks passed
+All 46 tests and both Conformance tool 1.1.0 plugin checks passed
 on dev-02 at the 14.38 pin under the shared lock. The repository
 documentation gate passed in the earlier afternoon run. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
@@ -512,6 +512,9 @@ Message details use `reply-to`, `asked-by` and `mentions`. The
 private file calls its saved position `last-read-message`, and the
 notification preferences spell out when push is enabled. Consultation
 logs identify the conversation, lead agent and consulted agent.
+Bob's reply quotes Alice's text as it was when he replied. Alice's later
+edit changes her message and keeps the quoted wording. The quote is
+framing outside Bob's authored text.
 
 The host's recorded ranges delimit attested messages. For a hand-edited
 or imported file, a message ends at the next unescaped `###` heading
@@ -546,7 +549,9 @@ Can we meet by the garden gate at 10:30?
 
 The rain should clear by then.
 
-### Bob · 2026-11-20 09:02 UTC · reply to Alice {#m-eaa58816884f2492 by=p2 reply-to=m-b31395e111a687c4 mentions=p1}
+### Bob · 2026-11-20 09:02 UTC · reply to Alice {#m-eaa58816884f2492 by=p2 reply-to=m-b31395e111a687c4 quote=1 mentions=p1}
+
+> Can we meet by the garden gate at 10?
 
 Yes, I’ll bring the key.
 
@@ -643,10 +648,10 @@ discovery or cross-space transport.
 
 An invitation captures one message, an inclusive range, or the whole
 conversation as of that call. Unrelated later changes do not expire it.
-Edited or deleted selected text is withheld. A person who does not answer
-contributes no messages, and the call proceeds with whatever remains,
+Edited or deleted selected text is withheld. The call waits one minute
+for pending authors and then proceeds with whatever they approved,
 including a prompt-only call. Ask-each-time grants in the fixture last
-five minutes and apply to one call. Always grants apply to that author's
+five minutes once issued and apply to one call. Always grants apply to that author's
 messages in later explicitly addressed calls in the same conversation.
 Either can be revoked through the fixture's consent generation. Revoking
 while an attempt is active blocks its scoped read tool and suppresses
@@ -654,13 +659,12 @@ its reply. Tools are enabled in the fixture, and the message read tool
 can only resolve messages from that call's approved selection. Subsequent
 messages need a new call.
 
-A consultation keeps the agent-to-agent exchange in a separate linked
-item. The fixture bounds it at three pairs of exchanges and one lead
-summary, with up to 4 KiB per turn. The two agents receive the person's
-explicit consultation prompt and the private exchange. They receive no
-parent transcript by default. The parent gets a single summary with a
-portable link to the consultation item. The link confers no independent
-read grant.
+A consultation streams private turns into a separate linked item.
+The ordinary run limits apply. The first result ends the consultation
+and becomes one message in the conversation. Stop keeps the work
+already logged and suppresses the conversation reply. The two agents
+receive the person's explicit prompt and the private exchange. Passing
+the parent transcript would require its own checked disclosure.
 
 ### Cutover finding for the v1 reader
 
@@ -806,24 +810,23 @@ Use the host account selector for the people picker when Contacts supplies
 it. Submit named account selections and handle an unavailable selection
 when visibility changes before confirmation. [ADR 0060][adr0060]
 
-## Owner questions
+## Evening decisions and findings
 
-- **Should a missed run mean the server was unavailable or simply that it
-  started late?** This matters before someone can rely on Skip. A 9:00
-  alarm can reach a healthy worker at 9:00:01, or wait until 10:30 after
-  an outage. Treating any delay as a miss is simple and skips healthy
-  runs. An outage-only marker preserves those runs but misses long
-  healthy queues. A configurable grace period covers both at the cost
-  of an extra schedule setting. Recommend a defined grace period, with
-  one default for the initial UI and both timestamps shown in history.
-- **Should renaming a thread move its folder?** The file layout needs
-  this decision before old paths become export references. Renaming
-  “Lease” to “House paperwork” could move the directory, giving a
-  readable export but invalidating bookmarks to the old path. Keeping
-  the original folder avoids moves and keeps old file references
-  usable, with an old folder name beside a new title. Recommend the
-  original folder for the first release and message links based on
-  stable item/message IDs.
+The worker and fixtures cover the evening decisions under the 14.38
+pin. The owner record and reused Notes link scanner are here.
+[Evening decisions](https://git.kayg.org/kayg/calternal-ai/src/commit/340c0472f846b5855f0824765a019d177a9763b0/docs/morning-2026-11-20.md#evening-decisions-owner-2026-11-20) · [Notes link scanner](https://git.kayg.org/kayg/calternal-ai/src/commit/340c0472f846b5855f0824765a019d177a9763b0/crates/server/src/notes/links.rs)
+
+| Area and disposition | What works and what the contract needs |
+| --- | --- |
+| Generic rename and move · **OPEN** live | The template calls `host.item.rename` with the checked item and title. The 14.38 catalogue accepts those operands, but `item_engine.placement` leaves the folder move open and `item_save` only offers a leaf rename. The fixture moves the dated folder and updates two indexed Markdown links in one operation, preserving their labels and anchors, the same item and message IDs, old readable pins and active execution. Pin one generic, authority-checked rename/move transaction for the folder, title in the file and index, link bytes, Undo and publication. Apply it when either endpoint moves so relative links follow both. Include reference-style links and encoded paths in qualification. Define how host rewrites preserve authored spans and update their offsets without an opaque rewrite. |
+| Link rewrite cost · **OPEN** live | Reuse the reverse index principle in Notes, where normalized destinations are collected on write. The current scanner specifically limits its query to inline links targeting Notes. The generic host needs an index of resolved inbound destinations and source ranges, including links issued by other Markdown formats, and a way to rebase outbound relative links. Commit the affected files from that index with no space-wide scan. Define bounds, publication and failure behavior for high fan-out. The fixture uses registered backlinks. No live rename latency was measured. |
+| Quotes and attestation · **PARTLY** | A reply stores the target's text at reply time in `>` lines before its plain body. The attested middle remains the sender's exact text or the agent's validated output. 14.38 supports the quote as plugin-attributed prefix framing within 512 UTF-8 bytes. A long quote uses the opaque path and can remove personal discovery. To preserve attestation for long quotes, add a checked quote reference to a readable recorded span with revision, authority and bounds. The current catalogue has no such operand. |
+| Delete a quoted message · **PARTLY** | The worker removes its quoted copies and the original body in one save. This keeps the live replies and their original anchors. The existing single-span replace cannot redact several records at once, so the save is opaque. The host needs an atomic multi-span redaction or a checked derived quote whose text can be revoked with its source, including on history, cache and offline delivery. |
+| Time · **PARTLY** | Headings continue to write UTC. `threads.message.posted_at` supplies a typed timestamp. The 14.38 snapshot schema accepts a literal heading and no timestamp node. Add a typed instant in the snapshot or described message row and let the viewer's renderer format it in local time. Saving a server-local string would be wrong for other viewers. |
+| One-minute consent wait · **PARTLY** | The fake host accepts an answer at 59 seconds and withholds an answer at 61. The worker rechecks the current item and selected text after the wait. The public catalogue still needs checked pending-author notifications, a durable deadline, wake-up on consent or deadline and the ordinary revocation fence. The wait is separate from the lifetime of an issued grant. |
+| Consultation completion and Stop · **PARTLY** | A fixture passes five exchanges, logs each turn and publishes one result. A stopped consultation leaves its private log and no result in the conversation. The live host still needs the checked result stream and Stop fence for the linked run and its children, with ordinary run limits. |
+| Missed runs · **CLOSED** in the fixture | Threads supplies a default grace of 60 seconds and forwards an explicit grace when given. At exactly the deadline the fake runs normally. A delivery one second later is missed, and the worker follows Run when back or Skip from the pinned job. |
+| Default app and Markdown editor · **OPEN** | The worker declares `calternal-thread/v2` and the app `threads`. The manifest's `file_format` has only ID and version. Add an install-checked default app for the format, with opening in Notes as an explicit choice. The file already isolates hideable metadata in the trailing `{#m-… …}` heading tag, the link comment after the body, and the IDs, participant aliases and plugin identifiers in frontmatter. The host editor needs a format-aware declaration for hiding those ranges in its block view while preserving raw bytes, anchors and editing. Keep the author, date, edit/delete/reply markers and quote visible. |
 
 ## Simplification opportunities
 

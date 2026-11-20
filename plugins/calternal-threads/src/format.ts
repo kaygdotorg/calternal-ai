@@ -30,6 +30,7 @@ export type Message = {
   posted_at: Timestamp;
   replyTo?: string;
   replyToName?: string;
+  replyQuote?: string;
   askedBy?: Person;
   mentions?: string[];
   log?: ItemLocator;
@@ -138,6 +139,7 @@ export function messageRecord(message: Message, participants: Participant[], inl
   if (message.replyTo && message.replyToName) {
     heading.push(`reply to ${escapeLabel(message.replyToName)}`);
     attrs.push(`reply-to=m-${message.replyTo}`);
+    if (message.replyQuote !== undefined) attrs.push("quote=1");
   }
   if (message.askedBy) {
     heading.push(`asked by ${escapeLabel(message.askedBy.name)}`);
@@ -149,7 +151,9 @@ export function messageRecord(message: Message, participants: Participant[], inl
     if (link) links.push(`${name}=${encodeURIComponent(link.space)}/${encodeURIComponent(link.id)}`);
   }
   if (links.length) attrs.push("links=1");
-  return { prefix: `### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n`, text: message.text,
+  const quote = message.replyQuote === undefined ? "" :
+    message.replyQuote.split("\n").map(line => line === "" ? ">" : `> ${line}`).join("\n") + "\n\n";
+  return { prefix: `### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n${quote}`, text: message.text,
     suffix: links.length ? `\n\n<!-- ${links.join(" ")} -->\n\n` : "\n\n" };
 }
 
@@ -203,7 +207,7 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
   const attrs = new Map<string, string>();
   for (const field of raw.split(" ")) {
     const [key, value] = field.split("=", 2);
-    if (!["by", "reply-to", "asked-by", "mentions", "links", "agent-plugin"].includes(key) || !value || attrs.has(key)) {
+    if (!["by", "reply-to", "quote", "asked-by", "mentions", "links", "agent-plugin"].includes(key) || !value || attrs.has(key)) {
       throw new Error("Could not read the details after the message heading.");
     }
     attrs.set(key, value);
@@ -228,12 +232,24 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
   if (attribution?.kind === "person" && (author.kind !== "person" || author.id !== attribution.actor) ||
       attribution?.kind === "attempt" && author.kind !== "agent") throw new Error("The saved author does not match the message heading.");
   const posted_at = timestamp(date);
-  const start = body[0] === "" ? 1 : 0;
+  let start = body[0] === "" ? 1 : 0;
   let end = start < body.length && body.at(-1) === "" ? body.length - 1 : body.length;
   if (markers.includes("deleted")) {
     if (body.some(line => line !== "") || attrs.size !== 1 || markers.length !== 1 ||
         (indexed && (indexed.text !== "" || attribution?.kind !== "empty"))) throw new Error("Could not read the deleted message marker.");
     return { id, author, posted_at, text: "", deleted: true };
+  }
+  let replyQuote: string | undefined;
+  if (attrs.has("quote")) {
+    const quote = [];
+    while (body[start] === ">" || body[start]?.startsWith("> ")) {
+      quote.push(body[start].slice(2));
+      start++;
+    }
+    if (attrs.get("quote") !== "1" || !attrs.has("reply-to") || !quote.length || body[start++] !== "") {
+      throw new Error("Could not read the quoted message.");
+    }
+    replyQuote = quote.join("\n");
   }
   const refs = new Map<string, string>();
   if (attrs.has("links")) {
@@ -255,6 +271,7 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
     if (!reply || !/^m-[a-f0-9]{16}$/u.test(reply) || !replyLabel) throw new Error("Unreadable reply reference.");
     message.replyTo = reply.slice(2);
     message.replyToName = unescapeLabel(replyLabel.slice("reply to ".length));
+    if (replyQuote !== undefined) message.replyQuote = replyQuote;
   }
   const asked = attrs.get("asked-by");
   const askLabel = markers.find(marker => marker.startsWith("asked by "));
@@ -398,9 +415,9 @@ export function decodeIndexed(bytes: Buffer, index: readonly IndexedSpan[], prov
 export function messageView(thread: Thread, id: string): Omit<Message, "deleted"> {
   const message = thread.messages.find(entry => entry.id === id);
   if (!message || message.deleted) throw new Error("Message unavailable.");
-  const { replyTo, replyToName, deleted, ...fields } = message;
+  const { replyTo, replyToName, replyQuote, deleted, ...fields } = message;
   const target = replyTo && thread.messages.find(entry => entry.id === replyTo && !entry.deleted);
-  return { ...fields, ...(target && { replyTo, replyToName }) };
+  return { ...fields, ...(target && { replyTo, replyToName, ...(replyQuote !== undefined && { replyQuote }) }) };
 }
 
 export function page(thread: Thread, older?: string, anchor?: string): { view: ItemSnapshotView; older?: string; anchor?: string } {

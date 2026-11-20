@@ -1,6 +1,6 @@
 import type { AccountRef, ContributionIdentity, ItemContentReceipt, ItemCreate, ItemLocator, ItemRef, RevisionRef } from "../generated/wire.js";
-import { appendRecord, inlineBody, kind, publish, read } from "./files.ts";
-import { agentParticipant, attest, checkedTitle, encode, folder, messageId, messageRecord, messageView, personParticipant, step, type Message, type Thread } from "./format.ts";
+import { appendRecord, inlineBody, kind, publish, read, saveOpaque } from "./files.ts";
+import { agentParticipant, attest, checkedTitle, encode, folder, MAX_FILE_BYTES, messageId, messageRecord, messageView, personParticipant, step, type Message, type Thread } from "./format.ts";
 import { checkedText, type HarnessOutput } from "./harnesses-v1.ts";
 import type { Context } from "./interface.ts";
 
@@ -13,7 +13,8 @@ export type ConsultationTurn = { role: "lead" | "consultant" | "summary"; text: 
 type Consultation = {
   lead: ContributionIdentity;
   consultant: ContributionIdentity;
-  invoke(role: ConsultationTurn["role"], prompt: string, prior: readonly ConsultationTurn[]): Promise<string>;
+  signal: AbortSignal;
+  run(prompt: string): AsyncIterable<ConsultationTurn>;
 };
 
 export type PeopleContext = Context & {
@@ -35,6 +36,7 @@ export type PeopleContext = Context & {
   };
   invitation?: Invitation;
   canDisclose?: (grant: Invitation, author: AccountRef) => boolean;
+  waitForConsent?: (grant: Invitation, authors: readonly AccountRef[], seconds: number) => Promise<void>;
   consultation?: Consultation;
   runInvited?: (grant: Invitation, input: InvitedInput) => Promise<HarnessOutput>;
 };
@@ -45,6 +47,7 @@ type Preferences = {
   push: { enabled: boolean; iosLocked: boolean; iosUnlocked: boolean };
 };
 const editWindowMs = 48 * 60 * 60 * 1000;
+const consentWaitSeconds = 60;
 
 async function member(ctx: Context, item: ItemRef) {
   const { revision, locator } = await ctx.call("item_head", { item });
@@ -73,11 +76,9 @@ function find(thread: Thread, id: string) {
 }
 
 async function save(ctx: Context, item: ItemRef, revision: RevisionRef, thread: Thread, purpose: string) {
-  const saved = await ctx.call("item_save", {
-    request_id: step(ctx.author.request_id, purpose), item, expected: revision,
-    patch: { title: thread.title }, body: inlineBody(Buffer.from(encode(thread))),
-  });
-  if ("code" in saved) throw new Error(saved.code);
+  const saved = await saveOpaque(ctx, {
+    request_id: step(ctx.author.request_id, purpose), item, expected: revision, patch: { title: thread.title },
+  }, Buffer.from(encode(thread)));
   await publish(ctx, item, saved.revision, thread);
 }
 
@@ -121,7 +122,7 @@ async function post({ item, text, replyTo, mentions = [] }: Target & {
   const sender = thread.participants.find(person => person.id === ctx.author.actor)!;
   const message = {
     id, author: personParticipant(ctx.author.actor, ctx.author.actor_label ?? sender.name), text: checkedText(text), posted_at: ctx.author.authored_at,
-    ...(target && { replyTo, replyToName: target.author.name }), ...(recipients.length && { mentions: recipients }),
+    ...(target && { replyTo, replyToName: target.author.name, replyQuote: checkedText(target.text) }), ...(recipients.length && { mentions: recipients }),
   };
   const record = messageRecord(message, thread.participants);
   const captured = ctx.messageWrite;
@@ -151,13 +152,16 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
     await publish(ctx, item, revision, thread);
     return;
   }
+  const quotedBy = text === undefined ? thread.messages.filter(reply => reply.replyTo === message && reply.replyQuote !== undefined) : [];
   if (text === undefined) {
     entry.text = "";
     entry.deleted = true;
     delete entry.edited;
     delete entry.replyTo;
     delete entry.replyToName;
+    delete entry.replyQuote;
     delete entry.mentions;
+    for (const reply of quotedBy) delete reply.replyQuote;
   } else {
     entry.text = checkedText(text);
     entry.edited = true;
@@ -165,7 +169,7 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
   const purpose = text === undefined ? "person-delete" : "person-edit";
   const captured = ctx.messageWrite;
   const replace_span = spans.get(message);
-  if (replace_span !== undefined && (text === undefined || (captured?.item === item && captured.text === text))) {
+  if (!quotedBy.length && replace_span !== undefined && (text === undefined || (captured?.item === item && captured.text === text))) {
     const record = messageRecord(entry, thread.participants);
     const attested = attest(record, { kind: text === undefined ? "empty" : "input" });
     if (attested) {
@@ -295,12 +299,22 @@ async function callAgent({ item, prompt }: Target & { prompt: string }, ctx: Peo
   if (!grant || !ctx.runInvited || !canDisclose || grant.item !== item || grant.inviter !== ctx.author.actor) {
     throw new Error("A checked agent invitation is required.");
   }
-  const { thread, revision } = await writableMember(ctx, item);
+  let live = await writableMember(ctx, item);
   const id = messageId(ctx.author.request_id, `invited-${ctx.author.actor}`);
-  if (thread.messages.some(message => message.id === id)) return { message: id };
-  const original = revision === grant.revision ? thread : (await read(ctx, item, grant.revision)).thread;
+  if (live.thread.messages.some(message => message.id === id)) return { message: id };
+  const original = live.revision === grant.revision ? live.thread : (await read(ctx, item, grant.revision)).thread;
+  const selected = scoped(original.messages, grant.scope);
+  const pending = [...new Set(selected.filter(message => message.author.kind === "person" && !message.deleted &&
+    !canDisclose(grant, message.author.id)).map(message => message.author.id))];
+  if (pending.length) {
+    if (!ctx.waitForConsent) throw new Error("This host cannot wait for consent.");
+    await ctx.waitForConsent(grant, pending, consentWaitSeconds);
+    live = await writableMember(ctx, item);
+    if (live.thread.messages.some(message => message.id === id)) return { message: id };
+  }
+  const { thread } = live;
   const current = new Map(thread.messages.map(message => [message.id, message]));
-  const readable = scoped(original.messages, grant.scope)
+  const readable = selected
     .filter(message => {
       const live = current.get(message.id);
       return !message.deleted && message.author.kind === "person" && live !== undefined && !live.deleted
@@ -311,7 +325,7 @@ async function callAgent({ item, prompt }: Target & { prompt: string }, ctx: Peo
   if (Buffer.byteLength(JSON.stringify(payload)) > 16 * 1024) throw new Error("The invitation exceeds 16 KiB.");
 
   addAgent(thread, grant.contribution_identity);
-  inlineBody(Buffer.concat([Buffer.from(encode(thread)), Buffer.alloc(18 * 1024)]));
+  if (live.size + 18 * 1024 > MAX_FILE_BYTES) throw new Error("Thread is full.");
   const result = await ctx.runInvited(grant, payload);
   const latest = await writableMember(ctx, item);
   latest.thread.messages.push({
@@ -321,45 +335,53 @@ async function callAgent({ item, prompt }: Target & { prompt: string }, ctx: Peo
   return { message: id };
 }
 
-async function consult({ item, prompt, exchanges }: Target & { prompt: string; exchanges: number }, ctx: PeopleContext) {
+async function consult({ item, prompt }: Target & { prompt: string }, ctx: PeopleContext) {
   const agents = ctx.consultation;
   if (!agents) throw new Error("A checked consultation is required.");
-  if (!Number.isInteger(exchanges) || exchanges < 1 || exchanges > 3) throw new Error("Consultation exchange limit exceeded.");
-  const { thread, locator } = await writableMember(ctx, item);
+  const { thread, locator, size: threadSize } = await writableMember(ctx, item);
   const id = messageId(ctx.author.request_id, `consultation-${ctx.author.actor}`);
   const prior = thread.messages.find(message => message.id === id);
   if (prior?.consultation) return { message: id, consultation: prior.consultation };
   addAgent(thread, agents.lead);
-  inlineBody(Buffer.concat([Buffer.from(encode(thread)), Buffer.alloc(18 * 1024)]));
+  if (threadSize + 18 * 1024 > MAX_FILE_BYTES) throw new Error("Thread is full.");
   const question = checkedText(prompt);
-  const turns: ConsultationTurn[] = [];
-  const { invoke } = agents;
-  async function take(role: ConsultationTurn["role"]) {
-    await requireConversationWrite(ctx, item);
-    const text = checkedText(await invoke(role, question, [...turns]));
-    if (Buffer.byteLength(text) > 4096) throw new Error("Consultation reply exceeds 4 KiB.");
-    turns.push({ role, text });
-    return text;
-  }
-  for (let round = 0; round < exchanges; round++) {
-    await take("lead");
-    await take("consultant");
-  }
-  const summary = await take("summary");
-  await requireConversationWrite(ctx, item);
+  agents.signal.throwIfAborted();
   const title = "Agent consultation";
   const headings = { lead: "Lead agent", consultant: "Consulted agent", summary: "Summary" };
   const body = [
     "---", `title: ${title}`, `conversation: ${locator.space}/${locator.id}`,
     `lead-agent: ${agents.lead.package}/${agents.lead.contribution}`,
     `consulted-agent: ${agents.consultant.package}/${agents.consultant.contribution}`, "---", "",
-    ...turns.map(turn => `## ${headings[turn.role]}\n\n${turn.text}\n`),
   ].join("\n");
   const saved = await ctx.call("item_create", {
     request_id: step(ctx.author.request_id, "consultation-file"), kind: "thread-consultations",
     name: "Consultation.md", metadata: { title }, body: inlineBody(Buffer.from(body)),
   });
+  let revision = saved.revision;
+  let sequence = 0;
+  let size = Buffer.byteLength(body);
+  let summary: string | undefined;
+  for await (const turn of agents.run(question)) {
+    agents.signal.throwIfAborted();
+    await requireConversationWrite(ctx, item);
+    const text = checkedText(turn.text);
+    const bytes = Buffer.from(`\n## ${headings[turn.role]}\n\n${text}\n`);
+    size += bytes.length;
+    if (size > MAX_FILE_BYTES) throw new Error("The consultation log has reached the file size limit.");
+    const appended = await ctx.call("item_append", {
+      request_id: step(ctx.author.request_id, `consultation-turn-${++sequence}`),
+      item: saved.item, expected_revision: revision, bytes: bytes.toString("base64"),
+    });
+    revision = appended.revision;
+    if (turn.role === "summary") {
+      summary = text;
+      break;
+    }
+  }
+  agents.signal.throwIfAborted();
+  if (summary === undefined) throw new Error("The consultation ended without a result.");
   const latest = await writableMember(ctx, item);
+  agents.signal.throwIfAborted();
   const result = resultMessage(latest.thread, ctx, id, agents.lead, summary);
   const consultation: ItemLocator = saved.locator;
   latest.thread.messages.push({ ...result, consultation });

@@ -164,11 +164,37 @@ test("a new reply cannot target a deleted message and an existing reply stays vi
   const { host, people, item, first, ctx, get } = await setup();
   const reply = await people.post({ item, text: "Already sent", replyTo: first.message }, ctx(bob, "reply"));
   assert.equal((await get(bob, reply.message)).replyTo, first.message);
+  assert.equal((await get(bob, reply.message)).replyQuote, "Alice visible");
+  assert.match(host.markdown(item), /> Alice visible\n\nAlready sent/);
   await people.remove({ item, message: first.message }, ctx(alice, "delete-target"));
   await assert.rejects(people.post({ item, text: "Late reply", replyTo: first.message }, ctx(bob, "late-reply")), /unavailable/i);
   assert.equal((await get(bob, reply.message)).text, "Already sent");
   assert.equal((await get(bob, reply.message)).replyTo, undefined);
+  assert.equal((await get(bob, reply.message)).replyQuote, undefined);
+  assert.doesNotMatch(host.markdown(item), /Alice visible/);
   assert.equal(decode(host.markdown(item)).messages.find(entry => entry.id === reply.message)?.replyTo, first.message);
+});
+
+test("a checked reply quotes multiple paragraphs outside its attested text", async () => {
+  const { host, people, item, ctx } = await setup();
+  const original = "First paragraph\n\nSecond paragraph";
+  const { message: target } = await people.post({ item, text: original }, ctx(alice, "two-paragraphs"));
+  const text = "> My own words\n\nThe reply";
+  const writer = host.peopleContext(bob, "quoted-reply", undefined, undefined, undefined, { item, text });
+  const { message } = await people.post({ item, text, replyTo: target }, writer);
+  assert.match(host.markdown(item), /> First paragraph\n>\n> Second paragraph\n\n> My own words/);
+  assert.equal((await people.message({ item, message }, ctx(alice, "read-quote"))).replyQuote, original);
+  const { revision } = await writer.call("item_head", { item });
+  const { spans } = await writer.call("item_spans", { item, revision });
+  const span = spans.at(-1)!;
+  assert.equal(Buffer.from(host.markdown(item)).subarray(span.middle_offset, span.middle_offset + span.middle_length).toString(), text);
+  assert.deepEqual(span.attribution, { kind: "person", actor: bob });
+  const longQuote = "Long quote ".repeat(100);
+  const { message: longTarget } = await people.post({ item, text: longQuote }, ctx(alice, "long-quote-target"));
+  const { message: longReply } = await people.post({ item, text, replyTo: longTarget },
+    host.peopleContext(bob, "long-quoted-reply", undefined, undefined, undefined, { item, text }));
+  assert.equal((await people.message({ item, message: longReply }, ctx(alice, "read-long-quote"))).replyQuote, longQuote);
+  assert.equal(host.writeAuthor(item), undefined);
 });
 
 test("muted row counts are private and count a mention plus reply on one message once", async () => {
@@ -223,7 +249,7 @@ test("the conversation file example has two people, one agent and a separate pri
   const invite = host.invitedContext(alice, "example-agent", { item, scope: { message: answer.message }, consent: [alice] },
     "2026-11-20T09:06:00Z");
   await people.callAgent({ item, prompt: "Summarize our meeting time." }, invite);
-  await people.consult({ item, prompt: "Consult another agent on a wet-weather backup.", exchanges: 1 },
+  await people.consult({ item, prompt: "Consult another agent on a wet-weather backup." },
     host.consultationContext(alice, "example-consultation", "2026-11-20T09:07:00Z"));
   await people.setState({ item, readThrough: answer.message, draft: "I’ll bring the gloves.", muted: true },
     context(alice, "example-state", "09:07"));
@@ -333,12 +359,12 @@ test("losing the last common group preserves an exportable transcript and blocks
     assert.equal(Buffer.from(bytes, "base64").toString(), original);
     await assert.rejects(people.post({ item, text: "Blocked" }, ctx(actor, "post")), /read-only/);
     await assert.rejects(people.callAgent({ item, prompt: "Blocked" }, invitations[index]), /read-only/);
-    await assert.rejects(people.consult({ item, prompt: "Blocked", exchanges: 1 },
+    await assert.rejects(people.consult({ item, prompt: "Blocked" },
       host.consultationContext(actor, "consult")), /read-only/);
   }
   await assert.rejects(people.edit({ item, message: first.message, text: "Changed" }, ctx(alice, "edit")), /read-only/);
   await assert.rejects(people.remove({ item, message: first.message }, ctx(alice, "delete")), /read-only/);
-  await assert.rejects(handlers["threads.rename"]({ item, title: "Changed" }, ctx(alice, "rename")), /read-only/);
+  await assert.rejects(host.rename(item, "Changed", "rename", alice), /read-only/);
   assert.deepEqual(host.invitedInputs, []);
   assert.deepEqual(host.consultationTurns, []);
   assert.equal(host.markdown(item), original);
@@ -403,15 +429,15 @@ test("a call keeps its selection across later posts, with revocable one-call and
   assert.equal((await people.message({ item, message: late.message }, ctx(bob, "person-read"))).text, "Too late for the first selection");
 });
 
-test("a consultation is bounded, linked and posts exactly one result to the conversation", async () => {
+test("a consultation can go beyond three exchanges and posts one result when the agents finish", async () => {
   const { host, people, item } = await setup();
   const unstamped = host.peopleContext(alice, "unchecked-consultation");
-  await assert.rejects(people.consult({ item, prompt: "Ask for a recommendation", exchanges: 2 }, unstamped), /checked consultation/i);
+  await assert.rejects(people.consult({ item, prompt: "Ask for a recommendation" }, unstamped), /checked consultation/i);
+  host.consultationExchanges = 5;
   const ctx = host.consultationContext(alice, "consultation");
-  await assert.rejects(people.consult({ item, prompt: "Ask for a recommendation", exchanges: 4 }, ctx), /exchange limit/i);
-  const output = await people.consult({ item, prompt: "Ask for a recommendation", exchanges: 2 }, ctx);
-  assert.equal(host.consultationTurns.length, 5);
-  assert.deepEqual(host.consultationTurns.map(turn => turn.role), ["lead", "consultant", "lead", "consultant", "summary"]);
+  const output = await people.consult({ item, prompt: "Ask for a recommendation" }, ctx);
+  assert.equal(host.consultationTurns.length, 11);
+  assert.equal(host.consultationTurns.at(-1)?.role, "summary");
   const thread = decode(host.markdown(item));
   assert.equal(thread.messages.length, 4);
   assert.equal(thread.messages[3].id, output.message);
@@ -419,6 +445,30 @@ test("a consultation is bounded, linked and posts exactly one result to the conv
   assert.equal(thread.messages[3].consultation?.id, output.consultation.id);
   assert.doesNotMatch(host.markdown(item), /Private exchange/);
   assert.match(host.markdown(output.consultation.id), /^## Consulted agent\n\nPrivate exchange 2$/m);
+});
+
+test("Stop ends a consultation without posting to the conversation", async () => {
+  const { host, people, item } = await setup();
+  const stop = new AbortController();
+  host.onConsultationTurn = async () => stop.abort(new Error("Consultation stopped"));
+  const before = host.markdown(item);
+  await assert.rejects(people.consult({ item, prompt: "Find a recommendation" },
+    host.consultationContext(alice, "consult-stop", undefined, stop.signal)), /Consultation stopped/);
+  assert.equal(host.markdown(item), before);
+  const log = [...host.files].find(([, file]) => file.title === "Agent consultation");
+  assert.ok(log);
+  assert.match(host.markdown(log[0]), /Private exchange 1/);
+  assert.doesNotMatch(host.markdown(log[0]), /## Summary/);
+});
+
+test("missing consent waits one minute and includes only authors who reply in time", async () => {
+  const { host, people, item } = await setup();
+  host.setAlwaysConsent(item, alice, true);
+  host.onConsentWait = async () => [{ author: bob, after: 59 }, { author: cara, after: 61 }];
+  await people.callAgent({ item, prompt: "Answer after waiting" },
+    host.invitedContext(alice, "consent-deadline", { item, scope: { whole: true }, consent: [] }));
+  assert.deepEqual(host.consentWaits, [{ authors: [bob, cara], seconds: 60 }]);
+  assert.deepEqual(host.invitedInputs[0].messages.map(message => message.text), ["Alice visible", "Bob private"]);
 });
 
 test("ask-each-time authorization expires and is never reused by a later call", async () => {

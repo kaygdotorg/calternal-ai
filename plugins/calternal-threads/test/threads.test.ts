@@ -27,6 +27,7 @@ test("create, select a contributed harness, append its reply and Stop an exact a
   const reply = thread.messages[1];
   assert.deepEqual(thread.participants.map(p => p.kind), ["person", "agent"]);
   assert.equal(reply.text, "Reply to Say hello 🦊\n\n---\n<!-- ## Agent -->");
+  assert.equal(reply.replyQuote, thread.messages[0].text);
   assert.match(host.markdown(reply.log!.id), /## Reply/);
   assert.ok(host.markdown(item).includes(`{#m-${reply.id} `));
   assert.equal((await handlers["threads.message"]({ item, message: reply.id }, context("read-1", "threads.message"))).text, reply.text);
@@ -76,23 +77,33 @@ test("one durable successor waits for the head and exact attempt teardown", asyn
   assert.deepEqual(decode(host.markdown(item)).messages.map(message => message.text), ["First", "Second", "Reply to Second"]);
 });
 
-test("rename preserves IDs and old read pins, archive fences pending work", async () => {
+test("generic rename moves the folder, updates indexed links and preserves IDs and old read pins", async () => {
   const { host, item, send, context } = await setup();
   const original = host.snapshots.get(item)!;
   const { job_id } = await send("rename-head", "First");
   await host.run(job_id);
   const before = decode(host.markdown(item));
   const path = host.files.get(item)!.path;
-  await handlers["threads.rename"]({ item, title: "Later title" }, context("rename-1", "threads.rename"));
+  const anchor = `m-${before.messages[0].id}`;
+  host.linkTo(item, "Notes/Meeting.md", anchor);
+  host.linkTo(item, "Notes/Nested/Agenda.md", anchor);
+  host.linkedMarkdown.set("Notes/Unrelated.md", "No conversation link\n");
+  await host.rename(item, "Later title", "rename-1");
   const after = decode(host.markdown(item));
   assert.equal(after.title, "Later title");
   assert.equal(after.id, before.id);
   assert.deepEqual(after.messages, before.messages);
-  assert.equal(host.files.get(item)!.path, path);
+  assert.notEqual(host.files.get(item)!.path, path);
+  assert.equal(host.files.get(item)!.path, "Threads/2026-11-20 Later title/Conversation.md");
+  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Threads/2026-11-20 Later title/Conversation.md#${anchor}>)\n`);
+  assert.equal(host.linkedMarkdown.get("Notes/Nested/Agenda.md"), `[Read the conversation](<../../Threads/2026-11-20 Later title/Conversation.md#${anchor}>)\n`);
+  assert.equal(host.linkedMarkdown.get("Notes/Unrelated.md"), "No conversation link\n");
   assert.deepEqual(await handlers["threads.refresh"]({
     item, source_revision: original.source_revision,
   }, context("refresh-1", "threads.refresh")), { view: original.view });
   assert.equal(host.snapshots.get(item)!.source_revision, host.files.get(item)!.revision);
+  await host.rename(item, "Final title", "rename-2");
+  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Threads/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
 
   const pending = await send("pre-archive", "Never start");
   const queued = await send("pre-archive-queued", "Never promote");
@@ -107,13 +118,14 @@ test("alarm delivery retains checked harness and lets the worker decide whether 
   const { host, item, selection, context } = await setup();
   const arm = (if_missed: "skip" | "run", request: string) =>
     handlers["threads.arm"]({
-      item, harness: selection.harness, text: if_missed, at: "2026-11-20T13:00:00Z", if_missed, grace_seconds: 30,
+      item, harness: selection.harness, text: if_missed, at: "2026-11-20T13:00:00Z", if_missed,
     }, context(request, "threads.arm"));
   const skipped = await arm("skip", "alarm-skip");
-  await host.deliver(skipped.alarm, "2026-11-20T14:00:00Z");
+  await host.deliver(skipped.alarm, "2026-11-20T13:01:01Z");
   assert.equal(decode(host.markdown(item)).messages.length, 0);
   const due = await arm("skip", "alarm-on-time");
-  await host.deliver(due.alarm, "2026-11-20T13:00:01Z");
+  assert.equal(host.alarms.get(due.alarm)?.grace_seconds, 60);
+  await host.deliver(due.alarm, "2026-11-20T13:01:00Z");
   assert.equal(decode(host.markdown(item)).messages.length, 2);
   const late = await arm("run", "alarm-run");
   assert.deepEqual(await arm("run", "alarm-run"), late);
@@ -188,7 +200,7 @@ test("a rename while the harness is running preserves the reply and snapshot", a
   host.claude = async () => { reached(); await gate; return "Finished"; };
   const run = host.run((await send("rename-in-flight", "Working")).job_id);
   await started;
-  await handlers["threads.rename"]({ item, title: "New title" }, context("rename-in-flight-edit", "threads.rename"));
+  await host.rename(item, "New title", "rename-in-flight-edit");
   release!();
   await run;
   const thread = decode(host.markdown(item));
@@ -439,8 +451,9 @@ test("indexed spans preserve literal heading and trailer lookalikes next to an o
 test("opaque fallback stages a large reframe without losing formerly indexed literal headings", async () => {
   const { host, item, send, selection, context } = await setup();
   const delimiter = "### Ordinary text {#m-aabbccddeeff0011 by=p1}";
+  host.claude = async () => "x".repeat(12_000);
   for (let index = 0; index < 12; index++) {
-    const { job_id } = await send(`long-${index}`, `${delimiter}\n${"x".repeat(6000)}`);
+    const { job_id } = await send(`long-${index}`, delimiter);
     await host.run(job_id);
   }
   const file = host.files.get(item)!;
