@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.32 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.33 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -664,28 +664,31 @@ personal arm. The shared arm replaces `desk` with `my-laptop`, or
 `space-machine` if the member kept the default.
 
 ```json
-{"job":"run","item":"file-1","input":{"text":"Say hello"},"harness":"harness-1","placement":"desk"}
+{"job":"run","item":"file-1","input":{},"contribution_input":{"text":"Say hello"},"harness":"harness-1","placement":"desk"}
 ```
 
 The alarm arm uses the same top-level item and omits the placement.
 Its author input also omits the operation's target field.
 
 ```json
-{"request_id":"alarm-set-1","job":"run","item":"file-1","input":{"text":"Say hello"},"harness":"harness-1","at":"2026-11-21T00:00:00Z","grace_seconds":30}
+{"request_id":"alarm-set-1","job":"run","item":"file-1","input":{},"contribution_input":{"text":"Say hello"},"harness":"harness-1","at":"2026-11-21T00:00:00Z","grace_seconds":30}
 ```
 
 On either admission path, the host supplies `input.item: "file-1"` to
 the run operation and the same item in its protected job context. The
 author never supplies `input.item` on either broker request. The job
-may store its host-stamped logical contribution identity as a participant.
+gets the pinned `contribution_input` in its protected context. It may store
+its host-stamped logical contribution identity as a participant.
 The checked harness ref still comes from the current host binding.
 
 ```json
 {"job_id":"admitted-job-1"}
 ```
 
-Send's `ok` follows durable admission. The first live page precedes any
-agent output. The Threads job calls `execution_start` for its pinned harness,
+The host checks the full encoded contribution envelope during admission.
+A frame-limit refusal leaves the file and queue untouched. Send's `ok`
+follows durable admission. The job saves the prompt only after that
+receipt. The first live page precedes any agent output. The Threads job calls `execution_start` for its pinned harness,
 then `contribution_call` with its checked prompt. The host passes that input
 to the qualified contributor. It can return a link to its own working log.
 The Threads job reads the bounded committed contribution frames and appends

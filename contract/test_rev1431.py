@@ -44,6 +44,7 @@ class Revision1431(unittest.TestCase):
         context = {
             "intent": "job-1", "item": "item-1", "harness": "harness-1",
             "contribution_identity": {"package": "sample-harness", "contribution": "worker"},
+            "contribution_input": {"text": "hello"},
         }
         frame = {
             "v": 1, "epoch": "epoch-1", "seq": 1, "package": "sample", "digest": "a" * 64, "ticket": "ticket-1",

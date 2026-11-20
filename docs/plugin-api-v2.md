@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.32 draft
+# Plugin API v2 · revision 14.33 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -502,6 +502,8 @@ opens the [generic contribution call](../contract/host-catalogue-v2.json#/extens
 with the checked input and pinned contribution. The catalogue meters the
 whole encoded JSON frame and its LF, including escapes and frame fields.
 Authors use the SDK's `encodeContributionFrame` to enforce the same bound.
+Pin the exact contribution input at admission. The [preflight rule](../contract/host-catalogue-v2.json#/extension_points/calls/preflight)
+requires encoded size checks before the initiating prompt can commit.
 Consume committed frames by
 call and sequence. Use stable subeffect receipts to write owner output under
 the exact attempt fence before successful job completion. The contributor
@@ -592,6 +594,9 @@ Threads file. Threads opts into the generic [per-item discovery rule](../contrac
 A person's own agent thread can be `creator_only` and stays discoverable
 to their own authorized attempts. A people conversation is `consent_only`
 and stays outside attempt list, search, direct reads and derived output.
+Under the catalogue’s opaque-write rule, the host marks unknown or other-
+author content in the same writer transaction. An authorized writer can
+request protection. Only the host may clear it on verified provenance.
 The harness has no direct writer authority on the thread. Calling in an agent selects a message, a range
 or the whole conversation. Apply the generic
 [author-consent rule](../contract/host-catalogue-v2.json#/attempt_disclosure)
@@ -1584,8 +1589,15 @@ accepted publication receipt. On one opted-in kind, test a creator-only
 item and a consent-only item. The creator's live attempt can find and
 read the first. The second contributes no match, rank, count, excerpt or
 direct bytes. Repeat with another actor and with a demotion racing a
-pending reply. Confirm that an alarm and an immediate Send get the same
-host-injected target and both refuse a target in author input.
+pending reply. Stage an opaque whole-file replacement and race its commit
+against attempt discovery. Require the protected marker and zero new
+bodies, excerpts, matches or counts after the commit. Refuse a writer's
+attempt to clear it. Confirm that an alarm and an immediate Send get the
+same host-injected target and both refuse a target in author input.
+Send an escape-heavy prompt whose complete contribution frame exceeds
+the bound. Require a 413 before a receipt, prompt append or provider
+start. Admit the next eligible Send once, and refuse a later changed
+contribution input under the same receipt.
 
 The Threads cutover requires measured product wake p95 at or below
 500 ms for both the plugin and agent placements on the perf VM.

@@ -151,12 +151,12 @@ on the same archive offline.
 ### Revision 14 draft packages
 
 Use one reviewed contract checkout for generation and package validation.
-For a revision 14.32 checkout, point the SDK at its absolute contract
+For a revision 14.33 checkout, point the SDK at its absolute contract
 directory and set the expected revision.
 
 ```sh
 export CALTERNAL_PLUGIN_CONTRACT="$PWD/contract"
-export CALTERNAL_PLUGIN_CONTRACT_REVISION=14.32
+export CALTERNAL_PLUGIN_CONTRACT_REVISION=14.33
 npm run build -w @calternal/plugin-sdk
 node packages/plugin-sdk/scripts/build-author-package.mjs ./plugin.ts ./dist ./worker.mjs
 python3 -B "$CALTERNAL_PLUGIN_CONTRACT/verify-description.py" --package ./dist
@@ -180,7 +180,9 @@ deterministic writes and receipts. The app creates an item with
 `{created: result.item}`. Send starts a job. The job reserves an attempt
 and calls the checked contribution. Use top-level `item` for the
 checked target on `start_job` and `alarm_set`. The host injects the
-declared run-operation field. Use `encodeContributionFrame` from
+declared run-operation field. Supply `contribution_input` at admission
+and save the prompt only after the receipt. The job reads that pinned
+value from its protected context. Use `encodeContributionFrame` from
 `@calternal/plugin-sdk/contribution-frame` on the whole frame before
 sending it. It serializes UTF-8 JSON with LF and throws
 `contribution_frame_limit` when over the catalogue bound. A fake host can return a typed output

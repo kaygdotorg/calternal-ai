@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 14.32 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 14.33 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -468,7 +468,7 @@
         "waits": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/wait" } },
         "execution": {
           "const": true,
-          "description": "An execution start_job takes ExecutionJobStart including the typed harness operand. If also scheduled by an alarm, use AlarmSet.harness."
+          "description": "An execution start_job takes ExecutionJobStart including the typed harness operand and the pinned contribution_input. If also scheduled by an alarm, use AlarmSet.harness."
         },
         "alarm": {
           "const": true,
