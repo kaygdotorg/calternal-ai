@@ -1,0 +1,6 @@
+#!/bin/busybox sh
+/fixture/mounts || exit 1
+export HOME=/ LANG=C.UTF-8
+/fixture/node --max-old-space-size=128 /fixture/host.mjs &
+/fixture/relay &
+wait
