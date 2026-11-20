@@ -140,6 +140,35 @@ test checks both job and alarm callbacks for zero writes on oversized
 input and refuses another app's choice and a byte-identical reinstall's
 old generation.
 
+## Restart and reconnect qualification
+
+The restart fixture closes the server database after committing output whose
+acknowledgment the machine missed. It buffers 130 output frames and one
+successful terminal, reopens the database, and proves the same call can replay
+the acknowledged prefix and drain the remaining frames. It cuts the connection
+again after another committed frame and compares the complete paginated
+result to the original stream. The launch claim stays consumed. A wrong
+attempt generation and a sequence gap are refused.
+
+The reattached carrier must retain its unacknowledged head frame on temporary
+ingest-credit exhaustion. The spool returns retry-after, preserves the cursor
+and terminal, and charges both existing budgets only when the frame is
+accepted. Permanent frame and storage ceilings still apply. The carrier
+selects this path from exact reattachment proof. The entry payload supplies
+no catch-up flag. The policy and carrier handoff are tracked on #78.
+
+Product qualification needs the enrolled carrier to keep the harness alive
+and the execution lane to reattach the exact attempt. Kill the server during
+output and separately drop the machine connection. For each cut, compare the
+retained output with the original sequence and verify the thread stays active
+through an eventual successful terminal. Send queued follow-ups immediately
+before, during and after the cut and verify one delivery for each request.
+Issue Stop before a cut and prove it reaches that same attempt after
+recovery. Also delay a Stop across a reconnect and prove it leaves the
+successor running. Check that the updater waits while a run is active and
+that an update forced during a run preserves the same attempt and output.
+The scripted storage test covers only the spool part of these cases.
+
 ## Simplification opportunities
 
 Keep install and startup on the same asset pin validator. Build checked

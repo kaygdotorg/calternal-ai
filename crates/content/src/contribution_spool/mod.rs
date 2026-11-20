@@ -129,6 +129,33 @@ impl<'tx, 'conn> Spool<'tx, 'conn> {
         now: i64,
         validate_output: impl FnOnce(&Value) -> bool,
     ) -> Result<Ingest> {
+        self.ingest_frame(call, frame, now, validate_output, false)
+    }
+
+    /// Drain one frame retained by the enrolled machine after exact-attempt
+    /// reattachment. The authenticated carrier chooses this path for its
+    /// buffered frames. On temporary ingest-credit exhaustion, keep the
+    /// frame on the machine and retry after releasing the transaction.
+    /// Acknowledge stored or replayed frames only after commit.
+    /// Uses the same reads and writes as ordinary ingest.
+    pub fn ingest_buffered(
+        &self,
+        call: Uuid,
+        frame: &Value,
+        now: i64,
+        validate_output: impl FnOnce(&Value) -> bool,
+    ) -> Result<Ingest> {
+        self.ingest_frame(call, frame, now, validate_output, true)
+    }
+
+    fn ingest_frame(
+        &self,
+        call: Uuid,
+        frame: &Value,
+        now: i64,
+        validate_output: impl FnOnce(&Value) -> bool,
+        buffered: bool,
+    ) -> Result<Ingest> {
         let (seq, output) = frame_shape(frame)?;
         let state = self.call(call)?;
         let encoded = serde_json::to_vec(frame).map_err(internal)?;
@@ -191,6 +218,13 @@ impl<'tx, 'conn> Spool<'tx, 'conn> {
                 size,
             ));
         if credit.is_none() {
+            if buffered {
+                return Err(Error::new(
+                    ErrorCode::RetryAfter,
+                    "Wait for contribution ingest credit",
+                )
+                .with_details(json!({"retry_after_ms":1000})));
+            }
             self.seal_failed(call, seq)?;
             return Ok(Ingest::Sealed);
         }

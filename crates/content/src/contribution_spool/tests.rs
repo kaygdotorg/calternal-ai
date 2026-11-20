@@ -278,3 +278,104 @@ fn verified_exit_without_terminal_seals_the_call_once() {
     );
     tx.commit().unwrap();
 }
+
+#[test]
+fn machine_backlog_survives_restart_and_another_lost_ack() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("space.db");
+    let mut db = setup(&path);
+    let output = |seq| json!({"seq":seq,"kind":"output","data":{"text":format!("chunk {seq}")}});
+    let tx = db.transaction().unwrap();
+    let spool = checked(&tx, 1).unwrap();
+    let call = spool.reserve(1000).unwrap();
+    assert!(spool.claim_launch(call).unwrap());
+    assert_eq!(
+        spool.ingest(call, &output(1), 1000, |_| true).unwrap(),
+        Ingest::Stored
+    );
+    tx.commit().unwrap();
+    drop(db);
+
+    // The machine keeps its unacknowledged prefix and produces the remaining
+    // output while the server has no open connection to the database.
+    let mut buffered: Vec<_> = (1..=130).map(output).collect();
+    buffered.push(json!({"seq":131,"kind":"terminal","state":"ok"}));
+    let mut db = open_db(&path);
+    let tx = db.transaction().unwrap();
+    let spool = checked(&tx, 1).unwrap();
+    assert!(!spool.claim_launch(call).unwrap());
+    assert_eq!(
+        spool
+            .ingest_buffered(call, &buffered[0], 3000, |_| true)
+            .unwrap(),
+        Ingest::Replay
+    );
+    assert_eq!(
+        spool
+            .ingest_buffered(call, &buffered[2], 3000, |_| true)
+            .unwrap_err()
+            .code,
+        ErrorCode::Conflict
+    );
+    assert_eq!(
+        spool
+            .ingest_buffered(call, &buffered[1], 3000, |_| true)
+            .unwrap(),
+        Ingest::Stored
+    );
+    tx.commit().unwrap();
+    drop(db);
+
+    // The acknowledgment for sequence 2 was also lost.
+    let mut db = open_db(&path);
+    let mut now = 3000;
+    let mut pauses = 0;
+    for (index, frame) in buffered.iter().enumerate().skip(1) {
+        loop {
+            let tx = db.transaction().unwrap();
+            let spool = checked(&tx, 1).unwrap();
+            match spool.ingest_buffered(call, frame, now, |_| true) {
+                Ok(outcome) => {
+                    assert_eq!(
+                        outcome,
+                        if index == 1 {
+                            Ingest::Replay
+                        } else {
+                            Ingest::Stored
+                        }
+                    );
+                    tx.commit().unwrap();
+                    break;
+                }
+                Err(error) => {
+                    assert_eq!(error.code, ErrorCode::RetryAfter);
+                    assert_eq!(
+                        spool.read(call, index as i64, 256 * 1024).unwrap(),
+                        Vec::<Value>::new()
+                    );
+                    tx.commit().unwrap();
+                    pauses += 1;
+                    assert!(pauses <= 2);
+                    now += 1000;
+                }
+            }
+        }
+    }
+    assert_eq!(pauses, 2);
+
+    let tx = db.transaction().unwrap();
+    let spool = checked(&tx, 1).unwrap();
+    assert!(!spool.claim_launch(call).unwrap());
+    assert!(checked(&tx, 2).is_err());
+    let mut delivered = Vec::new();
+    loop {
+        let page = spool
+            .read(call, delivered.len() as i64, 256 * 1024)
+            .unwrap();
+        if page.is_empty() {
+            break;
+        }
+        delivered.extend(page);
+    }
+    assert_eq!(delivered, buffered);
+}
