@@ -6,14 +6,16 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AlarmDelivery, AlarmSet, ExecutionJobContext, ExecutionJobStart, ExecutionStatus,
-  ExecutionStopRequest, ExecutionStopResult, HostWorkerInvokeFrame, ItemCreate, ItemSave, ItemStageBegin, ItemStageChunk, ItemStageSeal, ItemViewPublish } from "../generated/wire.js";
+  ExecutionStopRequest, ExecutionStopResult, HostWorkerInvokeFrame, ItemContentReceipt, ItemCreate, ItemSave, ItemStageBegin, ItemStageChunk, ItemStageSeal, ItemViewPublish } from "../generated/wire.js";
 import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { authorContext } from "../generated/author-context.mjs";
 import type { ManifestV2 } from "../generated/author.js";
 import type { Context, RunInput } from "../src/interface.ts";
 import type { HarnessInput, HarnessOutput } from "../src/harnesses-v1.ts";
 import type { handlers as threadHandlers } from "../src/worker.ts";
-import type { InvitedInput, PeopleContext, Scope, peopleHandlers } from "../src/people.ts";
+import { scoped } from "../src/people.ts";
+import { decode } from "../src/format.ts";
+import type { ConsultationTurn, InvitedInput, PeopleContext, Scope, peopleHandlers } from "../src/people.ts";
 import type { handlers as harnessHandlers } from "../../calternal-threads-claude-code/src/worker.ts";
 
 async function load<H, E = object>(directory: URL) {
@@ -52,7 +54,7 @@ export function checkTrace() {
   execFileSync("python3", ["-B", check, contract], { input: JSON.stringify(trace), stdio: ["pipe", "inherit", "inherit"] });
 }
 
-type File = { creator: string; discovery: "creator_only" | "consent_only"; owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; revision: string; path?: string; archived: boolean; title: string };
+type File = { space: string; people?: readonly string[]; creator: string; discovery: "creator_only" | "consent_only"; owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; revision: string; path?: string; archived: boolean; title: string };
 type Job = {
   context: ExecutionJobContext;
   input: RunInput;
@@ -92,6 +94,10 @@ export class FakeHost {
   private selected = { harness: "checked-harness", placement: "checked-desk" };
   loseNextAppendAck = false;
   invitedInputs: InvitedInput[] = [];
+  onInvited = async (_tools: { readMessage(id: string): { id: string; text: string } | undefined }) => {};
+  consultationTurns: ConsultationTurn[] = [];
+  private consent = new Map<string, { generation: number; always: boolean }>();
+  invitationClock = (authoredAt: string) => Date.parse(authoredAt);
   private personState = new Map<string, string>();
   private personPreferences = new Map<string, string>();
   beforeTerminal = async () => {};
@@ -155,6 +161,37 @@ export class FakeHost {
     });
   }
 
+  personalSpace(person: string) {
+    assert.ok(checkedPeople.includes(person));
+    return space.slice(0, -1) + checkedPeople.indexOf(person);
+  }
+
+  conversationAccess(item: string, person: string) {
+    return this.files.get(item)?.people?.includes(person) ? "full" : undefined;
+  }
+
+  setAlwaysConsent(item: string, person: string, always: boolean) {
+    assert.equal(this.conversationAccess(item, person), "full");
+    const key = JSON.stringify([item, person]);
+    const previous = this.consent.get(key);
+    this.consent.set(key, { generation: (previous?.generation ?? 0) + 1, always });
+  }
+
+  consultationContext(person: string, request: string, authored_at = now): PeopleContext {
+    return {
+      ...this.peopleContext(person, request, authored_at),
+      consultation: {
+        lead: logicalHarness, consultant: { package: "fixture-codex", contribution: "codex" },
+        invoke: async (role, _prompt, prior) => {
+          assert.deepEqual(prior, this.consultationTurns);
+          const text = role === "summary" ? "Agreed recommendation" : `Private exchange ${prior.length + 1}`;
+          this.consultationTurns.push({ role, text });
+          return text;
+        },
+      },
+    };
+  }
+
   peopleContext(person: string, request: string, authored_at = now, actor_label = personLabels[person]): PeopleContext {
     const call: Context["call"] = async (method, input) => {
       assert.ok(peopleMethods.has(method));
@@ -166,6 +203,14 @@ export class FakeHost {
     };
     return {
       author: { request_id: request, actor: person, authored_at, ...(actor_label && { actor_label }) }, checkedPeople, personLabels, call,
+      createShared: async (input, people) => {
+        assert.ok(people.includes(person) && people.every(id => checkedPeople.includes(id)));
+        assert.equal(input.kind, "threads");
+        trace.push(["ItemCreate", input]);
+        const result = await this.call("threads", request, "item_create", input, undefined, person, false, people);
+        trace.push(["ItemContentReceipt", result]);
+        return result as ItemContentReceipt;
+      },
       privateState: {
         read: async item => this.personState.get(JSON.stringify([person, item])),
         write: async (item, body, expected) => {
@@ -187,22 +232,56 @@ export class FakeHost {
   invitedContext(person: string, request: string, input: { item: string; scope: Scope; consent: string[] }, authored_at = now): PeopleContext {
     const ctx = this.peopleContext(person, request, authored_at);
     const { item, scope, consent } = input;
-    const invitation = {
-      item, scope, consent: [...consent], revision: this.files.get(item)!.revision,
-      inviter: person, contribution_identity: logicalHarness,
+    const file = this.files.get(item)!;
+    assert.equal(this.conversationAccess(item, person), "full");
+    const invitation = { item, scope, revision: file.revision, inviter: person, contribution_identity: logicalHarness, call: request };
+    const chosen = new Map(scoped(decode(this.markdown(item)).messages, scope).map(entry => [entry.id, entry]));
+    const permission = (author: string) => this.consent.get(JSON.stringify([item, author])) ?? { generation: 0, always: false };
+    const grants = new Map((file.people ?? []).flatMap(author => {
+      const grant = permission(author);
+      if (author === person || grant.always) return [[author, { ...grant, until: Infinity }] as const];
+      if (consent.includes(author)) return [[author, { ...grant, until: Date.parse(authored_at) + 5 * 60_000 }] as const];
+      return [];
+    }));
+    let state: "ready" | "running" | "done" = "ready";
+    const canDisclose: NonNullable<PeopleContext["canDisclose"]> = (grant, author) => {
+      const pinned = grants.get(author);
+      return grant === invitation && state !== "done" && pinned !== undefined
+        && pinned.generation === permission(author).generation && this.invitationClock(authored_at) < pinned.until;
     };
     return {
-      ...ctx, invitation,
+      ...ctx, invitation, canDisclose,
       runInvited: async (grant, payload) => {
+        assert.equal(state, "ready", "invitation already used");
         assert.equal(grant, invitation, "unchecked invitation");
-        assert.equal(this.files.get(item)?.revision, invitation.revision, "invitation changed");
-        this.invitedInputs.push(structuredClone(payload));
-        const harness = this.context(request, "threads-claude-code.run", undefined, undefined, "claude-code-run");
-        const reply = await contribution.handlers["threads-claude-code.run"]({ text: JSON.stringify(payload) }, {
-          ...harness, claude: async () => "Reply to the permitted context",
-        });
-        assert.equal(this.files.get(item)?.revision, invitation.revision, "invitation changed");
-        return reply;
+        assert.equal(payload.tools, true);
+        const selected = new Map(payload.messages.map(message => [message.id, message]));
+        const readMessage = (id: string) => {
+          const original = chosen.get(id);
+          const message = selected.get(id);
+          if (state !== "running" || !original || original.deleted || original.author.kind !== "person"
+            || !message || original.text !== message.text || !canDisclose(grant, original.author.id)) return;
+          const live = decode(this.markdown(item)).messages.find(entry => entry.id === id);
+          if (live?.deleted || live?.text !== original.text || live.author.id !== original.author.id) return;
+          return { ...message };
+        };
+        state = "running";
+        try {
+          assert.ok(payload.messages.every(message => readMessage(message.id)), "invitation scope changed");
+          this.invitedInputs.push(structuredClone(payload));
+          const harness = this.context(request, "threads-claude-code.run", undefined, undefined, "claude-code-run");
+          const reply = await contribution.handlers["threads-claude-code.run"]({ text: JSON.stringify(payload) }, {
+            ...harness, claude: async () => {
+              await this.onInvited({ readMessage });
+              assert.ok(payload.messages.every(message => readMessage(message.id)), "invitation consent changed");
+              return "Reply to the permitted context";
+            },
+          });
+          assert.ok(payload.messages.every(message => readMessage(message.id)), "invitation consent changed");
+          return reply;
+        } finally {
+          state = "done";
+        }
       },
     };
   }
@@ -268,10 +347,11 @@ export class FakeHost {
   }
 
   // This dispatch is the only place that unpacks fixture broker method operands.
-  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0] | StagingMethod, input: unknown, job?: Job, receiptActor = actor, checkedSoleCreator = false): Promise<unknown> {
+  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0] | StagingMethod, input: unknown, job?: Job, receiptActor = actor, checkedSoleCreator = false, shared?: readonly string[]): Promise<unknown> {
     if (job) assert.equal(job.state, "running", "attempt retired");
     const args = input as Record<string, string>;
     const file = this.files.get(args.item);
+    if (file?.people) assert.ok(file.people.includes(receiptActor), "Conversation unavailable.");
     const writable = () => {
       assert.ok(file?.owner === owner && !file.archived, "target unavailable");
       return file;
@@ -281,11 +361,11 @@ export class FakeHost {
     switch (method) {
       case "item_create": return commit(() => {
         const create = input as ItemCreate;
-        assert.equal(create.kind, owner);
+        assert.ok(create.kind === owner || (owner === "threads" && create.kind === "thread-consultations"));
         const item = this.id("item");
         const revision = this.id("rev");
         const body = Buffer.from(create.body ?? "", "base64");
-        const root = owner === "threads" ? "Threads" : ".calternal";
+        const root = create.kind === "thread-consultations" ? ".calternal/thread-consultations" : owner === "threads" ? "Threads" : ".calternal";
         const folders = create.folders ?? [];
         const used = new Set([...this.files.values()].map(file => file.path));
         let path = [root, ...folders, create.name].join("/");
@@ -299,9 +379,9 @@ export class FakeHost {
           assert.ok(checkedSoleCreator, "unchecked sole creator");
           assert.equal(application.manifest.kinds.find(kind => kind.id === create.kind)?.attempt_discovery, "item_policy");
         }
-        this.files.set(item, { owner, creator: receiptActor, discovery, revision, history: new Map([[revision, body]]),
+        this.files.set(item, { owner, space: this.personalSpace(receiptActor), people: shared && [...shared], creator: receiptActor, discovery, revision, history: new Map([[revision, body]]),
           path, archived: false, title: String(create.metadata.title) });
-        return { item, revision, locator: { space, id: item }, receipt: requestId };
+        return { item, revision, locator: { space: this.personalSpace(receiptActor), id: item }, receipt: requestId };
       });
       case "item_save_begin": return commit(() => {
         const spec = input as ItemStageBegin;
@@ -351,7 +431,7 @@ export class FakeHost {
           target.revision = revision;
           if (typeof save.patch?.title === "string") target.title = save.patch.title;
           if (stage || save.attempt_discovery === "consent_only" || receiptActor !== target.creator) target.discovery = "consent_only";
-          return { item: save.item, revision, locator: { space, id: save.item }, receipt: requestId };
+          return { item: save.item, revision, locator: { space: target.space, id: save.item }, receipt: requestId };
         });
       }
       case "item_head": {
@@ -457,7 +537,7 @@ export class FakeHost {
   }
 
   private head(item: string, file: File) {
-    return { item, revision: file.revision, locator: { space, id: item }, bytes: file.history.get(file.revision)!.length,
+    return { item, revision: file.revision, locator: { space: file.space, id: item }, bytes: file.history.get(file.revision)!.length,
       metadata: { title: file.title } };
   }
 
@@ -542,6 +622,13 @@ export class FakeHost {
     await mkdir(dirname(privateFile), { recursive: true });
     await writeFile(transcript, file.history.get(file.revision)!);
     await writeFile(privateFile, state);
+    for (const message of decode(this.markdown(item)).messages) {
+      if (!message.consultation) continue;
+      const consultation = this.files.get(message.consultation.id)!;
+      const path = join(directory, consultation.path!);
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, consultation.history.get(consultation.revision)!);
+    }
   }
 
   markdown(item: string) {

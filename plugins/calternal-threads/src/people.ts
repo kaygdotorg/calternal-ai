@@ -1,4 +1,4 @@
-import type { AccountRef, ContributionIdentity, ItemRef, RevisionRef } from "../generated/wire.js";
+import type { AccountRef, ContributionIdentity, ItemContentReceipt, ItemCreate, ItemLocator, ItemRef, RevisionRef } from "../generated/wire.js";
 import { inlineBody, kind, publish, read } from "./files.ts";
 import { agentParticipant, checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, messageId, messageView, personParticipant, step, type Message, type Thread } from "./format.ts";
 import { checkedText, type HarnessOutput } from "./harnesses-v1.ts";
@@ -7,12 +7,19 @@ import type { Context } from "./interface.ts";
 type Target = { item: ItemRef };
 type MessageTarget = Target & { message: string };
 export type Scope = { message: string } | { from: string; through: string } | { whole: true };
-type Invitation = Target & { revision: RevisionRef; inviter: AccountRef; contribution_identity: ContributionIdentity; scope: Scope; consent: readonly string[] };
-export type InvitedInput = { prompt: string; messages: { id: string; text: string }[] };
+type Invitation = Target & { revision: RevisionRef; inviter: AccountRef; contribution_identity: ContributionIdentity; scope: Scope; call: string };
+export type InvitedInput = { prompt: string; messages: { id: string; text: string }[]; tools: true };
+export type ConsultationTurn = { role: "lead" | "consultant" | "summary"; text: string };
+type Consultation = {
+  lead: ContributionIdentity;
+  consultant: ContributionIdentity;
+  invoke(role: ConsultationTurn["role"], prompt: string, prior: readonly ConsultationTurn[]): Promise<string>;
+};
 
 export type PeopleContext = Context & {
   // Fixture ports for checked participants, account-private storage and invocation.
   checkedPeople?: readonly AccountRef[];
+  createShared?: (input: ItemCreate, people: readonly AccountRef[]) => Promise<ItemContentReceipt>;
   personLabels?: Readonly<Record<AccountRef, string>>;
   privateState?: {
     read(item: ItemRef): Promise<string | undefined>;
@@ -23,6 +30,8 @@ export type PeopleContext = Context & {
     write(body: string, expected: string | undefined): Promise<void>;
   };
   invitation?: Invitation;
+  canDisclose?: (grant: Invitation, author: AccountRef) => boolean;
+  consultation?: Consultation;
   runInvited?: (grant: Invitation, input: InvitedInput) => Promise<HarnessOutput>;
 };
 
@@ -34,12 +43,12 @@ type Preferences = {
 const editWindowMs = 48 * 60 * 60 * 1000;
 
 async function member(ctx: Context, item: ItemRef) {
-  const { revision } = await ctx.call("item_head", { item });
+  const { revision, locator } = await ctx.call("item_head", { item });
   const { thread, size } = await read(ctx, item, revision);
   if (thread.conversation !== "people" || !thread.participants.some(p => p.kind === "person" && p.id === ctx.author.actor)) {
     throw new Error("Conversation unavailable.");
   }
-  return { thread, revision, size };
+  return { thread, revision, size, locator };
 }
 
 function find(thread: Thread, id: string) {
@@ -67,10 +76,11 @@ async function create(input: { title: string; participants: AccountRef[] }, ctx:
     title: checkedTitle(input.title), created: ctx.author.authored_at, conversation: "people",
     participants: ids.map(id => personParticipant(id, id === ctx.author.actor ? ctx.author.actor_label : ctx.personLabels?.[id])), messages: [],
   };
-  const head = await ctx.call("item_create", {
+  if (!ctx.createShared) throw new Error("Shared conversation creation unavailable.");
+  const head = await ctx.createShared({
     request_id: step(ctx.author.request_id, "people-create"), kind, folders: [folder(thread)], name: "Conversation.md", attempt_discovery: "consent_only",
     metadata: { title: thread.title }, body: inlineBody(Buffer.from(encode(thread))),
-  });
+  }, ids);
   await publish(ctx, head.item, head.revision, thread);
   return { created: head.item };
 }
@@ -224,7 +234,7 @@ async function delivery(input: MessageTarget & ({ device: "ios"; locked: boolean
   return { ring: true, push: push.enabled && deviceAllowed };
 }
 
-function scoped(messages: Message[], scope: Scope) {
+export function scoped(messages: Message[], scope: Scope) {
   if ("whole" in scope) return messages;
   const from = "message" in scope ? scope.message : scope.from;
   const through = "message" in scope ? scope.message : scope.through;
@@ -234,40 +244,101 @@ function scoped(messages: Message[], scope: Scope) {
   return messages.slice(start, end + 1);
 }
 
-async function callAgent({ item, prompt }: Target & { prompt: string }, ctx: PeopleContext) {
-  const grant = ctx.invitation;
-  if (!grant || !ctx.runInvited || grant.item !== item || grant.inviter !== ctx.author.actor) {
-    throw new Error("A checked agent invitation is required.");
-  }
-  const { thread, revision } = await member(ctx, item);
-  if (grant.revision !== revision) throw new Error("The invitation needs a current revision.");
-  const readable = scoped(thread.messages, grant.scope)
-    .filter(message => !message.deleted && message.author.kind === "person"
-      && (message.author.id === ctx.author.actor || grant.consent.includes(message.id)))
-    .map(({ id, text }) => ({ id, text }));
-  if (!readable.length) throw new Error("There are no readable messages in this invitation.");
-  const payload = { prompt: checkedText(prompt), messages: readable };
-  if (Buffer.byteLength(JSON.stringify(payload)) > 16 * 1024) throw new Error("The invitation exceeds 16 KiB.");
-
-  const agent = agentParticipant(thread.id, grant.contribution_identity);
-  if (!thread.participants.some(p => p.kind === agent.kind && p.id === agent.id)) {
+function addAgent(thread: Thread, identity: ContributionIdentity) {
+  const agent = agentParticipant(thread.id, identity);
+  if (!thread.participants.some(person => person.id === agent.id)) {
     if (thread.participants.length >= 64) throw new Error("Thread participant limit reached.");
     thread.participants.push(agent);
   }
+  return agent;
+}
+
+function resultMessage(thread: Thread, ctx: PeopleContext, id: string, identity: ContributionIdentity, result: string) {
+  const inviter = thread.participants.find(person => person.id === ctx.author.actor)!;
+  return {
+    id, author: addAgent(thread, identity), text: checkedText(result), posted_at: ctx.author.authored_at,
+    askedBy: personParticipant(ctx.author.actor, ctx.author.actor_label ?? inviter.name),
+  };
+}
+
+async function callAgent({ item, prompt }: Target & { prompt: string }, ctx: PeopleContext) {
+  const grant = ctx.invitation;
+  const canDisclose = ctx.canDisclose;
+  if (!grant || !ctx.runInvited || !canDisclose || grant.item !== item || grant.inviter !== ctx.author.actor) {
+    throw new Error("A checked agent invitation is required.");
+  }
+  const { thread, revision } = await member(ctx, item);
   const id = messageId(ctx.author.request_id, `invited-${ctx.author.actor}`);
-  // Refuse before dispatch when the fixture cannot save the reply inline.
+  if (thread.messages.some(message => message.id === id)) return { message: id };
+  const original = revision === grant.revision ? thread : (await read(ctx, item, grant.revision)).thread;
+  const current = new Map(thread.messages.map(message => [message.id, message]));
+  const readable = scoped(original.messages, grant.scope)
+    .filter(message => {
+      const live = current.get(message.id);
+      return !message.deleted && message.author.kind === "person" && live !== undefined && !live.deleted
+        && live.text === message.text && live.author.id === message.author.id && canDisclose(grant, message.author.id);
+    })
+    .map(({ id, text }) => ({ id, text }));
+  const payload: InvitedInput = { prompt: checkedText(prompt), messages: readable, tools: true };
+  if (Buffer.byteLength(JSON.stringify(payload)) > 16 * 1024) throw new Error("The invitation exceeds 16 KiB.");
+
+  addAgent(thread, grant.contribution_identity);
   inlineBody(Buffer.concat([Buffer.from(encode(thread)), Buffer.alloc(18 * 1024)]));
   const result = await ctx.runInvited(grant, payload);
-  const inviter = thread.participants.find(participant => participant.id === ctx.author.actor)!;
-  const askedBy = personParticipant(ctx.author.actor, ctx.author.actor_label ?? inviter.name);
-  thread.messages.push({ id, author: agent, text: checkedText(result.text), posted_at: ctx.author.authored_at, askedBy, log: result.log });
-  await save(ctx, item, revision, thread, "invited-reply");
+  const latest = await member(ctx, item);
+  latest.thread.messages.push({
+    ...resultMessage(latest.thread, ctx, id, grant.contribution_identity, result.text), log: result.log,
+  });
+  await save(ctx, item, latest.revision, latest.thread, "invited-reply");
   return { message: id };
+}
+
+async function consult({ item, prompt, exchanges }: Target & { prompt: string; exchanges: number }, ctx: PeopleContext) {
+  const agents = ctx.consultation;
+  if (!agents) throw new Error("A checked consultation is required.");
+  if (!Number.isInteger(exchanges) || exchanges < 1 || exchanges > 3) throw new Error("Consultation exchange limit exceeded.");
+  const { thread, locator } = await member(ctx, item);
+  const id = messageId(ctx.author.request_id, `consultation-${ctx.author.actor}`);
+  const prior = thread.messages.find(message => message.id === id);
+  if (prior?.consultation) return { message: id, consultation: prior.consultation };
+  addAgent(thread, agents.lead);
+  inlineBody(Buffer.concat([Buffer.from(encode(thread)), Buffer.alloc(18 * 1024)]));
+  const question = checkedText(prompt);
+  const turns: ConsultationTurn[] = [];
+  const { invoke } = agents;
+  async function take(role: ConsultationTurn["role"]) {
+    const text = checkedText(await invoke(role, question, [...turns]));
+    if (Buffer.byteLength(text) > 4096) throw new Error("Consultation reply exceeds 4 KiB.");
+    turns.push({ role, text });
+    return text;
+  }
+  for (let round = 0; round < exchanges; round++) {
+    await take("lead");
+    await take("consultant");
+  }
+  const summary = await take("summary");
+  const title = "Agent consultation";
+  const body = [
+    "---", `title: ${title}`, `parent: ${locator.space}/${locator.id}`,
+    `lead: ${agents.lead.package}/${agents.lead.contribution}`,
+    `consultant: ${agents.consultant.package}/${agents.consultant.contribution}`, "---", "",
+    ...turns.map(turn => `## ${turn.role}\n\n${turn.text}\n`),
+  ].join("\n");
+  const saved = await ctx.call("item_create", {
+    request_id: step(ctx.author.request_id, "consultation-file"), kind: "thread-consultations",
+    name: "Consultation.md", metadata: { title }, body: inlineBody(Buffer.from(body)),
+  });
+  const latest = await member(ctx, item);
+  const result = resultMessage(latest.thread, ctx, id, agents.lead, summary);
+  const consultation: ItemLocator = saved.locator;
+  latest.thread.messages.push({ ...result, consultation });
+  await save(ctx, item, latest.revision, latest.thread, "consultation-result");
+  return { message: id, consultation };
 }
 
 /** Fixture-only entry points for people threads pending shared custody and consent APIs. */
 export const peopleHandlers = {
-  create, post, message, getState, setState, getPreferences, setPreferences, row, delivery, callAgent,
+  create, post, message, getState, setState, getPreferences, setPreferences, row, delivery, callAgent, consult,
   edit: (input: MessageTarget & { text: string }, ctx: PeopleContext) => change(input, ctx, input.text),
   remove: (input: MessageTarget, ctx: PeopleContext) => change(input, ctx),
 };

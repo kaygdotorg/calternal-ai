@@ -76,25 +76,25 @@ test("an invited agent receives only scoped messages whose authors have consente
   await assert.rejects(people.callAgent({ item, prompt: "Try without a grant" }, ctx(alice, "denied")), /invitation/i);
   await assert.rejects(handlers["threads.send"]({ item, text: "Bypass", ...host.choose() },
     host.context("ordinary-send", "threads.send")), /invitation/i);
-  await assert.rejects(run("single-withheld", { message: second.message }, []), /no readable messages/i);
-  await run("single", { message: third.message }, [third.message]);
+  await run("single-withheld", { message: second.message }, []);
+  await run("single", { message: third.message }, [cara]);
   await run("range", { from: first.message, through: second.message }, []);
-  await run("whole", { whole: true }, [third.message]);
+  await run("whole", { whole: true }, [cara]);
   assert.deepEqual(host.invitedInputs.map(input => input.messages.map(message => message.text)), [
-    ["Cara visible"], ["Alice visible"], ["Alice visible", "Cara visible"],
+    [], ["Cara visible"], ["Alice visible"], ["Alice visible", "Cara visible"],
   ]);
-  assert.equal(decode(host.markdown(item)).messages.filter(message => message.author.kind === "agent").length, 3);
+  assert.equal(decode(host.markdown(item)).messages.filter(message => message.author.kind === "agent").length, 4);
 });
 
 test("a grant for the previous body cannot disclose an edit or deleted message", async () => {
   const { host, people, item, second, ctx } = await setup();
-  const grant = host.invitedContext(alice, "stale", { item, scope: { message: second.message }, consent: [second.message] });
+  const grant = host.invitedContext(alice, "stale", { item, scope: { message: second.message }, consent: [bob] });
   await people.edit({ item, message: second.message, text: "New private text" }, ctx(bob, "edit-private"));
-  await assert.rejects(people.callAgent({ item, prompt: "Read it" }, grant), /invitation/i);
+  await people.callAgent({ item, prompt: "Read it" }, grant);
   await people.remove({ item, message: second.message }, ctx(bob, "delete-private"));
-  const current = host.invitedContext(alice, "tombstone", { item, scope: { message: second.message }, consent: [second.message] });
-  await assert.rejects(people.callAgent({ item, prompt: "Read it" }, current), /no readable messages/i);
-  assert.deepEqual(host.invitedInputs, []);
+  const current = host.invitedContext(alice, "tombstone", { item, scope: { message: second.message }, consent: [bob] });
+  await people.callAgent({ item, prompt: "Read it" }, current);
+  assert.deepEqual(host.invitedInputs.map(input => input.messages), [[], []]);
 });
 
 test("discovery uses the checked creator policy per item and excludes a people thread", async () => {
@@ -180,6 +180,8 @@ test("the conversation file example has two people, one agent and a separate pri
   const invite = host.invitedContext(alice, "example-agent", { item, scope: { message: answer.message }, consent: [] },
     "2026-11-20T09:06:00Z");
   await people.callAgent({ item, prompt: "Summarize our meeting time." }, invite);
+  await people.consult({ item, prompt: "Consult another agent on a wet-weather backup.", exchanges: 1 },
+    host.consultationContext(alice, "example-consultation", "2026-11-20T09:07:00Z"));
   await people.setState({ item, readThrough: answer.message, draft: "I’ll bring the gloves.", muted: true },
     context(alice, "example-state", "09:07"));
 
@@ -187,6 +189,8 @@ test("the conversation file example has two people, one agent and a separate pri
   assert.deepEqual(thread.participants.map(participant => participant.kind), ["person", "person", "agent"]);
   assert.equal(thread.messages[0].edited, true);
   assert.equal(thread.messages[2].deleted, true);
+  assert.ok(thread.messages[4].consultation);
+  assert.match(host.markdown(item), /^format: calternal-thread\/v2$/m);
   assert.doesNotMatch(host.markdown(item), /gloves|wrong date/);
   const directory = process.env.THREADS_REPORT_FILES;
   if (directory) await host.materialize(directory, item, alice);
@@ -218,4 +222,80 @@ test("an audience-checked rename appears in new headings and keeps the old name 
   assert.equal(changed.posted_at, "2026-11-20T12:07:12.345Z");
   assert.match(host.markdown(item), /  - p1 \| Alice \| person/);
   assert.match(host.markdown(item), /### Alice \\· AJ \\\| New · 2026-11-20 12:07:12\.345 UTC/);
+});
+
+test("one starter-owned file gives both people full access", async () => {
+  const host = new FakeHost();
+  const people = peopleFromBundle();
+  const { created: item } = await people.create({ title: "Bob started", participants: [alice] }, host.peopleContext(bob, "bob-start"));
+  assert.equal(host.files.size, 1);
+  assert.equal(host.files.get(item)?.space, host.personalSpace(bob));
+  assert.equal(host.conversationAccess(item, alice), "full");
+  assert.equal(host.conversationAccess(item, cara), undefined);
+  const sent = await people.post({ item, text: "Same file" }, host.peopleContext(alice, "shared-write"));
+  assert.equal((await people.message({ item, message: sent.message }, host.peopleContext(bob, "shared-read"))).text, "Same file");
+});
+
+test("a call keeps its selection across later posts, with revocable one-call and always consent", async () => {
+  const { host, people, ctx, item, first, second, post } = await setup();
+  host.setAlwaysConsent(item, bob, true);
+  const call = (request: string, consent: string[]) => host.invitedContext(alice, request, { item, scope: { whole: true }, consent });
+  const original = call("snapshot", [cara]);
+  let savedTool: ((id: string) => { text: string } | undefined) | undefined;
+  const late = await post(bob, "after-call", "Too late for the first selection");
+  host.onInvited = async ({ readMessage }) => {
+    assert.equal(readMessage(second.message)?.text, "Bob private");
+    assert.equal(readMessage(late.message), undefined);
+    savedTool = readMessage;
+  };
+  await people.callAgent({ item, prompt: "Answer" }, original);
+  assert.equal(savedTool?.(second.message), undefined);
+  host.onInvited = async () => {};
+  assert.deepEqual(host.invitedInputs.at(-1)?.messages.map(message => message.text), ["Alice visible", "Bob private", "Cara visible"]);
+
+  await people.callAgent({ item, prompt: "Second call" }, call("later", []));
+  assert.deepEqual(host.invitedInputs.at(-1)?.messages.map(message => message.text), ["Alice visible", "Bob private", "Too late for the first selection"]);
+  host.onInvited = async ({ readMessage }) => {
+    host.setAlwaysConsent(item, bob, false);
+    assert.equal(readMessage(second.message), undefined);
+  };
+  await assert.rejects(people.callAgent({ item, prompt: "Revoke during call" }, call("revoke-active", [])), /consent changed/);
+  host.onInvited = async () => {};
+  await people.callAgent({ item, prompt: "Third call" }, call("revoked", []));
+  assert.deepEqual(host.invitedInputs.at(-1)?.messages.map(message => message.id), [first.message]);
+  assert.equal((await people.message({ item, message: late.message }, ctx(bob, "person-read"))).text, "Too late for the first selection");
+});
+
+test("a consultation is bounded, linked and posts exactly one result to the conversation", async () => {
+  const { host, people, item } = await setup();
+  const unstamped = host.peopleContext(alice, "unchecked-consultation");
+  await assert.rejects(people.consult({ item, prompt: "Ask for a recommendation", exchanges: 2 }, unstamped), /checked consultation/i);
+  const ctx = host.consultationContext(alice, "consultation");
+  await assert.rejects(people.consult({ item, prompt: "Ask for a recommendation", exchanges: 4 }, ctx), /exchange limit/i);
+  const output = await people.consult({ item, prompt: "Ask for a recommendation", exchanges: 2 }, ctx);
+  assert.equal(host.consultationTurns.length, 5);
+  assert.deepEqual(host.consultationTurns.map(turn => turn.role), ["lead", "consultant", "lead", "consultant", "summary"]);
+  const thread = decode(host.markdown(item));
+  assert.equal(thread.messages.length, 4);
+  assert.equal(thread.messages[3].id, output.message);
+  assert.equal(thread.messages[3].text, "Agreed recommendation");
+  assert.equal(thread.messages[3].consultation?.id, output.consultation.id);
+  assert.doesNotMatch(host.markdown(item), /Private exchange/);
+  assert.match(host.markdown(output.consultation.id), /Private exchange/);
+});
+
+test("ask-each-time authorization expires and is never reused by a later call", async () => {
+  const { host, people, item } = await setup();
+  const call = (name: string, consent: string[]) =>
+    host.invitedContext(alice, name, { item, scope: { whole: true }, consent });
+  const approved = call("one-approved-call", [bob]);
+  await people.callAgent({ item, prompt: "Summarize" }, approved);
+  await people.callAgent({ item, prompt: "Summarize" }, approved);
+  assert.equal(host.invitedInputs.length, 1);
+  assert.deepEqual(host.invitedInputs[0].messages.map(message => message.text), ["Alice visible", "Bob private"]);
+  await people.callAgent({ item, prompt: "Summarize again" }, call("no-later-approval", []));
+  host.invitationClock = (at: string) => Date.parse(at) + 5 * 60_000;
+  await people.callAgent({ item, prompt: "Summarize after expiry" }, call("expired-approval", [bob]));
+  assert.deepEqual(host.invitedInputs.slice(1).map(input => input.messages.map(message => message.text)),
+    [["Alice visible"], ["Alice visible"]]);
 });

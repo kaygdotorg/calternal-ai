@@ -36,7 +36,7 @@ nix develop -c npm run conformance -w @calternal/threads
 The build uses the 14.33 revision-aware SDK builder. It pins both
 manifest/worker packages, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-On dev-01, all 28 tests and the repository documentation gate passed. Conformance tool 1.1.0 independently
+On dev-01, all 32 tests and the repository documentation gate passed. Conformance tool 1.1.0 independently
 accepted both packages. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
@@ -270,7 +270,8 @@ still requires the host.
 The files below are the exact bytes the package worker wrote through
 the fake host on dev-01. Alice and Bob are synthetic accounts. The
 called-in Claude Code harness uses scripted output and owns a separate
-log. The private path is the fixture's account namespace.
+log. The consultation item shows the private exchange whose summary was
+posted back once. The private path is the fixture's account namespace.
 
 The format uses plain frontmatter and one participant per line. Aliases
 such as `p1` resolve to stable IDs in the list. Names on its entries are
@@ -295,7 +296,7 @@ disk. Conversation views omit it.
 
 ````markdown
 ---
-format: calternal-thread-1
+format: calternal-thread/v2
 id: e5119471e0af708b988694a46ffdd4a9
 title: Community Garden
 created: 2026-11-20 09:00 UTC
@@ -321,6 +322,10 @@ agent-p3-contribution: claude-code
 ### Claude Code · 2026-11-20 09:06 UTC · asked by Alice {#m-4daee5fd2fb71be4 by=p3 ask=p1 log=019a0000-0000-7000-8000-000000000010/item-14}
 
 > Reply to the permitted context
+
+### Claude Code · 2026-11-20 09:07 UTC · asked by Alice {#m-9d1c7cac655cb70d by=p3 ask=p1 consult=019a0000-0000-7000-8000-000000000010/item-19}
+
+> Agreed recommendation
 ````
 
 `.calternal-private/019a0000-0000-7000-8000-000000000001/threads/item-1.md`
@@ -331,6 +336,29 @@ read-through: "b31395e111a687c4"
 draft: "I’ll bring the gloves."
 muted: true
 ---
+````
+
+`.calternal/thread-consultations/Consultation.md`
+
+````markdown
+---
+title: Agent consultation
+parent: 019a0000-0000-7000-8000-000000000010/item-1
+lead: calternal-threads-claude-code/claude-code
+consultant: fixture-codex/codex
+---
+
+## lead
+
+Private exchange 1
+
+## consultant
+
+Private exchange 2
+
+## summary
+
+Agreed recommendation
 ````
 
 ## Needs host
@@ -369,15 +397,66 @@ as Markdown in a separate fixture record. That record uses compare-and-set
 and keeps the furthest read anchor. The fake uses an in-memory broker and
 a provisioned set of checked people.
 
-Invitations select one anchor, an inclusive range, or the whole current
-revision. A revision change requires another checked grant. The invite
-carries message-level consent recorded by the fake, excludes tombstones
-and agent-authored messages, and refuses a selection with no readable
-messages. The provider fixture receives only the filtered IDs and text
-plus the inviter's prompt. The reply is written by Threads and its run
-log by the harness. These are deliberately narrow fixture choices pending
-file custody, consent, placement and tool rules. Test fixtures cover a
-single space and do not model discovery or delivery between spaces.
+The starter's space holds the single conversation file. The fixture
+creates it together with full file grants for the checked people.
+They share one item and revision history. Message-level author rules
+still govern edits and deletion. The fixture does not implement group
+discovery or cross-space transport.
+
+An invitation captures one message, an inclusive range, or the whole
+conversation as of that call. Unrelated later changes do not expire it.
+Edited or deleted selected text is withheld. A person who does not answer
+contributes no messages, and the call proceeds with whatever remains,
+including a prompt-only call. Ask-each-time grants in the fixture last
+five minutes and apply to one call. Always grants apply to that author's
+messages in later explicitly addressed calls in the same conversation.
+Either can be revoked through the fixture's consent generation. Revoking
+while an attempt is active blocks its scoped read tool and suppresses
+its reply. Tools are enabled in the fixture, and the message read tool
+can only resolve messages from that call's approved selection. Subsequent
+messages need a new call.
+
+A consultation keeps the agent-to-agent exchange in a separate linked
+item. The fixture bounds it at three pairs of exchanges and one lead
+summary, with up to 4 KiB per turn. The two agents receive the person's
+explicit consultation prompt and the private exchange. They receive no
+parent transcript by default. The parent gets a single summary with a
+portable link to the consultation item. The link confers no independent
+read grant.
+
+### Cutover finding for the v1 reader
+
+The plugin writes `calternal-thread/v2` and declares file-format
+version 2. At cutover it also needs a bounded, read-only
+`calternal-thread/v1` reader following the existing writer and reader in
+`crates/server/src/threads/document.rs` and
+`crates/server/src/threads/records.rs`. That reader and migration are
+outside this fixture change.
+
+- Parse the v1 UTF-8 envelope, materialized `calternal-id`, JSON-escaped
+  title, `date`, `last edited`, archive fact and generated title heading.
+  Apply the existing rules for stripping the provider notice and private
+  session marker. Provider session data stays outside the public view.
+- Honor the v1 record's exact UTF-8 **byte** count, framing separators and
+  duplicate-ID checks. Authored Markdown can contain lookalike headings
+  and comments. Preserve message UUIDs, person/agent/automation role,
+  historical heading and offset-aware time, optional agent turn UUID and
+  provenance such as provider/model, machine and durations.
+- Resolve old deep links using the original item and message UUIDs.
+  The 16-hex v2 anchors cannot be used to infer those UUIDs. Preserve
+  existing source authority, and default ambiguous authorship to
+  consent-only for discovery. Exercise the existing examples, malformed
+  records, historical links, and private session suppression before
+  enabling the reader at cutover.
+
+### Host needs from the afternoon decisions
+
+| Area | Remaining work |
+| --- | --- |
+| Shared custody | Atomically create the file in the starter's space and establish full grants for the checked participants. Keep author rules for edits and deletion independent of host privileges. |
+| Call selection and consent | Persist the per-conversation preference and call-bound selections. Fence delivery, derived outputs and writes on revoke, expiry or delete. Qualify active attempts and both modes against a real host. |
+| Tools | Enable the called-in agent's tools under the checked call. Enforce the selected-content ceiling across every read surface and prevent broader search or follow-on reads. The fixture demonstrates only a scoped read tool. |
+| Consultation | Authorize both placements independently, bound the exchange, persist replay and cancellation, and publish just the final linked result. Require separate authority before sharing parent transcript content with a second agent. |
 
 ## Scope and limits
 

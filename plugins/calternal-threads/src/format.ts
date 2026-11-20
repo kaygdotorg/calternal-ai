@@ -33,6 +33,7 @@ export type Message = {
   askedBy?: Person;
   mentions?: string[];
   log?: ItemLocator;
+  consultation?: ItemLocator;
   edited?: true;
   deleted?: true;
 };
@@ -118,7 +119,9 @@ export function encodeMessage(message: Message, participants: Participant[]): st
     attrs.push(`ask=${alias(message.askedBy.id)}`);
   }
   if (message.mentions?.length) attrs.push(`to=${message.mentions.map(alias).join(",")}`);
-  if (message.log) attrs.push(`log=${encodeURIComponent(message.log.space)}/${encodeURIComponent(message.log.id)}`);
+  for (const [name, link] of [["log", message.log], ["consult", message.consultation]] as const) {
+    if (link) attrs.push(`${name}=${encodeURIComponent(link.space)}/${encodeURIComponent(link.id)}`);
+  }
   const quoted = message.text.split("\n").map(line => line ? `> ${line}` : ">").join("\n");
   return `\n### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n${quoted}\n`;
 }
@@ -126,7 +129,7 @@ export function encodeMessage(message: Message, participants: Participant[]): st
 /** Serialize the transcript in the same format as the append stream. */
 export function encode(thread: Thread): string {
   const { title, created, id, participants, messages, conversation } = thread;
-  const header = ["---", "format: calternal-thread-1", `id: ${id}`, `title: ${title}`, `created: ${utc(created)}`];
+  const header = ["---", "format: calternal-thread/v2", `id: ${id}`, `title: ${title}`, `created: ${utc(created)}`];
   if (conversation) header.push("conversation: people");
   header.push("participants:");
   participants.forEach((person, index) => header.push(`  - p${index + 1} | ${escapeLabel(person.name)} | ${person.kind} | ${person.id}`));
@@ -147,7 +150,7 @@ function decodeMessage(line: string, body: string[], people: Map<string, Partici
   const attrs = new Map<string, string>();
   for (const field of raw.split(" ")) {
     const [key, value] = field.split("=", 2);
-    if (!["by", "re", "ask", "to", "log"].includes(key) || !value || attrs.has(key)) {
+    if (!["by", "re", "ask", "to", "log", "consult"].includes(key) || !value || attrs.has(key)) {
       throw new Error("Unreadable message attributes.");
     }
     attrs.set(key, value);
@@ -187,11 +190,12 @@ function decodeMessage(line: string, body: string[], people: Map<string, Partici
   }
   const mentions = attrs.get("to");
   if (mentions) message.mentions = mentions.split(",").map(alias => participant(alias).id);
-  const log = attrs.get("log");
-  if (log) {
-    const [space, id, ...rest] = log.split("/");
-    if (!space || !id || rest.length) throw new Error("Unreadable log locator.");
-    message.log = { space: decodeURIComponent(space), id: decodeURIComponent(id) };
+  for (const [attribute, field] of [["log", "log"], ["consult", "consultation"]] as const) {
+    const value = attrs.get(attribute);
+    if (!value) continue;
+    const [space, id, ...rest] = value.split("/");
+    if (!space || !id || rest.length) throw new Error("Unreadable item locator.");
+    message[field] = { space: decodeURIComponent(space), id: decodeURIComponent(id) };
   }
   if (markers.includes("edited")) message.edited = true;
   return message;
@@ -219,7 +223,7 @@ export function decode(body: string): Thread {
   const id = fields.get("id");
   const title = fields.get("title");
   const created = fields.get("created");
-  if (fields.get("format") !== "calternal-thread-1" || !id || !/^[a-f0-9]{32}$/u.test(id) || !title || !created) {
+  if (fields.get("format") !== "calternal-thread/v2" || !id || !/^[a-f0-9]{32}$/u.test(id) || !title || !created) {
     throw new Error("Unreadable thread frontmatter.");
   }
   const people = new Map<string, Participant>();

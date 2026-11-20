@@ -46,8 +46,11 @@ const app = {
 const metadata = {
   api_version: 2, id: "calternal-threads", name: "Threads", version: "0.1.0", icon: "threads",
   kinds: [{
+    id: "thread-consultations", icon: "threads", title_field: "title", storage: { hidden: true },
+    claimed_text: true, schema: object({ title }, "title"),
+  }, {
     id: "threads", icon: "threads", title_field: "title", storage: { folder: "Threads" },
-    claimed_text: true, searchable: true, file_format: { id: "calternal-thread", version: 1 },
+    claimed_text: true, searchable: true, file_format: { id: "calternal-thread", version: 2 },
     append_file: true, attempt_discovery: "item_policy", execution_target: true, view_snapshots: [{ id: "body", refresh: "threads.refresh" }],
     schema: object({ title }, "title"),
   }],
@@ -70,7 +73,7 @@ const metadata = {
     { ...read, id: "threads.message", title: "Read message", target, methods: [...readBody],
       input_schema: object({ item, message: { type: "string", pattern: "^[0-9a-f]{16}$" } }, "item", "message"),
       output_schema: object({ ...messageResult, text: textSchema, posted_at: catalogueRef("Timestamp"),
-        log: catalogueRef("ItemLocator"), edited: { const: true }, replyTo: { type: "string" }, replyToName: { type: "string" },
+        log: catalogueRef("ItemLocator"), consultation: catalogueRef("ItemLocator"), edited: { const: true }, replyTo: { type: "string" }, replyToName: { type: "string" },
         askedBy: object({ kind: { const: "person" }, id: { type: "string" }, name: { type: "string" } }, "kind", "id", "name"),
         mentions: { type: "array", items: catalogueRef("AccountRef") } }, "id", "author", "text", "posted_at") },
   ],
