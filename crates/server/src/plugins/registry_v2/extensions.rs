@@ -97,6 +97,19 @@ impl CheckedContribution {
     ) -> Result<Ingest> {
         spool.ingest(call, frame, now, |data| self.interface.accepts_output(data))
     }
+
+    /// Drain one retained frame after the enrolled carrier has proved the
+    /// exact attempt. The carrier keeps the frame on a retry response and
+    /// acknowledges durable storage only after commit.
+    pub(crate) fn ingest_buffered_frame(
+        &self,
+        spool: &Spool<'_, '_>,
+        call: Uuid,
+        frame: &Value,
+        now: i64,
+    ) -> Result<Ingest> {
+        spool.ingest_buffered(call, frame, now, |data| self.interface.accepts_output(data))
+    }
 }
 
 /// Immutable catalogue index. Maximum entries are the installed package cap
