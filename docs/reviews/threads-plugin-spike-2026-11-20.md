@@ -4,7 +4,7 @@ The lane starts from dev `80864d0d`. The spike has rerun against
 14.30 (`b89586dd`), 14.31 (`00828198`), 14.32 (`3ca11613`) and
 14.33 (`47024c0f`), 14.34 (`b4d0f20d`), 14.35 (`36d49713`) and
 14.36 (`1c38c21d`) and 14.37 (`0d684545`). The current pin for both
-packages is draft 14.38 at `430cb649c5bcff7c04b856f88b0527d633c0d2e8`
+plugins is draft 14.38 at `430cb649c5bcff7c04b856f88b0527d633c0d2e8`
 on `origin/lane/v2-host-base`. It follows the November 20
 decision that the Threads app (`calternal-threads`) owns the conversation file and the selected harness
 owns its working log. The lane issue is [#92](https://git.kayg.org/kayg/calternal-ai/issues/92).
@@ -39,9 +39,9 @@ flock -s /tmp/calternal-dev02.lock nix develop -c bash -c '
 ```
 
 The build uses the 14.38 revision-aware SDK builder. It pins both
-manifest/worker packages, the Threads template and the harness entry.
+plugin manifests and workers, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-All 43 tests and both Conformance tool 1.1.0 package checks passed
+All 43 tests and both Conformance tool 1.1.0 plugin checks passed
 on dev-02 at the 14.38 pin under the shared lock. The repository
 documentation gate passed in the earlier afternoon run. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
@@ -62,8 +62,8 @@ documents the revision 13.5 renderer fixture and qualification probes.
 | --- | --- | --- |
 | File custody, API §§1 and 3 and description §9.3 | The latest owner decision assigns a conversation to Threads and a log to the harness. §1 and the worked exchange assign the conversation to the harness. A harness that forks to its own writer would also bypass Threads' participant and message rules. | Update the worked exchange to admit a job against a Threads-owned item, deliver a harness result, and append from the Threads owner under the exact attempt fence. |
 | Harness ingress and egress, §1, §3 and catalogue `extension_points`, `execution_engines` | `ExecutionJobStart.input` goes to the owning job. `ExecutionStart` accepts harness and continuation. Nothing specifies how a checked prompt reaches the contributed operation or the provider entry, or how reply bytes and a log link get back to the owner. Status and wait carry phase, approval, child and terminal signals. | Pin a generic contribution handoff with typed input and bounded, ordered output tied to the exact attempt, plus terminal and replay semantics. Define how each owner commits its own file under that fence. A completed one-shot result suffices for the first slice. Streaming needs the same checked route. |
-| Harness entry and packaging, §1, §3 and manifest `harness` | The image digest and entry asset are declarative pins. Authors need the executable ABI, image acquisition and verification, invocation, cancellation, return values, log mount or broker access, and where execution egress is described apart from the ordinary worker's network policy. | Publish the entry ABI and a same-path example with a reviewed image, resolved publisher, mounted profile and explicit placement/egress disclosure. Teach the offline builder to include and verify entry assets. |
-| Contribution target identity, §1 and manifest `contribution.app` | The prose resolves an exact app and both package generations. The manifest only names the package-local app ID as `app`. Different packages can plausibly expose the same ID. | Qualify the app by its owning package, or pin and specify a globally unique app namespace and collision rule. |
+| Harness entry and build, §1, §3 and manifest `harness` | The image digest and entry asset are declarative pins. Authors need the executable ABI, image acquisition and verification, invocation, cancellation, return values, log mount or broker access, and where execution egress is described apart from the ordinary worker's network policy. | Publish the entry ABI and a same-path example with a reviewed image, resolved publisher, mounted profile and explicit placement/egress disclosure. Teach the offline builder to include and verify entry assets. |
+| Contribution target identity, §1 and manifest `contribution.app` | The prose resolves an exact app and both plugin generations. The manifest only names the plugin-local app ID as `app`. Different plugins can plausibly expose the same ID. | Qualify the app by its owning plugin, or pin and specify a globally unique app namespace and collision rule. |
 | Item create, save, range and placement, §3 engine surface and staged save | Common item methods have prose but no catalogue request/response schemas. The create needs a checked item ref, a revision, and a readable dynamic child folder with collision behavior. The kind's folder is static. The worker also lacks an audience-safe display name for the person's part of the readable path, so the spike uses date and title. Staged save describes begin/chunk/seal but the author method enum has no precise staged calls. | Add typed create, save, head and range, including safe relative path components under the kind's declared root, atomic collision handling, a typed head conflict, and typed staged save arms. Specify audience-safe naming inputs for placement. Use the existing content writer. |
 | Rename and lifecycle projection, API §§3 and 4.4 and catalogue `host.item.rename` / `host.item.archive` | Rename of the app title can update the Markdown header with the indexed metadata, or generic Rename can update placement and Undo. No declared operation can combine both. Archive is generic and fenced, but the generic field table does not expose an `archived` list predicate. | Add a checked owner-authored body and title/placement update in one content receipt if folders should follow titles. Expose the generic archive fact to filtered Binds without asking owners to mirror it. |
 | Worker context and receipts, §§3, 4.3 and 7, SDK `worker-v2.ts` | Worker code needs the live job and alarm metadata, stable parent request identity for subeffect IDs, stable actor attribution and an authored timestamp that survives replay. The declared host frame includes job and alarm, but no author-facing request, actor or stable clock context. The dev SDK worker accepts a v1 manifest, v1 host-call inventory and a separate fixture frame with no revision 14 context. | Generate a typed author context from the revision 14 carrier, exposing only stable author data and protected job context. Derive subeffect receipts from that context. Teach the SDK how to encode refusal status and retryable head conflict. |
@@ -71,11 +71,11 @@ documents the revision 13.5 renderer fixture and qualification probes.
 | Stable identifiers and message links, API §§3 and 4.2, catalogue `view_snapshots` | The app can store a stable message ID and look it up in a checked item. `ItemViewRead` only accepts latest or older. Snapshot leaves have no message anchor and `ItemRef` / `HarnessRef` specify checked scope, leaving portable, durable identity for the log link and participant uncertain after reinstall, export or receipt expiry. | Define an authorized item locator and optional opaque message anchor on item-view open and leaves. Specify which IDs can be stored as portable references versus only used as live operands. |
 | Alarm lateness, API §3 and `AlarmDelivery` | Timestamps distinguish an exact on-time admission from a delayed one. They cannot tell an outage miss from ordinary scheduler jitter, so the spike's strict comparison would skip normal late-by-milliseconds runs. | Define scheduler delay semantics, or add a host-attested missed-window fact while leaving the action choice with the plugin. |
 | Snapshot text bounds, description `SnapshotText` and API §7 | JSON Schema `maxLength` counts characters. The pinned validator rejects a string of at most 2,000 multibyte characters when its UTF-8 encoding exceeds 2,000 bytes. The spike splits at 2,000 bytes and keeps a whole message together in its page. | Specify the intended unit and add a Unicode boundary fixture shared by SDK, tool and host. Keep the independent aggregate byte cap. |
-| SDK and guide, API §7 | The dev guide and offline builder target the sealed contract. The author and renderer generators can consume draft schemas, but the sealed SDK build rejects draft manifests and packages only the older verifier module list. The public guide does not show execution jobs, alarm evidence, view publication or a cross-package harness. | Ship a revision-aware validator, package builder and broker context, and a walkthrough that runs the same plain app plus separate harness example on the real and fake hosts. |
-| Conformance tool 1.0.0, `description_verification.py` | `check_manifest_install` unconditionally reads the catalogue's removed `conversation_capability` key. Both package runs crash after local manifest shape checks. The same module's worker-invocation check still keys on `execution_intent` while the draft job declares `execution`. | Update the tool to the revision 14 catalogue and add regressions for a plain `execution_target` app manifest, a separate contribution manifest and an alarm execution job invoke. |
+| SDK and guide, API §7 | The dev guide and offline builder target the sealed contract. The author and renderer generators can consume draft schemas, but the sealed SDK build rejects draft manifests and bundles only the older verifier module list. The public guide does not show execution jobs, alarm evidence, view publication or a cross-plugin harness. | Ship a revision-aware validator, plugin builder and broker context, and a walkthrough that runs the same plain app plus separate harness example on the real and fake hosts. |
+| Conformance tool 1.0.0, `description_verification.py` | `check_manifest_install` unconditionally reads the catalogue's removed `conversation_capability` key. Both plugin runs crash after local manifest shape checks. The same module's worker-invocation check still keys on `execution_intent` while the draft job declares `execution`. | Update the tool to the revision 14 catalogue and add regressions for a plain `execution_target` app manifest, a separate contribution manifest and an alarm execution job invoke. |
 | People-thread custody and participant refs, owner first answers and API §§1, 3, 5 | The worker can record checked people as participants in the existing kind. A list in Markdown carries no authority. The fixture supplies a prechecked account set and models one thread file with no group or cross-space behavior. | Pin the custody and membership choice before exposing people-thread creation. Define a checked operation for establishing the participant audience and file rights atomically, including which participant identifiers may be written or displayed. |
 | People-message edits and tombstones, API §3 item save and §4.2 search, history and views | A participant can edit only their own message in the fixture. The same anchor resolves to an edited mark or tombstone. The previous revision can still have the removed text, and the whole-file rewrite must remain within inline limits until staged writes exist. | Specify what deletion promises for live views, retained pages, history, search excerpts and offline copies. Reuse revision-fenced staged save. Add targeted invalidation if ordinary replacement is insufficient for the deletion promise. |
-| Private per-person thread state, API §3 item methods and §4.2 offline state | Package-owned shared items and hidden placement do not establish actor-private storage. Draft, mute, and read position need item-scoped, account-private persistence, writes from multiple devices, and cleanup independent of the shared transcript. | Pin an actor-scoped read and compare-and-set write for private item state, or explicitly give ordinary items account-private ownership. Publish applicable quotas, offline, receipt, sign-out and erase behavior. |
+| Private per-person thread state, API §3 item methods and §4.2 offline state | Plugin-owned shared items and hidden placement do not establish actor-private storage. Draft, mute, and read position need item-scoped, account-private persistence, writes from multiple devices, and cleanup independent of the shared transcript. | Pin an actor-scoped read and compare-and-set write for private item state, or explicitly give ordinary items account-private ownership. Publish applicable quotas, offline, receipt, sign-out and erase behavior. |
 | Scope and consent for called-in agents, API §3 every call and delivery, §5 and catalogue execution admission | The fixture binds an invitation to the inviter, item, source revision, selected message/range/whole scope, and consenting message IDs. The inviter authorizes their own selected messages. An old grant cannot leak new edits. A normal Send and alarm must load the Markdown to reject admission before creating a job. | Add host-issued consent and invitation bindings with visible author, exact selected message revisions, expiry and revoke rules. Revalidate at admission, before data delivery to the exact attempt, and when committing its reply. Pin a body-independent admission rule for people-only threads and a replayable one-use invocation receipt. Specify whether unrelated edits should invalidate the whole grant or only the affected messages. |
 | Called-in agent data and output, API §3 attempt authority and catalogue item/query/view routes | Delivering a filtered prompt is insufficient if an agent could subsequently read the full item through item ranges, history, snapshots, search, list or tools. The fixture only delivers selected human message IDs and text, and hands the reply back to Threads. | Add an execution read ceiling for a people thread that all alternate read routes honor. Let the attempt consume a bounded approved projection. Recheck audience/consent independently of what the ordinary inviter may read, and link the harness log through a separately checked reference. |
 | Placement for a private people conversation, API §3 and catalogue `execution_placement` | The owner decision uses the inviter's login and machine in a private people conversation. The current generic placement examples distinguish personal spaces and shared-space login choices. File custody for people threads is still open. | Pin placement and profile derivation for a checked private people-thread invitation. Keep shared-space subscription behavior on the existing path. |
@@ -90,7 +90,7 @@ behavior. Real host qualification remains under Needs host.
 | --- | --- | --- |
 | File custody | **CLOSED** | API §§1 and 3 and description §9.3 use a Threads-owned conversation and a separate harness-owned log. The fixture writes through those two owners. |
 | Harness ingress and egress | **CLOSED** | `execution_start`, `contribution_call`, and `contribution_read` pin the checked handoff, attempt writer scope, ordered output and terminal. Tests consume both frames and stop the same attempt after the first committed reply. |
-| Harness entry and packaging | **PARTLY** | `extension_points.harness_abi` specifies entry frames and pins. The SDK packages the entry and checks its digest. The manifest has no execution egress or OCI source field despite the ABI prose. The live broker endpoint and real image lifecycle remain unqualified. |
+| Harness entry and build | **PARTLY** | `extension_points.harness_abi` specifies entry frames and pins. The SDK bundles the entry and checks its digest. The manifest has no execution egress or OCI source field despite the ABI prose. The live broker endpoint and real image lifecycle remain unqualified. |
 | Contribution target identity | **CLOSED** | The qualified app is `{package:"calternal-threads",app:"threads"}`. The fake verifies both components and equality of the two interface declarations. |
 | Item create, save, range and placement | **CLOSED** | The catalogue now has typed create, head, save, range, staged operations and `head_conflict`. Relative name/folder placement, collision bounds and the optional audience-checked actor label are specified. The spike exercises inline operations and collision replay. |
 | Rename and lifecycle projection | **PARTLY** | A single save can update body, title and leaf name. The generic `archived` predicate is specified. Moving the original folder on title change remains open. |
@@ -99,8 +99,8 @@ behavior. Real host qualification remains under Needs host.
 | Stable identifiers and message links | **PARTLY** | `ItemLocator`, `item.locate` and `ItemViewRead.anchor` now have contracts. The spike stores the locator and verifies anchored pages and missing anchors. A portable logical harness participant identity across a changed installation binding still needs a source. |
 | Alarm lateness | **CLOSED** | Authored `grace_seconds` and host-stamped `missed` distinguish delay within grace from a missed run. The worker uses `missed`. The tests cover delivery one second late inside a 30-second grace window. |
 | Snapshot text bounds | **CLOSED** | Tool 1.1.0 counts Unicode code points and includes a Unicode regression. The spike uses code-point leaves within the unchanged aggregate byte budget. |
-| SDK and guide | **PARTLY** | A revision-aware builder, context adapter and two-package walkthrough are available on the draft branch. The dev SDK and installable guide remain sealed-revision artifacts. Real/fake parity is unqualified. |
-| Conformance tool crash | **CLOSED** | Tool 1.1.0 accepts both real packages and the producer regression validates the current `execution` job declaration. |
+| SDK and guide | **PARTLY** | A revision-aware builder, context adapter and two-plugin walkthrough are available on the draft branch. The dev SDK and installable guide remain sealed-revision artifacts. Real/fake parity is unqualified. |
+| Conformance tool crash | **CLOSED** | Tool 1.1.0 accepts both plugins and the producer regression validates the current `execution` job declaration. |
 | People-thread custody and participant refs | **OPEN** | Custody, trusted authorship and atomically establishing a participant's file grants remain open. The fixture provisions checked participants. |
 | People-message edits and tombstones | **PARTLY** | Atomic content save and the message anchor route are now defined. Deletion behavior for history, search, cached pages and offline copies is still open. |
 | Private per-person thread state | **OPEN** | There is no actor-private, item-scoped compare-and-set or retention contract. |
@@ -154,8 +154,8 @@ is present. Live qualification is tracked separately.
 | --- | --- | --- |
 | File custody | **CLOSED** | Threads writes the transcript. A checked contributor writes its own log and returns an independently authorized locator. |
 | Harness ingress and egress | **CLOSED** | The pinned broker calls still supply an ordered stream and exact attempt fence. The Stop and lost-ACK tests pass. |
-| Harness entry and packaging | **CLOSED** | The ABI, asset packing, OCI source and separately approved execution network fields are declared. The lane's fixture source is `registry.example.invalid/calternal/threads-claude-code-fixture` with explicit `execution_network:"none"`. Real image acquisition, executable launch and egress enforcement still need host qualification. |
-| Contribution target identity | **CLOSED** | Both package and app are qualified and the fake checks the two declared interfaces. |
+| Harness entry and build | **CLOSED** | The ABI, asset packing, OCI source and separately approved execution network fields are declared. The lane's fixture source is `registry.example.invalid/calternal/threads-claude-code-fixture` with explicit `execution_network:"none"`. Real image acquisition, executable launch and egress enforcement still need host qualification. |
+| Contribution target identity | **CLOSED** | Both plugin and app are qualified and the fake checks the two declared interfaces. |
 | Item create, save, range and placement | **CLOSED** | Typed inline and staged methods, conflict result, readable placement and optional checked actor label remain defined. The spike continues to exercise the inline subset. |
 | Rename and lifecycle projection | **PARTLY** | Atomic body/title/leaf rename and the archived predicate remain defined. Moving the folder with a rename is undecided. |
 | Worker context and receipts | **PARTLY** | The adapter exposes the checked author, job and alarm facts, and the generated broker types have improved. Sealed dev worker dispatch still needs the draft carrier adapter for the live host. |
@@ -163,8 +163,8 @@ is present. Live qualification is tracked separately.
 | Stable identifiers and message links | **CLOSED** | Log locators, checked anchors and portable logical contribution identity are defined. Message authors keep one local ID across a fresh live harness binding. |
 | Alarm lateness | **CLOSED** | The host records the grace-based missed bit. The worker tests both within-grace and missed runs. |
 | Snapshot text bounds | **CLOSED** | Unicode code-point leaves and the independent aggregate-byte cap remain in use. |
-| SDK and guide | **PARTLY** | The pinned SDK builds, encodes and validates both packages. The draft walkthrough is updated. The installable guide and real-host parity remain separate work. |
-| Conformance tool crash | **CLOSED** | The verifier accepts both packages at the new pin. |
+| SDK and guide | **PARTLY** | The pinned SDK builds, encodes and validates both plugins. The draft walkthrough is updated. The installable guide and real-host parity remain separate work. |
+| Conformance tool crash | **CLOSED** | The verifier accepts both plugins at the new pin. |
 | People-thread custody and participant refs | **OPEN** | The fixture can provision participants. Production custody, trusted authorship and atomic participant grants still need decisions and checked routes. |
 | People-message edits and tombstones | **PARTLY** | Typed saves and anchors work. Historical content, search and offline/cache deletion propagation remain open. |
 | Private per-person thread state | **OPEN** | An actor-private item-scoped write, compare-and-set and retention policy remain unspecified. |
@@ -195,7 +195,7 @@ contract gap. Live host qualification remains separate.
 | --- | --- | --- |
 | File custody | **CLOSED** | Threads still writes the conversation and the harness still owns its separate log. |
 | Harness ingress and egress | **CLOSED** | Admission pins the exact input. The checked contribution transports bounded output and a terminal frame. |
-| Harness entry and packaging | **CLOSED** | The declared ABI, asset pins, OCI source and explicit execution policy pass the package checks. The registry and entry are still fixtures. |
+| Harness entry and build | **CLOSED** | The declared ABI, asset pins, OCI source and explicit execution policy pass the plugin checks. The registry and entry are still fixtures. |
 | Contribution target identity | **CLOSED** | The qualified app and both declared contribution interfaces still match. |
 | Item create, save, range and placement | **CLOSED** | Typed operations pass. The fake now exercises revision-checked staged replacement as well as the inline paths. |
 | Rename and lifecycle projection | **PARTLY** | Atomic body, title and leaf update and the archived predicate are defined. Moving a thread's folder on rename remains open. |
@@ -204,8 +204,8 @@ contract gap. Live host qualification remains separate.
 | Stable identifiers and message links | **CLOSED** | Anchor and locator tests pass, and an agent keeps its logical participant identity after a fresh checked binding. |
 | Alarm lateness | **CLOSED** | The worker still applies the host-recorded missed bit and authored grace period. |
 | Snapshot text bounds | **CLOSED** | The code-point and aggregate-byte limits remain covered by paged snapshot tests. |
-| SDK and guide | **PARTLY** | Both packages build with the pinned SDK. The draft author walkthrough is updated. Installable guide updates and real-host parity remain. |
-| Conformance tool crash | **CLOSED** | Conformance tool 1.1.0 accepts both packages at the 14.33 pin. |
+| SDK and guide | **PARTLY** | Both plugins build with the pinned SDK. The draft author walkthrough is updated. Installable guide updates and real-host parity remain. |
+| Conformance tool crash | **CLOSED** | Conformance tool 1.1.0 accepts both plugins at the 14.33 pin. |
 | People-thread custody and participant refs | **OPEN** | Production custody and atomic grants for checked participants still need a contract. |
 | People-message edits and tombstones | **PARTLY** | Typed saves and message anchors work. Prior history, search and offline deletion propagation remain open. |
 | Private per-person thread state | **OPEN** | Account-private per-item persistence, compare-and-set and retention remain fixture-only. |
@@ -244,7 +244,7 @@ or a host recertification path.
 | --- | --- | --- |
 | File custody | **CLOSED** | The Threads app writes the conversation and the harness owns its separate log. |
 | Harness ingress and egress | **CLOSED** | Admission pins input and the checked contribution returns bounded output. |
-| Harness entry and packaging | **CLOSED** | Both packages pass the ABI, asset and execution policy checks. Placement remains fixture-only. |
+| Harness entry and build | **CLOSED** | Both plugins pass the ABI, asset and execution policy checks. Placement remains fixture-only. |
 | Contribution target identity | **CLOSED** | The qualified app and contribution interfaces match. |
 | Item create, save, range and placement | **CLOSED** | Typed inline and staged operations pass. Exact begin and final-save replay return the committed receipt after stage retirement. Changed operands conflict. |
 | Rename and lifecycle projection | **PARTLY** | The atomic body, title and leaf and archived predicate are defined. A folder move on rename remains open. |
@@ -253,17 +253,17 @@ or a host recertification path.
 | Stable identifiers and message links | **CLOSED** | Stable message anchors, portable locators and logical agent identities pass. |
 | Alarm lateness | **CLOSED** | The worker consumes the missed bit and applies the authored grace period. |
 | Snapshot text bounds | **CLOSED** | Page tests cover complete messages, code points and aggregate bytes. |
-| SDK and guide | **PARTLY** | Both packages build with the pinned SDK. The installable guide update and host parity remain open. |
-| Conformance tool crash | **CLOSED** | Tool 1.1.0 accepts both packages at 14.34. |
+| SDK and guide | **PARTLY** | Both plugins build with the pinned SDK. The installable guide update and host parity remain open. |
+| Conformance tool crash | **CLOSED** | Tool 1.1.0 accepts both plugins at 14.34. |
 | People-thread custody and participant refs | **PARTLY** | §3 pins one starter-space item and checked full item grants, including item sharing. Checked lookup and atomic creation and grant wires remain open. |
 | People-message edits and tombstones | **PARTLY** | Current-head saves and links work. History, search, cache and offline propagation remain open. |
-| Private per-person thread state | **PARTLY** | `attempt_disclosure.private_state` defines actor/package/item scope and live access. Compare-and-set, retention and wire shapes remain open. |
+| Private per-person thread state | **PARTLY** | `attempt_disclosure.private_state` defines actor/plugin/item scope and live access. Compare-and-set, retention and wire shapes remain open. |
 | Scope and consent for called-in agents | **PARTLY** | `attempt_disclosure` pins selection, both consent modes, revocation and fences. Trusted authorship, selection evidence and grant wires remain open. The fixture withholds even the caller's old messages without a grant. |
 | Called-in agent data and output | **PARTLY** | The policy limits tools to the checked selection and fences delivery and derived output. Per-author projection and tools-on isolation still need live qualification. |
 | Placement for a private people conversation | **PARTLY** | Selected-material calls use the caller's enrolled machine and login in a personal space or the configured binding in a shared space. The checked placement exchange and qualification remain open. |
 | Kind-wide denial of discovery (14.31) | **CLOSED** | The decision is still per item. A checked fresh creator item is discoverable by the creator's attempts. Ordinary opaque continuation loses that eligibility under 14.34. See the new finding below. |
-| Harness egress and OCI acquisition fields (14.31) | **CLOSED** | The fields pass package checks; registry and egress enforcement need live qualification. |
-| Generated `ItemSave` and `ItemViewPage` (14.31) | **CLOSED** | The generated fields used by both packages still compile. |
+| Harness egress and OCI acquisition fields (14.31) | **CLOSED** | The fields pass plugin checks; registry and egress enforcement need live qualification. |
+| Generated `ItemSave` and `ItemViewPage` (14.31) | **CLOSED** | The generated fields used by both plugins still compile. |
 | First Send target operand (14.31) | **CLOSED** | Send and alarms use top-level `item`, and the host keeps the contributed input separate. |
 | Encoded contribution limits (14.31) | **CLOSED** | Both LF-terminated frames are bounded before admission and at dispatch. |
 | Participant identity (14.31) | **CLOSED** | The stored logical identity remains separate from the checked harness ref. |
@@ -274,8 +274,8 @@ or a host recertification path.
 | Receipt, typing and device routing | **OPEN** | Muted-chat delivery, the account preference and iOS device state still need host exchanges. |
 | Read-only v1 cutover reader | **OPEN** | §3 pins the format identifier scheme. The existing v1 reader behavior is listed below and still needs implementation at cutover. |
 | Agent consultation | **PARTLY** | §3 and `attempt_disclosure.consultation` specify a linked item, child-execution ceilings and an independent disclosure check. Live child admission and result authority are unqualified. |
-| Account picker and atomic named grants | **PARTLY** | `group_people_scope` pins one checked common group. The fixture exercises mixed-group refusal and revalidation at write. Package-facing exchange and live bootstrap remain open. |
-| Account invites and contact identity | **PARTLY** | Group members may issue scoped invites under 14.34. Contact association and package-facing invitation, redemption and default-space bootstrap remain for Contacts. |
+| Account picker and atomic named grants | **PARTLY** | `group_people_scope` pins one checked common group. The fixture exercises mixed-group refusal and revalidation at write. Plugin-facing exchange and live bootstrap remain open. |
+| Account invites and contact identity | **PARTLY** | Group members may issue scoped invites under 14.34. Contact association and plugin-facing invitation, redemption and default-space bootstrap remain for Contacts. |
 | Existing sharing rights and group removal | **PARTLY** | 14.34 grants editing and sharing rights within the item. The owner settled the read-only rule below. The named-grant exchange and live downgrade still need host qualification. |
 | Account lookup versus agent discovery | **CLOSED** | `group_people_scope` and `attempt_disclosure` explicitly govern separate checks. Future Contacts policy and live host paths remain open. |
 
@@ -294,19 +294,19 @@ or a host recertification path.
 | Kind-wide denial of discovery and import downgrade | **CLOSED** | Another person's agent cannot discover the personal item. A people thread remains excluded for both participants. A staged import into the proven personal item still becomes `consent_only` only when published. The worker still cannot clear the marker. |
 | Shared write attribution | **CLOSED** for discovery | One participant submits a message using the starter's display name. The fixture binds the other participant's account to the committed revision and the transcript keeps that participant's stable ID. This item-level attribution supplies no trusted per-message consent proof. |
 | Group separation and shared custody | **PARTLY** | `group_people_scope.loss_of_common_group` now pins the read-only transition and grant-change fence. The fixture preserves both readers' exports and blocks pending replies. Live lookup, named grants, write and disclosure fences, and default-space bootstrap still need a host. |
-| SDK and guide | **PARTLY** | The installable guide and reading-list reference now use the replayable alarm job and `alarm_set`. Both Threads packages build at the pin. Live parity and the generated contribution/alarm type gap remain. |
+| SDK and guide | **PARTLY** | The installable guide and reading-list reference now use the replayable alarm job and `alarm_set`. Both Threads plugins build at the pin. Live parity and the generated contribution/alarm type gap remain. |
 | Guide for one-date alarms | **CLOSED** | The guide now identifies the checked reminder item and the one due time. |
 | Scope and consent, called-in data and output, placement, actor-private state, viewer-specific row fields, consultations | **PARTLY** | 14.35 distinguishes checked item-write attribution from per-message authorship. The previous trusted selection, grant, preference, placement, tools and delivery exchanges remain open. |
 | Rename and lifecycle, worker context and receipts, message tombstones, picker/grants, invites/contact identity | **PARTLY** | Each retains its 14.34 disposition. Live write attribution and read-only group enforcement add qualification cases. |
 | Generated contribution input and alarm dependency, receipt/typing/device routing, read-only v1 cutover reader | **OPEN** | No relevant wire or implementation change at this pin. |
-| File custody, harness ingress/egress and packaging, contribution target identity, item create/save/range/placement, create outcome, stable identifiers and message links, alarm lateness, snapshot bounds, verifier crash, harness egress/OCI, generated `ItemSave`/`ItemViewPage`, top-level Send target, encoded contribution limits, 413 preflight, logical participant identity, separate account and agent discovery | **CLOSED** | The previous dispositions hold. The package and fixture rerun covers the current schemas. |
+| File custody, harness ingress/egress and build, contribution target identity, item create/save/range/placement, create outcome, stable identifiers and message links, alarm lateness, snapshot bounds, verifier crash, harness egress/OCI, generated `ItemSave`/`ItemViewPage`, top-level Send target, encoded contribution limits, 413 preflight, logical participant identity, separate account and agent discovery | **CLOSED** | The previous dispositions hold. The plugin and fixture rerun covers the current schemas. |
 
 **New finding, OPEN.** The catalogue says an import, whole-file paste or
 hand edit is unproven even when submitted by the creator.
 `ItemSave` and `ItemAppend` expose opaque bytes and an optional
 `consent_only` request. The fixture knows its staged input came from a
 separate import entry. If an import enters through the same checked
-owning-package invocation as an authored write, the catalogue does not
+owning plugin's invocation as an authored write, the catalogue does not
 pin how the host distinguishes the two. Pin the generic checked source
 of that classification, including imported content assembled by a
 worker, and test that omitting the marker cannot preserve discovery.
@@ -333,7 +333,7 @@ The encoding vector also showed that a record with unrelated content appended st
 passes a substring check. A size cap alone leaves that channel open.
 
 **14.36 proposal, superseded by the owner decision below.** Keep exact whole-source equality as the
-default. For formatted bytes, let the installed package declare one
+default. For formatted bytes, let the installed plugin declare one
 bounded, deterministic byte recipe per supported write shape. The
 worker can select a permitted recipe and identify the checked source
 and previous-revision ranges it uses. The host reconstructs and compares
@@ -414,7 +414,7 @@ and the escape can therefore round-trip without parsing Markdown.
 | Finding | Status | Evidence or remaining gap |
 | --- | --- | --- |
 | Normal creator discovery | **CLOSED** on the fake host | The checked title is the middle at creation. Each of three ordinary Sends appends the exact checked composer text. Each reply uses its validated output sequence. Host-recorded attribution preserves creator discovery through those writes. |
-| Shared sender attribution and span changes | **CLOSED** for the tested exchange | The checked writer attributes Bob's submission and edit to Bob's account even when the heading label is Alice. The edit replaces one recorded span, a stale ref is refused, and deletion uses an empty middle plus the package's tombstone heading. The neighboring record stays intact. The tombstone has no authored middle. |
+| Shared sender attribution and span changes | **CLOSED** for the tested exchange | The checked writer attributes Bob's submission and edit to Bob's account even when the heading label is Alice. The edit replaces one recorded span, a stale ref is refused, and deletion uses an empty middle plus the plugin's deleted-message heading. The neighboring record stays intact. The tombstone has no authored middle. |
 | Import classification | **CLOSED** at the contract and fixture level | Raw staged import removes creator discovery at publication. An exact Notes-like snapshot can use the empty-framing attested save. The same writer can save additional unexplained bytes only via the opaque path, which downgrades the item. |
 | Delimiter escape | **OPEN** | Catalogue `item_engine.attested_write.compose` explicitly prohibits transforms. A body line requiring the reversible escape below is stored as an explicit opaque write, which sets `consent_only`. If those messages must preserve discovery, pin the one reversible delimiter escape as a checked capture/serialization rule, or provide a boundary mechanism that leaves the captured middle unchanged. |
 | Recover message span refs | **OPEN** | Receipts return a span ref, but there is no checked lookup after reopening by message anchor and no durable app receipt-to-anchor binding in the current people fixture. The edit/delete test passes the earlier checked receipt into the fixture. Define a scoped lookup or a durable app mapping. A raw whole-body rename or an opaque people-thread rewrite retires existing spans. |
@@ -422,7 +422,7 @@ and the escape can therefore round-trip without parsing Markdown.
 | Other 14.36 findings | **Unchanged** | Live host qualification, invoked and alarm-source details, trusted per-message consent, and the outstanding people, cutover and SDK wires remain open. |
 
 For personal threads, the starter stays in the frontmatter. An agent
-reply carries its durable contribution identity as a compact `agent=`
+reply carries its durable contribution identity as a compact `agent-plugin=`
 heading attribute. The reader incorporates that participant into the
 roster from its first reply. This avoids rewriting the whole file to
 insert the first harness participant, which 14.37 would treat as opaque.
@@ -443,7 +443,7 @@ the alarm invocation has no checked composer capture.
 | --- | --- | --- |
 | Delimiter escape in checked messages | **CLOSED** | `item_spans` supplies the byte bounds of the complete record and exact middle. A tagged heading, an existing backslash and a trailer-shaped line can be literal body text. The personal Send fixture confirms that the bytes stay unchanged and creator discovery stays enabled. |
 | Recover message span refs | **CLOSED** on the fake host | A new invocation lists the exact revision and gets the message span by its anchor. Edit and delete use that live ref. The test pages one span at a time, reads the old ref from its historical page, and checks that it is refused as a live mutation target. |
-| Framing budget | **PARTLY** | The heading carries only a `refs=1` flag for artifact references. A compact Markdown comment in the suffix holds the log and consultation locators. UTF-8 length is checked for both operands. An over-budget prefix or suffix stays on the opaque path without truncating names or links. |
+| Framing budget | **PARTLY** | The heading carries only a `links=1` flag for links. A compact Markdown comment in the suffix holds the log and consultation locators. UTF-8 length is checked for both operands. An over-budget prefix or suffix stays on the opaque path without truncating names or links. |
 | Opaque import or fallback | **CLOSED** for protection and plugin-controlled fallback | A raw append or save invalidates the new revision's old index and sets `consent_only`. Older revision indexes remain readable through their pins. Before an opaque append would make existing literal headings ambiguous, the plugin serializes those messages with escapes and commits the update together. The test exercises a reframe large enough to need staging. Later attested appends add their own spans without recertifying the opaque prefix. |
 | External edits after index loss | **OPEN** | A hand edit or import can preserve an unescaped line that used to be inside an indexed middle while discarding its index. The unproven bytes alone cannot disambiguate it from a real heading. Hand editors can escape such a line. If lossless export and reimport of those cases is required, the export path needs to escape unindexed delimiters or carry the ranges with the export. |
 | Live host and earlier findings | **UNCHANGED** | This run exercises the published shapes on the fake host. Sealed read authority, persisted revision retention and purge, trusted consent, scheduling, and the earlier cutover and SDK issues still need their own qualifications. |
@@ -491,7 +491,7 @@ still requires the host.
 
 ### Conversation and private state on disk
 
-The files below are the exact bytes the package worker wrote through
+The files below are the exact bytes the plugin worker wrote through
 the fake host on dev-02. Alice and Bob are synthetic accounts. The
 called-in Claude Code harness uses scripted output and owns a separate
 log. The consultation item shows the private exchange whose summary was
@@ -506,6 +506,12 @@ headings or changing the participant ID. The agent label is derived from
 the contribution's local name until the host supplies an approved
 presentation label. Contribution identity stays in the frontmatter.
 Names are for display. The host still determines authority.
+
+The transcript names the agent's plugin and harness explicitly.
+Message details use `reply-to`, `asked-by` and `mentions`. The
+private file calls its saved position `last-read-message`, and the
+notification preferences spell out when push is enabled. Consultation
+logs identify the conversation, lead agent and consulted agent.
 
 The host's recorded ranges delimit attested messages. For a hand-edited
 or imported file, a message ends at the next unescaped `###` heading
@@ -530,8 +536,8 @@ participants:
   - p1 | Alice | person | 019a0000-0000-7000-8000-000000000001
   - p2 | Bob | person | 019a0000-0000-7000-8000-000000000002
   - p3 | Claude Code | agent | a2816f2fd78322bbae0b8609cf0ed511
-agent-p3-package: calternal-threads-claude-code
-agent-p3-contribution: claude-code
+agent-p3-plugin: calternal-threads-claude-code
+agent-p3-harness: claude-code
 ---
 
 ### Alice · 2026-11-20 09:01 UTC · edited {#m-b31395e111a687c4 by=p1}
@@ -540,23 +546,23 @@ Can we meet by the garden gate at 10:30?
 
 The rain should clear by then.
 
-### Bob · 2026-11-20 09:02 UTC · reply to Alice {#m-eaa58816884f2492 by=p2 re=m-b31395e111a687c4 to=p1}
+### Bob · 2026-11-20 09:02 UTC · reply to Alice {#m-eaa58816884f2492 by=p2 reply-to=m-b31395e111a687c4 mentions=p1}
 
 Yes, I’ll bring the key.
 
 ### Bob · 2026-11-20 09:03 UTC · deleted {#m-264b5e3f491fd782 by=p2}
 
-### Claude Code · 2026-11-20 09:06 UTC · asked by Alice {#m-4daee5fd2fb71be4 by=p3 ask=p1 refs=1}
+### Claude Code · 2026-11-20 09:06 UTC · asked by Alice {#m-4daee5fd2fb71be4 by=p3 asked-by=p1 links=1}
 
 Reply to the permitted context
 
-<!-- log=019a0000-0000-7000-8000-000000000010/item-19 -->
+<!-- run-log=019a0000-0000-7000-8000-000000000010/item-19 -->
 
-### Claude Code · 2026-11-20 09:07 UTC · asked by Alice {#m-9d1c7cac655cb70d by=p3 ask=p1 refs=1}
+### Claude Code · 2026-11-20 09:07 UTC · asked by Alice {#m-9d1c7cac655cb70d by=p3 asked-by=p1 links=1}
 
 Agreed recommendation
 
-<!-- consult=019a0000-0000-7000-8000-000000000010/item-24 -->
+<!-- consultation=019a0000-0000-7000-8000-000000000010/item-24 -->
 
 ````
 
@@ -564,7 +570,7 @@ Agreed recommendation
 
 ````markdown
 ---
-read-through: "b31395e111a687c4"
+last-read-message: "b31395e111a687c4"
 draft: "I’ll bring the gloves."
 muted: true
 ---
@@ -575,27 +581,27 @@ muted: true
 ````markdown
 ---
 title: Agent consultation
-parent: 019a0000-0000-7000-8000-000000000010/item-1
-lead: calternal-threads-claude-code/claude-code
-consultant: fixture-codex/codex
+conversation: 019a0000-0000-7000-8000-000000000010/item-1
+lead-agent: calternal-threads-claude-code/claude-code
+consulted-agent: fixture-codex/codex
 ---
 
-## lead
+## Lead agent
 
 Private exchange 1
 
-## consultant
+## Consulted agent
 
 Private exchange 2
 
-## summary
+## Summary
 
 Agreed recommendation
 ````
 
 ## Needs host
 
-- Generic installation and cross-package extension resolution, with
+- Generic installation and cross-plugin extension resolution, with
   pinned owner app and contributor builds, checked harness and placement
   choices, protected Send, and a verified harness image and entry.
 - The typed execution admission, invocation metadata, bounded
@@ -704,7 +710,7 @@ and unknown IDs with the same error, including on replay.
 In the existing app, account invites are single-use onboarding links issued
 under `people.invite`. 14.34 allows members to issue links scoped to
 their own group and calls for a default shared space per group. The
-package exchange stays open. Redemption creates the account and applies any assigned
+plugin exchange stays open. Redemption creates the account and applies any assigned
 local memberships together. An account becomes eligible to pick when the
 same directory rule can see it. The picker deals in account IDs. Contact
 cards and CardDAV lists have their own identities and can supply contact
@@ -751,8 +757,8 @@ legacy native provider path or new public execution and contribution
 APIs. Directly appending from the harness to the thread would also
 require a cross-owner write grant that the design does not provide.
 
-The package worker code uses no native Threads dispatch, special plugin ID,
-direct package connection, inherited provider credential, or server-owned
+The plugin worker code uses no native Threads dispatch, special plugin ID,
+direct plugin connection, inherited provider credential, or server-owned
 thread format. The fixture provider port stands in for live execution placement. The
 14.38 fake carries replies through the catalogue's checked contribution
 methods. People-thread invitations still use fixture ports. The harness manifest includes
@@ -828,6 +834,6 @@ when visibility changes before confirmation. [ADR 0060][adr0060]
   writer and reader authority enforced at their separate entry points.
 - Put shared broker request and result shapes in the catalogue once and
   derive worker typings, fake validation and author examples from them.
-  That removes the spike's fixture declarations and draft packaging script.
+  That removes the spike's fixture declarations and draft plugin build script.
 - Keep one host composition path for complete editor snapshots,
   formatted appends and recorded-span replacements.

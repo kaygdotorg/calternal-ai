@@ -10,7 +10,7 @@ const slot = "body";
 
 /** Encode the full Markdown body within the inline broker frame budget. */
 export function inlineBody(body: Buffer): string {
-  if (body.length > MAX_V2_FRAME_BYTES / 2) throw new Error("This edit needs staged item save.");
+  if (body.length > MAX_V2_FRAME_BYTES / 2) throw new Error("This edit is too large to save in one step.");
   return body.toString("base64");
 }
 
@@ -23,7 +23,7 @@ export async function read(ctx: Context, item: ItemRef, revision: RevisionRef) {
     const chunk = Buffer.from(part.bytes, "base64");
     const end = offset + chunk.length;
     if (chunk.length > 65536 || end > MAX_FILE_BYTES || (part.next_offset !== undefined && (end <= offset || end !== part.next_offset))) {
-      throw new Error("Invalid or oversized thread range.");
+      throw new Error("The conversation file could not be read within its size limit.");
     }
     chunks.push(chunk);
     if (part.next_offset === undefined) {
@@ -37,7 +37,7 @@ export async function read(ctx: Context, item: ItemRef, revision: RevisionRef) {
         if (page.item !== item || page.revision !== revision ||
             (provenance !== undefined && page.body_provenance !== provenance) ||
             page.spans.length > 128 || (page.next && (!page.spans.length || seen.has(page.next))) ||
-            index.length + page.spans.length > bytes.length) throw new Error("Invalid thread span index.");
+            index.length + page.spans.length > bytes.length) throw new Error("The saved message ranges are invalid.");
         index.push(...page.spans);
         provenance = page.body_provenance;
         cursor = page.next;
@@ -74,7 +74,7 @@ export async function appendRecord(ctx: Context, item: ItemRef, revision: Revisi
         const chunk = body.subarray(offset, offset + 65536);
         const ack = await ctx.call("item_save_chunk", { handle: begin.handle, offset, bytes: chunk.toString("base64") });
         if (ack.next_offset < offset + chunk.length || ack.next_offset > body.length) {
-          throw new Error("Invalid thread staging acknowledgement.");
+          throw new Error("The host could not confirm the saved portion of the conversation.");
         }
         offset = ack.next_offset;
       }

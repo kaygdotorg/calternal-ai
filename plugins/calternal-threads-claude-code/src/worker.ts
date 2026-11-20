@@ -10,7 +10,7 @@ type HarnessContext = Pick<Context, "call" | "author"> & {
 
 async function run({ text }: HarnessInput, ctx: HarnessContext): Promise<HarnessOutput> {
   const prompt = checkedText(text);
-  if (!ctx.claude) throw new Error("This host does not expose the harness entry ABI.");
+  if (!ctx.claude) throw new Error("The Claude Code plugin cannot run on this host.");
   const key = (purpose: string) =>
     createHash("sha256").update(JSON.stringify([ctx.author.request_id, purpose])).digest("hex").slice(0, 32);
   const id = key("log");

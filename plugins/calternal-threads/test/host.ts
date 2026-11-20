@@ -91,7 +91,7 @@ type DirectoryGroup = { id: string; source: "local" | "oidc"; members: readonly 
 const peopleMethods = new Set(["item_create", "item_head", "item_range", "item_spans", "item_save", "item_save_begin",
   "item_save_chunk", "item_save_seal", "item_append", "item_view_context", "item_view_publish"]);
 
-/** One in-memory space. Validates package ownership, exact revisions and
+/** One in-memory space. Validates plugin ownership, exact revisions and
  * attempt retirement around the calls used by the spike. */
 export class FakeHost {
   files = new Map<string, File>();
@@ -233,7 +233,7 @@ export class FakeHost {
     this.directoryGroups = groups;
   }
 
-  // The package picker uses the checked group, separate from administrative visibility (ADR 0060).
+  // The plugin picker uses the checked group, separate from administrative visibility (ADR 0060).
   private canPickPerson(group: string, viewer: string, person: string) {
     const members = this.directoryGroups.find(entry => entry.id === group)?.members;
     return directoryAccounts.includes(viewer) && directoryAccounts.includes(person) &&

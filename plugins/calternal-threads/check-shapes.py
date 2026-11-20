@@ -20,7 +20,7 @@ def validate(shape, value, root, path):
 def pinned(directory, asset):
     path = directory / asset["path"]
     if not path.resolve().is_relative_to(directory.resolve()):
-        raise SystemExit(f"Asset outside package: {path}")
+        raise SystemExit(f"Asset outside the plugin archive: {path}")
     if hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]:
         raise SystemExit(f"SHA-256 mismatch: {path}")
     return path

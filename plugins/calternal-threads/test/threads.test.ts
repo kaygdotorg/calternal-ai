@@ -349,7 +349,7 @@ test("the shorter heading and suffix fit a long reply and keep a literal delimit
   const heading = messageRecord(base, [agent], true);
   assert.ok(Buffer.byteLength(heading.prefix) <= 512);
   assert.doesNotMatch(heading.prefix, /log=/);
-  assert.match(heading.suffix, /<!-- log=019a0000-0000-7000-8000-000000000010\/run-1 -->/);
+  assert.match(heading.suffix, /<!-- run-log=019a0000-0000-7000-8000-000000000010\/run-1 -->/);
   assert.ok(attest(heading, { kind: "output", seq: 1 }));
   const oversized = messageRecord({ ...base, replyToName: "🐝".repeat(100) }, [agent], true);
   assert.ok(Buffer.byteLength(oversized.prefix) > 512);
@@ -405,7 +405,7 @@ test("Markdown keeps one plain body span and reversibly escapes only tagged head
   assert.deepEqual(decode(saved).messages, [message]);
   const agent = agentParticipant(thread.id, { package: "calternal-threads-claude-code", contribution: "claude-code" });
   const agentHeader = Buffer.from(
-    `  - p2 | Claude Code | agent | ${agent.id}\nagent-p2-package: calternal-threads-claude-code\nagent-p2-contribution: claude-code\n`,
+    `  - p2 | Claude Code | agent | ${agent.id}\nagent-p2-plugin: calternal-threads-claude-code\nagent-p2-harness: claude-code\n`,
   );
   const withFirstPrompt = Buffer.from(encode({ ...thread, participants: [alice, agent], messages: [message] }));
   assert.deepEqual(withFirstPrompt, Buffer.concat([existing.subarray(0, -5), agentHeader, existing.subarray(-5), expected]));
@@ -421,7 +421,7 @@ test("indexed spans preserve literal heading and trailer lookalikes next to an o
   const header = Buffer.from(encode(thread));
   const tagged = "### Looks like a record {#m-aabbccddeeff0011 by=p1}";
   const first = { author: alice, id: "0123456789abcdef", posted_at,
-    text: `Quoted literally:\n${tagged}\n\\${tagged}\n\n<!-- log=example/body -->`,
+    text: `Quoted literally:\n${tagged}\n\\${tagged}\n\n<!-- run-log=example/body -->`,
     log: { space: "019a0000-0000-7000-8000-000000000010", id: "run-1" } };
   const { prefix, text, suffix } = messageRecord(first, [alice]);
   const record = Buffer.from(prefix + text + suffix);

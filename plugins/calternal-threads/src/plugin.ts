@@ -20,7 +20,7 @@ const messageResult = {
   author: object({ kind: { enum: ["person", "agent"] }, id: { type: "string" }, name: { type: "string" }, contribution: catalogueRef("ContributionIdentity") }, "kind", "id", "name"),
 };
 const itemRoute = { route: "item" };
-const harnessChoice = { prompt: { title: "Harness", kind: "choice", options: { extension: "harnesses" } } } as const;
+const harnessChoice = { prompt: { title: "Agent", kind: "choice", options: { extension: "harnesses" } } } as const;
 const description: AppDescription = {
   version: 2, kind: "app", revision: 1,
   view: { root: { type: "stack", children: [
@@ -65,7 +65,7 @@ const metadata = {
       output_schema: catalogueRef("ExecutionJobReceipt") },
     { ...write, id: "threads.rename", title: "Rename", target, methods: [...readBody, "item_save", ...writeView],
       input_schema: object({ item, title }, "item", "title"), output_schema: empty },
-    { ...execute, id: "threads.run", title: "Run harness", target, methods: [...readBody, "item_append", "item_save",
+    { ...execute, id: "threads.run", title: "Run agent", target, methods: [...readBody, "item_append", "item_save",
       "item_save_begin", "item_save_chunk", "item_save_seal", "execution_start", "contribution_call", "contribution_read", ...writeView],
       write_origins: { attempt_output: "text" },
       input_schema: object({ item, if_missed: ifMissed }, "item"), output_schema: empty },

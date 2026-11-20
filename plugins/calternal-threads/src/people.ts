@@ -181,7 +181,7 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
 
 function stateOf(body: string | undefined): State {
   if (body === undefined) return { draft: "", muted: false };
-  const fields = /^---\nread-through: (.*)\ndraft: (.*)\nmuted: (true|false)\n---\n$/u.exec(body);
+  const fields = /^---\nlast-read-message: (.*)\ndraft: (.*)\nmuted: (true|false)\n---\n$/u.exec(body);
   if (!fields) throw new Error("Unreadable private thread state.");
   const readThrough = JSON.parse(fields[1]);
   return { ...(readThrough && { readThrough }), draft: JSON.parse(fields[2]), muted: fields[3] === "true" };
@@ -207,14 +207,14 @@ async function setState({ item, draft, muted, readThrough }: Target & State, ctx
   if (readThrough !== undefined && next < 0) throw new Error("Message unavailable.");
   const last = thread.messages.findIndex(message => message.id === prior.readThrough);
   const anchor = JSON.stringify(thread.messages[Math.max(last, next)]?.id ?? null);
-  await ctx.privateState.write(item, `---\nread-through: ${anchor}\ndraft: ${JSON.stringify(draft)}\nmuted: ${muted}\n---\n`, body);
+  await ctx.privateState.write(item, `---\nlast-read-message: ${anchor}\ndraft: ${JSON.stringify(draft)}\nmuted: ${muted}\n---\n`, body);
 }
 
 async function getPreferences(ctx: PeopleContext): Promise<Preferences> {
   if (!ctx.privatePreferences) throw new Error("Private preferences unavailable.");
   const body = await ctx.privatePreferences.read();
   if (body === undefined) return { receiptsAndTyping: true, push: { enabled: false, iosLocked: true, iosUnlocked: true } };
-  const match = /^---\nreceipts-and-typing: (true|false)\npush: (true|false)\nios-locked: (true|false)\nios-unlocked: (true|false)\n---\n$/u.exec(body);
+  const match = /^---\nread-receipts-and-typing: (true|false)\npush-notifications: (true|false)\npush-when-ios-locked: (true|false)\npush-when-ios-unlocked: (true|false)\n---\n$/u.exec(body);
   if (!match) throw new Error("Unreadable preferences.");
   return {
     receiptsAndTyping: match[1] === "true",
@@ -227,7 +227,7 @@ async function setPreferences(preferences: Preferences, ctx: PeopleContext) {
   const expected = await ctx.privatePreferences.read();
   const { receiptsAndTyping, push: { enabled, iosLocked, iosUnlocked } } = preferences;
   await ctx.privatePreferences.write(
-    `---\nreceipts-and-typing: ${receiptsAndTyping}\npush: ${enabled}\nios-locked: ${iosLocked}\nios-unlocked: ${iosUnlocked}\n---\n`,
+    `---\nread-receipts-and-typing: ${receiptsAndTyping}\npush-notifications: ${enabled}\npush-when-ios-locked: ${iosLocked}\npush-when-ios-unlocked: ${iosUnlocked}\n---\n`,
     expected,
   );
 }
@@ -348,11 +348,12 @@ async function consult({ item, prompt, exchanges }: Target & { prompt: string; e
   const summary = await take("summary");
   await requireConversationWrite(ctx, item);
   const title = "Agent consultation";
+  const headings = { lead: "Lead agent", consultant: "Consulted agent", summary: "Summary" };
   const body = [
-    "---", `title: ${title}`, `parent: ${locator.space}/${locator.id}`,
-    `lead: ${agents.lead.package}/${agents.lead.contribution}`,
-    `consultant: ${agents.consultant.package}/${agents.consultant.contribution}`, "---", "",
-    ...turns.map(turn => `## ${turn.role}\n\n${turn.text}\n`),
+    "---", `title: ${title}`, `conversation: ${locator.space}/${locator.id}`,
+    `lead-agent: ${agents.lead.package}/${agents.lead.contribution}`,
+    `consulted-agent: ${agents.consultant.package}/${agents.consultant.contribution}`, "---", "",
+    ...turns.map(turn => `## ${headings[turn.role]}\n\n${turn.text}\n`),
   ].join("\n");
   const saved = await ctx.call("item_create", {
     request_id: step(ctx.author.request_id, "consultation-file"), kind: "thread-consultations",

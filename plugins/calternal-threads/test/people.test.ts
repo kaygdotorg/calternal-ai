@@ -192,6 +192,8 @@ test("private preferences combine receipts and typing and apply iOS push state",
   const { people, item, second, ctx } = await setup();
   await people.setPreferences({ receiptsAndTyping: false,
     push: { enabled: true, iosLocked: true, iosUnlocked: false } }, ctx(alice, "preferences"));
+  assert.match((await ctx(alice, "read-preference-file").privatePreferences?.read())!,
+    /^read-receipts-and-typing: false\npush-notifications: true\npush-when-ios-locked: true\npush-when-ios-unlocked: false$/m);
   assert.equal((await people.getPreferences(ctx(bob, "bob-prefs"))).receiptsAndTyping, true);
   assert.equal((await people.getPreferences(ctx(alice, "alice-prefs"))).receiptsAndTyping, false);
   const decision = (locked: boolean) => people.delivery({ item, message: second.message, device: "ios", locked }, ctx(alice, "delivery"));
@@ -232,6 +234,9 @@ test("the conversation file example has two people, one agent and a separate pri
   assert.equal(thread.messages[2].deleted, true);
   assert.ok(thread.messages[4].consultation);
   assert.match(host.markdown(item), /^format: calternal-thread\/v2$/m);
+  assert.match(host.markdown(item), /^agent-p3-plugin: calternal-threads-claude-code\nagent-p3-harness: claude-code$/m);
+  assert.match((await context(alice, "example-read-state-file", "09:07").privateState?.read(item))!,
+    /^last-read-message: "b31395e111a687c4"$/m);
   assert.doesNotMatch(host.markdown(item), /gloves|wrong date/);
   const directory = process.env.THREADS_REPORT_FILES;
   if (directory) await host.materialize(directory, item, alice);
@@ -413,7 +418,7 @@ test("a consultation is bounded, linked and posts exactly one result to the conv
   assert.equal(thread.messages[3].text, "Agreed recommendation");
   assert.equal(thread.messages[3].consultation?.id, output.consultation.id);
   assert.doesNotMatch(host.markdown(item), /Private exchange/);
-  assert.match(host.markdown(output.consultation.id), /Private exchange/);
+  assert.match(host.markdown(output.consultation.id), /^## Consulted agent\n\nPrivate exchange 2$/m);
 });
 
 test("ask-each-time authorization expires and is never reused by a later call", async () => {

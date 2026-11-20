@@ -12,7 +12,7 @@ function requireAgentThread(thread: Thread, ctx: Context) {
   if (thread.conversation === "people") throw new Error("This conversation requires an agent invitation.");
   const people = thread.participants.filter(participant => participant.kind === "person");
   if (people.length !== 1 || people[0].id !== ctx.author.actor) {
-    throw new Error("Only the sole creator may use ordinary Send in this spike.");
+    throw new Error("Only the person who started this conversation can send to its agent.");
   }
 }
 
@@ -66,7 +66,7 @@ async function rename({ item, title }: { item: ItemRef; title: string }, ctx: Pe
 }
 
 async function run(input: RunInput, ctx: Context) {
-  if (!ctx.job || ctx.job.item !== input.item) throw new Error("No checked execution job.");
+  if (!ctx.job || ctx.job.item !== input.item) throw new Error("This agent run is unavailable.");
   if (ctx.alarm?.missed && input.if_missed === "skip") return {};
   const { item, harness } = ctx.job;
   const head = await ctx.call("item_head", { item });
@@ -108,10 +108,10 @@ async function run(input: RunInput, ctx: Context) {
   while (true) {
     const { frames } = await ctx.call("contribution_read", { call, after, wait_ms: 1000 });
     for (const frame of frames) {
-      if (frame.seq !== (after ?? 0) + 1) throw new Error("Contribution sequence changed.");
+      if (frame.seq !== (after ?? 0) + 1) throw new Error("A reply from the agent arrived out of order.");
       after = frame.seq;
       if (frame.kind === "terminal") {
-        if (frame.state !== "ok") throw new Error(`Contribution ${frame.state}.`);
+        if (frame.state !== "ok") throw new Error(`The agent run ended with status ${frame.state}.`);
         return {};
       }
       const id = messageId(ctx.author.request_id, `reply-${call}-${frame.seq}`);

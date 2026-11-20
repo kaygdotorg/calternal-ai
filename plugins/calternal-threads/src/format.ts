@@ -77,7 +77,7 @@ export function folder(thread: Thread): string {
 }
 
 const messageBoundary = /^### [^\r\n]+ \{#m-[a-f0-9]{16}(?: [^{}\r\n]+)?\}$/u;
-const messageHeading = /^### (.+) \{#m-([a-f0-9]{16}) (by=p[1-9][0-9]*(?: [a-z]+=[^ {}]+)*)\}$/u;
+const messageHeading = /^### (.+) \{#m-([a-f0-9]{16}) (by=p[1-9][0-9]*(?: [a-z]+(?:-[a-z]+)*=[^ {}]+)*)\}$/u;
 
 function escapeBodyHeadings(text: string, encode: boolean): string {
   return text.split("\n").map(line => {
@@ -132,23 +132,23 @@ export function messageRecord(message: Message, participants: Participant[], inl
   }
   if (inlineAgent && message.author.kind === "agent") {
     const { package: pkg, contribution } = message.author.contribution;
-    attrs.push(`agent=${encodeURIComponent(pkg)}/${encodeURIComponent(contribution)}`);
+    attrs.push(`agent-plugin=${encodeURIComponent(pkg)}/${encodeURIComponent(contribution)}`);
   }
   if (message.edited) heading.push("edited");
   if (message.replyTo && message.replyToName) {
     heading.push(`reply to ${escapeLabel(message.replyToName)}`);
-    attrs.push(`re=m-${message.replyTo}`);
+    attrs.push(`reply-to=m-${message.replyTo}`);
   }
   if (message.askedBy) {
     heading.push(`asked by ${escapeLabel(message.askedBy.name)}`);
-    attrs.push(`ask=${alias(message.askedBy.id)}`);
+    attrs.push(`asked-by=${alias(message.askedBy.id)}`);
   }
-  if (message.mentions?.length) attrs.push(`to=${message.mentions.map(alias).join(",")}`);
+  if (message.mentions?.length) attrs.push(`mentions=${message.mentions.map(alias).join(",")}`);
   const links: string[] = [];
-  for (const [name, link] of [["log", message.log], ["consult", message.consultation]] as const) {
+  for (const [name, link] of [["run-log", message.log], ["consultation", message.consultation]] as const) {
     if (link) links.push(`${name}=${encodeURIComponent(link.space)}/${encodeURIComponent(link.id)}`);
   }
-  if (links.length) attrs.push("refs=1");
+  if (links.length) attrs.push("links=1");
   return { prefix: `### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n`, text: message.text,
     suffix: links.length ? `\n\n<!-- ${links.join(" ")} -->\n\n` : "\n\n" };
 }
@@ -177,8 +177,8 @@ export function threadHeader(thread: Thread): FramedText {
   participants.forEach((person, index) => header.push(`  - p${index + 1} | ${escapeLabel(person.name)} | ${person.kind} | ${person.id}`));
   participants.forEach((person, index) => {
     if (person.kind === "agent") {
-      header.push(`agent-p${index + 1}-package: ${person.contribution.package}`,
-        `agent-p${index + 1}-contribution: ${person.contribution.contribution}`);
+      header.push(`agent-p${index + 1}-plugin: ${person.contribution.package}`,
+        `agent-p${index + 1}-harness: ${person.contribution.contribution}`);
     }
   });
   return { prefix: `---\nformat: calternal-thread/v2\nid: ${id}\ntitle: `, text: title,
@@ -203,15 +203,15 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
   const attrs = new Map<string, string>();
   for (const field of raw.split(" ")) {
     const [key, value] = field.split("=", 2);
-    if (!["by", "re", "ask", "to", "refs", "agent"].includes(key) || !value || attrs.has(key)) {
-      throw new Error("Unreadable message attributes.");
+    if (!["by", "reply-to", "asked-by", "mentions", "links", "agent-plugin"].includes(key) || !value || attrs.has(key)) {
+      throw new Error("Could not read the details after the message heading.");
     }
     attrs.set(key, value);
   }
-  const inlineAgent = attrs.get("agent");
+  const inlineAgent = attrs.get("agent-plugin");
   if (inlineAgent) {
     const [pkg, contribution, ...extra] = inlineAgent.split("/");
-    if (!pkg || !contribution || extra.length) throw new Error("Unreadable contribution identity.");
+    if (!pkg || !contribution || extra.length) throw new Error("Could not read which plugin runs this agent.");
     const agent = agentParticipant(threadId, { package: decodeURIComponent(pkg), contribution: decodeURIComponent(contribution) });
     const alias = attrs.get("by")!;
     const previous = people.get(alias);
@@ -226,19 +226,19 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
   const author = { ...participant(attrs.get("by")), name: unescapeLabel(authorName) };
   const attribution = indexed?.span.attribution;
   if (attribution?.kind === "person" && (author.kind !== "person" || author.id !== attribution.actor) ||
-      attribution?.kind === "attempt" && author.kind !== "agent") throw new Error("Message attribution does not match its span.");
+      attribution?.kind === "attempt" && author.kind !== "agent") throw new Error("The saved author does not match the message heading.");
   const posted_at = timestamp(date);
   const start = body[0] === "" ? 1 : 0;
   let end = start < body.length && body.at(-1) === "" ? body.length - 1 : body.length;
   if (markers.includes("deleted")) {
     if (body.some(line => line !== "") || attrs.size !== 1 || markers.length !== 1 ||
-        (indexed && (indexed.text !== "" || attribution?.kind !== "empty"))) throw new Error("Unreadable tombstone.");
+        (indexed && (indexed.text !== "" || attribution?.kind !== "empty"))) throw new Error("Could not read the deleted message marker.");
     return { id, author, posted_at, text: "", deleted: true };
   }
   const refs = new Map<string, string>();
-  if (attrs.has("refs")) {
-    const trailer = /^<!-- ((?:log|consult)=[^ <>]+(?: (?:log|consult)=[^ <>]+)?) -->$/u.exec(body[end - 1]);
-    if (attrs.get("refs") !== "1" || !trailer || body[end - 2] !== "") throw new Error("Unreadable message trailer.");
+  if (attrs.has("links")) {
+    const trailer = /^<!-- ((?:run-log|consultation)=[^ <>]+(?: (?:run-log|consultation)=[^ <>]+)?) -->$/u.exec(body[end - 1]);
+    if (attrs.get("links") !== "1" || !trailer || body[end - 2] !== "") throw new Error("Could not read the links after the message.");
     for (const ref of trailer[1].split(" ")) {
       const [key, value] = ref.split("=", 2);
       if (refs.has(key)) throw new Error("Duplicate message reference.");
@@ -247,29 +247,29 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
     end -= 2;
   }
   const framingBody = body.slice(start, end).join("\n");
-  if (indexed && (framingBody !== "" || attribution?.kind === "empty")) throw new Error("Unreadable message framing.");
+  if (indexed && (framingBody !== "" || attribution?.kind === "empty")) throw new Error("Could not read where the message text starts and ends.");
   const message: Message = { id, author, posted_at, text: indexed?.text ?? escapeBodyHeadings(framingBody, false) };
-  const reply = attrs.get("re");
+  const reply = attrs.get("reply-to");
   const replyLabel = markers.find(marker => marker.startsWith("reply to "));
   if (reply || replyLabel) {
     if (!reply || !/^m-[a-f0-9]{16}$/u.test(reply) || !replyLabel) throw new Error("Unreadable reply reference.");
     message.replyTo = reply.slice(2);
     message.replyToName = unescapeLabel(replyLabel.slice("reply to ".length));
   }
-  const asked = attrs.get("ask");
+  const asked = attrs.get("asked-by");
   const askLabel = markers.find(marker => marker.startsWith("asked by "));
   if (asked || askLabel) {
     const asker = participant(asked);
-    if (asker.kind !== "person" || !askLabel) throw new Error("Unreadable invitation attribution.");
+    if (asker.kind !== "person" || !askLabel) throw new Error("Could not read who asked the agent.");
     message.askedBy = { ...asker, name: unescapeLabel(askLabel.slice("asked by ".length)) };
   }
-  const mentions = attrs.get("to");
+  const mentions = attrs.get("mentions");
   if (mentions) message.mentions = mentions.split(",").map(alias => participant(alias).id);
-  for (const [attribute, field] of [["log", "log"], ["consult", "consultation"]] as const) {
+  for (const [attribute, field] of [["run-log", "log"], ["consultation", "consultation"]] as const) {
     const value = refs.get(attribute);
     if (!value) continue;
     const [space, id, ...rest] = value.split("/");
-    if (!space || !id || rest.length) throw new Error("Unreadable item locator.");
+    if (!space || !id || rest.length) throw new Error("Could not read the saved link.");
     message[field] = { space: decodeURIComponent(space), id: decodeURIComponent(id) };
   }
   if (markers.includes("edited")) message.edited = true;
@@ -283,27 +283,27 @@ function decodeRecords(frontmatter: string[], records: Iterable<MessageRecord>) 
     if (line === "participants:") continue;
     const item = /^  - (p[1-9][0-9]*) \| (.+) \| (person|agent) \| (\S+)$/u.exec(line);
     if (item) {
-      if (listed.has(item[1])) throw new Error("Duplicate participant alias.");
+      if (listed.has(item[1])) throw new Error("A participant label is listed twice.");
       listed.set(item[1], { name: unescapeLabel(item[2]), kind: item[3], id: item[4] });
       continue;
     }
     const field = /^([a-z0-9-]+): (.+)$/u.exec(line);
-    if (!field || fields.has(field[1])) throw new Error("Unreadable thread frontmatter.");
+    if (!field || fields.has(field[1])) throw new Error("Could not read the conversation details at the top of the file.");
     fields.set(field[1], field[2]);
   }
   const id = fields.get("id");
   const title = fields.get("title");
   const created = fields.get("created");
   if (fields.get("format") !== "calternal-thread/v2" || !id || !/^[a-f0-9]{32}$/u.test(id) || !title || !created) {
-    throw new Error("Unreadable thread frontmatter.");
+    throw new Error("Could not read the conversation details at the top of the file.");
   }
   const people = new Map<string, Participant>();
   for (const [alias, entry] of listed) {
     if (entry.kind === "person") people.set(alias, { ...entry, kind: "person" });
     else {
-      const pkg = fields.get(`agent-${alias}-package`);
-      const contribution = fields.get(`agent-${alias}-contribution`);
-      if (!pkg || !contribution) throw new Error("Unreadable contribution identity.");
+      const pkg = fields.get(`agent-${alias}-plugin`);
+      const contribution = fields.get(`agent-${alias}-harness`);
+      if (!pkg || !contribution) throw new Error("Could not read which plugin runs this agent.");
       people.set(alias, { ...entry, kind: "agent", contribution: { package: pkg, contribution } });
     }
   }
@@ -312,7 +312,7 @@ function decodeRecords(frontmatter: string[], records: Iterable<MessageRecord>) 
   const messages: Message[] = [];
   for (const record of records) {
     const message = decodeMessage(record, people, id);
-    if (anchors.has(message.id)) throw new Error("Duplicate message anchor.");
+    if (anchors.has(message.id)) throw new Error("Two messages use the same ID.");
     anchors.add(message.id);
     if (record.indexed) spans.set(message.id, record.indexed.span.span);
     messages.push(message);
@@ -366,7 +366,7 @@ export function decodeIndexed(bytes: Buffer, index: readonly IndexedSpan[], prov
       const middleEnd = middle_offset + middle_length;
       if (![offset, length, middle_offset, middle_length].every(Number.isSafeInteger) || length <= 0 || end > bytes.length ||
           middle_offset < offset || middle_length < 0 || middleEnd > end || refs.has(span)) {
-        throw new Error("Invalid thread span index.");
+        throw new Error("The saved message ranges are invalid.");
       }
       refs.add(span);
       // An attested create records the frontmatter as the first span.
@@ -374,20 +374,20 @@ export function decodeIndexed(bytes: Buffer, index: readonly IndexedSpan[], prov
         cursor = end;
         continue;
       }
-      if (offset < cursor) throw new Error("Overlapping thread spans.");
+      if (offset < cursor) throw new Error("The saved message ranges overlap.");
       if (offset > cursor) {
-        if (provenance === "attested") throw new Error("Incomplete thread span index.");
+        if (provenance === "attested") throw new Error("Some saved message ranges are missing.");
         yield* opaqueRecords(documentLines(utf8.decode(bytes.subarray(cursor, offset))));
       }
       const prefix = utf8.decode(bytes.subarray(offset, middle_offset));
       const suffix = utf8.decode(bytes.subarray(middleEnd, end));
-      if (!prefix.endsWith("\n\n")) throw new Error("Unreadable message framing.");
+      if (!prefix.endsWith("\n\n")) throw new Error("Could not read where the message text starts and ends.");
       const [heading, ...body] = documentLines(prefix + suffix);
       yield { heading, body, indexed: { span: entry, text: utf8.decode(bytes.subarray(middle_offset, middleEnd)) } };
       cursor = end;
     }
     if (cursor < bytes.length) {
-      if (provenance === "attested") throw new Error("Incomplete thread span index.");
+      if (provenance === "attested") throw new Error("Some saved message ranges are missing.");
       yield* opaqueRecords(documentLines(utf8.decode(bytes.subarray(cursor))));
     }
   }
@@ -404,7 +404,7 @@ export function messageView(thread: Thread, id: string): Omit<Message, "deleted"
 }
 
 export function page(thread: Thread, older?: string, anchor?: string): { view: ItemSnapshotView; older?: string; anchor?: string } {
-  if (anchor !== undefined && older !== undefined) throw new Error("An anchored page cannot use a cursor.");
+  if (anchor !== undefined && older !== undefined) throw new Error("Open either a linked message or an older page at a time.");
   const visible = thread.messages.filter(message => !message.deleted);
   const index = anchor === undefined ? -1 : visible.findIndex(message => message.id === anchor);
   if (anchor !== undefined && index === -1) throw new Error("Message unavailable.");
