@@ -1967,7 +1967,7 @@
         "selectable": {
           "type": "boolean",
           "default": false,
-          "description": "Up and Down move selection through the rows. Home, End, Page Up and Page Down scroll without changing selection. The selected row's id is the selection source for this Bind. Its route loads when selection settles."
+          "description": "On the web, one Tab stop per list. Up and Down move selection through the rows. Home, End, Page Up and Page Down scroll without changing selection. The selected row's id is the selection source for this Bind. Its route loads when selection settles."
         },
         "title": {
           "type": "string",

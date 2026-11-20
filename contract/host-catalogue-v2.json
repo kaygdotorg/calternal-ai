@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Review contract for host kinds, operations, query limits and the activation exchange. A reference shape conveys no authority. The host semantic loader still validates scope, profiles, contracts and dependencies. A description, manifest, event or reply conforms only if it passes contract/verify-description.py at the pinned revision. The JSON Schemas define necessary structural rules and are insufficient on their own. A schema validator used alone must assert formats, including calendar validity for date-time. Differences in verifier-only rule classes are by design.",
+  "description": "Normative host kinds, operations, query limits and activation exchange, read with the pinned specification, description contract and schemas. A reference shape conveys no authority. The host checks scope, profiles, contracts and dependencies. Validators assert formats, including calendar validity for date-time. The versioned conformance tool provides evidence separately.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -871,7 +871,7 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": false,
-      "atomic_undo_unavailable": "The current item writer stores one shared manual deadline and cannot implement this actor-scoped operation. Set available to true only after the Step 2 actor-keyed snooze writer gate proves that the actor’s deadline, its index entry and Undo commit together. The host refuses snooze on every route while available is false. Subscription retry state is unaffected. Apply execution_intents.snooze to all execution intents. See attempt_authority_end.actions.snooze.",
+      "atomic_undo_unavailable": "The current item writer stores one shared manual deadline and cannot implement this actor-scoped operation. Set available to true only after the Step 2 actor-keyed snooze writer gate proves that the actor’s deadline, its durable publication intent and Undo commit together and the index catches up under query.list_publication. The host refuses snooze on every route while available is false. Subscription retry state is unaffected. Apply execution_intents.snooze to all execution intents. See attempt_authority_end.actions.snooze.",
       "kind_capability": "conversation"
     },
     "host.collection.move": {
@@ -1176,7 +1176,7 @@
       "effect": "irreversible",
       "idempotency": "request_id",
       "kind_capability": "conversation",
-      "authority": "Host composer only. Issue an action only to a live member with edit, corpus and execution-start authority who owns the protected binding or its retirement marker. A marker yields only the unavailable refusal. Admission checks authenticated historical account, exact provider contribution, conversation, enrolled machine and original profile, with a qualified credential path and current placement and effects. Withhold the action from guests and non-owners. Refuse forged or revoked invocations opaquely.",
+      "authority": "Host composer only. Issue an action only to a live member with edit, corpus and execution-start authority who owns the protected binding or its retirement marker. A marker yields only the unavailable refusal. Admission checks authenticated historical account, exact provider contribution, conversation, enrolled machine and original profile, with a qualified provider sandbox and proven original login profile and current placement and effects. Withhold the action from guests and non-owners. Refuse forged or revoked invocations opaquely.",
       "surfaces": [
         "host_composer"
       ],
@@ -1260,7 +1260,7 @@
     "max_sort_fields": 2,
     "tie_breaker": "id",
     "count_modes": {
-      "exact": "Count of the authorized projection at its checked result version; guest requires explicit count permission.",
+      "exact": "Count of the authorized projection at its checked result version. Guest requires explicit count permission. For non-search lists apply query.list_publication. For search apply query.search.count.",
       "estimate": "Audience-certified member estimate only. A guest never gets an estimate. Refuse an end anchor with end_unavailable and never send an end-relative result.",
       "none": "Omit count. This is always the guest fallback, including nested windows, unless the authorized projection allows an exact count. Refuse an end anchor with end_unavailable and never send an end-relative result."
     },
@@ -1279,8 +1279,27 @@
       "row_reference_schema": {
         "$ref": "#/$defs/Ref"
       },
-      "description": "The declared parent edge constrains the nested lookup and any count before filtering or pagination. Authorize the entire parent ancestry and each returned row. A parent operand is an optional extra predicate. A Bind may be a section rows Bind or a children target, never both. Section rows present LayoutEntryRef; child rows present their kind’s row ref. The window_ref identifies the Bind, stable parent, anchor and issued range within the current lease and partition. Separately cap materialized rows and entries skipped in an index-only jump over the scoped covering index from the nearer end. Absolute jumps are capped by max_offset. An explicit start anchor can cross that cap only for forward continuation without exact count authority, exactly at the next row of a host-issued ready start window for the current view, Bind, parent and result version. Seek from the checked boundary key. Before planning an end-relative request, check the effective authorized count mode for its Bind and scope. Require a non-search Bind and exact count authority. For search or with mode estimate or none return WindowPlanError with reason end_unavailable and no end distance. A view with count mode none shows no scroll extent implying a total. An index-only jump beyond the skip cap returns WindowPlanError with reason skip_limit. Non-search list plans use maintained scope counts. Search counts use query.search.count. Check the live field and its source before using any sort or filter. A grant on the item or a generic display name cannot authorize an unreadable predicate or ordering key.",
-      "max_nested_row_depth": 3
+      "description": "The declared parent edge constrains the nested lookup and any count before filtering or pagination. Authorize the entire parent ancestry and each returned row. A parent operand is an optional extra predicate. A Bind may be a section rows Bind or a children target, never both. Section rows present LayoutEntryRef; child rows present their kind’s row ref. The window_ref identifies the Bind, stable parent, anchor and issued range within the current lease and partition. Separately cap materialized rows and entries skipped in an index-only jump over the scoped covering index from the nearer end. Absolute jumps are capped by max_offset. An explicit start anchor can cross that cap only for forward continuation without exact count authority, exactly at the next row of a host-issued ready start window for the current view, Bind, parent and result version. Seek from the checked boundary key. Before planning an end-relative request, check the effective authorized count mode for its Bind and scope. Require a non-search Bind and exact count authority. For search or with mode estimate or none return WindowPlanError with reason end_unavailable and no end distance. A view with count mode none shows no scroll extent implying a total. An index-only jump beyond the skip cap returns WindowPlanError with reason skip_limit. Non-search list plans use maintained scope counts under query.list_publication, including for an end anchor. Search counts use query.search.count. Check the live field and its source before using any sort or filter. A grant on the item or a generic display name cannot authorize an unreadable predicate or ordering key.",
+      "max_nested_row_depth": 3,
+      "keyboard": {
+        "web_tab_stops_per_list": 1,
+        "scroll_without_selection": [
+          "Home",
+          "End",
+          "PageUp",
+          "PageDown"
+        ]
+      }
+    },
+    "list_publication": {
+      "commit": "Commit the authoritative item or scope change and its durable publication intent and any receipt and Undo before acknowledgement. The save does not wait for index publication.",
+      "replay": "The host window engine replays committed intents shortly after save. Replay is bounded and idempotent. Publish the audience-scoped covering keys, row snapshots, count, and verified source epoch and watermark together. Bound work and retention and recover from a checkpoint or rebuild before declaring the projection current.",
+      "authority": "Check live scope, row and field authority at planning and delivery. Fence revocation and affected old results immediately. Deny scopes that lost authority. Hidden-only changes leave the visible state, rows, ordering, counts and result version unchanged.",
+      "catch_up": {
+        "state": "loading",
+        "rule": "When the visible projection is behind or cannot be verified, withhold rows, count, activation contexts, cache records, result version, window reference and end distance. Do not reuse superseded results or selections. Use loading for an otherwise eligible End request."
+      },
+      "qualification": "Before enabling the path, pass the Step 2 power-cut and backlog gate, including revocation races, bounded drain, exact recovery, no worker wakes and the foreground save gate."
     },
     "unsupported_plan": {
       "$ref": "#/$defs/WindowPlanError"
@@ -1316,7 +1335,7 @@
       "max_utf8_bytes_per_element": 256,
       "max_total_index_keys": 1152,
       "refusal": "index_work_limit",
-      "rules": "Count all changed covering, membership and count keys across fields, items and scopes. Apply at the save, share, membership and Undo fence. Mandatory revoke fences first and defers excess cleanup. Counts include each authorized item once. TextSet is not sortable.",
+      "rules": "Budget all changed covering, membership and count keys across fields, items and scopes before committing the save, share, membership or Undo. Mandatory revoke fences first and defers excess cleanup. Publish covering and count keys under query.list_publication. Counts include each authorized item once. TextSet is not sortable.",
       "contains": "One nonempty Text element of at most 256 UTF-8 bytes. A text literal or a checked route resolved as Text is eligible. AccountRef and parent refs are ineligible."
     },
     "body_excerpt": {
@@ -1403,7 +1422,7 @@
       "max_literal_and_terms": 3,
       "max_token_prefix_expansions": 32,
       "qualification": "For each ready authority-versioned Bind, qualify its supported literal-term and prefix modes for windows up to query.window.max_request_span starting at offsets through qualified_depth. Serve later windows while both query.live_limits budgets for scoped postings and materialized rows hold. Use only the kind’s authorized scopes, order and scope-local statistics. Refuse unqualified shapes, scopes and sorts with unsupported_query_plan. End anchors are unavailable for search. The host returns WindowPlanError with reason end_unavailable and the renderer pages forward for End.",
-      "publication": "The host owns the qualified list and search projections of item text and declared indexed fields. Its index maintains the list projections, and its existing background search worker maintains the search projections and same-generation term statistics independently of save acknowledgement. Check live access to the scope, searchable fields and output fields before evaluation. Readiness and invalidation compare revisions of the viewer’s authorized row-and-field projection, never a space-wide watermark. While that projection is behind or stale after revocation, return loading with no rows, count or activation contexts. A hidden-only edit leaves the visible search state, result version, rows, ranks and counts unchanged during and after publication. Fence cached results on revocation and recheck authority on delivery. Deny access if the scope is no longer authorized.",
+      "publication": "The host owns the qualified list and search projections of item text and declared indexed fields. Apply query.list_publication to list projections. The existing background search worker publishes the search projections and same-generation term statistics independently of save acknowledgement. Check live access to the scope, searchable fields and output fields before evaluation. Readiness and invalidation compare revisions of the viewer’s authorized row-and-field projection, never a space-wide watermark. While that projection is behind or stale after revocation, return loading with no rows, count or activation contexts. A hidden-only edit leaves the visible search state, result version, rows, ranks and counts unchanged during and after publication. Fence cached results on revocation and recheck authority on delivery. Deny access if the scope is no longer authorized.",
       "refinement": "Bound scoped posting work using same-generation term frequencies. When an otherwise qualified query exhausts the scoped-posting or materialized-row budget, return refine_query with only bounded provisional rows from the same authorized query and published generation. A prefix exceeding either the expansion cap or the posting budget returns refine_query without starting expansion and can include only already-issued rows for that query, audience and generation. Omit count, activation contexts and member cache record. Provisional replies have null result_version and window_ref.",
       "count": "Non-search lists use maintained per-scope counts. Claimed-text exact search counts measure qualified matches in a ready authorized projection under the separate count-work and rate budgets and require exact-count authority. Search defaults to count mode none. Search estimates and exact distinct-thread search counts are unqualified. Refuse an unqualified count request with unsupported_query_plan. Apply current source authority before matching, ranking or counting. A title-only grant contributes only the authorized title corpus. Any body excerpt in a search row is independently checked.",
       "request_schema": {
@@ -5335,6 +5354,9 @@
           "has_quote": [
             "quote"
           ]
+        },
+        "confirmation_schema": {
+          "$ref": "#/$defs/PreparedSendConfirmation"
         }
       },
       "host.execution.resume": {
@@ -5537,7 +5559,23 @@
       "host.undo"
     ],
     "material_rule": "Select the row by the checked operation and host surface. Check all material for the exact normalized request under the pinned context. Reject empty lists, duplicate names or missing required entries. For every current checked fact listed in when, require its entries too. Include untouched prefills and all applicable material. Plugin challenges also include present manifest material_inputs as checked by the host. Host keys are host-owned. Every manifest input key is projected with manifest_input_prefix and its original local ID, using its declared label and checked value. The prefix is reserved and is unavailable to host entries. Render labels and checked values. Explicit default, none or clearing choices are shown with a readable label. The device cannot supply the challenge kind or facts.",
-    "manifest_input_prefix": "input:"
+    "manifest_input_prefix": "input:",
+    "exchange_checks": {
+      "resolution_from_invoke": [
+        "activation_id"
+      ],
+      "confirm_from_resolution": [
+        "activation_id",
+        "resolution_ref",
+        "confirmation_challenge"
+      ],
+      "default_resolution_schema": {
+        "$ref": "#/$defs/ActivationResolution"
+      },
+      "default_confirmation_schema": {
+        "$ref": "#/$defs/NoFinalTextConfirmation"
+      }
+    }
   },
   "schedule_create_input": {
     "$ref": "#/$defs/ScheduleCreateInput"
@@ -5551,9 +5589,25 @@
     }
   },
   "execution_attempt_authority": {
-    "principal": "A distinct host-minted principal per exact attempt. Its separately fenced lease never confers an ordinary invocation ticket or the member principal. Interim refs-only policy applies in every space.",
-    "broker": "Only purpose-specific operations on admitted host-issued refs within effect ceilings. Reject list, search, count, enumeration and bulk reads. Refuse job enqueue, ticket minting and delegation that could acquire discovery rights.",
-    "renewal_and_egress": "Recheck the exact attempt and runtime fence, live session or scheduled principal, grants, package generation and placement at renewal, effects and output egress. Revoke fences immediately and stops renewal."
+    "principal": "A distinct host-minted principal per exact attempt, bound to the sender and the admitted request. Its separately fenced lease grants no ordinary invocation ticket or member principal.",
+    "broker": "Use purpose-specific operations on admitted host-issued refs within effect ceilings and the discovery grant below. Reject raw enumeration and bulk exports, foreign scopes, forged tickets, and job enqueue, ticket minting or delegation used to widen discovery.",
+    "renewal_and_egress": "Recheck the exact attempt and runtime fence, the sender's live authority, grants, job or session, package generation and placement at renewal, effects and output egress. Revoke fences immediately and stops renewal.",
+    "discovery": {
+      "operations": [
+        "list",
+        "search"
+      ],
+      "grant": "The sender's request to find items grants discovery within that space. No separate confirmation in either Full access or Approve for me. Existing controls still apply to any later effect.",
+      "authority": "Limit discovery to the sender's current read authority and the admitted request. Apply existing query bounds and access records and recheck live authority at planning and delivery. Counts, rank and returned fields share that scope. A child stays under every ancestor's ceiling."
+    },
+    "provider_login": {
+      "native_profiles": {
+        "Claude Code": ".claude",
+        "Codex": ".codex"
+      },
+      "custody": "The verified provider program can read and refresh its own selected login and directories in the person's eligible sandbox. These native logins require no broker. Keep the directories out of other accounts, other packages, shared mounts, host-readable output and portable snapshots and backups.",
+      "account_switching": "Automatic account switching is deferred."
+    }
   },
   "carrier": {
     "invoke_schema": {
@@ -5577,7 +5631,7 @@
     ],
     "admission": "Under the conversation lifecycle fence refuse admission for an archived or deleted head or a cutover-fenced writer. Reserve the same quotas for either origin. Allow at most one unresolved execution intent or active attempt per conversation. Commit Starting, the exact intent, its receipt and owning job together. Exact-intent start admits at most one attempt and an authorized replay returns its existing result.",
     "stop_and_archive": "Idle archive requires no unresolved intent, active attempt or approval to retire. Protected archive and Stop use attempt_authority_end, pin the exact attempt or intent and recheck live execution-control and item authority. Never retarget replacements.",
-    "snooze": "Actor-keyed snooze and Undo only change the actor's deadline and index. Neither mutates, retires, reopens or admits any execution intent, nor changes retries.",
+    "snooze": "Actor-keyed snooze and Undo only change the actor's deadline and its publication intent. Neither mutates, retires, reopens or admits any execution intent, nor changes retries.",
     "cutover": "Halt new intents and attempts. Drain every unresolved execution intent or verify its existing protected durable refusal and verify zero active attempts and zero unresolved execution intents before switching writers. Preserve intents, refusals and receipts under protected custody. Do not admit or reopen retired intents on the new writer or rollback."
   },
   "attempt_authority_end": {
@@ -5594,7 +5648,7 @@
         "ends_authority": true
       },
       "snooze": {
-        "before_reply": "None. Actor-keyed snooze and Undo affect only the personal deadline and its index.",
+        "before_reply": "No execution fence. Actor-keyed snooze and Undo change only the personal deadline and its durable publication intent.",
         "after_commit": "None. Snooze does not dispatch Stop.",
         "ends_authority": false
       },
@@ -5701,6 +5755,46 @@
         "account_erasure",
         "conversation_erasure"
       ]
+    }
+  },
+  "activation_capture": {
+    "composer_operations": {
+      "send": "composer.send",
+      "resume": "host.execution.resume",
+      "stop": "host.execution.stop"
+    },
+    "context_authority_fields": [
+      "lease_ref",
+      "grant_revision"
+    ],
+    "renewal_matches": [
+      [
+        "request.lease_ref",
+        "current.lease_ref",
+        "result.request_lease_ref"
+      ],
+      [
+        "request.grant_revision",
+        "current.grant_revision"
+      ],
+      [
+        "request.renewal_id",
+        "result.renewal_id"
+      ],
+      [
+        "request.cache_partition",
+        "current.cache_partition",
+        "result.cache_partition",
+        "next.cache_partition"
+      ]
+    ],
+    "window_scope_fields": [
+      "bind",
+      "parent",
+      "settle_generation"
+    ],
+    "window_scope_defaults": {
+      "anchor": "start"
     }
   }
 }

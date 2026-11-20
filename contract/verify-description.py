@@ -505,6 +505,7 @@ def validate_activation_capture(capture, bindings, errors):
     origin = bindings()
     if errors:
         return
+    policy = catalogue["activation_capture"]
     contexts = {}
     audience = capture["view_open"]["audience"]
 
@@ -513,7 +514,7 @@ def validate_activation_capture(capture, bindings, errors):
         if errors:
             return issued
         lease = reply["lease"]
-        authority = (lease["lease_ref"], lease["grant_revision"])
+        authority = tuple(lease[field] for field in policy["context_authority_fields"])
         def remember(action, context, purpose, scope):
             binding = (authority, purpose, action, scope)
             previous = contexts.setdefault(context, binding)
@@ -545,12 +546,10 @@ def validate_activation_capture(capture, bindings, errors):
             errors.append(f"{path}.request: renewal ID was already used")
             return
         seen.add(request["renewal_id"])
-        if (request["lease_ref"] != lease["lease_ref"]
-                or request["grant_revision"] != lease["grant_revision"]
-                or result["renewal_id"] != request["renewal_id"]
-                or result["request_lease_ref"] != request["lease_ref"]
-                or not (lease["cache_partition"] == request["cache_partition"] == result["cache_partition"]
-                        == result["lease"]["cache_partition"])):
+        sources = {"request": request, "current": lease, "result": result, "next": result["lease"]}
+        if any(len({sources[source][field] for source, field in
+                    (entry.split(".", 1) for entry in fields)}) != 1
+               for fields in policy["renewal_matches"]):
             errors.append(f"{path}.result: must match the originating lease, partition and outstanding renewal from the last accepted reply")
             return
         for retained in errors.each(result["retained_results"]):
@@ -571,10 +570,10 @@ def validate_activation_capture(capture, bindings, errors):
             continue
         validate_event(request, lambda: origin, errors)
         payload = request["request"]
-        if any(payload.get(field) != result.get(field)
-               for field in ("bind", "parent", "settle_generation")) or (
-            payload.get("anchor", "start") != result.get("anchor", "start")
-        ):
+        if (any(payload.get(field) != result.get(field)
+                for field in policy["window_scope_fields"])
+                or any(payload.get(field, default) != result.get(field, default)
+                       for field, default in policy["window_scope_defaults"].items())):
             errors.append(f"{path}: result must match the originating window Bind and scope")
         if result["state"] != "ready":
             errors.append(f"{path}: activation contexts require a ready window")
@@ -596,7 +595,7 @@ def validate_activation_capture(capture, bindings, errors):
         if errors:
             return
         purpose = issued[action_id][1]
-        kind = "composer.send" if purpose == "send" else f"host.execution.{purpose}"
+        kind = policy["composer_operations"][purpose]
         facts = [f"has_{name}" for name, value in event.get("interaction", {}).get("draft", {}).items()
                  if name in ("attachments", "mentions", "quote") and value]
         if capture.get("checked_facts"):
@@ -977,6 +976,7 @@ def verify_package(args, path, inputs):
 
 def main():
     parser = argparse.ArgumentParser(description="Verify pinned description fixtures or emitted package artifacts.")
+    parser.add_argument("--version", action="version", version="Calternal v2 conformance tool 1.0.0")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--package", type=pathlib.Path, metavar="DIR", help="read manifest.json, declared templates and optional replies/*.json from DIR")
     mode.add_argument("--fixture-testing", action="store_true", help="allow CALTERNAL_HOST_CATALOGUE for fixture diagnostics")

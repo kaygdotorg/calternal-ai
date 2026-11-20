@@ -95,25 +95,27 @@ def check_request_card_material(card, errors, catalogue, *, checked=None):
 def check_confirmation_exchange(capture, kind, facts, errors, catalogue, *, material=None):
     """Check captured challenge material and bind confirmation to its exact resolve."""
     event, resolution = capture["event"], capture["resolution"]
-    definition = "ResumeResolution" if kind == "host.execution.resume" else "ActivationResolution"
-    check({"$ref": f"#/$defs/{definition}"}, resolution, "$.resolution", errors, catalogue)
+    policy = catalogue["confirmation"]
+    exchange = policy["exchange_checks"]
+    operation = catalogue["operations"].get(kind, {})
+    material_rule = policy["material_by_kind"].get(kind, {})
+    resolution_schema = operation.get("resolution_schema", exchange["default_resolution_schema"])
+    check(resolution_schema, resolution, "$.resolution", errors, catalogue)
     if errors:
         return
-    if resolution["activation_id"] != event["activation_id"]:
-        errors.append("$.resolution.activation_id: must match the originating invoke")
+    for field in exchange["resolution_from_invoke"]:
+        if resolution[field] != event[field]:
+            errors.append(f"$.resolution.{field}: must match the originating invoke")
     check_confirmation_material(resolution, kind, facts, errors, catalogue, material=material)
     if errors or "confirmation" not in capture:
         return
-    if kind == "composer.send":
-        definition = "PreparedSendConfirmation"
-    elif kind == "host.execution.resume":
-        definition = "ResumeConfirmation"
-    else:
-        definition = "NoFinalTextConfirmation"
     confirmation = capture["confirmation"]
-    check({"$ref": f"#/$defs/{definition}"}, confirmation, "$.confirmation", errors, catalogue)
+    confirmation_schema = operation.get(
+        "confirmation_schema", material_rule.get("confirmation_schema", exchange["default_confirmation_schema"])
+    )
+    check(confirmation_schema, confirmation, "$.confirmation", errors, catalogue)
     if not errors:
-        for field in ("activation_id", "resolution_ref", "confirmation_challenge"):
+        for field in exchange["confirm_from_resolution"]:
             if confirmation[field] != resolution[field]:
                 errors.append(f"$.confirmation.{field}: must match the originating resolution")
 

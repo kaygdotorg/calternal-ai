@@ -1,13 +1,13 @@
 # Description contract (v2)
 
-Status: **revision 14.12 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.13 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.
 
 To verify emitted artifacts, run `python3 contract/verify-description.py --package DIR` or supply `--manifest FILE` with explicit `--app FILE` paths. Replies require an origins file only when present.
 
-A description, manifest, event or reply conforms only if it passes contract/verify-description.py at the pinned revision. The JSON Schemas define necessary structural rules and are insufficient on their own. A schema validator used alone must assert formats, including calendar validity for date-time. Differences in verifier-only rule classes are by design. [Rule classes and enforcement](plugin-api-v2.md#7-author-sdk-and-conformance)
+This text, the Plugin API specification, the host catalogue and their schemas define conformance. The separately versioned Python tool reports conformance evidence. Validators assert formats, including calendar validity for date-time, and apply the specified semantic rules. [Rule classes and enforcement](plugin-api-v2.md#7-author-sdk-and-conformance)
 
 ## 0. What a description is
 
@@ -80,6 +80,8 @@ host  -> shell  { bind: "notes", audience, parent?, window_ref, state: "ready", 
 ```
 
 The catalogue defines one `WindowRequest` envelope and one `WindowReply` union of `WindowResult` and `WindowPlanError`. The typed refusal carries status 422, code `unsupported_query_plan`, and a reason.
+
+**List freshness.** After a save, the window engine replays the durable publication intent in the background. An affected Bind returns `loading` without rows, counts, contexts or an end distance until its current authorized generation is verified. Suspend use of affected old results, cached rows and action contexts when invalidated. Resume the viewport request when the new generation is ready.
 
 **End-relative windows.** End and near-end jumps use `anchor:"end"` only on non-search Binds with exact count authority. Follow the [catalogue’s end-anchor and result ordering rules](../contract/host-catalogue-v2.json#/$defs/WindowResult).
 
@@ -192,7 +194,7 @@ what is retried and what is shown come from the host catalogue and the manifest.
 `operation` is a plugin operation id from the manifest, or a **host built-in from the host catalogue** (`contract/host-catalogue-v2.json`, written by the plugins lane:
 exact ids, typed inputs, effect class, `confirm: none | challenge`, authority, whether it may be a generic invoke, whether it may be a full swipe, worker-wake behaviour).
 Built-ins that need no worker run in the host without waking the space runtime; a swipe on a row must not start a runtime. The catalogue, not this document, says which
-operations a description may name; the schema and the verifier reject the ones that belong to a component, an outcome, a sheet or the shell: `host.approval.resolve` (the request
+operations a description may name; exclude operations reserved to a component, an outcome, a sheet or the shell: `host.approval.resolve` (the request
 card), `host.undo` and `host.action.status` (an outcome), `host.panel.ask` (the transcript's quote control), prepared Send, `host.execution.resume` and `host.execution.stop` (the composer),
 `host.trash.purge` and `host.item.share` (protected sheets), `host.route.set` and `host.session.end` (shell controls). A description reaches the Trash and share sheets and the
 shell controls through a `ShellAction` (`shell: {sheet: trash | share}`, `{route}`, `{reload}`, `{signOut}`).
@@ -318,6 +320,7 @@ the web, SwiftUI natively); no plugin is written twice, and anything the vocabul
   (`{form: id, field: fieldId}`); the form shows what was typed, and by the rule in 3.2 the host still previews every material field (typing is never consent); a form may present that list in place. After an `ok` outcome the fields clear (`clear: onOk`,
   the default); after `error` or an unknown outcome they keep what was typed. Errors appear in a `notice` above the submit, never as loose text.
 * **Lists** are binds. On every platform, Up and Down move the selection through the rows when `selectable: true`. The route opens when selection settles, about 100 ms after the last key or on key up. Selection and navigation events wait during repeats. Apply prefetch replies for the result version already drawn at once. Hold only version-changing pushes until selection settles. Prefetch requests still cross up to the normal request cap (§8). The web renderer waits 1.6 times the longest gap between repeats in the burst, between 45 and 120 ms. A route load starts only after repeats settle, and a new arrow cancels the previous load.
+* **Web keyboard focus.** Each list is one Tab stop. Rows use the list's arrow navigation and do not add sequential Tab stops.
 * **Home, End and Page Up/Down** scroll the list without changing selection on any platform. The renderer requests unloaded windows for the viewport. Home asks for the initial window. On a non-search Bind with exact count authority, End requests the end anchor and Page Up/Down may use it near the tail. Search End and End without exact count authority page forward from the last loaded row. Follow §2.3 during recovery. Count-free views show no extent implying a total.
 * **Search refinement** uses the `refine_query` Bind state in §2.5.
 * **A `list` takes the remaining height of its stack and scrolls itself.** One `list` per scroll region: a `stack` that holds a list does not scroll, and nested scrolling
@@ -532,7 +535,7 @@ such as Empty Trash.
 * **Data-free templates persist.** A template is a description with its binds as requests: sections, selectors, titles the author wrote, icons, actions. It holds no row, no title of a
   person's item, no count, no account initial and no activation context, so it may be stored (one file of at most 4 MB, keyed by the signed-in account, deleted on sign-out and on account
   switch). `templates: none` keeps nothing.
-* **Q10 (owner decision, 2026-11-19): own-space member rows can persist.** Only opted-in root windows without route-dependent or parent scope are eligible, and only for binds whose query inputs are **invariant**: a `list` source with at most a literal collection and no reference, search text, route, form, selection or parent operand anywhere in the source, filter or sort (account-bound `{viewer: person}` stays invariant); the schema and the verifier refuse `persist` otherwise, no query identity is added to the record, and only start-anchored windows are persisted.
+* **Q10 (owner decision, 2026-11-19): own-space member rows can persist.** Only opted-in root windows without route-dependent or parent scope are eligible, and only for binds whose query inputs are **invariant**: a `list` source with at most a literal collection and no reference, search text, route, form, selection or parent operand anywhere in the source, filter or sort (account-bound `{viewer: person}` stays invariant); refuse `persist` otherwise. Records carry no query identity. Persist only start-anchored windows.
   Accept only `MemberRowCacheRecord`, the display-only exception to session-only projections. The host builds it from the paired window using the catalogue’s offline display allowlist. Every title and secondary part must keep its checked source. Exclude body text and sources ineligible for offline display. A plain provider label may use a declared eligible Text field in the paired Threads row. It is separate from the verified provider icon and its mark authority. For Notes the cached secondary line keeps the authorised date as `subtitle_timestamp`. Format it from the local clock at draw time using the pinned template. Reserve the same line height until a fresh authorised reply adds the snippet. The authenticated `ViewOpenResult` and `WindowResult` name the audience.
   The schema permits the record only on ready or empty start-anchored own-space member replies without a parent. Before writing, match it to the authenticated active view and window.
   On write and load check the schema, host proof, scope, opt-ins and expiry (§4.2 of the Plugin API). Load only into the matching own-space root display.
@@ -578,6 +581,9 @@ such as Empty Trash.
 * Unknown fields are ignored; unknown enum values in a field the renderer needs refuse the description.
 
 ## 8. Native review (SwiftUI)
+
+On iPad use the same host layout as Mac: the left sidebar, floating
+card and right sidebar. Sidebar sections keep their authored placement.
 
 What the renderer needs from the contract, and what it costs:
 
