@@ -816,6 +816,46 @@ rule, contingent on the evidence, would reject a pair if either arm
 has two such control spikes or one control operation above 40 ms.
 This rule uses the independent control before judging save latency.
 
+The monitored perf-01 run completed 20 arms with 100 saves each and no
+placement breaches. The table reports milliseconds. The monitor recorded
+642 one-second host intervals and 2,916 control writes on the ext4
+filesystem. The control's idle p95/p99/max were 16.209/24.261/60.449 ms.
+The prespecified spike threshold was 48.522 ms.
+
+| Pair | Arm | Save p95 | Save p99 | Save max | Control write+fsync p95 | Control write+fsync max | Control fsync p95 | Control fsync max |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | Release | 34.729 | 39.339 | 94.436 | 20.639 | 22.658 | 20.62 | 22.644 |
+| 0 | Candidate | 38.884 | 71.157 | 83.097 | 20.171 | 21.824 | 20.157 | 21.808 |
+| 1 | Release | 63.074 | 93.164 | 130.062 | 35.384 | 42.488 | 35.348 | 42.456 |
+| 1 | Candidate | 37.787 | 51.747 | 86.475 | 22.273 | 24.432 | 22.259 | 24.418 |
+| 2 | Release | 47.769 | 58.242 | 97.996 | 27.371 | 30.591 | 27.356 | 30.575 |
+| 2 | Candidate | 47.608 | 85.403 | 94.307 | 32.5 | 48.973 | 32.488 | 48.948 |
+| 3 | Release | 62.128 | 77.441 | 105.244 | 40.109 | 44.785 | 40.077 | 44.766 |
+| 3 | Candidate | 40.018 | 57.479 | 99.612 | 23.855 | 24.529 | 23.841 | 24.514 |
+| 4 | Release | 53.452 | 98.589 | 133.771 | 23.403 | 39.623 | 23.384 | 39.607 |
+| 4 | Candidate | 60.646 | 79.908 | 105.518 | 25.527 | 46.807 | 25.514 | 46.794 |
+| 5 | Release | 40.943 | 65.558 | 88.504 | 19.108 | 24.601 | 19.094 | 24.588 |
+| 5 | Candidate | 46.483 | 67.431 | 94.756 | 25.06 | 26.485 | 25.046 | 26.472 |
+| 6 | Release | 39.01 | 68.293 | 84.772 | 22.266 | 25.047 | 22.25 | 25.017 |
+| 6 | Candidate | 47.357 | 64.871 | 85.221 | 27.641 | 28.262 | 27.627 | 28.244 |
+| 7 | Release | 40.45 | 45.695 | 84.35 | 19.426 | 22.055 | 19.411 | 22.031 |
+| 7 | Candidate | 37.324 | 51.717 | 98.696 | 18.994 | 19.672 | 18.98 | 19.658 |
+| 8 | Release | 68.621 | 102.268 | 171.459 | 64.936 | 124.257 | 64.919 | 124.237 |
+| 8 | Candidate | 57.551 | 74.14 | 116.227 | 27.587 | 34.288 | 27.57 | 34.27 |
+| 9 | Release | 39.242 | 49.02 | 100.567 | 21.104 | 22.371 | 21.089 | 22.353 |
+| 9 | Candidate | 57.232 | 99.604 | 107.538 | 33.35 | 37.415 | 33.336 | 37.399 |
+
+Each release missed the 40 ms save gate in seven arms. Nine of 185
+above-limit saves were within 200 ms of a control spike, compared with
+10 of 1,815 other saves. Baseline pair 8 showed a clear shared-I/O event.
+Its control reached 124.257 ms and peak full I/O pressure reached 52.117%.
+The proposed quiet-pair filter excludes pairs 1, 2, 3, 4 and 8. Five of
+the ten remaining arms still missed. This experiment therefore does not
+justify a quiet-only passing gate. The 200 ms probe can miss short I/O
+events, and five control fsyncs per second can alter the shared workload.
+The next comparison tests that observer effect, with the commit-stage
+build paused.
+
 ## Review gate
 
 The measured poll-only candidate `5370a9d0` was built on dev
