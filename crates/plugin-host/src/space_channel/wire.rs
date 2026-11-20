@@ -14,12 +14,36 @@ pub struct PackagePin {
     pub digest: String,
 }
 
-/// The methods admitted to the v2 callback wire.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SpaceMethod {
-    /// Return the head of one item in the ticket's space.
-    ItemHead,
+/// One host method name from the pinned v2 manifest's `hostMethod` list.
+/// Decoding refuses any other name, so no callback reaches an engine the
+/// contract does not define. The receiver still checks that the exact
+/// invocation's operation declared the method. Cost: one set lookup.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
+#[serde(transparent)]
+pub struct SpaceMethod(String);
+
+impl SpaceMethod {
+    /// Check a method name against the pinned list. Returns `Error::Invalid`
+    /// for any name the contract does not define.
+    pub fn new(name: &str) -> Result<Self, crate::Error> {
+        if crate::registry_v2::host_method(name) {
+            Ok(Self(name.to_owned()))
+        } else {
+            Err(crate::Error::Invalid)
+        }
+    }
+
+    /// The checked method name, as declared in an operation's `methods`.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for SpaceMethod {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        Self::new(&name).map_err(|_| serde::de::Error::custom("unknown host method"))
+    }
 }
 
 /// Direction-checked invocation, callback and transport messages.

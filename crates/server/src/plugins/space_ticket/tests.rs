@@ -60,7 +60,7 @@ fn ticket_is_refused_after_grant_revision_moves_or_epoch_changes() {
         ticket: Some(ticket.id()),
         message: SpaceMessage::Call {
             callback_id: Uuid::new_v4(),
-            method: SpaceMethod::ItemHead,
+            method: SpaceMethod::new("item_head").unwrap(),
             input: json!({}),
         },
     };

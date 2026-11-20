@@ -12,7 +12,7 @@ use crate::{
 use calternal_auth::spaces::Spaces;
 use calternal_content::{ItemHead, ItemHeadReader};
 use calternal_machine::{protocol::PluginWorker, sandbox::worker::MAX_SOURCE_BYTES};
-use calternal_plugin_host::space_channel::{PackagePin, SpaceMessage, SpaceMethod, SpaceSender};
+use calternal_plugin_host::space_channel::{PackagePin, SpaceMessage, SpaceSender};
 use calternal_types::{AccountId, Capability, Error, ErrorCode, SpaceId};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -355,9 +355,9 @@ async fn run(
         match &frame.message {
             SpaceMessage::Call {
                 callback_id,
-                method: SpaceMethod::ItemHead,
+                method,
                 input,
-            } if answered.is_none() => {
+            } if answered.is_none() && method.as_str() == "item_head" => {
                 if !item_target_matches(&ticket.scope.kind, ticket.scope.item, input) {
                     return Err(missing());
                 }

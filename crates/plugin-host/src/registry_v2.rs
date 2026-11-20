@@ -89,6 +89,22 @@ fn contract_json(bytes: &str) -> Value {
     serde_json::from_str(bytes).expect("pinned contract is JSON")
 }
 
+/// Whether `name` is one of the pinned manifest's `hostMethod` values. The
+/// set is read once from the embedded schema. Cost: one ordered lookup.
+pub(crate) fn host_method(name: &str) -> bool {
+    static METHODS: OnceLock<BTreeSet<String>> = OnceLock::new();
+    METHODS
+        .get_or_init(|| {
+            contract_json(MANIFEST)["definitions"]["hostMethod"]["enum"]
+                .as_array()
+                .expect("pinned hostMethod list")
+                .iter()
+                .map(|method| method.as_str().expect("host method name").to_owned())
+                .collect()
+        })
+        .contains(name)
+}
+
 /// Compile a named wire shape against the embedded catalogue. Callers cache
 /// the result per shape. The registry resolves references offline.
 pub(crate) fn catalogue_validator(definition: &str) -> jsonschema::Validator {

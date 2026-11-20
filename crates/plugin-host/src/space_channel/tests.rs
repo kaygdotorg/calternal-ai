@@ -104,7 +104,7 @@ async fn full_windows_wait_and_deliver_each_maximum_result() {
                 ticket,
                 SpaceMessage::Call {
                     callback_id,
-                    method: SpaceMethod::ItemHead,
+                    method: SpaceMethod::new("item_head").unwrap(),
                     input: json!({}),
                 },
             )

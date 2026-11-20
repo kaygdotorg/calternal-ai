@@ -1,4 +1,5 @@
 use super::*;
+use calternal_plugin_host::space_channel::SpaceMethod;
 use serde_json::json;
 
 #[test]
@@ -221,7 +222,7 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
         ticket: Some(old_ticket.id()),
         message: SpaceMessage::Call {
             callback_id: Uuid::new_v4(),
-            method: SpaceMethod::ItemHead,
+            method: SpaceMethod::new("item_head").unwrap(),
             input: json!({"kind":"notes","item_id":item.id}),
         },
     };
@@ -258,7 +259,7 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
                 old_ticket.id(),
                 SpaceMessage::Call {
                     callback_id: callback,
-                    method: SpaceMethod::ItemHead,
+                    method: SpaceMethod::new("item_head").unwrap(),
                     input: input.clone(),
                 },
             )
@@ -276,7 +277,7 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
                 admitted,
                 SpaceMessage::Call {
                     callback_id: callback,
-                    method: SpaceMethod::ItemHead,
+                    method: SpaceMethod::new("item_head").unwrap(),
                     input,
                 },
             )
@@ -342,7 +343,7 @@ async fn a_ticket_in_flight_keeps_the_carrier_awake_past_idle() {
             ticket,
             SpaceMessage::Call {
                 callback_id,
-                method: SpaceMethod::ItemHead,
+                method: SpaceMethod::new("item_head").unwrap(),
                 input: json!({"kind":"notes","item_id":item.id}),
             },
         )

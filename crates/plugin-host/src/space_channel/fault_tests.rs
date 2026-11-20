@@ -25,7 +25,7 @@ fn invoke(input: serde_json::Value) -> SpaceMessage {
 fn callback() -> SpaceMessage {
     SpaceMessage::Call {
         callback_id: Uuid::new_v4(),
-        method: SpaceMethod::ItemHead,
+        method: SpaceMethod::new("item_head").unwrap(),
         input: json!({}),
     }
 }

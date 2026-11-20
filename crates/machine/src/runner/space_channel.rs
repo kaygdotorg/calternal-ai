@@ -273,7 +273,8 @@ mod tests {
             let call_id = Uuid::new_v4();
             let call = |text: String| ChildMessage::HostCall {
                 call_id,
-                method: calternal_plugin_host::space_channel::SpaceMethod::ItemHead,
+                method: calternal_plugin_host::space_channel::SpaceMethod::new("item_head")
+                    .unwrap(),
                 input: serde_json::json!(text),
             };
             let overhead = ChildFrame::encode(alias, call(String::new()))
