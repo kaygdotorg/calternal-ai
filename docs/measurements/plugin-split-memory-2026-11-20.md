@@ -23,6 +23,8 @@ The guest is the same arrangement as the [space runtime walls](space-runtime-wal
 
 Inside the guest a bench supervisor (`guest/host.mjs`) stands in for the plugin supervisor. It starts the plugins, answers their broker calls from memory (fixed replies, no I/O), and reads memory from `/proc`. It starts each plugin process with the product's flags: `--permission --allow-fs-read=<package> --disallow-code-generation-from-strings --max-old-space-size=128`. Everything in the guest ran as root without the product's in-guest seccomp and user separation. That changes neither memory nor start time much, but it is not the full product wall.
 
+Image `root.ext4` SHA-256 `35ad2a68…` ran the memory, latency, wake and idle-stop series. The fault series ran on a repacked image that only adds OOM protection for the relay and resets each plugin's OOM score to the default. Without that, plugins inherited the supervisor's protection and the guest kernel panicked when it ran out of memory. The first two fault attempts are kept on perf-01.
+
 Workload, in the order used for 1, 2, 4 and 7 plugins:
 
 | # | Plugin | Source | Call used |
