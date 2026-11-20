@@ -382,6 +382,36 @@ async fn enrolled_package_writes_and_reads_items_through_live_callbacks() {
         call("after", "reading.add", add).await.unwrap_err().code,
         ErrorCode::NotFound
     );
+    // Disable fenced the placement; the machine must stop the worker before
+    // the test lets go of its supervisor, and nothing may outlive the run.
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !runner.reports().is_empty() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the runner must stop the disabled package's placement");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !processes_under(root.path()).await.is_empty() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("no worker process may outlive its placement");
     supervisor.abort();
     server.abort();
+}
+
+/// Processes whose working directory lies under `root`.
+async fn processes_under(root: &std::path::Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut entries = tokio::fs::read_dir("/proc").await.unwrap();
+    while let Some(entry) = entries.next_entry().await.unwrap() {
+        if let Ok(cwd) = tokio::fs::read_link(entry.path().join("cwd")).await
+            && cwd.starts_with(root)
+        {
+            found.push(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+    found
 }

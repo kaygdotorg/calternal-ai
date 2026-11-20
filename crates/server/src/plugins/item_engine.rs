@@ -23,11 +23,13 @@ mod commit;
 mod provision;
 mod read;
 mod stages;
+mod viewer;
 mod wire;
 pub use attested::{AttemptOutputs, AttemptText, CapturedInput};
 use attested::{Attested, Composed, Placing};
 pub use provision::kind_registrations;
 pub use stages::ItemStages;
+use commit::receipt_key;
 use wire::*;
 
 /// The protected check required at a callback boundary.
@@ -214,6 +216,8 @@ impl ItemEngine {
                 Ok(page)
             }
             "item_spans" => self.spans(decode(operand)?),
+            "viewer_state_read" => self.viewer_read(decode(operand)?),
+            "viewer_state_write" => self.viewer_write(decode(operand)?, operand),
             "item_create" => {
                 let create: Create = decode(operand)?;
                 if create.kind != self.kind_id() {

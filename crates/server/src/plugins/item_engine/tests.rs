@@ -49,6 +49,11 @@ impl Fixture {
         let mut kind = manifest["kinds"][0].clone();
         kind["append_file"] = json!(true);
         kind["attempt_discovery"] = json!("item_policy");
+        kind["viewer_fields"] = json!({
+            "last_read": {"type":"Timestamp"},
+            "pinned": {"type":"Boolean"},
+            "unread": {"type":"Number","source":"entry_unread"}
+        });
         let mut operation = manifest["operations"][0].clone();
         operation["methods"] = json!([
             "item_create",
@@ -59,7 +64,9 @@ impl Fixture {
             "item_append",
             "item_save_begin",
             "item_save_chunk",
-            "item_save_seal"
+            "item_save_seal",
+            "viewer_state_read",
+            "viewer_state_write"
         ]);
         operation["write_origins"] = json!({"host_input":"title","attempt_output":"text"});
         let mut declaration = manifest;
@@ -99,10 +106,14 @@ impl Fixture {
     }
 
     fn engine(&self, invocation: &str) -> ItemEngine {
+        self.engine_for(self.account, invocation)
+    }
+
+    fn engine_for(&self, account: AccountId, invocation: &str) -> ItemEngine {
         ItemEngine::new(
             self.content.clone(),
             self.space,
-            self.account,
+            account,
             self.package.clone(),
             "reading.add",
             "reading-item",
@@ -404,5 +415,61 @@ fn attested_writes_refuse_unproven_sources_and_raw_writes_protect() {
     assert_eq!(
         scoped.call("item_append", &append).unwrap_err().code,
         ErrorCode::Forbidden
+    );
+}
+
+#[test]
+fn viewer_state_is_private_per_account_and_compare_and_set() {
+    let fixture = Fixture::new();
+    let mut owner = fixture.engine("owner");
+    let created = owner
+        .call(
+            "item_create",
+            &json!({"request_id":"v","kind":"reading-item","name":"V.md","metadata":{"title":"V"}}),
+        )
+        .unwrap();
+    let item = created["item"].clone();
+    let read = json!({"item":item});
+    assert_eq!(
+        owner.call("viewer_state_read", &read).unwrap(),
+        json!({"version":"0","fields":{}})
+    );
+    let write = json!({
+        "item":item, "expected":"0", "request_id":"pin",
+        "patch":{"pinned":true,"last_read":"2026-11-20T10:00:00Z"}
+    });
+    let written = owner.call("viewer_state_write", &write).unwrap();
+    assert_eq!(
+        written,
+        json!({"version":"1","fields":{"pinned":true,"last_read":"2026-11-20T10:00:00Z"}})
+    );
+    assert_eq!(owner.call("viewer_state_write", &write).unwrap(), written);
+    let mut stale = write.clone();
+    stale["request_id"] = json!("stale");
+    assert_eq!(
+        owner.call("viewer_state_write", &stale).unwrap_err().code,
+        ErrorCode::Conflict
+    );
+    let mut other = fixture.engine_for(AccountId::new(), "other");
+    assert_eq!(
+        other.call("viewer_state_read", &read).unwrap(),
+        json!({"version":"0","fields":{}})
+    );
+    for patch in [
+        json!({"unread":3}),
+        json!({"pinned":"yes"}),
+        json!({"shared":true}),
+        json!({"last_read":"2026-11-20T10:00:60Z"}),
+    ] {
+        let refused = json!({"item":item,"expected":"1","request_id":"bad","patch":patch});
+        assert_eq!(
+            owner.call("viewer_state_write", &refused).unwrap_err().code,
+            ErrorCode::InvalidInput
+        );
+    }
+    let clear = json!({"item":item,"expected":"1","request_id":"clear","patch":{"pinned":null}});
+    assert_eq!(
+        owner.call("viewer_state_write", &clear).unwrap(),
+        json!({"version":"2","fields":{"last_read":"2026-11-20T10:00:00Z"}})
     );
 }
