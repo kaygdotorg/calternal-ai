@@ -1,0 +1,17 @@
+{
+  "id": "spike-chat",
+  "name": "Spike Chat",
+  "kinds": {
+    "chats": {
+      "folder": "Chats",
+      "records": true,
+      "fields": {
+        "title":  { "type": "text", "index": "sort" },
+        "format": { "type": "text", "default": "calternal-chat/v2" }
+      }
+    }
+  },
+  "grant": { "write": ["chats"] },
+  "collections": { "All": { "kind": "chats", "sort": "title" } },
+  "sidebar": ["All"]
+}

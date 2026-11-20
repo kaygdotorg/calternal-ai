@@ -1,0 +1,25 @@
+{
+  "id": "calternal-reading-list",
+  "name": "Reading List",
+  "kinds": {
+    "reading": {
+      "folder": "Reading",
+      "fields": {
+        "url":   { "type": "url",  "required": true, "label": "Link" },
+        "title": { "type": "text", "index": "sort" },
+        "read":  { "type": "bool", "default": false, "index": "filter" }
+      },
+      "looks": { "row": { "title": "title", "subtitle": "url" } }
+    }
+  },
+  "grant": { "write": ["reading"] },
+  "forms": {
+    "add": { "title": "Add link", "create": "reading", "fields": ["url", "title"] },
+    "mark-read": { "title": "Mark read", "set": { "read": true }, "when": { "read": false } }
+  },
+  "collections": {
+    "Unread": { "kind": "reading", "where": { "read": false }, "sort": "-created" },
+    "All":    { "kind": "reading", "sort": "-created" }
+  },
+  "sidebar": ["Unread", "All"]
+}
