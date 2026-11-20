@@ -3,7 +3,7 @@
   // Everything shown comes from the template and the row's fields; nothing is added or dropped here. Selection is read from the list, never from the description.
   import { Icon, Row } from "@calternal/ui";
   import type { RowFields, RowTemplate, WindowRow } from "../model";
-  import { iconOf, imageIconOf, marksOf, secondaryOf, titleOf } from "./eval";
+  import { iconOf, imageIconOf, marksOf, secondaryOf, secondaryParts, titleOf } from "./eval";
   import RowImage from "./RowImage.svelte";
   import { knownIcon } from "./icons";
   let { template, row, kindIcon, selected = false, depth = 0, onclick }: { template: RowTemplate; row: WindowRow; kindIcon?: string; selected?: boolean; depth?: number; onclick?: (e: MouseEvent) => void } = $props();
@@ -13,10 +13,13 @@
   const icon = $derived(knownIcon(iconName));
   const img = $derived(imageIconOf(template.icon));
   const sub = $derived(secondaryOf(template.secondary, fields));
+  const parts = $derived(secondaryParts(template.secondary, fields));
   const marks = $derived(marksOf(template.marks, fields));
 </script>
 
 <Row {title} {sub} {selected} {depth} {onclick}>
+  <!-- The second line: everything but its last part may ellipsise; the last part (a time) stays whole at the end (the shared Row's own line is a flex box, whose plain text cannot ellipsise). -->
+  {#snippet meta()}{#if parts.length > 1}<span class="sl">{parts.slice(0, -1).join(" \u00b7 ")}</span><span class="sx">\u00b7 {parts.at(-1)}</span>{:else}<span class="sl">{parts[0] ?? ""}</span>{/if}{/snippet}
   {#snippet leading()}{#if img}<RowImage ref={typeof fields[img.field] === "string" ? (fields[img.field] as string) : undefined} snippet={img.fallback && typeof fields[img.fallback] === "string" ? (fields[img.fallback] as string) : undefined} />{:else if iconName !== undefined}<span class="lead">{#if icon}<Icon name={icon} />{:else}<i class="missing" data-icon-missing={iconName}></i>{/if}</span>{/if}{/snippet}
   {#snippet trailing()}{#each marks as m, k (k)}
     {#if m.kind === "dot"}<i class="dot {m.tone ?? ''}" data-mark="dot"></i>
@@ -27,6 +30,7 @@
 </Row>
 
 <style>
+  .sl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .sx { flex: none; white-space: nowrap; }
   .lead { flex: none; display: grid; color: var(--ink-2); }
   .missing { width: var(--glyph); height: var(--glyph); border-radius: 50%; border: 1.5px dashed currentColor; opacity: 0.4; box-sizing: border-box; }
   .missing.small { width: var(--glyph-inline); height: var(--glyph-inline); }

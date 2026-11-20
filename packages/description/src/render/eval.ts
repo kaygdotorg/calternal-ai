@@ -83,6 +83,15 @@ export function relativeDate(t: number, now: number): string {
   return new Date(t).toLocaleDateString();
 }
 
+/** The secondary line as its parts (the same rules as `secondaryOf`), so a row can ellipsise the first and keep the last (the time) whole. */
+export function secondaryParts(parts: readonly Secondary[] | undefined, fields: RowFields, now: number = Date.now()): string[] {
+  const s = secondaryOf(parts, fields, now);
+  if (!s) return [];
+  const out: string[] = [];
+  for (const p of (parts ?? []).slice(0, 3)) { const one = secondaryOf([p], fields, now); if (one) out.push(one); }
+  return out;
+}
+
 /** The secondary line: the declared parts, in order, each from its projected field; an absent or malformed part (and its separator) is omitted; joined by a space, a middle dot and a space. Undefined when the template declares none. */
 export function secondaryOf(parts: readonly Secondary[] | undefined, fields: RowFields, now: number = Date.now()): string | undefined {
   if (!parts?.length) return undefined;

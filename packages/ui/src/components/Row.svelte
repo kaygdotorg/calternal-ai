@@ -48,5 +48,5 @@
   .t, .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .s { display: flex; align-items: center; gap: var(--s-2); }
   .s { font-size: var(--text-label); color: var(--ink-3); }
-  .tr { flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-label); color: var(--ink-3); }
+  .tr { flex: none; margin-inline-start: var(--s-2); display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-label); color: var(--ink-3); }
 </style>
