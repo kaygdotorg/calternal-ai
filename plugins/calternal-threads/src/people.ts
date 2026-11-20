@@ -1,6 +1,6 @@
-import type { AccountRef, ContributionIdentity, ItemContentReceipt, ItemCreate, ItemLocator, ItemRef, ItemSave, RevisionRef } from "../generated/wire.js";
-import { inlineBody, kind, publish, read } from "./files.ts";
-import { agentParticipant, attest, checkedTitle, encode, encodeRecord, folder, MAX_FILE_BYTES, messageId, messageRecord, messageView, personParticipant, step, type Message, type Thread } from "./format.ts";
+import type { AccountRef, ContributionIdentity, ItemContentReceipt, ItemCreate, ItemLocator, ItemRef, RevisionRef } from "../generated/wire.js";
+import { appendRecord, inlineBody, kind, publish, read } from "./files.ts";
+import { agentParticipant, attest, checkedTitle, encode, folder, messageId, messageRecord, messageView, personParticipant, step, type Message, type Thread } from "./format.ts";
 import { checkedText, type HarnessOutput } from "./harnesses-v1.ts";
 import type { Context } from "./interface.ts";
 
@@ -23,8 +23,8 @@ export type PeopleContext = Context & {
   createShared?: (input: ItemCreate, people: readonly AccountRef[]) => Promise<ItemContentReceipt>;
   // Checks current common membership using the host's item grants and account directory.
   canWriteConversation?: (item: ItemRef) => Promise<boolean>;
-  // Fixture binding to the captured text and the app's previously checked message receipt.
-  messageWrite?: { item: ItemRef; text?: string; replace?: { message: string; span: NonNullable<ItemSave["replace_span"]> } };
+  // Fixture binding to the captured composer or editor text.
+  messageWrite?: { item: ItemRef; text: string };
   privateState?: {
     read(item: ItemRef): Promise<string | undefined>;
     write(item: ItemRef, body: string, expected: string | undefined): Promise<void>;
@@ -48,11 +48,11 @@ const editWindowMs = 48 * 60 * 60 * 1000;
 
 async function member(ctx: Context, item: ItemRef) {
   const { revision, locator } = await ctx.call("item_head", { item });
-  const { thread, size } = await read(ctx, item, revision);
+  const { thread, size, spans } = await read(ctx, item, revision);
   if (thread.conversation !== "people" || !thread.participants.some(p => p.kind === "person" && p.id === ctx.author.actor)) {
     throw new Error("Conversation unavailable.");
   }
-  return { thread, revision, size, locator };
+  return { thread, revision, size, locator, spans };
 }
 
 /** Refuse shared mutations and agent calls unless the host confirms current common group membership. */
@@ -124,15 +124,10 @@ async function post({ item, text, replyTo, mentions = [] }: Target & {
     ...(target && { replyTo, replyToName: target.author.name }), ...(recipients.length && { mentions: recipients }),
   };
   const record = messageRecord(message, thread.participants);
-  const bytes = Buffer.from(encodeRecord(record));
-  if (size + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
   const captured = ctx.messageWrite;
   const attested = captured?.item === item && captured.text === text ? attest(record, { kind: "input" }) : undefined;
-  const saved = await ctx.call("item_append", {
-    request_id: step(ctx.author.request_id, "person-post"), item, expected_revision: revision,
-    ...(attested ? { attested } : { bytes: bytes.toString("base64") }),
-  });
   thread.messages.push(message);
+  const saved = await appendRecord(ctx, item, revision, step(ctx.author.request_id, "person-post"), size, thread, record, attested);
   await publish(ctx, item, saved.revision, thread);
   return { message: id };
 }
@@ -143,7 +138,7 @@ async function message({ item, message }: MessageTarget, ctx: PeopleContext) {
 }
 
 async function change({ item, message }: MessageTarget, ctx: PeopleContext, text?: string) {
-  const { thread, revision } = await writableMember(ctx, item);
+  const { thread, revision, spans } = await writableMember(ctx, item);
   const entry = find(thread, message);
   if (entry.author.kind !== "person" || entry.author.id !== ctx.author.actor || (entry.deleted && text !== undefined)) {
     throw new Error("Message unavailable.");
@@ -169,12 +164,13 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
   }
   const purpose = text === undefined ? "person-delete" : "person-edit";
   const captured = ctx.messageWrite;
-  if (captured?.item === item && captured.replace?.message === message && captured.text === text) {
+  const replace_span = spans.get(message);
+  if (replace_span !== undefined && (text === undefined || (captured?.item === item && captured.text === text))) {
     const record = messageRecord(entry, thread.participants);
     const attested = attest(record, { kind: text === undefined ? "empty" : "input" });
     if (attested) {
       const result = await ctx.call("item_save", { request_id: step(ctx.author.request_id, purpose),
-        item, expected: revision, replace_span: captured.replace.span, attested });
+        item, expected: revision, replace_span, attested });
       if ("code" in result) throw new Error(result.code);
       await publish(ctx, item, result.revision, thread);
       return;

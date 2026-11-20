@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { AttestedBody, ContributionIdentity, ItemSnapshotView, ItemLocator, SnapshotNode, Timestamp } from "../generated/wire.js";
+import type { AttestedBody, ContributionIdentity, ItemSave, ItemSpansPage, ItemSnapshotView, ItemLocator, SnapshotNode, Timestamp } from "../generated/wire.js";
 
 type Person = { kind: "person"; id: string; name: string };
 type Agent = { kind: "agent"; id: string; name: string; contribution: ContributionIdentity };
@@ -111,11 +111,10 @@ function timestamp(value: string): Timestamp {
 type FramedText = { prefix: string; text: string; suffix: string };
 const maxFramingBytes = 512;
 
-/** Select a host source only when the exact text and framing can be stored as-is. */
+/** Select a host source only when each framing operand fits the host byte bound. */
 export function attest(parts: FramedText, source: AttestedBody["source"]): AttestedBody | undefined {
-  const { prefix, text, suffix } = parts;
-  if (Buffer.byteLength(prefix) > maxFramingBytes || Buffer.byteLength(suffix) > maxFramingBytes ||
-      escapeBodyHeadings(text, true) !== text) return;
+  const { prefix, suffix } = parts;
+  if (Buffer.byteLength(prefix) > maxFramingBytes || Buffer.byteLength(suffix) > maxFramingBytes) return;
   return { source, prefix, suffix };
 }
 
@@ -145,15 +144,23 @@ export function messageRecord(message: Message, participants: Participant[], inl
     attrs.push(`ask=${alias(message.askedBy.id)}`);
   }
   if (message.mentions?.length) attrs.push(`to=${message.mentions.map(alias).join(",")}`);
+  const links: string[] = [];
   for (const [name, link] of [["log", message.log], ["consult", message.consultation]] as const) {
-    if (link) attrs.push(`${name}=${encodeURIComponent(link.space)}/${encodeURIComponent(link.id)}`);
+    if (link) links.push(`${name}=${encodeURIComponent(link.space)}/${encodeURIComponent(link.id)}`);
   }
-  return { prefix: `### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n`, text: message.text, suffix: "\n\n" };
+  if (links.length) attrs.push("refs=1");
+  return { prefix: `### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n`, text: message.text,
+    suffix: links.length ? `\n\n<!-- ${links.join(" ")} -->\n\n` : "\n\n" };
 }
 
 /** Render the opaque Markdown for a record that cannot use host composition. */
 export function encodeRecord({ prefix, text, suffix }: FramedText): string {
   return prefix + escapeBodyHeadings(text, true) + suffix;
+}
+
+/** Identify a previously stored middle that needs escaping if its span index is discarded. */
+export function needsOpaqueEscape(text: string): boolean {
+  return escapeBodyHeadings(text, true) !== text;
 }
 
 /** Append a tagged heading and one plain body span. */
@@ -184,7 +191,11 @@ export function encode(thread: Thread): string {
   return prefix + text + suffix + thread.messages.map(message => encodeMessage(message, thread.participants)).join("");
 }
 
-function decodeMessage(line: string, body: string[], people: Map<string, Participant>, threadId: string): Message {
+type SpanRef = NonNullable<ItemSave["replace_span"]>;
+type IndexedSpan = ItemSpansPage["spans"][number];
+type MessageRecord = { heading: string; body: string[]; indexed?: { span: IndexedSpan; text: string } };
+
+function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: Map<string, Participant>, threadId: string): Message {
   const match = messageHeading.exec(line);
   if (!match) throw new Error("Unreadable message heading.");
   const [, label, id, raw] = match;
@@ -192,7 +203,7 @@ function decodeMessage(line: string, body: string[], people: Map<string, Partici
   const attrs = new Map<string, string>();
   for (const field of raw.split(" ")) {
     const [key, value] = field.split("=", 2);
-    if (!["by", "re", "ask", "to", "log", "consult", "agent"].includes(key) || !value || attrs.has(key)) {
+    if (!["by", "re", "ask", "to", "refs", "agent"].includes(key) || !value || attrs.has(key)) {
       throw new Error("Unreadable message attributes.");
     }
     attrs.set(key, value);
@@ -213,17 +224,31 @@ function decodeMessage(line: string, body: string[], people: Map<string, Partici
     return person;
   };
   const author = { ...participant(attrs.get("by")), name: unescapeLabel(authorName) };
+  const attribution = indexed?.span.attribution;
+  if (attribution?.kind === "person" && (author.kind !== "person" || author.id !== attribution.actor) ||
+      attribution?.kind === "attempt" && author.kind !== "agent") throw new Error("Message attribution does not match its span.");
   const posted_at = timestamp(date);
   const start = body[0] === "" ? 1 : 0;
-  const end = start < body.length && body.at(-1) === "" ? body.length - 1 : body.length;
+  let end = start < body.length && body.at(-1) === "" ? body.length - 1 : body.length;
   if (markers.includes("deleted")) {
-    if (body.some(line => line !== "") || attrs.size !== 1 || markers.length !== 1) throw new Error("Unreadable tombstone.");
+    if (body.some(line => line !== "") || attrs.size !== 1 || markers.length !== 1 ||
+        (indexed && (indexed.text !== "" || attribution?.kind !== "empty"))) throw new Error("Unreadable tombstone.");
     return { id, author, posted_at, text: "", deleted: true };
   }
-  const message: Message = {
-    id, author, posted_at,
-    text: escapeBodyHeadings(body.slice(start, end).join("\n"), false),
-  };
+  const refs = new Map<string, string>();
+  if (attrs.has("refs")) {
+    const trailer = /^<!-- ((?:log|consult)=[^ <>]+(?: (?:log|consult)=[^ <>]+)?) -->$/u.exec(body[end - 1]);
+    if (attrs.get("refs") !== "1" || !trailer || body[end - 2] !== "") throw new Error("Unreadable message trailer.");
+    for (const ref of trailer[1].split(" ")) {
+      const [key, value] = ref.split("=", 2);
+      if (refs.has(key)) throw new Error("Duplicate message reference.");
+      refs.set(key, value);
+    }
+    end -= 2;
+  }
+  const framingBody = body.slice(start, end).join("\n");
+  if (indexed && (framingBody !== "" || attribution?.kind === "empty")) throw new Error("Unreadable message framing.");
+  const message: Message = { id, author, posted_at, text: indexed?.text ?? escapeBodyHeadings(framingBody, false) };
   const reply = attrs.get("re");
   const replyLabel = markers.find(marker => marker.startsWith("reply to "));
   if (reply || replyLabel) {
@@ -241,7 +266,7 @@ function decodeMessage(line: string, body: string[], people: Map<string, Partici
   const mentions = attrs.get("to");
   if (mentions) message.mentions = mentions.split(",").map(alias => participant(alias).id);
   for (const [attribute, field] of [["log", "log"], ["consult", "consultation"]] as const) {
-    const value = attrs.get(attribute);
+    const value = refs.get(attribute);
     if (!value) continue;
     const [space, id, ...rest] = value.split("/");
     if (!space || !id || rest.length) throw new Error("Unreadable item locator.");
@@ -251,17 +276,10 @@ function decodeMessage(line: string, body: string[], people: Map<string, Partici
   return message;
 }
 
-/** Read headings and body boundaries so edits never depend on a stale byte count. */
-export function decode(body: string): Thread {
-  // A document converted wholesale by a text editor can use CRLF framing.
-  const document = body.startsWith("---\r\n") ? body.replaceAll("\r\n", "\n") : body;
-  const lines = document.split("\n");
-  if (document.endsWith("\n")) lines.pop();
-  const close = lines.indexOf("---", 1);
-  if (lines[0] !== "---" || close < 0) throw new Error("Unreadable thread document.");
+function decodeRecords(frontmatter: string[], records: Iterable<MessageRecord>) {
   const fields = new Map<string, string>();
   const listed = new Map<string, { name: string; kind: string; id: string }>();
-  for (const line of lines.slice(1, close)) {
+  for (const line of frontmatter) {
     if (line === "participants:") continue;
     const item = /^  - (p[1-9][0-9]*) \| (.+) \| (person|agent) \| (\S+)$/u.exec(line);
     if (item) {
@@ -289,28 +307,91 @@ export function decode(body: string): Thread {
       people.set(alias, { ...entry, kind: "agent", contribution: { package: pkg, contribution } });
     }
   }
-  const messages: Message[] = [];
+  const spans = new Map<string, SpanRef>();
   const anchors = new Set<string>();
-  let heading: string | undefined;
-  let content: string[] = [];
-  const finish = () => {
-    if (heading === undefined) return;
-    const message = decodeMessage(heading, content, people, id);
+  const messages: Message[] = [];
+  for (const record of records) {
+    const message = decodeMessage(record, people, id);
     if (anchors.has(message.id)) throw new Error("Duplicate message anchor.");
     anchors.add(message.id);
+    if (record.indexed) spans.set(message.id, record.indexed.span.span);
     messages.push(message);
-  };
-  for (const line of lines.slice(close + 1)) {
+  }
+  const thread: Thread = { id, title, created: timestamp(created), participants: [...people.values()],
+    ...(fields.get("conversation") === "people" && { conversation: "people" }), messages };
+  return { thread, spans };
+}
+
+function documentLines(document: string): string[] {
+  const lines = document.split("\n");
+  if (document.endsWith("\n")) lines.pop();
+  return lines;
+}
+
+function* opaqueRecords(lines: string[]): Iterable<MessageRecord> {
+  let heading: string | undefined;
+  let content: string[] = [];
+  for (const line of lines) {
     if (messageBoundary.test(line)) {
-      finish();
+      if (heading !== undefined) yield { heading, body: content };
       heading = line;
       content = [];
     } else if (heading !== undefined) content.push(line);
     else if (line !== "") throw new Error("Expected a message heading.");
   }
-  finish();
-  return { id, title, created: timestamp(created), participants: [...people.values()],
-    ...(fields.get("conversation") === "people" && { conversation: "people" }), messages };
+  if (heading !== undefined) yield { heading, body: content };
+}
+
+/** Recover an imported or hand-edited file using its tagged headings. */
+export function decode(body: string): Thread {
+  const document = body.startsWith("---\r\n") ? body.replaceAll("\r\n", "\n") : body;
+  const lines = documentLines(document);
+  const close = lines.indexOf("---", 1);
+  if (lines[0] !== "---" || close < 0) throw new Error("Unreadable thread document.");
+  return decodeRecords(lines.slice(1, close), opaqueRecords(lines.slice(close + 1))).thread;
+}
+
+/** Parse message boundaries at host-pinned UTF-8 byte ranges and retain their writer refs. */
+export function decodeIndexed(bytes: Buffer, index: readonly IndexedSpan[], provenance: ItemSpansPage["body_provenance"]) {
+  const utf8 = new TextDecoder("utf-8", { fatal: true });
+  const close = bytes.indexOf("\n---\n", 3);
+  if (bytes.subarray(0, 4).toString() !== "---\n" || close < 4) throw new Error("Unreadable thread document.");
+  const headerEnd = close + 5;
+  function* records(): Iterable<MessageRecord> {
+    let cursor = headerEnd;
+    const refs = new Set<SpanRef>();
+    for (const [position, entry] of index.entries()) {
+      const { offset, length, span, middle_offset, middle_length } = entry;
+      const end = offset + length;
+      const middleEnd = middle_offset + middle_length;
+      if (![offset, length, middle_offset, middle_length].every(Number.isSafeInteger) || length <= 0 || end > bytes.length ||
+          middle_offset < offset || middle_length < 0 || middleEnd > end || refs.has(span)) {
+        throw new Error("Invalid thread span index.");
+      }
+      refs.add(span);
+      // An attested create records the frontmatter as the first span.
+      if (position === 0 && offset === 0 && (end === headerEnd || (end === headerEnd + 1 && bytes[headerEnd] === 10))) {
+        cursor = end;
+        continue;
+      }
+      if (offset < cursor) throw new Error("Overlapping thread spans.");
+      if (offset > cursor) {
+        if (provenance === "attested") throw new Error("Incomplete thread span index.");
+        yield* opaqueRecords(documentLines(utf8.decode(bytes.subarray(cursor, offset))));
+      }
+      const prefix = utf8.decode(bytes.subarray(offset, middle_offset));
+      const suffix = utf8.decode(bytes.subarray(middleEnd, end));
+      if (!prefix.endsWith("\n\n")) throw new Error("Unreadable message framing.");
+      const [heading, ...body] = documentLines(prefix + suffix);
+      yield { heading, body, indexed: { span: entry, text: utf8.decode(bytes.subarray(middle_offset, middleEnd)) } };
+      cursor = end;
+    }
+    if (cursor < bytes.length) {
+      if (provenance === "attested") throw new Error("Incomplete thread span index.");
+      yield* opaqueRecords(documentLines(utf8.decode(bytes.subarray(cursor))));
+    }
+  }
+  return decodeRecords(documentLines(utf8.decode(bytes.subarray(4, close))), records());
 }
 
 /** Resolve a visible message and keep reply context only while its target is visible. */

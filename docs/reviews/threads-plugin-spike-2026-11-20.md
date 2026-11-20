@@ -3,8 +3,8 @@
 The lane starts from dev `80864d0d`. The spike has rerun against
 14.30 (`b89586dd`), 14.31 (`00828198`), 14.32 (`3ca11613`) and
 14.33 (`47024c0f`), 14.34 (`b4d0f20d`), 14.35 (`36d49713`) and
-14.36 (`1c38c21d`). The current pin for both packages is draft 14.37 at
-`0d6845451e6eba68b7fd8c64cce1a61618bc1031`
+14.36 (`1c38c21d`) and 14.37 (`0d684545`). The current pin for both
+packages is draft 14.38 at `430cb649c5bcff7c04b856f88b0527d633c0d2e8`
 on `origin/lane/v2-host-base`. It follows the November 20
 decision that the Threads app (`calternal-threads`) owns the conversation file and the selected harness
 owns its working log. The lane issue is [#92](https://git.kayg.org/kayg/calternal-ai/issues/92).
@@ -38,11 +38,11 @@ flock -s /tmp/calternal-dev02.lock nix develop -c bash -c '
 '
 ```
 
-The build uses the 14.37 revision-aware SDK builder. It pins both
+The build uses the 14.38 revision-aware SDK builder. It pins both
 manifest/worker packages, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-All 41 tests and both Conformance tool 1.1.0 package checks passed
-on dev-02 at the 14.37 pin under the shared lock. The repository
+All 43 tests and both Conformance tool 1.1.0 package checks passed
+on dev-02 at the 14.38 pin under the shared lock. The repository
 documentation gate passed in the earlier afternoon run. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
@@ -397,7 +397,7 @@ one contiguous body of ordinary Markdown paragraphs as the middle, and
 two LF bytes as the suffix. A literal blockquote typed by the author
 stays a blockquote. The format does not add quote markers to the body.
 
-For the host's one reversible escape, split on LF without changing
+For opaque bytes, the plugin's reversible escape splits on LF without changing
 the source bytes. For each line, ignore any leading backslashes and
 one terminal CR when checking for an exact delimiter. A delimiter
 starts with `### `, has a nonempty label and ends with a space and
@@ -436,6 +436,25 @@ the cap. The worker writes an explicit opaque record in that case
 and preserves the full name and link. On a personal item that choice
 sets `consent_only`. Scheduled prompts also use the opaque path while
 the alarm invocation has no checked composer capture.
+
+### Revision 14.38 disposition
+
+| Finding | Status | Evidence or remaining gap |
+| --- | --- | --- |
+| Delimiter escape in checked messages | **CLOSED** | `item_spans` supplies the byte bounds of the complete record and exact middle. A tagged heading, an existing backslash and a trailer-shaped line can be literal body text. The personal Send fixture confirms that the bytes stay unchanged and creator discovery stays enabled. |
+| Recover message span refs | **CLOSED** on the fake host | A new invocation lists the exact revision and gets the message span by its anchor. Edit and delete use that live ref. The test pages one span at a time, reads the old ref from its historical page, and checks that it is refused as a live mutation target. |
+| Framing budget | **PARTLY** | The heading carries only a `refs=1` flag for artifact references. A compact Markdown comment in the suffix holds the log and consultation locators. UTF-8 length is checked for both operands. An over-budget prefix or suffix stays on the opaque path without truncating names or links. |
+| Opaque import or fallback | **CLOSED** for protection and plugin-controlled fallback | A raw append or save invalidates the new revision's old index and sets `consent_only`. Older revision indexes remain readable through their pins. Before an opaque append would make existing literal headings ambiguous, the plugin serializes those messages with escapes and commits the update together. The test exercises a reframe large enough to need staging. Later attested appends add their own spans without recertifying the opaque prefix. |
+| External edits after index loss | **OPEN** | A hand edit or import can preserve an unescaped line that used to be inside an indexed middle while discarding its index. The unproven bytes alone cannot disambiguate it from a real heading. Hand editors can escape such a line. If lossless export and reimport of those cases is required, the export path needs to escape unindexed delimiters or carry the ranges with the export. |
+| Live host and earlier findings | **UNCHANGED** | This run exercises the published shapes on the fake host. Sealed read authority, persisted revision retention and purge, trusted consent, scheduling, and the earlier cutover and SDK issues still need their own qualifications. |
+
+The worker reads the file and the span pages under the same revision
+pin. A fully attested revision uses recorded byte ranges throughout.
+If an unproven revision acquires new checked appends, the heading reader
+only examines the unindexed ranges. A read costs the bounded body range
+pages plus up to 128 span entries per index call, with at least one of
+each. The common checked append commits once. The rare opaque reframe
+uses one save, with staging when the inline body bound is exceeded.
 
 ### Messaging decisions fixture
 
@@ -488,10 +507,11 @@ the contribution's local name until the host supplies an approved
 presentation label. Contribution identity stays in the frontmatter.
 Names are for display. The host still determines authority.
 
-A message ends at the next unescaped `###` heading with a `{#m-…}` anchor.
-Edit the paragraphs or Markdown between headings. Add a leading
-backslash to a body line that would look like a message delimiter.
-There is no length to update. The worker reads
+The host's recorded ranges delimit attested messages. For a hand-edited
+or imported file, a message ends at the next unescaped `###` heading
+with a `{#m-…}` anchor. Add a leading backslash to a body line that
+would look like a delimiter in that case. There is no length to update.
+The worker reads
 hand-edited body text under the same anchor. Such a file edit is an
 opaque import for the host's provenance rules and cannot impersonate an
 in-app edit or acquire consent. Deletion leaves only the heading on
@@ -526,13 +546,17 @@ Yes, I’ll bring the key.
 
 ### Bob · 2026-11-20 09:03 UTC · deleted {#m-264b5e3f491fd782 by=p2}
 
-### Claude Code · 2026-11-20 09:06 UTC · asked by Alice {#m-4daee5fd2fb71be4 by=p3 ask=p1 log=019a0000-0000-7000-8000-000000000010/item-19}
+### Claude Code · 2026-11-20 09:06 UTC · asked by Alice {#m-4daee5fd2fb71be4 by=p3 ask=p1 refs=1}
 
 Reply to the permitted context
 
-### Claude Code · 2026-11-20 09:07 UTC · asked by Alice {#m-9d1c7cac655cb70d by=p3 ask=p1 consult=019a0000-0000-7000-8000-000000000010/item-24}
+<!-- log=019a0000-0000-7000-8000-000000000010/item-19 -->
+
+### Claude Code · 2026-11-20 09:07 UTC · asked by Alice {#m-9d1c7cac655cb70d by=p3 ask=p1 refs=1}
 
 Agreed recommendation
+
+<!-- consult=019a0000-0000-7000-8000-000000000010/item-24 -->
 
 ````
 
@@ -730,7 +754,7 @@ require a cross-owner write grant that the design does not provide.
 The package worker code uses no native Threads dispatch, special plugin ID,
 direct package connection, inherited provider credential, or server-owned
 thread format. The fixture provider port stands in for live execution placement. The
-14.37 fake carries replies through the catalogue's checked contribution
+14.38 fake carries replies through the catalogue's checked contribution
 methods. People-thread invitations still use fixture ports. The harness manifest includes
 an image-shaped fixture digest and a pinned entry that fails closed.
 It cannot launch Claude Code. The real image, login mapping and reviewed

@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { MAX_V2_FRAME_BYTES } from "@calternal/plugin-sdk";
-import type { ItemRef, RevisionRef } from "../generated/wire.js";
-import { decode, MAX_FILE_BYTES, page, step, type Thread } from "./format.ts";
+import type { AttestedBody, ItemRef, ItemSpansPage, RevisionRef } from "../generated/wire.js";
+import { decode, decodeIndexed, encode, encodeRecord, MAX_FILE_BYTES, type messageRecord, needsOpaqueEscape, page, step, type Thread } from "./format.ts";
 import type { Context } from "./interface.ts";
 
 /** The installed item kind shared by both conversation shapes. */
@@ -26,10 +27,67 @@ export async function read(ctx: Context, item: ItemRef, revision: RevisionRef) {
     }
     chunks.push(chunk);
     if (part.next_offset === undefined) {
-      return { thread: decode(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))), size: end };
+      const bytes = Buffer.concat(chunks);
+      const index: ItemSpansPage["spans"] = [];
+      let provenance: ItemSpansPage["body_provenance"] | undefined;
+      let cursor: string | undefined;
+      const seen = new Set<string>();
+      do {
+        const page = await ctx.call("item_spans", { item, revision, ...(cursor && { cursor }) });
+        if (page.item !== item || page.revision !== revision ||
+            (provenance !== undefined && page.body_provenance !== provenance) ||
+            page.spans.length > 128 || (page.next && (!page.spans.length || seen.has(page.next))) ||
+            index.length + page.spans.length > bytes.length) throw new Error("Invalid thread span index.");
+        index.push(...page.spans);
+        provenance = page.body_provenance;
+        cursor = page.next;
+        if (cursor) seen.add(cursor);
+      } while (cursor);
+      const parsed: ReturnType<typeof decodeIndexed> = index.length || provenance === "attested" ? decodeIndexed(bytes, index, provenance!) : {
+        thread: decode(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
+        spans: new Map(),
+      };
+      return { ...parsed, size: end };
     }
     offset = part.next_offset;
   }
+}
+
+/** Append a record, preserving literal text if an opaque write would discard earlier spans. */
+export async function appendRecord(ctx: Context, item: ItemRef, revision: RevisionRef, request_id: string, size: number,
+  thread: Thread, record: ReturnType<typeof messageRecord>, attested?: AttestedBody) {
+  const bytes = Buffer.from(attested ? record.prefix + record.text + record.suffix : encodeRecord(record));
+  if (!attested && thread.messages.slice(0, -1).some(message => needsOpaqueEscape(message.text))) {
+    const body = Buffer.from(encode(thread));
+    if (body.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
+    const target = { request_id, item, expected: revision };
+    let content;
+    if (body.length <= MAX_V2_FRAME_BYTES / 2) content = { body: inlineBody(body) };
+    else {
+      const begin = await ctx.call("item_save_begin", {
+        ...target, length: body.length, sha256: createHash("sha256").update(body).digest("hex"),
+      });
+      if ("code" in begin) throw new Error(begin.code);
+      if ("revision" in begin) return { revision: begin.revision, end_offset: body.length };
+      let offset = 0;
+      while (offset < body.length) {
+        const chunk = body.subarray(offset, offset + 65536);
+        const ack = await ctx.call("item_save_chunk", { handle: begin.handle, offset, bytes: chunk.toString("base64") });
+        if (ack.next_offset < offset + chunk.length || ack.next_offset > body.length) {
+          throw new Error("Invalid thread staging acknowledgement.");
+        }
+        offset = ack.next_offset;
+      }
+      content = await ctx.call("item_save_seal", { handle: begin.handle });
+    }
+    const saved = await ctx.call("item_save", { ...target, ...content, attempt_discovery: "consent_only" });
+    if ("code" in saved) throw new Error(saved.code);
+    return { revision: saved.revision, end_offset: body.length };
+  }
+  if (size + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
+  return ctx.call("item_append", {
+    request_id, item, expected_revision: revision, ...(attested ? { attested } : { bytes: bytes.toString("base64"), attempt_discovery: "consent_only" }),
+  });
 }
 
 /** Publish a page only under a writer scope for the just-read revision. */

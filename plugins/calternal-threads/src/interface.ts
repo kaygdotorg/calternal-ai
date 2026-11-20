@@ -2,7 +2,8 @@ import type { AlarmDelivery, AlarmReceipt, AlarmSet, AuthorInvocationContext, Co
   ContributionRead, ContributionReadResult, ExecutionJobContext, ExecutionJobReceipt, ExecutionJobStart, ExecutionStart,
   ExecutionStatus, ItemAppend, ItemAppendReceipt, ItemViewContext, ItemViewContextRequest, ItemViewPublish,
   ItemViewPublishReceipt, ItemContentReceipt, ItemCreate, ItemHeadRequest, OwnedItemHead, ItemRange, ItemRangeResult,
-  ItemSave, ItemSaveReply, ItemRef, HarnessRef, ChoiceRef } from "../generated/wire.js";
+  ItemSave, ItemSaveReply, ItemRef, HarnessRef, ChoiceRef, ItemSpansRequest, ItemSpansPage,
+  ItemStageBegin, ItemStageBeginReply, ItemStageChunk, ItemStageChunkAck, ItemStageSeal, ItemStageSealed } from "../generated/wire.js";
 
 export type Send = { item: ItemRef; text: string; harness: HarnessRef; placement: ChoiceRef };
 export type RunInput = { item: ItemRef; if_missed?: "run" | "skip" };
@@ -11,7 +12,11 @@ type Methods = {
   item_create: [ItemCreate, ItemContentReceipt];
   item_head: [ItemHeadRequest, OwnedItemHead];
   item_range: [ItemRange, ItemRangeResult];
+  item_spans: [ItemSpansRequest, ItemSpansPage];
   item_save: [ItemSave, ItemSaveReply];
+  item_save_begin: [ItemStageBegin, ItemStageBeginReply];
+  item_save_chunk: [ItemStageChunk, ItemStageChunkAck];
+  item_save_seal: [ItemStageSeal, ItemStageSealed];
   start_job: [ExecutionJobStart, ExecutionJobReceipt];
   execution_start: [ExecutionStart, ExecutionStatus];
   contribution_call: [ContributionCall, ContributionCallReceipt];

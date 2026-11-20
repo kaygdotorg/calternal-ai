@@ -8,7 +8,7 @@ const harness = catalogueRef("HarnessRef");
 const placement = catalogueRef("ChoiceRef");
 const title = { type: "string", minLength: 1, maxLength: 120 };
 const writeView = ["item_view_context", "item_view_publish"] as const;
-const readBody = ["item_head", "item_range"] as const;
+const readBody = ["item_head", "item_range", "item_spans"] as const;
 const target = { kind: "threads", field: "item" };
 const write = { required_capability: "content.write", risk: "reversible", idempotency: "request_id" } as const;
 const read = { required_capability: "space.read", risk: "read", idempotency: "read_only" } as const;
@@ -65,7 +65,8 @@ const metadata = {
       output_schema: catalogueRef("ExecutionJobReceipt") },
     { ...write, id: "threads.rename", title: "Rename", target, methods: [...readBody, "item_save", ...writeView],
       input_schema: object({ item, title }, "item", "title"), output_schema: empty },
-    { ...execute, id: "threads.run", title: "Run harness", target, methods: [...readBody, "item_append", "execution_start", "contribution_call", "contribution_read", ...writeView],
+    { ...execute, id: "threads.run", title: "Run harness", target, methods: [...readBody, "item_append", "item_save",
+      "item_save_begin", "item_save_chunk", "item_save_seal", "execution_start", "contribution_call", "contribution_read", ...writeView],
       write_origins: { attempt_output: "text" },
       input_schema: object({ item, if_missed: ifMissed }, "item"), output_schema: empty },
     { ...execute, id: "threads.arm", title: "Schedule a run", target, methods: [...readBody, "alarm_set"],

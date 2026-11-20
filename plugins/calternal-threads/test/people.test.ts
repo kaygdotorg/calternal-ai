@@ -34,20 +34,27 @@ test("a people-only thread keeps message anchors stable across authors and repla
 
 test("the shared write attests to its sender and edit and tombstone replace recorded spans", async () => {
   const { host, people, item } = await setup();
-  const writer = (request: string, text?: string, replace?: { message: string; span: string }) =>
-    host.peopleContext(bob, request, undefined, "Alice", undefined, { item, text, replace });
+  host.spanPageSize = 1;
+  const writer = (request: string, text?: string) =>
+    host.peopleContext(bob, request, undefined, "Alice", undefined, text === undefined ? undefined : { item, text });
   const { message } = await people.post({ item, text: "Bob speaking" }, writer("same-label", "Bob speaking"));
   const original = host.lastSpan(item);
   assert.equal(host.writeAuthor(item), bob);
   assert.equal((await people.message({ item, message }, host.peopleContext(alice, "read-bob"))).author.id, bob);
   const neighbor = await people.post({ item, text: "Unaffected" }, writer("neighbor", "Unaffected"));
+  const before = (await writer("historical-head").call("item_head", { item })).revision;
   await people.edit({ item, message, text: "Bob speaking again" },
-    writer("checked-edit", "Bob speaking again", { message, span: original }));
+    writer("reopen-and-edit", "Bob speaking again"));
   const edited = host.lastSpan(item);
   assert.notEqual(edited, original);
   assert.equal(host.writeAuthor(item), bob);
-  await assert.rejects(people.remove({ item, message }, writer("stale-delete", undefined, { message, span: original })), /span unavailable/);
-  await people.remove({ item, message }, writer("checked-delete", undefined, { message, span: edited }));
+  const stale = writer("stale-delete");
+  const current = (await stale.call("item_head", { item })).revision;
+  const historical = await stale.call("item_spans", { item, revision: before });
+  assert.equal(historical.spans[0].span, original);
+  await assert.rejects(stale.call("item_save", { item, request_id: "stale-span", expected: current,
+    replace_span: original, attested: { source: { kind: "empty" } } }), /span unavailable/);
+  await people.remove({ item, message }, writer("reopen-and-delete"));
   assert.notEqual(host.lastSpan(item), edited);
   assert.equal(host.writeAuthor(item), undefined);
   assert.equal(decode(host.markdown(item)).messages.find(entry => entry.id === message)?.deleted, true);
@@ -197,22 +204,20 @@ test("the conversation file example has two people, one agent and a separate pri
   const people = peopleFromBundle();
   const context = (actor: string, request: string, at: string) => host.peopleContext(actor, request, `2026-11-20T${at}:00Z`);
   const { created: item } = await people.create({ title: "Community Garden", participants: [bob] }, context(alice, "example-create", "09:00"));
-  const write = (actor: string, request: string, at: string, text?: string, replace?: { message: string; span: string }) =>
-    host.peopleContext(actor, request, `2026-11-20T${at}:00Z`, undefined, undefined, { item, text, replace });
+  const write = (actor: string, request: string, at: string, text?: string) =>
+    host.peopleContext(actor, request, `2026-11-20T${at}:00Z`, undefined, undefined, text === undefined ? undefined : { item, text });
   const first = "Can we meet by the garden gate at 10?";
   const answer = await people.post({ item, text: first }, write(alice, "example-first", "09:01", first));
-  const firstSpan = host.lastSpan(item);
   const reply = "Yes, I’ll bring the key.";
   await people.post({ item, text: reply, replyTo: answer.message, mentions: [alice] },
     write(bob, "example-reply", "09:02", reply));
   const mistaken = "I was looking at the wrong date.";
   const discarded = await people.post({ item, text: mistaken }, write(bob, "example-deleted", "09:03", mistaken));
-  const discardedSpan = host.lastSpan(item);
   const changed = "Can we meet by the garden gate at 10:30?\n\nThe rain should clear by then.";
   await people.edit({ item, message: answer.message, text: changed },
-    write(alice, "example-edit", "09:04", changed, { message: answer.message, span: firstSpan }));
+    write(alice, "example-edit", "09:04", changed));
   await people.remove({ item, message: discarded.message },
-    write(bob, "example-delete", "09:05", undefined, { message: discarded.message, span: discardedSpan }));
+    write(bob, "example-delete", "09:05"));
   const invite = host.invitedContext(alice, "example-agent", { item, scope: { message: answer.message }, consent: [alice] },
     "2026-11-20T09:06:00Z");
   await people.callAgent({ item, prompt: "Summarize our meeting time." }, invite);

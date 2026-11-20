@@ -1,9 +1,9 @@
 import type { ItemViewRead, ItemRef, Timestamp } from "../generated/wire.js";
 import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { checkedText, type HarnessInput, type HarnessOutput } from "./harnesses-v1.ts";
-import { agentParticipant, attest, checkedTitle, encode, encodeRecord, folder, MAX_FILE_BYTES, messageId, messageRecord, page, personParticipant, step, threadHeader, messageView, type Thread } from "./format.ts";
+import { agentParticipant, attest, checkedTitle, encode, folder, MAX_FILE_BYTES, messageId, messageRecord, page, personParticipant, step, threadHeader, messageView, type Thread } from "./format.ts";
 import type { Context, RunInput, Send } from "./interface.ts";
-import { inlineBody, kind, publish, read } from "./files.ts";
+import { appendRecord, inlineBody, kind, publish, read } from "./files.ts";
 import { requireConversationWrite, type PeopleContext } from "./people.ts";
 
 export { peopleHandlers } from "./people.ts";
@@ -86,15 +86,15 @@ async function run(input: RunInput, ctx: Context) {
     const prompt = { id: promptId, author: person, text, posted_at: ctx.author.authored_at };
     thread.messages.push(prompt);
     const record = messageRecord(prompt, thread.participants);
-    const body = Buffer.from(encodeRecord(record));
-    currentSize = size + body.length;
     // Reserve one reply and its bounded message metadata before admitting execution.
-    if (currentSize + 18 * 1024 > MAX_FILE_BYTES) throw new Error("Thread is full.");
+    if (size + Buffer.byteLength(record.prefix + record.text + record.suffix) + 18 * 1024 > MAX_FILE_BYTES) {
+      throw new Error("Thread is full.");
+    }
     const request_id = step(ctx.author.request_id, "prompt");
     const attested = ctx.alarm ? undefined : attest(record, { kind: "input" });
-    const saved = await ctx.call("item_append", { request_id, item, expected_revision: revision,
-      ...(attested ? { attested } : { bytes: body.toString("base64"), attempt_discovery: "consent_only" }) });
+    const saved = await appendRecord(ctx, item, revision, request_id, size, thread, record, attested);
     revision = saved.revision;
+    currentSize = saved.end_offset;
   }
   await publish(ctx, item, revision, thread);
   const attempt = await ctx.call("execution_start", { request_id: step(ctx.author.request_id, "start"), harness });
@@ -128,15 +128,10 @@ async function run(input: RunInput, ctx: Context) {
       if (!thread.participants.some(participant => participant.id === agent.id)) thread.participants.push(agent);
       const message = { id, author: agent, text: checkedText(output.text), posted_at: ctx.author.authored_at, log: output.log };
       const record = messageRecord(message, thread.participants, true);
-      const bytes = Buffer.from(encodeRecord(record));
-      if (currentSize + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
       const attested = attest(record, { kind: "output", seq: frame.seq });
-      const saved = await ctx.call("item_append", {
-        request_id: step(ctx.author.request_id, `append-${call}-${frame.seq}-${revision}`),
-        item, expected_revision: revision,
-        ...(attested ? { attested } : { bytes: bytes.toString("base64"), attempt_discovery: "consent_only" }),
-      });
       thread.messages.push(message);
+      const saved = await appendRecord(ctx, item, revision, step(ctx.author.request_id, `append-${call}-${frame.seq}-${revision}`),
+        currentSize, thread, record, attested);
       currentSize = saved.end_offset;
       revision = saved.revision;
       await publish(ctx, item, revision, thread);

@@ -6,7 +6,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AlarmDelivery, AlarmSet, AttestedBody, ExecutionJobContext, ExecutionJobStart, ExecutionStatus,
-  ExecutionStopRequest, ExecutionStopResult, HostWorkerInvokeFrame, ItemAppend, ItemContentReceipt, ItemCreate, ItemSave, ItemStageBegin, ItemStageChunk, ItemStageSeal, ItemViewPublish } from "../generated/wire.js";
+  ExecutionStopRequest, ExecutionStopResult, HostWorkerInvokeFrame, ItemAppend, ItemContentReceipt, ItemCreate, ItemSave,
+  ItemSpansPage, ItemSpansRequest, ItemStageBegin, ItemStageChunk, ItemStageSeal, ItemViewPublish } from "../generated/wire.js";
 import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { authorContext } from "../generated/author-context.mjs";
 import type { ManifestV2 } from "../generated/author.js";
@@ -14,7 +15,7 @@ import type { Context, RunInput } from "../src/interface.ts";
 import type { HarnessInput, HarnessOutput } from "../src/harnesses-v1.ts";
 import type { handlers as threadHandlers } from "../src/worker.ts";
 import { scoped } from "../src/people.ts";
-import { decode } from "../src/format.ts";
+import { decode, decodeIndexed } from "../src/format.ts";
 import type { ConsultationTurn, InvitedInput, PeopleContext, Scope, peopleHandlers } from "../src/people.ts";
 import type { handlers as harnessHandlers } from "../../calternal-threads-claude-code/src/worker.ts";
 
@@ -35,6 +36,7 @@ const exchanges = {
   item_create: ["ItemCreate", "ItemContentReceipt"],
   item_head: ["ItemHeadRequest", "OwnedItemHead"],
   item_range: ["ItemRange", "ItemRangeResult"],
+  item_spans: ["ItemSpansRequest", "ItemSpansPage"],
   item_save: ["ItemSave", "ItemSaveReply"],
   contribution_call: ["ContributionCall", "ContributionCallReceipt"],
   contribution_read: ["ContributionRead", "ContributionReadResult"],
@@ -47,14 +49,17 @@ const exchanges = {
 } as const;
 const trace: [name: string, value: unknown][] = [];
 
-/** Check the fake's revision 14.37 exchanges against the pinned schemas. */
+/** Check the fake's revision 14.38 exchanges against the pinned schemas. */
 export function checkTrace() {
   const check = fileURLToPath(new URL("../check-shapes.py", import.meta.url));
   const contract = fileURLToPath(new URL("../.build/contract/", import.meta.url));
   execFileSync("python3", ["-B", check, contract], { input: JSON.stringify(trace), stdio: ["pipe", "inherit", "inherit"] });
 }
 
-type File = { space: string; people?: readonly string[]; creator: string; discovery: "creator_only" | "consent_only"; owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; authors: Map<string, string>; spans: Map<string, { start: number; length: number }>; revision: string; path?: string; archived: boolean; title: string };
+type SpanIndex = Pick<ItemSpansPage, "body_provenance" | "spans">;
+type File = { space: string; people?: readonly string[]; creator: string; discovery: "creator_only" | "consent_only"; owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; authors: Map<string, string>;
+  spanHistory: Map<string, SpanIndex>; spans: Map<string, ItemSpansPage["spans"][number]>; provenance: SpanIndex["body_provenance"];
+  revision: string; path?: string; archived: boolean; title: string };
 type Job = {
   context: ExecutionJobContext;
   starter: string;
@@ -83,7 +88,8 @@ const directoryAccounts = [
 const personLabels: Record<string, string> = Object.fromEntries(directoryAccounts.map((id, index) => [id, ["Alice", "Bob", "Cara"][index]]));
 const defaultGroup = "threads-group";
 type DirectoryGroup = { id: string; source: "local" | "oidc"; members: readonly string[] };
-const peopleMethods = new Set(["item_create", "item_head", "item_range", "item_save", "item_append", "item_view_context", "item_view_publish"]);
+const peopleMethods = new Set(["item_create", "item_head", "item_range", "item_spans", "item_save", "item_save_begin",
+  "item_save_chunk", "item_save_seal", "item_append", "item_view_context", "item_view_publish"]);
 
 /** One in-memory space. Validates package ownership, exact revisions and
  * attempt retirement around the calls used by the spike. */
@@ -95,9 +101,11 @@ export class FakeHost {
   receipts = new Map<string, { fingerprint: string; result: unknown }>();
   private stages = new Map<string, Stage>();
   private scopes = new Map<string, { item: string; revision: string }>();
+  private spanPages = new Map<string, { item: string; revision: string; viewer: string; owner: Owner; after: number }>();
   private serial = 0;
   private selected = { harness: "checked-harness", placement: "checked-desk" };
   loseNextAppendAck = false;
+  spanPageSize = 128;
   invitedInputs: InvitedInput[] = [];
   onInvited = async (_tools: { readMessage(id: string): { id: string; text: string } | undefined }) => {};
   consultationTurns: ConsultationTurn[] = [];
@@ -310,7 +318,7 @@ export class FakeHost {
     const file = this.files.get(item)!;
     assert.equal(this.conversationAccess(item, person), "full");
     const invitation = { item, scope, revision: file.revision, inviter: person, contribution_identity: logicalHarness, call: request };
-    const chosen = new Map(scoped(decode(this.markdown(item)).messages, scope).map(entry => [entry.id, entry]));
+    const chosen = new Map(scoped(this.thread(item).messages, scope).map(entry => [entry.id, entry]));
     const permission = (author: string) => this.consent.get(JSON.stringify([item, author])) ?? { generation: 0, always: false };
     const grants = new Map((file.people ?? []).flatMap(author => {
       const grant = permission(author);
@@ -338,7 +346,7 @@ export class FakeHost {
           const message = selected.get(id);
           if (state !== "running" || !original || original.deleted || original.author.kind !== "person"
             || !message || original.text !== message.text || !canDisclose(grant, original.author.id)) return;
-          const live = decode(this.markdown(item)).messages.find(entry => entry.id === id);
+          const live = this.thread(item).messages.find(entry => entry.id === id);
           if (live?.deleted || live?.text !== original.text || live.author.id !== original.author.id) return;
           return { ...message };
         };
@@ -469,11 +477,26 @@ export class FakeHost {
       if (attested && attested.source.kind !== "empty") target.authors.set(revision, receiptActor);
       if (!attested || receiptActor !== target.creator || args.attempt_discovery === "consent_only") target.discovery = "consent_only";
     };
-    const recordSpan = (target: File, start: number, length: number) => {
+    const recordSpan = (target: File, offset: number, length: number, attested: AttestedBody) => {
       if (!length) return {};
       const span = this.id("span");
-      target.spans.set(span, { start, length });
+      const prefix = Buffer.byteLength(attested.prefix ?? "");
+      const suffix = Buffer.byteLength(attested.suffix ?? "");
+      const attribution = attested.source.kind === "input" ? { kind: "person" as const, actor: receiptActor }
+        : attested.source.kind === "output" ? { kind: "attempt" as const, attempt: job!.attempt!.execution }
+        : { kind: "empty" as const };
+      target.spans.set(span, { span, offset, length, middle_offset: offset + prefix, middle_length: length - prefix - suffix, attribution });
       return { span };
+    };
+    const publishIndex = (target: File, revision: string, opaque = false) => {
+      if (opaque) {
+        target.provenance = "unproven";
+        target.spans.clear();
+      }
+      target.spanHistory.set(revision, {
+        body_provenance: target.provenance,
+        spans: [...target.spans.values()].sort((a, b) => a.offset - b.offset).map(entry => structuredClone(entry)),
+      });
     };
     switch (method) {
       case "item_create": return commit(() => {
@@ -497,9 +520,10 @@ export class FakeHost {
           assert.equal(application.manifest.kinds.find(kind => kind.id === create.kind)?.attempt_discovery, "item_policy");
         }
         const target: File = { owner, space: this.personalSpace(receiptActor), people: shared && [...shared], creator: receiptActor, discovery, revision, history: new Map([[revision, body]]),
-          authors: new Map(), spans: new Map(), path, archived: false, title: String(create.metadata.title) };
-        const span = create.attested ? recordSpan(target, 0, body.length) : {};
+          authors: new Map(), spans: new Map(), spanHistory: new Map(), provenance: "attested", path, archived: false, title: String(create.metadata.title) };
+        const span = create.attested ? recordSpan(target, 0, body.length, create.attested) : {};
         if (create.attested) attributeWrite(target, revision, create.attested);
+        publishIndex(target, revision, !create.attested && body.length !== 0);
         this.files.set(item, target);
         return { item, revision, locator: { space: target.space, id: item }, receipt: requestId, ...span };
       });
@@ -517,9 +541,15 @@ export class FakeHost {
       case "item_save_chunk": {
         const { handle, offset, bytes } = input as ItemStageChunk;
         const stage = this.stages.get(handle);
-        assert.ok(stage && !stage.sealed && offset === stage.length);
+        assert.ok(stage && offset >= 0 && offset <= stage.length);
         const chunk = Buffer.from(bytes, "base64");
-        assert.ok(chunk.length > 0 && chunk.length <= 65536 && stage.length + chunk.length <= stage.spec.length);
+        assert.ok(chunk.length > 0 && chunk.length <= 65536 && offset + chunk.length <= stage.spec.length);
+        if (offset < stage.length) {
+          assert.ok(offset + chunk.length <= stage.length && Buffer.concat(stage.chunks).subarray(offset, offset + chunk.length).equals(chunk),
+            "conflicting staged chunk");
+          return { next_offset: stage.length };
+        }
+        assert.ok(!stage.sealed);
         stage.chunks.push(chunk);
         stage.length += chunk.length;
         return { next_offset: stage.length };
@@ -555,24 +585,28 @@ export class FakeHost {
             if (save.replace_span) {
               const prior = target.spans.get(save.replace_span);
               assert.ok(prior, "span unavailable");
-              body = Buffer.concat([original.subarray(0, prior.start), replacement, original.subarray(prior.start + prior.length)]);
+              body = Buffer.concat([original.subarray(0, prior.offset), replacement, original.subarray(prior.offset + prior.length)]);
               target.spans.delete(save.replace_span);
               for (const other of target.spans.values()) {
-                if (other.start > prior.start) other.start += replacement.length - prior.length;
+                if (other.offset > prior.offset) {
+                  other.offset += replacement.length - prior.length;
+                  other.middle_offset += replacement.length - prior.length;
+                }
               }
-              span = recordSpan(target, prior.start, replacement.length);
+              span = recordSpan(target, prior.offset, replacement.length, save.attested);
             } else {
               body = replacement;
               target.spans.clear();
-              span = recordSpan(target, 0, replacement.length);
+              span = recordSpan(target, 0, replacement.length, save.attested);
             }
-          } else if (stage || save.body !== undefined) target.spans.clear();
+          }
           if (save.staged !== undefined) this.stages.delete(save.staged);
           target.history.set(revision, body);
           target.revision = revision;
           if (typeof save.patch?.title === "string") target.title = save.patch.title;
           if (stage || save.body !== undefined || save.attested) attributeWrite(target, revision, save.attested);
           if (save.attempt_discovery === "consent_only") target.discovery = "consent_only";
+          publishIndex(target, revision, Boolean(stage) || save.body !== undefined);
           const result = { item: save.item, revision, locator: { space: target.space, id: save.item }, receipt: requestId, ...span };
           if (stage) this.receipts.get(receiptKey("item_save_begin"))!.result = result;
           return result;
@@ -591,6 +625,24 @@ export class FakeHost {
         const page = body.subarray(offset, offset + length);
         const next = offset + page.length;
         return { bytes: page.toString("base64"), ...(next < body.length && { next_offset: next }) };
+      }
+      case "item_spans": {
+        assert.equal(file?.owner, owner);
+        const { item, revision, cursor } = input as ItemSpansRequest;
+        const index = file.spanHistory.get(revision);
+        assert.ok(index, "span revision unavailable");
+        const location = { item, revision, viewer: receiptActor, owner };
+        let after = 0;
+        if (cursor) {
+          const pin = this.spanPages.get(cursor);
+          assert.ok(pin, "invalid span cursor");
+          after = pin.after;
+          assert.deepEqual(pin, { ...location, after }, "wrong span cursor scope");
+        }
+        const spans = index.spans.slice(after, after + this.spanPageSize);
+        const next = after + spans.length < index.spans.length ? this.id("spans-page") : undefined;
+        if (next) this.spanPages.set(next, { ...location, after: after + spans.length });
+        return { item, revision, body_provenance: index.body_provenance, spans, ...(next && { next }) };
       }
       case "start_job": return commit(() => this.admit(input as ExecutionJobStart, receiptActor, captured));
       case "execution_start": return commit(() => {
@@ -647,8 +699,10 @@ export class FakeHost {
           target.history.set(revision, body);
           target.revision = revision;
           attributeWrite(target, revision, append.attested);
+          const span = append.attested ? recordSpan(target, prior.length, addition.length, append.attested) : {};
+          publishIndex(target, revision, !append.attested);
           return { revision, end_offset: body.length, receipt: requestId,
-            ...(append.attested ? recordSpan(target, prior.length, addition.length) : {}) };
+            ...span };
         });
         if (owner === "threads" && this.loseNextAppendAck) {
           this.loseNextAppendAck = false;
@@ -769,13 +823,20 @@ export class FakeHost {
     await mkdir(dirname(privateFile), { recursive: true });
     await writeFile(transcript, file.history.get(file.revision)!);
     await writeFile(privateFile, state);
-    for (const message of decode(this.markdown(item)).messages) {
+    for (const message of this.thread(item).messages) {
       if (!message.consultation) continue;
       const consultation = this.files.get(message.consultation.id)!;
       const path = join(directory, consultation.path!);
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, consultation.history.get(consultation.revision)!);
     }
+  }
+
+  private thread(item: string) {
+    const file = this.files.get(item)!;
+    const bytes = file.history.get(file.revision)!;
+    const index = file.spanHistory.get(file.revision)!;
+    return index.spans.length ? decodeIndexed(bytes, index.spans, index.body_provenance).thread : decode(bytes.toString());
   }
 
   markdown(item: string) {

@@ -1,7 +1,7 @@
 import type { SnapshotNode } from "../generated/wire.js";
 import assert from "node:assert/strict";
 import test, { after } from "node:test";
-import { agentParticipant, attest, decode, encode, encodeMessage, messageRecord, personParticipant, step, type Thread } from "../src/format.ts";
+import { agentParticipant, attest, decode, decodeIndexed, encode, encodeMessage, messageRecord, personParticipant, step, type Thread } from "../src/format.ts";
 import { FakeHost, handlers, checkTrace } from "./host.ts";
 
 after(checkTrace);
@@ -339,8 +339,8 @@ test("the creator retains discovery across several attested prompts and replies"
   assert.equal(messages.at(-1)?.text, "Reply to Third");
 });
 
-test("the UTF-8 framing budget covers a long reply heading and escaped records use the opaque path", async () => {
-  const { host, item, send } = await setup();
+test("the shorter heading and suffix fit a long reply and keep a literal delimiter attested", async () => {
+  const { host, item, send, context } = await setup();
   const agent = { ...agentParticipant("test-thread", { package: "calternal-threads-claude-code", contribution: "claude-code" }),
     name: "é".repeat(100) };
   const base = { id: "0123456789abcdef", author: agent, posted_at: "2026-11-20T12:00:00Z",
@@ -348,6 +348,8 @@ test("the UTF-8 framing budget covers a long reply heading and escaped records u
     log: { space: "019a0000-0000-7000-8000-000000000010", id: "run-1" } };
   const heading = messageRecord(base, [agent], true);
   assert.ok(Buffer.byteLength(heading.prefix) <= 512);
+  assert.doesNotMatch(heading.prefix, /log=/);
+  assert.match(heading.suffix, /<!-- log=019a0000-0000-7000-8000-000000000010\/run-1 -->/);
   assert.ok(attest(heading, { kind: "output", seq: 1 }));
   const oversized = messageRecord({ ...base, replyToName: "🐝".repeat(100) }, [agent], true);
   assert.ok(Buffer.byteLength(oversized.prefix) > 512);
@@ -356,8 +358,14 @@ test("the UTF-8 framing budget covers a long reply heading and escaped records u
   const delimiter = "### Example {#m-aabbccddeeff0011 by=p1}";
   const { job_id } = await send("escaped-heading", delimiter);
   await host.run(job_id);
-  assert.equal(decode(host.markdown(item)).messages[0].text, delimiter);
-  assert.equal(host.files.get(item)!.discovery, "consent_only");
+  assert.ok(host.markdown(item).includes(`\n${delimiter}\n\n`));
+  assert.ok(!host.markdown(item).includes(`\\${delimiter}`));
+  const index = host.files.get(item)!.spanHistory.get(host.files.get(item)!.revision)!;
+  assert.deepEqual(index.spans.map(span => span.attribution.kind), ["person", "person", "attempt"]);
+  const first = decodeIndexed(Buffer.from(host.markdown(item)), index.spans, index.body_provenance).thread.messages[0];
+  const message = await handlers["threads.message"]({ item, message: first.id }, context("reopen-literal", "threads.message"));
+  assert.equal(message.text, delimiter);
+  assert.equal(host.files.get(item)!.discovery, "creator_only");
 });
 
 test("a checked editor save qualifies complete bytes and downgrades unexplained bytes in the same checked path", async () => {
@@ -406,10 +414,56 @@ test("Markdown keeps one plain body span and reversibly escapes only tagged head
   assert.equal(graft.equals(expected), false);
 });
 
+test("indexed spans preserve literal heading and trailer lookalikes next to an opaque record", () => {
+  const alice = personParticipant("019a0000-0000-7000-8000-000000000001", "Alice 🐝");
+  const posted_at = "2026-11-20T12:00:00Z";
+  const thread: Thread = { id: "0".repeat(32), title: "Garden", created: posted_at, participants: [alice], messages: [] };
+  const header = Buffer.from(encode(thread));
+  const tagged = "### Looks like a record {#m-aabbccddeeff0011 by=p1}";
+  const first = { author: alice, id: "0123456789abcdef", posted_at,
+    text: `Quoted literally:\n${tagged}\n\\${tagged}\n\n<!-- log=example/body -->`,
+    log: { space: "019a0000-0000-7000-8000-000000000010", id: "run-1" } };
+  const { prefix, text, suffix } = messageRecord(first, [alice]);
+  const record = Buffer.from(prefix + text + suffix);
+  const next = { author: alice, id: "fedcba9876543210", posted_at, text: tagged };
+  const opaque = Buffer.from(encodeMessage(next, [alice]));
+  const offset = header.length + opaque.length;
+  const result = decodeIndexed(Buffer.concat([header, opaque, record]), [
+    { offset, length: record.length, span: "first-message", middle_offset: offset + Buffer.byteLength(prefix),
+      middle_length: Buffer.byteLength(text), attribution: { kind: "person", actor: alice.id } },
+  ], "unproven");
+  assert.deepEqual(result.thread.messages, [next, first]);
+  assert.deepEqual([...result.spans], [[first.id, "first-message"]]);
+});
+
+test("opaque fallback stages a large reframe without losing formerly indexed literal headings", async () => {
+  const { host, item, send, selection, context } = await setup();
+  const delimiter = "### Ordinary text {#m-aabbccddeeff0011 by=p1}";
+  for (let index = 0; index < 12; index++) {
+    const { job_id } = await send(`long-${index}`, `${delimiter}\n${"x".repeat(6000)}`);
+    await host.run(job_id);
+  }
+  const file = host.files.get(item)!;
+  const oldRevision = file.revision;
+  const old = file.spanHistory.get(oldRevision)!;
+  const first = decodeIndexed(Buffer.from(host.markdown(item)), old.spans, old.body_provenance).thread.messages[0];
+  assert.ok(Buffer.byteLength(host.markdown(item)) > 128 * 1024);
+  const alarm = await handlers["threads.arm"]({ item, harness: selection.harness, text: "Scheduled",
+    at: "2026-11-20T13:00:00Z", if_missed: "run" }, context("arm-fallback", "threads.arm"));
+  await host.deliver(alarm.alarm, "2026-11-20T13:00:01Z");
+  assert.equal(file.discovery, "consent_only");
+  assert.equal(file.spanHistory.get(file.revision)?.spans.length, 1);
+  assert.equal(file.spanHistory.get(oldRevision)?.spans.length, 25);
+  assert.ok(host.markdown(item).includes(`\\${delimiter}`));
+  const result = await handlers["threads.message"]({ item, message: first.id }, context("read-after-fallback", "threads.message"));
+  assert.equal(result.text, first.text);
+});
+
 test("an unproven staged replacement sets consent_only and a worker cannot clear it", async () => {
   const { host, item, send } = await setup();
   const { job_id } = await send("before-import", "Proven conversation");
   await host.run(job_id);
+  const prior = host.files.get(item)!.revision;
   const creator = "019a0000-0000-7000-8000-000000000001";
   assert.deepEqual(host.discoverAsAttempt(creator), [item]);
   const body = Buffer.from(host.markdown(item) + "Imported material of unproven authorship\n" + "x".repeat(140 * 1024));
@@ -423,6 +477,9 @@ test("an unproven staged replacement sets consent_only and a worker cannot clear
   assert.equal(host.markdown(item), body.toString());
   assert.equal(host.files.get(item)!.discovery, "consent_only");
   assert.equal(host.writeAuthor(item), undefined);
+  const file = host.files.get(item)!;
+  assert.deepEqual(file.spanHistory.get(file.revision), { body_provenance: "unproven", spans: [] });
+  assert.equal(file.spanHistory.get(prior)?.spans.length, 3);
   assert.deepEqual(host.discoverAsAttempt(creator), []);
   const revision = host.files.get(item)!.revision;
   await assert.rejects(host.attemptRestoreDiscovery(item), /host-owned marker/);
