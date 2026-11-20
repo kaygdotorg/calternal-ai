@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.35 draft
+# Plugin API v2 · revision 14.36 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -624,9 +624,14 @@ Threads opts into the catalogue’s [per-item discovery rule][item-discovery].
 A person's own agent thread can be `creator_only` and stays discoverable
 to their own authorized attempts. A people conversation is `consent_only`
 and stays outside attempt list, search, direct reads and derived output.
-Apply the [catalogue’s checked authorship rule][item-authorship] when the
-owning package writes. It covers prompts, attempt output, another
-participant’s submission and imports in the same writer transaction.
+An operation opts in with manifest `write_origins`. Apply the
+[catalogue’s checked authorship rule][item-authorship] at the writer.
+The host binds the exact submitted component text or validated attempt
+output and verifies the bytes before preserving discovery. Raw imports,
+including inside the same authenticated operation, remain opaque.
+Qualification includes an ordinary Send and a same-invocation import
+with the marker omitted. For an app's formatted records, the host
+needs a qualified generic encoding that verifies the complete write.
 An authorized writer can request protection. Only the host can clear it
 on verified provenance. The harness receives selected material through
 the [disclosure boundary][attempt-disclosure] and has no direct read or

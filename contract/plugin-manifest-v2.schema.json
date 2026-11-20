@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 14.35 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 14.36 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -420,6 +420,22 @@
           ]
         },
         "creates": { "$ref": "host-catalogue-v2.json#/$defs/KindId", "description": "Declare a typed created output under catalogue created_outcome." },
+        "write_origins": {
+          "description": "Optional sources eligible for item-write authorship under catalogue execution_attempt_authority.discovery.item_policy.authorship. The declaration supplies no evidence by itself. Omission makes the operation's body writes opaque unless the exact admitted continuation carries verified host input.",
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "host_input": {
+              "allOf": [{ "$ref": "#/definitions/localId" }],
+              "description": "Operation input key that must resolve from a checked host-owned composer or editor text submission."
+            },
+            "attempt_output": {
+              "allOf": [{ "$ref": "#/definitions/localId" }],
+              "description": "Top-level string field of a validated contribution output delivered to this exact attempt."
+            }
+          }
+        },
         "material_inputs": {
           "description": "Labels by original input key for extra required material. The host writes each into the preview key space input:<key>. Host material occupies a separate key space.",
           "type": "object", "maxProperties": 32,
