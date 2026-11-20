@@ -5,16 +5,15 @@ use std::{fs, path::Path};
 use super::*;
 
 const MANIFEST: &[u8] = include_bytes!(
-    "../../../../../contract/fixtures/description-v2/manifests/reading-list-manifest-v2-app.json"
+    "../../../../../contract/fixtures/description-v2/manifests/reading-list-installer-v2-app.json"
 );
 const TEMPLATE: &[u8] = include_bytes!(
-    "../../../../../contract/fixtures/description-v2/reading-list-manifest-v2-app.json"
+    "../../../../../contract/fixtures/description-v2/reading-list-installer-v2-app.json"
 );
 const WORKER: &[u8] = b"throw new Error('registration must never start this worker');";
 
 fn source(path: &Path) -> Value {
     let mut manifest: Value = serde_json::from_slice(MANIFEST).unwrap();
-    manifest["id"] = json!("calternal-reading-list");
     manifest["worker"] = json!({"path":"worker.mjs", "sha256": crate::plugins::sha256_hex(WORKER)});
     let template = manifest["apps"][0]["description"]["template"]["path"]
         .as_str()
@@ -254,34 +253,23 @@ fn v2_installer_rejects_registration_collisions_and_dangling_reads() {
     candidate["kinds"] = json!([kind("different", "NOTES")]);
     refuse(&catalog_v1, candidate, "Storage folder");
 
-    let legacy_provider = calternal_plugin_host::parse_manifest(include_bytes!(
-        "../../../../../plugins/calternal-claude-code/manifest.json"
-    ))
-    .unwrap();
-    let legacy_provider = package_store::Package {
-        manifest: legacy_provider,
-        worker: None,
-    };
-    catalog_v1 = Catalog::from_plugins(vec![
-        legacy_notes("calternal-notes", "notes", "Notes"),
-        Arc::new(
-            crate::plugins::Plugin::new(
-                legacy_provider.entry(false),
-                legacy_provider.manifest,
-                None,
-            )
-            .unwrap(),
-        ),
-    ]);
-    let mut candidate = bare("intruder");
-    candidate["providers"] = json!([provider("calternal-claude-code")]);
-    refuse(&catalog_v1, candidate, "Provider calternal-claude-code");
+    // Provider declarations from the sealed v2 draft cannot claim an ID
+    // under the current manifest. Harnesses use qualified contributions.
+    let native_manifest = bare("intruder");
+    v2(native_manifest.clone());
+    for provider_id in ["calternal-claude-code", "owner-provider"] {
+        let mut candidate = native_manifest.clone();
+        candidate["providers"] = json!([provider(provider_id)]);
+        let error =
+            calternal_plugin_host::ManifestV2::parse(&serde_json::to_vec(&candidate).unwrap())
+                .unwrap_err();
+        assert_eq!(error, "v2 manifest does not match the pinned schema at /");
+    }
 
     let mut catalog_v2 = Catalog::default();
     let mut owner = bare("owner-package");
     owner["apps"] = json!([app("owner-app")]);
     owner["kinds"] = json!([kind("owner-kind", "Owner Folder")]);
-    owner["providers"] = json!([provider("owner-provider")]);
     with_op(&mut owner, "owner-app.read");
     catalog_v2.register_v2(v2(owner.clone())).unwrap();
     refuse(&catalog_v2, owner, "Operation owner-app.read");
@@ -295,11 +283,6 @@ fn v2_installer_rejects_registration_collisions_and_dangling_reads() {
     for (entry, value, error) in [
         ("kinds", kind("owner-kind", "New Folder"), "Kind owner-kind"),
         ("kinds", kind("new-kind", "OWNER FOLDER"), "Storage folder"),
-        (
-            "providers",
-            provider("owner-provider"),
-            "Provider owner-provider",
-        ),
     ] {
         let mut candidate = bare("intruder");
         candidate[entry] = json!([value]);

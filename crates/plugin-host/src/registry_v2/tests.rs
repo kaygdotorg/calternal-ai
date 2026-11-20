@@ -1,17 +1,15 @@
 use super::*;
 
 const FIXTURE: &[u8] = include_bytes!(
-    "../../../../contract/fixtures/description-v2/manifests/reading-list-manifest-v2-app.json"
+    "../../../../contract/fixtures/description-v2/manifests/reading-list-installer-v2-app.json"
 );
 const TEMPLATE: &[u8] = include_bytes!(
-    "../../../../contract/fixtures/description-v2/reading-list-manifest-v2-app.json"
+    "../../../../contract/fixtures/description-v2/reading-list-installer-v2-app.json"
 );
 
 #[test]
 fn installer_reads_sdk_v2_reading_list() {
-    let mut manifest = strict_json(FIXTURE).unwrap();
-    manifest["id"] = "calternal-reading-list".into();
-    let installed = ManifestV2::parse(&serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let installed = ManifestV2::parse(FIXTURE).unwrap();
     assert_eq!(installed.id(), "calternal-reading-list");
     assert!(installed.reads("reading-item"));
     installed.check_description(TEMPLATE).unwrap();
@@ -111,7 +109,7 @@ fn refuse(fixture: &Value, expected: &str) {
 #[test]
 fn rejects_reserved_kinds_namespaces_and_duplicate_declarations() {
     let fixture = strict_json(FIXTURE).unwrap();
-    for id in ["threads", "collections", "automations", "skill-example"] {
+    for id in ["requests", "collections", "automations", "skill-example"] {
         let mut manifest = fixture.clone();
         manifest["kinds"][0]["id"] = id.into();
         refuse(&manifest, "reserved by the host");

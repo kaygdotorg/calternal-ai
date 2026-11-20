@@ -103,6 +103,11 @@ fn validator(schema: &Value) -> Result<jsonschema::Validator, String> {
                 catalogue().clone(),
             )
             .expect("pinned catalogue URI")
+            .add(
+                format!("{CONTRACT}description-v2.schema.json"),
+                contract_json(DESCRIPTION),
+            )
+            .expect("pinned description schema URI")
             .prepare()
             .expect("pinned schemas resolve offline")
     });

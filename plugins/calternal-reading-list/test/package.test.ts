@@ -8,6 +8,8 @@ const readJson = (url: URL) => JSON.parse(readFileSync(url, "utf8"));
 
 it("matches the Reading List fixture with the draft create and alarm declarations", () => {
   const emitted = readJson(new URL("manifest.json", root));
+  const installer = readJson(new URL("manifests/reading-list-installer-v2-app.json", fixture));
+  expect(emitted).toEqual(installer);
   const sealed = readJson(new URL("manifests/reading-list-manifest-v2-app.json", fixture));
   expect(emitted.id).toBe("calternal-reading-list");
   for (const asset of [emitted.worker, emitted.apps[0].description.template]) {
@@ -49,6 +51,7 @@ it("matches the Reading List fixture with the draft create and alarm declaration
 it("matches the sealed app with the SDK's window and message defaults", () => {
   const manifest = readJson(new URL("manifest.json", root));
   const emitted = readJson(new URL(manifest.apps[0].description.template.path, root));
+  expect(emitted).toEqual(readJson(new URL("reading-list-installer-v2-app.json", fixture)));
   const sealed = readJson(new URL("reading-list-manifest-v2-app.json", fixture));
   expect(emitted).toEqual({
     ...sealed,

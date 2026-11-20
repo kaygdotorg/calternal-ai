@@ -70,7 +70,10 @@ pub(super) fn review(package: &PackageV2, manifest: &ManifestV2) -> Result<Reply
         })
         .collect::<Vec<_>>();
     let jobs = labels(data, "jobs", "run_operation");
-    let schedules = labels(data, "schedule_eligibility", "operation");
+    let schedules = ids(data, "jobs")
+        .filter(|job| job["alarm"] == true)
+        .map(|job| format!("{} via {}", text(job, "id"), text(job, "run_operation")))
+        .collect::<Vec<_>>();
     let webhooks = labels(data, "wait_webhooks", "schema_operation");
     let mut reply = Reply::new(json!({
         "id":manifest.id(), "api_version":2, "version":data["version"],
@@ -104,7 +107,7 @@ pub(super) fn review(package: &PackageV2, manifest: &ManifestV2) -> Result<Reply
     }
     for (heading, declared) in [
         ("Jobs", jobs),
-        ("Schedules", schedules),
+        ("One-shot alarms", schedules),
         ("Inbound webhooks", webhooks),
     ] {
         if !declared.is_empty() {
@@ -222,8 +225,10 @@ mod tests {
         manifest["network"] = json!({"fixed_sites":["read.example.org"],"user_servers":true});
         manifest["operations"] = json!([{"id":"fixture.read","title":"Read", "input_schema":{},"output_schema":{},
             "required_capability":"space.read", "risk":"read","idempotency":"read_only","methods":[]}]);
-        manifest["jobs"] = json!([{"id":"job","run_operation":"fixture.read","replayable":true}]);
-        manifest["schedule_eligibility"] = json!([{"id":"calendar","operation":"fixture.read"}]);
+        manifest["jobs"] = json!([
+            {"id":"job","run_operation":"fixture.read","replayable":true},
+            {"id":"calendar","run_operation":"fixture.read","replayable":true,"alarm":true}
+        ]);
         manifest["wait_webhooks"] =
             json!([{"id":"notify","schema_operation":"fixture.read","signing_secret":"login"}]);
         manifest["secrets"] = json!([{"name":"login","label":"Login","purpose":"Review data","scope":"personal","required":true}]);
@@ -237,6 +242,12 @@ mod tests {
         std::fs::write(directory.path().join("worker"), worker).unwrap();
         std::fs::write(directory.path().join("manifest.json"), manifest.to_string()).unwrap();
         let reply = crate::plugin_cli::review(directory.path(), None).unwrap();
+        let rendered = Output::detect_with_options(true, true).render(&reply);
+        let output: Value = serde_json::from_str(&rendered).unwrap();
+        assert_eq!(
+            output["data"]["schedules"],
+            json!(["calendar via fixture.read"])
+        );
         let human = Output::detect_with_options(false, true).render(&reply);
         for text in [
             "CREDENTIAL ROUTE",
@@ -244,6 +255,7 @@ mod tests {
             "server you add (reading)",
             "login",
             "job via fixture.read",
+            "One-shot alarms",
             "calendar via fixture.read",
             "notify via fixture.read",
         ] {
