@@ -4,6 +4,20 @@
 let
   runtime = with pkgs; [ busybox podman conmon crun catatonit socat shadow coreutils slirp4netns ];
   closure = pkgs.closureInfo { rootPaths = runtime; };
+  workerLauncher = pkgs.pkgsStatic.stdenv.mkDerivation {
+    name = "calternal-worker-launch";
+    dontUnpack = true;
+    buildPhase = ''
+      $CC -O2 -Wall -Wextra -Werror ${./worker-launch.c} -o worker-launch
+    '';
+    installPhase = "install -Dm0755 worker-launch $out/bin/worker-launch";
+  };
+  seccomp = pkgs.runCommand "calternal-worker-bpf" {
+    nativeBuildInputs = [ pkgs.python3 ];
+    LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.libseccomp ];
+  } ''
+    python3 ${./worker-seccomp.py} ${../../crates/machine/src/sandbox/worker-seccomp.json} "$out"
+  '';
   kernel = pkgs.fetchurl {
     url = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/20261111-778a26c0594c-0/x86_64/vmlinux-6.1.188";
     hash = "sha256-9XNXdOJXDZ30UfxWZfNSXTuvcj+mqKQToDWR1XQrOaU=";
@@ -38,6 +52,9 @@ pkgs.runCommand "calternal-microvm-x86_64-v2" {
   install -m 0755 ${cli} root/opt/calternal
   mkdir root/opt/standard
   tar --no-same-owner -xzf ${standardRoot} -C root/opt/standard
+  mkdir -p root/opt/standard/{plugin,proc,dev}
+  install -m 0755 ${workerLauncher}/bin/worker-launch root/opt/calternal-worker-launch
+  install -m 0444 ${seccomp} root/opt/calternal-worker.bpf
 
   printf 'root:x:0:0:root:/root:/bin/sh\nagent:x:1000:1000:agent:/data/home:/bin/sh\n' > root/etc/passwd
   printf 'root:x:0:\nagent:x:1000:\n' > root/etc/group
@@ -70,5 +87,6 @@ pkgs.runCommand "calternal-microvm-x86_64-v2" {
   for helper in newuidmap newgidmap; do
     debugfs -w -R "set_inode_field /usr/bin/$helper mode 0104755" "$out/root.ext4"
   done
+  debugfs -w -R "set_inode_field /opt/calternal-worker-launch mode 0104755" "$out/root.ext4"
   (cd "$out"; sha256sum vmlinux root.ext4 > image.sha256)
 ''

@@ -107,6 +107,15 @@ leased space and generation before starting the package in the existing
 worker sandbox. Revoking the session or losing the short space-channel
 lease tears down that placement. [Protocol and verification](../../docs/reviews/space-channel-2026-11-19.md).
 
+With `--space-vm-config PATH`, the item-head carrier uses an offline 256 MiB,
+two-vCPU Firecracker guest. Use the digest-pinned image assembled by
+`deploy/microvm/build-image.sh` with the Node runtime. The guest stages package
+code on private tmpfs and starts Node through a restricted process launcher.
+The launcher installs the worker seccomp profile, isolates mounts, processes
+and networking, drops privileges, and uses per-worker cgroup limits. Snapshots
+contain no live package process. A restored guest must acknowledge kernel
+reseed before it can stage and start a fresh package.
+
 
 
 First-owner deployments start their machine service before setup. The server

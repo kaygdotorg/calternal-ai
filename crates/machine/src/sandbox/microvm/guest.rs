@@ -20,15 +20,15 @@ use crate::sandbox::{
 const SMALL_READY: &str = "/run/agent/small-ready";
 
 struct Agent {
-    backend: PodmanBackend,
+    backend: Option<PodmanBackend>,
     key: ring::hmac::Key,
-    small: bool,
     threads: Mutex<HashMap<Uuid, Arc<dyn Sandbox>>>,
 }
 
 /// Run the guest-only agent on a Unix socket behind the boot image's vsock listener.
 /// The image names the packaged root filesystem and its writable-overlay flag.
-/// Startup sweeps old Podman containers before accepting commands. The caller must
+/// Agent guests sweep old Podman containers. The small guest stages package code
+/// in private tmpfs and uses a dedicated launcher. The caller must
 /// run as the dedicated unprivileged guest user, with a delegated cgroup.
 /// The kernel-local token authenticates the host before any request is decoded.
 pub async fn run_agent(
@@ -37,13 +37,17 @@ pub async fn run_agent(
     image: String,
     token: [u8; 32],
 ) -> SandboxResult<()> {
-    let backend = PodmanBackend::in_microvm(root, image);
-    backend.initialize().await?;
+    let backend = if std::env::var_os("CALTERNAL_SMALL_GUEST").is_some() {
+        None
+    } else {
+        let backend = PodmanBackend::in_microvm(root, image);
+        backend.initialize().await?;
+        Some(backend)
+    };
     let agent = Arc::new(Agent {
         backend,
         key: ring::hmac::Key::new(ring::hmac::HMAC_SHA256, &token),
         threads: Mutex::new(HashMap::new()),
-        small: std::env::var_os("CALTERNAL_SMALL_GUEST").is_some(),
     });
     let listener = UnixListener::bind(socket).map_err(SandboxError::new)?;
     let connections = Arc::new(Semaphore::new(512));
@@ -150,27 +154,27 @@ impl Agent {
             Request::ReseedSmall(_) => unreachable!(),
             Request::Start(space, mut spec) => {
                 spec.space_id = Some(space);
-                if self.small {
-                    // Serialize this guest's package startup with Quiesce and
-                    // Reseed until the sandbox occupies the placement.
+                if let Some(backend) = &self.backend {
+                    let sandbox = backend.start(&spec).await?;
+                    self.threads.lock().await.insert(spec.thread_id, sandbox);
+                } else {
+                    // Serialize package admission with Quiesce and Reseed.
                     let mut threads = self.threads.lock().await;
                     small_ready().await?;
-                    let sandbox = self.backend.start(&spec).await?;
+                    if !threads.is_empty() {
+                        return Err(SandboxError("small guest already has a package".into()));
+                    }
+                    let sandbox = super::plain::start(&spec).await?;
                     threads.insert(spec.thread_id, sandbox);
-                    return Ok(());
                 }
-                let sandbox = self.backend.start(&spec).await?;
-                self.threads.lock().await.insert(spec.thread_id, sandbox);
                 Ok(())
             }
             Request::StartHarness(space, mut spec, harness) => {
-                if self.small {
-                    return Err(SandboxError(
-                        "small plugin guest cannot start a harness".into(),
-                    ));
-                }
+                let backend = self.backend.as_ref().ok_or_else(|| {
+                    SandboxError("small plugin guest cannot start a harness".into())
+                })?;
                 spec.space_id = Some(space);
-                let sandbox = self.backend.start_harness(&spec, &harness).await?;
+                let sandbox = backend.start_harness(&spec, &harness).await?;
                 self.threads.lock().await.insert(spec.thread_id, sandbox);
                 Ok(())
             }
@@ -183,13 +187,18 @@ impl Agent {
                 } else {
                     sandbox.stop().await?;
                 }
-                sync_disk().await?;
+                if self.backend.is_some() {
+                    sync_disk().await?;
+                }
                 self.threads.lock().await.remove(&thread);
                 Ok(())
             }
             Request::Discard(account, thread) => {
-                self.backend.erase(account, Some(thread)).await?;
-                sync_disk().await
+                if let Some(backend) = &self.backend {
+                    backend.erase(account, Some(thread)).await?;
+                    sync_disk().await?;
+                }
+                Ok(())
             }
             Request::Exec(..) => unreachable!(),
         }

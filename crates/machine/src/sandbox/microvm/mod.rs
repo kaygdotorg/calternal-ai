@@ -11,6 +11,7 @@ mod kvm;
 #[cfg(test)]
 mod measure;
 mod network;
+mod plain;
 mod snapshot;
 mod snapshot_api;
 mod space;

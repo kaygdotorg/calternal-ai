@@ -4,18 +4,24 @@ use crate::{
     sandbox::{ExecRequest, OutputEvent, worker::SPACE_VM_IMAGE},
 };
 
+const ENTROPY_PACKAGE: &str = r#"
+    const fs = require('node:fs');
+    const crypto = require('node:crypto');
+    if (process.getuid() !== 1100 || process.getgid() !== 1100 || process.pid !== 1)
+        process.exit(1);
+    if (process.permission.has('fs.write', 'worker.js')) process.exit(2);
+    if (!fs.readFileSync('worker.js', 'utf8').includes('crypto')) process.exit(3);
+    console.log(JSON.stringify({
+        node: crypto.randomBytes(32).toString('hex'),
+        uuid: crypto.randomUUID()
+    }));
+"#;
+
 async fn entropy(vm: &Placement) -> serde_json::Value {
-    // Draw from the guest kernel and the freshly launched Node process.
-    let js = r#"
-        const fd = require('node:fs').openSync('/dev/urandom','r');
-        const kernel = Buffer.alloc(32);
-        if (require('node:fs').readSync(fd, kernel) !== 32) process.exit(1);
-        const node = require('node:crypto').randomBytes(32);
-        console.log(JSON.stringify({kernel:kernel.toString('hex'), node:node.toString('hex')}));
-    "#;
     let mut exec = vm
         .exec(ExecRequest {
-            argv: vec!["node".into(), "-e".into(), js.into()],
+            argv: crate::sandbox::worker::ARGV.map(str::to_owned).to_vec(),
+            interactive: true,
             ..Default::default()
         })
         .await
@@ -99,7 +105,7 @@ exec "$profile/real-firecracker" "$@"
         image: Some(SPACE_VM_IMAGE.into()),
         worker: Some(PluginWorker {
             space_id: space,
-            source: "/* fixture */".into(),
+            source: ENTROPY_PACKAGE.into(),
         }),
         limits: Limits::default(),
         code_directory: None,
@@ -207,7 +213,7 @@ exec "$profile/real-firecracker" "$@"
         Some(base.id)
     );
     let second_draw = entropy(&second).await;
-    assert_ne!(first_draw["kernel"], second_draw["kernel"]);
+    assert_ne!(first_draw["uuid"], second_draw["uuid"]);
     assert_ne!(first_draw["node"], second_draw["node"]);
     assert!(second.checkpoint(2).await.unwrap());
     drop(second);

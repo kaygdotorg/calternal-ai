@@ -12,6 +12,15 @@ pub const IMAGE: &str = "docker.io/library/node:24-alpine";
 /// Internal placement image selector for an offline small plugin microVM.
 /// Used only on v2 space leases. It is never passed to a container engine.
 pub const SPACE_VM_IMAGE: &str = "calternal:small-plugin-vm";
+/// Command accepted by the package-only guest transport.
+pub(crate) const ARGV: [&str; 6] = [
+    "node",
+    "--permission",
+    "--allow-fs-read=.",
+    "--disallow-code-generation-from-strings",
+    "--max-old-space-size=128",
+    "worker.js",
+];
 /// Fixed worker resource ceiling: 256 MiB, one CPU and 64 processes.
 pub const LIMITS: Limits = Limits {
     memory_bytes: Some(256 * 1024 * 1024),
