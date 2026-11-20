@@ -638,6 +638,26 @@ Use one queue per host for both guest sizes. Qualify the unloaded wake first and
 
 ## Where the product wake spends its time
 
+### Summary for the owner (2026-11-20)
+
+**What was measured.** A sleeping space wakes from a Firecracker snapshot on disk. On perf-02 the measured product wake is 1.61 s p50 / 2.12 s p95 against a 500 ms gate. About 0.9 s of it is starting a fresh Node process inside the restored guest. We asked why that is so slow and whether a Node process that was started before the snapshot could be reused safely.
+
+**Why Node takes 0.9 s.** The same Node binary starts in 20 ms on the perf VM host and 20 ms in a freshly booted guest that has been up for a minute. So running Firecracker inside a virtual machine (nested virtualisation) is not what makes Node slow. In a restored guest the same start takes 877 ms p50 (30 runs), with the same number of page faults, no disk reads and the binary already in the guest's page cache. The guest simply stalls on first use of each page of restored memory: tracing the host's KVM showed about 12,400 nested-page-fault exits per Node launch in a restored guest against about 100 in a warm one, costing roughly 120 to 195 µs each. That first-touch tax is also most of the 317 ms reseed. Whether it would be much cheaper on bare metal is not measured; perf-02 is itself a virtual machine.
+
+**Can a pre-started worker be made safe?** Yes, on the evidence gathered. A trusted launcher starts Node before the snapshot and parks it. After a restore and the kernel reseed acknowledgement, a small native module in the launcher asks Node's own OpenSSL to reseed its random generators from the kernel (`EVP_RAND_reseed` with prediction resistance on the primary, public and private generators) and the launcher drains Node's cached UUID bytes. Only then is the plugin's code loaded. Two restores of the same snapshot gave different `randomBytes`, `randomUUID`, `getRandomValues`, Ed25519 key pair and TLS ClientHello (including its random field). A counter showed three 32-byte kernel reads inside the refresh, after the acknowledgement. Not covered: Math.random and V8's hash seed stay identical across restores (details below), and two checks were not run (generators in worker threads; the addon permission drop).
+
+**The choice.**
+
+| Option | Wake from disk | Memory | Status |
+| --- | ---: | --- | --- |
+| A. Disk wake with the pre-started, refreshed worker | about 0.6 s p50, an estimate: 30 harness wakes reached the worker ready at 890 ms, of which about 400 ms is test-shell overhead that the product path does not pay | none extra | Needs integration into the product path and an end-to-end measurement. Does not reach 500 ms. |
+| B. Disk wake without it | 1.61 s p50 / 2.12 s p95, measured | none extra | Qualified, simplest. |
+| C. Keep recently used spaces running | 5 to 23 ms per call (4.73 / 22.69 ms p50 / p95) | about 130 MiB per space; 10 residents about 1.3 GiB, 100 residents about 12.7 GiB, more than all of perf-02's RAM | Qualified. Cost grows with the number of distinct spaces active in the window. |
+
+**Is 500 ms reachable from disk on this hardware?** Not by anything measured. The best disk wake is about 0.6 s (option A), and 317 ms of that is the reseed exchange, which is bound by the same first-touch cost. Reaching 500 ms would need that cost cut, for example by backing guest memory with huge pages or populating it before the restore. Neither was tried. Only option C (resident) is far inside the gate. A reasonable plan is C for spaces used in the last N minutes and A or B for the rest; A is worth building only if its 0.6 s matters.
+
+Details: [Node startup after restore, and the refreshed worker](#node-startup-after-restore-and-the-refreshed-worker) at the end of this file.
+
 | Wake boundary | Product XFS restored (ms, p50 / p95) | Prototype cached full (ms, p50 / p95) | Prototype historical dirty replay (ms, p50 / p95) |
 | --- | ---: | ---: | ---: |
 | Request through placement decision | 21.64 / 39.44 | — | — |
@@ -920,3 +940,92 @@ Perf-02 retained `/srv/homes/perf/vm90/f/` with the fault events, paired JSON, m
 ## Simplification opportunities
 
 Keep fresh-worker disk wake as the qualified path and use residency for spaces with recent traffic. The targeted read has measurable synchronous cost and poor coverage of later faulting pages. Trace the fresh Node launch outside the host fault handler before attributing its remaining latency to the backing file.
+
+## Node startup after restore, and the refreshed worker
+
+All numbers here come from perf-02 under the perf lock, Firecracker 1.16.1, the same 256 MiB two-vCPU guest and the exact guest Node (v24.22.3, OpenSSL 3.5.9; the host copy is byte-identical, sha256 `7e027679...`). The host is itself a KVM guest (AMD Ryzen 7 3700X under another hypervisor), so Firecracker runs nested. The harness is [perf/vm-final](../../perf/vm-final) (`bench.py`, `kvm-trace.py`, `summarize.py`). It exercises the guest and VMM, not the full server: placement (about 22 ms in the earlier tables) and the package Start exchange (about 30 ms) are not in it. Every restored arm drops the snapshot memory file from the host page cache first and checks with `mincore` that zero pages remain.
+
+### Where Node's time goes
+
+| Node launch to first statement | p50 / p95 (ms) | Minor / major faults, p50 | Guest CPU time (user + system), p50 |
+| --- | ---: | ---: | ---: |
+| (a) perf-02 host, direct (30) | 20.1 / 22.9 | 4,470 / 0 | 31 ms |
+| (b) freshly cold-booted guest, up 60 s, nothing restored (30) | 20.0 / 24.5 | 4,134 / 0 | 30 ms |
+| (c) restored guest (30) | 877.0 / 1,191.2 | 4,127 / 0 | 731 ms |
+
+The first launch in each of (a) and (b) was cold-cache and slow (617 and 872 ms); the figures above are over all 30 including that one. No arm read from a disk inside the guest (`fsRead` 0). In (c) the binary was already in the guest page cache (11,670 of 32,350 pages of `node`, as in (b) after its runs).
+
+Nested virtualisation is therefore not the cost for a running guest: (a) and (b) agree. In (c) the same work takes about 24 times the CPU time, in user mode as well as in the kernel, which points to the vCPU stalling on memory. The KVM exit trace (`kvm_exit` and `kvm_entry`, five launches per arm; handling time is the gap to the next entry, summed over both vCPUs, so it can exceed wall time) shows where:
+
+| KVM exits during one launch call, median of 5 | Settled cold guest | Restored guest |
+| --- | ---: | ---: |
+| Launch to first statement (ms) | 20 | 960 |
+| All exits | 1,122 | 20,665 |
+| Nested page faults (`npf`) | 100 | 12,432 |
+| Time handling `npf` (ms, both vCPUs) | 0.7 | 1,935 |
+| `npf` time per exit (µs) | 7 | 156 |
+
+Cause: after a restore the guest's RAM is a private mapping of the snapshot file. Each first touch of a 4 KiB guest page is an exit, a host page fault and a mapping update, about 156 µs each here. Node touches about 12,000 distinct pages, so that is most of the 0.9 s. The earlier fault-handler trace saw only 43 to 47 ms inside the host's fault handler because most of the exit cost falls outside it. This also explains why filling the host page cache did not help in the earlier prefill runs. The per-fault price is probably inflated by nesting, but a bare-metal figure was not measured. Source of the exit table: `/srv/homes/perf/vm-final/trace/kvm-trace.jsonl`.
+
+### The refreshed worker
+
+The launcher parks `node --permission` running `standby.cjs` before the snapshot. At wake the host restores, sends the authenticated kernel reseed and waits for the acknowledgement. Only after that it releases the worker. The release runs [reseed-addon.c](../../perf/vm-final/reseed-addon.c), loaded by the launcher, which finds three symbols in the Node executable with `dlsym(RTLD_DEFAULT)` and calls, with NULL library context, no entropy and no additional input:
+
+- `RAND_get0_primary`, `RAND_get0_public`, `RAND_get0_private`, then
+- `EVP_RAND_reseed(rng, 1, NULL, 0, NULL, 0)` on each (prediction resistance 1, so the generator draws fresh entropy from the operating system).
+
+Node's statically linked OpenSSL does export these to an addon: `dladdr` places `EVP_RAND_reseed` in `/usr/local/bin/node`, and the addon links no libcrypto. The launcher then calls `crypto.randomUUID()` 128 times to flush Node's UUID cache (a batch of 128) and only then loads `/plugin/worker.js`, so everything the plugin does at load time is fresh. Release is refused with `BLOCKED` until the guest's ready marker exists, and the independent Start guard stays in force.
+
+Proof, from two restores of the same standby snapshot (memory file sha256 identical before and after, `b0ade8e0...`). Every value below is a SHA-256 of the value, truncated:
+
+| Value | Restore 1 | Restore 2 | Differ |
+| --- | --- | --- | --- |
+| `crypto.randomBytes(32)` | `c20b2628bf7c` | `e09efe5f5cf2` | yes |
+| `crypto.randomUUID()` (after the flush) | `21ce8d365688` | `bbb15c450199` | yes |
+| `crypto.getRandomValues` | `55bff7706984` | `d626a7759d37` | yes |
+| Ed25519 public key | `0390129c64ad` | `9cdc43a9e5f0` | yes |
+| TLS ClientHello record | `6996a0f3d111` | `4a4c1c19119b` | yes |
+| ClientHello `random` field (32 bytes) | `d7762d64800c` | `4242d90793c1` | yes |
+| Plugin's load-time call id (UUID) | `e44ccd10-16b9-43...` | `420a9e93-2e25-44...` | yes |
+
+A forwarding `LD_PRELOAD` counter (lengths and caller symbol only) logged `getentropy` calls from `ossl_pool_acquire_entropy`. The 48-byte read happens before the snapshot, at Node startup, as found earlier. In both restores exactly three 32-byte reads occurred between `NATIVE_RESEED_BEGIN` and `NATIVE_RESEED_END`, which are written only after the release, and the host checks that the kernel acknowledgement came before the release acknowledgement in every one of the 30 wakes (acknowledgement to refresh: 491.5 / 563.3 ms p50 / p95, of which 66.3 / 88.5 ms in the reseed call and 26.5 / 79.8 ms flushing the UUID cache; the rest is the test shell channel).
+
+What stays identical across restores, as the same two restores showed: the UUID drawn before the snapshot (`savedUUID` equal), `Math.random` (the next value after restore was `0.9612162602812918` in both) and the process id (1 in its namespace). By construction V8's hash seed, timers and anything a module captured before the snapshot are the same. For an idle worker that served nothing, and with plugin code loaded after release, the realistic hazards are:
+
+| Identical state | Could it hurt a plugin author? |
+| --- | --- |
+| `Math.random` sequence | Yes, if a plugin uses it for ids, sampling or jitter: two wakes of one snapshot produce the same values. Untested mitigation: the launcher replaces `Math.random` with a function backed by `crypto` before loading the plugin. |
+| V8 hash seed | Mostly invisible; only affects object and hash table layout and hash-flooding resistance per instance. |
+| Pid and thread ids | No: namespace-local, not identities. |
+| Timers and clocks | Not for a worker that only waits. Timers created by the launcher before the snapshot are the launcher's own. |
+| Module state captured at load | Not for plugin code, which loads after release. It matters for the launcher's own dependencies (`node:crypto`, `node:tls`), which cached nothing found by this test except the UUID batch. |
+
+Not checked: libuv worker threads each have their own OpenSSL generators; OpenSSL children reseed when their parent's reseed counter changes, which should cover them, but async `randomBytes` and key generation across a restore were not run. The launcher's `process.permission.drop('addons')` reports `has('addons') === false` afterwards, but an attempt to load another shared object failed with `ERR_DLOPEN_FAILED`, not `ERR_ACCESS_DENIED`, so enforcement of the drop is unproven.
+
+### Wake stages, 30 wakes
+
+Same snapshot, each wake from a restored VM with the cache dropped. Compared arm: a fresh Node process started in the restored guest (30 wakes).
+
+| Stage, p50 / p95 (ms) | Fresh Node after restore | Refreshed worker, released after ack |
+| --- | ---: | ---: |
+| Inspect and drop snapshot cache | 76.1 / 78.5 | 13.8 / 25.8 |
+| VMM start through API ready | 1.4 / 1.5 | 1.4 / 2.5 |
+| Load snapshot | 4.2 / 26.6 | 4.0 / 4.7 |
+| Resume | 0.2 / 0.3 | 0.2 / 0.7 |
+| Reseed through acknowledgement | 360.6 / 613.3 | 316.9 / 367.2 |
+| Arrival through kernel acknowledgement | 435.7 / 661.6 | 339.3 / 398.4 |
+| Launch Node to first statement | 877.0 / 1,191.2 | not needed |
+| Generator refresh and UUID flush, in process | not needed | 92.8 / 168.3 (sum of the two medians and p95s above) |
+| Package module load, in process | 65 (earlier table) | 47.5 / 66.9 |
+| Acknowledgement through worker ready, as measured | not measured | 546.3 / 643.7 (incl. about 400 ms shell channel) |
+| **Arrival through worker ready (harness)** | not measured | **889.7 / 994.9** |
+
+Errors: 0 of 30 refreshed-worker wakes, 0 of 30 restored fresh-Node wakes, no cold fallback (the harness has none). The harness's own first-callback and reply steps went through a shell channel that cost about 500 ms per call even for an idle guest, so the arrival-to-reply figure is not reported. Treating the reseed exchange and the in-process refresh as they are, and adding the earlier tables' placement (22 ms), Start (30 ms), first callback (about 60 to 90 ms) and reply (3 ms), the refreshed-worker wake would be about 0.6 s; the fresh-Node wake measured 1.61 s in the product path. These two sums are estimates, not a measurement of either.
+
+### Raw evidence
+
+On perf-02 under `/srv/homes/perf/vm-final/`: `full/samples.jsonl` (all arms, 125 records), `full/run.log`, `trace/kvm-trace.jsonl`, `smoke-ok/`, and `full-attempt1/`, a first full run that stopped in the restored arm when the harness's own cache-eviction check found resident pages; the check now retries, never skips. The prepared image (`guest/image.sha256`, root.ext4 `87962b52...`, vmlinux `f5735774...`) was patched twice after the first smoke runs: the launcher's addon-drop assertion was replaced by a logged probe, and in-process timings were added. The image and the reseed addon were built on dev-01 and checksummed before transfer. The addon in the image was not rebuilt from the committed source in this lane, so its identity rests on the previous agent's build log and `SHA256SUMS`.
+
+## Simplification opportunities
+
+The test shell channel in the guest costs about 500 ms per call after a restore; the product agent socket should be used for any further wake measurement. The refresh and the plugin-load order are one launcher concern and could be one function. The cache-eviction check and the retry could move into a shared helper used by all `perf/vm-*` harnesses.
