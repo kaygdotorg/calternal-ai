@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.24 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.25 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -223,6 +223,7 @@ cites them and defines none of its own (`$defs/Event` references them).
 shell -> host  { type: "invoke", action_id, activation_id, activation_context, interaction?, dispatch?: true }                   // resolve (and dispatch when no confirmation)
 host  -> shell { activation_id, resolution_ref, confirmation_challenge?, material?: [ {name, label, value} ] }                       // or the ActionOutcome when dispatched
 shell -> host  { type: "invoke_confirm", activation_id, resolution_ref, confirmation_challenge }             // only when the host challenged
+host  -> shell { activation_id, resolution_ref, confirmation_proof }                                       // accepted confirmation
 shell -> host  { type: "invoke_dispatch", activation_id, resolution_ref, confirmation_proof? }                                       // dispatch
 host  -> shell { activation_id, state: ok | pending | error | stale | refused | unknown, status_ref?, undo?, created?, code?, message? }
 ```
@@ -270,7 +271,7 @@ An activation names the host-issued **activation context** (an opaque snapshot o
 
 ### 3.4 Outcomes
 
-The host answers a resolve that needs no challenge, and every dispatch, with an `ActionOutcome` (the catalogue's): `ok`, `pending` (with a host-owned `status_ref`, polled through the
+A successful separate resolve returns `ActivationResolution`. A combined resolve and dispatch, a typed refusal, or any dispatch returns an `ActionOutcome` (the catalogue's): `ok`, `pending` (with a host-owned `status_ref`, polled through the
 host's own status control, not by the description), `error`, `refused`, `stale` and `unknown` (the interface shows an unknown outcome instead of retrying a non-idempotent action); on `ok`
 an optional host-owned **undo** `{ref, label, expires_at}` and, when the operation created an item, **`created`** (a host-minted reference an invoke's `then: {route}` opens: a new note,
 a new thread). Error text is written by the host. Draw only validated host replies and checked native descriptions. A row with an action in flight keeps its place with a quiet progress mark; it leaves the
@@ -403,7 +404,16 @@ It never carries the raw route values again. After an `ok` outcome,
 
 **Package controls.** Use the checked action and form exchange for a
 package’s controls, including composing input and choosing a harness.
-Protected Stop uses a host-issued exact execution or pending-job context.
+A choice prompt with `options: {extension: "<point>"}` uses
+`extension.choices` on the current app’s lease. The renderer submits the
+short-lived option ref through its prompt slot. When choosing a harness,
+use the accompanying typed `harness_ref` to request placement. The host
+resolves both choices together before dispatch.
+
+Call `execution.control` for the open item-view to request protected Stop
+controls. It returns only eligible contexts for specific jobs or attempts.
+Resolve `host.execution.stop` with that context, show the host challenge,
+confirm and dispatch. A description cannot author this operation.
 
 An authorised renderer calls `request-card.read` for the bound request and
 component within the current view lease. Draw the host record and only its
@@ -571,6 +581,83 @@ snapshot. The live view follows committed appends and loads older pages.
 Only a write-authorized run updates the retained view. The app owns Send,
 options, queued follow-ups and continuation. The host owns admission,
 file writes, approval dispatch and widening fences.
+
+#### First Send from a fresh renderer
+
+Start from an authenticated shell in the selected space, with an enabled
+app and a checked deep link to the empty, committed harness-owned item
+`file-1`. This is the first Send for that item. The renderer holds no
+cached template, lease, option, context or result. The installed example
+app declares the `harnesses` extension point and a replayable `run` execution
+job. Its `threads-example.send` operation declares `placement` as a material
+input. The same installed description serves both spaces.
+
+Each line below gives the route, complete request body and reply body.
+Use the current authenticated shell and, from `view.open` onward, its active
+view lease. The `item_view.open` body travels in the existing component
+event with `component: "transcript"` and `route: "item_view.open"`. The first
+follow reply shown is the first notification on the open subscription.
+Renew the lease under §6 if needed while awaiting output.
+
+**Personal space.** Open the app and item, pick Example harness in the
+composer and keep its short option ref `h-opt`. Use the selected option's
+`harness_ref` for placement and choose Desk machine. The member types
+“Say hello” locally and presses Send. The placement and harness choices
+are submitted only in the Send resolve. The shell displays the host
+challenge and confirms before dispatching.
+
+```jsonl
+{"route":"app.open","request":{"type":"app","id":"threads-example"},"reply":{"view_ref":"threads-view","description":{"version":2,"kind":"app","revision":1,"view":{"root":{"type":"stack","children":[{"type":"component","component":{"type":"item-view","id":"transcript","config":{"item":{"route":"item"},"slot":"body"}}},{"type":"form","id":"composer","fields":[{"id":"message","label":"Message","input":"multiline","required":true}],"submit":{"id":"send","title":"Send","operation":"threads-example.send","inputs":{"item":{"route":"item"},"text":{"form":"composer","field":"message"},"harness":{"prompt":{"title":"Harness","kind":"choice","options":{"extension":"harnesses"}}},"placement":{"prompt":{"title":"Run on","kind":"choice","options":{"host":"execution_placement"}}}}}}]}}}}}
+{"route":"view.open","request":{"type":"view_open","view_ref":"threads-view","route":{"item":"file-1"}},"reply":{"lease":{"lease_ref":"lease-1","grant_revision":"grant-1","lease_seconds":15,"cache_partition":"partition-1"},"audience":"own_space_member","activation_contexts":{"send":"send-ctx"}}}
+{"route":"extension.choices","request":{"type":"extension_choices","app":"threads-example","point":"harnesses","activation_context":"send-ctx","slot":"harness"},"reply":{"options":[{"ref":"h-opt","label":"Example harness","harness_ref":"harness-1"}]}}
+{"route":"choice.options","request":{"type":"choice_options","activation_context":"send-ctx","slot":"placement","harness":"harness-1","activation_id":"send-1"},"reply":{"host":"execution_placement","options":[{"ref":"desk","label":"Desk machine · My login"},{"ref":"laptop","label":"Laptop · My login"}],"default_ref":"desk"}}
+{"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"desk"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Thread","value":"New thread"},{"name":"input:placement","label":"Run on","value":"Desk machine · My login"}]}}
+{"route":"activation.confirm","request":{"type":"invoke_confirm","activation_id":"send-1","resolution_ref":"send-res","confirmation_challenge":"send-challenge"},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirmation_proof":"send-proof"}}
+{"route":"activation.dispatch","request":{"type":"invoke_dispatch","activation_id":"send-1","resolution_ref":"send-res","confirmation_proof":"send-proof"},"reply":{"activation_id":"send-1","state":"ok"}}
+{"route":"item_view.open","request":{"type":"item_view","item":"file-1","component":"transcript","slot":"body","live":true},"reply":{"state":"live","source_revision":"rev-1","window_ref":"page-1","result_version":"version-1","follow":"tail-1","view":{"content":{"type":"snapshot-text","text":"Starting"}}}}
+{"route":"item_view.follow","request":{"type":"item_view_follow","follow":"tail-1"},"reply":{"type":"item_view_signal","follow":"tail-1","state":"changed"}}
+{"route":"item_view.open","request":{"type":"item_view","item":"file-1","component":"transcript","slot":"body","live":true},"reply":{"state":"live","source_revision":"rev-2","window_ref":"page-2","result_version":"version-2","follow":"tail-2","view":{"content":{"type":"snapshot-text","text":"Hello. I’m working on it."}}}}
+{"route":"execution.control","request":{"type":"execution_control","component":"transcript","item":"file-1"},"reply":{"controls":[{"action_id":"host.execution.stop","activation_context":"stop-ctx","phase":"running"}]}}
+{"route":"activation.resolve","request":{"type":"invoke","action_id":"host.execution.stop","activation_id":"stop-1","activation_context":"stop-ctx"},"reply":{"activation_id":"stop-1","resolution_ref":"stop-res","confirm":"challenge","confirmation_challenge":"stop-challenge","material":[{"name":"item","label":"Thread","value":"New thread"},{"name":"execution","label":"Execution","value":"Running"},{"name":"effect","label":"Effect","value":"Stop this execution"}]}}
+{"route":"activation.confirm","request":{"type":"invoke_confirm","activation_id":"stop-1","resolution_ref":"stop-res","confirmation_challenge":"stop-challenge"},"reply":{"activation_id":"stop-1","resolution_ref":"stop-res","confirmation_proof":"stop-proof"}}
+{"route":"activation.dispatch","request":{"type":"invoke_dispatch","activation_id":"stop-1","resolution_ref":"stop-res","confirmation_proof":"stop-proof"},"reply":{"activation_id":"stop-1","state":"ok"}}
+```
+
+**Shared space.** Start with another empty renderer and repeat every request
+and reply above in the selected shared space, using the independent
+refs issued by that space. Replace the following three lines. The default
+is the space machine and login. The member explicitly picks My laptop for
+this run. Keeping the default instead sends `space-machine` in the same
+placement slot and shows that option's host label in the protected preview.
+
+```jsonl
+{"route":"view.open","request":{"type":"view_open","view_ref":"threads-view","route":{"item":"file-1"}},"reply":{"lease":{"lease_ref":"lease-1","grant_revision":"grant-1","lease_seconds":15,"cache_partition":"partition-1"},"audience":"member","activation_contexts":{"send":"send-ctx"}}}
+{"route":"choice.options","request":{"type":"choice_options","activation_context":"send-ctx","slot":"placement","harness":"harness-1","activation_id":"send-1"},"reply":{"host":"execution_placement","options":[{"ref":"space-machine","label":"Space machine · Space login"},{"ref":"my-laptop","label":"My laptop · My login"}],"default_ref":"space-machine"}}
+{"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"my-laptop"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Thread","value":"New thread"},{"name":"input:placement","label":"Run on","value":"My laptop · My login"}]}}
+```
+
+In either space, the host resolves `h-opt` to `harness-1` and gives Send
+the selected placement ref as its named input. The operation forwards the
+ref unchanged when it admits the job. This is the broker request and reply for the
+personal arm. The shared arm replaces `desk` with `my-laptop`, or
+`space-machine` if the member kept the default.
+
+```json
+{"job":"run","item":"file-1","input":{"text":"Say hello"},"harness":"harness-1","placement":"desk"}
+```
+
+```json
+{"job_id":"admitted-job-1"}
+```
+
+Send's `ok` follows durable admission. The first live page precedes any
+agent output. The harness starts the pinned attempt and appends output to
+the item. The host signals the committed revision, including if it landed
+between open and follow. The renderer then requests the new head and
+follows its replacement ref. In a shared space the attempt uses
+whole-audience discovery and the shared tools rule for either placement.
+Stop uses the context for the exact running attempt, and its `ok` follows
+the durable fence. The renderer never supplies an attempt ID.
 
 The earlier Threads paper fixtures exercise legacy component shapes.
 The separately versioned conformance tool and fixtures follow the

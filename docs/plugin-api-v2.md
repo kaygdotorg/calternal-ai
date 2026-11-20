@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.24 draft
+# Plugin API v2 · revision 14.25 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -92,7 +92,9 @@ pins both package generations and intersects the caller’s rights with the
 approved interface. The host validates the resulting native description and
 rechecks the requested item and data scope. No direct connection or implicit
 cross-package grant follows from installation. Use checked extension choices
-for a durable host-issued `HarnessRef` at execution-job admission.
+for a durable host-issued `HarnessRef` at execution-job admission. A fresh
+renderer gets eligible contributions through the scoped
+[`extension.choices` route](../contract/host-catalogue-v2.json#/component_routes/extension.choices).
 A checked alarm can retain that ref across restarts. Resolve the same
 pinned contribution under live authority at claim. Use the catalogue’s
 [extension points](../contract/host-catalogue-v2.json#/extension_points).

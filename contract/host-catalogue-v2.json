@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Revision 14.24 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
+  "description": "Revision 14.25 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -498,7 +498,8 @@
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
       },
-      "atomic_undo": false
+      "atomic_undo": false,
+      "confirmation_when": "Always require the protected challenge under confirmation.material_by_kind. Only a context issued by execution.control can resolve this renderer action. Resolve, confirm and dispatch through the activation exchange; never accept a renderer-supplied intent or attempt ref."
     },
     "host.route.set": {
       "engine": "host shell route state",
@@ -1375,7 +1376,8 @@
       "properties": {
         "form": {
           "type": "object",
-          "maxProperties": 32
+          "maxProperties": 32,
+          "description": "A map keyed by form ID. Each entry maps declared field IDs to values from that form. Resolve only the fields named by the checked action's form inputs."
         },
         "prompt": {
           "type": "object",
@@ -4726,6 +4728,15 @@
         },
         "cursor": {
           "$ref": "#/$defs/Ref"
+        },
+        "type": {
+          "const": "extension_choices"
+        },
+        "activation_context": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "slot": {
+          "$ref": "#/$defs/ActionId"
         }
       },
       "required": [
@@ -4999,6 +5010,137 @@
         "media_type"
       ],
       "description": "Standard padded base64 carrying at most 64 KiB of decoded bytes from the checked immutable asset. Omit next_offset at end of file. Never redirect."
+    },
+    "AppOpenResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "view_ref",
+        "description"
+      ],
+      "properties": {
+        "view_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "description": {
+          "$ref": "description-v2.schema.json#/$defs/AppDescription"
+        }
+      }
+    },
+    "RendererExtensionChoiceRequest": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ExtensionChoiceRequest"
+        },
+        {
+          "required": [
+            "type",
+            "activation_context",
+            "slot"
+          ]
+        }
+      ]
+    },
+    "ExecutionControlRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "component",
+        "item"
+      ],
+      "properties": {
+        "type": {
+          "const": "execution_control"
+        },
+        "component": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        }
+      }
+    },
+    "ExecutionControlResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "controls"
+      ],
+      "properties": {
+        "controls": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "action_id",
+              "activation_context",
+              "phase"
+            ],
+            "properties": {
+              "action_id": {
+                "const": "host.execution.stop"
+              },
+              "activation_context": {
+                "$ref": "#/$defs/ContextRef"
+              },
+              "phase": {
+                "enum": [
+                  "queued",
+                  "starting",
+                  "running",
+                  "waiting",
+                  "frozen"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "ActivationConfirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "activation_id",
+        "resolution_ref",
+        "confirmation_proof"
+      ],
+      "properties": {
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
+        },
+        "resolution_ref": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "confirmation_proof": {
+          "$ref": "#/$defs/ProofRef"
+        }
+      }
+    },
+    "ActivationResolveReply": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ActivationResolution"
+        },
+        {
+          "$ref": "#/$defs/ActionOutcome"
+        }
+      ]
+    },
+    "ExecutionJobReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "job_id"
+      ],
+      "properties": {
+        "job_id": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
     }
   },
   "activation_limits": {
@@ -5293,6 +5435,60 @@
         "$ref": "#/$defs/ItemViewAssetResult"
       },
       "scope": "Resolve the host-issued ref and exact current view lease. Apply view_snapshots.assets and body_content before returning a bounded range."
+    },
+    "app.open": {
+      "input_schema": {
+        "$ref": "description-v2.schema.json#/$defs/EventApp"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/AppOpenResult"
+      },
+      "scope": "Authenticated shell in its selected space. Resolve the installed app entry and its validated static description. Return the pinned description and a view_ref for its exact account, session, space, app and digest, with no worker wake. Use view.open with that ref to check route operands and acquire a view lease. Refuse an unavailable app opaquely."
+    },
+    "extension.choices": {
+      "input_schema": {
+        "$ref": "#/$defs/RendererExtensionChoiceRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/ExtensionChoicePage"
+      },
+      "scope": "Authenticated member renderer and current view lease. Resolve the current app and slot from the activation context. The app must match, and the slot must declare this exact extension point. Apply extension_points.choices and check authority before delivery. Reject foreign, disabled or stale scopes opaquely. Read installed contributions without a plugin wake."
+    },
+    "execution.control": {
+      "input_schema": {
+        "$ref": "#/$defs/ExecutionControlRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/ExecutionControlResult"
+      },
+      "scope": "Authenticated member renderer, active view lease and exact item bound to the named item-view component. Apply item authority and the retirement rule for each candidate Stop. Return only eligible exact pending or live targets in head-then-successor order, or an empty array. Use queued for the successor and starting for a pending head. Each context is for the reserved host.execution.stop action on one target; omit unauthorized targets and their state. No plugin wake. Recheck at resolve and commit. A stale context cannot stop a successor or retarget a replacement."
+    },
+    "activation.resolve": {
+      "input_schema": {
+        "$ref": "#/$defs/ResolveActivation"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/ActivationResolveReply"
+      },
+      "scope": "Apply the checked activation and confirmation rules under the current lease. An ordinary separate path returns a resolution. An eligible dispatch:true shortcut or typed refusal may return an outcome. Reserved protected actions require their designated host context."
+    },
+    "activation.confirm": {
+      "input_schema": {
+        "$ref": "#/$defs/ConfirmActivation"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/ActivationConfirmation"
+      },
+      "scope": "Match the challenge, activation and resolution under the current lease and live authority. Return the same activation and resolution identifiers with a one-use proof bound to the normalized material."
+    },
+    "activation.dispatch": {
+      "input_schema": {
+        "$ref": "#/$defs/DispatchActivation"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "scope": "Recheck context, live authority and any required confirmation proof. Dispatch only the pinned operation and inputs. Replay by the checked activation receipt."
     }
   },
   "generic_item_fields": {
@@ -5534,6 +5730,9 @@
       },
       "default_confirmation_schema": {
         "$ref": "#/$defs/ConfirmActivation"
+      },
+      "default_confirmation_reply_schema": {
+        "$ref": "#/$defs/ActivationConfirmation"
       }
     }
   },
@@ -5588,7 +5787,7 @@
     "invoke_scope": "Dispatch to the exact admitted package, digest, epoch and ticket. Stamp protected job and alarm metadata as in HostWorkerInvokeFrame. Refuse worker-origin invoke or worker-supplied host metadata."
   },
   "execution_placement": {
-    "source": "Any app may declare a choice prompt with options.host:execution_placement for a single-item execution action, including its composer's Send action. Permit one placement slot per action. Resolve the live member, target item and action from the activation context. Validate the supplied HarnessRef against the installed contribution, requested item and activation's app and scope under the extension and placement rules. Read the eligible binding inventory on the host without waking a plugin.",
+    "source": "Any app may declare a choice prompt with options.host:execution_placement for a single-item execution action, including its composer's Send action. Permit one placement slot per action. Resolve the live member, target item and action from the activation context. Validate the supplied HarnessRef against the installed contribution, requested item and activation's app and scope under the extension and placement rules. Read the eligible binding inventory on the host without waking a plugin. When that action also declares a harness extension choice, the submitted option must resolve to the same HarnessRef before dispatch.",
     "options": "In a shared space put its eligible configured space binding first and mark it default. Also offer the acting member's own live enrolled machines paired with their own eligible approved login for this harness, in an isolated sandbox. In a personal space use the same enrollment and login options and the established eligible personal default when configured, including eligible hosted placement. Never offer another person's enrollment or login. Filter by live grants, exact build, enrollment, profile and placement eligibility before paging. Use the existing 50-option cap and an opaque next cursor pinned to the same authorized option set. Labels identify the machine and whose login will be used, using safe profile display names where needed. Omit default_ref if there is no eligible default. Only the first page can name a default, and it must equal a ref in that page's options.",
     "request_and_submit": "The authenticated renderer calls choice.options with the checked context, placement slot, selected HarnessRef and the activation_id it will use for resolve. Request another page with the returned next cursor, if present. Render only the host labels and default. Submit the selected ChoiceRef under that slot in ResolveActivation.interaction.choices, with the same activation ID and context. When the slot is declared this ref is required, including when accepting the returned default. A shared-space personal choice requires explicit selection for this run and is never the default. With no selected eligible option, the action stays unavailable. Discard options and cursors on context or harness change, lease loss or disconnect and fetch fresh options. Reject stale or foreign choices and return to the picker without dispatch.",
     "dispatch": "Bind each choice to the actor, space, lease, action, slot, activation ID, item, harness build, exact machine and login binding. Pin the selected choice when resolving activation and recheck at dispatch. Give the checked worker operation only the opaque ChoiceRef as that named input. Forward it as ExecutionJobStart.placement with the same harness on the same checked dispatch, including an authorized contribution invoked under its checked scope. Require the exact ref when that activation supplied one. Reject a ref from any other input, invocation or receipt. Consume it once when admitting the job, bind the resolved placement to the receipt and allow exact replay. Never grant a plugin access to option labels, cursors, enrollment IDs, login identity or paths through this exchange. Protected preview material, when required, uses the host label and is renderer-only.",
@@ -5599,7 +5798,10 @@
       "input": {
         "$ref": "#/$defs/ExecutionJobStart"
       },
-      "description": "This request is for the execution arm of start_job. Its job ID resolves one installed declaration. Ordinary jobs refuse harness and placement. Apply admission and provider_login."
+      "description": "This request is for the execution arm of start_job. Its job ID resolves one installed declaration. Ordinary jobs refuse harness and placement. Apply admission and provider_login.",
+      "output": {
+        "$ref": "#/$defs/ExecutionJobReceipt"
+      }
     },
     "admission": "Only a declared replayable job with execution:true and a checked live item whose installed kind declares execution_target. Keep one eligible head job or active attempt per item. The successor rule governs queued jobs. Pin the audience generation, actor, job, package, exact harness binding, selected placement and profile, and effect ceiling. Use the top-level ExecutionJobStart.harness or the already-pinned alarm binding. Apply execution_placement to the StartJob placement operand. Never select a harness or placement from opaque job input. Under the lifecycle fence refuse deleted, archived or retired targets. Reserve quotas once. Exact replay returns the current receipt without another admission. Refuse changed operands under the same receipt. Recheck the same bindings at promotion and claim, without substitution. No caller-supplied host job context.",
     "stop_and_archive": "Idle archive excludes unresolved execution jobs, live attempts and protected approvals. Protected archive pins the entire affected set, including head and successor. Stop pins its exact target and any affected descendants. Both apply attempt_authority_end.retirement_authority. Never retarget a replacement.",
@@ -5839,7 +6041,8 @@
       "output": {
         "$ref": "#/$defs/ExtensionChoicePage"
       },
-      "rule": "Only the owning app or its checked device interface can request choices. Bind the short-lived option to the exact declared point and scope. For an eligible harness option also issue the durable HarnessRef. Reuse the binding for the same exact tuple. Limit stored bindings to the installed contribution inventory and retire them when their pinned digests or enrollment lose eligibility. Recheck membership, placement, publisher approval, installed contribution, digest, point and profile at each job or alarm claim. Refuse a stale ref instead of substituting another build. Receipt replay never reissues or widens authority."
+      "rule": "Only the owning app or its checked device interface can request choices. Bind the short-lived option to the exact declared point and scope. For an eligible harness option also issue the durable HarnessRef. Reuse the binding for the same exact tuple. Limit stored bindings to the installed contribution inventory and retire them when their pinned digests or enrollment lose eligibility. Recheck membership, placement, publisher approval, installed contribution, digest, point and profile at each job or alarm claim. Refuse a stale ref instead of substituting another build. Receipt replay never reissues or widens authority. A worker request cannot assert renderer context, issue renderer refs or reuse its pagination cursor on the renderer route.",
+      "renderer": "The renderer requests extension.choices using its app and the exact prompt slot declared as options.extension with the point ID. Option refs and the continuation are scoped to the active authenticated view, lease, actor, checked action, slot, declared point and installed generations. For harness choices return both ref and harness_ref. The renderer uses harness_ref to fetch placement, but submits the picked option ref under its slot in ResolveActivation.interaction.choices. Resolve it at activation to the same checked HarnessRef, and supply that typed ref as the operation's named input. Other extension choices resolve to their scoped opaque contribution refs. Recheck choices at dispatch. Discard dependent placement options on harness change. If both choices are present, require that the resolved harness equals the placement's pinned harness before dispatch. Never accept a raw contribution ID or renderer-supplied HarnessRef as the submitted choice."
     }
   },
   "alarms": {
@@ -5912,7 +6115,7 @@
     "live_view": "On a separate live item_view.open request, the declared refresh read operation receives ItemViewRead and returns ItemViewPage for the requesting member only, with state:live. Scope it to the exact viewer, lease, item and checked source revision. Hold the retained view while the refresh runs only as permitted by view_snapshots.body_content. The admitted call may wake the package under the existing runtime rules. Apply pending and payload bounds. Keep its output transient and apply view_snapshots.body_content. A refresh cannot mint or redeem a publish scope or change the retained snapshot, even for a viewer who can edit. Guest and public requests use retained content only and never invoke refresh.",
     "body_content": "Item views are body content, whether retained, stale or live. Every production and delivery path uses the same live revision-specific body-read check as a file read for that exact item and source revision. Check the acting principal at production admission and again before committing or returning produced content. Check the viewer at open admission and immediately before delivery. Title access alone is insufficient. On a relevant invalidation, fence outstanding delivery and invalidate affected results on the authenticated lease. Close the lease if the host cannot signal invalidation. Clear displayed and buffered content on relevant invalidation, lease loss or disconnect, and ignore superseded replies. Apply view_result_retention on renewal. With no authorized result, show the basic item shell.",
     "paging": "A snapshot holds the newest page and optionally its private older boundary. An authorized member can request older pages through item_view.open with live:true and the issued cursor. Bind each external cursor to its checked viewer, view, item, slot, source revision, and plugin boundary. Resolve and reauthorize the exact pinned revision before invoking the owner. No offset or count. Absence of older ends the chain. Do not mix revisions in one chain. The plugin supplies older pages when awake, under admitted wake rules. Guest and public views receive the retained newest page alone. Meter each page against the snapshot bounds.",
-    "follow": "The latest live page may give the active member a follow ref. On a committed item change send changed on the authenticated subscription so the renderer requests the latest live head without a cursor. Keep still-authorized pages while refreshing, then replace the chain if the pinned revision changed. On body or asset authority loss, purge, retired source or other relevant invalidation send invalidated and apply body_content before any further output. Bind and fence the follow ref with the result and lease. Keep one follow per open item-view slot under the existing per-view subscription cap. Coalesce signals and meter them with the existing live update cap.",
+    "follow": "The cursorless latest live page supplies a follow ref to its eligible active member. On a committed item change send changed on the authenticated subscription so the renderer requests the latest live head without a cursor. Keep still-authorized pages while refreshing, then replace the chain if the pinned revision changed. On body or asset authority loss, purge, retired source or other relevant invalidation send invalidated and apply body_content before any further output. Bind and fence the follow ref with the result and lease. Keep one follow per open item-view slot under the existing per-view subscription cap. Coalesce signals and meter them with the existing live update cap. On subscribe, check for a committed revision after the followed head and send changed immediately if one already exists and is deliverable, so a commit between open and subscribe cannot be missed. An enabled refresh slot can return a readable empty-file page with a follow ref before the attempt emits its first output.",
     "assets": "Accept only checked immutable image and attachment references at publish or refresh. Bind them to the item-view source, verified asset revision and audience. Omit an inaccessible leaf and its metadata. On delivery mint a scoped ItemViewAssetRef and check both the item body authority and the asset's independent live access again at every range open and delivery. Fence on source or asset revoke. Serve normalized still PNG or JPEG images with at most 512 KiB and 2,048 pixels on either edge. Attachments use the existing file limits and checked ranges. Each response is at most 64 KiB decoded. Treat labels and author lines as plain authored data."
   },
   "offline_download": {
@@ -5934,7 +6137,7 @@
     "retention_days": 30,
     "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action. Start retention at trash commit. No item kind or package overrides the retention period."
   },
-  "exchanges_revision": "14.24",
+  "exchanges_revision": "14.25",
   "view_result_retention": {
     "rule": "Host windows, plugin search pages and stored or live item-view pages use the same result_versions and retained_results exchange. On a successful renewal with an unchanged grant revision, re-confirm the exact result ref and version, current audience and checked scope, including the active settle generation for a plugin search, the slot for an item view, and live access to each exact item, asset and source revision represented in the result. Retain each still-authorized unchanged result by acknowledging the exact pair, without rerendering or invoking a plugin. Treat a changed or refused result as an invalidation of that result only. A changed audience requires a new view.",
     "scope": "Retain only on the same authenticated view, account and cache partition. Rebind the acknowledged result's eligible continuation, follow and item-view asset refs to the renewed lease. Asset reads still apply view_snapshots.assets at admission and delivery. Supply current scoped contexts in retained_results for retained plugin-search pages. A missing context is unavailable. Replace old tokens as a set. Invalidate selections or activities whose originating result or context no longer holds. Acknowledge each exact result at most once under the existing aggregate cap.",

@@ -202,6 +202,15 @@
                         }
                       },
                       "description": "Host-owned placement options for a checked execution action. Apply the catalogue's execution_placement exchange."
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["extension"],
+                      "properties": {
+                        "extension": {"$ref": "#/$defs/Id"}
+                      },
+                      "description": "Installed contribution options for this app's declared extension point. Use extension.choices."
                     }
                   ]
                 }
@@ -216,7 +225,7 @@
                     "required": ["options"],
                     "properties": {
                       "options": {
-                        "required": ["host"]
+                        "anyOf": [{"required": ["host"]}, {"required": ["extension"]}]
                       }
                     }
                   },
@@ -1705,6 +1714,12 @@
         },
         {
           "$ref": "host-catalogue-v2.json#/$defs/ItemViewAssetRequest"
+        },
+        {
+          "$ref": "host-catalogue-v2.json#/$defs/RendererExtensionChoiceRequest"
+        },
+        {
+          "$ref": "host-catalogue-v2.json#/$defs/ExecutionControlRequest"
         }
       ]
     },
@@ -2542,7 +2557,7 @@
         "type",
         "id"
       ],
-      "description": "Another app was chosen in the footer."
+      "description": "Open the selected app with app.open in the authenticated shell space. The host replies with its description and view_ref."
     },
     "EventRefresh": {
       "type": "object",
