@@ -1,4 +1,4 @@
-import { defineOperation, handlersOf, integer, LIMITS, object, oneOf, oneOfValues, ref, streamContribution, string, type OperationContext } from "@calternal/plugin-sdk";
+import { array, defineOperation, handlersOf, integer, LIMITS, literal, object, oneOf, oneOfValues, ref, streamContribution, string, type OperationContext } from "@calternal/plugin-sdk";
 import type { ItemRef } from "@calternal/plugin-sdk/types";
 import { checkedText, textSchema, type HarnessInput, type HarnessOutput } from "./harnesses-v1.ts";
 import { agentParticipant, attest, checkedTitle, encode, MAX_FILE_BYTES, messageId, messageRecord, personParticipant, threadHeader, threadShape, messageView, type Thread } from "./format.ts";
@@ -22,10 +22,10 @@ const messageOffset = integer({ minimum: 0, maximum: 2 * 1024 * 1024 });
 const author = object({ kind: oneOfValues("person", "agent"), id: string(), name: string(), contribution: ref("ContributionIdentity") }, "kind", "id", "name");
 const message = object({
   id: string(), author, text: textSchema, posted_at: ref("Timestamp"),
-  log: ref("ItemLocator"), consultation: ref("ItemLocator"), edited: { const: true }, replyTo: string(), replyToName: string(),
+  log: ref("ItemLocator"), consultation: ref("ItemLocator"), edited: literal(true), replyTo: string(), replyToName: string(),
   replyIn: ref("ItemLocator"), replyQuote: textSchema,
-  askedBy: object({ kind: { const: "person" }, id: string(), name: string() }, "kind", "id", "name"),
-  mentions: { type: "array", items: ref("AccountRef") },
+  askedBy: object({ kind: literal("person"), id: string(), name: string() }, "kind", "id", "name"),
+  mentions: array(ref("AccountRef")),
 }, "id", "author", "text", "posted_at");
 const legacyMessageResult = object({
   id: string(), role: oneOfValues("person", "agent", "automation"), heading: string(),
