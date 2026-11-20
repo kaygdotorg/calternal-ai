@@ -13,25 +13,18 @@ const go = async (query, size) => { const r = await open(browser, `fixture=threa
 const snap = async (p, name) => { if (shots) { name = `${process.env.SCHEME ?? "light"}-${name}`; await p.waitForTimeout(500); await p.screenshot({ path: `${shots}/${name}.png` }); } };
 const DESK = { width: 1280, height: 800 }, PHONE = { width: 390, height: 844 };
 const log = (p, f) => p.evaluate((src) => window.__transport.log.filter(new Function("l", `return ${src}`)), f);
-const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", { timeout: 20000 }); await p.locator("[data-i] button.row").first().evaluate((e) => e.click()); await p.waitForSelector("[data-entry]", { timeout: 10000 }); };
+const openFirst = async (p) => { await p.waitForSelector("[data-strip=conv-pins] [data-row-id=t-lunch] button", { timeout: 20000 }); await p.locator("[data-strip=conv-pins] [data-row-id=t-lunch] button").evaluate((e) => e.click()); await p.waitForSelector("[data-entry]", { timeout: 10000 }); };
 
-// ---- the list
+// ---- the list rows (the sidebar's own arrangement is in threads-sidebar.mjs)
 {
   const { page: p } = await go("", DESK);
-  await p.waitForSelector("[data-i] button.row", { timeout: 20000 });
-  const rows = await p.locator("[data-i] button.row").evaluateAll((els) => els.map((e) => e.textContent.trim()));
-  ok(rows.length === 7 && rows[0].startsWith("Where to eat") && rows[1].startsWith("Release notes"), "pinned threads come first, then the rest by activity", rows.slice(0, 2).join(" | "));
-  ok((await p.locator("[data-i] button.row .s").count()) === 0 && (await p.locator("[data-i] button.row").first().locator("[data-mark=text]").count()) === 1, "every thread row is one line, with its time at the end");
-  const marks = await p.locator("[data-i] button.row").evaluateAll((els) => els.map((e) => [...e.querySelectorAll("[data-mark=count]")].map((m) => `${m.textContent}${m.classList.contains("quiet") ? "q" : ""}`)));
-  ok(marks[0].join() === "3", "an unmuted thread shows its unread count in the accent, after its time", marks[0].join());
-  ok(marks[3].join() === "2", "a muted thread (it never rings) keeps only its mention count, in the accent", marks[3].join());
-  ok(marks[1].length === 0, "a thread with nothing unread shows no count");
+  await p.waitForSelector("[data-tree] button.row", { timeout: 20000 });
+  ok((await p.locator("[data-tree] [data-row-id] button.row .s").count()) === 0 && (await p.locator("[data-tree] [data-row-id] button.row").first().locator("[data-mark=text]").count()) === 1, "every thread row is one line, with its time at the end");
+  const mk = (id) => p.locator(`[data-row-id="${id}"] [data-mark=count]`).allTextContents();
+  ok((await mk("t-bug")).join() === "12", "an unmuted thread shows its unread count in the accent, after its time", (await mk("t-bug")).join());
+  ok((await mk("t-design")).join() === "2", "a muted thread (it never rings) keeps only its mention count, in the accent", (await mk("t-design")).join());
+  ok((await mk("t-trip")).length === 0, "a thread with nothing unread shows no count");
   await snap(p, "next-desktop-1-list");
-  await p.getByText("People", { exact: true }).first().click(); await p.waitForTimeout(600);
-  ok((await p.locator("[data-i] button.row").count()) === 3, "People shows only the threads with people in them");
-  await p.getByText("Agents", { exact: true }).first().click(); await p.waitForTimeout(600);
-  ok((await p.locator("[data-i] button.row").count()) === 3, "Agents shows only the threads with agents alone");
-  await p.getByText("All", { exact: true }).first().click(); await p.waitForTimeout(600);
 }
 
 // ---- the conversation
@@ -61,7 +54,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   ok(await p.locator("[data-anchor=e5].hl").count() === 1, "the quoted message is highlighted");
   // item link
   await p.locator("[data-anchor=e7] [data-item-link]").click(); await p.waitForTimeout(800);
-  ok((await log(p, "l.route === 'item.locate'")).length === 1 && (await log(p, "l.route === 'item_view.open' && l.body.item === 'r-0'")).length >= 1, "an item link goes through item.locate");
+  ok((await log(p, "l.route === 'item.locate'")).length === 1 && (await log(p, "l.route === 'item_view.open' && l.body.item === 't-lunch'")).length >= 1, "an item link goes through item.locate");
 }
 
 // ---- reading position
@@ -269,7 +262,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   await openFirst(p);
   ok((await p.locator("[data-panel=info]").textContent()).includes("Last activity"), "the right panel draws content nodes");
   ok(!/\d{4}-\d{2}-\d{2}T/.test(await p.locator("[data-panel=info]").textContent()) && /\d{1,2}:\d{2}/.test(await p.locator("[data-panel=info]").textContent()), "a time in the panel is shown in local time, not as stored (UTC)", (await p.locator("[data-panel=info]").textContent()).replace(/\s+/g, " ").slice(0, 80));
-  ok((await p.locator("[data-i] button.row [data-mark=text]").first().evaluate((e) => e.getBoundingClientRect().width / e.closest("button.row").getBoundingClientRect().width)) < 0.2, "the time takes less than a fifth of a row, so the title keeps its room");
+  ok((await p.locator("[data-tree] [data-row-id] button.row [data-mark=text]").first().evaluate((e) => e.getBoundingClientRect().width / e.closest("button.row").getBoundingClientRect().width)) <= 0.21, "the time takes about a fifth of a row at most, so the title keeps its room");
   await p.getByRole("button", { name: "Mute this thread" }).click();
   await p.waitForSelector("[data-dialog=choose]", { timeout: 5000 });
   const labels = await p.locator("[data-dialog=choose] button[role=option]").allTextContents();
@@ -318,9 +311,9 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
 // ---- phone
 {
   const { page: p } = await go("", PHONE);
-  await p.waitForSelector("[data-i] button.row", { timeout: 20000 });
+  await p.waitForSelector("[data-tree] button.row", { timeout: 20000 });
   await snap(p, "next-phone-1-list");
-  await p.locator("[data-i] button.row").first().evaluate((e) => e.click()); await p.waitForSelector("[data-entry]", { timeout: 10000 });
+  await openFirst(p);
   const w = await p.evaluate(() => ({ s: document.documentElement.scrollWidth, c: document.documentElement.clientWidth }));
   ok(w.s <= w.c, "nothing overflows the phone's width", JSON.stringify(w));
   const ha = p.locator("[data-action=call-in]"); ok((await ha.textContent()).trim() === "" && (await ha.getAttribute("aria-label")) === "Call an agent in" && (await p.locator("main h1").textContent()).includes("Where to eat on Friday"), "on a phone the header action is its icon only (named for a screen reader) and the title is whole", await p.locator("main h1").textContent());

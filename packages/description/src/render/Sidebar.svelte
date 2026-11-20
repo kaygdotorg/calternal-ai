@@ -8,6 +8,8 @@
   import type { Section, Sidebar, Footer } from "../model";
   import { useApp, useActions } from "../invoke/context";
   import ContentList from "./ContentList.svelte";
+  import Tree from "./Tree.svelte";
+  import type { SectionD } from "../draft";
   import ActionButton from "./ActionButton.svelte";
   import { knownIcon } from "./icons";
   import { marksOf } from "./eval";
@@ -21,6 +23,9 @@
     if ("route" in w) return app.route[w.route] === w.equals;
     return (ranks[role ?? "viewer"] ?? 0) >= ranks[w.minRole];
   }
+
+  // DRAFT: a sidebar whose sections have subsections, a strip or customisation is drawn as a tree the person arranges (Tree.svelte); the others as before.
+  const tree = $derived((sidebar.sections ?? []).some((s) => { const d = s as unknown as SectionD; return !!d.sections || !!d.presentation || d.customise !== undefined; }));
 
   // Search: settled text goes to the host, then the search bind's windows are read again.
   let text = $state(""), timer = 0, sentText = $state(""), seq = 0;
@@ -62,7 +67,8 @@
       {@const st = app.storeFor(searchBind)}
       {#if st}<ContentList store={st} selection={app.selectionFor(searchBind)} kindIcon={app.kindIconFor(searchBind)} label="Search results" inside />{/if}
     {:else}
-      {#each sidebar.sections ?? [] as s (s.id)}
+      {#if tree}<Tree sections={(sidebar.sections ?? []) as unknown as SectionD[]} shown={(s) => shown(s as unknown as Section)} />
+      {:else}{#each sidebar.sections ?? [] as s (s.id)}
         {#if shown(s)}
           <section class="sec" data-section={s.id}>
             {#if s.title}<h3 class="sh">{s.title}</h3>{/if}
@@ -86,7 +92,7 @@
             {/if}
           </section>
         {/if}
-      {/each}
+      {/each}{/if}
     {/if}
   </div>
   {#if footer}

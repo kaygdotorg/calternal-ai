@@ -1,3 +1,4 @@
+// DRAFT SIDEBAR (issue #78): the sidebar below uses shapes the contract does not have yet (subsections, a pinned strip, avatar marks, per-person arrangement); everything else is 14.43.
 // The Threads interface at contract revision 14.43 (generic entry views, viewer-private fields, read position, checked per-entry actions, range selection, composer drafts and mentions, literal choices, quiet marks,
 // panel content). It is NOT yet wired into the plugin: the build pins 4a1e099b (14.41), whose schema and manifest do not carry these shapes, and the manifest still has to declare the kind's `viewer_fields`
 // (`unread` and `mentions` from the entry order, `muted`, `pinned`, `draft`, `preview`) and the operations named below (`threads.state`, `threads.edit`, `threads.delete`, `threads.call`, `threads.send` without a harness).
@@ -12,11 +13,10 @@ const mute = (id: string, title: string, inputs: Record<string, unknown>) => ({ 
 const muteFor = { prompt: { title: "Mute for", kind: "choice", options: [
   { value: "1h", label: "1 hour" }, { value: "8h", label: "8 hours" }, { value: "2d", label: "2 days" }, { value: "forever", label: "Until I unmute" }, { value: "mentions", label: "Mute, but tell me about mentions" }] } };
 const pin = (id: string, on: boolean) => ({ id, title: on ? "Pin" : "Unpin", icon: "spark", operation: "threads.state", inputs: { item: row, pinned: { literal: on } } });
-/** A thread row is one line: shape icon, title, then the time and the counts. */
+/** A thread row is one line: avatar, title, then the time and the counts (a muted thread keeps only its mention count, in the accent: it never rings). */
 const rowTemplate = (n: string) => ({
   title: { field: "title", fallback: "Untitled thread" },
-  icon: { field: "shape", name: "threads", map: { person: "user", group: "user", agent: "spark", mixed: "threads" } },
-  // One line: the title, then at its end the time and the counts (a muted chat keeps only its mention count, in the accent: it never rings).
+  icon: { avatar: { label: "title" } },
   marks: [
     { kind: "text", field: "updated" },
     { kind: "count", field: "mentions", when: eq("muted", true) },
@@ -31,9 +31,9 @@ const rowTemplate = (n: string) => ({
     { id: `trash-${n}`, title: "Move to Trash", icon: "trash", role: "destructive", operation: "host.item.trash", inputs: { item: row } },
   ],
 });
-const list = (id: string, filter: unknown[], empty: unknown) => ({
+const list = (id: string, filter: unknown[], empty: unknown, extra: Record<string, unknown> = {}) => ({
   id, source: { type: "list", kind: "threads" }, fields, filter: { all: filter }, sort: [{ field: "pinned", direction: "desc" }, ...newest], window: { size: 60, count: "exact" },
-  row: rowTemplate(id), states: { empty, error: { title: "Threads could not load", action: { id: `retry-${id}`, title: "Try again", shell: { reload: true } } } },
+  row: rowTemplate(id), states: { empty, error: { title: "Threads could not load", action: { id: `retry-${id}`, title: "Try again", shell: { reload: true } } } }, ...extra,
 });
 const none = { title: "Nothing here", detail: "Threads that match come back by themselves." };
 const harness = (showWhen: unknown) => ({ prompt: { title: "Agent", kind: "choice", options: { extension: "harnesses" }, showWhen } });
@@ -43,31 +43,35 @@ const callIn = (id: string, title: string, scope: unknown, extra: Record<string,
   id, title, icon: "spark", operation: "threads.call",
   inputs: { item, scope, harness: harness(undefined), placement: place(undefined), ...extra },
 });
-const viewer = (id: string, kind: string) => ({ id, source: { type: "list", kind: "threads" }, fields: [], filter: { all: [eq("archived", false), eq("shape", kind)] }, window: { size: 1, count: "exact" } });
+const notArchived = eq("archived", false), unpinned = eq("pinned", false), pinnedOnly = eq("pinned", true);
+const pins = (id: string, bind: string) => ({ id, presentation: "strip", bind, drop: { action: "pin" }, dragOut: { action: "unpin" } });
 
 export const descriptionNext = {
   version: 2, kind: "app", revision: 3, cache: { templates: "keep" },
   binds: [
-    list("all", [eq("archived", false)], { title: "No threads yet", detail: "Start one with New thread: a conversation with an agent or with people." }),
-    list("people", [eq("archived", false), { field: "shape", op: "in", value: { literal: ["person", "group"] } }], none),
-    list("agents", [eq("archived", false), eq("shape", "agent")], none),
-    { ...list("archived", [eq("archived", true)], { title: "Nothing archived", detail: "A thread comes back here to the list when someone writes in it." }),
+    list("conv-pinned", [notArchived, pinnedOnly, { field: "shape", op: "in", value: { literal: ["person", "group", "mixed"] } }], none),
+    list("groups", [notArchived, unpinned, { field: "shape", op: "in", value: { literal: ["group", "mixed"] } }], { title: "No groups yet", detail: "A conversation with several people appears here." }),
+    list("contacts", [notArchived, unpinned, eq("shape", "person")], { title: "No conversations yet", detail: "Start one with New thread." }),
+    list("agent-pinned", [notArchived, pinnedOnly, eq("shape", "agent")], none),
+    // A Cal is a saved assistant definition (docs/architecture-proposal.md): its row opens to its threads (nested child rows).
+    { id: "cals", source: { type: "list", kind: "cals" }, fields: ["title", "updated"], sort: newest, window: { size: 60, count: "exact" },
+      row: { title: { field: "title" }, icon: { avatar: { label: "title" } }, children: { bind: "cal-threads" } }, states: { empty: { title: "No Cals yet", detail: "Save an assistant as a Cal to see its threads here." } } },
+    { id: "cal-threads", source: { type: "list", kind: "threads", parent: true }, fields, filter: { all: [notArchived] }, sort: newest, window: { size: 30, count: "exact" }, row: rowTemplate("cal-threads") },
+    list("harnesses", [notArchived, unpinned, eq("shape", "agent"), eq("via_cal", false)], { title: "No harness threads", detail: "A thread with a plain agent appears here." }),
+    { ...list("archived", [eq("archived", true)], { title: "Nothing archived", detail: "A thread comes back to the list when someone writes in it." }),
       row: { ...rowTemplate("archived"), leadingActions: undefined, trailingActions: [{ id: "unarchive", title: "Unarchive", icon: "check", tone: "good", operation: "host.item.unarchive", inputs: { item: row } }] } },
-    { id: "archived-count", source: { type: "list", kind: "threads" }, fields: [], filter: { all: [eq("archived", true)] }, window: { size: 1, count: "exact" } },
     { id: "thread", source: { type: "item", kind: "threads", ref: item }, fields: ["title", "updated", "shape", "muted", "pinned"] },
     { id: "found", source: { type: "search", kind: "threads" }, fields: ["title", "updated", "preview"], window: { size: 30, count: "none" },
-      row: { title: { field: "title" }, open: { route: { name: "item", value: "id" } }, icon: { kindIcon: true } },
-      states: { empty: { title: "No thread matches" } } },
+      row: { title: { field: "title" }, open: { route: { name: "item", value: "id" } }, icon: { kindIcon: true } }, states: { empty: { title: "No thread matches" } } },
   ],
   chrome: {
+    // DRAFT sidebar shapes (issue #78): sections with subsections and a pinned strip, all of it arranged by the person (reorder, collapse, hide, rename, folders), stored for them by the host.
     sidebar: { open: true, title: "Threads", refresh: true, width: 280,
-      selectors: [{ id: "view", route: "view", selected: "all", options: [{ id: "all", title: "All" }, { id: "people", title: "People" }, { id: "agents", title: "Agents" }, { id: "archived", title: "Archived", count: { bind: "archived-count" } }] }],
       sections: [
         { id: "shortcuts", rows: [{ id: "new-thread", title: "New thread", icon: "plus", open: { invoke: { id: "create-thread", title: "New thread", operation: "threads.create", inputs: { title: { prompt: { title: "New thread", placeholder: "What is it about?" } } }, then: { route: { name: "item" } } } } }] },
-        { id: "all", bind: "all", showWhen: { route: "view", equals: "all" } },
-        { id: "people", bind: "people", showWhen: { route: "view", equals: "people" } },
-        { id: "agents", bind: "agents", showWhen: { route: "view", equals: "agents" } },
-        { id: "archived", bind: "archived", showWhen: { route: "view", equals: "archived" } },
+        { id: "conversations", title: "Conversations", customise: { folders: true }, sections: [pins("conv-pins", "conv-pinned"), { id: "groups", title: "Groups", bind: "groups" }, { id: "people", title: "People", bind: "contacts" }] },
+        { id: "agents", title: "Agents", customise: { folders: true }, sections: [pins("agent-pins", "agent-pinned"), { id: "cals", title: "Cals", bind: "cals" }, { id: "harnesses", title: "Harnesses", bind: "harnesses" }] },
+        { id: "archive", title: "Archived", collapsed: true, bind: "archived", customise: { hide: false, rename: false } },
       ] },
     header: { title: { bind: "thread", field: "title" }, trailing: [callIn("call-in", "Call an agent in", { literal: "all" })] },
     footer: { account: { id: "account", title: "Account", menu: [{ id: "signout", title: "Sign out", role: "destructive", shell: { signOut: true } }] },

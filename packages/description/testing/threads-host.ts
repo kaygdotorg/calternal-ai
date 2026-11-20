@@ -57,6 +57,11 @@ export interface ThreadsHostOptions { scenario?: string; /** The number of messa
 
 /** A `MockHost` whose view open also issues the contexts of the description's view-level actions (the composer's Send, the header's Archive, the New thread shortcut). */
 class ViewContexts extends MockHost {
+  /** The bind and parent of the window being answered, so a row's id is the thread's own (a list can change under a pin). */
+  curBind = ""; curParent = "";
+  idOf: (bind: string, parent: string, i: number) => string | undefined = () => undefined;
+  override id(i: number): string { return this.idOf(this.curBind, this.curParent, i) ?? super.id(i); }
+  override answer(req: Parameters<MockHost["answer"]>[0]) { this.curBind = req.bind; this.curParent = (req as { parent?: string }).parent ?? ""; return super.answer(req); }
   override async post<T>(route: Route, body: unknown): Promise<T> {
     const r = await super.post<T>(route, body);
     if (route === "view.open") (r as { activation_contexts: Record<string, string> }).activation_contexts = { send: "ctx-send", "archive-open": "ctx-archive-open", "create-thread": "ctx-create-thread", "call-in": "ctx-call-in", "call-range": "ctx-call-range", "mute-thread": "ctx-mute-thread", "pin-thread": "ctx-pin-thread" };
@@ -67,12 +72,38 @@ class ViewContexts extends MockHost {
 /** The host: a `MockHost` over the thread lists, plus the item-view, choice and activation routes the Threads description uses. */
 export function threadsHost(o: ThreadsHostOptions) {
   const empty = o.scenario === "empty";
-  const byPin = [...THREADS].sort((a, b) => Number(EXTRA[b.id]?.pinned ?? 0) - Number(EXTRA[a.id]?.pinned ?? 0) || a.ago - b.ago);
-  const lists: Record<string, { id: string; title: string; ago: number }[]> = o.next
-    ? { all: empty ? [] : byPin, people: byPin.filter((t) => ["person", "group"].includes(EXTRA[t.id]!.shape)), agents: byPin.filter((t) => EXTRA[t.id]!.shape === "agent"), archived: ARCHIVED, "archived-count": ARCHIVED, thread: [THREADS[0]!], found: THREADS.slice(0, 3) }
-    : { threads: empty ? [] : THREADS, archived: ARCHIVED, "archived-count": ARCHIVED, thread: [THREADS[0]!], found: THREADS.slice(0, 3) };
-  const counts: Record<string, number> = Object.fromEntries(Object.entries(lists).map(([k, v]) => [k, v.length]));
-  const rowOf = (bind: string, i: number) => lists[bind]?.[i] ?? THREADS[0]!;
+  type Th = { id: string; title: string; ago: number };
+  // The sidebar of the owner's guidance: pinned conversations on a strip (more than fit, so it scrolls), Groups and People, pinned agents, Cals (each a row that opens its threads), Harnesses, Archived.
+  const MORE: Th[] = ["Anna Lindqvist", "Ben Okafor", "Chloe Martin", "Dev Patel", "Eva Rossi", "Femi Adeyemi", "Gus Hansen", "Hana Sato", "Ivo Novak", "Jun Park"].map((t, i) => ({ id: `t-p${i}`, title: t, ago: 600 + i * 5000 }));
+  const MORE_EX = (id: string) => ({ shape: "person", unread: id === "t-p1" ? 4 : id === "t-p4" ? 1 : 0, mentions: 0, muted: false, preview: "" });
+  const pins = new Set<string>([...Object.entries(EXTRA).filter(([, e]) => e.pinned).map(([id]) => id), ...MORE.slice(0, 7).map((t) => t.id)]);
+  const CALS: Th[] = [{ id: "cal-release", title: "Release captain", ago: 1800 }, { id: "cal-research", title: "Researcher", ago: 86400 * 2 }];
+  const CAL_OF: Record<string, string> = { "t-release": "cal-release", "t-recipe": "cal-research" };
+  const ex = (id: string) => ({ ...(EXTRA[id] ?? MORE_EX(id)), pinned: pins.has(id) });
+  const ALL = [...THREADS, ...MORE];
+  const sortPin = (l: Th[]) => [...l].sort((x, y) => Number(pins.has(y.id)) - Number(pins.has(x.id)) || x.ago - y.ago);
+  /** The rows of a bind (and of a parent row's children), computed each time so a pin moves a thread between the strip and its list. */
+  function listFor(bind: string, parent = ""): Th[] {
+    const pi = parent ? Number(parent.split("-").pop()) : -1;
+    switch (bind) {
+      case "all": return empty ? [] : sortPin(THREADS);
+      case "people": return sortPin(THREADS).filter((t) => ["person", "group"].includes(EXTRA[t.id]!.shape));
+      case "agents": return sortPin(THREADS).filter((t) => EXTRA[t.id]!.shape === "agent");
+      case "threads": return empty ? [] : THREADS;
+      case "conv-pinned": return sortPin(ALL).filter((t) => pins.has(t.id) && ex(t.id).shape !== "agent");
+      case "groups": return ALL.filter((t) => !pins.has(t.id) && ["group", "mixed"].includes(ex(t.id).shape));
+      case "contacts": return ALL.filter((t) => !pins.has(t.id) && ex(t.id).shape === "person");
+      case "agent-pinned": return ALL.filter((t) => pins.has(t.id) && ex(t.id).shape === "agent");
+      case "cals": return CALS;
+      case "cal-threads": return ALL.filter((t) => CAL_OF[t.id] === CALS[pi]?.id && !pins.has(t.id));
+      case "harnesses": return ALL.filter((t) => !pins.has(t.id) && ex(t.id).shape === "agent" && !CAL_OF[t.id]);
+      case "archived": case "archived-count": return ARCHIVED;
+      case "thread": return [THREADS[0]!];
+      case "found": return THREADS.slice(0, 3);
+      default: return [];
+    }
+  }
+  const rowOf = (bind: string, i: number, parent = "") => listFor(bind, parent)[i] ?? THREADS[0]!;
   const sent: { text: string; harness: string; placement: string }[] = [];
   // ---- 14.43 entry views: the viewer is Ada (own entries); every other author is someone else. Reading state, drafts and extra messages are per fixture host, in memory.
   const unreadLeft = new Map<string, number>(), drafts = new Map<string, { v: number; text: string }>(), extra: { who: string; text: string; at: number; quote?: string }[] = [];
@@ -149,8 +180,12 @@ export function threadsHost(o: ThreadsHostOptions) {
       case "attachment.begin": return { stage: `st-${body.request_id}`, next_offset: 0, max_bytes: 10_000_000, expires_at: iso(-600) };
       case "attachment.chunk": return { stage: body.stage, next_offset: Number(body.offset) + Math.floor((String(body.bytes).length * 3) / 4), max_bytes: 10_000_000, expires_at: iso(-600) };
       case "attachment.finish": return { attachment: `att-${String(body.stage).slice(3, 11)}` };
+      case "layout.state": return layoutStore;
+      case "layout.apply": layoutStore = body.layout; return {};
       case "request.resolve": return { activation_id: "x", state: "ok" };
       case "activation.resolve": {
+        const pm = /^(pin|unpin)-/.exec(String(body.action_id));
+        if (pm) { const rid = String(body.activation_context).slice(`ctx-${body.action_id}-`.length); if (pm[1] === "pin") pins.add(rid); else pins.delete(rid); (host as ViewContexts).version = `rv-${++pinVer}`; return { activation_id: body.activation_id, state: "ok" }; }
         const m = /^ctx-(reply|edit)-(.+)$/.exec(String(body.activation_context));
         if (m) return { activation_id: body.activation_id, state: "ok", entry_composer: `c-${m[1]}-${m[2]}` };
         if (body.action_id === "delete" || body.action_id === "call-from-here" || body.action_id === "call-range" || body.action_id === "call-in") return { activation_id: body.activation_id, resolution_ref: "res-x", confirmation_challenge: "chal-x", material: [{ name: "operation", label: "Operation", value: body.action_id === "delete" ? "Delete for everyone" : "Call an agent in" }, { name: "effect", label: "Effect", value: body.action_id === "delete" ? "The message disappears for everyone." : "The agent reads the selected messages. People whose messages are included are asked first." }] };
@@ -160,17 +195,17 @@ export function threadsHost(o: ThreadsHostOptions) {
       default: return undefined;
     }
   }
-  let opens = 0;
+  let opens = 0, pinVer = 1, layoutStore: unknown = {};
   let version = 0; const follows = new Map<string, number>();
   const host: MockHost = new ViewContexts({
-    rows: 1, actionIds: o.actionIds, latencyMs: o.latencyMs,
-    rowsFor: (b) => counts[b] ?? 0,
+    rows: 1, actionIds: o.actionIds, latencyMs: o.latencyMs, parentBinds: ["cal-threads"],
+    rowsFor: (b) => listFor(b, (host as ViewContexts).curParent).length,
     fields: (i, b) => {
-      const t = rowOf(b, i);
+      const t = rowOf(b, i, (host as ViewContexts).curParent);
       if (!o.next) return { title: t.title, updated: NOW - t.ago, archived: b === "archived" };
       const when = iso(t.ago);
-      const ex = EXTRA[t.id] ?? { shape: "person", unread: 0, mentions: 0, muted: false, pinned: false, preview: "" };
-      return { title: t.title, updated: when, archived: b === "archived", ...ex };
+      if (b === "cals") return { title: t.title, updated: when, archived: false };
+      return { title: t.title, updated: when, archived: b === "archived", ...ex(t.id), ...(b === "cal-threads" ? { shape: "agent" } : {}) };
     },
     ...(o.next ? { /* the sections of the 14.43 list are filtered by the host; the fixture serves the same seven threads, pinned first */ } : {}),
     intercept: (req) => (o.scenario === "error" && (req.bind === "threads" || req.bind === "all") ? ({ status: 422, code: "unsupported_query_plan", reason: "host_error" } as never) : undefined),
@@ -211,5 +246,6 @@ export function threadsHost(o: ThreadsHostOptions) {
     },
   });
   void version;
-  return Object.assign(host, { sent });
+  (host as ViewContexts).idOf = (bind, parent, i) => listFor(bind, parent)[i]?.id;
+  return Object.assign(host, { sent, pins, layout: () => layoutStore });
 }

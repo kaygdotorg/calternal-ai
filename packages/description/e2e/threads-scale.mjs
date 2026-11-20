@@ -12,9 +12,9 @@ for (const mode of (process.env.MODES ?? "cv,nocv").split(",")) for (const cpu o
   const { page: p, cdp } = await open(browser, `fixture=threads-next&scenario=scale&messages=${N}${mode === "nocv" ? "&nocv=1" : ""}`);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: cpu });
   await cdp.send("Performance.enable");
-  await p.waitForSelector("[data-i] button.row", { timeout: 60000 });
+  await p.waitForSelector("[data-strip=conv-pins] [data-row-id=t-lunch] button", { timeout: 60000 });
   const t0 = Date.now();
-  await p.locator("[data-i] button.row").first().evaluate((e) => e.click());
+  await p.locator("[data-strip=conv-pins] [data-row-id=t-lunch] button").evaluate((e) => e.click());
   await p.waitForSelector("[data-entry]", { timeout: 60000 });
   const first = Date.now() - t0;
   // read every older page: go to the top as the person would; the view reads one as the top comes near

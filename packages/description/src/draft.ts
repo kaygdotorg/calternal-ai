@@ -62,3 +62,18 @@ export interface ItemViewReply {
 export interface RequestCardRecord { request_ref: string; title: string; detail?: string; material: { name: string; label: string; value: unknown }[]; state: "open" | "approved" | "denied" | "expired"; card_context?: string; actions: { decision: "approve" | "deny"; lifetimes?: ("once" | "this_item")[] }[]; expires_at?: string }
 /** A follow signal: the content changed (fetch the newest head) or was invalidated (clear it). */
 export interface ItemViewSignal { type: "item_view_signal"; follow: string; state: "changed" | "invalidated" | "reader_state" | "closed" }
+
+/**
+ * DRAFT (issue #78 comment, the owner's Threads sidebar): a sidebar section as the person may arrange it. Beyond the 14.44 `Section` it has subsections, a `strip` presentation (round thumbnails in a row that scrolls
+ * sideways), what the person may change (`customise`, default everything: reorder, collapse, hide, rename, make folders) and, for a strip, the row action a drop onto it runs (`drop`) and the one a drag off it runs (`dragOut`):
+ * the name of a row action, matched by its id (`pin`, or `pin-<bind>`), so pinning by dragging is the same checked action as pinning from the menu. Everything the person changes is theirs and the host's to store.
+ */
+export interface SectionD extends Omit<import("./model").Section, "sections"> {
+  presentation?: "list" | "strip";
+  sections?: SectionD[];
+  customise?: boolean | { reorder?: boolean; collapse?: boolean; hide?: boolean; rename?: boolean; folders?: boolean };
+  drop?: { action: string };
+  dragOut?: { action: string };
+}
+/** DRAFT icon: a round avatar from a picture field, else the initials of a label field on a colour taken from the row id. */
+export interface AvatarIcon { avatar: { label: string; image?: string } }

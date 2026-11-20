@@ -7,8 +7,8 @@ const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${not
 const N = 1500;
 const { page: p } = await open(browser, `fixture=threads-next&scenario=uneven&messages=${N}`, { width: 1100, height: 700 });
 const errors = []; p.on("pageerror", (e) => errors.push(String(e)));
-await p.waitForSelector("[data-i] button.row", { timeout: 30000 });
-await p.locator("[data-i] button.row").first().evaluate((e) => e.click());
+await p.waitForSelector("[data-strip=conv-pins] [data-row-id=t-lunch] button", { timeout: 30000 });
+await p.locator("[data-strip=conv-pins] [data-row-id=t-lunch] button").evaluate((e) => e.click());
 await p.waitForSelector("[data-entry]", { timeout: 30000 });
 const log = p.locator("[role=log]");
 const atEnd = () => log.evaluate((e) => e.scrollHeight - e.clientHeight - e.scrollTop < 2);

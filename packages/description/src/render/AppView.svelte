@@ -107,7 +107,7 @@
        carries the secondary inks solved for the pixels under it. A phone shows one at a time. -->
   <div class="app" data-app data-compact={compact || undefined} data-pane={compact ? (opened ? "card" : "list") : undefined}>
     {#if (description.chrome?.sidebar || description.chrome?.footer) && listPane}
-      <aside class="side" style:--sw={compact ? "100%" : description.chrome.sidebar?.width ? `${description.chrome.sidebar.width}px` : undefined}>
+      <aside class="side" style:--sw={compact ? "100%" : description.chrome.sidebar?.width ? `${description.chrome.sidebar.width}px` : undefined} style:--time-max={compact ? "72px" : `${Math.round((description.chrome.sidebar?.width ?? 240) * 0.2)}px`}>
         <Sidebar sidebar={description.chrome.sidebar ?? {}} footer={description.chrome.footer} role={props.role} initial={props.initial} />
       </aside>
     {/if}
