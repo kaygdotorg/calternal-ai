@@ -21,6 +21,7 @@
   {#snippet trailing()}{#each marks as m, k (k)}
     {#if m.kind === "dot"}<i class="dot {m.tone ?? ''}" data-mark="dot"></i>
     {:else if m.kind === "icon"}<span class="mi {m.tone ?? ''}" data-mark="icon">{#if knownIcon(m.icon)}<Icon name={knownIcon(m.icon)!} inline />{:else}<i class="missing small" data-icon-missing={m.icon}></i>{/if}</span>
+    {:else if m.kind === "count"}<span class="cnt {m.tone ?? ''}" data-mark="count">{m.text}</span>
     {:else}<span class="mt {m.tone ?? ''}" data-mark={m.kind}>{m.text}</span>{/if}
   {/each}{/snippet}
 </Row>
@@ -34,4 +35,8 @@
   .dot.good, .dot.warn, .dot.bad { background: var(--c); }
   .mi, .mt { color: var(--c, var(--ink-3)); }
   .mt { font-variant-numeric: tabular-nums; }
+  /* A count is a pill: the accent by default (the unread mark), the secondary fill for `quiet` (a muted chat), tone colours as marks elsewhere. */
+  .cnt { min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; display: inline-grid; place-items: center; font-size: var(--text-label); font-weight: var(--strong-weight); font-variant-numeric: tabular-nums; background: var(--c, var(--accent)); color: var(--on-accent, #fff); }
+  .cnt.quiet { background: color-mix(in oklab, var(--ink) 16%, transparent); color: var(--ink-2); }
+  .cnt.good { --c: var(--good); } .cnt.warn { --c: var(--warn); } .cnt.bad { --c: var(--danger); }
 </style>

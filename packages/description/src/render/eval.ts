@@ -38,7 +38,7 @@ export function holds(p: Predicate | undefined, fields: RowFields): boolean {
 }
 
 /** A trailing mark ready to draw. */
-export interface MarkView { kind: "dot" | "count" | "text" | "icon"; text?: string; icon?: string; tone?: "good" | "warn" | "bad" }
+export interface MarkView { kind: "dot" | "count" | "text" | "icon"; text?: string; icon?: string; tone?: "good" | "warn" | "bad" | "quiet" }
 
 /** The marks of a row, at most three, those whose `when` holds. A count of zero draws nothing, as a system badge does. */
 export function marksOf(marks: Marks | undefined, fields: RowFields): MarkView[] {

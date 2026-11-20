@@ -51,8 +51,8 @@
   {#if template.children && row.parent_refs?.[template.children.bind]}<button type="button" tabindex="-1" class="disc" aria-expanded={open} aria-label={open ? "Collapse" : "Expand"} onclick={() => (open = !open)}>{open ? "▾" : "▸"}</button>{/if}
   {#if lead.length || trail.length || menu.length}
     <div class="acts" role="group" aria-label="Actions">
-      {#each lead as a (a.id)}<ActionButton action={a} context={ctx(a)} disabled={off(a)} />{/each}
-      {#each trail as a (a.id)}<ActionButton action={a} context={ctx(a)} disabled={off(a)} />{/each}
+      {#each lead as a (a.id)}<span class="ab fold"><ActionButton action={a} context={ctx(a)} disabled={off(a)} /></span>{/each}
+      {#each trail as a, k (a.id)}<span class="ab" class:fold={k > 0}><ActionButton action={a} context={ctx(a)} disabled={off(a)} /></span>{/each}
       {#if every.length}<button type="button" tabindex="-1" class="more" aria-label="More actions" bind:this={moreEl} onclick={() => { menuAnchor = null; menuOpen = true; }}>…</button>{/if}
     </div>
   {/if}
@@ -66,6 +66,8 @@
   .acts { pointer-events: none; position: absolute; inset-block: 0; inset-inline-end: var(--s-3); display: flex; align-items: center; gap: var(--s-2); opacity: 0; }
   /* Hidden by opacity, not display, so the arrow keys can move focus into it; its buttons take pointer events only while it is shown. */
   .ra:hover .acts, .ra:focus-within .acts, .ra.sel .acts { opacity: 1; }
+  /* Beside the row only the first trailing action and "More" show, so the group never covers the title or the counts; the other actions stay reachable by keyboard focus, the menu and the swipe. */
+  .ab.fold:not(:focus-within) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .disc { position: absolute; inset-inline-start: 0; top: 0; min-width: 20px; min-height: var(--row-h); color: var(--ink-3); }
   .ra:hover .acts :global(button), .ra:focus-within .acts :global(button), .ra.sel .acts :global(button) { pointer-events: auto; }
   .acts :global(.btn[data-has-icon]) { padding: 0 var(--s-3); min-width: 44px; justify-content: center; }

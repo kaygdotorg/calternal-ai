@@ -8,6 +8,7 @@ import { MockHost } from "../testing/mock-host";
 import { SyntheticSource } from "../testing/synthetic-source";
 import { threadsHost } from "../testing/threads-host";
 import { description as threadsDescription } from "../../../plugins/calternal-threads/src/description";
+import { descriptionNext as threadsNext } from "../../../plugins/calternal-threads/src/description-next";
 // every sealed description fixture, by file name without the extension
 const all = import.meta.glob(["../../../contract/fixtures/description-v2/*.json", "!../../../contract/fixtures/description-v2/invalid-*.json"], { eager: true, import: "default" }) as Record<string, unknown>;
 
@@ -16,8 +17,8 @@ initInputModality(); initScheme();
 const fixtures: Record<string, unknown> = Object.fromEntries(Object.entries(all).map(([k, v]) => [k.split("/").pop()!.replace(/\.json$/, ""), v]));
 fixtures["reading-list"] = fixtures["reading-list-app"]; fixtures.notes = fixtures["notes-app"];
 const rows = Number(q.get("mock") ?? 0);
-const threads = q.get("fixture") === "threads";
-let description = (threads ? threadsDescription : fixtures[q.get("fixture") ?? "reading-list"]) as unknown as AppDescription;
+const next = q.get("fixture") === "threads-next", threads = q.get("fixture") === "threads" || next;
+let description = (next ? threadsNext : threads ? threadsDescription : fixtures[q.get("fixture") ?? "reading-list"]) as unknown as AppDescription;
 let viewRef = q.get("view") ?? "v-mock";
 const bearer = q.get("bearer") ?? undefined;
 // A product route (`?product=<view address>&token=<bearer>`): the view describes itself.
@@ -38,7 +39,7 @@ const actionIds = [...new Set((description.binds ?? []).flatMap((b) => [...(b.ro
 const challenge = q.get("challenge") === "1";
 const handle = challenge ? (route: string, body: any) => route === "activation.resolve" ? { activation_id: body.activation_id, resolution_ref: "res", confirmation_challenge: "chal", material: [{ name: "destination", label: "Destination", value: "Archive" }, { name: "count", label: "Items", value: 1 }] } : route === "activation.confirm" ? { confirmation_proof: "proof" } : route === "activation.dispatch" ? { activation_id: body.activation_id, state: "ok", undo: { ref: "undo-1", label: "Moved", expires_at: "2026-11-19T23:00:00Z" } } : route === "choice.options" ? { bind: "collections", options: [{ ref: "ch-1", label: "Archive" }, { ref: "ch-2", label: "Review" }] } : route === "undo" ? { activation_id: "u", state: "ok" } : undefined : undefined;
 // `?fixture=threads[&scenario=empty|error|stale|loading|unavailable]`: the real Threads description (the plugin's own file) over the fixture host.
-const threadsFixture = threads ? threadsHost({ scenario: q.get("scenario") ?? undefined, actionIds: [...new Set([...actionIds, "open"])] }) : null;
+const threadsFixture = threads ? threadsHost({ next, scenario: q.get("scenario") ?? undefined, actionIds: [...new Set([...actionIds, "open"])] }) : null;
 const transport = threadsFixture ? threadsFixture : rows > 0 && !product
   ? new MockHost({ rows, parentBinds, actionIds, handle: handle as never, rowsFor: (b) => ((description.binds ?? []).find((x) => x.id === b)?.source.type === "item" ? 1 : rows), count: (q.get("count") as "exact" | "none") ?? "exact", latencyMs: Number(q.get("latency") ?? 0), skipLimit: q.has("skip") ? Number(q.get("skip")) : undefined, endUnavailable: q.get("noend") === "1", fields: (i, bind) => ({ title: `${bind} ${i}`, added: 1_700_000_000 - i, read: i % 7 === 0, updated: 1_700_000_000 - i, pinned: i % 11 === 0, snippet: `Snippet of ${bind} ${i}`, thumbnail: `thumb-${i}-aaaaaaaaaaaaaaaaaaaaaaaa`, due: "Fri", unread: i % 3 === 0 }) })
   : product ?? new HttpTransport({ base: q.get("host")!, bearer });

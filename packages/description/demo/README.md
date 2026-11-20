@@ -11,3 +11,5 @@ A static server plus a proxy for the step 0 host, so a browser needs no tunnel a
 ## Threads fixture (no host needed)
 
 `/app/?fixture=threads[&scenario=empty|error|stale|loading|unavailable]` draws the Threads plugin's own description (`plugins/calternal-threads/src/description.ts`) over `testing/threads-host.ts`: invented threads and people, a committed transcript as snapshot nodes, `item_view.follow`, the harness and placement choices and the protected confirmation. Narrow the window to 720 px or less for the phone layout. The browser suite is `e2e/threads.mjs` (`node e2e/threads.mjs <shots-directory>` also saves captures).
+
+`?fixture=threads-next[&scenario=consent|lapsed|stale|loading|unavailable|empty|error]` draws `plugins/calternal-threads/src/description-next.ts` (the interface at contract 14.43: viewer-private counts, entries, reading position, per-entry menus, reply and edit, mentions, drafts, range selection, consent card, read-only) over the same fixture host. Suite: `e2e/threads-entries.mjs [shots-directory]`.

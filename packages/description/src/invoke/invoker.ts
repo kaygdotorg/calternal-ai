@@ -105,6 +105,12 @@ export class Invoker {
     for (const [name, src] of Object.entries(action.inputs ?? {})) {
       if (!("prompt" in src)) continue;
       const p = src.prompt;
+      // 14.43: a prompt (the harness and placement choices of a message that addresses no agent) is asked only while its condition on the form holds; a hidden prompt supplies nothing.
+      const cond = (p as { showWhen?: { form: string; field: string; op: "exists" | "eq"; value?: unknown } }).showWhen;
+      if (cond) {
+        const form = (into.form ?? {}) as Record<string, unknown>, scope = (this.session.formKeyed ? form[cond.form] : form) as Record<string, unknown> | undefined, v = scope?.[cond.field];
+        if (cond.op === "exists" ? v === undefined || v === null || v === "" || v === false : !(v === cond.value || String(v) === String(cond.value))) continue;
+      }
       if (p.kind === "choice") {
         const from = (p as { options?: { extension?: string; host?: string } }).options ?? {};
         let page: ChoicePage;

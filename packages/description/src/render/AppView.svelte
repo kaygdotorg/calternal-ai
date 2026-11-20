@@ -4,7 +4,7 @@
   // code: what is drawn is only what the description declares; the page supplies the host components and the shell's own controls.
   import { onDestroy, onMount, setContext, untrack, type Component } from "svelte";
   import { Glass, Toasts, navHold } from "@calternal/ui";
-  import type { Action, AppDescription, Bind } from "../model";
+  import type { Action, AppDescription, Bind, ContentNode } from "../model";
   import type { HostSession } from "../wire/session";
   import { refusalOf } from "../check";
   import { WindowStore } from "../windows/window-store.svelte";
@@ -16,6 +16,7 @@
   import Node from "./Node.svelte";
   import HostComponent from "./HostComponent.svelte";
   import { hostComponents } from "../components/registry";
+  import { ItemViews } from "../components/entry-state.svelte";
   import { ImageCache } from "./images";
   import ActionButton from "./ActionButton.svelte";
 
@@ -74,7 +75,7 @@
   const selections = new Map<string, Selection>();
   const selectionFor = (id: string): Selection => { let x = selections.get(id); if (!x) { x = new Selection(id, session); selections.set(id, x); } return x; };
   const kindIconFor = (id: string): string | undefined => { const k = binds.get(id)?.source.kind; return k ? props.kindIcons?.[k] : undefined; };
-  const app: AppContext = { storeFor, selectionFor, kindIconFor, route, setRoute, get components() { return { ...hostComponents, ...(props.components ?? {}) } as AppContext["components"]; }, onshell: (a) => props.onshell?.(a), openApp: (id) => props.openApp?.(id) };
+  const app: AppContext = { itemViews: new ItemViews(), storeFor, selectionFor, kindIconFor, route, setRoute, get components() { return { ...hostComponents, ...(props.components ?? {}) } as AppContext["components"]; }, onshell: (a) => props.onshell?.(a), openApp: (id) => props.openApp?.(id) };
   setContext(APP_KEY, app);
   session.held = () => Object.fromEntries([...stores.values()].filter((s) => s.windowRef && s.resultVersion).map((s) => [s.windowRef!, s.resultVersion!]));
   // The lease: while it has lapsed the rows are not drawn as current and offer no contexts; a renewal repaints only the windows it names as retained and may bring replacement windows (section 6).
@@ -116,7 +117,8 @@
     {#if panel && panel.open !== false && !compact}
       <aside class="panel" data-panel={panel.id ?? "panel"} aria-label={panel.title ?? "Panel"}><Glass />
         {#if panel.title}<h2 class="ph">{panel.title}</h2>{/if}
-        {#each panel.components as c (c.id)}<HostComponent component={c} />{/each}
+        {#each panel.components ?? [] as c (c.id)}<HostComponent component={c} />{/each}
+        {#each (panel as unknown as { content?: ContentNode[] }).content ?? [] as n, k (k)}<Node node={n} />{/each}
       </aside>
     {/if}
   </div>
