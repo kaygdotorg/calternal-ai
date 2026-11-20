@@ -246,12 +246,41 @@ fn dormant_space_runtime_erasure_replays_for_both_owners() {
             assert!(stored, "assignment must persist checkpoint provenance");
         }
         service.sleep_space_run(account, run.lease_id).unwrap();
+        if erase_account {
+            let mut state = service.lock().unwrap();
+            crate::machines::checkpoint::acknowledge(&state.db, space, run.lease_id, machine, 1)
+                .unwrap();
+            state.finish_worker_stop(run.lease_id).unwrap();
+            state
+                .db
+                .execute(
+                    "UPDATE leases SET updated_ms=0 WHERE id=?1",
+                    [run.lease_id.to_string()],
+                )
+                .unwrap();
+            assert_eq!(
+                crate::machines::db::prune_ended(&state.db, Duration::from_secs(1)).unwrap(),
+                1
+            );
+        }
         let owner = if erase_account {
             ErasedOwner::Account(account)
         } else {
             ErasedOwner::Space(space)
         };
         service.retire_owner(owner).unwrap();
+        if erase_account {
+            let state = service.lock().unwrap();
+            let (lease, holder): (String, Option<String>) = state
+                .db
+                .query_row(
+                    "SELECT lease,acknowledged FROM space_runtime_checkpoints WHERE space=?1",
+                    [space.to_string()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!((lease.as_str(), holder), ("", None));
+        }
         drop(service);
 
         let (service, _) = open(dir.path());
@@ -377,8 +406,30 @@ fn checkpoint_order_survives_restart_and_stale_erasure_retries_are_bounded() {
     sync(&service, b, &btoken, space_report(0, 8, true));
     let first = wake(&service).unwrap();
     assert_eq!(first.machine_id, Some(a));
-    let (seq, one) = sleeping(&service, &first, a, &atoken, space_report(0, 1, false));
+    let (_, one) = sleeping(&service, &first, a, &atoken, space_report(0, 1, false));
     assert_eq!(one, 1);
+    let atoken = connect(&service, a, &akey);
+    let mut pending = space_report(0, 1, false);
+    pending.leases.push(LeaseReport {
+        lease_id: first.lease_id,
+        fence: 1,
+        sandbox: SandboxState::SleepPending,
+    });
+    let commands = sync(&service, a, &atoken, pending);
+    assert!(!commands.iter().any(|command| matches!(
+        command.message, Down::Stop { lease_id, .. } if lease_id == first.lease_id
+    )));
+    let seq = commands
+        .iter()
+        .find_map(|command| match command.message {
+            Down::SleepSpace { lease_id, counter }
+                if lease_id == first.lease_id && counter == one =>
+            {
+                Some(command.seq)
+            }
+            _ => None,
+        })
+        .expect("reconnect must replay the same authorized sleep");
     let mut saved = space_report(seq, 1, false);
     saved.leases.push(LeaseReport {
         lease_id: first.lease_id,

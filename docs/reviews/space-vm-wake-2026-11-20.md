@@ -81,6 +81,70 @@ reseed fixture and all four enrolled-runner KVM tests.
 Use the matching machine-role binary and pinned guest image. Existing
 checkpoints remain bound to their original image digest.
 
+## Checkpoint follow-ups
+
+An authenticated reconnect reporting SleepPending can receive the same
+numbered sleep command. Its machine, lease and fence must still match the
+durable authorization. Account erasure now matches an acknowledged
+checkpoint holder directly against the erasure queue, including after the
+lease history has been pruned. All nine machine worker tests passed on
+dev-01, including both regressions.
+
+Issue #90 still tracks cutoff erasure that retains an unacknowledged newer
+snapshot and the operator end state for repeated or revoked-machine erasure
+failures.
+
+## Locked perf-02 measurements
+
+The existing enrolled item-head harness ran against an XFS scratch directory
+and the rebuilt guest on perf-02. It used the operator's one-second idle
+override to generate independent disk wakes with normal filesystem caching.
+Each wake was followed by a validated resident call to the same worker.
+The 30 disk wakes and 30 resident calls completed with zero errors and zero
+cold fallbacks. Host CPU idle was 78.49% and steal was 0.78%. Stage percentiles
+are computed independently. Raw data and the measurement overlay are under
+`/srv/homes/perf/vmw2`.
+
+| Stage | p50 (ms) | p95 (ms) |
+| --- | ---: | ---: |
+| Request through placement decision | 22.13 | 30.79 |
+| Placement decision through machine gate entry | 4.20 | 7.78 |
+| Machine placement gate | 0.016 | 0.024 |
+| Manifest and local setup | 0.21 | 0.53 |
+| Prepare private scratch and control drives | 1.11 | 1.56 |
+| VMM launch through API availability | 3.96 | 19.22 |
+| Snapshot load and file-backed memory mapping | 2.01 | 5.08 |
+| Resume | 0.40 | 0.59 |
+| Reseed through acknowledgement | 402.26 | 692.73 |
+| Inline readiness handoff | 0.025 | 0.053 |
+| Stage the package and reserve its cgroup | 26.41 | 68.00 |
+| Admit first call before starting Node | 30.02 | 45.53 |
+| Node launch through first statement | 848.50 | 1,086.47 |
+| First statement through package readiness | 94.58 | 181.78 |
+| Package readiness through first callback | 133.01 | 293.06 |
+| First callback through validated reply | 2.69 | 15.85 |
+| **Disk wake through first validated reply** | **1,610.87** | **2,350.86** |
+| **Resident call through validated reply** | **4.76** | **6.07** |
+
+Disk wake remains above the 500 ms gate on this host. Compared with the
+ten-wake launcher series, the VMM and reseed stages took less time at the
+median. Fresh Node startup remained the largest stage.
+
+### Resident memory
+
+The density fixture kept one idle package worker per guest. At each count it
+settled for seven seconds and took three readings. The table reports median
+aggregate Firecracker PSS and the drop in host MemAvailable from the same
+baseline. PSS apportions shared pages among processes. The machine charges
+configured guest RAM for each reservation. Evidence is under
+`/srv/homes/perf/vmw2/d`.
+
+| Resident spaces | Aggregate VMM PSS (MiB) | Mean PSS per VM (MiB) | MemAvailable drop (MiB) | Reserved guest RAM (MiB) |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 124.56 | 124.56 | 121.99 | 256 |
+| 4 | 477.03 | 119.26 | 463.88 | 1,024 |
+| 16 | 1,863.26 | 116.45 | 1,874.21 | 4,096 |
+
 ## Simplification opportunities
 
 The worker seccomp JSON already serves as the single source for the guest
