@@ -1033,6 +1033,140 @@ full 436-page docs gate using the installer pages inherited from dev.
     and recovery tests live in separate files. Per-space leases, query
     admission and the package fixture have separate modules.
 
+## Independent review follow-up, 2026-11-20
+
+1. **Recovery.** Confirmed the baseline returned 500 for a corrupt sidecar.
+   The shared worker now discards the derived DB, WAL and SHM and rebuilds.
+   A per-space private marker distinguishes reader and replay failures, with
+   a retry delay from 200 to 3,200 ms. Recovery logs at warn and the route
+   returns HTTP 503 `unavailable` while a known failure persists. A path
+   that cannot be safely removed stays unavailable until repaired. Only an
+   inherited over-limit note is skipped, with its reason recorded in the
+   sidecar. Other rows publish. HTTP covers corruption, unopenable storage
+   and recovery. The content test covers editing and repairing an
+   inherited over-limit member.
+2. **Idle polling.** Confirmed repeated SQLite opens in the baseline. The
+   worker compares the cached published head to the in-memory journal head.
+   A dormant space without an authorized window request skips projection
+   I/O. The first cache implementation failed near 50 active spaces at
+   the perf host's SSH soft limit of 1,024 file descriptors. A separate
+   dev-01 reproduction traced `openat(content.db-wal) = -1 EMFILE`.
+   Idle connection retention is now capped separately at eight reader
+   pairs and eight writer pairs for the service. A space can retain two
+   reader pairs and one writer pair for up to five idle seconds. Cache
+   exhaustion and expiry preserve the in-memory head and ordinary admission.
+3. **Request reads.** Confirmed one cold open and attach sequence for every
+   baseline request. The pooled path reuses both connections, checks
+   authority outside the read transaction, and uses the reads in the table
+   above with zero flushes. A warm-reuse test marks the borrowed SQLite
+   connection and observes the same marker after a second product query.
+   A full cache test proves a later space still gets its exact result.
+4. **Other-kind traffic.** Confirmed root Notes starvation in both fixtures.
+   Root Notes can now prove irrelevance across up to 128 contiguous
+   journal entries, with bounded pending-intent inspection and before/after
+   freshness and authority checks. Unknown events, relevant writes,
+   unresolved epochs and partial membership replay still withhold rows and
+   count. HTTP covers unrelated and relevant writes against a held
+   projection lock. A deterministic save between row materialization and
+   delivery also withholds rows and exact count. A real viewer can still
+   need a fresh lease when the process-wide authority epoch changes.
+5. **Bounded replay.** Confirmed unbounded delete and collection work.
+   Epoch and gap recovery clear at most 128 derived rows per transaction.
+   Bootstrap reads at most 128 source IDs. A collection event persists
+   a member UUID cursor and bounds the next batch to 128 notes. The
+   content test observes 128 of 129 members with no released result,
+   resumes the last member and checks the bounded reset of a prior epoch.
+6. **Collection retitles.** Confirmed repeated reverse-index work and the
+   inherited-data edit failure. The authoritative trigger now computes a
+   membership delta. Retitling compares old/new serialized member arrays
+   once and runs zero reverse-edge mutations or scope-limit probes. A
+   genuinely new edge does the existing indexed admission. The concern
+   about other admitting writers mapping to 500 did not hold. Both
+   collection HTTP mutations use `Content::write` and `Staged::write` and
+   return typed 422 on new overflow. Linked and live head writes share
+   that path. Direct placement, purge and Notes-only recovery SQL do
+   not add collection edges. Inherited active edges stay editable.
+   Restoring a collection adds live edges and must fit the cap.
+7. **Review gate.** Confirmed stale docs and shared quotas. Actual space
+   IDs own their rate and permit counters. The HTTP test exhausts exact
+   starts in one space and still serves another UUID in the same former
+   shard. The budget for retained SQLite handles does not gate requests.
+   Issue #85 names the callers for every remaining window scope, audience,
+   row selector and estimate. Guest and public windows are reachable
+   from no product route in this merge.
+
+### Locked review measurements
+
+Baseline server source was `eb4516db`. Candidate server source was
+`92dd29c8`. Both binaries were built on dev-01, transferred with
+SHA-256 verification and run under `/usr/local/bin/perf-lock.sh` on
+perf-02. The idle runner used the default 1,024-descriptor soft limit.
+Each arm used fresh disposable roots and one published Notes window
+per space. The Linux `/proc` CPU counters and the `search-index` thread's
+selected `strace` syscall counters came from separate 60-second runs.
+The trace selected file syscalls, close, read, pread64, pwrite64, fcntl,
+fsync, fdatasync and futex. Candidate totals include one-time idle
+handle closes. Futex accounts for 1,196 calls at one space and 1,195
+at 50. No `openat` call occurred in either candidate measurement.
+
+| Open spaces | Worker CPU ms before / after | Process CPU ms before / after | Worker selected syscalls before / after | Worker openat before / after | Candidate FDs start / end |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1,850 / 30 | 1,900 / 70 | 160,433 / 1,220 | 7,063 / 0 | 59 / 50 |
+| 50 | 33,840 / 90 | 34,120 / 310 | 1,040,601 / 1,315 | 46,094 / 0 | 635 / 593 |
+
+For the streaming fixture, a disposable loopback shim feeds synthetic
+one-byte chunks into the normal assistant-output checkpoint handler and
+verifies the durable thread text. It uses a single thread and one turn,
+targets one durable append every 50 ms, and makes no provider calls.
+The import fixture saturates real HTTP `threads.create` requests in the
+same space. The paced checkpoint runs sustained 19.7 and 19.5 successful
+appends per second. The uncapped imports sustained 17.0 and 18.2 successful
+creates per second. An earlier repeated-send probe hit the one-active-turn
+guard and was discarded. The first baseline shell wrapper printed an EOF
+after the locked server and retitle arms had emitted their complete records.
+The result checker validated each arm's sample count. Both fixtures sample the real exact Notes window at 500 ms intervals
+for 60 seconds. The harness reopens a stale lease once and records
+the retry separately. Remaining import responses outside ready/loading
+were HTTP 404s from the existing authority epoch. The baseline's
+streaming ready latency reflects only two ready samples. The baseline
+longest runs of 64 and 28 consecutive loading samples represent roughly
+32 and 14 seconds respectively.
+
+| Workload | Arm | Durable changes | Ready / loading / other windows | Longest consecutive loading samples | Lease retries | Ready p95 (ms) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| checkpoint | before | 1181 | 2 / 118 / 0 | 64 | 2 | 4.778 |
+| checkpoint | after | 1168 | 120 / 0 / 0 | 0 | 2 | 1.937 |
+| import | before | 1017 | 1 / 113 / 6 | 28 | 119 | — |
+| import | after | 1092 | 115 / 0 / 5 | 0 | 119 | — |
+
+The retitle fixture times the real durable `Content::write` path for a
+collection with 5,000 distinct stored member IDs and unchanged membership.
+Each arm warms ten saves, then measures 100 saves with 25 ms between writes.
+The drafts change the title and write the full collection payload each time.
+Baseline p50/p95/p99/max were 84.078 / 93.712 / 105.580 / 113.181 ms.
+Candidate values were 27.232 / 51.256 / 57.205 / 66.444 ms. This includes
+the existing history, journal and placement work. The retitle binary
+reuses the candidate's identical collection trigger and writer from the
+preceding build, with the background projection worker disabled in both
+retitle arms. The 40 ms inherited gate measures short-body HTTP Notes
+edits on the warm 100,000-note fixture.
+
+Server SHA-256 digests were
+`6f9ef4e3cab3bd01dc85d1b2d20442dd20eebb4e67d55d420f8aa7b658496263`
+and `5e31ea94fd8b648491d46ebecb804145eba4c05a254c51c8d12468685b6d9ec1`.
+The checkpoint fixture binaries were
+`0438f8cb70053d497f85e10600fe587f3ac6b60bae51679e17e73e42c07fe9bc`
+and `077bfe7e5eb0528b6d55f4346f0b1feb51a3fdbf41a84c30bbb67a69721b83e5`.
+
+On dev-01, `92dd29c8` passed `cargo fmt --all -- --check`,
+`cargo test --locked -p calternal-content --tests` (61 tests),
+`cargo test --locked -p calternal-server --features test-plugins --test http`
+(36 tests), Rust contract export with `--check`, the sealed fixture
+verifier and `scripts/check-docs.sh` (436 generated pages).
+The release-image upgrade and backend acceptance gates for this revision
+remain with the coordinator. The earlier physical power-cut qualification
+gap remains open.
+
 ## Simplification opportunities
 
 - Generalize the existing collection membership relation before qualifying
