@@ -164,7 +164,7 @@ fn large_collection_replay_persists_a_bounded_membership_cursor() {
     assert!(content.advance_window(space, true).unwrap());
     let source = crate::db::space_path(&content.roots.appdata, space);
     let reader = replay::reader(&source).unwrap();
-    let progress: (bool, Option<String>, u64) = reader
+    let progress: (bool, Option<String>, i64) = reader
         .query_row(
             "SELECT ready,member_after,(SELECT total FROM window_scopes WHERE collection=?1)
          FROM window_publication",
@@ -177,7 +177,7 @@ fn large_collection_replay_persists_a_bounded_membership_cursor() {
     assert_eq!(progress.2, 128);
     assert_loading(member_window(&content, space));
     project(&content, space);
-    let count: u64 = reader
+    let count: i64 = reader
         .query_row(
             "SELECT total FROM window_scopes WHERE collection=?1",
             [id],
@@ -194,7 +194,7 @@ fn large_collection_replay_persists_a_bounded_membership_cursor() {
     let count_rows = || {
         reader
             .query_row("SELECT count(*) FROM window_rows", [], |row| {
-                row.get::<_, usize>(0)
+                row.get::<_, i64>(0)
             })
             .unwrap()
     };
