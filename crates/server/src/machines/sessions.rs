@@ -11,8 +11,8 @@ use base64::engine::general_purpose::STANDARD as B64;
 use calternal_auth::token::{hash32, normalize_setup_token, random32};
 use calternal_machine::protocol::{
     Capacity, ChunkEvent, Down, EnrolRequest, EnrolResponse, Envelope, HARNESS_PROTOCOL_VERSION,
-    OutputAck, OutputPost, Owner, PROTOCOL_VERSION, SessionFinish, SessionGranted, SyncRequest,
-    session_message,
+    OutputAck, OutputPost, Owner, PROTOCOL_VERSION, SMALL_VM_MAX_IDLE_SECONDS, SessionFinish,
+    SessionGranted, SyncRequest, session_message,
 };
 use tokio::sync::Notify;
 use uuid::Uuid;
@@ -363,12 +363,16 @@ impl MachineService {
         let assigned = st.machines[&machine_id].assigned;
         let live = live_mut(st.machines.get_mut(&machine_id), session)?;
         live.outbox.retain(|e| e.seq > req.ack);
-        let readiness_changed = live.capacity.max_sandboxes != req.capacity.max_sandboxes
-            || live.capacity.running_sandboxes != req.capacity.running_sandboxes
-            || live.capacity.available_memory_bytes != req.capacity.available_memory_bytes
-            || live.capacity.small_vm != req.capacity.small_vm
+        let mut capacity = req.capacity;
+        if let Some(small_vm) = &mut capacity.small_vm {
+            small_vm.idle_seconds = small_vm.idle_seconds.clamp(1, SMALL_VM_MAX_IDLE_SECONDS);
+        }
+        let readiness_changed = live.capacity.max_sandboxes != capacity.max_sandboxes
+            || live.capacity.running_sandboxes != capacity.running_sandboxes
+            || live.capacity.available_memory_bytes != capacity.available_memory_bytes
+            || live.capacity.small_vm != capacity.small_vm
             || live.draining != req.draining;
-        live.capacity = req.capacity;
+        live.capacity = capacity;
         // Closing or not-yet-reported leases still count against this sample.
         // The next report can prove the machine has reclaimed their memory.
         let observed = assigned.max(req.capacity.running_sandboxes as usize);

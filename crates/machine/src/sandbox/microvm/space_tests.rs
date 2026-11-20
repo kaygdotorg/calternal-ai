@@ -409,5 +409,95 @@ exec "$profile/real-firecracker" "$@"
     assert!(other.exists());
 }
 
+#[path = "restart_tests.rs"]
+mod restart_tests;
 #[path = "standby_tests.rs"]
 mod standby_tests;
+
+#[tokio::test]
+async fn native_worker_isolation_and_kernel_randomness_survive_restore() {
+    let Some(config) = std::env::var_os("CALTERNAL_SMALL_VM_NATIVE_TEST_CONFIG").map(PathBuf::from)
+    else {
+        eprintln!("SKIP native probe image: CALTERNAL_SMALL_VM_NATIVE_TEST_CONFIG is unset");
+        return;
+    };
+    let root = tempfile::Builder::new()
+        .prefix("nv")
+        .rand_bytes(5)
+        .tempdir_in(config.parent().unwrap())
+        .unwrap();
+    let runtime = Arc::new(
+        SmallRuntime::load(root.path().to_owned(), &config)
+            .await
+            .unwrap(),
+    );
+    runtime.initialize().await.unwrap();
+    let space = SpaceId::new();
+    let mut spec = SandboxSpec {
+        account_id: Uuid::new_v4(),
+        thread_id: Uuid::new_v4(),
+        space_id: Some(space),
+        image: Some(SPACE_VM_IMAGE.into()),
+        worker: Some(PluginWorker {
+            space_id: space,
+            source: r#"
+                const resident = [];
+                for (let i = 0; i < 20; i++) resident.push(Buffer.alloc(16 * 1024 * 1024, 93));
+                process.exit(23);
+            "#
+            .into(),
+        }),
+        limits: Limits::default(),
+        code_directory: None,
+        provider_login: false,
+        shared_provider_sponsor: None,
+        shared_tools: None,
+    };
+    let exec = || ExecRequest {
+        argv: crate::sandbox::worker::ARGV.map(str::to_owned).to_vec(),
+        interactive: true,
+        ..Default::default()
+    };
+    let cold = runtime.start(&spec, None).await.unwrap();
+    let (_, _, oom) = tokio::time::timeout(
+        Duration::from_secs(12),
+        crate::sandbox::collect(cold.exec(exec()).await.unwrap()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        oom.code,
+        Some(137),
+        "worker must be killed at its cgroup bound"
+    );
+    assert!(
+        cold.checkpoint(1).await.unwrap(),
+        "agent and helper must survive OOM"
+    );
+    let generation = Generation::current(&cold.saved, &cold.binding)
+        .unwrap()
+        .unwrap()
+        .id;
+    spec.worker.as_mut().unwrap().source = "// calternal native launcher proof\n".into();
+    let mut samples = Vec::new();
+    for _ in 0..2 {
+        spec.thread_id = Uuid::new_v4();
+        let restored = runtime.start(&spec, Some(1)).await.unwrap();
+        assert_eq!(
+            restored.slot.lock().await.vm.as_ref().unwrap().restored,
+            Some(generation)
+        );
+        let (out, _, status) = tokio::time::timeout(
+            Duration::from_secs(12),
+            crate::sandbox::collect(restored.exec(exec()).await.unwrap()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(status.code, Some(0), "{status:?}");
+        let sample: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(sample["kernel"].as_str().unwrap().len(), 64);
+        samples.push(sample);
+        restored.stop().await.unwrap();
+    }
+    assert_ne!(samples[0], samples[1]);
+}

@@ -12,6 +12,7 @@ use uuid::Uuid;
 const LAUNCHER: &str = "/opt/calternal-worker-launch";
 const PACKAGE_ROOT: &str = "/run/agent/plain";
 const CGROUP_ROOT: &str = "/sys/fs/cgroup/agent/ctr";
+const MEMORY_BYTES: u64 = (crate::protocol::SMALL_VM_MEMORY_MIB as u64 * 3 / 4) << 20;
 
 /// An isolated worker environment with a one-use package exec.
 pub(super) struct PlainWorker {
@@ -124,10 +125,7 @@ impl PlainWorker {
 
     async fn limits(&self) -> SandboxResult<()> {
         for (file, limit) in [
-            (
-                "memory.max",
-                worker::LIMITS.memory_bytes.unwrap().to_string(),
-            ),
+            ("memory.max", MEMORY_BYTES.to_string()),
             ("memory.swap.max", "0".into()),
             ("pids.max", worker::LIMITS.pids.unwrap().to_string()),
             (
@@ -264,6 +262,10 @@ impl Sandbox for PlainWorker {
                 }
                 Launch::Closed => Err(SandboxError("package exec already used or closed".into())),
                 Launch::Standby(mut exec) => {
+                    if let Err(error) = super::guest::small_ready().await {
+                        *launch = Launch::Standby(exec);
+                        return Err(error);
+                    }
                     let refreshed = async {
                         self.check_threads().await?;
                         send(&exec, b"refresh\n".to_vec()).await?;

@@ -1,4 +1,6 @@
-#define _GNU_SOURCE
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE 1
+#endif
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
@@ -71,7 +73,8 @@ static void worker(const char *source, const struct sock_fprog *policy, int stan
                   MS_BIND | MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC,
                   NULL), "seal worker code");
     require(mount("proc", "/opt/standard/proc", "proc",
-                  MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL), "mount private proc");
+                  MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC,
+                  "subset=pid,hidepid=invisible"), "mount private proc");
     require(mount("tmpfs", "/opt/standard/dev", "tmpfs", MS_NOSUID | MS_NOEXEC,
                   "mode=0755,size=64k"), "mount private dev");
     const struct { const char *path; int minor; } devices[] = {
@@ -87,7 +90,11 @@ static void worker(const char *source, const struct sock_fprog *policy, int stan
                   MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NOEXEC, NULL), "seal devices");
     require(mount(NULL, root, NULL, MS_BIND | MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NODEV,
                   NULL), "seal runtime root");
-    require(chroot(root), "chroot");
+    // Stacking the new and old root at '.' avoids a writable put_old directory
+    // inside the runtime. MNT_DETACH removes the old mount tree recursively.
+    require(chdir(root), "enter private root");
+    require(syscall(SYS_pivot_root, ".", "."), "pivot to private root");
+    require(umount2(".", MNT_DETACH), "detach guest root");
     require(chdir("/plugin"), "enter readonly package");
     require(setgroups(0, NULL), "drop supplementary groups");
     for (int cap = 0; cap <= 40; cap++)
@@ -104,6 +111,9 @@ static void worker(const char *source, const struct sock_fprog *policy, int stan
     struct statvfs code;
     require(statvfs("/plugin", &code), "check package mount");
     if (!(code.f_flag & ST_RDONLY)) _exit(126);
+#ifdef CALTERNAL_WORKER_PROOF
+    if (!standby) run_worker_proof();
+#endif
     char *const command[] = {
         "node", "--permission", "--allow-fs-read=.", "--disallow-code-generation-from-strings",
         "--max-old-space-size=128", "worker.js", NULL,
@@ -127,8 +137,13 @@ int main(int argc, char **argv) {
     struct sock_fprog policy = { .filter = filter, .len = read_filter(filter, sizeof(filter)) };
     char source[128];
     snprintf(source, sizeof(source), "/run/agent/plain/%s", argv[1]);
+    int oom = open("/proc/self/oom_score_adj", O_WRONLY | O_CLOEXEC);
+    require(oom, "open worker OOM adjustment");
+    require(write(oom, "0", 1) == 1 ? 0 : -1, "make worker eligible for OOM reclamation");
+    require(close(oom), "close worker OOM adjustment");
     place(argv[1]);
-    require(unshare(CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWIPC | CLONE_NEWUTS),
+    require(unshare(CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWIPC |
+                    CLONE_NEWUTS | CLONE_NEWCGROUP),
             "unshare worker namespaces");
     require(mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL), "private mount propagation");
     pid_t child = fork();

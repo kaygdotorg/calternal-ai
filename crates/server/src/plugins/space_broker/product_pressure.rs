@@ -41,11 +41,43 @@ pub(super) async fn check_pressure(
         expected(&items[0]),
     );
     assert_eq!(firecracker_pid(run).await, pid);
-    // The fixture requires a burst on the first invocation of each
-    // fresh package. Coalesce the concurrent arrivals behind eviction.
     let requests: Vec<_> = (0..MAX_ACTIVE_TICKETS)
         .map(|i| format!("pressure-{i}"))
         .collect();
+    let approval = state
+        .registry
+        .space_item_head(spaces[0], "fixture.head")
+        .unwrap();
+    let awake = approval.wake.awake.lock().await.as_ref().unwrap().clone();
+    let in_flight = dispatch_read("in-flight", spaces[0], items[0].id, "fixture.head");
+    tokio::pin!(in_flight);
+    tokio::select! {
+        answer = &mut in_flight => panic!("call completed before pressure: {answer:?}"),
+        _ = tokio::time::timeout(Duration::from_secs(2), async {
+            while !awake.has_active_ticket() {
+                tokio::task::yield_now().await;
+            }
+        }) => assert!(awake.has_active_ticket()),
+    }
+    let blocked = dispatch_read(
+        "pressure-in-flight",
+        spaces[1],
+        items[1].id,
+        "fixture.other",
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        blocked
+            .details
+            .is_some_and(|details| details["reason"] == "worker_capacity")
+    );
+    assert!(awake.sender.is_live());
+    assert!(awake.drain_waiter().is_none());
+    assert_eq!(firecracker_pid(run).await, pid);
+    assert_eq!(in_flight.await.unwrap(), expected(&items[0]));
+    // The fixture requires a burst on the first invocation of each
+    // fresh package. Coalesce the concurrent arrivals behind eviction.
     let burst = |space, item, operation| {
         futures_util::future::join_all(
             requests
@@ -70,10 +102,6 @@ pub(super) async fn check_pressure(
     );
     let restored = firecracker_pid(run).await;
     assert!(!launched_cold(&restored).await);
-    let approval = state
-        .registry
-        .space_item_head(spaces[0], "fixture.head")
-        .unwrap();
     approval
         .wake
         .awake

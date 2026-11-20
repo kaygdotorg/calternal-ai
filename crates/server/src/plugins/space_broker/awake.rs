@@ -158,6 +158,11 @@ impl Awake {
     }
 
     #[cfg(test)]
+    pub(super) fn has_active_ticket(&self) -> bool {
+        !self.inboxes.lock().unwrap().is_empty()
+    }
+
+    #[cfg(test)]
     pub(super) async fn invoke(&self, scope: Scope) -> Result<Value, Error> {
         let usage = self.admit()?.ok_or_else(unavailable)?;
         self.invoke_reserved(scope, usage).await

@@ -61,7 +61,10 @@ if [ "${small_ready:-0}" = 1 ]; then
   export CALTERNAL_SMALL_GUEST=1
   # The root helper keeps its agent-only listener across a checkpoint.
   # It creates the first ready marker after cold boot reseed and socket setup.
-  /opt/calternal-microvm-agent --reseed-small-serve &
+  sh -ec '
+    echo -1000 > /proc/self/oom_score_adj
+    exec /opt/calternal-microvm-agent --reseed-small-serve
+  ' &
   reseed=$!
   while [ ! -f /run/agent/small-ready ]; do
     kill -0 "$reseed"
@@ -70,6 +73,9 @@ if [ "${small_ready:-0}" = 1 ]; then
 fi
 sh -ec '
   echo "$$" > /sys/fs/cgroup/agent/ctl/cgroup.procs
+  if [ "${CALTERNAL_SMALL_GUEST:-0}" = 1 ]; then
+    echo -1000 > /proc/self/oom_score_adj
+  fi
   exec chpst -u agent /sbin/agent-start
 ' &
 agent=$!

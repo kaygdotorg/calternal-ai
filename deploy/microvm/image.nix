@@ -1,6 +1,6 @@
 # Build with the repository's locked nixpkgs. The normalized OCI root and static
 # executables are input store paths so the builder has no network dependency.
-{ pkgs, agent, cli, standardRoot }:
+{ pkgs, agent, cli, standardRoot, workerProof ? false }:
 let
   runtime = with pkgs; [ busybox podman conmon crun catatonit socat shadow coreutils slirp4netns ];
   closure = pkgs.closureInfo { rootPaths = runtime; };
@@ -8,7 +8,8 @@ let
     name = "calternal-worker-launch";
     dontUnpack = true;
     buildPhase = ''
-      $CC -O2 -Wall -Wextra -Werror ${./worker-launch.c} -o worker-launch
+      $CC -O2 -Wall -Wextra -Werror ${pkgs.lib.optionalString workerProof
+        "-DCALTERNAL_WORKER_PROOF -include ${./worker-isolation-proof.h}"} ${./worker-launch.c} -o worker-launch
     '';
     installPhase = "install -Dm0755 worker-launch $out/bin/worker-launch";
   };

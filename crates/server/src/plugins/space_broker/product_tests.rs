@@ -2,6 +2,8 @@ use super::*;
 #[path = "product_pressure.rs"]
 mod product_pressure;
 use product_pressure::check_pressure;
+#[path = "product_retirement.rs"]
+mod product_retirement;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
 async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_spaces() {
@@ -50,11 +52,22 @@ enum VmEnd {
     Sleep,
     LeaseLoss,
     Pressure,
+    Revoke,
+    Erase,
 }
 
 async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
     let wait_sleep = end == VmEnd::Sleep;
     let pressure = end == VmEnd::Pressure;
+    let retirement = matches!(end, VmEnd::Revoke | VmEnd::Erase);
+    let package = if pressure {
+        child_source().replace(
+            "if (m.operation === 'fixture.other' || !firstBurst) callback();",
+            "if (m.operation === 'fixture.other') callback();\n    else if (!firstBurst) setTimeout(callback, 1200);",
+        )
+    } else {
+        child_source()
+    };
     use crate::{
         api::{AppState, allowed_hosts, dispatch, router},
         auth::StoredDirectory,
@@ -161,7 +174,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                 space,
                 PackagePin {
                     package: "calternal-head-fixture".into(),
-                    digest: sha256_hex(child_source().as_bytes()),
+                    digest: sha256_hex(package.as_bytes()),
                 },
                 if space == ids.personal {
                     "fixture.head"
@@ -170,7 +183,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                 }
                 .into(),
                 "notes".into(),
-                child_source(),
+                package.clone(),
             )
             .unwrap()
         });
@@ -262,6 +275,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
     let (draining, mut drain) = tokio::sync::mpsc::channel(1);
     let continue_drain = Arc::new(tokio::sync::Semaphore::new(0));
     let drain_gate = continue_drain.clone();
+    let connection = service.clone();
     let supervisor = tokio::spawn(async move {
         let mut ack = 0;
         let mut opened = 0;
@@ -270,11 +284,11 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
             let mut report = request(ack);
             // During sleep, report the real slot until reaping is complete.
             // The fault cases withhold reports to isolate the carrier fence.
-            if wait_sleep || pressure {
+            if wait_sleep || pressure || retirement {
                 report.leases = sync_runner.reports();
                 report.capacity.small_vm = sync_runner.capacity().small_vm;
             }
-            for envelope in service.sync(machine, &token, report).await.unwrap() {
+            for envelope in connection.sync(machine, &token, report).await.unwrap() {
                 ack = ack.max(envelope.seq);
                 let message = envelope.message;
                 if matches!(message, Down::Assign { .. }) {
@@ -283,7 +297,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                 if let Down::OpenSpaceChannel { channel } = &message {
                     opened += 1;
                     if opened == 1 {
-                        let unavailable = before_claim.check(&service, channel, &token).await;
+                        let unavailable = before_claim.check(&connection, channel, &token).await;
                         claimed.try_send((channel.clone(), unavailable)).unwrap();
                     } else if wait_sleep && opened == 2 {
                         assert_eq!(
@@ -300,7 +314,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                     drain_gate.acquire().await.unwrap().forget();
                 }
                 sync_runner.handle(message).await;
-                if !pressure && opened == (if wait_sleep { 3 } else { 2 }) {
+                if !pressure && !retirement && opened == (if wait_sleep { 3 } else { 2 }) {
                     return;
                 }
             }
@@ -356,6 +370,23 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
     if vm_config.is_some() {
         let run = placement_root.join("space-runtime/microvm/run");
         let pid = firecracker_pid(&run).await;
+        if retirement {
+            product_retirement::check_retirement(
+                &state,
+                &service,
+                &runner,
+                ids.owner,
+                [ids.personal, ids.shared],
+                &items,
+                end,
+            )
+            .await;
+            supervisor.abort();
+            let _ = supervisor.await;
+            server.abort();
+            let _ = server.await;
+            return;
+        }
         if end == VmEnd::LeaseLoss {
             tokio::fs::write(&relay.stall, []).await.unwrap();
             let lost = Instant::now();

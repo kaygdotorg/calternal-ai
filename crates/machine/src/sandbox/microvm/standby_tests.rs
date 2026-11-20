@@ -18,6 +18,12 @@ if (launcher) {
     const copy = '/opt/calternal-standby/reseed-second.node';
     const denied = { code: 'ERR_ACCESS_DENIED' };
     assert.equal(process.permission.has('addon'), false);
+    assert.equal(process.mainModule, undefined);
+    assert.equal(require.main, undefined);
+    const trusted = require.cache['/opt/calternal-standby/standby.cjs'];
+    assert.ok(trusted);
+    assert.ok(trusted.children.every(child => !child.filename.endsWith('.node')));
+    assert.ok(Object.keys(require.cache).every(path => !path.endsWith('/reseed.node')));
     assert.throws(() => require(copy), denied);
     assert.throws(() => process.dlopen({ exports: {} }, copy), denied);
     assert.throws(() => new (require('node:worker_threads').Worker)('0', { eval: true }), denied);
@@ -52,7 +58,24 @@ const socket = new Duplex({
 const client = tls.connect({socket, servername:'fixture.invalid'});
 "#;
 
+const BINARY_PACKAGE: &str = r#"
+const expected = Buffer.from('000d0afffefd0d780a800171', 'hex');
+let received = Buffer.alloc(0);
+process.stdin.on('data', chunk => {
+    received = Buffer.concat([received, chunk]);
+    if (received.length < expected.length) return;
+    if (!received.equals(expected)) process.exit(3);
+    process.stdout.write(JSON.stringify({
+        launcher: process.argv[1].endsWith('/standby.cjs'), bytes: received.toString('hex'),
+    }), () => process.exit(0));
+});
+"#;
+
 async fn draw(worker: &Placement) -> serde_json::Value {
+    response(worker, &[]).await
+}
+
+async fn response(worker: &Placement, frames: &[&[u8]]) -> serde_json::Value {
     let exec = worker
         .exec(ExecRequest {
             argv: worker::ARGV.map(str::to_owned).to_vec(),
@@ -61,6 +84,14 @@ async fn draw(worker: &Placement) -> serde_json::Value {
         })
         .await
         .unwrap();
+    for frame in frames {
+        exec.input
+            .as_ref()
+            .unwrap()
+            .send(frame.to_vec())
+            .await
+            .unwrap();
+    }
     let (out, err, status) =
         tokio::time::timeout(Duration::from_secs(12), crate::sandbox::collect(exec))
             .await
@@ -81,6 +112,16 @@ async fn image_standby_refreshes_randomness_and_preserves_denials() {
         .rand_bytes(5)
         .tempdir_in(config.parent().unwrap())
         .unwrap();
+    let mut oversized: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
+    oversized["idle_seconds"] = serde_json::json!(u32::MAX);
+    let invalid = root.path().join("oversized.json");
+    std::fs::write(&invalid, oversized.to_string()).unwrap();
+    assert!(
+        SmallRuntime::load(root.path().to_owned(), &invalid)
+            .await
+            .is_err()
+    );
     let runtime = Arc::new(
         SmallRuntime::load(root.path().to_owned(), &config)
             .await
@@ -140,6 +181,42 @@ async fn image_standby_refreshes_randomness_and_preserves_denials() {
         }
         assert_ne!(observations[0][field], observations[1][field], "{field}");
     }
+    let frame = [0, 13, 10, 255, 254, 253, 13, b'x', 10, 128, 1, b'q'];
+    let frames = [&frame[..2], &frame[2..8], &frame[8..]];
+    spec.worker.as_mut().unwrap().source = BINARY_PACKAGE.into();
+    spec.thread_id = Uuid::new_v4();
+    let restored = runtime.start(&spec, Some(1)).await.unwrap();
+    let standby = response(&restored, &frames).await;
+    assert_eq!(standby["launcher"], true);
+    restored.stop().await.unwrap();
+    spec.thread_id = Uuid::new_v4();
+    let fresh = runtime.start(&spec, None).await.unwrap();
+    let fresh_bytes = response(&fresh, &frames).await;
+    assert_eq!(fresh_bytes["launcher"], false);
+    assert_eq!(fresh_bytes["bytes"], standby["bytes"]);
+    fresh.stop().await.unwrap();
+
+    // Freeze the adopted process before exec. Its task inventory remains
+    // valid, but the trusted launcher can no longer acknowledge refresh.
+    // The restored guest must reap it and execute these same bytes fresh.
+    spec.thread_id = Uuid::new_v4();
+    let failed_refresh = runtime.start(&spec, Some(1)).await.unwrap();
+    assert_eq!(
+        failed_refresh
+            .slot
+            .lock()
+            .await
+            .vm
+            .as_ref()
+            .unwrap()
+            .restored,
+        Some(saved.id)
+    );
+    failed_refresh.freeze().await.unwrap();
+    let fallback = response(&failed_refresh, &frames).await;
+    assert_eq!(fallback["launcher"], false);
+    assert_eq!(fallback["bytes"], fresh_bytes["bytes"]);
+    failed_refresh.stop().await.unwrap();
     assert_eq!(
         Generation::current(&cold.saved, &cold.binding)
             .unwrap()

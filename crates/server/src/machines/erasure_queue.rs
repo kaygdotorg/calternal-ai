@@ -115,8 +115,8 @@ pub(super) fn queue(
             "UPDATE space_runtime_checkpoints AS checkpoint SET acknowledged=NULL,lease=''
              WHERE EXISTS(SELECT 1 FROM space_runtime_erasures erase
                           WHERE erase.space=checkpoint.space AND erase.through IS NULL
-                            AND erase.machine=coalesce(checkpoint.acknowledged,
-                                (SELECT old.machine FROM leases old WHERE old.id=checkpoint.lease)))", [],
+                            AND (erase.machine=checkpoint.acknowledged OR
+                                 erase.machine=(SELECT old.machine FROM leases old WHERE old.id=checkpoint.lease)))", [],
         ).map_err(sql)?;
     }
     db.execute(

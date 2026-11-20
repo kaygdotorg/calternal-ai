@@ -112,15 +112,15 @@ two-vCPU Firecracker guest. Use the digest-pinned image assembled by
 `deploy/microvm/build-image.sh` with the Node runtime. The guest stages package
 code on private tmpfs and starts Node through a restricted process launcher.
 The launcher installs the worker seccomp profile, isolates mounts, processes
-and networking, drops privileges, and uses per-worker cgroup limits. Before a
-checkpoint, the guest stops the package and parks a clean trusted launcher.
-A restored guest must acknowledge kernel
-reseed before it can refresh the launcher and load a package. Set
-`prestarted_worker: false` in the small VM configuration to restore with
-fresh Node. The image build runs the two-restore randomness and permission
-proof under KVM before publishing its output link.
+and networking, drops privileges, and gives each worker a 192 MiB memory
+limit with no swap. The remaining guest memory is available to the kernel,
+the control agent and the reseed helper. Restores launch fresh Node by
+default. Set `prestarted_worker: true` to park a clean trusted launcher before
+checkpointing. The restored guest must acknowledge kernel reseed before the
+launcher can refresh and load a package. The image build runs the two-restore
+randomness and permission proof under KVM before publishing its output link.
 
-The small VM JSON accepts `idle_seconds` (default 900) and
+The small VM JSON accepts `idle_seconds` (1 through 86400, default 900) and
 `resident_memory_mib` (default `memory_mib` × `max_guests`). The machine reserves
 256 MiB of guest RAM for each placement. A full machine sleeps the least
 recently used idle guest before admitting another space. Calls arriving during

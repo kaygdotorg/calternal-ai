@@ -68,7 +68,7 @@ Path(config).write_text(json.dumps(dict(
     image_directory=image,
     image_digest=hashlib.sha256(manifest.read_bytes()).hexdigest(),
     mkfs_ext4=mkfs,
-    vcpus=2, memory_mib=256, disk_mib=1024, max_guests=1, warm_guests=0,
+    vcpus=2, memory_mib=256, disk_mib=1024, max_guests=1, warm_guests=0, prestarted_worker=True,
 )))
 PYCONFIG
 export CALTERNAL_SMALL_VM_TEST_CONFIG="$proof/small.json" CALTERNAL_SMALL_VM_PROOF_REQUIRED=1

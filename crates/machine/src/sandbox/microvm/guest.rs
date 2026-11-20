@@ -18,6 +18,7 @@ use crate::sandbox::{
 };
 
 const SMALL_READY: &str = "/run/agent/small-ready";
+const RESEED_SOCKET: &str = "/run/calternal-reseed.sock";
 
 struct Agent {
     backend: Option<PodmanBackend>,
@@ -126,7 +127,7 @@ impl Agent {
                 "small plugin guest was not drained".into(),
             )));
         }
-        let mut control = UnixStream::connect("/run/calternal-reseed.sock")
+        let mut control = UnixStream::connect(RESEED_SOCKET)
             .await
             .map_err(SandboxError::new)?;
         control.write_all(&seed).await.map_err(SandboxError::new)?;
@@ -152,6 +153,11 @@ impl Agent {
                 if !threads.is_empty() {
                     return Err(SandboxError("small plugin guest was not drained".into()));
                 }
+                // A dead helper leaves the pathname behind. A live listener
+                // accepts this probe without changing kernel randomness.
+                UnixStream::connect(RESEED_SOCKET)
+                    .await
+                    .map_err(SandboxError::new)?;
                 tokio::fs::remove_file(SMALL_READY)
                     .await
                     .map_err(SandboxError::new)?;
@@ -228,7 +234,8 @@ impl Agent {
     }
 }
 
-async fn small_ready() -> SandboxResult<()> {
+/// Verify that the authenticated kernel reseed opened guest admission.
+pub(super) async fn small_ready() -> SandboxResult<()> {
     if tokio::fs::try_exists(SMALL_READY)
         .await
         .map_err(SandboxError::new)?
