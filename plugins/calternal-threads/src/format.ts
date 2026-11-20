@@ -76,7 +76,16 @@ export function folder(thread: Thread): string {
   return `${thread.created.slice(0, 10)} ${short}`;
 }
 
+const messageBoundary = /^### [^\r\n]+ \{#m-[a-f0-9]{16}(?: [^{}\r\n]+)?\}$/u;
 const messageHeading = /^### (.+) \{#m-([a-f0-9]{16}) (by=p[1-9][0-9]*(?: [a-z]+=[^ {}]+)*)\}$/u;
+
+function escapeBodyHeadings(text: string, encode: boolean): string {
+  return text.split("\n").map(line => {
+    if (!encode && !line.startsWith("\\")) return line;
+    if (!messageBoundary.test(line.replace(/^\\+/u, "").replace(/\r$/u, ""))) return line;
+    return encode ? `\\${line}` : line.slice(1);
+  }).join("\n");
+}
 
 function escapeLabel(value: string): string {
   return value.replace(/[\\|·{}]/gu, "\\$&");
@@ -99,7 +108,7 @@ function timestamp(value: string): Timestamp {
   return date.toISOString().replace(/\.000Z$/u, "Z");
 }
 
-/** Append a human-readable heading and a blockquoted body with no stored length. */
+/** Append a tagged heading and one plain body span, escaping delimiter-shaped lines. */
 export function encodeMessage(message: Message, participants: Participant[]): string {
   const alias = (id: string) => {
     const index = participants.findIndex(person => person.id === id);
@@ -108,7 +117,7 @@ export function encodeMessage(message: Message, participants: Participant[]): st
   };
   const heading = [escapeLabel(message.author.name), utc(message.posted_at)];
   const attrs = [`#m-${message.id}`, `by=${alias(message.author.id)}`];
-  if (message.deleted) return `\n### ${[...heading, "deleted"].join(" · ")} {${attrs.join(" ")}}\n`;
+  if (message.deleted) return `### ${[...heading, "deleted"].join(" · ")} {${attrs.join(" ")}}\n\n`;
   if (message.edited) heading.push("edited");
   if (message.replyTo && message.replyToName) {
     heading.push(`reply to ${escapeLabel(message.replyToName)}`);
@@ -122,8 +131,7 @@ export function encodeMessage(message: Message, participants: Participant[]): st
   for (const [name, link] of [["log", message.log], ["consult", message.consultation]] as const) {
     if (link) attrs.push(`${name}=${encodeURIComponent(link.space)}/${encodeURIComponent(link.id)}`);
   }
-  const quoted = message.text.split("\n").map(line => line ? `> ${line}` : ">").join("\n");
-  return `\n### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n${quoted}\n`;
+  return `### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n${escapeBodyHeadings(message.text, true)}\n\n`;
 }
 
 /** Serialize the transcript in the same format as the append stream. */
@@ -139,7 +147,7 @@ export function encode(thread: Thread): string {
         `agent-p${index + 1}-contribution: ${person.contribution.contribution}`);
     }
   });
-  return `${header.join("\n")}\n---\n` + messages.map(message => encodeMessage(message, participants)).join("");
+  return `${header.join("\n")}\n---\n\n` + messages.map(message => encodeMessage(message, participants)).join("");
 }
 
 function decodeMessage(line: string, body: string[], people: Map<string, Participant>): Message {
@@ -162,17 +170,15 @@ function decodeMessage(line: string, body: string[], people: Map<string, Partici
   };
   const author = { ...participant(attrs.get("by")), name: unescapeLabel(authorName) };
   const posted_at = timestamp(date);
-  let start = 0;
-  let end = body.length;
-  while (start < end && body[start] === "") start++;
-  while (end > start && body[end - 1] === "") end--;
+  const start = body[0] === "" ? 1 : 0;
+  const end = start < body.length && body.at(-1) === "" ? body.length - 1 : body.length;
   if (markers.includes("deleted")) {
-    if (end !== start || attrs.size !== 1 || markers.length !== 1) throw new Error("Unreadable tombstone.");
+    if (body.some(line => line !== "") || attrs.size !== 1 || markers.length !== 1) throw new Error("Unreadable tombstone.");
     return { id, author, posted_at, text: "", deleted: true };
   }
   const message: Message = {
     id, author, posted_at,
-    text: body.slice(start, end).map(line => line === ">" ? "" : line.startsWith("> ") ? line.slice(2) : line).join("\n"),
+    text: escapeBodyHeadings(body.slice(start, end).join("\n"), false),
   };
   const reply = attrs.get("re");
   const replyLabel = markers.find(marker => marker.startsWith("reply to "));
@@ -203,7 +209,10 @@ function decodeMessage(line: string, body: string[], people: Map<string, Partici
 
 /** Read headings and body boundaries so edits never depend on a stale byte count. */
 export function decode(body: string): Thread {
-  const lines = body.replaceAll("\r\n", "\n").split("\n");
+  // A document converted wholesale by a text editor can use CRLF framing.
+  const document = body.startsWith("---\r\n") ? body.replaceAll("\r\n", "\n") : body;
+  const lines = document.split("\n");
+  if (document.endsWith("\n")) lines.pop();
   const close = lines.indexOf("---", 1);
   if (lines[0] !== "---" || close < 0) throw new Error("Unreadable thread document.");
   const fields = new Map<string, string>();
@@ -248,7 +257,7 @@ export function decode(body: string): Thread {
     messages.push(message);
   };
   for (const line of lines.slice(close + 1)) {
-    if (line.startsWith("### ") && line.includes(" {#m-")) {
+    if (messageBoundary.test(line)) {
       finish();
       heading = line;
       content = [];

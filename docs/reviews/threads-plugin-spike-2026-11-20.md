@@ -326,20 +326,13 @@ worker, and test that omitting the marker cannot preserve discovery.
 **OPEN**, API §3, description §§9.2–9.3 and catalogue
 `execution_attempt_authority.discovery.item_policy.authorship.byte_check`.
 
-The actual record begins with a blank line, then a heading such as
-`### Alice · 2026-11-20 12:00 UTC {#m-0123456789abcdef by=p1}`.
-A blank line separates the heading from the body. The encoder splits
-the message at LF, writes `> ` before each nonempty line and `>` for
-each empty line, and ends with LF. A multiline composer submission
-therefore need not exist as a contiguous byte span in the file.
-The encoding vector compares the real encoder with those bytes,
-including UTF-8, blank lines, a heading-shaped line and trailing LF.
-It also reconstructs the first Save from the prior frontmatter,
-new pinned harness participant lines and the complete prompt record.
-It also shows that a record with unrelated content appended still
+The format tested in the initial 14.36 rerun added Markdown quote
+markers to each line of the message. A multiline composer submission
+therefore did not have to exist as a contiguous byte span in the file.
+The encoding vector also showed that a record with unrelated content appended still
 passes a substring check. A size cap alone leaves that channel open.
 
-**Smallest generic rule.** Keep exact whole-source equality as the
+**14.36 proposal, superseded by the owner decision below.** Keep exact whole-source equality as the
 default. For formatted bytes, let the installed package declare one
 bounded, deterministic byte recipe per supported write shape. The
 worker can select a permitted recipe and identify the checked source
@@ -390,6 +383,35 @@ editor capture, even if its bytes happen to match. An ordinary editor
 save preserves any existing `consent_only` state. This avoids giving
 plugins an author-assertion bit or teaching the broker either format.
 
+#### Owner follow-up · contiguous message text
+
+The owner chose host composition of bounded plugin prefix, checked
+middle, and bounded plugin suffix. The prefix and suffix carry plugin
+attribution. The host gets the middle from the captured submission or
+validated attempt output and records the span for checked replacement.
+An edit replaces one recorded span. A deletion supplies an empty middle
+to leave only the tombstone heading.
+
+The Threads app now writes a heading and blank line as the prefix,
+one contiguous body of ordinary Markdown paragraphs as the middle, and
+two LF bytes as the suffix. A literal blockquote typed by the author
+stays a blockquote. The format does not add quote markers to the body.
+
+For the host's one reversible escape, split on LF without changing
+the source bytes. For each line, ignore any leading backslashes and
+one terminal CR when checking for an exact delimiter. A delimiter
+starts with `### `, has a nonempty label and ends with a space and
+`{#m-` followed by 16 lowercase hex digits and, optionally, a space
+and attributes with no braces, then `}`. Add one backslash at the
+start of each matching body line, including lines already beginning
+with backslashes. Leave every other byte alone. The reader treats an
+unescaped delimiter as a record boundary and removes exactly one
+leading backslash from an escaped delimiter. The registered body
+and the escape can therefore round-trip without parsing Markdown.
+
+The 14.36 run retains opaque writes. The 14.37 pin and the
+several-Sends discovery test depend on its published writer exchange.
+
 ### Messaging decisions fixture
 
 The edit window uses `author_context.authored_at` and the recorded
@@ -426,7 +448,7 @@ still requires the host.
 ### Conversation and private state on disk
 
 The files below are the exact bytes the package worker wrote through
-the fake host on dev-01. Alice and Bob are synthetic accounts. The
+the fake host on dev-02. Alice and Bob are synthetic accounts. The
 called-in Claude Code harness uses scripted output and owns a separate
 log. The consultation item shows the private exchange whose summary was
 posted back once. The private path is the fixture's account namespace.
@@ -441,10 +463,10 @@ the contribution's local name until the host supplies an approved
 presentation label. Contribution identity stays in the frontmatter.
 Names are for display. The host still determines authority.
 
-A message ends at the next unquoted `###` heading with a `{#m-…}` anchor.
-Edit body text on the `>` lines, or add ordinary unquoted text or
-Markdown between headings. Quote any line that itself looks like a
-message delimiter. There is no length to update. The worker reads
+A message ends at the next unescaped `###` heading with a `{#m-…}` anchor.
+Edit the paragraphs or Markdown between headings. Add a leading
+backslash to a body line that would look like a message delimiter.
+There is no length to update. The worker reads
 hand-edited body text under the same anchor. Such a file edit is an
 opaque import for the host's provenance rules and cannot impersonate an
 in-app edit or acquire consent. Deletion leaves only the heading on
@@ -469,21 +491,24 @@ agent-p3-contribution: claude-code
 
 ### Alice · 2026-11-20 09:01 UTC · edited {#m-b31395e111a687c4 by=p1}
 
-> Can we meet by the garden gate at 10:30?
+Can we meet by the garden gate at 10:30?
+
+The rain should clear by then.
 
 ### Bob · 2026-11-20 09:02 UTC · reply to Alice {#m-eaa58816884f2492 by=p2 re=m-b31395e111a687c4 to=p1}
 
-> Yes, I’ll bring the key.
+Yes, I’ll bring the key.
 
 ### Bob · 2026-11-20 09:03 UTC · deleted {#m-264b5e3f491fd782 by=p2}
 
 ### Claude Code · 2026-11-20 09:06 UTC · asked by Alice {#m-4daee5fd2fb71be4 by=p3 ask=p1 log=019a0000-0000-7000-8000-000000000010/item-14}
 
-> Reply to the permitted context
+Reply to the permitted context
 
 ### Claude Code · 2026-11-20 09:07 UTC · asked by Alice {#m-9d1c7cac655cb70d by=p3 ask=p1 consult=019a0000-0000-7000-8000-000000000010/item-19}
 
-> Agreed recommendation
+Agreed recommendation
+
 ````
 
 `.calternal-private/019a0000-0000-7000-8000-000000000001/threads/item-1.md`

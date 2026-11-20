@@ -353,30 +353,34 @@ test("a checked editor save qualifies complete bytes and downgrades unexplained 
   assert.deepEqual(host.discoverAsAttempt(creator), []);
 });
 
-test("the Markdown record is reproducible from checked framing fields and captured text", () => {
+test("Markdown keeps one plain body span and reversibly escapes only tagged heading lines", () => {
   const alice = personParticipant("019a0000-0000-7000-8000-000000000001", "Alice");
   const posted_at = "2026-11-20T12:00:00Z";
   const id = "0123456789abcdef";
-  const text = "Bring 🐝 gloves.\n\n### Looks like a heading\n";
+  const reserved = "### Looks like a record {#m-aabbccddeeff0011 by=p1}";
+  const plain = "\nBring 🐝 gloves.\r\n\n### Ordinary heading\n> Quoted by the author\n";
+  const text = `${plain}${reserved}\n\\${reserved}\n`;
   const message = { author: alice, id, posted_at, text };
-  const thread: Thread = { id: "example", title: "Garden", created: posted_at, participants: [alice], messages: [] };
+  const thread: Thread = { id: "0".repeat(32), title: "Garden", created: posted_at, participants: [alice], messages: [] };
 
-  // This is an encoding vector for the proposed contract. The fixture does not trust it for attribution.
-  const heading = "\n### Alice · 2026-11-20 12:00 UTC {#m-0123456789abcdef by=p1}\n\n";
-  const expected = Buffer.from(heading + text.split("\n").map(line => line ? `> ${line}\n` : ">\n").join(""));
+  const prefix = "### Alice · 2026-11-20 12:00 UTC {#m-0123456789abcdef by=p1}\n\n";
+  const expected = Buffer.from(`${prefix}${plain}\\${reserved}\n\\\\${reserved}\n\n\n`);
+  assert.equal(encodeMessage({ ...message, text: plain }, [alice]), `${prefix}${plain}\n\n`);
   const record = Buffer.from(encodeMessage(message, [alice]));
   assert.deepEqual(record, expected);
   assert.equal(record.includes(Buffer.from(text)), false);
 
   const existing = Buffer.from(encode(thread));
-  assert.deepEqual(Buffer.from(encode({ ...thread, messages: [message] })), Buffer.concat([existing, expected]));
+  const saved = encode({ ...thread, messages: [message] });
+  assert.deepEqual(Buffer.from(saved), Buffer.concat([existing, expected]));
+  assert.deepEqual(decode(saved).messages, [message]);
   const agent = agentParticipant(thread.id, { package: "calternal-threads-claude-code", contribution: "claude-code" });
   const agentHeader = Buffer.from(
     `  - p2 | Claude Code | agent | ${agent.id}\nagent-p2-package: calternal-threads-claude-code\nagent-p2-contribution: claude-code\n`,
   );
   const withFirstPrompt = Buffer.from(encode({ ...thread, participants: [alice, agent], messages: [message] }));
-  assert.deepEqual(withFirstPrompt, Buffer.concat([existing.subarray(0, -4), agentHeader, existing.subarray(-4), expected]));
-  const graft = Buffer.concat([record, Buffer.from("\n> Imported material\n")]);
+  assert.deepEqual(withFirstPrompt, Buffer.concat([existing.subarray(0, -5), agentHeader, existing.subarray(-5), expected]));
+  const graft = Buffer.concat([record, Buffer.from("\nImported material\n")]);
   assert.equal(graft.includes(expected), true);
   assert.equal(graft.equals(expected), false);
 });

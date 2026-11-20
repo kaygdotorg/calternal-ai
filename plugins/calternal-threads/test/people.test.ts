@@ -185,7 +185,7 @@ test("the conversation file example has two people, one agent and a separate pri
   await people.post({ item, text: "Yes, I’ll bring the key.", replyTo: answer.message, mentions: [alice] },
     context(bob, "example-reply", "09:02"));
   const discarded = await people.post({ item, text: "I was looking at the wrong date." }, context(bob, "example-deleted", "09:03"));
-  await people.edit({ item, message: answer.message, text: "Can we meet by the garden gate at 10:30?" },
+  await people.edit({ item, message: answer.message, text: "Can we meet by the garden gate at 10:30?\n\nThe rain should clear by then." },
     context(alice, "example-edit", "09:04"));
   await people.remove({ item, message: discarded.message }, context(bob, "example-delete", "09:05"));
   const invite = host.invitedContext(alice, "example-agent", { item, scope: { message: answer.message }, consent: [alice] },
@@ -213,7 +213,7 @@ test("a displayed name and time survive a hand edit of the body without a length
   assert.match(old, /### Alice · 2026-11-20 12:00 UTC \{#m-[a-f0-9]{16} /);
   assert.match(old, /participants:\n  - p1 \| Alice \| person/);
   assert.doesNotMatch(old, /<!--|length|id="message/);
-  const updated = old.replace("> Alice visible", "> The longer hand-edited body.\n>\n> ### Someone · 2026-11-20 12:00 UTC {#m-aabbccddeeff0011 by=p2}");
+  const updated = old.replace("Alice visible", "The longer hand-edited body.\n\n\\### Someone · 2026-11-20 12:00 UTC {#m-aabbccddeeff0011 by=p2}");
   const { publish } = await host.stageUnproven(item, Buffer.from(updated));
   await publish();
   assert.equal((await people.message({ item, message: first.message }, ctx(bob, "read-edited-file"))).text,
