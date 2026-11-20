@@ -14,6 +14,13 @@ const WORKER: &[u8] = b"throw new Error('registration must never start this work
 
 fn source(path: &Path) -> Value {
     let mut manifest: Value = serde_json::from_slice(MANIFEST).unwrap();
+    // Retain the sealed description while supplying today's alarm method in
+    // this installer fixture. The worker must never be invoked by this test.
+    manifest
+        .as_object_mut()
+        .unwrap()
+        .remove("schedule_eligibility");
+    manifest["operations"][1]["methods"][0] = json!("alarm_set");
     manifest["id"] = json!("calternal-reading-list");
     manifest["worker"] = json!({"path":"worker.mjs", "sha256": crate::plugins::sha256_hex(WORKER)});
     let template = manifest["apps"][0]["description"]["template"]["path"]
@@ -192,10 +199,6 @@ fn kind(id: &str, folder: &str) -> Value {
         "storage":{"folder":folder},"schema":{"type":"object","properties":{"title":{"type":"string"}}}})
 }
 
-fn provider(id: &str) -> Value {
-    json!({"id":id,"name":"Provider","engine":"turns","adapter":{"path":"adapter.json","sha256":"0".repeat(64)}})
-}
-
 fn op(id: &str) -> Value {
     json!({"id":id,"title":"Read","input_schema":{},"output_schema":{},"required_capability":"space.read",
         "risk":"read","idempotency":"read_only","methods":[]})
@@ -214,7 +217,7 @@ fn v2(manifest: Value) -> Arc<calternal_plugin_host::ManifestV2> {
 
 fn refuse(catalogue: &Catalog, manifest: Value, message: &str) {
     let mut catalogue = catalogue.clone();
-    let error = catalogue.register_v2(v2(manifest)).unwrap_err();
+    let error = catalogue.register_v2(v2(manifest), 1).unwrap_err();
     assert!(error.contains(message), "{error}");
 }
 
@@ -254,52 +257,28 @@ fn v2_installer_rejects_registration_collisions_and_dangling_reads() {
     candidate["kinds"] = json!([kind("different", "NOTES")]);
     refuse(&catalog_v1, candidate, "Storage folder");
 
-    let legacy_provider = calternal_plugin_host::parse_manifest(include_bytes!(
-        "../../../../../plugins/calternal-claude-code/manifest.json"
-    ))
-    .unwrap();
-    let legacy_provider = package_store::Package {
-        manifest: legacy_provider,
-        worker: None,
-    };
-    catalog_v1 = Catalog::from_plugins(vec![
-        legacy_notes("calternal-notes", "notes", "Notes"),
-        Arc::new(
-            crate::plugins::Plugin::new(
-                legacy_provider.entry(false),
-                legacy_provider.manifest,
-                None,
-            )
-            .unwrap(),
-        ),
-    ]);
-    let mut candidate = bare("intruder");
-    candidate["providers"] = json!([provider("calternal-claude-code")]);
-    refuse(&catalog_v1, candidate, "Provider calternal-claude-code");
-
     let mut catalog_v2 = Catalog::default();
     let mut owner = bare("owner-package");
     owner["apps"] = json!([app("owner-app")]);
     owner["kinds"] = json!([kind("owner-kind", "Owner Folder")]);
-    owner["providers"] = json!([provider("owner-provider")]);
     with_op(&mut owner, "owner-app.read");
-    catalog_v2.register_v2(v2(owner.clone())).unwrap();
+    catalog_v2.register_v2(v2(owner.clone()), 1).unwrap();
     refuse(&catalog_v2, owner, "Operation owner-app.read");
     refuse(&catalog_v2, bare("owner-app"), "namespace owner-app");
-    let mut candidate = bare("intruder");
+    let mut candidate = bare("app-only-name");
     candidate["apps"] = json!([app("owner-package")]);
-    refuse(&catalog_v2, candidate.clone(), "namespace owner-package");
+    catalog_v2.register_v2(v2(candidate), 1).unwrap();
+    let mut candidate = bare("other-package");
+    candidate["apps"] = json!([app("owner-app")]);
+    with_op(&mut candidate, "other-package.read");
+    catalog_v2.register_v2(v2(candidate), 1).unwrap();
+    let mut candidate = bare("operation-conflict");
     candidate["apps"] = json!([app("owner-app")]);
     with_op(&mut candidate, "owner-app.read");
     refuse(&catalog_v2, candidate, "Operation owner-app.read");
     for (entry, value, error) in [
         ("kinds", kind("owner-kind", "New Folder"), "Kind owner-kind"),
         ("kinds", kind("new-kind", "OWNER FOLDER"), "Storage folder"),
-        (
-            "providers",
-            provider("owner-provider"),
-            "Provider owner-provider",
-        ),
     ] {
         let mut candidate = bare("intruder");
         candidate[entry] = json!([value]);
@@ -332,14 +311,14 @@ fn v2_installer_rejects_registration_collisions_and_dangling_reads() {
         "Declared read kind missing is not installed",
     );
     dependent["reads"] = json!(["owner-kind"]);
-    catalog_v2.register_v2(v2(dependent.clone())).unwrap();
+    catalog_v2.register_v2(v2(dependent.clone()), 1).unwrap();
     assert!(
         catalog(&catalog_v2, "owner-package", None)
             .unwrap_err()
             .contains("depends on the removed kind")
     );
     dependent["reads"] = json!(["notes"]);
-    catalog_v1.register_v2(v2(dependent)).unwrap();
+    catalog_v1.register_v2(v2(dependent), 1).unwrap();
     assert!(
         catalog(&catalog_v1, "calternal-notes", None)
             .unwrap_err()
@@ -362,8 +341,14 @@ fn v2_installer_skips_invalid_or_colliding_stored_rows_on_startup() {
     bad["unknown_after_schema_change"] = json!(true);
     let stored = |manifest| serde_json::to_vec(&json!({"manifest":manifest,"assets":{}})).unwrap();
     let inject = |id, bytes: &[u8]| {
-        package_store::commit_v2(data.path(), id, bytes, &crate::plugins::sha256_hex(bytes))
-            .unwrap()
+        package_store::commit_v2(
+            data.path(),
+            id,
+            bytes,
+            &crate::plugins::sha256_hex(bytes),
+            |_| Ok(()),
+        )
+        .unwrap()
     };
     inject("bad-package", &stored(bad));
     let good = bare("good-package");
@@ -403,3 +388,5 @@ fn v2_installer_skips_invalid_or_colliding_stored_rows_on_startup() {
 }
 
 mod reservations;
+
+mod contributions;

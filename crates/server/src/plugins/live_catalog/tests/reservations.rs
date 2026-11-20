@@ -12,7 +12,14 @@ fn start_catalog(data: &Path) -> Catalog {
 
 fn stored_archive(data: &Path, id: &str, manifest: Value) {
     let bytes = serde_json::to_vec(&json!({"manifest": manifest, "assets": {}})).unwrap();
-    package_store::commit_v2(data, id, &bytes, &crate::plugins::sha256_hex(&bytes)).unwrap();
+    package_store::commit_v2(
+        data,
+        id,
+        &bytes,
+        &crate::plugins::sha256_hex(&bytes),
+        |_| Ok(()),
+    )
+    .unwrap();
 }
 
 fn legacy_operation(id: &str) -> Arc<crate::plugins::Plugin> {
@@ -41,7 +48,7 @@ fn v1_and_v2_reserve_prefixes_and_report_exact_operation_collisions() {
     refuse(&legacy_catalog, v2_reader.clone(), "Operation reader.open");
 
     let mut installed_v2 = Catalog::default();
-    installed_v2.register_v2(v2(v2_reader)).unwrap();
+    installed_v2.register_v2(v2(v2_reader), 1).unwrap();
     for (operation, expected) in [
         ("reader.delete", "namespace reader"),
         ("reader.open", "Operation reader.open"),
@@ -53,18 +60,14 @@ fn v1_and_v2_reserve_prefixes_and_report_exact_operation_collisions() {
 }
 
 #[test]
-fn host_namespaces_cannot_be_claimed_by_apps_or_legacy_operations() {
-    let catalog = Catalog::default();
+fn local_app_ids_do_not_claim_host_operation_namespaces() {
+    let mut catalog = Catalog::default();
     for prefix in [
         "spaces", "notes", "secrets", "plugins", "jobs", "machines", "pending", "drafts", "agent",
     ] {
-        let mut plugin = bare("intruder");
+        let mut plugin = bare(&format!("fixture-{prefix}"));
         plugin["apps"] = json!([app(prefix)]);
-        refuse(
-            &catalog,
-            plugin,
-            &format!("namespace {prefix} is reserved by the host"),
-        );
+        catalog.register_v2(v2(plugin), 1).unwrap();
     }
     let legacy = legacy_operation("notes.takeover");
     let error = crate::plugins::check_operations(&legacy.manifest).unwrap_err();
@@ -269,14 +272,10 @@ fn replacing_legacy_package_cannot_drop_a_kind_read_by_v2() {
 
 #[test]
 fn delegated_threads_namespace_has_one_owner_and_preserves_exact_host_lookup() {
-    let catalog = Catalog::default();
+    let mut catalog = Catalog::default();
     let mut manifest = bare("intruder");
     manifest["apps"] = json!([app("threads")]);
-    refuse(
-        &catalog,
-        manifest,
-        "namespace threads is reserved by calternal-orchestrator",
-    );
+    catalog.register_v2(v2(manifest), 1).unwrap();
     for (id, operation, reason) in [
         (
             "intruder",
@@ -317,7 +316,14 @@ fn colliding_and_invalid_rows_do_not_unseat_the_live_owner_after_update_or_resta
         worker: None,
     };
     let archive = winner.archive().unwrap();
-    package_store::commit_v2(path, "winner", &archive, &winner.checksum().unwrap()).unwrap();
+    package_store::commit_v2(
+        path,
+        "winner",
+        &archive,
+        &winner.checksum().unwrap(),
+        |_| Ok(()),
+    )
+    .unwrap();
 
     let loser = legacy_notes("loser", "owned-kind", "Loser Folder");
     let loser = package_store::Package {
@@ -325,7 +331,10 @@ fn colliding_and_invalid_rows_do_not_unseat_the_live_owner_after_update_or_resta
         worker: None,
     };
     let archive = loser.archive().unwrap();
-    package_store::commit_v2(path, "loser", &archive, &loser.checksum().unwrap()).unwrap();
+    package_store::commit_v2(path, "loser", &archive, &loser.checksum().unwrap(), |_| {
+        Ok(())
+    })
+    .unwrap();
     let mut skipped_v2 = bare("loser-v2");
     skipped_v2["kinds"] = json!([kind("owned-kind", "Other Folder")]);
     stored_archive(path, "loser-v2", skipped_v2);
@@ -386,6 +395,7 @@ fn startup_uses_install_order_across_versions() {
         "later-v1",
         &second.archive().unwrap(),
         &second.checksum().unwrap(),
+        |_| Ok(()),
     )
     .unwrap();
     for _ in 0..2 {
@@ -426,6 +436,7 @@ fn startup_resolves_reads_against_all_winners_and_cascades_invalid_reads() {
         "later-owner",
         &later.archive().unwrap(),
         &later.checksum().unwrap(),
+        |_| Ok(()),
     )
     .unwrap();
 
