@@ -58,12 +58,15 @@ mkdir -p /run/agent /run/user/1000 /data/home /data/sandboxes
 chown 1000:1000 /run/agent /run/user/1000 /data/home /data/sandboxes
 chmod 700 /run/agent /run/user/1000
 if [ "${small_ready:-0}" = 1 ]; then
-  touch /run/agent/small-ready
   export CALTERNAL_SMALL_GUEST=1
-  # Root owns the kernel entropy update. Only the trusted guest agent can
-  # reach this socket. The package worker profile denies socket creation.
-  socat UNIX-LISTEN:/run/calternal-reseed.sock,user=agent,mode=0600,fork,max-children=1 \
-    EXEC:'/opt/calternal-microvm-agent --reseed-small-restore' &
+  # The root helper keeps its agent-only listener across a checkpoint.
+  # It creates the first ready marker after cold boot reseed and socket setup.
+  /opt/calternal-microvm-agent --reseed-small-serve &
+  reseed=$!
+  while [ ! -f /run/agent/small-ready ]; do
+    kill -0 "$reseed"
+    sleep 0.01
+  done
 fi
 sh -ec '
   echo "$$" > /sys/fs/cgroup/agent/ctl/cgroup.procs
@@ -72,8 +75,8 @@ sh -ec '
 agent=$!
 socat VSOCK-LISTEN:5000,reuseaddr,fork,max-children=512 UNIX-CONNECT:/run/agent/control.sock &
 relay=$!
-trap 'kill "$relay" "$agent" 2>/dev/null || true; sync; poweroff -f' TERM
+trap 'kill "$relay" "$agent" ${reseed:+"$reseed"} 2>/dev/null || true; sync; poweroff -f' TERM
 wait "$agent"
-kill "$relay"
+kill "$relay" ${reseed:+"$reseed"}
 sync
 poweroff -f

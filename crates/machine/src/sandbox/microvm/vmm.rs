@@ -187,7 +187,8 @@ impl Guest {
         }
     }
 
-    /// Resume, reseed and check guest admission. Stop the VMM on any failure.
+    /// Resume and wait for the guest to acknowledge a fresh kernel reseed and
+    /// publish readiness. Stop the VMM on failure.
     pub(super) async fn restore_small(
         config: &Config,
         run: &Path,
@@ -204,8 +205,9 @@ impl Guest {
             SystemRandom::new()
                 .fill(&mut seed)
                 .map_err(|_| SandboxError("Cannot get fresh small VM entropy".into()))?;
-            guest.control_checked(&Request::ReseedSmall(seed)).await?;
-            guest.control_checked(&Request::SmallReady).await
+            // Ready acknowledges both the kernel update and the guest's
+            // admission marker. Start still checks the marker independently.
+            guest.control_checked(&Request::ReseedSmall(seed)).await
         })
         .await;
         match ready {
@@ -271,7 +273,7 @@ impl Guest {
                         SandboxError("Firecracker did not open the snapshot API".into()).into(),
                     );
                 }
-                tokio::time::sleep(Duration::from_millis(20)).await;
+                tokio::time::sleep(Duration::from_millis(1)).await;
             }
             snapshot_api::load(
                 &api_socket,

@@ -65,6 +65,22 @@ flushes. It retains the existing ticket and item-read calls. Wake and sleep
 use the existing scheduler, checkpoint proof and scratch durability steps.
 There are no new tables.
 
+## Restore handoff
+
+The root reseed helper keeps its agent-only Unix listener across checkpoints.
+Each exchange still reads 32 fresh host bytes, updates and reseeds the guest
+kernel, and acknowledges only on success. The guest publishes its ready
+marker before sending the authenticated response. The restored host path uses
+that response directly. Start checks the marker independently. The VMM waits
+1 ms between API socket checks. The small guest's package staging uses fresh
+tmpfs on cold boot and an emptied package directory on restore. Its path has
+no Podman ownership inventory. Agent-guest startup retains its existing
+ownership reconciliation. The dev-01 image passed the real-KVM snapshot and
+reseed fixture and all four enrolled-runner KVM tests.
+
+Use the matching machine-role binary and pinned guest image. Existing
+checkpoints remain bound to their original image digest.
+
 ## Simplification opportunities
 
 The worker seccomp JSON already serves as the single source for the guest

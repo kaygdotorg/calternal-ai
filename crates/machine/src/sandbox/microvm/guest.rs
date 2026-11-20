@@ -38,6 +38,9 @@ pub async fn run_agent(
     token: [u8; 32],
 ) -> SandboxResult<()> {
     let backend = if std::env::var_os("CALTERNAL_SMALL_GUEST").is_some() {
+        // The package path stages only into new boot tmpfs. Restores use an
+        // empty package directory after checkpoint drain, so there is no
+        // Podman scratch inventory to scan in either case.
         None
     } else {
         let backend = PodmanBackend::in_microvm(root, image);
