@@ -72,6 +72,15 @@ thesis has no name for this third store; see §7 and question 5.
 
 ### 1.2 Operations
 
+What an author learns for this whole area: **work** (start, send, stop), **watch**,
+the **program** declaration, the **inbox and log** of a run, **net.fetch** with a
+declared secret, and **notify** with declared phrases. Six concepts; a plain list app
+needs none of them.
+
+One agent run's cost, end to end: start 2 F; each synced log batch 1 F on each side
+(at most 20 a second); each input or call result 1 F; Stop 1 F; end 1 F. No read or
+flush of the run touches another space or an installation-wide lock.
+
 Costs are on the request path: SQLite reads (R), durable flushes (F, an fsync of WAL
 or file), and host-to-box messages (M). A call that is refused costs at most one read.
 
