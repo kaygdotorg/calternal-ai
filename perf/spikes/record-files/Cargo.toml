@@ -1,0 +1,17 @@
+# Throwaway measurement spike for record files (#107). Not a workspace member:
+# it never merges into the product build.
+[package]
+name = "record-files-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+calternal-fsio = { path = "../../../crates/fsio" }
+rusqlite = { version = "0.41", features = ["bundled"] }
+blake3 = "1.8"
+
+[profile.release]
+debug = "line-tables-only"

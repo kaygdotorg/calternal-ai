@@ -1,0 +1,184 @@
+case	1MiB	A	records=4396	files=1	file_bytes=1048636	ledger_bytes=1654784	index_bytes=167936	build_s=0.1
+op	1MiB	A	append	n=200	p50=13.539	p95=15.541	p99=20.648	max=27.359	db_ms=7.062	file_ms=6.733	scrub_ms=0.000	wchar=36620	write_bytes=45158	rchar=1210	syscr=0.3	syscw=18.4	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	1MiB	A	read_last_50	n=200	p50=0.019	p95=0.023	p99=0.044	max=0.086	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=14214	syscr=1.0	syscw=0.0	sql_reads=1.0	fallback=0.0%	changed_rows=0
+op	1MiB	A	unread_after_p	n=200	p50=0.074	p95=0.111	p99=0.125	max=0.184	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=11681	syscr=1.0	syscw=0.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	1MiB	A	edit_recent	n=200	p50=13.955	p95=19.552	p99=23.351	max=33.882	db_ms=7.834	file_ms=7.259	scrub_ms=0.000	wchar=121580	write_bytes=129884	rchar=64469	syscr=1.6	syscw=28.1	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	1MiB	A	edit_random	n=200	p50=19.513	p95=29.046	p99=33.062	max=35.383	db_ms=11.548	file_ms=8.678	scrub_ms=0.000	wchar=1061763	write_bytes=1074934	rchar=547389	syscr=10.1	syscw=232.3	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	1MiB	A	redact_recent	n=200	p50=26.828	p95=31.598	p99=35.823	max=41.879	db_ms=13.789	file_ms=6.209	scrub_ms=6.992	wchar=172155	write_bytes=184095	rchar=108501	syscr=15.7	syscw=43.7	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	1MiB	A	redact_random	n=200	p50=33.423	p95=40.502	p99=46.193	max=52.305	db_ms=17.301	file_ms=7.834	scrub_ms=8.138	wchar=1276563	write_bytes=1290691	rchar=753137	syscr=68.2	syscw=297.6	sql_reads=3.0	fallback=0.0%	changed_rows=0
+history	1MiB	A	edits=1000	secs=14.4	ledger_bytes 1957888 -> 2207744 (+249856)	versions 4919 -> 5919 (+1000)	version_body_bytes +171523	file_bytes 1044532 -> 1063137 (+18605)
+op	1MiB	A	reanchor_typo	n=20	p50=14.239	p95=18.372	p99=26.350	max=26.350	db_ms=15.129	file_ms=0.000	scrub_ms=0.000	wchar=18748	write_bytes=22938	rchar=1075035	syscr=5.9	syscw=9.2	sql_reads=0.0	fallback=0.0%	changed_rows=1
+op	1MiB	A	reanchor_insert	n=20	p50=20.818	p95=23.087	p99=28.281	max=28.281	db_ms=20.536	file_ms=0.000	scrub_ms=0.000	wchar=371038	write_bytes=375194	rchar=1093247	syscr=10.3	syscw=172.9	sql_reads=0.0	fallback=0.0%	changed_rows=2734
+op	1MiB	A	reanchor_trim	n=1	p50=5.698	p95=5.698	p99=5.698	max=5.698	db_ms=5.697	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=1063517	syscr=3.0	syscw=0.0	sql_reads=0.0	fallback=0.0%	changed_rows=0
+op	1MiB	A	append	n=5	p50=13.399	p95=18.553	p99=18.553	max=18.553	db_ms=7.064	file_ms=7.279	scrub_ms=0.000	wchar=47050	write_bytes=57344	rchar=6574	syscr=2.6	syscw=23.8	sql_reads=2.0	fallback=0.0%	changed_rows=0
+verify	1MiB	A	ok	0.0s
+case	1MiB	A2	records=4396	files=1	file_bytes=1048636	ledger_bytes=1654784	index_bytes=167936	build_s=0.1
+op	1MiB	A2	edit_recent	n=200	p50=32.580	p95=38.083	p99=45.643	max=53.566	db_ms=7.671	file_ms=25.490	scrub_ms=0.000	wchar=1117420	write_bytes=1125335	rchar=1051045	syscr=2.3	syscw=30.1	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	1MiB	A2	edit_random	n=200	p50=36.644	p95=50.223	p99=57.390	max=76.817	db_ms=11.993	file_ms=26.355	scrub_ms=0.000	wchar=1602491	write_bytes=1612206	rchar=1087946	syscr=10.5	syscw=234.0	sql_reads=3.0	fallback=0.0%	changed_rows=0
+verify	1MiB	A2	ok	0.0s
+case	1MiB	B	records=3498	files=1	file_bytes=1048662	ledger_bytes=1335296	index_bytes=135168	build_s=0.1
+op	1MiB	B	append	n=200	p50=13.278	p95=17.225	p99=21.762	max=36.231	db_ms=7.057	file_ms=6.738	scrub_ms=0.000	wchar=36101	write_bytes=44646	rchar=922	syscr=0.2	syscw=18.2	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	1MiB	B	read_last_50	n=200	p50=0.020	p95=0.031	p99=0.046	max=0.079	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=17743	syscr=1.0	syscw=0.0	sql_reads=1.0	fallback=0.0%	changed_rows=0
+op	1MiB	B	unread_after_p	n=200	p50=0.079	p95=0.116	p99=0.141	max=0.159	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=14152	syscr=1.0	syscw=0.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	1MiB	B	edit_recent	n=200	p50=9.604	p95=14.312	p99=17.131	max=21.128	db_ms=6.733	file_ms=3.961	scrub_ms=0.000	wchar=49317	write_bytes=57508	rchar=18108	syscr=0.6	syscw=15.7	sql_reads=3.0	fallback=22.0%	changed_rows=0
+op	1MiB	B	edit_random	n=200	p50=9.798	p95=20.542	p99=23.880	max=29.325	db_ms=7.667	file_ms=4.552	scrub_ms=0.000	wchar=285923	write_bytes=295117	rchar=151612	syscr=2.6	syscw=61.5	sql_reads=3.0	fallback=27.0%	changed_rows=0
+op	1MiB	B	redact_recent	n=200	p50=23.395	p95=28.364	p99=30.490	max=66.977	db_ms=13.893	file_ms=3.336	scrub_ms=6.993	wchar=61349	write_bytes=73544	rchar=29921	syscr=7.3	syscw=24.4	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	1MiB	B	redact_random	n=200	p50=23.050	p95=25.997	p99=31.572	max=37.001	db_ms=13.476	file_ms=3.290	scrub_ms=6.802	wchar=55170	write_bytes=67297	rchar=25498	syscr=6.2	syscw=22.5	sql_reads=3.0	fallback=0.0%	changed_rows=0
+history	1MiB	B	edits=1000	secs=10.8	ledger_bytes 1589248 -> 1835008 (+245760)	versions 4009 -> 5009 (+1000)	version_body_bytes +160102	file_bytes 1118671 -> 1144037 (+25366)
+op	1MiB	B	reanchor_typo	n=20	p50=13.779	p95=15.457	p99=22.938	max=22.938	db_ms=14.350	file_ms=0.000	scrub_ms=0.000	wchar=17718	write_bytes=21914	rchar=1144037	syscr=2.0	syscw=8.7	sql_reads=0.0	fallback=0.0%	changed_rows=1
+op	1MiB	B	reanchor_insert	n=20	p50=16.104	p95=23.932	p99=38.571	max=38.571	db_ms=17.820	file_ms=0.000	scrub_ms=0.000	wchar=236546	write_bytes=240845	rchar=1169827	syscr=8.2	syscw=108.7	sql_reads=0.0	fallback=0.0%	changed_rows=1604
+op	1MiB	B	reanchor_trim	n=1	p50=19.761	p95=19.761	p99=19.761	max=19.761	db_ms=19.760	file_ms=0.000	scrub_ms=0.000	wchar=440840	write_bytes=442368	rchar=846371	syscr=2.0	syscw=214.0	sql_reads=0.0	fallback=0.0%	changed_rows=3698
+op	1MiB	B	append	n=5	p50=13.778	p95=15.396	p99=15.396	max=15.396	db_ms=7.073	file_ms=7.213	scrub_ms=0.000	wchar=35960	write_bytes=45056	rchar=1	syscr=0.0	syscw=18.2	sql_reads=2.0	fallback=0.0%	changed_rows=0
+verify	1MiB	B	ok	0.0s
+case	1MiB	C	records=4396	files=1	file_bytes=1048653	ledger_bytes=1671168	index_bytes=176128	build_s=0.1
+op	1MiB	C	append	n=200	p50=13.800	p95=15.986	p99=20.295	max=36.909	db_ms=7.103	file_ms=6.773	scrub_ms=0.000	wchar=36723	write_bytes=45261	rchar=1208	syscr=0.3	syscw=18.4	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	1MiB	C	read_last_50	n=200	p50=0.020	p95=0.022	p99=0.035	max=0.069	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=14211	syscr=1.0	syscw=0.0	sql_reads=1.0	fallback=0.0%	changed_rows=0
+op	1MiB	C	unread_after_p	n=200	p50=0.078	p95=0.115	p99=0.126	max=0.165	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=11678	syscr=1.0	syscw=0.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	1MiB	C	edit_recent	n=200	p50=14.094	p95=18.949	p99=22.835	max=56.716	db_ms=7.570	file_ms=7.111	scrub_ms=0.000	wchar=126574	write_bytes=135066	rchar=64463	syscr=1.6	syscw=29.5	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	1MiB	C	edit_random	n=200	p50=19.147	p95=28.948	p99=33.087	max=33.618	db_ms=11.334	file_ms=8.244	scrub_ms=0.000	wchar=1080839	write_bytes=1094042	rchar=551059	syscr=10.1	syscw=240.2	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	1MiB	C	redact_recent	n=200	p50=27.844	p95=32.270	p99=38.826	max=39.385	db_ms=14.303	file_ms=6.579	scrub_ms=7.298	wchar=181270	write_bytes=193556	rchar=108483	syscr=14.7	syscw=45.5	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	1MiB	C	redact_random	n=200	p50=33.907	p95=40.881	p99=46.749	max=58.527	db_ms=17.513	file_ms=7.917	scrub_ms=8.282	wchar=1296987	write_bytes=1311068	rchar=760000	syscr=68.8	syscw=305.9	sql_reads=3.0	fallback=0.0%	changed_rows=0
+history	1MiB	C	edits=1000	secs=14.3	ledger_bytes 1978368 -> 2228224 (+249856)	versions 4919 -> 5919 (+1000)	version_body_bytes +171523	file_bytes 1044549 -> 1063154 (+18605)
+op	1MiB	C	reanchor_typo	n=20	p50=14.478	p95=15.654	p99=29.472	max=29.472	db_ms=15.325	file_ms=0.000	scrub_ms=0.000	wchar=19366	write_bytes=23552	rchar=1076876	syscr=5.3	syscw=9.4	sql_reads=0.0	fallback=0.0%	changed_rows=1
+op	1MiB	C	reanchor_insert	n=20	p50=21.367	p95=25.634	p99=34.439	max=34.439	db_ms=21.311	file_ms=0.000	scrub_ms=0.000	wchar=383597	write_bytes=387891	rchar=1094473	syscr=9.6	syscw=178.8	sql_reads=0.0	fallback=0.0%	changed_rows=2734
+op	1MiB	C	reanchor_trim	n=1	p50=5.718	p95=5.718	p99=5.718	max=5.718	db_ms=5.718	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=1063514	syscr=2.0	syscw=0.0	sql_reads=0.0	fallback=0.0%	changed_rows=0
+op	1MiB	C	append	n=5	p50=13.356	p95=19.327	p99=19.327	max=19.327	db_ms=7.135	file_ms=7.257	scrub_ms=0.000	wchar=46226	write_bytes=56525	rchar=6554	syscr=1.6	syscw=23.4	sql_reads=2.0	fallback=0.0%	changed_rows=0
+verify	1MiB	C	ok	0.0s
+case	16MiB	A	records=68436	files=1	file_bytes=16777453	ledger_bytes=26206208	index_bytes=2506752	build_s=0.5
+op	16MiB	A	append	n=200	p50=13.283	p95=16.097	p99=24.804	max=44.634	db_ms=7.087	file_ms=6.751	scrub_ms=0.000	wchar=50316	write_bytes=58880	rchar=11940	syscr=2.9	syscw=24.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	16MiB	A	read_last_50	n=200	p50=0.019	p95=0.024	p99=0.031	max=0.075	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=10577	syscr=1.0	syscw=0.0	sql_reads=1.0	fallback=0.0%	changed_rows=0
+op	16MiB	A	unread_after_p	n=200	p50=0.074	p95=0.118	p99=0.126	max=0.142	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=12675	syscr=1.2	syscw=0.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	16MiB	A	edit_recent	n=200	p50=13.809	p95=19.598	p99=23.147	max=26.567	db_ms=7.548	file_ms=6.821	scrub_ms=0.000	wchar=137067	write_bytes=146104	rchar=62696	syscr=2.6	syscw=33.0	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	16MiB	A	edit_random	n=200	p50=161.541	p95=270.619	p99=292.220	max=304.603	db_ms=85.704	file_ms=71.541	scrub_ms=0.000	wchar=19720207	write_bytes=19765453	rchar=15699741	syscr=1690.1	syscw=4544.9	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	16MiB	A	redact_recent	n=200	p50=28.081	p95=34.623	p99=39.819	max=49.354	db_ms=14.625	file_ms=6.454	scrub_ms=7.518	wchar=212728	write_bytes=225587	rchar=135613	syscr=21.4	syscw=53.9	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	16MiB	A	redact_random	n=200	p50=164.821	p95=287.314	p99=295.884	max=302.566	db_ms=83.433	file_ms=70.526	scrub_ms=9.844	wchar=18902092	write_bytes=18926408	rchar=18300823	syscr=2499.5	syscw=5170.2	sql_reads=3.0	fallback=0.0%	changed_rows=0
+history	16MiB	A	edits=1000	secs=14.9	ledger_bytes 26947584 -> 27226112 (+278528)	versions 68960 -> 69960 (+1000)	version_body_bytes +182900	file_bytes 16759869 -> 16786128 (+26259)
+op	16MiB	A	reanchor_typo	n=20	p50=128.707	p95=140.698	p99=168.791	max=168.791	db_ms=130.536	file_ms=0.000	scrub_ms=0.000	wchar=17718	write_bytes=21914	rchar=24156066	syscr=1801.3	syscw=8.7	sql_reads=0.0	fallback=0.0%	changed_rows=1
+op	16MiB	A	reanchor_insert	n=20	p50=236.972	p95=321.446	p99=330.909	max=330.909	db_ms=234.487	file_ms=0.000	scrub_ms=0.000	wchar=7364522	write_bytes=7371981	rchar=31267117	syscr=3537.3	syscw=2778.2	sql_reads=0.0	fallback=0.0%	changed_rows=37146
+op	16MiB	A	reanchor_trim	n=1	p50=94.376	p95=94.376	p99=94.376	max=94.376	db_ms=94.376	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=24130623	syscr=1795.0	syscw=0.0	sql_reads=0.0	fallback=0.0%	changed_rows=0
+op	16MiB	A	append	n=5	p50=13.184	p95=55.622	p99=55.622	max=55.622	db_ms=11.775	file_ms=10.030	scrub_ms=0.000	wchar=48769	write_bytes=56525	rchar=20487	syscr=5.0	syscw=24.6	sql_reads=2.0	fallback=0.0%	changed_rows=0
+verify	16MiB	A	ok	0.6s
+case	16MiB	A2	records=68436	files=1	file_bytes=16777453	ledger_bytes=26206208	index_bytes=2506752	build_s=0.5
+op	16MiB	A2	edit_recent	n=200	p50=224.063	p95=408.776	p99=690.018	max=823.035	db_ms=8.885	file_ms=237.928	scrub_ms=0.000	wchar=16847897	write_bytes=16855245	rchar=16783779	syscr=3.1	syscw=45.7	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	16MiB	A2	edit_random	n=200	p50=296.591	p95=365.689	p99=377.261	max=410.921	db_ms=84.346	file_ms=212.834	scrub_ms=0.000	wchar=26954829	write_bytes=26964500	rchar=23059889	syscr=1534.8	syscw=4231.2	sql_reads=3.0	fallback=0.0%	changed_rows=0
+verify	16MiB	A2	ok	0.6s
+case	16MiB	B	records=54630	files=1	file_bytes=16777625	ledger_bytes=20963328	index_bytes=2002944	build_s=0.4
+op	16MiB	B	append	n=200	p50=13.404	p95=18.005	p99=25.460	max=27.192	db_ms=7.205	file_ms=6.851	scrub_ms=0.000	wchar=48911	write_bytes=57487	rchar=10957	syscr=2.7	syscw=23.3	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	16MiB	B	read_last_50	n=200	p50=0.020	p95=0.023	p99=0.032	max=0.070	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=13207	syscr=1.0	syscw=0.0	sql_reads=1.0	fallback=0.0%	changed_rows=0
+op	16MiB	B	unread_after_p	n=200	p50=0.075	p95=0.116	p99=0.124	max=0.131	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=14928	syscr=1.0	syscw=0.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	16MiB	B	edit_recent	n=200	p50=9.949	p95=15.796	p99=22.554	max=33.927	db_ms=7.316	file_ms=4.210	scrub_ms=0.000	wchar=57530	write_bytes=65925	rchar=23156	syscr=1.5	syscw=17.2	sql_reads=3.0	fallback=22.0%	changed_rows=0
+op	16MiB	B	edit_random	n=200	p50=10.232	p95=189.661	p99=243.610	max=252.887	db_ms=17.017	file_ms=13.843	scrub_ms=0.000	wchar=2691648	write_bytes=2705347	rchar=2130516	syscr=196.3	syscw=566.3	sql_reads=3.0	fallback=16.5%	changed_rows=0
+op	16MiB	B	redact_recent	n=200	p50=23.751	p95=28.525	p99=34.769	max=36.078	db_ms=14.028	file_ms=3.454	scrub_ms=7.109	wchar=61429	write_bytes=73421	rchar=33178	syscr=8.1	syscw=24.2	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	16MiB	B	redact_random	n=200	p50=23.555	p95=27.367	p99=31.937	max=46.395	db_ms=13.885	file_ms=3.522	scrub_ms=6.929	wchar=56931	write_bytes=68936	rchar=29307	syscr=7.2	syscw=23.1	sql_reads=3.0	fallback=0.0%	changed_rows=0
+history	16MiB	B	edits=1000	secs=11.4	ledger_bytes 21651456 -> 21893120 (+241664)	versions 55168 -> 56168 (+1000)	version_body_bytes +156981	file_bytes 16845234 -> 16867964 (+22730)
+op	16MiB	B	reanchor_typo	n=20	p50=108.934	p95=118.652	p99=120.493	max=120.493	db_ms=108.989	file_ms=0.000	scrub_ms=0.000	wchar=16688	write_bytes=20890	rchar=22824572	syscr=1456.2	syscw=8.2	sql_reads=0.0	fallback=0.0%	changed_rows=1
+op	16MiB	B	reanchor_insert	n=20	p50=188.877	p95=259.940	p99=374.455	max=374.455	db_ms=198.077	file_ms=0.000	scrub_ms=0.000	wchar=5791594	write_bytes=5796454	rchar=28551583	syscr=2854.4	syscw=2230.4	sql_reads=0.0	fallback=0.0%	changed_rows=30573
+op	16MiB	B	reanchor_trim	n=1	p50=240.493	p95=240.493	p99=240.493	max=240.493	db_ms=240.492	file_ms=0.000	scrub_ms=0.000	wchar=11896744	write_bytes=11902976	rchar=31228833	syscr=4348.0	syscw=4343.0	sql_reads=0.0	fallback=0.0%	changed_rows=54830
+op	16MiB	B	append	n=5	p50=13.898	p95=24.236	p99=24.236	max=24.236	db_ms=8.747	file_ms=7.009	scrub_ms=0.000	wchar=46410	write_bytes=58163	rchar=20480	syscr=5.0	syscw=23.6	sql_reads=2.0	fallback=0.0%	changed_rows=0
+verify	16MiB	B	ok	0.5s
+case	16MiB	C	records=68434	files=4	file_bytes=16777262	ledger_bytes=26443776	index_bytes=2646016	build_s=0.5
+op	16MiB	C	append	n=200	p50=13.266	p95=18.624	p99=24.500	max=35.141	db_ms=7.190	file_ms=6.765	scrub_ms=0.000	wchar=50439	write_bytes=59003	rchar=12022	syscr=2.9	syscw=24.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	16MiB	C	read_last_50	n=200	p50=0.020	p95=0.028	p99=0.042	max=0.077	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=10577	syscr=1.0	syscw=0.0	sql_reads=1.0	fallback=0.0%	changed_rows=0
+op	16MiB	C	unread_after_p	n=200	p50=0.076	p95=0.121	p99=0.141	max=0.159	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=12881	syscr=1.2	syscw=0.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	16MiB	C	edit_recent	n=200	p50=13.739	p95=18.068	p99=23.923	max=26.523	db_ms=7.493	file_ms=6.870	scrub_ms=0.000	wchar=132153	write_bytes=139981	rchar=67602	syscr=2.6	syscw=30.9	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	16MiB	C	edit_random	n=200	p50=50.006	p95=90.795	p99=100.311	max=111.500	db_ms=28.887	file_ms=22.101	scrub_ms=0.000	wchar=5001108	write_bytes=5020508	rchar=3717420	syscr=369.3	syscw=1145.8	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	16MiB	C	redact_recent	n=200	p50=27.672	p95=32.261	p99=39.266	max=45.352	db_ms=14.519	file_ms=6.258	scrub_ms=7.283	wchar=164301	write_bytes=176742	rchar=106335	syscr=14.4	syscw=41.5	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	16MiB	C	redact_random	n=200	p50=67.250	p95=107.973	p99=114.845	max=118.185	db_ms=30.359	file_ms=24.432	scrub_ms=13.681	wchar=4728108	write_bytes=4749210	rchar=3731181	syscr=429.7	syscw=1127.3	sql_reads=3.0	fallback=0.0%	changed_rows=0
+history	16MiB	C	edits=1000	secs=15.4	ledger_bytes 27189248 -> 27443200 (+253952)	versions 68965 -> 69965 (+1000)	version_body_bytes +166792	file_bytes 16758507 -> 16778213 (+19706)
+op	16MiB	C	reanchor_typo	n=20	p50=39.320	p95=44.457	p99=54.946	max=54.946	db_ms=39.784	file_ms=0.000	scrub_ms=0.000	wchar=18748	write_bytes=22938	rchar=6339183	syscr=481.9	syscw=9.2	sql_reads=0.0	fallback=0.0%	changed_rows=1
+op	16MiB	C	reanchor_insert	n=20	p50=70.582	p95=91.282	p99=91.495	max=91.495	db_ms=64.709	file_ms=0.000	scrub_ms=0.000	wchar=1831174	write_bytes=1835622	rchar=6380374	syscr=558.2	syscw=729.3	sql_reads=0.0	fallback=0.0%	changed_rows=10368
+op	16MiB	C	reanchor_trim	n=1	p50=16.545	p95=16.545	p99=16.545	max=16.545	db_ms=16.545	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=4930303	syscr=382.0	syscw=0.0	sql_reads=0.0	fallback=0.0%	changed_rows=0
+op	16MiB	C	append	n=5	p50=12.975	p95=26.722	p99=26.722	max=26.722	db_ms=8.037	file_ms=7.666	scrub_ms=0.000	wchar=42126	write_bytes=49971	rchar=18022	syscr=4.4	syscw=21.4	sql_reads=2.0	fallback=0.0%	changed_rows=0
+verify	16MiB	C	ok	0.6s
+case	64MiB	A	records=275516	files=1	file_bytes=67108914	ledger_bytes=105668608	index_bytes=10100736	build_s=1.7
+op	64MiB	A	append	n=200	p50=13.682	p95=20.535	p99=30.651	max=37.135	db_ms=7.637	file_ms=7.065	scrub_ms=0.000	wchar=65729	write_bytes=74281	rchar=24883	syscr=6.1	syscw=29.4	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	64MiB	A	read_last_50	n=200	p50=0.020	p95=0.032	p99=0.046	max=0.092	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=15275	syscr=1.0	syscw=0.0	sql_reads=1.0	fallback=0.0%	changed_rows=0
+op	64MiB	A	unread_after_p	n=200	p50=0.076	p95=0.124	p99=0.139	max=0.179	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=13271	syscr=1.2	syscw=0.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	64MiB	A	edit_recent	n=200	p50=14.136	p95=17.918	p99=24.959	max=25.556	db_ms=7.665	file_ms=7.064	scrub_ms=0.000	wchar=140911	write_bytes=149402	rchar=74306	syscr=2.6	syscw=30.6	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	64MiB	A	edit_random	n=200	p50=588.704	p95=1058.169	p99=1115.897	max=1149.504	db_ms=307.877	file_ms=278.165	scrub_ms=0.000	wchar=82349492	write_bytes=82500055	rchar=68565390	syscr=8096.2	syscw=19114.4	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	64MiB	A	redact_recent	n=200	p50=33.327	p95=44.893	p99=76.920	max=86.246	db_ms=18.077	file_ms=8.302	scrub_ms=9.069	wchar=191743	write_bytes=204861	rchar=120212	syscr=16.3	syscw=47.2	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	64MiB	A	redact_random	n=200	p50=569.073	p95=1230.934	p99=1727.645	max=1810.982	db_ms=311.075	file_ms=285.482	scrub_ms=4.031	wchar=76356566	write_bytes=76519178	rchar=77861754	syscr=11013.4	syscw=21202.6	sql_reads=3.0	fallback=0.0%	changed_rows=0
+history	64MiB	A	edits=1000	secs=15.0	ledger_bytes 107249664 -> 107520000 (+270336)	versions 276050 -> 277050 (+1000)	version_body_bytes +183701	file_bytes 67098073 -> 67119416 (+21343)
+op	64MiB	A	reanchor_typo	n=20	p50=503.430	p95=548.329	p99=569.530	max=569.530	db_ms=504.881	file_ms=0.000	scrub_ms=0.000	wchar=21838	write_bytes=26010	rchar=96881568	syscr=7268.1	syscw=10.7	sql_reads=0.0	fallback=0.0%	changed_rows=1
+op	64MiB	A	reanchor_insert	n=20	p50=1045.688	p95=1175.810	p99=1239.683	max=1239.683	db_ms=974.390	file_ms=0.000	scrub_ms=0.000	wchar=40846466	write_bytes=40857190	rchar=137551556	syscr=17197.3	syscw=14923.1	sql_reads=0.0	fallback=0.0%	changed_rows=188849
+op	64MiB	A	reanchor_trim	n=1	p50=417.851	p95=417.851	p99=417.851	max=417.851	db_ms=417.850	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=96844450	syscr=7259.0	syscw=0.0	sql_reads=0.0	fallback=0.0%	changed_rows=0
+op	64MiB	A	append	n=5	p50=12.969	p95=159.765	p99=159.765	max=159.765	db_ms=29.054	file_ms=13.654	scrub_ms=0.000	wchar=61079	write_bytes=72090	rchar=26216	syscr=6.4	syscw=30.8	sql_reads=2.0	fallback=0.0%	changed_rows=0
+verify	64MiB	A	ok	2.3s
+case	64MiB	A2	records=275516	files=1	file_bytes=67108914	ledger_bytes=105668608	index_bytes=10100736	build_s=1.7
+op	64MiB	A2	edit_recent	n=200	p50=782.653	p95=868.765	p99=981.575	max=1438.137	db_ms=8.396	file_ms=773.322	scrub_ms=0.000	wchar=67175053	write_bytes=67182428	rchar=67116110	syscr=3.3	syscw=91.8	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	64MiB	A2	edit_random	n=200	p50=1113.520	p95=1369.507	p99=1469.971	max=1480.355	db_ms=304.077	file_ms=801.380	scrub_ms=0.000	wchar=113058610	write_bytes=113070531	rchar=99490883	syscr=7907.2	syscw=18765.5	sql_reads=3.0	fallback=0.0%	changed_rows=0
+verify	64MiB	A2	ok	2.3s
+case	64MiB	B	records=220658	files=1	file_bytes=67110103	ledger_bytes=84815872	index_bytes=8089600	build_s=1.4
+op	64MiB	B	append	n=200	p50=13.184	p95=18.826	p99=24.739	max=35.942	db_ms=7.286	file_ms=6.798	scrub_ms=0.000	wchar=64909	write_bytes=73462	rchar=24166	syscr=5.9	syscw=29.1	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	64MiB	B	read_last_50	n=200	p50=0.020	p95=0.026	p99=0.034	max=0.068	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=19078	syscr=1.0	syscw=0.0	sql_reads=1.0	fallback=0.0%	changed_rows=0
+op	64MiB	B	unread_after_p	n=200	p50=0.074	p95=0.118	p99=0.132	max=0.150	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=15916	syscr=1.2	syscw=0.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	64MiB	B	edit_recent	n=200	p50=10.262	p95=15.090	p99=16.040	max=18.222	db_ms=7.172	file_ms=4.124	scrub_ms=0.000	wchar=50838	write_bytes=59269	rchar=20556	syscr=1.3	syscw=16.1	sql_reads=3.0	fallback=19.5%	changed_rows=0
+op	64MiB	B	edit_random	n=200	p50=11.692	p95=693.832	p99=896.328	max=992.591	db_ms=58.867	file_ms=56.102	scrub_ms=0.000	wchar=15916022	write_bytes=15953900	rchar=13531617	syscr=1431.1	syscw=3386.8	sql_reads=3.0	fallback=22.5%	changed_rows=0
+op	64MiB	B	redact_recent	n=200	p50=23.518	p95=26.659	p99=34.897	max=43.892	db_ms=13.831	file_ms=3.379	scrub_ms=6.944	wchar=57868	write_bytes=70144	rchar=30904	syscr=7.5	syscw=23.4	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	64MiB	B	redact_random	n=200	p50=23.974	p95=28.666	p99=32.733	max=50.313	db_ms=14.002	file_ms=3.557	scrub_ms=7.139	wchar=66292	write_bytes=78623	rchar=40509	syscr=9.9	syscw=26.6	sql_reads=3.0	fallback=0.0%	changed_rows=0
+history	64MiB	B	edits=1000	secs=11.4	ledger_bytes 86335488 -> 86605824 (+270336)	versions 221199 -> 222199 (+1000)	version_body_bytes +174336	file_bytes 67192100 -> 67222159 (+30059)
+op	64MiB	B	reanchor_typo	n=20	p50=417.050	p95=442.851	p99=475.959	max=475.959	db_ms=420.749	file_ms=0.000	scrub_ms=0.000	wchar=22456	write_bytes=26624	rchar=91325482	syscr=5886.6	syscw=10.9	sql_reads=0.0	fallback=0.0%	changed_rows=1
+op	64MiB	B	reanchor_insert	n=20	p50=810.057	p95=936.554	p99=946.937	max=946.937	db_ms=776.115	file_ms=0.000	scrub_ms=0.000	wchar=30939062	write_bytes=30950400	rchar=122178588	syscr=13419.0	syscw=11308.2	sql_reads=0.0	fallback=0.0%	changed_rows=141332
+op	64MiB	B	reanchor_trim	n=1	p50=940.145	p95=940.145	p99=940.145	max=940.145	db_ms=940.144	file_ms=0.000	scrub_ms=0.000	wchar=48186872	write_bytes=48193536	rchar=125919777	syscr=17620.0	syscw=17596.0	sql_reads=0.0	fallback=0.0%	changed_rows=220858
+op	64MiB	B	append	n=5	p50=13.175	p95=55.145	p99=55.145	max=55.145	db_ms=15.021	file_ms=6.511	scrub_ms=0.000	wchar=50923	write_bytes=61440	rchar=25398	syscr=6.2	syscw=25.6	sql_reads=2.0	fallback=0.0%	changed_rows=0
+verify	64MiB	B	ok	1.9s
+case	64MiB	C	records=275511	files=16	file_bytes=67109624	ledger_bytes=106463232	index_bytes=10665984	build_s=1.8
+op	64MiB	C	append	n=200	p50=13.803	p95=19.152	p99=23.666	max=35.918	db_ms=7.537	file_ms=7.091	scrub_ms=0.000	wchar=65955	write_bytes=74506	rchar=25068	syscr=6.1	syscw=29.5	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	64MiB	C	read_last_50	n=200	p50=0.020	p95=0.037	p99=0.061	max=0.089	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=15275	syscr=1.0	syscw=0.0	sql_reads=1.0	fallback=0.0%	changed_rows=0
+op	64MiB	C	unread_after_p	n=200	p50=0.077	p95=0.121	p99=0.137	max=0.159	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=13213	syscr=1.2	syscw=0.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	64MiB	C	edit_recent	n=200	p50=13.986	p95=15.823	p99=42.285	max=47.024	db_ms=7.410	file_ms=6.942	scrub_ms=0.000	wchar=123792	write_bytes=132649	rchar=69896	syscr=2.3	syscw=27.6	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	64MiB	C	edit_random	n=200	p50=47.549	p95=94.289	p99=102.737	max=108.458	db_ms=29.213	file_ms=22.075	scrub_ms=0.000	wchar=5410573	write_bytes=5430292	rchar=4295946	syscr=492.1	syscw=1252.6	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	64MiB	C	redact_recent	n=200	p50=27.104	p95=33.768	p99=47.286	max=48.670	db_ms=14.218	file_ms=6.410	scrub_ms=7.171	wchar=158734	write_bytes=171069	rchar=105586	syscr=14.5	syscw=41.1	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	64MiB	C	redact_random	n=200	p50=73.044	p95=109.880	p99=126.006	max=132.324	db_ms=30.905	file_ms=25.283	scrub_ms=13.652	wchar=5102916	write_bytes=5124219	rchar=4207355	syscr=512.1	syscw=1228.3	sql_reads=3.0	fallback=0.0%	changed_rows=0
+history	64MiB	C	edits=1000	secs=14.9	ledger_bytes 107962368 -> 108224512 (+262144)	versions 276044 -> 277044 (+1000)	version_body_bytes +170197	file_bytes 67089225 -> 67104147 (+14922)
+op	64MiB	C	reanchor_typo	n=20	p50=39.491	p95=41.735	p99=53.875	max=53.875	db_ms=38.455	file_ms=0.000	scrub_ms=0.000	wchar=25752	write_bytes=29901	rchar=6195735	syscr=480.4	syscw=12.6	sql_reads=0.0	fallback=0.0%	changed_rows=1
+op	64MiB	C	reanchor_insert	n=20	p50=73.049	p95=94.237	p99=94.531	max=94.531	db_ms=68.412	file_ms=0.000	scrub_ms=0.000	wchar=2116411	write_bytes=2121114	rchar=7448836	syscr=750.8	syscw=780.0	sql_reads=0.0	fallback=0.0%	changed_rows=9530
+op	64MiB	C	reanchor_trim	n=1	p50=24.951	p95=24.951	p99=24.951	max=24.951	db_ms=24.950	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=6584463	syscr=510.0	syscw=0.0	sql_reads=0.0	fallback=0.0%	changed_rows=0
+op	64MiB	C	append	n=5	p50=14.681	p95=34.396	p99=34.396	max=34.396	db_ms=11.419	file_ms=6.930	scrub_ms=0.000	wchar=56247	write_bytes=65536	rchar=27853	syscr=6.8	syscw=28.4	sql_reads=2.0	fallback=0.0%	changed_rows=0
+verify	64MiB	C	ok	2.3s
+case	256MiB	A	records=1103069	files=1	file_bytes=268435530	ledger_bytes=423329792	index_bytes=40468480	build_s=7.5
+op	256MiB	A	append	n=200	p50=13.046	p95=15.439	p99=24.141	max=36.732	db_ms=7.070	file_ms=6.504	scrub_ms=0.000	wchar=71265	write_bytes=79831	rchar=29389	syscr=7.2	syscw=31.7	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	256MiB	A	read_last_50	n=200	p50=0.020	p95=0.024	p99=0.036	max=0.081	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=15179	syscr=1.0	syscw=0.0	sql_reads=1.0	fallback=0.0%	changed_rows=0
+op	256MiB	A	unread_after_p	n=200	p50=0.074	p95=0.115	p99=0.123	max=0.158	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=12688	syscr=1.2	syscw=0.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	256MiB	A	edit_recent	n=200	p50=14.093	p95=18.671	p99=23.106	max=33.320	db_ms=7.773	file_ms=7.053	scrub_ms=0.000	wchar=139060	write_bytes=148398	rchar=73246	syscr=3.2	syscw=31.2	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	256MiB	A	edit_random	n=200	p50=2014.611	p95=4052.977	p99=4244.045	max=4439.608	db_ms=1073.400	file_ms=982.289	scrub_ms=0.000	wchar=315812537	write_bytes=316359086	rchar=264990545	syscr=31805.5	syscw=73606.6	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	256MiB	A	redact_recent	n=200	p50=27.365	p95=36.948	p99=51.085	max=88.021	db_ms=14.441	file_ms=6.441	scrub_ms=7.337	wchar=182297	write_bytes=194847	rchar=113793	syscr=15.8	syscw=45.2	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	256MiB	A	redact_random	n=200	p50=2087.023	p95=4208.154	p99=5174.112	max=9203.370	db_ms=1157.655	file_ms=1076.478	scrub_ms=6.709	wchar=325198538	write_bytes=326586388	rchar=331935533	syscr=47186.5	syscw=90229.0	sql_reads=3.0	fallback=0.0%	changed_rows=0
+history	256MiB	A	edits=1000	secs=14.6	ledger_bytes 425840640 -> 426119168 (+278528)	versions 1103598 -> 1104598 (+1000)	version_body_bytes +185550	file_bytes 268422281 -> 268445912 (+23631)
+op	256MiB	A	reanchor_typo	n=20	p50=2183.874	p95=2424.924	p99=2554.858	max=2554.858	db_ms=2247.177	file_ms=0.000	scrub_ms=0.000	wchar=31314	write_bytes=36454	rchar=387504140	syscr=29069.0	syscw=15.2	sql_reads=0.0	fallback=0.0%	changed_rows=1
+op	256MiB	A	reanchor_insert	n=20	p50=4343.148	p95=4797.697	p99=5096.886	max=5096.886	db_ms=3981.056	file_ms=0.000	scrub_ms=0.000	wchar=147156311	write_bytes=147207373	rchar=534291248	syscr=64905.6	syscw=53755.8	sql_reads=0.0	fallback=0.0%	changed_rows=681449
+op	256MiB	A	reanchor_trim	n=1	p50=2264.588	p95=2264.588	p99=2264.588	max=2264.588	db_ms=2264.588	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=387463745	syscr=29059.0	syscw=0.0	sql_reads=0.0	fallback=0.0%	changed_rows=0
+op	256MiB	A	append	n=5	p50=14.864	p95=23.737	p99=23.737	max=23.737	db_ms=9.189	file_ms=6.989	scrub_ms=0.000	wchar=57214	write_bytes=68813	rchar=24577	syscr=6.0	syscw=28.8	sql_reads=2.0	fallback=0.0%	changed_rows=0
+verify	256MiB	A	ok	9.7s
+case	256MiB	A2	records=1103069	files=1	file_bytes=268435530	ledger_bytes=423329792	index_bytes=40468480	build_s=7.7
+op	256MiB	A2	edit_recent	n=200	p50=3336.964	p95=4040.067	p99=6087.046	max=7560.370	db_ms=9.231	file_ms=3443.778	scrub_ms=0.000	wchar=268502787	write_bytes=268511683	rchar=268443128	syscr=3.5	syscw=285.4	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	256MiB	A2	edit_random	n=200	p50=4494.586	p95=5930.177	p99=6675.842	max=9161.230	db_ms=1165.535	file_ms=3394.217	scrub_ms=0.000	wchar=452028982	write_bytes=452062679	rchar=399963063	syscr=32111.4	syscw=74630.6	sql_reads=3.0	fallback=0.0%	changed_rows=0
+verify	256MiB	A2	ok	9.5s
+case	256MiB	B	records=882908	files=1	file_bytes=268435607	ledger_bytes=339787776	index_bytes=32387072	build_s=6.1
+op	256MiB	B	append	n=200	p50=13.345	p95=19.850	p99=27.610	max=36.875	db_ms=7.437	file_ms=7.040	scrub_ms=0.000	wchar=70998	write_bytes=79524	rchar=28856	syscr=7.0	syscw=31.6	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	256MiB	B	read_last_50	n=200	p50=0.020	p95=0.031	p99=0.037	max=0.071	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=18955	syscr=1.0	syscw=0.0	sql_reads=1.0	fallback=0.0%	changed_rows=0
+op	256MiB	B	unread_after_p	n=200	p50=0.075	p95=0.116	p99=0.122	max=0.172	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=15837	syscr=1.2	syscw=0.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	256MiB	B	edit_recent	n=200	p50=9.756	p95=14.034	p99=18.018	max=20.746	db_ms=6.766	file_ms=3.886	scrub_ms=0.000	wchar=47931	write_bytes=56238	rchar=21219	syscr=1.9	syscw=15.6	sql_reads=3.0	fallback=17.0%	changed_rows=0
+op	256MiB	B	edit_random	n=200	p50=10.554	p95=1818.541	p99=3107.330	max=3898.453	db_ms=130.413	file_ms=132.639	scrub_ms=0.000	wchar=38507806	write_bytes=38584218	rchar=33659310	syscr=3713.3	syscw=8367.6	sql_reads=3.0	fallback=17.5%	changed_rows=0
+op	256MiB	B	redact_recent	n=200	p50=23.855	p95=31.013	p99=56.480	max=72.786	db_ms=14.573	file_ms=3.482	scrub_ms=7.338	wchar=56861	write_bytes=69140	rchar=31171	syscr=7.6	syscw=23.0	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	256MiB	B	redact_random	n=200	p50=24.019	p95=27.601	p99=36.587	max=52.373	db_ms=14.109	file_ms=3.511	scrub_ms=7.135	wchar=84639	write_bytes=96707	rchar=55398	syscr=13.5	syscw=33.3	sql_reads=3.0	fallback=0.0%	changed_rows=0
+history	256MiB	B	edits=1000	secs=11.3	ledger_bytes 342138880 -> 342413312 (+274432)	versions 883446 -> 884446 (+1000)	version_body_bytes +179123	file_bytes 268509502 -> 268533545 (+24043)
+op	256MiB	B	reanchor_typo	n=20	p50=1876.831	p95=2005.121	p99=2054.746	max=2054.746	db_ms=1867.310	file_ms=0.000	scrub_ms=0.000	wchar=30696	write_bytes=35840	rchar=364694518	syscr=23478.8	syscw=14.9	sql_reads=0.0	fallback=0.0%	changed_rows=1
+op	256MiB	B	reanchor_insert	n=20	p50=2715.908	p95=3845.957	p99=3965.054	max=3965.054	db_ms=2718.720	file_ms=0.000	scrub_ms=0.000	wchar=71539932	write_bytes=71562035	rchar=436005248	syscr=40888.6	syscw=26127.6	sql_reads=0.0	fallback=0.0%	changed_rows=327738
+op	256MiB	B	reanchor_trim	n=1	p50=4056.133	p95=4056.133	p99=4056.133	max=4056.133	db_ms=4056.132	file_ms=0.000	scrub_ms=0.000	wchar=192402320	write_bytes=192475136	rchar=503140124	syscr=70351.0	syscw=70255.0	sql_reads=0.0	fallback=0.0%	changed_rows=883108
+op	256MiB	B	append	n=5	p50=13.538	p95=23.989	p99=23.989	max=23.989	db_ms=8.860	file_ms=6.657	scrub_ms=0.000	wchar=50811	write_bytes=62259	rchar=24576	syscr=6.0	syscw=25.6	sql_reads=2.0	fallback=0.0%	changed_rows=0
+verify	256MiB	B	ok	7.6s
+case	256MiB	C	records=1103051	files=61	file_bytes=268435485	ledger_bytes=426401792	index_bytes=42713088	build_s=8.0
+op	256MiB	C	append	n=200	p50=13.425	p95=20.155	p99=28.979	max=35.860	db_ms=7.559	file_ms=7.074	scrub_ms=0.000	wchar=71162	write_bytes=79729	rchar=29225	syscr=7.1	syscw=31.6	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	256MiB	C	read_last_50	n=200	p50=0.020	p95=0.029	p99=0.050	max=0.068	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=15179	syscr=1.0	syscw=0.0	sql_reads=1.0	fallback=0.0%	changed_rows=0
+op	256MiB	C	unread_after_p	n=200	p50=0.074	p95=0.116	p99=0.142	max=0.154	db_ms=0.000	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=12724	syscr=1.2	syscw=0.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+op	256MiB	C	edit_recent	n=200	p50=13.840	p95=17.634	p99=23.357	max=24.158	db_ms=7.492	file_ms=6.941	scrub_ms=0.000	wchar=126683	write_bytes=134963	rchar=70514	syscr=3.1	syscw=29.5	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	256MiB	C	edit_random	n=200	p50=54.108	p95=107.476	p99=142.404	max=159.727	db_ms=32.308	file_ms=26.162	scrub_ms=0.000	wchar=5294593	write_bytes=5314273	rchar=4245228	syscr=499.7	syscw=1231.0	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	256MiB	C	redact_recent	n=200	p50=27.882	p95=33.608	p99=45.331	max=76.626	db_ms=14.536	file_ms=6.579	scrub_ms=7.497	wchar=180721	write_bytes=192758	rchar=123577	syscr=17.6	syscw=45.8	sql_reads=3.0	fallback=0.0%	changed_rows=0
+op	256MiB	C	redact_random	n=200	p50=78.971	p95=121.621	p99=135.806	max=153.346	db_ms=33.686	file_ms=30.106	scrub_ms=15.083	wchar=5514500	write_bytes=5535867	rchar=4713221	syscr=594.7	syscw=1356.8	sql_reads=3.0	fallback=0.0%	changed_rows=0
+history	256MiB	C	edits=1000	secs=17.7	ledger_bytes 428789760 -> 429027328 (+237568)	versions 1103599 -> 1104599 (+1000)	version_body_bytes +156718	file_bytes 268408694 -> 268427903 (+19209)
+op	256MiB	C	reanchor_typo	n=20	p50=72.424	p95=107.021	p99=179.494	max=179.494	db_ms=80.059	file_ms=0.000	scrub_ms=0.000	wchar=34610	write_bytes=38707	rchar=6582144	syscr=511.3	syscw=16.9	sql_reads=0.0	fallback=0.0%	changed_rows=1
+op	256MiB	C	reanchor_insert	n=20	p50=101.764	p95=278.482	p99=449.018	max=449.018	db_ms=123.747	file_ms=0.000	scrub_ms=0.000	wchar=1993235	write_bytes=1997824	rchar=7560213	syscr=759.0	syscw=737.6	sql_reads=0.0	fallback=0.0%	changed_rows=8983
+op	256MiB	C	reanchor_trim	n=1	p50=25.267	p95=25.267	p99=25.267	max=25.267	db_ms=25.266	file_ms=0.000	scrub_ms=0.000	wchar=0	write_bytes=0	rchar=6634718	syscr=510.0	syscw=0.0	sql_reads=0.0	fallback=0.0%	changed_rows=0
+op	256MiB	C	append	n=5	p50=13.680	p95=25.659	p99=25.659	max=25.659	db_ms=9.062	file_ms=6.831	scrub_ms=0.000	wchar=49536	write_bytes=57344	rchar=26214	syscr=6.4	syscw=25.0	sql_reads=2.0	fallback=0.0%	changed_rows=0
+verify	256MiB	C	ok	9.9s
