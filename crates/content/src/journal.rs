@@ -125,6 +125,7 @@ impl Journals {
     /// Pruning retains the receipt while a durable outbox intent can replay it.
     /// Cost: one indexed read and, when new, one FULL writer transaction (one WAL
     /// fsync) on the space's writer thread.
+    /// Window lag classification relies on the single item ID from the outbox.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn publish(
         &self,

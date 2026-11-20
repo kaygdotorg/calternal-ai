@@ -46,9 +46,7 @@ impl Content {
         let unavailable = || {
             reauthorize()?;
             self.wake_window(space, true);
-            Err(Error::unavailable(
-                "window projection is temporarily unavailable",
-            ))
+            Err(Error::unavailable("window projection is unavailable"))
         };
         let slot = self.pin_slot(space)?;
         let cache = &slot.windows;
@@ -66,13 +64,13 @@ impl Content {
             return Ok(reply);
         }
         let Ok(pin) = cache.gate.try_read() else {
-            return if cache.failure().is_some() {
+            return if cache.reader_blocked() {
                 unavailable()
             } else {
                 loading()
             };
         };
-        if cache.initialize_failure(&source).is_err() || cache.failure().is_some() {
+        if cache.initialize_failure(&source).is_err() || cache.reader_blocked() {
             drop(pin);
             return unavailable();
         }
@@ -102,8 +100,8 @@ impl Content {
                 drop(pin);
                 return loading();
             }
-            Err(_) => {
-                cache.report_reader_error();
+            Err(error) => {
+                cache.report_failure(space, &error, runtime::Action::Reader);
                 drop(pin);
                 return unavailable();
             }
@@ -155,6 +153,20 @@ impl Content {
         };
         if result.is_ok() {
             cache.put_reader(reader, &self.window_handles);
+        } else {
+            drop(reader);
+        }
+        match &result {
+            Ok(Some(_)) => cache.recovered(true),
+            Err(error)
+                if !matches!(
+                    error.code,
+                    crate::ErrorCode::NotFound | crate::ErrorCode::Conflict
+                ) =>
+            {
+                cache.report_failure(space, error, runtime::Action::Reader);
+            }
+            _ => {}
         }
         drop(pin);
         match result {
@@ -165,10 +177,7 @@ impl Content {
             Ok(None) => loading(),
             Err(error) if error.code == crate::ErrorCode::NotFound => Err(error),
             Err(error) if error.code == crate::ErrorCode::Conflict => loading(),
-            Err(_) => {
-                cache.report_reader_error();
-                unavailable()
-            }
+            Err(_) => unavailable(),
         }
     }
 }

@@ -1,3 +1,6 @@
+#[path = "window_recovery.rs"]
+mod recovery;
+
 use super::*;
 
 fn call(srv: &Server, token: &str, path: &str, body: Option<Value>, lease: &Value) -> Resp {
@@ -220,97 +223,6 @@ fn space_count_quota_is_independent_for_colliding_space_ids() {
         &second,
     );
     assert_eq!(answer.status, 200, "{}", answer.body);
-}
-
-#[test]
-fn corrupt_projection_is_rebuilt_before_releasing_rows() {
-    let dir = TempDir::new("v2-corrupt");
-    let srv = start(&dir.0, None);
-    create(&srv, "first-note", &srv.personal, "durable body");
-    let path = dir
-        .0
-        .join("appdata/spaces")
-        .join(&srv.personal)
-        .join("windows-v1.db");
-    std::fs::write(path, b"invalid SQLite database").unwrap();
-    let view = format!("/api/v2/spaces/{}/notes-view", srv.personal);
-    let window = format!("{view}/window");
-    let lease = open(&srv, &view, "exact");
-    let request = requested("notes", "start");
-    let deadline = Instant::now() + Duration::from_secs(8);
-    loop {
-        let reply = call(&srv, &srv.owner, &window, Some(request.clone()), &lease);
-        match reply.status {
-            200 if reply.body["state"] == "ready" => {
-                assert_eq!(reply.body["count"]["value"], 1);
-                break;
-            }
-            200 => {
-                assert_eq!(reply.body["state"], "loading");
-                assert_eq!(reply.body["rows"], json!([]));
-                assert!(reply.body.get("count").is_none());
-            }
-            503 => {
-                assert_eq!(reply.body["error"]["code"], "unavailable");
-                assert!(reply.body.get("rows").is_none());
-                assert!(reply.body.get("count").is_none());
-            }
-            429 => {}
-            _ => panic!("unexpected {}: {}", reply.status, reply.body),
-        }
-        assert!(Instant::now() < deadline, "projection did not rebuild");
-        std::thread::sleep(Duration::from_millis(1050));
-    }
-}
-
-#[test]
-fn unopenable_projection_persists_unavailability_until_it_can_rebuild() {
-    let dir = TempDir::new("v2-unopenable");
-    let srv = start(&dir.0, None);
-    create(&srv, "first-note", &srv.personal, "durable body");
-    let path = dir
-        .0
-        .join("appdata/spaces")
-        .join(&srv.personal)
-        .join("windows-v1.db");
-    // An unexpected directory cannot be opened as SQLite or removed as a file.
-    std::fs::create_dir(&path).unwrap();
-    let view = format!("/api/v2/spaces/{}/notes-view", srv.personal);
-    let lease = open(&srv, &view, "exact");
-    let endpoint = format!("{view}/window");
-    let request = requested("notes", "start");
-    // The first authorized request wakes the worker if the slot is dormant.
-    let first = call(&srv, &srv.owner, &endpoint, Some(request.clone()), &lease);
-    assert!(matches!(first.status, 200 | 503), "{}", first.body);
-    let failure = path.with_file_name("windows-v1.failure");
-    let deadline = Instant::now() + Duration::from_secs(8);
-    loop {
-        if std::fs::read_to_string(&failure).is_ok_and(|body| body.starts_with("replay_failed ")) {
-            break;
-        }
-        assert!(Instant::now() < deadline, "failure was not persisted");
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    let failed = call(&srv, &srv.owner, &endpoint, Some(request.clone()), &lease);
-    assert_eq!(failed.status, 503, "{}", failed.body);
-    assert_eq!(failed.body["error"]["code"], "unavailable");
-    assert!(path.is_dir());
-    std::fs::remove_dir(path).unwrap();
-    loop {
-        let reply = call(&srv, &srv.owner, &endpoint, Some(request.clone()), &lease);
-        if reply.body["state"] == "ready" {
-            assert_eq!(reply.body["count"]["value"], 1);
-            break;
-        }
-        assert!(matches!(reply.status, 200 | 429 | 503), "{}", reply.body);
-        assert!(
-            Instant::now() < deadline,
-            "window could not recover: {}",
-            reply.body
-        );
-        std::thread::sleep(Duration::from_millis(1050));
-    }
-    assert!(!failure.exists());
 }
 
 #[test]

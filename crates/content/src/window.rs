@@ -1,8 +1,11 @@
 //! Ordered windows over committed, audience-visible rows.
 
+mod inspect;
 mod kinds;
+pub use inspect::WindowProjectionStatus;
 mod read;
 mod replay;
+mod replay_rows;
 mod request;
 pub(crate) mod runtime;
 pub use kinds::{WindowField, WindowKindOrder, WindowOrder, WindowScope};

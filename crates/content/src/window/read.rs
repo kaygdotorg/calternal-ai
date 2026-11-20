@@ -1,7 +1,7 @@
 //! Covering index locators and bounded row materialization.
 
 use super::{Key, WindowAnchor, WindowPlanReason, limits};
-use crate::{Result, types::internal};
+use crate::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 
 #[derive(Default)]
@@ -14,7 +14,7 @@ pub(super) fn scope(conn: &Connection, scope: &(String, &str)) -> Result<Scope> 
     conn.prepare_cached(
         "SELECT total,version FROM window_scopes WHERE (collection,audience)=(?1,?2)",
     )
-    .map_err(internal)?
+    .map_err(super::replay::sidecar_error)?
     .query_row(params![scope.0, scope.1], |r| {
         Ok(Scope {
             total: r.get::<_, i64>(0)? as u64,
@@ -22,7 +22,7 @@ pub(super) fn scope(conn: &Connection, scope: &(String, &str)) -> Result<Scope> 
         })
     })
     .optional()
-    .map_err(internal)
+    .map_err(super::replay::sidecar_error)
     .map(|scope| scope.unwrap_or_default())
 }
 
@@ -130,10 +130,13 @@ pub(super) fn keys(
     if plan.take == 0 {
         return Ok(keys);
     }
-    let mut stmt = statement(conn, scope, &plan).map_err(internal)?;
+    let mut stmt = statement(conn, scope, &plan).map_err(super::replay::sidecar_error)?;
     let mut rows = stmt.raw_query();
-    while let Some(row) = rows.next().map_err(internal)? {
-        keys.push((row.get(0).map_err(internal)?, row.get(1).map_err(internal)?));
+    while let Some(row) = rows.next().map_err(super::replay::sidecar_error)? {
+        keys.push((
+            row.get(0).map_err(super::replay::sidecar_error)?,
+            row.get(1).map_err(super::replay::sidecar_error)?,
+        ));
     }
     if matches!(plan.scan, Scan::Reverse(_) | Scan::Seek(_, true)) != plan.reversed {
         keys.reverse();
@@ -260,7 +263,7 @@ impl<'a, 'fields> Projection<'a, 'fields> {
             "SELECT metadata FROM items WHERE id=?1"
         };
         Ok(Self {
-            statement: conn.prepare_cached(sql).map_err(internal)?,
+            statement: conn.prepare_cached(sql).map_err(super::replay::sql_error)?,
             title,
             title_path: format!("$.{title}"),
             fields,
@@ -274,14 +277,15 @@ impl<'a, 'fields> Projection<'a, 'fields> {
             let title: String = self
                 .statement
                 .query_row([id, &self.title_path], |row| row.get(0))
-                .map_err(internal)?;
+                .map_err(super::replay::sql_error)?;
             return Ok(json!({"title": title}));
         }
         let metadata: String = self
             .statement
             .query_row([id], |row| row.get(0))
-            .map_err(internal)?;
-        let metadata: Value = serde_json::from_str(&metadata).map_err(internal)?;
+            .map_err(super::replay::sql_error)?;
+        let metadata: Value =
+            serde_json::from_str(&metadata).map_err(|_| super::replay::malformed_metadata())?;
         let mut fields = Map::new();
         fields.insert(
             "title".into(),

@@ -21,9 +21,9 @@ appear only in the historical measurements below.
 - A live note can have its space projection and up to 31 explicit
   collection projections. A new edge that would exceed the cap aborts the
   authoritative transaction with HTTP 422 `effective_scope_limit_exceeded`.
-  Inherited over-limit notes remain editable. Replay records an omission
-  for each affected note and publishes the other rows. Removing the excess
-  edges makes the note appear in the next published generation.
+  Inherited over-limit notes remain editable and keep their Notes or
+  Trash row. Replay omits the affected explicit-collection rows and
+  records the item until its memberships are repaired.
 - Guest rows expose titles and view-scoped selectors. Hidden metadata and
   body edits leave the guest scope version unchanged. Grant, revoke and
   membership authority are checked before storage access and before
@@ -627,8 +627,8 @@ reuses the existing Notes head and reverse membership indexes, the content
 outbox, the durable journal, and the shared search projection worker. The
 32-scope bound is checked in the authoritative transaction. Earlier
 releases could already have saved an oversized membership. The sidecar
-records each skipped item and publishes the rest. Authorized native callers
-can still read and edit the original content and list records. The index and
+records each affected item and omits its explicit-collection rows. The
+root Notes and Trash windows still include it in the appropriate state. The index and
 count rows live in a separate private SQLite WAL database with
 `synchronous=NORMAL`. The first authorized v2 window requests a build.
 The shared worker polls active spaces for further durable journal entries.
@@ -640,7 +640,7 @@ timestamp and UUID cursor queries the live heads as on dev.
 | Existing-item ACK | Existing content and journal statements. The projection adds zero reads, SQLite statements or queue requests. | Same three FULL transaction boundaries as dev. |
 | Warm ready v2 window, current head | No opens or attachments when reusing a reader. One publication read, two journal head statements (two seeks each), two source config/outbox checks, one source binding lookup, one scope lookup, one covering range, and one source point lookup per returned row. Declared orders and parents add point checks. The host checks live authority before storage and before delivery. | 0 |
 | Warm root Notes with unrelated lag | Each freshness check may add one journal range, at most 128 indexed kind probes and one epoch recheck. The outbox check examines at most 129 pending intents and probes kinds for at most that many. Unknown entries fail closed. | 0 |
-| Cold v2 window | May stat/open the sidecar, attach the source and open the journal reader with one journal binding lookup. Each slot can cache up to two reader/journal pairs and one writer/journal pair. The service retains at most eight pairs of each class and expires them after five idle seconds. The cap controls retention only. A request or replay can open a pair on demand. | 0 |
+| Cold v2 window | May stat/open the sidecar, check its schema version, attach the source and open the journal reader with one journal binding lookup. Each slot can cache up to two reader/journal pairs and one writer/journal pair. The service retains at most eight pairs of each class and expires them after five idle seconds. The cap controls retention only. A request or replay can open a pair on demand. | 0 |
 | Replay or rebuild step | One page of up to 128 journal entries, source items or rows removed. A collection event advances a separate member UUID cursor in batches of up to 128, drawing from bounded seeks into source edges, prior edges and the recorded omissions. | At most one NORMAL sidecar commit per step. The worker also performs creation, checkpointing and recovery. |
 | Collection save | Unchanged member arrays still require old/new JSON comparison. A retitle does zero reverse-edge mutations and no scope-cap probes. Adding an edge checks whether it already exists and probes the capped reverse-note range. Membership changes compare bounded arrays of up to 10,000 entries. | Existing authoritative flushes. |
 
@@ -1033,7 +1033,10 @@ full 436-page docs gate using the installer pages inherited from dev.
     and recovery tests live in separate files. Per-space leases, query
     admission and the package fixture have separate modules.
 
-## Independent review follow-up, 2026-11-20
+## First independent review follow-up, 2026-11-20
+
+These measurements use the first review's candidate. The second review
+follow-up below records subsequent recovery and omission behavior.
 
 1. **Recovery.** Confirmed the baseline returned 500 for a corrupt sidecar.
    The shared worker now discards the derived DB, WAL and SHM and rebuilds.
@@ -1166,6 +1169,42 @@ verifier and `scripts/check-docs.sh` (436 generated pages).
 The release-image upgrade and backend acceptance gates for this revision
 remain with the coordinator. The earlier physical power-cut qualification
 gap remains open.
+
+## Second independent review follow-up
+
+- Over-limit notes keep the root Notes or Trash row. Replay omits only their
+  explicit-collection rows. The first committed omission for an item logs
+  one warning. The record remains through a move to Trash until memberships
+  are repaired or the item is purged. The private `window-status` command
+  reads the recorded count and persistent failure state.
+- Corrupt, foreign-format or incompatible-schema sidecars are replaced.
+  Failures in the authoritative database, its journal or an ambiguous
+  cross-database statement retry in place. A poison item with malformed
+  metadata reaches a persistent failure after five attempts. Reads return
+  typed unavailability during backoff and after exhaustion. Inspect the
+  failure category with `calternal window-status`. After repairing a
+  terminal source failure, stop the server, remove that space's private
+  `windows-v1.failure` marker and restart to resume the saved cursor.
+- A committed ready sidecar clears its replay failure even with pending
+  journal entries. Root Notes applies its existing disjoint-lag proof.
+  Relevant lag returns loading without rows or an exact count.
+- SQLite sidecar schema version 2 includes the membership cursor and
+  omission table. A previous generation at the same derived path rebuilds.
+  The authoritative schema and sealed contracts retain their existing versions.
+- A content request stages one changed item and its outbox row together.
+  Linked edits use a distinct request for each item. The outbox key enforces
+  uniqueness and the writer asserts insertion of one row. The journal
+  publishes that same item, which the root Notes lag check classifies.
+- Issue #85 tracks collection-scoped omission repair, an inode-swap audit
+  and lag acceptance for additional scopes together.
+
+The coordinator's full-workspace run on `2afa2a19` hit the existing
+one-second userdata placement guard during the sustained-write fixture.
+The preceding `save-253` journal commit took 662 ms on the nearly full,
+shared dev filesystem. The test now retries that specific backpressure
+response with the same request ID, revision and payload for up to ten
+seconds. Its assertions still check the same 128-entry replay boundaries
+and keep count withheld until the final relevant page.
 
 ## Simplification opportunities
 

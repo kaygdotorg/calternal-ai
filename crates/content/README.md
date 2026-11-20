@@ -172,9 +172,14 @@ content service, at most eight of each pair are retained, for up to five
 idle seconds. A full cache still allows on-demand reads and replay.
 Bootstrap, epoch reset and collection replay use bounded
 resumable pages. A broken sidecar produces typed unavailability while the
-worker retries with backoff and rebuilds derived files. Replay records and
-omits inherited over-limit notes until their memberships are repaired.
-A Notes save adds no synchronous index I/O or worker request.
+worker retries with backoff. Confirmed sidecar corruption and incompatible
+schemas rebuild from the journal. Other failures retain the existing file
+and stop after five failed attempts. Once a rebuild publishes, the ordinary
+freshness checks apply even while replay is catching up. An inherited
+over-limit note keeps its Notes or Trash row and is omitted from explicit
+collections until repaired. The private `window-status` command reports the
+omission count, failure category and retry state. A Notes save adds zero
+synchronous projection reads, queue requests or flushes.
 
 Space plugin settings use a versioned file in userdata. A single durable,
 settings-only intent in the existing per-space database carries the file

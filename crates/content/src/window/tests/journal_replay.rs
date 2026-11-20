@@ -30,10 +30,41 @@ pub(super) fn verify_inherited_memberships(
         .unwrap();
     conn.execute_batch(&trigger).unwrap();
     project(content, space);
+    let id = inherited["id"].as_str().unwrap().parse().unwrap();
     assert_eq!(
         result(member_window(content, space)).count.unwrap().value,
+        1
+    );
+    assert_eq!(
+        scope_count(content, space, WindowScope::NotesCollection(id)),
         0
     );
+    assert_eq!(
+        content
+            .window_projection_status(space)
+            .unwrap()
+            .skipped_items,
+        Some(1)
+    );
+    let note = content.get(space, item).unwrap();
+    let trashed = content
+        .trash(
+            &note,
+            note.metadata.clone(),
+            &note.bytes,
+            request(actor, "trash-inherited"),
+            |_| json!({}),
+            || Ok(()),
+        )
+        .unwrap();
+    project(content, space);
+    assert_eq!(scope_count(content, space, WindowScope::SpaceNotes), 0);
+    assert_eq!(scope_count(content, space, WindowScope::NotesTrash), 1);
+    content
+        .restore(&trashed, request(actor, "restore-inherited"), |_| json!({}))
+        .unwrap();
+    project(content, space);
+    assert_eq!(scope_count(content, space, WindowScope::SpaceNotes), 1);
     let skipped: String = replay::reader(source)
         .unwrap()
         .query_row(
@@ -43,7 +74,6 @@ pub(super) fn verify_inherited_memberships(
         )
         .unwrap();
     assert_eq!(skipped, "effective_scope_limit_exceeded");
-    let id = inherited["id"].as_str().unwrap().parse().unwrap();
     let original = content.get(space, id).unwrap();
     let mut metadata = original.metadata;
     metadata["title"] = json!("Retitled");
@@ -72,6 +102,105 @@ pub(super) fn verify_inherited_memberships(
     project(content, space);
     assert_eq!(
         result(member_window(content, space)).count.unwrap().value,
+        1
+    );
+}
+
+fn scope_count(content: &Content, space: SpaceId, scope: WindowScope) -> u64 {
+    result(
+        content
+            .window(
+                space,
+                &WindowRequest::Window {
+                    request: range(0, 10, WindowAnchor::Start),
+                },
+                None,
+                || {
+                    Ok(WindowAccess {
+                        scope: scope.clone(),
+                        audience: WindowAudience::Member,
+                        count: WindowCountMode::Exact,
+                        view: Uuid::nil(),
+                    })
+                },
+            )
+            .unwrap(),
+    )
+    .count
+    .unwrap()
+    .value
+}
+
+#[test]
+fn rebuilt_projection_clears_failure_before_catching_unrelated_journal_head() {
+    let dir = tempfile::tempdir().unwrap();
+    let content = content(&dir);
+    let space = SpaceId::new();
+    let actor = AccountId::new();
+    let _pin = content.pin_slot(space).unwrap();
+    seed_note(&content, space, actor);
+    content
+        .register_kind(
+            space,
+            "threads",
+            Placement::Visible {
+                folder: "Threads".into(),
+            },
+            FileFormat::Markdown,
+        )
+        .unwrap();
+    let source = crate::db::space_path(&content.roots.appdata, space);
+    let path = replay::path(&source);
+    Connection::open(path)
+        .unwrap()
+        .pragma_update(None, "user_version", 1)
+        .unwrap();
+    let answer = content.window(
+        space,
+        &WindowRequest::Window {
+            request: range(0, 10, WindowAnchor::Start),
+        },
+        None,
+        || {
+            Ok(WindowAccess {
+                scope: WindowScope::SpaceNotes,
+                audience: WindowAudience::Member,
+                count: WindowCountMode::Exact,
+                view: Uuid::nil(),
+            })
+        },
+    );
+    assert_eq!(answer.unwrap_err().code, ErrorCode::Unavailable);
+    std::thread::sleep(Duration::from_millis(225));
+    assert!(content.advance_window(space, true).unwrap());
+    assert_eq!(
+        content
+            .window_projection_status(space)
+            .unwrap()
+            .failure
+            .as_deref(),
+        Some("rebuilding")
+    );
+    content
+        .write(
+            space,
+            None,
+            "threads",
+            None,
+            json!({"title":"Other kind"}),
+            b"thread body",
+            request(actor, "append-during-rebuild"),
+            |_| json!({}),
+        )
+        .unwrap();
+    assert!(
+        content.advance_window(space, true).unwrap(),
+        "journal still has work after bootstrap"
+    );
+    let status = content.window_projection_status(space).unwrap();
+    assert!(status.failure.is_none());
+    assert_eq!(
+        result(member_window(&content, space)).count.unwrap().value,
         1
     );
 }
@@ -325,6 +454,25 @@ fn relevant_save_between_materialization_and_delivery_releases_no_rows() {
 
 #[test]
 fn sustained_writes_leave_no_exact_count_until_the_last_journal_page() {
+    fn write_with_retry(write: impl Fn() -> Result<crate::Item>) -> crate::Item {
+        // The replay fixture tests the journal boundary. A slow volume can
+        // temporarily pause the ordinary content writer while placement drains.
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            match write() {
+                Err(error)
+                    if error.code == ErrorCode::Unavailable
+                        && error.message
+                            == "userdata materialization exceeded one second; check the SSD root and retry"
+                        && std::time::Instant::now() < deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                result => return result.expect("durable fixture write"),
+            }
+        }
+    }
+
     let dir = tempfile::tempdir().unwrap();
     let content = content(&dir);
     let space = SpaceId::new();
@@ -337,8 +485,8 @@ fn sustained_writes_leave_no_exact_count_until_the_last_journal_page() {
     );
     let mut save = |i| {
         let key = format!("save-{i}");
-        note = content
-            .write(
+        note = write_with_retry(|| {
+            content.write(
                 space,
                 Some(note.id),
                 "notes",
@@ -348,13 +496,13 @@ fn sustained_writes_leave_no_exact_count_until_the_last_journal_page() {
                 request(actor, &key),
                 |_| json!({}),
             )
-            .unwrap();
+        });
     };
     for i in 1..=260 {
         save(i);
     }
-    content
-        .write(
+    write_with_retry(|| {
+        content.write(
             space,
             None,
             "notes",
@@ -364,7 +512,7 @@ fn sustained_writes_leave_no_exact_count_until_the_last_journal_page() {
             request(actor, "second"),
             |_| json!({}),
         )
-        .unwrap();
+    });
     assert_loading(member_window(&content, space));
     assert!(content.advance_window(space, true).unwrap());
     assert_loading(member_window(&content, space));

@@ -133,7 +133,7 @@ fn randomized_windows_match_independent_scan_of_mixed_visibility() {
         true,
     );
     for n in 1..=900 {
-        replay::item(&conn, &Uuid::from_u128(n).to_string()).unwrap();
+        replay_rows::item(&conn, &Uuid::from_u128(n).to_string()).unwrap();
     }
     for (scope, audience, mode) in [
         (
@@ -493,10 +493,10 @@ fn guest_titles_ignore_hidden_edits_and_certified_estimates_are_member_only() {
     );
     let scope = WindowScope::NotesCollection(coll);
     let key = scope.key();
-    replay::item(&conn, &note.to_string()).unwrap();
+    replay_rows::item(&conn, &note.to_string()).unwrap();
     let old = read::scope(&conn, &key).unwrap();
     conn.execute("UPDATE items SET metadata=json_set(metadata,'$.hidden','New secret'),updated_at='2026-11-19T00:00:10.000Z' WHERE id=?1", [note.to_string()]).unwrap();
-    replay::item(&conn, &note.to_string()).unwrap();
+    replay_rows::item(&conn, &note.to_string()).unwrap();
     let new = read::scope(&conn, &key).unwrap();
     assert_eq!(old.version, new.version);
     let request = range(0, 10, WindowAnchor::Start);
@@ -529,7 +529,7 @@ fn deep_starts_require_a_current_boundary_and_end_offsets_exceed_the_start_ceili
     let items = [Uuid::from_u128(1), Uuid::from_u128(2)];
     for id in items {
         insert(&conn, id, "notes", json!({"title":"Same"}), 1, true);
-        replay::item(&conn, &id.to_string()).unwrap();
+        replay_rows::item(&conn, &id.to_string()).unwrap();
     }
     let access = WindowAccess {
         scope: WindowScope::SpaceNotes,

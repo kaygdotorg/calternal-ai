@@ -90,6 +90,7 @@ title: "Command reference"
 - [calternal-account-recover](./calternal-account-recover/)
 - [calternal-mail-test](./calternal-mail-test/)
 - [calternal-receipt-status](./calternal-receipt-status/)
+- [calternal-window-status](./calternal-window-status/)
 - [calternal-machines-code](./calternal-machines-code/)
 - [calternal-machines-list](./calternal-machines-list/)
 - [calternal-machines-revoke](./calternal-machines-revoke/)

@@ -289,6 +289,47 @@ pub fn receipt_status(
     Ok(Reply::new(json!({"space_id": space, "issue": issue})).line(status))
 }
 
+/// Inspect one space's recorded window omissions and retry state.
+/// Cost: one private socket round trip and one read-only count on the server.
+pub fn window_status(
+    appdata: &Path,
+    installation_id: &str,
+    space: &str,
+) -> Result<Reply, CliError> {
+    let installation =
+        uuid::Uuid::parse_str(installation_id).map_err(|_| bad_uuid("installation"))?;
+    let space = calternal_types::SpaceId::parse(space).map_err(|_| bad_uuid("space"))?;
+    let hint = "Run as the server's user with its appdata directory and installation ID.";
+    let response = admin::ask_server(appdata, installation, Request::WindowStatus { space })
+        .map_err(|e| CliError::new("failed", e.message).hint(hint))?;
+    let status = match response {
+        Some(Response::WindowStatus { status }) => status,
+        Some(_) => return Err(unexpected()),
+        None => {
+            return Err(CliError::new(
+                "server_unavailable",
+                "The local admin socket is unavailable.",
+            )
+            .hint(hint));
+        }
+    };
+    let count = status
+        .skipped_items
+        .map_or_else(|| "unknown".into(), |count| count.to_string());
+    let mut reply = Reply::new(
+        json!({"space_id": space, "skipped_items": status.skipped_items,
+        "failure": status.failure, "retries_exhausted": status.retries_exhausted}),
+    )
+    .line(format!("Skipped items  {count}"));
+    if let Some(reason) = status.failure {
+        reply = reply.line(format!("Projection failure  {reason}"));
+    }
+    if status.retries_exhausted {
+        reply = reply.line("Automatic retries exhausted.");
+    }
+    Ok(reply)
+}
+
 /// Run one `machines` subcommand. Cost: see [`run`].
 pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
     let account = |s: &str| calternal_types::AccountId::parse(s).map_err(|_| bad_uuid("account"));

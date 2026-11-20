@@ -153,6 +153,11 @@ fn main() {
             &installation_id,
             &space,
         )),
+        Cmd::WindowStatus {
+            appdata,
+            installation_id,
+            space,
+        } => out.finish(admin_cli::window_status(&appdata, &installation_id, &space)),
         Cmd::Serve {
             appdata,
             userdata_ssd,

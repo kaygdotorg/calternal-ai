@@ -79,8 +79,8 @@ pub use types::{
 use uuid::Uuid;
 pub use window::{
     LoadingWindow, WindowAccess, WindowAnchor, WindowAudience, WindowCountMode, WindowField,
-    WindowKindOrder, WindowOrder, WindowPlanError, WindowPlanReason, WindowRange, WindowReply,
-    WindowRequest, WindowResult, WindowScope,
+    WindowKindOrder, WindowOrder, WindowPlanError, WindowPlanReason, WindowProjectionStatus,
+    WindowRange, WindowReply, WindowRequest, WindowResult, WindowScope,
 };
 
 /// Installation content service with bounded per-space connections and idle release.

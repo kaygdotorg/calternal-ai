@@ -699,7 +699,7 @@ impl Content {
             }
             let response=result(&root.item);
             let tx=s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
-            root.write(&tx, old_path.as_deref(), &request.account.to_string())?;
+            root.write(&tx, old_path.as_deref(), request, &response)?;
             match destination {
                 Destination::Trash => {
                     tx.execute("INSERT INTO trash_origins VALUES(?1,?2)", params![id.to_string(),old_path]).map_err(internal)?;
@@ -709,7 +709,6 @@ impl Content {
                 }
                 Destination::Current => {}
             }
-            root.outbox(&tx,request,&response)?;
             if let (Some((job, _)), Some(old), Some(base)) = (retarget, old_path.as_deref(), base) {
                 crate::rename_job::record(&tx, job, &root, old, base, &candidates, request,
                     self.receipt_retention())?;

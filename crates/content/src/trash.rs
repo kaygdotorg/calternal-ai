@@ -260,19 +260,22 @@ impl Content {
             [id.to_string()],
         )
         .map_err(internal)?;
-        tx.execute(
-            "INSERT INTO outbox VALUES(?1,?2,?3,?4,?5,?6,?7)",
-            params![
-                request.account.to_string(),
-                request.id,
-                request.operation,
-                request.fingerprint,
-                id.to_string(),
-                revision,
-                request.outbox_result(&response),
-            ],
-        )
-        .map_err(internal)?;
+        // A purge changes one item and publishes that same item for window replay.
+        let rows = tx
+            .execute(
+                "INSERT INTO outbox VALUES(?1,?2,?3,?4,?5,?6,?7)",
+                params![
+                    request.account.to_string(),
+                    request.id,
+                    request.operation,
+                    request.fingerprint,
+                    id.to_string(),
+                    revision,
+                    request.outbox_result(&response),
+                ],
+            )
+            .map_err(internal)?;
+        assert_eq!(rows, 1, "each purge must publish one outbox item");
         tx.commit().map_err(internal)?;
         (self.fault)(FaultPoint::AfterCommit);
         self.publish_pending(s)?;

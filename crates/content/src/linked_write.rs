@@ -23,11 +23,15 @@ impl Staged {
         format!("v{seq}.{}", Uuid::now_v7().simple())
     }
 
+    /// Stage one item revision and its matching outbox row in the same transaction.
+    /// Window lag classification relies on one item per request, enforced by the
+    /// outbox primary key. A linked edit must use a separate request for each item.
     pub(crate) fn write(
         &self,
         tx: &Transaction<'_>,
         old_path: Option<&str>,
-        account: &str,
+        request: Request<'_>,
+        response: &Value,
     ) -> Result<()> {
         let item = &self.item;
         let metadata = item.metadata.to_string();
@@ -52,35 +56,28 @@ impl Staged {
                 metadata,
                 item.bytes,
                 item.updated_at,
-                account
+                request.account.to_string()
             ],
         )
         .map_err(internal)?;
         if let Some(room) = &self.room {
             room.write(tx, item.id, self.seq)?;
         }
-        Ok(())
-    }
-
-    pub(crate) fn outbox(
-        &self,
-        tx: &Transaction<'_>,
-        request: Request<'_>,
-        response: &Value,
-    ) -> Result<()> {
-        tx.execute(
-            "INSERT INTO outbox VALUES(?1,?2,?3,?4,?5,?6,?7)",
-            params![
-                request.account.to_string(),
-                request.id,
-                request.operation,
-                request.fingerprint,
-                self.item.id.to_string(),
-                self.item.revision,
-                request.outbox_result(response),
-            ],
-        )
-        .map_err(internal)?;
+        let rows = tx
+            .execute(
+                "INSERT INTO outbox VALUES(?1,?2,?3,?4,?5,?6,?7)",
+                params![
+                    request.account.to_string(),
+                    request.id,
+                    request.operation,
+                    request.fingerprint,
+                    self.item.id.to_string(),
+                    self.item.revision,
+                    request.outbox_result(response),
+                ],
+            )
+            .map_err(internal)?;
+        assert_eq!(rows, 1, "each staged revision must publish one outbox item");
         Ok(())
     }
     pub(crate) fn require_placement(

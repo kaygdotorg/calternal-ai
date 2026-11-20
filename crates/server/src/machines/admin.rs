@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use calternal_content::{Content, ReceiptPruningIssue};
+use calternal_content::{Content, ReceiptPruningIssue, WindowProjectionStatus};
 use calternal_machine::protocol::Owner;
 use calternal_types::{AccountId, Error, SpaceId};
 use serde::{Deserialize, Serialize};
@@ -53,6 +53,11 @@ pub enum Request {
     },
     /// Inspect receipt pruning in a single space through the running server.
     ReceiptStatus {
+        /// Space UUID to inspect, including dormant spaces.
+        space: SpaceId,
+    },
+    /// Inspect ordered-window projection health through the running server.
+    WindowStatus {
         /// Space UUID to inspect, including dormant spaces.
         space: SpaceId,
     },
@@ -146,6 +151,11 @@ pub enum Response {
         /// Reason for impaired pruning, if observed.
         issue: Option<ReceiptPruningIssue>,
     },
+    /// Window projection health and recorded omissions for the requested space.
+    WindowStatus {
+        /// Persistent status for this space's projection.
+        status: WindowProjectionStatus,
+    },
     /// A new code and its expiry in Unix milliseconds.
     Code {
         /// The one-time code; shown once.
@@ -196,6 +206,11 @@ pub fn execute(svc: &MachineService, request: Request) -> Result<Response, Error
         Request::MailTest { .. } => {
             return Err(Error::unavailable(
                 "start this server before sending a test message",
+            ));
+        }
+        Request::WindowStatus { .. } => {
+            return Err(Error::unavailable(
+                "start this server before inspecting window projection health",
             ));
         }
         Request::ReceiptStatus { .. } => {
@@ -453,6 +468,9 @@ async fn answer(
             Request::ReceiptStatus { space } => content
                 .receipt_pruning_issue(space)
                 .map(|issue| Response::ReceiptStatus { issue }),
+            Request::WindowStatus { space } => content
+                .window_projection_status(space)
+                .map(|status| Response::WindowStatus { status }),
             request => execute(&svc, request),
         })
         .await

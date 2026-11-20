@@ -1,5 +1,8 @@
 //! Bounded replay on the existing per-space projection worker.
-use super::runtime::{self, Writer};
+use super::{
+    replay_rows::{collection_page, is_collection, item},
+    runtime::{self, Action, Writer},
+};
 use crate::{Content, Error, ErrorCode, Result, SpaceId, types::internal};
 use calternal_store::{ProjectionJournal, SyncToken};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
@@ -12,7 +15,7 @@ use std::{
 pub(super) const PAGE: usize = 128;
 const SQL: &str = include_str!("sidecar.sql");
 const SCHEMA: calternal_store::migrations::Schema<'_> =
-    calternal_store::migrations::Schema::new("window sidecar", 1, &[SQL], &[]);
+    calternal_store::migrations::Schema::new("window sidecar", 2, &[SQL], &[]);
 
 pub(super) fn path(source: &Path) -> PathBuf {
     source.with_file_name("windows-v1.db")
@@ -33,16 +36,34 @@ fn attach(conn: &Connection, source: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn reader(source: &Path) -> Result<Connection> {
+// A derived file keeps a stable path across schema versions. v1 is obsolete
+// and must rebuild from the journal rather than be read as the current layout.
+fn check_version(conn: &Connection, allow_new: bool) -> Result<()> {
+    let version: i64 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(sidecar_error)?;
+    if version == SCHEMA.version() || (version == 0 && allow_new) {
+        return Ok(());
+    }
+    Err(classified("sidecar_schema"))
+}
+
+pub(super) fn open_sidecar_reader(sidecar: &Path) -> Result<Connection> {
     let conn = Connection::open_with_flags(
-        path(source),
+        sidecar,
         OpenFlags::SQLITE_OPEN_READ_ONLY
             | OpenFlags::SQLITE_OPEN_URI
             | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
-    .map_err(sql_error)?;
+    .map_err(sidecar_error)?;
     conn.busy_timeout(Duration::from_millis(50))
-        .map_err(sql_error)?;
+        .map_err(sidecar_error)?;
+    check_version(&conn, false)?;
+    Ok(conn)
+}
+
+pub(super) fn reader(source: &Path) -> Result<Connection> {
+    let conn = open_sidecar_reader(&path(source))?;
     attach(&conn, source)?;
     Ok(conn)
 }
@@ -59,9 +80,9 @@ pub(super) struct Publication {
 impl Publication {
     pub(super) fn read(conn: &Connection) -> Result<Option<Self>> {
         conn.prepare_cached(
-            "SELECT epoch,sequence,config,scan_after,ready,member_after FROM window_publication",
+            "SELECT epoch,sequence,config,scan_after,ready,member_after FROM main.window_publication",
         )
-        .map_err(sql_error)?
+        .map_err(sidecar_error)?
         .query_row([], |row| {
             Ok(Self {
                 head: SyncToken {
@@ -75,12 +96,12 @@ impl Publication {
             })
         })
         .optional()
-        .map_err(sql_error)
+        .map_err(sidecar_error)
     }
 
     fn persist(&self, conn: &Connection) -> Result<()> {
         conn.execute(
-            "INSERT INTO window_publication VALUES(1,?1,?2,?3,?4,?5,?6)
+            "INSERT INTO main.window_publication VALUES(1,?1,?2,?3,?4,?5,?6)
              ON CONFLICT(id) DO UPDATE SET epoch=excluded.epoch,sequence=excluded.sequence,
                  config=excluded.config,scan_after=excluded.scan_after,ready=excluded.ready,member_after=excluded.member_after",
             params![
@@ -92,7 +113,7 @@ impl Publication {
                 self.member_after
             ],
         )
-        .map_err(sql_error)?;
+        .map_err(sidecar_error)?;
         Ok(())
     }
 
@@ -161,10 +182,6 @@ impl Publication {
         }
         Ok(sequenced == head.seq && journal.head().map_err(internal)?.epoch == head.epoch)
     }
-
-    pub(super) fn matches_source(&self, conn: &Connection) -> Result<bool> {
-        Ok(self.ready && source_config(conn)? == Some(self.config))
-    }
 }
 
 fn source_config(conn: &Connection) -> Result<Option<i64>> {
@@ -202,6 +219,9 @@ impl Content {
         let slot = self.pin_slot(space)?;
         let cache = &slot.windows;
         cache.expire_handles();
+        if cache.worker_deferred() {
+            return Ok(false);
+        }
         if !create && cache.idle_at(None) {
             return Ok(false);
         }
@@ -221,21 +241,20 @@ impl Content {
                 return Ok(false);
             }
             cache.initialize_failure(&source)?;
+            cache.flush_failure(&source)?;
             if let Some(failure) = cache.failure() {
-                if failure.retry_at_ms > calternal_types::now_ms() {
+                if failure.terminal() || (failure.action != Action::Reader && !failure.can_retry())
+                {
                     return Ok(false);
                 }
-                if failure.replace {
+                if failure.action == Action::Replace {
                     let Ok(_exclusive) = cache.gate.try_write() else {
                         return Ok(false);
                     };
-                    if failure.attempts == 0 {
-                        tracing::warn!(%space, "rebuilding unreadable window projection");
-                        cache.record_failure(&source, "reader_failed", true)?;
-                    }
                     cache.drain();
                     runtime::replace_sidecar(&source)?;
-                    cache.replaced(&source)?;
+                    cache.replaced();
+                    cache.flush_failure(&source)?;
                 }
             }
             let revision = cache.revision();
@@ -261,33 +280,30 @@ impl Content {
                 }
             };
             let head = writer.journal.head().map_err(internal)?;
-            let more = match advance(&writer.conn, &writer.journal, &head) {
-                Ok(more) => more,
+            let progress = match advance(&writer.conn, &writer.journal, &head, space) {
+                Ok(progress) => progress,
                 Err(error) if error.code == ErrorCode::Conflict => {
                     cache.put_writer(writer, &self.window_handles);
                     return Ok(false);
                 }
                 Err(error) => return Err(error),
             };
-            if !more {
-                if let Some(publication) = Publication::read(&writer.conn)?
-                    && publication.ready
-                    && publication.head == head
-                    && publication.matches_source(&writer.conn)?
-                {
-                    cache.recovered(&source)?;
-                    cache.published(head, revision);
-                }
+            if progress.ready {
+                cache.recovered(false);
+                cache.flush_failure(&source)?;
+            }
+            if let Some(head) = progress.caught_up {
+                cache.published(head, revision);
             }
             cache.put_writer(writer, &self.window_handles);
-            Ok(more)
+            Ok(progress.more)
         })();
         if let Err(error) = result {
             if error.code == ErrorCode::Conflict {
                 return Ok(false);
             }
-            tracing::warn!(%space, ?error, "window projection failed");
-            if let Err(storage) = cache.record_failure(&source, "replay_failed", true) {
+            cache.report_failure(space, &error, Action::Replay);
+            if let Err(storage) = cache.flush_failure(&source) {
                 tracing::warn!(%space, ?storage, "could not persist window replay failure");
             }
             return Ok(false);
@@ -304,14 +320,46 @@ fn writer(source: &Path, appdata: &Path, space: SpaceId) -> Result<Writer> {
     calternal_fsio::private::file(&sidecar).map_err(internal)?;
     let conn =
         Connection::open_with_flags(sidecar, OpenFlags::default() | OpenFlags::SQLITE_OPEN_URI)
-            .map_err(sql_error)?;
+            .map_err(sidecar_error)?;
     conn.busy_timeout(Duration::from_millis(50))
-        .map_err(sql_error)?;
+        .map_err(sidecar_error)?;
+    check_version(&conn, true)?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
-        .map_err(sql_error)?;
-    calternal_store::migrations::migrate(&conn, SCHEMA).map_err(sql_error)?;
+        .map_err(sidecar_error)?;
+    calternal_store::migrations::migrate(&conn, SCHEMA).map_err(sidecar_error)?;
     attach(&conn, source)?;
     Ok(Writer { conn, journal })
+}
+
+pub(super) fn malformed_metadata() -> Error {
+    classified("malformed_source_metadata")
+}
+
+fn classified(reason: &'static str) -> Error {
+    Error::internal("window projection storage error")
+        .with_details(serde_json::json!({"window_failure": reason}))
+}
+
+// Only operations confined to main may authorize replacement. An error on
+// the source, journal, or SQL spanning databases must keep the sidecar.
+pub(super) fn sidecar_error(error: rusqlite::Error) -> Error {
+    use rusqlite::ErrorCode::*;
+    let reason = match error.sqlite_error_code() {
+        Some(DatabaseCorrupt | NotADatabase) => Some("sidecar_corrupt"),
+        Some(SchemaChanged) => Some("sidecar_schema"),
+        _ => {
+            let message = error.to_string();
+            (message.starts_with("no such table:")
+                || message.starts_with("no such column:")
+                || message.starts_with("no such index:"))
+            .then_some("sidecar_schema")
+        }
+    };
+    if let Some(reason) = reason {
+        tracing::debug!(%error, reason, "invalid window sidecar");
+        return classified(reason);
+    }
+    sql_error(error)
 }
 
 pub(super) fn sql_error(error: rusqlite::Error) -> Error {
@@ -320,15 +368,30 @@ pub(super) fn sql_error(error: rusqlite::Error) -> Error {
         Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
     ) {
         Error::conflict("window database is busy")
+    } else if matches!(&error, rusqlite::Error::SqliteFailure(_, Some(message)) if message == "malformed JSON")
+    {
+        malformed_metadata()
     } else {
         internal(error)
     }
 }
 
-fn advance(conn: &Connection, journal: &ProjectionJournal, head: &SyncToken) -> Result<bool> {
+#[derive(Default)]
+struct Progress {
+    more: bool,
+    ready: bool,
+    caught_up: Option<SyncToken>,
+}
+
+fn advance(
+    conn: &Connection,
+    journal: &ProjectionJournal,
+    head: &SyncToken,
+    space: SpaceId,
+) -> Result<Progress> {
     let tx = conn.unchecked_transaction().map_err(sql_error)?;
     let Some(config) = source_config(&tx)? else {
-        return Ok(false);
+        return Ok(Progress::default());
     };
     let mut publication = match Publication::read(&tx)? {
         Some(mut publication)
@@ -353,21 +416,26 @@ fn advance(conn: &Connection, journal: &ProjectionJournal, head: &SyncToken) -> 
         },
     };
     if publication.ready && publication.head == *head {
-        return Ok(false);
+        return Ok(Progress {
+            ready: true,
+            caught_up: Some(head.clone()),
+            more: false,
+        });
     }
 
+    let mut skipped = Vec::new();
     if publication.scan_after.as_deref() == Some("!") {
         let removed = tx
             .execute(
                 "DELETE FROM window_rows WHERE rowid IN (SELECT rowid FROM window_rows LIMIT ?1)",
                 [PAGE as i64],
             )
-            .map_err(sql_error)?;
+            .map_err(sidecar_error)?;
         if removed == 0 {
             let skipped = tx.execute(
                 "DELETE FROM window_skipped WHERE item IN (SELECT item FROM window_skipped LIMIT ?1)",
                 [PAGE as i64],
-            ).map_err(sql_error)?;
+            ).map_err(sidecar_error)?;
             if skipped < PAGE {
                 publication.scan_after = Some(String::new());
             }
@@ -383,7 +451,9 @@ fn advance(conn: &Connection, journal: &ProjectionJournal, head: &SyncToken) -> 
                 .map_err(sql_error)?
         };
         for id in &ids {
-            item(&tx, id)?;
+            if item(&tx, id)? {
+                skipped.push(id.clone());
+            }
         }
         publication.scan_after = (ids.len() == PAGE).then(|| ids.last().unwrap().clone());
     } else if publication.head.seq < head.seq {
@@ -411,12 +481,15 @@ fn advance(conn: &Connection, journal: &ProjectionJournal, head: &SyncToken) -> 
                         &tx,
                         &id,
                         publication.member_after.as_deref().unwrap_or(""),
+                        &mut skipped,
                     )?;
                     if publication.member_after.is_some() {
                         break;
                     }
                 }
-                item(&tx, &id)?;
+                if item(&tx, &id)? {
+                    skipped.push(id);
+                }
             }
             expected = entry.sequence;
         }
@@ -430,113 +503,21 @@ fn advance(conn: &Connection, journal: &ProjectionJournal, head: &SyncToken) -> 
     }
     let current = journal.head().map_err(internal)?;
     if current.epoch != publication.head.epoch || current.seq < publication.head.seq {
-        return Ok(true);
+        return Ok(Progress {
+            more: true,
+            ..Progress::default()
+        });
     }
     publication.ready = publication.scan_after.is_none() && publication.member_after.is_none();
     let caught_up = publication.ready && publication.head == current;
     publication.persist(&tx)?;
-    tx.commit().map_err(sql_error)?;
-    Ok(!caught_up)
-}
-
-const ITEM_ROWS: &str = "
-    SELECT n.collection,n.audience,n.key,n.id,
-           CASE WHEN n.audience='explicit' THEN CASE WHEN json_type(i.metadata,'$.title')='text' THEN json_extract(i.metadata,'$.title') ELSE '' END
-                ELSE i.revision END AS visible
-      FROM window_note_candidates n JOIN items i ON i.id=n.id WHERE n.id=?1
-    UNION ALL
-    SELECT 'notes','trash',t.key,t.id,i.revision
-      FROM window_trash_notes t JOIN items i ON i.id=t.id WHERE t.id=?1
-    UNION ALL
-    SELECT g.collection,g.audience,g.key,g.id,i.revision
-      FROM window_generic_candidates g JOIN items i ON i.id=g.id WHERE g.id=?1";
-
-const UPSERT: &str = "ON CONFLICT(item,collection,audience) DO UPDATE
-    SET sort_key=excluded.sort_key, visible=excluded.visible
-    WHERE window_rows.sort_key IS NOT excluded.sort_key OR window_rows.visible IS NOT excluded.visible";
-
-// A space from before scope admission can still contain excess memberships.
-// Exclude only that item and retain a reason until its memberships are repaired.
-const EXCESS_SCOPES: &str = "EXISTS(SELECT 1 FROM note_collection_members
-    WHERE note_id=n.id LIMIT 1 OFFSET 31)";
-
-pub(super) fn item(conn: &Connection, id: &str) -> Result<()> {
-    static LIMIT: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-        format!(
-            "SELECT EXISTS(SELECT 1 FROM window_live_notes n WHERE n.id=?1 AND {EXCESS_SCOPES})"
-        )
-    });
-    let excess: bool = conn
-        .prepare_cached(&LIMIT)
-        .map_err(sql_error)?
-        .query_row([id], |row| row.get(0))
-        .map_err(sql_error)?;
-    if excess {
-        conn.execute("DELETE FROM window_rows WHERE item=?1", [id])
-            .map_err(sql_error)?;
-        conn.execute(
-            "INSERT OR IGNORE INTO window_skipped VALUES(?1,'effective_scope_limit_exceeded')",
-            [id],
-        )
-        .map_err(sql_error)?;
-        return Ok(());
+    tx.commit().map_err(sidecar_error)?;
+    for item in skipped {
+        tracing::warn!(%space, %item, "window omitted explicit collections for an over-limit note");
     }
-    conn.execute("DELETE FROM window_skipped WHERE item=?1", [id])
-        .map_err(sql_error)?;
-
-    static DELETE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-        format!(
-            "DELETE FROM window_rows WHERE item=?1 AND (collection,audience) NOT IN
-         (SELECT collection,audience FROM ({ITEM_ROWS}))"
-        )
-    });
-    static PUT: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-        format!("INSERT INTO window_rows SELECT * FROM ({ITEM_ROWS}) WHERE true {UPSERT}")
-    });
-    conn.prepare_cached(&DELETE)
-        .map_err(sql_error)?
-        .execute([id])
-        .map_err(sql_error)?;
-    conn.prepare_cached(&PUT)
-        .map_err(sql_error)?
-        .execute([id])
-        .map_err(sql_error)?;
-    Ok(())
-}
-
-fn is_collection(conn: &Connection, id: &str) -> Result<bool> {
-    conn.prepare_cached("SELECT EXISTS(SELECT 1 FROM items WHERE id=?1 AND kind='collections')")
-        .map_err(sql_error)?
-        .query_row([id], |row| row.get(0))
-        .map_err(sql_error)
-}
-
-fn collection_page(conn: &Connection, id: &str, after: &str) -> Result<Option<String>> {
-    // The source range admits new edges and the sidecar range locates old
-    // edges for deletion. Each branch seeks by collection and item first.
-    let mut stmt = conn
-        .prepare_cached(
-            "SELECT item FROM (
-           SELECT item FROM (SELECT note_id AS item FROM note_collection_members
-             WHERE collection_id=?1 AND note_id>?2 ORDER BY note_id LIMIT ?3)
-           UNION
-           SELECT item FROM (SELECT item FROM window_rows INDEXED BY window_members
-             WHERE collection=?1 AND item>?2 AND audience IN ('explicit','explicit_newest')
-             ORDER BY item LIMIT ?3)
-           UNION
-           SELECT item FROM (SELECT item FROM window_skipped WHERE item>?2 ORDER BY item LIMIT ?3)
-         ) ORDER BY item LIMIT ?3",
-        )
-        .map_err(sql_error)?;
-    let ids = stmt
-        .query_map(params![id, after, PAGE as i64], |row| {
-            row.get::<_, String>(0)
-        })
-        .map_err(sql_error)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(sql_error)?;
-    for note in &ids {
-        item(conn, note)?;
-    }
-    Ok((ids.len() == PAGE).then(|| ids.last().unwrap().clone()))
+    Ok(Progress {
+        more: !caught_up,
+        ready: publication.ready,
+        caught_up: caught_up.then_some(current),
+    })
 }
