@@ -40,6 +40,10 @@ pub struct Config {
     /// for every configured VMM slot.
     #[serde(default)]
     pub resident_memory_mib: Option<u32>,
+    /// Include a qualified trusted launcher in small-plugin checkpoints.
+    /// Omit to enable it, or set false to use the fresh-Node path.
+    #[serde(default)]
+    pub prestarted_worker: Option<bool>,
 }
 
 impl Config {
@@ -74,6 +78,7 @@ impl Config {
                 GuestSize::from_mib(config.memory_mib).is_none()
                     || config.idle_seconds.is_some()
                     || config.resident_memory_mib.is_some()
+                    || config.prestarted_worker.is_some()
             }
             || !(1024..=65536).contains(&config.disk_mib)
             || !(1..=64).contains(&config.max_guests)

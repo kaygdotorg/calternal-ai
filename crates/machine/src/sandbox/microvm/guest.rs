@@ -23,6 +23,7 @@ struct Agent {
     backend: Option<PodmanBackend>,
     key: ring::hmac::Key,
     threads: Mutex<HashMap<Uuid, Arc<dyn Sandbox>>>,
+    parked: Mutex<Option<Arc<super::plain::PlainWorker>>>,
 }
 
 /// Run the guest-only agent on a Unix socket behind the boot image's vsock listener.
@@ -51,6 +52,7 @@ pub async fn run_agent(
         backend,
         key: ring::hmac::Key::new(ring::hmac::HMAC_SHA256, &token),
         threads: Mutex::new(HashMap::new()),
+        parked: Mutex::new(None),
     });
     let listener = UnixListener::bind(socket).map_err(SandboxError::new)?;
     let connections = Arc::new(Semaphore::new(512));
@@ -113,8 +115,8 @@ impl Agent {
 
     async fn reseed_small(&self, seed: [u8; 32]) -> Result<(), AttemptError> {
         use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-        // The small guest snapshots only after the package and its
-        // exec pipes have been stopped. An active guest cannot reseed.
+        // The snapshot contains only trusted agent and standby pipes. An
+        // active package cannot share the guest with a reseed exchange.
         // Only this guest's startup can wait on the privileged
         // helper. Keep the lock until acknowledgement so Start cannot
         // observe an incomplete seed exchange.
@@ -145,31 +147,49 @@ impl Agent {
                 let _threads = self.threads.lock().await;
                 small_ready().await
             }
-            Request::QuiesceSmall => {
+            Request::QuiesceSmall(prestart) => {
                 let threads = self.threads.lock().await;
                 if !threads.is_empty() {
                     return Err(SandboxError("small plugin guest was not drained".into()));
                 }
                 tokio::fs::remove_file(SMALL_READY)
                     .await
-                    .map_err(SandboxError::new)
+                    .map_err(SandboxError::new)?;
+                let mut parked = self.parked.lock().await;
+                if let Some(previous) = parked.take() {
+                    previous.stop().await?;
+                }
+                if prestart {
+                    *parked = super::plain::park().await?;
+                }
+                Ok(())
             }
             Request::ReseedSmall(_) => unreachable!(),
             Request::Start(space, mut spec) => {
+                let backend = self.backend.as_ref().ok_or_else(|| {
+                    SandboxError("small plugin guest requires its offline profile".into())
+                })?;
                 spec.space_id = Some(space);
-                if let Some(backend) = &self.backend {
-                    let sandbox = backend.start(&spec).await?;
-                    self.threads.lock().await.insert(spec.thread_id, sandbox);
-                } else {
-                    // Serialize package admission with Quiesce and Reseed.
-                    let mut threads = self.threads.lock().await;
-                    small_ready().await?;
-                    if !threads.is_empty() {
-                        return Err(SandboxError("small guest already has a package".into()));
-                    }
-                    let sandbox = super::plain::start(&spec).await?;
-                    threads.insert(spec.thread_id, sandbox);
+                let sandbox = backend.start(&spec).await?;
+                self.threads.lock().await.insert(spec.thread_id, sandbox);
+                Ok(())
+            }
+            Request::StartSmall(space, mut spec, prestart) => {
+                if self.backend.is_some() {
+                    return Err(SandboxError(
+                        "agent guest cannot start the small profile".into(),
+                    ));
                 }
+                spec.space_id = Some(space);
+                // Serialize admission with Quiesce and the reseed exchange.
+                let mut threads = self.threads.lock().await;
+                small_ready().await?;
+                if !threads.is_empty() {
+                    return Err(SandboxError("small guest already has a package".into()));
+                }
+                let mut parked = self.parked.lock().await;
+                let sandbox = super::plain::start(&spec, &mut parked, prestart).await?;
+                threads.insert(spec.thread_id, sandbox);
                 Ok(())
             }
             Request::StartHarness(space, mut spec, harness) => {

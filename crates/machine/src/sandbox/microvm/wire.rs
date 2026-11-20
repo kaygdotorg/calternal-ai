@@ -40,9 +40,10 @@ pub(super) async fn verify(
 pub(super) enum Request {
     Ready,
     SmallReady,
-    QuiesceSmall,
+    QuiesceSmall(bool),
     ReseedSmall([u8; 32]),
     Start(SpaceId, SandboxSpec),
+    StartSmall(SpaceId, SandboxSpec, bool),
     StartHarness(SpaceId, SandboxSpec, crate::protocol::HarnessSandbox),
     Discard(Uuid, Uuid),
     Exec(Uuid, ExecRequest),

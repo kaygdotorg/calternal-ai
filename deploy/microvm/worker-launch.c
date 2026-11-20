@@ -13,6 +13,7 @@
 #include <sys/mount.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/syscall.h>
 #include <sys/sysmacros.h>
 #include <sys/wait.h>
@@ -63,7 +64,7 @@ static size_t read_filter(struct sock_filter *filter, size_t bytes) {
     return read_bytes / sizeof(*filter);
 }
 
-static void worker(const char *source, const struct sock_fprog *policy) {
+static void worker(const char *source, const struct sock_fprog *policy, int standby) {
     require(mount(root, root, NULL, MS_BIND, NULL), "bind runtime root");
     require(mount(source, "/opt/standard/plugin", NULL, MS_BIND, NULL), "bind worker code");
     require(mount(NULL, "/opt/standard/plugin", NULL,
@@ -100,20 +101,28 @@ static void worker(const char *source, const struct sock_fprog *policy) {
         prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0) != 1) _exit(126);
     errno = 0;
     if (syscall(SYS_socket, 2, 1, 0) != -1 || errno != EPERM) _exit(126);
-    errno = 0;
-    if (open("/plugin/worker.js", O_WRONLY) != -1 || (errno != EROFS && errno != EACCES)) _exit(126);
+    struct statvfs code;
+    require(statvfs("/plugin", &code), "check package mount");
+    if (!(code.f_flag & ST_RDONLY)) _exit(126);
     char *const command[] = {
         "node", "--permission", "--allow-fs-read=.", "--disallow-code-generation-from-strings",
         "--max-old-space-size=128", "worker.js", NULL,
     };
+    char *const parked[] = {
+        "/usr/local/bin/node", "--permission", "--allow-addons",
+        "--allow-fs-read=/opt/calternal-standby", "--allow-fs-read=/plugin",
+        "--disallow-code-generation-from-strings", "--max-old-space-size=128",
+        "/opt/calternal-standby/standby.cjs", NULL,
+    };
     char *const env[] = {"LANG=C.UTF-8", NULL};
-    execve("/usr/local/bin/node", command, env);
+    execve("/usr/local/bin/node", standby ? parked : command, env);
     perror("exec node");
     _exit(126);
 }
 
 int main(int argc, char **argv) {
-    if (argc != 2 || !valid_id(argv[1]) || getuid() != 1000 || geteuid() != 0) return 126;
+    if ((argc != 2 && (argc != 3 || strcmp(argv[2], "--standby") != 0)) ||
+        !valid_id(argv[1]) || getuid() != 1000 || geteuid() != 0) return 126;
     struct sock_filter filter[4097];
     struct sock_fprog policy = { .filter = filter, .len = read_filter(filter, sizeof(filter)) };
     char source[128];
@@ -124,7 +133,7 @@ int main(int argc, char **argv) {
     require(mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL), "private mount propagation");
     pid_t child = fork();
     require(child, "spawn worker in private pid namespace");
-    if (!child) worker(source, &policy);
+    if (!child) worker(source, &policy, argc == 3);
     int status;
     while (waitpid(child, &status, 0) < 0) {
         if (errno != EINTR) return 126;

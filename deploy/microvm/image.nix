@@ -12,6 +12,15 @@ let
     '';
     installPhase = "install -Dm0755 worker-launch $out/bin/worker-launch";
   };
+  muslCompiler = pkgs.pkgsCross.musl64.stdenv.cc;
+  nodeHeaders = pkgs.lib.getDev pkgs.nodejs_24;
+  reseedAddon = pkgs.runCommand "calternal-reseed.node" {
+    nativeBuildInputs = [ muslCompiler pkgs.binutils ];
+    CC_x86_64_unknown_linux_musl = "${muslCompiler}/bin/${muslCompiler.targetPrefix}cc";
+    CALTERNAL_NODE_HEADERS = "${nodeHeaders}/include/node";
+  } ''
+    bash ${./build-addon.sh} ${./reseed-addon.c} "$out"
+  '';
   seccomp = pkgs.runCommand "calternal-worker-bpf" {
     nativeBuildInputs = [ pkgs.python3 ];
     LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.libseccomp ];
@@ -52,7 +61,12 @@ pkgs.runCommand "calternal-microvm-x86_64-v2" {
   install -m 0755 ${cli} root/opt/calternal
   mkdir root/opt/standard
   tar --no-same-owner -xzf ${standardRoot} -C root/opt/standard
-  mkdir -p root/opt/standard/{plugin,proc,dev}
+  mkdir -p root/opt/standard/{plugin,proc,dev,opt/calternal-standby}
+  install -m 0444 ${./standby.cjs} root/opt/standard/opt/calternal-standby/standby.cjs
+  for addon in reseed.node reseed-second.node; do
+    install -m 0444 ${reseedAddon} "root/opt/standard/opt/calternal-standby/$addon"
+  done
+  (cd root/opt/standard/opt/calternal-standby; sha256sum reseed.node) > "$out/reseed.sha256"
   install -m 0755 ${workerLauncher}/bin/worker-launch root/opt/calternal-worker-launch
   install -m 0444 ${seccomp} root/opt/calternal-worker.bpf
 

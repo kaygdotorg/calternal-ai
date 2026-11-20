@@ -148,7 +148,8 @@ impl SmallRuntime {
             .cloned()
             .ok_or_else(|| SandboxError("small plugin VM is not initialized".into()))?;
         let run = self.state.root.join("run");
-        let request = Request::Start(space, spec.clone());
+        let prestart = self.state.config.prestarted_worker.unwrap_or(true);
+        let request = Request::StartSmall(space, spec.clone(), prestart);
         let mut discard_after_start = false;
         let restored = if let Some(counter) = checkpoint {
             let generation = async {
@@ -274,6 +275,7 @@ impl SmallRuntime {
             gate: Mutex::new(Some(gate)),
             saved,
             binding,
+            prestart,
         }))
     }
 
@@ -427,6 +429,7 @@ pub(in crate::sandbox) struct Placement {
     gate: Mutex<Option<PlacementGate>>,
     saved: PathBuf,
     binding: Binding,
+    prestart: bool,
 }
 
 impl Sandbox for Placement {
@@ -483,7 +486,15 @@ impl Sandbox for Placement {
                             .as_ref()
                             .expect("live placement holds the gate")
                             .clone();
-                        save(&vm, &self.saved, &self.binding, gate, counter).await
+                        save(
+                            &vm,
+                            &self.saved,
+                            &self.binding,
+                            gate,
+                            counter,
+                            self.prestart,
+                        )
+                        .await
                     }
                     Err(error) => Err(error),
                 };
@@ -508,6 +519,7 @@ async fn save(
     binding: &Binding,
     gate: PlacementGate,
     counter: u64,
+    prestart: bool,
 ) -> SandboxResult<()> {
     use super::{
         snapshot::{Generation, clone_or_copy},
@@ -538,7 +550,7 @@ async fn save(
         .map_err(SandboxError::new)?
         .map_err(SandboxError::new)?
     };
-    vm.control(&Request::QuiesceSmall).await?;
+    vm.control(&Request::QuiesceSmall(prestart)).await?;
     snapshot_api::pause(api).await?;
     if let Some(restored) = vm.restored {
         let previous = {

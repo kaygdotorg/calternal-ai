@@ -162,18 +162,22 @@ exec "$profile/real-firecracker" "$@"
         .unwrap();
         assert!(vm.control(&Request::SmallReady).await.is_err());
         assert!(
-            vm.control(&Request::Start(space, spec.clone()))
+            vm.control(&Request::StartSmall(space, spec.clone(), true))
                 .await
                 .is_err()
         );
         let mut unmarked = spec.clone();
         unmarked.image = None;
-        assert!(vm.control(&Request::Start(space, unmarked)).await.is_err());
+        assert!(
+            vm.control(&Request::StartSmall(space, unmarked, true))
+                .await
+                .is_err()
+        );
         let mut seed = [0; 32];
         ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut seed).unwrap();
         vm.control(&Request::ReseedSmall(seed)).await.unwrap();
         vm.control(&Request::SmallReady).await.unwrap();
-        vm.control(&Request::Start(space, spec.clone()))
+        vm.control(&Request::StartSmall(space, spec.clone(), true))
             .await
             .unwrap();
         vm.stop().await.unwrap();
@@ -404,3 +408,6 @@ exec "$profile/real-firecracker" "$@"
     assert!(!saved.exists());
     assert!(other.exists());
 }
+
+#[path = "standby_tests.rs"]
+mod standby_tests;

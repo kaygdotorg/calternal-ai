@@ -116,6 +116,26 @@ leased space and generation before starting the package in the existing
 worker sandbox. Revoking the session or losing the short space-channel
 lease tears down that placement. Protocol and verification.
 
+With `--space-vm-config PATH`, the item-head carrier uses an offline 256 MiB,
+two-vCPU Firecracker guest. Use the digest-pinned image assembled by
+`deploy/microvm/build-image.sh` with the Node runtime. The guest stages package
+code on private tmpfs and starts Node through a restricted process launcher.
+The launcher installs the worker seccomp profile, isolates mounts, processes
+and networking, drops privileges, and uses per-worker cgroup limits. Before a
+checkpoint, the guest stops the package and parks a clean trusted launcher.
+A restored guest must acknowledge kernel
+reseed before it can refresh the launcher and load a package. Set
+`prestarted_worker: false` in the small VM configuration to restore with
+fresh Node. The image build runs the two-restore randomness and permission
+proof under KVM before publishing its output link.
+
+The small VM JSON accepts `idle_seconds` (default 900) and
+`resident_memory_mib` (default `memory_mib` × `max_guests`). The machine reserves
+256 MiB of guest RAM for each placement. A full machine sleeps the least
+recently used idle guest before admitting another space. Calls arriving during
+sleep join the same teardown before the next wake. `calternal machine status`
+reports resident count, reserved guest RAM and the configured idle window.
+
 
 
 First-owner deployments start their machine service before setup. The server

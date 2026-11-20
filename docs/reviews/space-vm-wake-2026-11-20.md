@@ -90,6 +90,11 @@ checkpoint holder directly against the erasure queue, including after the
 lease history has been pruned. All nine machine worker tests passed on
 dev-01, including both regressions.
 
+The fresh-Node revision passed `scripts/verify-additive-upgrade.sh` against
+`localhost/calternal-ai:31fb41179460` and the candidate image `469217aa84a4`.
+The script also checked for leaked Podman containers, Firecracker processes
+and provider sign-in processes.
+
 Issue #90 still tracks cutoff erasure that retains an unacknowledged newer
 snapshot and the operator end state for repeated or revoked-machine erasure
 failures.
@@ -144,6 +149,35 @@ configured guest RAM for each reservation. Evidence is under
 | 1 | 124.56 | 124.56 | 121.99 | 256 |
 | 4 | 477.03 | 119.26 | 463.88 | 1,024 |
 | 16 | 1,863.26 | 116.45 | 1,874.21 | 4,096 |
+
+## Pre-started worker
+
+Before sleep, the guest tears down the package and parks a new trusted Node
+launcher in an empty package mount. The launcher loads the native reseed
+module, drops the singular `addon` permission and verifies all six approved
+denials. The guest agent checks the process and task names through the cgroup
+and procfs before snapshot, including the absence of libuv pool threads. The
+launcher and fresh worker share the same seccomp filter and namespace setup.
+The launcher reads its own directory and the package directory.
+
+After authenticated kernel reseed and Start admission, the agent sends a
+refresh command. The launcher reseeds the three OpenSSL generators with
+prediction resistance, discards the 128-entry UUID cache, seeds V8 for new
+contexts, replaces main-realm `Math.random` and checks the denials again.
+A separate load command follows the refresh acknowledgement. It loads the
+package through the Node module loader, including ES modules with top-level
+await. A failed pre-load assertion reaps the parked process and leaves fresh
+Node available. A failed package after load follows the normal lease
+failure path.
+
+The image builder compiles the native module from committed source and
+records its checksum. Before publishing the image, its KVM proof exercises
+two restores of one checkpoint through the guest agent. The proof checks
+distinct random bytes, UUID, Web Crypto bytes, Ed25519 keys, TLS ClientHello
+and random field, main-realm and new-context Math.random, plus all six
+permission denials. A fresh Node fallback cannot satisfy the standby proof.
+The dev-01 gate passed for image manifest `1cebe7316ed5` and native module
+`fc880b6ab431`. The proof package used an ES module with top-level await.
 
 ## Simplification opportunities
 
