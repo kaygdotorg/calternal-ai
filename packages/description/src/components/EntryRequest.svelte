@@ -26,16 +26,20 @@
 
 <aside class="rc" data-entry-request data-state={shown} aria-label={card.title}>
   <strong>{card.title}</strong>{#if card.detail}<span class="d">{card.detail}</span>{/if}
-  {#if shown === "open"}
+  <!-- The decisions gather away and the outcome rises in place: height and opacity over --dur-base on --ease-out (no motion under reduced motion). -->
+  <div class="fold" class:shut={shown !== "open"} aria-hidden={shown !== "open" || undefined}><div class="in">
     {#if left !== null}<span class="cd" data-countdown>{left > 0 ? `Without an answer in ${left} s your messages stay out of it.` : "Time is up: your messages stay out of it."}</span>{/if}
-    <div class="b">{#each card.actions as a (a.decision)}{#if a.decision === "approve"}{#each a.lifetimes ?? [] as l (l)}<button type="button" class="p" disabled={busy} onclick={() => decide("approve", l)}>{label("approve", l)}</button>{/each}{:else}<button type="button" disabled={busy} onclick={() => decide("deny")}>{label("deny")}</button>{/if}{/each}</div>
-  {:else}<span class="d" data-request-result>{shown === "approved" ? "You allowed it." : shown === "denied" ? "You declined." : "No answer in time: your messages stayed out of it."}</span>{/if}
+    <div class="b">{#each card.actions as a (a.decision)}{#if a.decision === "approve"}{#each a.lifetimes ?? [] as l (l)}<button type="button" class="p" disabled={busy || shown !== "open"} tabindex={shown === "open" ? 0 : -1} onclick={() => decide("approve", l)}>{label("approve", l)}</button>{/each}{:else}<button type="button" disabled={busy || shown !== "open"} tabindex={shown === "open" ? 0 : -1} onclick={() => decide("deny")}>{label("deny")}</button>{/if}{/each}</div>
+  </div></div>
+  {#if shown !== "open"}<span class="d res" data-request-result>{shown === "approved" ? "You allowed it." : shown === "denied" ? "You declined." : "No answer in time: your messages stayed out of it."}</span>{/if}
   {#if message}<span class="er" role="alert">{message}</span>{/if}
 </aside>
 
 <style>
-  .rc { display: grid; gap: var(--s-2); padding: var(--s-4); border-radius: var(--r-select); background: color-mix(in oklab, var(--warn) 12%, transparent); max-width: 30rem; }
+  .rc { display: grid; gap: var(--s-2); padding: var(--s-4); border-radius: var(--r-card); background: var(--accent-soft); max-width: 30rem; font-size: var(--text-ui); }
   .d, .cd { color: var(--ink-2); font-size: var(--text-label); } .b { display: flex; flex-wrap: wrap; gap: var(--s-2); }
-  .b button { min-height: 44px; padding: 0 var(--s-4); border-radius: var(--r-select); background: color-mix(in oklab, var(--ink) 10%, transparent); color: var(--ink); } .b .p { background: var(--accent); color: var(--on-accent, #fff); }
+  .b button { min-height: var(--pill-h); padding: 0 var(--s-5); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); color: var(--ink); font-weight: var(--strong-weight); } .b .p { background: var(--accent-base); color: #fff; }
+  .fold { display: grid; grid-template-rows: 1fr; transition: grid-template-rows var(--dur-base) var(--ease-out), opacity var(--dur-base) var(--ease-out); } .fold.shut { grid-template-rows: 0fr; opacity: 0; } .fold > .in { overflow: clip; display: grid; gap: var(--s-2); min-height: 0; }
+  .res { animation: rise var(--dur-base) var(--ease-out); } @keyframes rise { from { opacity: 0; translate: 0 var(--s-2); } to { opacity: 1; translate: 0 0; } }
   .er { color: var(--danger); }
 </style>

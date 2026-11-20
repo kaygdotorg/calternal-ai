@@ -3,7 +3,7 @@
   // place that draws the bind, holds the route parameters (selectors and row `open` set them; binds that read a route parameter start over when it changes), and refuses a description it cannot draw. It holds no app-specific
   // code: what is drawn is only what the description declares; the page supplies the host components and the shell's own controls.
   import { onDestroy, onMount, setContext, untrack, type Component } from "svelte";
-  import { Glass, Toasts, navHold } from "@calternal/ui";
+  import { Card, Icon, Toasts, navHold } from "@calternal/ui";
   import type { Action, AppDescription, Bind, ContentNode } from "../model";
   import type { HostSession } from "../wire/session";
   import { refusalOf } from "../check";
@@ -103,19 +103,27 @@
 {#if refusal}
   <div class="refused" role="alert" data-refused>This app cannot be drawn here: {refusal.reason}.</div>
 {:else}
+  <!-- The shell's three regions (docs/ui-shell.md): the sidebar and the panel sit flat on the page's background (the wallpaper and its veil, drawn by the page), the middle card is the only surface on top of it. Each region
+       carries the secondary inks solved for the pixels under it. A phone shows one at a time. -->
   <div class="app" data-app data-compact={compact || undefined} data-pane={compact ? (opened ? "card" : "list") : undefined}>
     {#if (description.chrome?.sidebar || description.chrome?.footer) && listPane}
-      <aside class="side" style:width={compact ? "100%" : `${description.chrome.sidebar?.width ?? 280}px`}><Glass />
+      <aside class="side" style:--sw={compact ? "100%" : description.chrome.sidebar?.width ? `${description.chrome.sidebar.width}px` : undefined}>
         <Sidebar sidebar={description.chrome.sidebar ?? {}} footer={description.chrome.footer} role={props.role} initial={props.initial} />
       </aside>
     {/if}
-    {#if cardPane}<main class="main"><Glass />
-      <div class="head">{#if compact}<button class="back" type="button" aria-label="Back to the list" data-back onclick={() => setRoute("item", "")}>‹</button>{/if}{#if itemTitle ?? title}<h1 class="h1">{itemTitle ?? title}</h1>{/if}
-        {#each [...(header?.leading ?? []), ...(header?.trailing ?? [])] as a (a.id)}{@const sb = setBind(a)}<ActionButton action={a} context={viewContext(a.id)} selection={sb ? selectionFor(sb) : undefined} setOf={sb} />{/each}</div>
-      {#if description.view}<Node node={description.view.root} />{/if}
-    </main>{/if}
+    {#if cardPane}
+      <main class="mid">
+        <Card label={itemTitle || title || "Content"} variant="pane" class="card">
+          <div class="col">
+            <header class="head">{#if compact}<button class="back" type="button" aria-label="Back to the list" data-back onclick={() => setRoute("item", "")}><Icon name="back" /></button>{/if}{#if itemTitle ?? title}<h1 class="h1">{itemTitle ?? title}</h1>{/if}
+              <div class="hact">{#each [...(header?.leading ?? []), ...(header?.trailing ?? [])] as a (a.id)}{@const sb = setBind(a)}<ActionButton action={a} context={viewContext(a.id)} selection={sb ? selectionFor(sb) : undefined} setOf={sb} />{/each}</div></header>
+            {#if description.view}<div class="body"><Node node={description.view.root} /></div>{/if}
+          </div>
+        </Card>
+      </main>
+    {/if}
     {#if panel && panel.open !== false && !compact}
-      <aside class="panel" data-panel={panel.id ?? "panel"} aria-label={panel.title ?? "Panel"}><Glass />
+      <aside class="right" data-panel={panel.id ?? "panel"} aria-label={panel.title ?? "Panel"}>
         {#if panel.title}<h2 class="ph">{panel.title}</h2>{/if}
         {#each panel.components ?? [] as c (c.id)}<HostComponent component={c} />{/each}
         {#each (panel as unknown as { content?: ContentNode[] }).content ?? [] as n, k (k)}<Node node={n} />{/each}
@@ -127,16 +135,19 @@
 <Toasts />
 
 <style>
-  /* The shell look of packages/ui: floating glass panes (sidebar, card, panel) over the page's own ground, one pane radius. */
-  .app { display: flex; gap: var(--s-4); height: 100%; min-height: 0; padding: var(--s-4); box-sizing: border-box; }
-  .side { position: relative; flex: none; min-height: 0; border-radius: var(--r-pane); isolation: isolate; }
-  .main { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--s-4); padding: var(--s-5); border-radius: var(--r-pane); isolation: isolate; }
-  .panel { position: relative; flex: none; width: 320px; min-height: 0; display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); border-radius: var(--r-pane); isolation: isolate; }
-  .ph { margin: 0; font-size: var(--text-ui); font-weight: var(--strong-weight); }
-  .head { display: flex; align-items: center; gap: var(--s-3); }
-  .back { min-width: 44px; min-height: 44px; font-size: 28px; line-height: 1; color: var(--ink); border-radius: var(--r-select); }
-  .app[data-compact] { padding: var(--s-2); } .app[data-compact] .main { flex: 1; }
-  .h1 { margin: 0; font-size: var(--text-title, 28px); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .app[data-compact] .h1 { font-size: var(--text-ui); }
+  /* The shell's layout (apps/web shell/Shell.svelte): flat sidebar and panel on the background, one inset around the card, the card as the packages/ui pane (its own wallpaper copy and veil, concentric radii). */
+  .app { display: flex; height: 100%; min-height: 0; box-sizing: border-box; }
+  .side { flex: none; width: var(--sw, var(--side-w)); min-height: 0; overflow: clip; --ink-2: var(--l-ink2, currentcolor); --ink-3: var(--l-ink3, currentcolor); }
+  .mid { flex: 1; min-width: 0; min-height: 0; padding: 0 var(--inset); --ink-2: var(--c-ink2, currentcolor); --ink-3: var(--c-ink3, currentcolor); }
+  .mid :global(.card) { height: 100%; }
+  .right { flex: none; width: var(--right-w); min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4) var(--s-4) var(--s-6); box-sizing: border-box; --ink-2: var(--r-ink2, currentcolor); --ink-3: var(--r-ink3, currentcolor); }
+  .col { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+  .head { flex: none; height: var(--bar-h); display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-4) 0 var(--s-6); }
+  .hact { display: flex; align-items: center; gap: var(--s-2); }
+  .h1 { margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-heading); font-weight: var(--strong-weight); }
+  .body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 var(--s-4) var(--s-4); }
+  .ph { margin: var(--s-2) 0 0; padding: 0 var(--s-2); font-size: var(--text-section); font-weight: var(--strong-weight); color: var(--ink-3); }
+  .back { flex: none; display: inline-grid; place-items: center; min-width: var(--pill-h); min-height: var(--pill-h); margin-inline-start: calc(var(--s-4) * -1); color: var(--ink); border-radius: 50%; }
+  .app[data-compact] .mid { padding: 0 var(--inset); } .app[data-compact] .side { width: 100%; }
   .refused { padding: var(--s-6); color: var(--danger); }
 </style>

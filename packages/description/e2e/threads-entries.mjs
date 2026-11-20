@@ -3,14 +3,14 @@
 // and system lines, the unread separator, the activity row), the reading position written only for messages that scrolled into view, per-entry menus, reply and edit through the composer, mentions limited to
 // participants, drafts, range selection for calling an agent in, the consent card, the read-only notice, and the phone layout. Usage: node e2e/threads-entries.mjs [shots-directory]
 import { mkdirSync } from "node:fs";
-import { launch, open, serve } from "./lib.mjs";
+import { BASE as BASE_URL, launch, open, serve } from "./lib.mjs";
 const shots = process.argv[2]; if (shots) mkdirSync(shots, { recursive: true });
 const stop = await serve(); const browser = await launch();
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const errors = [];
-const go = async (query, size) => { const r = await open(browser, `fixture=threads-next&${query}`, size); r.page.on("pageerror", (e) => errors.push(String(e))); return r; };
-const snap = async (p, name) => { if (shots) { await p.waitForTimeout(500); await p.screenshot({ path: `${shots}/${name}.png` }); } };
+const go = async (query, size) => { const r = await open(browser, `fixture=threads-next&${query}${process.env.SCHEME ? `&scheme=${process.env.SCHEME}` : ""}`, size); r.page.on("pageerror", (e) => errors.push(String(e))); return r; };
+const snap = async (p, name) => { if (shots) { name = `${process.env.SCHEME ?? "light"}-${name}`; await p.waitForTimeout(500); await p.screenshot({ path: `${shots}/${name}.png` }); } };
 const DESK = { width: 1280, height: 800 }, PHONE = { width: 390, height: 844 };
 const log = (p, f) => p.evaluate((src) => window.__transport.log.filter(new Function("l", `return ${src}`)), f);
 const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", { timeout: 20000 }); await p.locator("[data-i] button.row").first().evaluate((e) => e.click()); await p.waitForSelector("[data-entry]", { timeout: 10000 }); };
@@ -37,8 +37,9 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
 // ---- the conversation
 {
   const { page: p } = await go("", DESK);
+  await p.evaluate(() => { const t = window.__transport, o = t.post.bind(t); t.post = async (r, b, ...a) => (r === "item_view.read" ? new Promise(() => {}) : o(r, b, ...a)); }); // (the read mark is held back here so the separator can be looked at)
   await openFirst(p);
-  ok((await p.locator("[data-entry]").count()) === 10, "the page is drawn from entries");
+  ok((await p.locator("[data-entry]").count()) === 9, "the page is drawn from entries");
   ok((await p.locator("[data-marker=date]").count()) === 2 && (await p.locator("[data-marker=system]").textContent()).includes("called Codex in"), "date lines and a system line sit between them");
   ok((await p.locator("[data-anchor=e2] .eh").count()) === 1 && (await p.locator("[data-anchor=e3] .eh").count()) === 0, "two messages from one author within five minutes group under one name");
   ok((await p.locator("[data-anchor=e1]").getAttribute("data-own")) === "true" && (await p.locator("[data-anchor=e2]").getAttribute("data-own")) === null, "own messages are the host's flag, not the author's name");
@@ -47,7 +48,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   ok((await p.locator("[data-anchor=e1] strong").textContent()) === "Wednesday" && (await p.locator("[data-anchor=e4] code").textContent()) === "19:00", "inline Markdown: strong and code");
   const a = p.locator("[data-anchor=e4] a"); ok((await a.getAttribute("href")) === "https://example.test/menu" && /noopener/.test(await a.getAttribute("rel")), "an explicit http(s) link opens safely");
   ok(!(await p.locator("[data-anchor=e1]").textContent()).includes("**"), "no marker characters are left in the text");
-  ok((await p.locator("[data-anchor=e10] [data-state-mark]").textContent()) === "Sending…", "a queued message says it is sending");
+  ok((await p.locator("[data-anchor=e9] [data-state-mark]").textContent()) === "Sending…", "a queued message says it is sending");
   ok((await p.locator("[data-anchor=e6] [data-quote]").textContent()).includes("River it is. Booking now.") && (await p.locator("[data-anchor=e6] .qa").textContent()) === "Ada", "a reply shows the host's quoted text and author");
   ok((await p.locator("[data-activity=working]").textContent()).includes("Codex is working"), "the agent's working state shows under the last message");
   await snap(p, "next-desktop-2-conversation");
@@ -58,7 +59,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   await p.waitForSelector("[data-back-chip]", { timeout: 3000 }).then(() => ok(true, "jumping to a quoted message offers a way back"), () => ok(false, "jumping to a quoted message offers a way back"));
   ok(await p.locator("[data-anchor=e5].hl").count() === 1, "the quoted message is highlighted");
   // item link
-  await p.locator("[data-anchor=e8] [data-item-link]").click(); await p.waitForTimeout(800);
+  await p.locator("[data-anchor=e7] [data-item-link]").click(); await p.waitForTimeout(800);
   ok((await log(p, "l.route === 'item.locate'")).length === 1 && (await log(p, "l.route === 'item_view.open' && l.body.item === 'r-0'")).length >= 1, "an item link goes through item.locate");
 }
 
@@ -68,7 +69,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   await openFirst(p);
   await p.waitForTimeout(2500);
   const read = await log(p, "l.route === 'item_view.read'");
-  ok(read.length === 1 && read[0].body.upto === "e10" && read[0].body.window_ref.startsWith("win-") && !!read[0].body.request_id, "the reading position is written once the last message has scrolled into view", JSON.stringify(read[0]?.body));
+  ok(read.length === 1 && read[0].body.upto === "e9" && read[0].body.window_ref.startsWith("win-") && !!read[0].body.request_id, "the reading position is written once the last message has scrolled into view", JSON.stringify(read[0]?.body));
   ok((await p.locator("[data-unread-separator]").count()) === 0 && (await p.locator("[data-jump-mention]").count()) === 0, "the separator and the mention control go when everything is read");
   const open1 = (await log(p, "l.route === 'item_view.open'"))[0].body;
   ok(open1.position === "unread" && open1.live === true, "the view first opens at the unread position", JSON.stringify(open1));
@@ -88,7 +89,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   await openFirst(p);
   await p.locator("[data-anchor=e2] [data-entry-menu]").click();
   const items2 = (await p.locator("[role=menuitem]").allTextContents()).map((t) => t.trim());
-  ok(items2.join("|") === "Reply|Call an agent in from here", "another person's message offers Reply and Call an agent in", items2.join("|"));
+  ok(items2.join("|") === "Reply|Call an agent in from here|Select messages", "another person's message offers Reply and Call an agent in", items2.join("|"));
   await snap(p, "next-desktop-4-entry-menu");
   await p.getByRole("menuitem", { name: "Reply" }).click();
   await p.waitForSelector("[data-composer-mode=reply]", { timeout: 5000 });
@@ -103,7 +104,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   // own message: edit and delete
   await p.locator("[data-anchor=e5] [data-entry-menu]").click();
   const own = (await p.locator("[role=menuitem]").allTextContents()).map((t) => t.trim());
-  ok(own.join("|") === "Reply|Edit|Delete for everyone|Call an agent in from here", "your own message also offers Edit and Delete for everyone", own.join("|"));
+  ok(own.join("|") === "Reply|Edit|Delete for everyone|Call an agent in from here|Select messages", "your own message also offers Edit and Delete for everyone", own.join("|"));
   await p.getByRole("menuitem", { name: "Edit" }).click();
   await p.waitForSelector("[data-composer-mode=edit]", { timeout: 5000 });
   ok((await box.inputValue()) === "River it is. Booking now.", "Edit prefills the composer with the host's text");
@@ -135,13 +136,29 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   await p.waitForFunction(() => document.querySelector("main textarea")?.value === "", null, { timeout: 5000 });
   const r = (await log(p, "l.route === 'activation.resolve' && l.body.action_id === 'send'")).at(-1).body;
   ok(JSON.stringify(r.interaction.mention_choices) === '{"message":["m-ben"]}', "the mention travels as the host's choice ref, not as a typed name", JSON.stringify(r.interaction.mention_choices));
-  // the agent toggle reveals the harness and placement choices only when it is on
-  await box.fill("Please summarise."); await p.getByLabel("Ask an agent").check();
+  // the chips: "Ask an agent" reveals the Agent and Run on chips; picked ahead, Send asks nothing more
+  ok((await p.locator("[data-chip=harness]").count()) === 0, "the Agent and Run on chips are absent until Ask an agent is on");
+  await box.fill("Please summarise."); await p.getByRole("button", { name: "Ask an agent" }).click();
+  ok((await p.locator("[data-chip=harness]").count()) === 1 && await p.locator("[data-chip=placement]").isDisabled(), "with it on, an Agent chip appears and Run on waits for an agent");
+  await snap(p, "next-desktop-11-chips");
+  await p.locator("[data-chip=harness]").click();
+  await p.waitForSelector("[data-dialog=choose] h2:text('Agent')", { timeout: 5000 });
+  await p.locator("[data-dialog=choose] button[role=option]", { hasText: "Codex" }).click();
+  await p.waitForFunction(() => /Desk machine/.test(document.querySelector("[data-chip=placement]")?.textContent ?? ""), null, { timeout: 5000 }).then(() => ok(true, "the agent chip shows the pick and Run on shows the host's default"), () => ok(false, "the agent chip shows the pick and Run on shows the host's default"));
   await box.press("Enter");
-  await p.waitForSelector("[data-dialog=choose] h2:text('Agent')", { timeout: 5000 }).then(() => ok(true, "with Ask an agent on, Send asks which agent"), () => ok(false, "with Ask an agent on, Send asks which agent"));
-  await p.locator("[data-dialog=choose] button[role=option]").first().click();
-  await p.waitForSelector("[data-dialog=choose] h2:text('Run on')", { timeout: 5000 });
-  await p.locator("[data-dialog] button", { hasText: "Cancel" }).click().catch(() => {});
+  await p.waitForSelector("[data-dialog=confirm]", { timeout: 5000 });
+  const cr = (await log(p, "l.route === 'activation.resolve' && l.body.action_id === 'send'")).at(-1).body;
+  ok(cr.interaction.choices.harness === "h-codex" && cr.interaction.choices.placement === "desk" && (await log(p, "l.route === 'choice.options' && l.body.slot === 'placement'")).every((l) => l.body.harness === "harness-codex" && !!l.body.activation_id), "Send uses the chip picks and asks nothing more; the placement was fetched for that agent", JSON.stringify(cr.interaction.choices));
+  ok((await log(p, "l.route === 'choice.options' && l.body.slot === 'placement'")).at(-1).body.activation_id === cr.activation_id, "and for the same activation id");
+  await p.locator("[data-dialog] button", { hasText: "Cancel" }).click();
+  // attachments
+  await p.setInputFiles("[data-file-input=files]", { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hello from the fixture") });
+  await p.waitForSelector("[data-upload=done]", { timeout: 5000 }).then(() => ok(true, "a chosen file uploads (begin, chunks, finish) and shows as a removable chip"), () => ok(false, "a chosen file uploads (begin, chunks, finish) and shows as a removable chip"));
+  const up = (await log(p, "l.route.startsWith('attachment.')")).map((l) => l.route).join();
+  ok(up === "attachment.begin,attachment.chunk,attachment.finish", "in that order", up);
+  const beg = (await log(p, "l.route === 'attachment.begin'"))[0].body;
+  ok(beg.field === "files" && beg.form === "composer" && /^[a-f0-9]{64}$/.test(beg.sha256) && beg.bytes === 22, "the host is told the name, size and digest", JSON.stringify(beg).slice(0, 160));
+  await snap(p, "next-desktop-12-attached");
   await p.waitForTimeout(300);
 }
 
@@ -149,9 +166,9 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
 {
   const { page: p } = await go("", DESK);
   await openFirst(p);
-  await p.locator("[data-select-start]").click();
-  ok(await p.locator("[data-range-action=call-range]").isDisabled(), "the range action waits for a selection");
-  await p.locator("[data-anchor=e2]").click(); await p.locator("[data-anchor=e4]").click(); await p.waitForTimeout(500);
+  await p.locator("[data-anchor=e2] [data-entry-menu]").click(); await p.getByRole("menuitem", { name: "Select messages" }).click();
+  ok(await p.locator("[data-range-action=call-range]").isDisabled(), "Select messages in the message menu starts a selection; the range action waits for it");
+  await p.waitForTimeout(400); await p.locator("[data-anchor=e4]").click(); await p.waitForTimeout(500);
   const sel = (await log(p, "l.route === 'item_view.selection'")).at(-1)?.body;
   ok(sel?.first === "e2" && sel.last === "e4" && sel.window_ref.startsWith("win-"), "two taps pick a range; the host issues the selection ref", JSON.stringify(sel));
   ok((await p.locator("[data-anchor=e3].picked").count()) === 1, "every message in the range is marked");
@@ -166,6 +183,83 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   ok(rs?.interaction?.selection_ref === "sel-e2-e4" && rs.activation_context === "ctx-call-range", "the call carries only the host's selection ref and context", JSON.stringify(rs?.interaction));
   await snap(p, "next-desktop-8-call-confirm");
   await p.locator("[data-dialog] button", { hasText: "Cancel" }).click();
+}
+
+// ---- keyboard and screen reader: the log is one tab stop; arrows move between messages; Shift extends a selection
+{
+  const { page: p } = await go("", DESK);
+  await openFirst(p);
+  await p.waitForTimeout(300);
+  await p.locator("[role=log]").focus();
+  await p.keyboard.press("End"); await p.waitForTimeout(100);
+  ok((await p.evaluate(() => document.activeElement?.getAttribute("data-anchor"))) === "e9", "End goes to the last message");
+  ok(/^Ben, .*sending/.test((await p.locator("[data-anchor=e9]").getAttribute("aria-label")) ?? ""), "each message is named for a screen reader: who, when, state", await p.locator("[data-anchor=e9]").getAttribute("aria-label"));
+  await p.keyboard.press("ArrowUp"); await p.keyboard.press("ArrowUp");
+  ok((await p.evaluate(() => document.activeElement?.getAttribute("data-anchor"))) === "e7", "Up moves one message at a time");
+  await p.keyboard.press("Shift+ArrowUp"); await p.keyboard.press("Shift+ArrowUp"); await p.waitForTimeout(500);
+  ok((await p.locator("[role=listbox]").count()) === 1 && (await p.locator("[data-anchor=e5]").getAttribute("aria-selected")) === "true" && (await p.locator("[data-anchor=e9]").getAttribute("aria-selected")) === "false", "Shift with an arrow starts a selection: the log becomes a multi-select list and selected messages say so");
+  ok((await p.locator("[data-selection-bar] .cnt").textContent()).includes("3 messages selected"), "and the count is announced", await p.locator("[data-selection-bar] .cnt").textContent());
+  const ks = (await log(p, "l.route === 'item_view.selection'")).at(-1)?.body;
+  ok(ks?.first === "e5" && ks.last === "e7", "the host issues the reference for exactly that range", JSON.stringify(ks));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(200);
+  ok((await p.locator("[role=log]").count()) === 1 && (await p.locator("[data-selection-bar]").count()) === 0, "Escape ends it");
+  await p.keyboard.press("Enter");
+  ok((await p.locator("[role=menuitem]").count()) >= 3, "Enter on a message opens its menu from the keyboard");
+  await p.keyboard.press("Escape");
+}
+
+// ---- touch: holding a message opens its menu
+{
+  const ctx = await browser.newContext({ viewport: PHONE, hasTouch: true, isMobile: true });
+  const p = await ctx.newPage(); p.on("pageerror", (e) => errors.push(String(e)));
+  const cdp = await ctx.newCDPSession(p);
+  await p.goto(`${BASE_URL}/?fixture=threads-next${process.env.SCHEME ? `&scheme=${process.env.SCHEME}` : ""}`);
+  await openFirst(p); await p.waitForTimeout(300);
+  const box = await p.locator("[data-anchor=e5] .bub").boundingBox();
+  const pt = [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }];
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: pt });
+  await p.waitForTimeout(250);
+  ok((await p.locator("[role=menuitem]").count()) === 0, "a short touch opens no menu");
+  await p.waitForTimeout(400);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await p.waitForSelector("[role=menuitem]", { timeout: 3000 }).then(() => ok(true, "holding a message opens its menu"), () => ok(false, "holding a message opens its menu"));
+  await snap(p, "next-phone-5-longpress");
+  await p.keyboard.press("Escape"); await p.waitForTimeout(300);
+  const b2 = await p.locator("[data-anchor=e2] .bub").boundingBox();
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: b2.x + 20, y: b2.y + 10 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: b2.x + 20, y: b2.y + 60 }] });
+  await p.waitForTimeout(600);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  ok((await p.locator("[role=menuitem]").count()) === 0, "moving the finger (a scroll) cancels the hold");
+  await ctx.close();
+}
+
+// ---- motion: arrival, the separator leaving, the consent card resolving, jump to latest
+{
+  const { page: p } = await go("", DESK);
+  await p.evaluate(() => { window.__arr = 0; window.__gone = 0; new MutationObserver((ms) => { for (const m of ms) { if (m.target.classList?.contains("arrive") || [...m.addedNodes].some((n) => n.classList?.contains("arrive"))) window.__arr++; if (m.target.classList?.contains("gone")) window.__gone++; } }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] }); });
+  await openFirst(p);
+  await p.waitForFunction(() => window.__gone > 0, null, { timeout: 8000 }).then(() => ok(true, "once read, the unread separator leaves (fades and gathers its height) instead of vanishing"), () => ok(false, "once read, the unread separator leaves (fades and gathers its height) instead of vanishing"));
+  await p.waitForTimeout(800); ok((await p.locator("[data-unread-separator]").count()) === 0, "and is gone after the motion");
+  await p.waitForFunction(() => window.__arr > 0, null, { timeout: 12000 }).then(() => ok(true, "a message that arrives while you read eases in"), () => ok(false, "a message that arrives while you read eases in"));
+  const anim = await p.evaluate(() => { const s = getComputedStyle(document.documentElement); return { base: s.getPropertyValue("--dur-base").trim(), slow: s.getPropertyValue("--dur-slow").trim() }; });
+  ok(/^\.?\d+(\.\d+)?m?s$/.test(anim.base) && /^\.?\d+(\.\d+)?m?s$/.test(anim.slow), "the durations are the app's tokens", JSON.stringify(anim));
+}
+{
+  const { page: p } = await go("", { width: 1280, height: 420 });
+  await openFirst(p);
+  await p.locator("[role=log]").evaluate((e) => { e.scrollTop = 0; }); await p.waitForTimeout(300);
+  await p.locator("[data-jump-latest]").click(); await p.waitForTimeout(60);
+  const mid = await p.locator("[role=log]").evaluate((e) => (e.scrollHeight - e.clientHeight - e.scrollTop) / (e.scrollHeight - e.clientHeight));
+  ok(mid > 0.02 && mid < 0.98, "jump to latest glides rather than cuts", `still ${(mid * 100).toFixed(0)}% from the end after 60 ms`);
+  await p.waitForTimeout(500);
+  ok(await p.locator("[role=log]").evaluate((e) => e.scrollHeight - e.clientHeight - e.scrollTop < 2), "and arrives");
+  const rctx = await browser.newContext({ viewport: { width: 1280, height: 420 }, reducedMotion: "reduce" });
+  const q = await rctx.newPage(); await q.goto(`${BASE_URL}/?fixture=threads-next`); await openFirst(q);
+  await q.locator("[role=log]").evaluate((e) => { e.scrollTop = 0; }); await q.waitForTimeout(300);
+  await q.locator("[data-jump-latest]").click(); await q.waitForTimeout(80);
+  ok(await q.locator("[role=log]").evaluate((e) => e.scrollHeight - e.clientHeight - e.scrollTop < 2), "under reduced motion it is instant");
+  await rctx.close();
 }
 
 // ---- mute prompt with literal options, the panel
@@ -185,7 +279,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
 {
   const { page: p } = await go("scenario=consent", DESK);
   await openFirst(p);
-  const card = p.locator("[data-anchor=e9] ~ [data-entry-request], [data-entry-request]").first();
+  const card = p.locator("[data-entry-request]").first();
   ok((await card.textContent()).includes("asks Codex to read your messages 1 to 3") && /Without an answer in \d+ s/.test(await card.textContent()), "the person whose messages are selected sees the request with a countdown");
   const btns = await card.locator("button").allTextContents();
   ok(btns.join("|") === "Allow once|Always allow in this thread|Decline", "only the decisions the host offered", btns.join("|"));
@@ -194,6 +288,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   const rr = (await log(p, "l.route === 'request.resolve'"))[0]?.body;
   ok(rr?.decision === "deny" && rr.card_context === "ctx-card" && !("lifetime" in rr), "Decline goes to the host with the card's own context", JSON.stringify(rr));
   ok(await p.locator("[data-request-result]").textContent().then((t) => t.includes("declined")), "and the card says what happened");
+  ok((await p.locator("[data-entry-request] .fold.shut").count()) === 1, "the decisions gather away as the outcome rises in (one motion)");
 }
 {
   const { page: p } = await go("scenario=lapsed", DESK);
@@ -202,6 +297,19 @@ const openFirst = async (p) => { await p.waitForSelector("[data-i] button.row", 
   ok(await p.locator("main textarea").first().isDisabled() && (await p.getByRole("button", { name: "Send" }).getAttribute("aria-disabled")) === "true", "and its composer is disabled");
   ok((await p.locator("[data-anchor=e2] [data-entry-menu]").count()) === 1, "read actions stay");
   await snap(p, "next-desktop-10-readonly");
+}
+
+// ---- the connection drops while a run continues: reconnecting, never failed
+{
+  const { page: p } = await go("scenario=reconnect", DESK);
+  await openFirst(p);
+  const n0 = await p.locator("[data-entry]").count();
+  await p.waitForSelector("[data-view-state=reconnecting]", { timeout: 8000 }).then(() => ok(true, "when the connection drops the thread says it is reconnecting"), () => ok(false, "when the connection drops the thread says it is reconnecting"));
+  ok((await p.locator("[data-entry]").count()) === n0 && (await p.locator("[data-view-state=error]").count()) === 0 && (await p.locator("[data-activity=working]").count()) === 1, "the messages stay, the run still shows as working, nothing shows as failed");
+  ok((await p.locator("[data-view-state=reconnecting]").textContent()).includes("agent keeps running"), "in plain words: the agent keeps running and the thread catches up");
+  await snap(p, "desktop-13-reconnecting");
+  await p.waitForFunction(() => !document.querySelector("[data-view-state=reconnecting]") && document.querySelectorAll("[data-entry]").length > 9, null, { timeout: 20000 }).then(() => ok(true, "when the host answers again the note goes and what the run wrote meanwhile arrives"), () => ok(false, "when the host answers again the note goes and what the run wrote meanwhile arrives"));
+  ok((await p.locator("[data-view-state=error]").count()) === 0, "and it never showed an error");
 }
 
 // ---- phone

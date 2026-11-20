@@ -32,6 +32,9 @@ export interface Activation {
   context: string | undefined;
   /** Values on the device: `form` fields of the submitting form, a composer `draft`, a ticked `selection_ref`. */
   interaction?: Pick<Interaction, "form" | "draft" | "selection_ref">;
+  /** The activation id the person's chip choices were fetched for (a placement option is bound to it) and the harness they picked; set by a composer that asked ahead. */
+  activation_id?: string;
+  harness?: string;
   /** Called first when a held selection must be sent before the activation (the context then arrives). */
   flush?: () => Promise<void>;
   /** Re-reads the context after `flush`. */
@@ -66,8 +69,8 @@ export class Invoker {
     let mayHaveRun = false; // true once a request that could have run the operation has been sent
     try {
       const interaction: Interaction = { ...(a.interaction ?? {}) };
-      const activation_id = newId();
-      const asked = await this.#ask(action, context, interaction, activation_id);
+      const activation_id = a.activation_id ?? newId();
+      const asked = await this.#ask(action, context, interaction, activation_id, a.harness);
       if (!asked) return { state: "cancelled" };
       mayHaveRun = oneExchange(action.operation); // a one-exchange resolve is also the dispatch
       let reply = await this.session.exchange<ActionOutcome | ActivationResolution>("activation.resolve", { type: "invoke", action_id: action.id, activation_id, activation_context: context, ...(Object.keys(interaction).length ? { interaction } : {}), ...(oneExchange(action.operation) ? { dispatch: true } : {}) });
@@ -100,8 +103,8 @@ export class Invoker {
    * (`extension.choices`, for example the installed harnesses) or from the host (`execution_placement`, asked after the harness because placement depends on it: the harness ref travels with the request, with the
    * activation id the person is about to start). Returns false when the person cancelled.
    */
-  async #ask(action: Invoke, context: string, into: Interaction, activation_id: string): Promise<boolean> {
-    let harness: string | undefined;
+  async #ask(action: Invoke, context: string, into: Interaction, activation_id: string, preharness?: string): Promise<boolean> {
+    let harness: string | undefined = preharness;
     for (const [name, src] of Object.entries(action.inputs ?? {})) {
       if (!("prompt" in src)) continue;
       const p = src.prompt;
@@ -111,6 +114,7 @@ export class Invoker {
         const form = (into.form ?? {}) as Record<string, unknown>, scope = (this.session.formKeyed ? form[cond.form] : form) as Record<string, unknown> | undefined, v = scope?.[cond.field];
         if (cond.op === "exists" ? v === undefined || v === null || v === "" || v === false : !(v === cond.value || String(v) === String(cond.value))) continue;
       }
+      if (p.kind === "choice" && into.choices?.[name]) continue; // already picked on a chip, before Send
       if (p.kind === "choice") {
         const from = (p as { options?: { extension?: string; host?: string } }).options ?? {};
         let page: ChoicePage;

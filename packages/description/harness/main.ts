@@ -2,7 +2,9 @@
 // never logged). `?fixture=reading-list|notes` picks the sealed fixture. The suites and the performance measures drive this page; it holds no product code.
 import { mount } from "svelte";
 import "@calternal/ui/styles";
-import { initInputModality, initScheme } from "@calternal/ui";
+import { applyScheme, currentScheme, initInputModality, initScheme, loadFonts, registerFonts } from "@calternal/ui";
+import { appearance } from "../../../apps/web/src/appearance/prefs.svelte";
+import Backdrop from "../../../apps/web/src/shell/Backdrop.svelte";
 import { AppView, HostSession, HttpTransport, ProductTransport, type AppDescription } from "../src";
 import { MockHost } from "../testing/mock-host";
 import { SyntheticSource } from "../testing/synthetic-source";
@@ -13,7 +15,13 @@ import { descriptionNext as threadsNext } from "../../../plugins/calternal-threa
 const all = import.meta.glob(["../../../contract/fixtures/description-v2/*.json", "!../../../contract/fixtures/description-v2/invalid-*.json"], { eager: true, import: "default" }) as Record<string, unknown>;
 
 const q = new URLSearchParams(location.search);
+// The page boots as the shell does: the shipped fonts, the scheme (`?scheme=light|dark`, else the system's), the web app's appearance engine (the wallpaper blurred once, the veils solved from its pixels) and its Backdrop.
+registerFonts(import.meta.env.BASE_URL);
 initInputModality(); initScheme();
+if (q.get("scheme") === "light" || q.get("scheme") === "dark") applyScheme(q.get("scheme") as "light" | "dark");
+void appearance.start();
+await Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => setTimeout(r, 2500))]);
+mount(Backdrop, { target: document.body });
 const fixtures: Record<string, unknown> = Object.fromEntries(Object.entries(all).map(([k, v]) => [k.split("/").pop()!.replace(/\.json$/, ""), v]));
 fixtures["reading-list"] = fixtures["reading-list-app"]; fixtures.notes = fixtures["notes-app"];
 const rows = Number(q.get("mock") ?? 0);

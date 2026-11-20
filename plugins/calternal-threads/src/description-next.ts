@@ -60,7 +60,7 @@ export const descriptionNext = {
       states: { empty: { title: "No thread matches" } } },
   ],
   chrome: {
-    sidebar: { open: true, title: "Threads", refresh: true,
+    sidebar: { open: true, title: "Threads", refresh: true, width: 280,
       selectors: [{ id: "view", route: "view", selected: "all", options: [{ id: "all", title: "All" }, { id: "people", title: "People" }, { id: "agents", title: "Agents" }, { id: "archived", title: "Archived", count: { bind: "archived-count" } }] }],
       sections: [
         { id: "shortcuts", rows: [{ id: "new-thread", title: "New thread", icon: "plus", open: { invoke: { id: "create-thread", title: "New thread", operation: "threads.create", inputs: { title: { prompt: { title: "New thread", placeholder: "What is it about?" } } }, then: { route: { name: "item" } } } } }] },
@@ -92,9 +92,10 @@ export const descriptionNext = {
     { type: "form", id: "composer", entry_context: { component: "transcript" },
       fields: [
         { id: "message", label: "Message", input: "multiline", required: true, maxLength: 4000, placeholder: "Message", initial: { entry: "text" }, draft: { slot: "message" }, mentions: "item_participants" },
+        { id: "files", label: "Add photos and files", input: "file" },
         { id: "ask", label: "Ask an agent", input: "toggle" },
       ],
       submit: { id: "send", title: "Send", icon: "send", operation: "threads.send", inputs: {
-        item, text: { form: "composer", field: "message" }, reply: { entry: "composer" }, harness: harness(ask), placement: place(ask) } } },
+        item, text: { form: "composer", field: "message" }, attachments: { form: "composer", field: "files" }, reply: { entry: "composer" }, harness: harness(ask), placement: place(ask) } } },
   ] } },
 };

@@ -62,15 +62,17 @@
 
 <style>
   .ra { position: relative; touch-action: pan-y; }
-  /* Row actions are compact: an icon where the action has one (its title is the accessible name and the tooltip), so the group never covers the row's own label, and only its buttons take pointer events. */
-  .acts { pointer-events: none; position: absolute; inset-block: 0; inset-inline-end: var(--s-3); display: flex; align-items: center; gap: var(--s-2); opacity: 0; }
-  /* Hidden by opacity, not display, so the arrow keys can move focus into it; its buttons take pointer events only while it is shown. */
-  .ra:hover .acts, .ra:focus-within .acts, .ra.sel .acts { opacity: 1; }
-  /* Beside the row only the first trailing action and "More" show, so the group never covers the title or the counts; the other actions stay reachable by keyboard focus, the menu and the swipe. */
+  /* Pointing at a row swaps its marks for its actions (docs/ui-design-system.md "Interaction rules"): the counts fade out and the first trailing action and "More" appear in their place on the row's own glass, so nothing is drawn over the title or the time.
+     Only hover and keyboard focus show them (a selected row does not), and only their buttons take pointer events. */
+  .acts { pointer-events: none; position: absolute; inset-block: 0; inset-inline-end: var(--s-2); display: flex; align-items: center; gap: var(--s-1); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+  .ra:hover .acts, .ra:focus-within .acts { opacity: 1; }
+  .ra:hover :global([data-mark]), .ra:focus-within :global([data-mark]) { opacity: 0; }
+  :global([data-mark]) { transition: opacity var(--dur-fast) var(--ease-out); }
+  .ra:hover .acts :global(button), .ra:focus-within .acts :global(button) { pointer-events: auto; }
   .ab.fold:not(:focus-within) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .disc { position: absolute; inset-inline-start: 0; top: 0; min-width: 20px; min-height: var(--row-h); color: var(--ink-3); }
-  .ra:hover .acts :global(button), .ra:focus-within .acts :global(button), .ra.sel .acts :global(button) { pointer-events: auto; }
-  .acts :global(.btn[data-has-icon]) { padding: 0 var(--s-3); min-width: 44px; justify-content: center; }
+  .acts :global(.btn[data-has-icon]) { padding: 0; min-width: 28px; width: 28px; height: 28px; justify-content: center; border-radius: 50%; }
   .acts :global(.btn[data-has-icon] > span:last-child) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .more { min-width: 44px; min-height: 44px; border-radius: var(--r-select); color: var(--ink-2); }
+  .more { min-width: 28px; height: 28px; border-radius: 50%; color: var(--ink-2); }
+  .more:hover, .acts :global(.btn:hover) { background: rgb(var(--ink-rgb) / 0.08); }
 </style>

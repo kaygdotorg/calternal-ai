@@ -49,7 +49,7 @@ export const description: AppDescription = {
   ],
   chrome: {
     sidebar: {
-      open: true, title: "Threads", refresh: true,
+      open: true, title: "Threads", refresh: true, width: 280,
       selectors: [{ id: "view", route: "view", selected: "threads", options: [
         { id: "threads", title: "Threads" },
         { id: "archived", title: "Archived", count: { bind: "archived-count" } }] }],

@@ -90,12 +90,11 @@ export function threadsHost(o: ThreadsHostOptions) {
       E(4, "a-codex", "Codex", 60 * 26 - 6, [txt("I read the three messages. The river place has a free table at `19:00` on Friday; the market is closed. [Their menu](https://example.test/menu)")], { asked_by: "Ada" }),
       { type: "snapshot-marker", kind: "date", timestamp: T(60 * 5) },
       E(5, "p-ada", "Ada", 60 * 5, [txt("River it is. Booking now.")]),
-      E(6, "p-ben", "Ben", 60 * 4, [{ type: "snapshot-quote", source: { item: id, revision: "rev-1", span: "s5" } }, txt("Great. *Please* ask for the terrace.")]),
-      E(7, "p-ben", "Ben", 60 * 4 - 1, [{ type: "snapshot-attachment", ref: "asset-menu", label: "menu-friday.pdf" }]),
-      E(8, "a-claude", "Claude", 60 * 2, [txt("A consult with Codex is done: both of us recommend the terrace table."), { type: "snapshot-link", label: "Consultation with Codex", target: { space: "sp", id: "t-consult" } }, { type: "snapshot-code", text: "curl -X POST https://example.test/book \\\n  -d 'time=19:00'" }], { asked_by: "Ben" }),
-      E(9, "p-ben", "Ben", 20, [txt("@Ada can you confirm the terrace?")]),
-      E(10, "p-ben", "Ben", 19, [txt("Sending from my phone…")], { state: "queued" }),
-      ...extra.map((x, k) => E(11 + k, x.who === "Ada" ? "p-ada" : "p-ben", x.who, Math.max(0, Math.round((Date.now() - x.at) / 60000)), [...(x.quote ? [{ type: "snapshot-quote", source: { item: id, revision: "rev-1", span: "s5" } }] : []), txt(x.text)])),
+      E(6, "p-ben", "Ben", 60 * 4, [{ type: "snapshot-quote", source: { item: id, revision: "rev-1", span: "s5" } }, { type: "snapshot-attachment", ref: "asset-menu", label: "menu-friday.pdf" }, txt("Great. *Please* ask for the terrace.")]),
+      E(7, "a-claude", "Claude", 60 * 2, [txt("A consult with Codex is done: both of us recommend the terrace table."), { type: "snapshot-link", label: "Consultation with Codex", target: { space: "sp", id: "t-consult" } }, { type: "snapshot-code", text: "curl -X POST https://example.test/book \\\n  -d 'time=19:00'" }], { asked_by: "Ben" }),
+      E(8, "p-ben", "Ben", 20, [txt("@Ada can you confirm the terrace?")]),
+      E(9, "p-ben", "Ben", 19, [txt("Sending from my phone…")], { state: "queued" }),
+      ...extra.map((x, k) => E(10 + k, x.who === "Ada" ? "p-ada" : "p-ben", x.who, Math.max(0, Math.round((Date.now() - x.at) / 60000)), [...(x.quote ? [{ type: "snapshot-quote", source: { item: id, revision: "rev-1", span: "s5" } }] : []), txt(x.text)])),
     ];
     return list;
   }
@@ -111,19 +110,19 @@ export function threadsHost(o: ThreadsHostOptions) {
     });
     const firstUnread = anchors[anchors.length - Math.min(left, anchors.length)];
     const quotes = [{ entry: "e6", source: { item: id, revision: "rev-1", span: "s5" }, text: "River it is. Booking now.", author: "Ada", target: { anchor: "e5", item: { space: "sp", id } } },
-      ...extra.filter((x) => x.quote).map((_, k) => ({ entry: A(11 + k), source: { item: id, revision: "rev-1", span: "s5" }, text: "River it is. Booking now.", author: "Ada", target: { anchor: "e5", item: { space: "sp", id } } }))];
+      ...extra.filter((x) => x.quote).map((_, k) => ({ entry: A(10 + k), source: { item: id, revision: "rev-1", span: "s5" }, text: "River it is. Booking now.", author: "Ada", target: { anchor: "e5", item: { space: "sp", id } } }))];
     return { state: o.scenario === "stale" ? "stale" : "live", source_revision: `rev-${extra.length}`, window_ref: `win-${id}`, result_version: `v-${extra.length}`, ...(o.scenario === "stale" ? {} : { follow: `f-${id}-${extra.length}` }),
       view: { content: { type: "stack", children: es } }, quotes, entry_controls: ctrls,
       access: o.scenario === "lapsed" ? { state: "read_only", reason: "lapsed" } : { state: "read_write" },
-      reading: { unread: left, mentions: left > 0 ? 1 : 0, ...(left > 0 ? { first_unread: firstUnread, next_mention: A(9) } : {}), version: `rd-${left}` },
-      ...(o.scenario === "consent" ? { requests: [{ anchor: A(9), card: { request_ref: "rq-1", title: "Ada asks Codex to read your messages 1 to 3", detail: "Codex would read the three messages you wrote in this thread.", material: [], state: "open", card_context: "ctx-card", expires_at: new Date(Date.now() + 60000).toISOString(), actions: [{ decision: "approve", lifetimes: ["once", "this_item"] }, { decision: "deny" }] } }] } : {}),
+      reading: { unread: left, mentions: left > 0 ? 1 : 0, ...(left > 0 ? { first_unread: firstUnread, next_mention: A(8) } : {}), version: `rd-${left}` },
+      ...(o.scenario === "consent" ? { requests: [{ anchor: A(8), card: { request_ref: "rq-1", title: "Ada asks Codex to read your messages 1 to 3", detail: "Codex would read the three messages you wrote in this thread.", material: [], state: "open", card_context: "ctx-card", expires_at: new Date(Date.now() + 60000).toISOString(), actions: [{ decision: "approve", lifetimes: ["once", "this_item"] }, { decision: "deny" }] } }] } : {}),
       activity: [{ label: "Codex is working", kind: "working", expires_at: new Date(Date.now() + 120000).toISOString() }] };
   }
   async function nextRoute(route: Route, body: any): Promise<unknown | undefined> {
     const id = String(body.item ?? body.window_ref?.replace(/^win-/, "") ?? "t-lunch");
     switch (route) {
-      case "item_view.open": if (o.scenario === "loading") await new Promise((r) => setTimeout(r, 60_000)); if (o.scenario === "unavailable") return { state: "unavailable" }; return page(id);
-      case "item_view.follow": await new Promise((r) => setTimeout(r, 6000)); if (extra.length < 3) extra.push({ who: extra.length % 2 ? "Ada" : "Ben", text: `Streamed message ${extra.length + 1}`, at: Date.now(), quote: extra.length === 1 ? "x" : undefined }); return { type: "item_view_signal", follow: body.follow, state: "changed" };
+      case "item_view.open": if (o.scenario === "reconnect" && ++opens >= 2 && opens <= 4) throw new Error("connection lost"); if (o.scenario === "loading") await new Promise((r) => setTimeout(r, 60_000)); if (o.scenario === "unavailable") return { state: "unavailable" }; return page(id);
+      case "item_view.follow": await new Promise((r) => setTimeout(r, o.scenario === "reconnect" ? 800 : 6000)); if (extra.length < 3) extra.push({ who: extra.length % 2 ? "Ada" : "Ben", text: `Streamed message ${extra.length + 1}`, at: Date.now(), quote: extra.length === 1 ? "x" : undefined }); return { type: "item_view_signal", follow: body.follow, state: "changed" };
       case "item_view.read": { const tid = String(body.window_ref).replace(/^win-/, ""); unreadLeft.set(tid, 0); return { unread: 0, mentions: 0, version: "rd-0" }; }
       case "item_view.selection": return { selection_ref: `sel-${body.first}-${body.last ?? body.first}` };
       case "item.locate": return { item: "t-bug" };
@@ -131,6 +130,9 @@ export function threadsHost(o: ThreadsHostOptions) {
       case "entry_composer.mentions": return { options: [{ ref: "m-ben", label: "Ben", kind: "person" }, { ref: "m-codex", label: "Codex", kind: "contribution" }, { ref: "m-claude", label: "Claude", kind: "contribution" }].filter((x) => x.label.toLowerCase().startsWith(String(body.text ?? "").toLowerCase())) };
       case "entry_composer.draft.read": { const d = drafts.get(id) ?? { v: 0, text: "" }; return { version: `d${d.v}`, text: d.text }; }
       case "entry_composer.draft": { const d = { v: (drafts.get(id)?.v ?? 0) + 1, text: String(body.text) }; drafts.set(id, d); return { version: `d${d.v}`, text: d.text }; }
+      case "attachment.begin": return { stage: `st-${body.request_id}`, next_offset: 0, max_bytes: 10_000_000, expires_at: iso(-600) };
+      case "attachment.chunk": return { stage: body.stage, next_offset: Number(body.offset) + Math.floor((String(body.bytes).length * 3) / 4), max_bytes: 10_000_000, expires_at: iso(-600) };
+      case "attachment.finish": return { attachment: `att-${String(body.stage).slice(3, 11)}` };
       case "request.resolve": return { activation_id: "x", state: "ok" };
       case "activation.resolve": {
         const m = /^ctx-(reply|edit)-(.+)$/.exec(String(body.activation_context));
@@ -142,6 +144,7 @@ export function threadsHost(o: ThreadsHostOptions) {
       default: return undefined;
     }
   }
+  let opens = 0;
   let version = 0; const follows = new Map<string, number>();
   const host: MockHost = new ViewContexts({
     rows: 1, actionIds: o.actionIds, latencyMs: o.latencyMs,

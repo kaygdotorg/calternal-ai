@@ -6,7 +6,7 @@
 /** One route of the exchange; the names are the catalogue's event families. */
 export type Route =
   | "view.open" | "view.renew" | "window" | "selection.settled" | "selection.set"
-  | "search" | "transcript.page" | "composer.options" | "request.resolve" | "request.card" | "activation.resolve" | "activation.confirm" | "activation.dispatch" | "choice.options" | "extension.choices" | "item_view.open" | "item_view.follow" | "item_view.read" | "item_view.selection" | "item.locate" | "entry_composer.open" | "entry_composer.mentions" | "entry_composer.draft.read" | "entry_composer.draft" | "undo" | "status";
+  | "search" | "transcript.page" | "composer.options" | "request.resolve" | "request.card" | "activation.resolve" | "activation.confirm" | "activation.dispatch" | "choice.options" | "extension.choices" | "item_view.open" | "item_view.follow" | "item_view.read" | "item_view.selection" | "item.locate" | "entry_composer.open" | "entry_composer.mentions" | "entry_composer.draft.read" | "attachment.begin" | "attachment.chunk" | "attachment.finish" | "entry_composer.draft" | "undo" | "status";
 
 /** A host answer that is not a sealed reply: the HTTP status and, when the body said so, the host's own code and message. */
 export class HostError extends Error {

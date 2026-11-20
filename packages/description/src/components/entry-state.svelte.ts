@@ -18,6 +18,15 @@ export class ItemViewState {
   selecting = $state(false);
   /** The anchors picked so far (first, then last). */
   picked = $state<string[]>([]);
+  /** The entry that has the keyboard's place (roving focus), or null. */
+  active = $state<string | null>(null);
+  /** Anchors of entries that arrived with the newest page (they ease in once), and the unread separator that is leaving. */
+  fresh = $state<ReadonlySet<string>>(new Set());
+  leaving = $state<string | null>(null);
+  /** The message the range grew from (a click or the key that started it). */
+  origin = $state<string | null>(null);
+  /** How many messages the picked range covers, for the announcement. */
+  count = $state(0);
   /** The host's reference for the picked range, once issued. */
   selectionRef = $state<string | undefined>();
 
@@ -39,7 +48,7 @@ export class ItemViewState {
     return walk(this.reply?.view?.content);
   }
   /** Leaves the selection mode and forgets what was picked. */
-  endSelection() { this.selecting = false; this.picked = []; this.selectionRef = undefined; }
+  endSelection() { this.selecting = false; this.picked = []; this.selectionRef = undefined; this.count = 0; this.origin = null; }
 }
 
 /** The item views of the open app by component id (reactive: a composer drawn before its view still finds it). */
