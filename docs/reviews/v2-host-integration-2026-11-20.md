@@ -12,6 +12,7 @@ Lane issue [#101](https://git.kayg.org/kayg/calternal-ai/issues/101). Branch
 | `lane/v2-host-execution` (slice 3, #94) | 1b76d8a0 | none |
 | `lane/v2-host-harness` (slice 4, #96) | 86f2dd0f | none |
 | `lane/threads-plugin` (#92) | ae428ee6 | none |
+| `lane/threads-ui` | 4e513af8 | none. Supersedes the plugin lane: both plugins renamed to `calternal-chat` and `calternal-chat-claude-code`. |
 
 After the merge, the 14.43 fixture refresh gave the Reading List manifest a `jobs`
 entry that the slice 2 item engine test drops with its operations. The integration
