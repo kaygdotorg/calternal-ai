@@ -1,7 +1,7 @@
 # Plugin API v2 host build plan
 
 Scope is an agent-only Threads app using its own item files and a second installed
-package for the harness. Use API v2 draft 14.33 and the [Threads
+package for the harness. Use the pinned API v2 draft on `lane/v2-host-base` and the [Threads
 spike](https://git.kayg.org/kayg/calternal-ai/src/commit/23471bfa/docs/reviews/threads-plugin-spike-2026-11-20.md).
 The code map is against dev `d3d37a4c`. Estimates are engineering days per lane,
 including focused qualification and excluding review queue time. People-thread consent,
@@ -65,8 +65,10 @@ title logic in Threads.
 Reuse `crates/server/src/plugins/jobs/{claim.rs,complete.rs,waits.rs}`,
 `plugins/space_ticket.rs`, `turns/{admission.rs,lease.rs,control.rs,
 space_execution.rs}`, `api/request_action.rs` and `crates/core/src/requests.rs`. Keep
-SQLite work per scope using rusqlite and the existing writer. Only dispatch remote
-cleanup after the fence commits. Hold quota until verified teardown.
+SQLite work per scope using rusqlite and the existing writer. Slice 2 owns the per-space content writer transaction
+and its migration sequence. Slice 3 owns the execution lifecycle rows and
+supplies the archive fences and cleanup in that same FULL transaction. Dispatch
+remote cleanup after the fence commits. Hold quota until verified teardown.
 
 Qualify lost receipt replay, two actors and a queued successor, commit before Stop or
 archive reply followed by crash, device and grant revoke, and server restart with live or

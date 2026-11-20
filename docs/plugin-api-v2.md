@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.33 draft
+# Plugin API v2 · revision 14.34 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -557,8 +557,11 @@ login for one run they start, through the catalogue’s
 [placement choice](../contract/host-catalogue-v2.json#/execution_placement). That run stays in their isolated sandbox and only that
 member’s explicitly selected runs can mount their login. Both choices
 limit discovery to what the whole file audience can read and keep tools
-off until isolation is proved (owner decision 74). Recheck the selected
-profile and session at continuation as well as at admission.
+off until isolation is proved (owner decision 74). Check the catalogue’s
+[disclosed-attempt rule][attempt-disclosure] for a selected-material call,
+which requires tools and stays disabled where its isolation is unproved.
+Recheck the selected profile and session at continuation as well as at
+admission.
 
 The same host choice offers eligible machines in a personal space. Any
 app can request it in a checked execution action using the description’s
@@ -589,29 +592,68 @@ the same live item and revision checks as any other item page. Host job
 and approval controls remain generic. A retained snapshot draws while
 the item owner sleeps (§4.2).
 
-**Threads participants.** People and agents are participant data in the
-Threads file. Threads opts into the generic [per-item discovery rule](../contract/host-catalogue-v2.json#/execution_attempt_authority/discovery/item_policy).
+**Threads with people.** Threads owns one Markdown file in the starter’s
+space and records the people and agent participants in that file. Its
+format identifier is `calternal-thread/v<n>` (manifest file format ID
+`calternal-thread`, integer version `n`). The app shares that item with
+the other participants with full item privileges, using checked host item
+grants. Those privileges cover this item, including its editing and sharing
+rights, and confer no role in the starter’s space. Participant data alone
+grants no access. Use the existing
+audience-widening protection when adding readers, including when Undo
+restores access.
+
+A person can belong to several groups. Each group gets its own shared space
+by default under the [afternoon decisions](morning-2026-11-20.md#decisions-of-the-afternoon-owner-2026-11-20).
+Threads picks participants through the [group-scoped people
+primitive][scoped-people]. A conversation between people requires one
+current group they share. Members can create invite links into their own
+groups. Reuse capability checks ([ADR 0058][adr-roles]), checked invites
+([ADR 0059][adr-invites]), and live group visibility ([ADR 0060][adr-groups]).
+Keep the protected management directory separate from package lookup.
+The generic host holds membership, scoped lookup, group invitation, space
+bootstrap and item grants. Contacts will settle the package-facing people
+and group flows using the existing group and contact decisions
+([ADR 0064][adr-contacts]). These exchanges stay OPEN.
+
+Threads opts into the catalogue’s [per-item discovery rule][item-discovery].
 A person's own agent thread can be `creator_only` and stays discoverable
 to their own authorized attempts. A people conversation is `consent_only`
 and stays outside attempt list, search, direct reads and derived output.
-Under the catalogue’s opaque-write rule, the host marks unknown or other-
-author content in the same writer transaction. An authorized writer can
-request protection. Only the host may clear it on verified provenance.
-The harness has no direct writer authority on the thread. Calling in an agent selects a message, a range
-or the whole conversation. Apply the generic
-[author-consent rule](../contract/host-catalogue-v2.json#/attempt_disclosure)
-to every included author's material. People-thread custody and participant grants, deletion across history,
-search, caches and offline copies, actor-private per-item state, trusted
-authorship and consent recording and revocation, and the checked
-invitation placement exchange remain OPEN. Group membership and cross-space
-delivery also remain OPEN. Keep the
-affected invocation path disabled until pinned. People discovery is
-limited to one's group. There is no server-wide people discovery.
-[Recorded Threads decisions][threads-decisions] For an agent called into a conversation between people,
-use the caller's own enrolled machine and login outside a shared space
-and the space binding in a shared space. Shared-space tool restrictions
-still apply. Calling a person into an agent conversation follows the
-existing audience fence. Any new invite or delivery mechanics remain open.
+The host marks unknown or other-author material in the writer transaction.
+An authorized writer can request protection. Only the host can clear it
+on verified provenance. The harness receives selected material through
+the [disclosure boundary][attempt-disclosure] and has no direct read or
+write authority on the people-thread file.
+
+Threads offers one message, a range or the whole conversation as the
+selection for one call. Each author chooses **Ask each time** or
+**Always** per conversation and may revoke either at any time. The host
+checks short-lived or standing grants per author and binds the checked
+selection to the exact attempt and source revision. The call proceeds
+with a non-answering author’s messages withheld. Later messages require
+another address and a new checked call. Use the catalogue’s
+[disclosed-attempt placement and tools rule][attempt-disclosure].
+Threads owns the selection UI, how a person addresses an agent, and
+applying its result to the item. The host owns the grant and attempt
+fences. A generic actor-private per-item record can hold a person’s
+view state and consent preference, with disclosure authority coming
+from the checked grant.
+
+A person may ask one agent to consult another. Threads puts that exchange
+in a separate linked item and posts only its result to the people
+conversation. The existing generic item/link and child-execution
+primitives supply the isolation and ceilings. Authorizing the first
+attempt does not disclose its inputs to the second. Check every receiving
+attempt and the delivery audience. Threads writes and draws the linked
+consultation and decides how to apply its result.
+
+The catalogue’s [OPEN list](../contract/host-catalogue-v2.json#/open_cutover_requirements)
+tracks the remaining wires and qualification for participant grants,
+group invitation and bootstrap, disclosure and placement, private
+per-item state, message deletion and any additional cross-space delivery.
+Keep those paths disabled until pinned. This revision leaves the
+agents-only implementation path available.
 
 #### Declarative extraction and retention
 
@@ -659,7 +701,9 @@ with bounded host cleanup and the same purge and revocation fences.
 
 **Staged save.** Call `item_save_begin`, `item_save_chunk` and `item_save_seal` from the [catalogue](../contract/host-catalogue-v2.json#/item_engine), then commit the sealed ref with `item_save`. Begin reserves total decoded bytes against the existing
 receipt namespace (space, actor, request ID), checked operation fingerprint,
-resolved target, expected head, total length and digest. Concurrent identical
+resolved target, expected head, total length and digest. The committed receipt
+retains separate checked begin and final save identities under the catalogue’s
+replay rule, even after stage retirement. Concurrent identical
 begins return one handle and reservation. Changed input in the namespace
 returns `409`. Each chunk carries a byte offset and bounded base64 data.
 Matching chunks replay, conflicting overlaps fail. Bind the handle to the
@@ -1644,5 +1688,12 @@ and queued follow-ups are owned by the app and harness contract.
 
 [placement-decision]: https://git.kayg.org/kayg/calternal-ai/src/commit/a4154906/docs/morning-2026-11-20.md#third-set-of-answers-owner-2026-11-20
 
-[threads-decisions]: https://git.kayg.org/kayg/calternal-ai/src/commit/d3d37a4cffa4ad4faff053a255caab70b3fee8b7/docs/morning-2026-11-20.md#threads-with-people-first-answers-owner-2026-11-20
 [threads-spike]: https://git.kayg.org/kayg/calternal-ai/src/commit/c3c70b73/docs/reviews/threads-plugin-spike-2026-11-20.md
+
+[scoped-people]: ../contract/host-catalogue-v2.json#/group_people_scope
+[item-discovery]: ../contract/host-catalogue-v2.json#/execution_attempt_authority/discovery/item_policy
+[attempt-disclosure]: ../contract/host-catalogue-v2.json#/attempt_disclosure
+[adr-roles]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0058-roles-are-capability-sets.md
+[adr-invites]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0059-invites-and-storage-quota.md
+[adr-groups]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0060-groups-and-person-visibility.md
+[adr-contacts]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0064-contacts-sync-over-carddav.md
