@@ -316,12 +316,8 @@ impl MachineService {
         let session = hash32(token);
         let ready = req.draining || !req.discards.is_empty();
         let svc = self.clone();
-        let (notify, awaiting_restore) =
+        let (notify, awaiting_restore, _guard) =
             blocking(move || svc.sync_begin(machine_id, &session, &req)).await?;
-        let _guard = PollGuard {
-            svc: self.clone(),
-            machine_id,
-        };
         let hold = if awaiting_restore {
             self.settings.poll_hold.min(Duration::from_millis(100))
         } else {
@@ -346,11 +342,11 @@ impl MachineService {
     }
 
     fn sync_begin(
-        &self,
+        self: &Arc<Self>,
         machine_id: Uuid,
         session: &[u8; 32],
         req: &SyncRequest,
-    ) -> Result<(Arc<Notify>, bool), Error> {
+    ) -> Result<(Arc<Notify>, bool, PollGuard), Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
         let _step = st
@@ -399,7 +395,14 @@ impl MachineService {
         st.reconcile(machine_id, &req.leases, &self.settings)?;
         st.place_waiting(&self.settings);
         live_mut(st.machines.get_mut(&machine_id), session)?.polls += 1;
-        Ok((notify, st.awaiting_restore_report(machine_id)))
+        // The blocking task's result owns this count even if the HTTP task
+        // disconnects before receiving the result.
+        let guard = PollGuard {
+            svc: self.clone(),
+            machine_id,
+            session: *session,
+        };
+        Ok((notify, st.awaiting_restore_report(machine_id), guard))
     }
 
     fn outbox(&self, machine_id: Uuid, session: &[u8; 32]) -> Result<Vec<Envelope>, Error> {
@@ -539,26 +542,31 @@ fn live_mut<'a>(m: Option<&'a mut Machine>, session: &[u8; 32]) -> Result<&'a mu
     }
 }
 
-/// Counts a held poll so the sweeper keeps the machine online; releases the
-/// count on a blocking task when the request ends or is cancelled.
+/// Owns one held poll from registration through request completion or cancellation.
+/// Releases the count on a blocking task for the same session.
 struct PollGuard {
     svc: Arc<MachineService>,
     machine_id: Uuid,
+    session: [u8; 32],
 }
 
 impl Drop for PollGuard {
     fn drop(&mut self) {
         let (svc, id) = (self.svc.clone(), self.machine_id);
+        let session = self.session;
         tokio::task::spawn_blocking(move || {
             if let Ok(mut st) = svc.state.lock()
                 && let Some(m) = st.machines.get_mut(&id)
+                && let Some(live) = m.live.as_mut().filter(|live| live.session == session)
             {
                 m.last_seen = Instant::now();
                 m.last_seen_ms = Some(super::db::now_ms());
-                if let Some(live) = m.live.as_mut() {
-                    live.polls = live.polls.saturating_sub(1);
-                }
+                live.polls = live.polls.saturating_sub(1);
             }
         });
     }
 }
+
+#[cfg(test)]
+#[path = "sessions_tests.rs"]
+mod tests;

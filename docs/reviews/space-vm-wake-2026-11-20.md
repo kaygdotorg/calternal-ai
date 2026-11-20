@@ -337,6 +337,30 @@ package load. Node RSS was 49.20 MiB fresh and up to 53.75 MiB after standby
 release in the small proof package. RSS includes shared resident pages.
 Evidence is under `/srv/homes/perf/vmw5`.
 
+## Workspace regression gate
+
+The provider integration suite checks that a disconnected machine's turn
+becomes interrupted in the thread detail, list and journal. The machine sync
+registration now owns the poll count before handing its result back to HTTP.
+If the request disappears during that handoff, dropping the result releases
+the poll and lets the sweeper expire the machine. Cleanup is scoped to the
+same machine session.
+
+Before handing this lane to the merge gate, build the plugin bundles and run
+the full workspace with all features in both profiles on dev-01. Keep the
+shared lock and the lane's three-job and three-test-thread limits in both runs.
+
+```sh
+export TMPDIR="$HOME/gate-tmp"
+flock -s -w 7200 /tmp/calternal-dev01.lock nice -n 10 nix develop -c npm run build:plugins
+flock -s -w 7200 /tmp/calternal-dev01.lock nice -n 10 nix develop -c \
+  scripts/check-podman-tests.sh cargo test --locked -j3 --workspace --all-features \
+  --no-fail-fast -- --test-threads=3
+flock -s -w 7200 /tmp/calternal-dev01.lock nice -n 10 nix develop -c \
+  scripts/check-podman-tests.sh cargo test --locked -j3 --release --workspace --all-features \
+  --no-fail-fast -- --test-threads=3
+```
+
 ## Review gate
 
 The wake path reuses the typed placement and snapshot authorization, durable
