@@ -1206,6 +1206,31 @@ response with the same request ID, revision and payload for up to ten
 seconds. Its assertions still check the same 128-entry replay boundaries
 and keep count withheld until the final relevant page.
 
+## Standalone conformance
+
+- An interrupted save can leave a committed content intent ahead of the
+  journal. A search-only wake also visits the window worker, which can
+  allocate a cache slot without opening the authoritative store. Search
+  now checks the post-recovery visibility handle before deciding whether
+  to inspect pending intents. It uses the existing cold recovery path to
+  publish the missing event.
+- The Trash conformance fixture rewinds the content schema to version 6
+  before restart. It now removes the version 9 window objects and restores
+  the original collection membership trigger as part of the rewind. Restart
+  exercises the version 6-to-current upgrade, including the Trash jobs schema.
+
+Run the complete standalone conformance crate as part of this lane's gate.
+On dev-01, under the shared build lock, build the plugin bundles and the
+server with `test-plugins`. Use the same lane-owned `CARGO_TARGET_DIR` for
+both Cargo commands, and keep the suite serial for its real-server fixtures.
+
+```sh
+cargo build --locked -j3 -p calternal-server --features test-plugins --bin calternal
+CALTERNAL_SERVER_BIN="$CARGO_TARGET_DIR/debug/calternal" \
+  ./scripts/check-podman-tests.sh cargo test --locked -j3 \
+  --manifest-path tests/conformance/Cargo.toml -- --test-threads=1
+```
+
 ## Simplification opportunities
 
 - Generalize the existing collection membership relation before qualifying

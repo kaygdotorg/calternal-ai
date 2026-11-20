@@ -175,9 +175,12 @@ fn project(
         return Ok(Progress::Idle);
     }
     // A stopped process can leave an unretired content intent without a new
-    // journal head. Activate recovery in the background only for a closed space.
-    let active = lock(&content.spaces).contains_key(&space);
-    if !active {
+    // journal head. A window cache slot can exist before the authoritative
+    // store has opened. Visibility is installed only after cold recovery.
+    let recovered = lock(&content.spaces)
+        .get(&space)
+        .is_some_and(|slot| slot.visibility.get().is_some());
+    if !recovered {
         let source = crate::pool::open_reader(&source_path).map_err(internal)?;
         if source::pending(&source)? {
             content.live_journal(space)?;
