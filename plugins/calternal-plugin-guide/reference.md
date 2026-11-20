@@ -59,9 +59,10 @@ checkpoint and use the typed answer the host delivers. Replays, deadline
 races, and refusing a revoked target need runtime conformance tests.
 
 For a one-date reading reminder, store the reminder in the person's own
-space and enroll the declared due operation with the host schedule. A
-reminder can reference a shared item, and opening it still requires current
-access to that item. A viewer filter controls what the Bind displays.
+space. Declare the due operation as a replayable job with `alarm: true`.
+Use `alarm_set` with the reminder as the job's checked target and one due
+time. A reminder can reference a shared item. Opening it still requires
+current access to that item. A viewer filter controls what the Bind displays.
 
 ## Network permissions
 

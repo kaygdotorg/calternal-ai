@@ -25,7 +25,7 @@ const addGear = defineOperation({
   id: "gear.add",
   title: "Add gear",
   creates: kind.id,
-  methods: ["item_save"],
+  methods: ["item_create"],
   required_capability: "content.write",
   risk: "reversible",
   idempotency: "request_id",
@@ -35,7 +35,12 @@ const addGear = defineOperation({
     required: ["title", "location"],
     properties: { title: { type: "string" }, location: { type: "string" } },
   },
-  output_schema: { type: "object", additionalProperties: false, properties: {} },
+  output_schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["created"],
+    properties: { created: { $ref: "host-catalogue-v2.json#/$defs/ItemRef" } },
+  },
 });
 
 // List Bind, empty state and row swipes

@@ -7,6 +7,12 @@ const reminder = "reading-reminder";
 const title = { type: "string", minLength: 1, maxLength: 128 };
 const timestamp = { type: "string", format: "date-time" };
 const emptyOutput = { type: "object", additionalProperties: false, properties: {} };
+const createdOutput = {
+  type: "object",
+  additionalProperties: false,
+  required: ["created"],
+  properties: { created: { $ref: "host-catalogue-v2.json#/$defs/ItemRef" } },
+};
 
 export default definePlugin({
   api_version: 2,
@@ -67,11 +73,11 @@ export default definePlugin({
         required: ["title", "url"],
         properties: { title, url: { type: "string", format: "uri", maxLength: 4096 } },
       },
-      output_schema: { ...emptyOutput, required: [] },
+      output_schema: createdOutput,
       required_capability: "content.write",
       risk: "reversible",
       idempotency: "request_id",
-      methods: ["item_save"],
+      methods: ["item_create"],
       creates: item,
     }),
     defineOperation({
@@ -87,11 +93,11 @@ export default definePlugin({
           note: { type: "string", minLength: 1, maxLength: 4096 },
         },
       },
-      output_schema: { ...emptyOutput, required: [] },
+      output_schema: createdOutput,
       required_capability: "content.write",
       risk: "reversible",
       idempotency: "request_id",
-      methods: ["schedule_create", "item_save"],
+      methods: ["item_create", "alarm_set"],
       target: { kind: item, field: "item" },
       creates: reminder,
     }),
@@ -112,7 +118,7 @@ export default definePlugin({
       target: { kind: reminder, field: "reminder" },
     }),
   ],
-  schedule_eligibility: [{ id: "reminder-due", operation: "reading.reminder-due" }],
+  jobs: [{ id: "reminder-due", run_operation: "reading.reminder-due", replayable: true, alarm: true }],
   apps: [defineApp({
     id: "reading",
     name: "Reading List",
