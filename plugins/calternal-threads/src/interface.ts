@@ -5,7 +5,7 @@ import type { AlarmDelivery, AlarmReceipt, AlarmSet, AuthorInvocationContext, Co
   ItemSave, ItemSaveReply, ItemRef, HarnessRef, ChoiceRef } from "../generated/wire.js";
 
 export type Send = { item: ItemRef; text: string; harness: HarnessRef; placement: ChoiceRef };
-export type RunInput = { item: ItemRef; text: string; if_missed?: "run" | "skip" };
+export type RunInput = { item: ItemRef; if_missed?: "run" | "skip" };
 
 type Methods = {
   item_create: [ItemCreate, ItemContentReceipt];

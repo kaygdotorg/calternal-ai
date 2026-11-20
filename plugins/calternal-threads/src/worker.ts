@@ -1,6 +1,6 @@
 import type { ItemViewRead, ItemRef, Timestamp } from "../generated/wire.js";
 import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
-import { checkedText, type HarnessOutput } from "./harnesses-v1.ts";
+import { checkedText, type HarnessInput, type HarnessOutput } from "./harnesses-v1.ts";
 import { agentParticipant, checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, page, step, messageView, type Thread } from "./format.ts";
 import type { Context, RunInput, Send } from "./interface.ts";
 import { inlineBody, kind, publish, read } from "./files.ts";
@@ -40,7 +40,7 @@ async function create({ title }: { title: string }, ctx: Context) {
 
 async function send({ item, text, harness, placement }: Send, ctx: Context) {
   await checkSend(ctx, item);
-  return ctx.call("start_job", { job: "run", item, harness, placement, input: { text: checkedText(text) } });
+  return ctx.call("start_job", { job: "run", item, harness, placement, input: {}, contribution_input: { text: checkedText(text) } });
 }
 
 async function rename({ item, title }: { item: ItemRef; title: string }, ctx: Context) {
@@ -71,7 +71,8 @@ async function run(input: RunInput, ctx: Context) {
   const agent = agentParticipant(thread.id, ctx.job.contribution_identity);
   const person = { kind: "person" as const, id: ctx.author.actor };
   const promptId = step(ctx.author.request_id, `prompt-${ctx.author.actor}`);
-  const text = checkedText(input.text);
+  const pinnedInput = ctx.job.contribution_input as HarnessInput;
+  const text = checkedText(pinnedInput.text);
   let revision = head.revision;
   let currentSize = size;
   if (!thread.messages.some(message => message.id === promptId)) {
@@ -100,7 +101,7 @@ async function run(input: RunInput, ctx: Context) {
   const attempt = await ctx.call("execution_start", { request_id: step(ctx.author.request_id, "start"), harness });
   const contribution = {
     request_id: step(ctx.author.request_id, "contribution"), execution: attempt.execution, contribution: harness,
-    input: { text },
+    input: pinnedInput,
   };
   encodeContributionFrame(contribution);
   const { call } = await ctx.call("contribution_call", contribution);
@@ -145,7 +146,7 @@ async function arm(input: Omit<Send, "placement"> & { at: Timestamp; if_missed: 
   await checkSend(ctx, item);
   return ctx.call("alarm_set", {
     request_id: step(ctx.author.request_id, "alarm"), job: "run", item, at, harness, grace_seconds,
-    input: { text: checkedText(input.text), if_missed },
+    input: { if_missed }, contribution_input: { text: checkedText(input.text) },
   });
 }
 

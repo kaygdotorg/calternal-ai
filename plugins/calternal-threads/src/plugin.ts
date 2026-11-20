@@ -61,7 +61,7 @@ const metadata = {
     { ...write, id: "threads.rename", title: "Rename", target, methods: [...readBody, "item_save", ...writeView],
       input_schema: object({ item, title }, "item", "title"), output_schema: empty },
     { ...execute, id: "threads.run", title: "Run harness", target, methods: [...readBody, "item_save", "item_append", "execution_start", "contribution_call", "contribution_read", ...writeView],
-      input_schema: object({ item, text: textSchema, if_missed: ifMissed }, "item", "text"), output_schema: empty },
+      input_schema: object({ item, if_missed: ifMissed }, "item"), output_schema: empty },
     { ...execute, id: "threads.arm", title: "Schedule a run", target, methods: [...readBody, "alarm_set"],
       input_schema: object({ item, text: textSchema, harness, at: catalogueRef("Timestamp"), if_missed: ifMissed, grace_seconds: { type: "integer", minimum: 0, maximum: 86400 } },
         "item", "text", "harness", "at", "if_missed"), output_schema: catalogueRef("AlarmReceipt") },

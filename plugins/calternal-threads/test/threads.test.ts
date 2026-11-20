@@ -1,7 +1,7 @@
 import type { SnapshotNode } from "../generated/wire.js";
 import assert from "node:assert/strict";
 import test, { after } from "node:test";
-import { decode } from "../src/format.ts";
+import { decode, step } from "../src/format.ts";
 import { FakeHost, handlers, checkTrace } from "./host.ts";
 
 after(checkTrace);
@@ -125,7 +125,7 @@ test("alarm delivery retains checked harness and lets the worker decide whether 
 test("newest pages keep complete messages and older reads stay on the same revision", async () => {
   const { host, item, send, context } = await setup();
   host.claude = async text => text;
-  const text = "🦊".repeat(3900);
+  const text = "🦊".repeat(3500);
   for (let index = 0; index < 3; index++) {
     await host.run((await send(`page-${index}`, text)).job_id);
   }
@@ -264,16 +264,75 @@ test("the shared run target is outside both Send and alarm broker payloads", asy
   assert.match(host.markdown(item), /Reply to Later/);
 });
 
-test("the SDK rejects an oversized complete contribution frame before entry dispatch", async () => {
-  const { host, item, send } = await setup();
+test("Send and alarm admission refuse an oversized contribution with 413 before any write", async () => {
+  const { host, item, send, selection, context } = await setup();
   let providerCalls = 0;
-  host.claude = async () => {
-    providerCalls++;
-    return "Unexpected";
-  };
+  host.claude = async () => { providerCalls++; return "Unexpected"; };
+  const before = host.markdown(item);
+  const revision = host.files.get(item)!.revision;
+  const receipts = host.receipts.size;
+  const error = { status: 413, code: "contribution_frame_limit" };
   const prompt = '"'.repeat(8192);
-  const { job_id } = await send("oversized-encoded-frame", prompt);
-  await assert.rejects(host.run(job_id), { code: "contribution_frame_limit" });
+  await assert.rejects(send("oversized-send", prompt), error);
+  await assert.rejects(handlers["threads.arm"]({
+    item, harness: selection.harness, text: prompt, at: "2026-11-21T12:00:00Z", if_missed: "run",
+  }, context("oversized-alarm", "threads.arm")), error);
   assert.equal(providerCalls, 0);
-  assert.deepEqual(decode(host.markdown(item)).messages.map(message => message.text), [prompt]);
+  assert.equal(host.jobs.size, 0);
+  assert.equal(host.alarms.size, 0);
+  assert.equal(host.receipts.size, receipts);
+  assert.equal(host.markdown(item), before);
+  assert.equal(host.files.get(item)!.revision, revision);
+  assert.equal(host.snapshots.get(item)?.source_revision, revision);
+
+  host.claude = async () => { providerCalls++; return "Fits"; };
+  const accepted = await send("eligible-after-413", "Try again");
+  assert.deepEqual(await send("eligible-after-413", "Try again"), accepted);
+  await host.run(accepted.job_id);
+  assert.equal(host.jobs.size, 1);
+  assert.equal(providerCalls, 1);
+});
+
+test("the broker refuses a changed contribution input on the same admitted attempt", async () => {
+  const { host, send } = await setup();
+  let ready!: () => void;
+  const atTerminal = new Promise<void>(resolve => { ready = resolve; });
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  host.beforeTerminal = async () => { ready(); await pending; };
+  const { job_id } = await send("pinned-input", "Approved");
+  const running = host.run(job_id);
+  await atTerminal;
+  try {
+    const job = host.jobs.get(job_id)!;
+    assert.deepEqual(job.context.contribution_input, { text: "Approved" });
+    const ctx = host.context(job_id, "threads.run", job);
+    const substitute = { execution: job.attempt!.execution, contribution: job.context.harness, input: { text: "Changed" } };
+    await assert.rejects(ctx.call("contribution_call", {
+      ...substitute, request_id: step(job_id, "contribution"),
+    }), /conflicting replay/);
+    await assert.rejects(ctx.call("contribution_call", {
+      ...substitute, request_id: "changed-call",
+    }), /differs from admission/);
+  } finally {
+    release();
+    await running;
+  }
+});
+
+test("an unproven staged replacement sets consent_only and a worker cannot clear it", async () => {
+  const { host, item } = await setup();
+  const creator = "019a0000-0000-7000-8000-000000000001";
+  assert.deepEqual(host.discoverAsAttempt(creator), [item]);
+  const body = Buffer.from(host.markdown(item) + "Imported material of unproven authorship\n" + "x".repeat(140 * 1024));
+  const publish = await host.stageUnproven(item, body);
+  assert.deepEqual(host.discoverAsAttempt(creator), [item]);
+  await publish();
+  assert.equal(host.markdown(item), body.toString());
+  assert.equal(host.files.get(item)!.discovery, "consent_only");
+  assert.deepEqual(host.discoverAsAttempt(creator), []);
+  const revision = host.files.get(item)!.revision;
+  await assert.rejects(host.attemptRestoreDiscovery(item), /host-owned marker/);
+  assert.equal(host.files.get(item)!.revision, revision);
+  assert.deepEqual(host.discoverAsAttempt(creator), []);
 });

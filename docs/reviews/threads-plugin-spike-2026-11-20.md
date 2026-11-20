@@ -1,9 +1,9 @@
 # Threads plugin spike · 2026-11-20
 
-The lane starts from dev `80864d0d`. The original spike used draft 14.30
-at `b89586dd`. The first rerun used draft 14.31 at `00828198`. The
-current package pin is draft 14.32 at
-`3ca1161337d442b3666fc6984d7aefa59b817b89`. It follows the November 20
+The lane starts from dev `80864d0d`. The spike has rerun against
+14.30 (`b89586dd`), 14.31 (`00828198`) and 14.32 (`3ca11613`).
+The current package pin is draft 14.33 at
+`47024c0f0b31c3db6406feaf4950b0f95553ec02`. It follows the November 20
 decision that Threads owns the conversation file and the selected harness
 owns its working log. The lane issue is [#92](https://git.kayg.org/kayg/calternal-ai/issues/92).
 
@@ -33,10 +33,10 @@ nix develop -c npm test -w @calternal/threads
 nix develop -c npm run conformance -w @calternal/threads
 ```
 
-The build uses the 14.32 revision-aware SDK builder. It pins both
+The build uses the 14.33 revision-aware SDK builder. It pins both
 manifest/worker packages, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-On dev-01, all 19 tests passed and conformance tool 1.1.0 independently
+On dev-01, all 21 tests and the repository documentation gate passed. Conformance tool 1.1.0 independently
 accepted both packages. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
@@ -179,6 +179,58 @@ is present. Live qualification is tracked separately.
 | **OPEN** · Preflight for encoded contribution size, catalogue `extension_points.calls` and description §9.3 | The exact encoder correctly protects entry dispatch. A direct Send can still receive a job receipt and persist the human prompt before a contribution frame is rejected. Full-frame validation needs the attempt ref, which the worker receives after admission. The escaped-prompt regression exercises that timing. | Specify a callable preflight or a conservative author input budget before job admission if the composer should reject this case synchronously. Keep the exact frame check at dispatch. |
 | **OPEN** · Provenance for privacy downgrades, catalogue `execution_attempt_authority.discovery.item_policy` and opaque `item_save` / `item_append` | The policy requires downgrading before imported material of unproven authorship becomes discoverable. Writes carry opaque bytes. The host can attest the create and detect another authorized writer, and a caller can explicitly request `consent_only`. The schema carries no trusted import/provenance designation for bytes an owning worker writes on behalf of the creator. The spike creates fresh items under checked creator admission and keeps the people invitation path fixture-only. | Specify how generic imports and unproven authoring paths trigger downgrade in the fenced writer. Pending that rule, require consent-only for such paths. |
 
+
+### Revision 14.33 disposition
+
+The table revisits all 27 prior findings. CLOSED tracks the author or
+contract gap. Live host qualification remains separate.
+
+| Finding | Status | 14.33 evidence or remaining gap |
+| --- | --- | --- |
+| File custody | **CLOSED** | Threads still writes the conversation and the harness still owns its separate log. |
+| Harness ingress and egress | **CLOSED** | Admission pins the exact input. The checked contribution transports bounded output and a terminal frame. |
+| Harness entry and packaging | **CLOSED** | The declared ABI, asset pins, OCI source and explicit execution policy pass the package checks. The registry and entry are still fixtures. |
+| Contribution target identity | **CLOSED** | The qualified app and both declared contribution interfaces still match. |
+| Item create, save, range and placement | **CLOSED** | Typed operations pass. The fake now exercises revision-checked staged replacement as well as the inline paths. |
+| Rename and lifecycle projection | **PARTLY** | Atomic body, title and leaf update and the archived predicate are defined. Moving a thread's folder on rename remains open. |
+| Worker context and receipts | **PARTLY** | The adapter carries stable author context, protected job metadata and the pinned input. Sealed dev worker dispatch and live receipt recovery remain separate work. |
+| Create outcome | **CLOSED** | The checked created item maps to the activation result. Logs use internal item creation. |
+| Stable identifiers and message links | **CLOSED** | Anchor and locator tests pass, and an agent keeps its logical participant identity after a fresh checked binding. |
+| Alarm lateness | **CLOSED** | The worker still applies the host-recorded missed bit and authored grace period. |
+| Snapshot text bounds | **CLOSED** | The code-point and aggregate-byte limits remain covered by paged snapshot tests. |
+| SDK and guide | **PARTLY** | Both packages build with the pinned SDK. The draft author walkthrough is updated. Installable guide updates and real-host parity remain. |
+| Conformance tool crash | **CLOSED** | Conformance tool 1.1.0 accepts both packages at the 14.33 pin. |
+| People-thread custody and participant refs | **OPEN** | Production custody and atomic grants for checked participants still need a contract. |
+| People-message edits and tombstones | **PARTLY** | Typed saves and message anchors work. Prior history, search and offline deletion propagation remain open. |
+| Private per-person thread state | **OPEN** | Account-private per-item persistence, compare-and-set and retention remain fixture-only. |
+| Scope and consent for called-in agents | **PARTLY** | Checked disclosure is required. Trusted selection, proof storage and revocation remain open. |
+| Called-in agent data and output | **PARTLY** | The per-item denial and import downgrade are defined. Trusted per-author projection is still fixture-only. |
+| Placement for a private people conversation | **PARTLY** | The inviter's machine and login are specified by policy. The checked exchange remains open. |
+| Kind-wide denial of discovery (14.31) | **CLOSED** | The fixture can still discover the creator's agent thread, excludes the people thread, and excludes the formerly discoverable item after an opaque import commits. |
+| Harness egress and OCI acquisition fields (14.31) | **CLOSED** | The manifest declares both fields. Live acquisition and egress enforcement remain host qualification. |
+| Generated `ItemSave` and `ItemViewPage` (14.31) | **CLOSED** | Both generated types retain their authored fields and shapes at the new pin. |
+| First Send target operand (14.31) | **CLOSED** | Send and alarms carry the target only in top-level `item`. The host injects it into the run input and keeps the contribution input separate. |
+| Encoded contribution limits (14.31) | **CLOSED** | Both complete frames are checked with LF before admission and rechecked at launch. |
+| Participant identity (14.31) | **CLOSED** | Threads stores `{package,contribution}` and requires a fresh live harness ref for execution. |
+| Preflight for encoded contribution size (14.32) | **CLOSED** | The fake refused oversized Send and alarm inputs with `413 contribution_frame_limit`. Neither request left a receipt, pending job or alarm, prompt, revision change, snapshot change or provider call. The next eligible Send admitted once. A later changed contribution input was refused under both a replayed and a fresh call receipt key. |
+| Provenance for privacy downgrades (14.32) | **CLOSED** | A staged replacement over the inline limit left discovery intact during stage/seal. Commit set `consent_only` without an explicit operand, preserved the exact imported bytes, and removed the item from subsequent creator discovery. The worker's attempt to clear the marker failed without changing the head. |
+
+### Finding from the 14.33 rerun
+
+| Status and reference | What the plugin needed | Smallest change |
+| --- | --- | --- |
+| **OPEN** · Generic contribution input types, pinned SDK generator and `ExecutionJobStart`, `ExecutionJobContext`, `AlarmSet` | The wire schemas let the selected interface define the contribution's JSON payload. The generator emits an object-only type for each description-only `contribution_input` property, and its alarm type omits the runtime requirement that an execution alarm with a harness also has an item and contribution input. On dev-01 the wire validator accepted an array contribution payload and refused an execution alarm missing the input. Threads uses an object and sends all three. | Preserve arbitrary JSON for description-only subschemas, and generate the execution/non-execution alarm arms or enforce the dependency in a typed alarm builder. |
+
+### 14.33 host qualification
+
+The fake models checked app-origin writes and an unproven staged import
+in one process. The real writer still needs evidence that it can attest
+trusted sole-creator continuation, downgrade opaque imports atomically,
+and fence in-flight reads, search counts and derivatives from earlier
+revisions. The staged test covers discovery before and after publication
+and the attempted worker clear. It does not prove live ref invalidation
+or a host recertification path.
+
 ## Needs host
 
 - Generic installation and cross-package extension resolution, with
@@ -235,7 +287,7 @@ require a cross-owner write grant that the design does not provide.
 The package worker code uses no native Threads dispatch, special plugin ID,
 direct package connection, inherited provider credential, or server-owned
 thread format. The fixture provider port stands in for live execution placement. The
-14.32 fake carries replies through the catalogue's checked contribution
+14.33 fake carries replies through the catalogue's checked contribution
 methods. People-thread invitations still use fixture ports. The harness manifest includes
 an image-shaped fixture digest and a pinned entry that fails closed.
 It cannot launch Claude Code. The real image, login mapping and reviewed

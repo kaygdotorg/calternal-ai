@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { AlarmDelivery, AlarmSet, ExecutionJobContext, ExecutionJobStart, ExecutionStatus,
-  ExecutionStopRequest, ExecutionStopResult, HostWorkerInvokeFrame, ItemCreate, ItemSave, ItemViewPublish } from "../generated/wire.js";
+  ExecutionStopRequest, ExecutionStopResult, HostWorkerInvokeFrame, ItemCreate, ItemSave, ItemStageBegin, ItemStageChunk, ItemStageSeal, ItemViewPublish } from "../generated/wire.js";
 import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { authorContext } from "../generated/author-context.mjs";
 import type { ManifestV2 } from "../generated/author.js";
@@ -24,6 +25,9 @@ const contribution = await load<typeof harnessHandlers>(new URL("../../calternal
 export const handlers = application.handlers;
 
 const exchanges = {
+  item_save_begin: ["ItemStageBegin", "ItemStageBeginReply"],
+  item_save_chunk: ["ItemStageChunk", "ItemStageChunkAck"],
+  item_save_seal: ["ItemStageSeal", "ItemStageSealed"],
   item_create: ["ItemCreate", "ItemContentReceipt"],
   item_head: ["ItemHeadRequest", "OwnedItemHead"],
   item_range: ["ItemRange", "ItemRangeResult"],
@@ -39,7 +43,7 @@ const exchanges = {
 } as const;
 const trace: [name: string, value: unknown][] = [];
 
-/** Check the fake's revision 14.32 exchanges against the pinned schemas. */
+/** Check the fake's revision 14.33 exchanges against the pinned schemas. */
 export function checkTrace() {
   const check = fileURLToPath(new URL("../check-shapes.py", import.meta.url));
   const contract = fileURLToPath(new URL("../.build/contract/", import.meta.url));
@@ -57,6 +61,8 @@ type Job = {
   contribution?: { call: string; input: HarnessInput };
 };
 type Owner = File["owner"];
+type Stage = { spec: ItemStageBegin; chunks: Buffer[]; length: number; sealed?: Buffer };
+type StagingMethod = "item_save_begin" | "item_save_chunk" | "item_save_seal";
 const actor = "019a0000-0000-7000-8000-000000000001";
 const space = "019a0000-0000-7000-8000-000000000010";
 const now = "2026-11-20T12:00:00Z";
@@ -77,6 +83,7 @@ export class FakeHost {
   snapshots = new Map<string, ItemViewPublish>();
   alarms = new Map<string, AlarmSet>();
   receipts = new Map<string, { fingerprint: string; result: unknown }>();
+  private stages = new Map<string, Stage>();
   private scopes = new Map<string, { item: string; revision: string }>();
   private serial = 0;
   private selected = { harness: "checked-harness", placement: "checked-desk" };
@@ -115,6 +122,33 @@ export class FakeHost {
     return [...this.files.entries()].filter(([, file]) =>
       file.owner === "threads" && file.creator === person && file.discovery === "creator_only",
     ).map(([item]) => item);
+  }
+
+  async stageUnproven(item: string, bytes: Buffer) {
+    const expected = this.files.get(item)!.revision;
+    const request_id = this.id("import");
+    const call = async <T>(method: StagingMethod | "item_save", operand: unknown): Promise<T> => {
+      const [before, after] = exchanges[method];
+      trace.push([before, operand]);
+      const result = await this.call("threads", request_id, method, operand);
+      trace.push([after, result]);
+      return result as T;
+    };
+    const { handle } = await call<{ handle: string }>("item_save_begin", {
+      request_id, item, expected, length: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"),
+    });
+    for (let offset = 0; offset < bytes.length; offset += 65536) {
+      await call("item_save_chunk", { handle, offset, bytes: bytes.subarray(offset, offset + 65536).toString("base64") });
+    }
+    const { staged } = await call<{ staged: string }>("item_save_seal", { handle });
+    // The import has no trusted provenance. The wire save omits the marker.
+    return () => call("item_save", { request_id, item, expected, staged });
+  }
+
+  attemptRestoreDiscovery(item: string) {
+    return this.call("threads", "try-clear-marker", "item_save", {
+      request_id: "try-clear-marker", item, expected: this.files.get(item)!.revision, attempt_discovery: "creator_only",
+    });
   }
 
   peopleContext(person: string, request: string): PeopleContext {
@@ -176,6 +210,20 @@ export class FakeHost {
     return result;
   }
 
+  private preflight(harness: string, input: unknown) {
+    assert.ok(input && typeof input === "object" && Object.keys(input).length === 1
+      && "text" in input && typeof input.text === "string" && input.text.length > 0, "invalid contribution input");
+    // Ref allows 128 Unicode code points, up to six JSON bytes each.
+    const unknownRef = "\u0000".repeat(128);
+    try {
+      encodeContributionFrame({ request_id: unknownRef, execution: unknownRef, contribution: harness, input });
+      encodeContributionFrame({ call: unknownRef, input });
+    } catch (error) {
+      if (error instanceof RangeError) throw Object.assign(error, { status: 413 });
+      throw error;
+    }
+  }
+
   private admit(payload: ExecutionJobStart) {
     assert.equal(payload.harness, this.selected.harness, "unchecked harness");
     if (payload.placement !== undefined) assert.equal(payload.placement, this.selected.placement, "unchecked placement");
@@ -184,8 +232,9 @@ export class FakeHost {
     const active = [...this.jobs.values()].filter(job => job.context.item === payload.item && ["pending", "running"].includes(job.state));
     assert.ok(active.length < 2, "pending_limit");
     assert.ok(!Object.hasOwn(payload.input, "item"), "duplicate target field");
+    this.preflight(payload.harness, payload.contribution_input);
     const intent = this.id("job");
-    const context = { intent, item: payload.item, harness: payload.harness, contribution_identity: logicalHarness };
+    const context = { intent, item: payload.item, harness: payload.harness, contribution_identity: logicalHarness, contribution_input: structuredClone(payload.contribution_input) };
     const input = { ...payload.input as Omit<RunInput, "item">, item: payload.item };
     this.jobs.set(intent, { context, input, state: "pending", teardown: true });
     return { job_id: intent };
@@ -203,12 +252,12 @@ export class FakeHost {
       return result as never;
     };
     const message = frame ?? { author_context: { request_id: request, actor, authored_at: now }, job_context: job?.context, alarm };
-    const author = authorContext(message, call as Parameters<typeof authorContext>[1]);
+    const author = authorContext(structuredClone(message), call as Parameters<typeof authorContext>[1]);
     return { ...author, call };
   }
 
   // This dispatch is the only place that unpacks fixture broker method operands.
-  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0], input: unknown, job?: Job, receiptActor = actor, checkedSoleCreator = false): Promise<unknown> {
+  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0] | StagingMethod, input: unknown, job?: Job, receiptActor = actor, checkedSoleCreator = false): Promise<unknown> {
     if (job) assert.equal(job.state, "running", "attempt retired");
     const args = input as Record<string, string>;
     const file = this.files.get(args.item);
@@ -243,19 +292,54 @@ export class FakeHost {
           path, archived: false, title: String(create.metadata.title) });
         return { item, revision, locator: { space, id: item }, receipt: requestId };
       });
+      case "item_save_begin": return commit(() => {
+        const spec = input as ItemStageBegin;
+        assert.equal(spec.expected, writable().revision);
+        assert.ok(spec.length > 0 && spec.length <= 2 * 1024 * 1024);
+        const handle = this.id("stage");
+        this.stages.set(handle, { spec, chunks: [], length: 0 });
+        return { handle };
+      });
+      case "item_save_chunk": {
+        const { handle, offset, bytes } = input as ItemStageChunk;
+        const stage = this.stages.get(handle);
+        assert.ok(stage && !stage.sealed && offset === stage.length);
+        const chunk = Buffer.from(bytes, "base64");
+        assert.ok(chunk.length > 0 && chunk.length <= 65536 && stage.length + chunk.length <= stage.spec.length);
+        stage.chunks.push(chunk);
+        stage.length += chunk.length;
+        return { next_offset: stage.length };
+      }
+      case "item_save_seal": {
+        const { handle } = input as ItemStageSeal;
+        const stage = this.stages.get(handle);
+        assert.ok(stage && stage.length === stage.spec.length);
+        const body = Buffer.concat(stage.chunks);
+        assert.equal(createHash("sha256").update(body).digest("hex"), stage.spec.sha256);
+        stage.sealed = body;
+        return { staged: handle };
+      }
       case "item_save": {
         const save = input as ItemSave;
+        assert.ok(args.attempt_discovery === undefined || args.attempt_discovery === "consent_only", "host-owned marker");
         const target = writable();
         if (save.expected !== target.revision && !this.receipts.has(`${owner}:${receiptActor}:${method}:${requestId}`)) {
           return { status: 409, code: "head_conflict", current: this.head(save.item, target) };
         }
         return commit(() => {
           const revision = this.id("rev");
-          const body = save.body === undefined ? target.history.get(target.revision)! : Buffer.from(save.body, "base64");
+          const stage = save.staged === undefined ? undefined : this.stages.get(save.staged);
+          if (save.staged !== undefined) {
+            assert.ok(stage?.sealed && stage.spec.item === save.item && stage.spec.expected === save.expected
+              && stage.spec.request_id === save.request_id, "invalid staged replacement");
+          }
+          const body = stage?.sealed ?? (save.body === undefined
+            ? target.history.get(target.revision)! : Buffer.from(save.body, "base64"));
+          if (save.staged !== undefined) this.stages.delete(save.staged);
           target.history.set(revision, body);
           target.revision = revision;
           if (typeof save.patch?.title === "string") target.title = save.patch.title;
-          if (save.attempt_discovery === "consent_only" || receiptActor !== target.creator) target.discovery = "consent_only";
+          if (stage || save.attempt_discovery === "consent_only" || receiptActor !== target.creator) target.discovery = "consent_only";
           return { item: save.item, revision, locator: { space, id: save.item }, receipt: requestId };
         });
       }
@@ -283,9 +367,11 @@ export class FakeHost {
       });
       case "contribution_call": return commit(() => {
         assert.ok(job?.attempt && job.attempt.execution === args.execution && job.context.harness === args.contribution);
+        const payload = (input as { input: HarnessInput }).input;
+        assert.deepEqual(payload, job.context.contribution_input, "contribution input differs from admission");
         assert.equal(job.contribution, undefined);
         const call = this.id("call");
-        const payload = (input as { input: HarnessInput }).input;
+        encodeContributionFrame(input as Parameters<typeof encodeContributionFrame>[0]);
         encodeContributionFrame({ call, input: payload });
         job.contribution = { call, input: payload };
         return { call };
@@ -324,6 +410,7 @@ export class FakeHost {
           const body = Buffer.concat([prior, addition]);
           target.history.set(revision, body);
           target.revision = revision;
+          if (args.attempt_discovery === "consent_only" || receiptActor !== target.creator) target.discovery = "consent_only";
           return { revision, end_offset: body.length, receipt: requestId };
         });
         if (owner === "threads" && this.loseNextAppendAck) {
@@ -350,8 +437,9 @@ export class FakeHost {
         assert.equal(set.harness, this.selected.harness);
         assert.ok(set.item && this.files.get(set.item)?.owner === "threads");
         assert.ok(!Object.hasOwn(set.input, "item"), "duplicate target field");
+        this.preflight(set.harness, set.contribution_input);
         const alarm = this.id("alarm");
-        this.alarms.set(alarm, set);
+        this.alarms.set(alarm, structuredClone(set));
         return { alarm, receipt: requestId };
       });
     }
@@ -424,9 +512,9 @@ export class FakeHost {
   deliver(alarm: string, actual_at: string) {
     const armed = this.alarms.get(alarm);
     if (!armed) return;
-    const { job, item, at, input, harness, grace_seconds } = armed;
-    assert.ok(item && harness);
-    const delivery = this.admit({ job, item, input, harness });
+    const { job, item, at, input, harness, grace_seconds, contribution_input } = armed;
+    assert.ok(item && harness && contribution_input !== undefined);
+    const delivery = this.admit({ job, item, input, harness, contribution_input });
     this.alarms.delete(alarm);
     return this.run(delivery.job_id, { alarm, scheduled_at: at, actual_at, missed: grace_seconds !== undefined && Date.parse(actual_at) > Date.parse(at) + 1000 * grace_seconds });
   }
