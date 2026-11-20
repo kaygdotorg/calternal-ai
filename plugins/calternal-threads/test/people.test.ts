@@ -26,10 +26,20 @@ test("a people-only thread keeps message anchors stable across authors and repla
   const { host, item, first, second, post, get } = await setup();
   assert.deepEqual(decode(host.markdown(item)).participants.map(({ kind, id }) => ({ kind, id })), [alice, bob, cara].map(id => ({ kind: "person", id })));
   assert.notEqual(first.message, second.message);
+  assert.equal(host.writeAuthor(item), cara);
   assert.deepEqual(await post(alice, "a1", "Alice visible"), first);
   assert.equal((await get(bob, first.message)).text, "Alice visible");
   assert.ok(host.markdown(item).includes(`{#m-${first.message} `));
   await assert.rejects(get("outsider", first.message), /unavailable/i);
+});
+
+test("shared writes use the submitting participant's checked actor, independent of the displayed name", async () => {
+  const { host, people, item } = await setup();
+  const { message } = await people.post({ item, text: "Bob speaking" }, host.peopleContext(bob, "same-label", undefined, "Alice"));
+  assert.equal(host.writeAuthor(item), bob);
+  assert.equal((await people.message({ item, message }, host.peopleContext(alice, "read-bob"))).author.id, bob);
+  assert.deepEqual(host.discoverAsAttempt(alice), []);
+  assert.deepEqual(host.discoverAsAttempt(bob), []);
 });
 
 test("edit and delete preserve the message link and authorize the original author", async () => {
@@ -108,11 +118,11 @@ test("discovery uses the checked creator policy per item and excludes a people t
   const { job_id } = await handlers["threads.send"]({ item: ownThread, text: "Hello", ...host.choose() },
     host.context("own-agent-send", "threads.send"));
   await host.run(job_id);
-  assert.deepEqual(host.discoverAsAttempt(alice), []);
+  assert.deepEqual(host.discoverAsAttempt(alice), [ownThread]);
 
   const invite = host.invitedContext(alice, "explicit-invite", { item, scope: { message: first.message }, consent: [alice] });
   await people.callAgent({ item, prompt: "Read this selection" }, invite);
-  assert.deepEqual(host.discoverAsAttempt(alice), []);
+  assert.deepEqual(host.discoverAsAttempt(alice), [ownThread]);
   assert.deepEqual(host.invitedInputs.map(input => input.messages.map(message => message.text)), [["Alice visible"]]);
 });
 

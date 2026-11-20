@@ -47,16 +47,17 @@ const exchanges = {
 } as const;
 const trace: [name: string, value: unknown][] = [];
 
-/** Check the fake's revision 14.34 exchanges against the pinned schemas. */
+/** Check the fake's revision 14.35 exchanges against the pinned schemas. */
 export function checkTrace() {
   const check = fileURLToPath(new URL("../check-shapes.py", import.meta.url));
   const contract = fileURLToPath(new URL("../.build/contract/", import.meta.url));
   execFileSync("python3", ["-B", check, contract], { input: JSON.stringify(trace), stdio: ["pipe", "inherit", "inherit"] });
 }
 
-type File = { space: string; people?: readonly string[]; creator: string; discovery: "creator_only" | "consent_only"; owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; revision: string; path?: string; archived: boolean; title: string };
+type File = { space: string; people?: readonly string[]; creator: string; discovery: "creator_only" | "consent_only"; owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; authors: Map<string, string>; revision: string; path?: string; archived: boolean; title: string };
 type Job = {
   context: ExecutionJobContext;
+  starter: string;
   input: RunInput;
   state: "pending" | "running" | "done" | "stopped";
   attempt?: ExecutionStatus;
@@ -135,6 +136,11 @@ export class FakeHost {
     return [...this.files.entries()].filter(([, file]) =>
       file.owner === "threads" && file.creator === person && file.discovery === "creator_only",
     ).map(([item]) => item);
+  }
+
+  /** Read the host's attribution for the current or a specific committed revision. */
+  writeAuthor(item: string, revision = this.files.get(item)!.revision) {
+    return this.files.get(item)!.authors.get(revision);
   }
 
   async stageUnproven(item: string, bytes: Buffer) {
@@ -218,7 +224,7 @@ export class FakeHost {
       assert.ok(peopleMethods.has(method));
       const wire = exchanges[method as keyof typeof exchanges];
       if (wire) trace.push([wire[0], input]);
-      const result = await this.call("threads", request, method, input, undefined, person);
+      const result = await this.call("threads", request, method, input, undefined, person, true);
       if (wire) trace.push([wire[1], result]);
       return result as never;
     };
@@ -233,7 +239,7 @@ export class FakeHost {
         }
         assert.equal(input.kind, "threads");
         trace.push(["ItemCreate", input]);
-        const result = await this.call("threads", request, "item_create", input, undefined, person, false, people);
+        const result = await this.call("threads", request, "item_create", input, undefined, person, true, people);
         trace.push(["ItemContentReceipt", result]);
         return result as ItemContentReceipt;
       },
@@ -343,7 +349,7 @@ export class FakeHost {
     }
   }
 
-  private admit(payload: ExecutionJobStart) {
+  private admit(payload: ExecutionJobStart, starter = actor) {
     assert.equal(payload.harness, this.selected.harness, "unchecked harness");
     if (payload.placement !== undefined) assert.equal(payload.placement, this.selected.placement, "unchecked placement");
     const file = this.files.get(payload.item);
@@ -355,34 +361,40 @@ export class FakeHost {
     const intent = this.id("job");
     const context = { intent, item: payload.item, harness: payload.harness, contribution_identity: logicalHarness, contribution_input: structuredClone(payload.contribution_input) };
     const input = { ...payload.input as Omit<RunInput, "item">, item: payload.item };
-    this.jobs.set(intent, { context, input, state: "pending", teardown: true });
+    this.jobs.set(intent, { context, input, starter, state: "pending", teardown: true });
     return { job_id: intent };
   }
 
   context(request: string, operation: string, job?: Job, alarm?: AlarmDelivery, owner: Owner = "threads", frame?: HostWorkerInvokeFrame["message"]): Context {
     const declared = (owner === "threads" ? application : contribution).manifest.operations.find(op => op.id === operation);
     assert.ok(declared);
+    const person = job?.starter ?? actor;
+    const message = frame ?? { author_context: { request_id: request, actor: person, authored_at: now, actor_label: personLabels[person] }, job_context: job?.context, alarm };
+    assert.equal(message.author_context?.actor, person);
     const call: Context["call"] = async (method, input) => {
       assert.ok((declared.methods as readonly string[]).includes(method), "undeclared method");
       const wire = exchanges[method as keyof typeof exchanges];
       if (wire) trace.push([wire[0], input]);
-      const result = await this.call(owner, request, method, input, job, actor, operation === "threads.create");
+      const result = await this.call(owner, request, method, input, job, person, true);
       if (wire) trace.push([wire[1], result]);
       return result as never;
     };
-    const message = frame ?? { author_context: { request_id: request, actor, authored_at: now, actor_label: personLabels[actor] }, job_context: job?.context, alarm };
     const author = authorContext(structuredClone(message), call as Parameters<typeof authorContext>[1]);
     return { ...author, call };
   }
 
   // This dispatch is the only place that unpacks fixture broker method operands.
-  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0] | StagingMethod, input: unknown, job?: Job, receiptActor = actor, checkedSoleCreator = false, shared?: readonly string[]): Promise<unknown> {
-    if (job) assert.equal(job.state, "running", "attempt retired");
+  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0] | StagingMethod, input: unknown, job?: Job, receiptActor = actor, checkedInvocation = false, shared?: readonly string[]): Promise<unknown> {
+    if (job) {
+      assert.ok(this.jobs.get(job.context.intent) === job && job.state === "running", "attempt retired");
+      assert.equal(job.starter, receiptActor);
+    }
     const args = input as Record<string, string>;
     const file = this.files.get(args.item);
     if (file?.people) assert.ok(file.people.includes(receiptActor), "Conversation unavailable.");
     const writable = () => {
       assert.ok(file?.owner === owner && !file.archived, "target unavailable");
+      if (owner === "threads" && job) assert.equal(job.context.item, args.item, "wrong attempt target");
       if (file.people && this.conversationAccess(args.item, receiptActor) !== "full") {
         throw new Error("Conversation is read-only.");
       }
@@ -391,6 +403,12 @@ export class FakeHost {
     const requestId = args.request_id ?? request;
     const receiptKey = (name: string) => `${owner}:${receiptActor}:${name}:${requestId}`;
     const commit = (effect: () => unknown) => this.receipt(receiptKey(method), input, effect);
+    const writeAuthor = checkedInvocation ? receiptActor : undefined;
+    const attributeWrite = (target: File, revision: string) => {
+      const author = job?.attempt ? job.starter : writeAuthor;
+      if (author !== undefined) target.authors.set(revision, author);
+      if (author !== target.creator || args.attempt_discovery === "consent_only") target.discovery = "consent_only";
+    };
     switch (method) {
       case "item_create": return commit(() => {
         const create = input as ItemCreate;
@@ -409,10 +427,11 @@ export class FakeHost {
         }
         const discovery = create.attempt_discovery ?? "consent_only";
         if (discovery === "creator_only") {
-          assert.ok(checkedSoleCreator, "unchecked sole creator");
+          assert.ok(writeAuthor && !shared, "unchecked sole creator");
           assert.equal(application.manifest.kinds.find(kind => kind.id === create.kind)?.attempt_discovery, "item_policy");
         }
         this.files.set(item, { owner, space: this.personalSpace(receiptActor), people: shared && [...shared], creator: receiptActor, discovery, revision, history: new Map([[revision, body]]),
+          authors: new Map(writeAuthor ? [[revision, writeAuthor]] : []),
           path, archived: false, title: String(create.metadata.title) });
         return { item, revision, locator: { space: this.personalSpace(receiptActor), id: item }, receipt: requestId };
       });
@@ -466,9 +485,8 @@ export class FakeHost {
           target.history.set(revision, body);
           target.revision = revision;
           if (typeof save.patch?.title === "string") target.title = save.patch.title;
-          if (stage || save.body !== undefined || save.attempt_discovery === "consent_only" || receiptActor !== target.creator) {
-            target.discovery = "consent_only";
-          }
+          if (stage || save.body !== undefined) attributeWrite(target, revision);
+          if (save.attempt_discovery === "consent_only") target.discovery = "consent_only";
           const result = { item: save.item, revision, locator: { space: target.space, id: save.item }, receipt: requestId };
           if (stage) this.receipts.get(receiptKey("item_save_begin"))!.result = result;
           return result;
@@ -488,7 +506,7 @@ export class FakeHost {
         const next = offset + page.length;
         return { bytes: page.toString("base64"), ...(next < body.length && { next_offset: next }) };
       }
-      case "start_job": return commit(() => this.admit(input as ExecutionJobStart));
+      case "start_job": return commit(() => this.admit(input as ExecutionJobStart, receiptActor));
       case "execution_start": return commit(() => {
         assert.ok(job?.state === "running");
         assert.equal(args.harness, job.context.harness);
@@ -541,7 +559,7 @@ export class FakeHost {
           const body = Buffer.concat([prior, addition]);
           target.history.set(revision, body);
           target.revision = revision;
-          target.discovery = "consent_only";
+          attributeWrite(target, revision);
           return { revision, end_offset: body.length, receipt: requestId };
         });
         if (owner === "threads" && this.loseNextAppendAck) {
@@ -592,7 +610,7 @@ export class FakeHost {
     const frame: HostWorkerInvokeFrame = {
       v: 1, epoch: "fake", seq: ++this.serial, package: application.manifest.id, digest: "0".repeat(64), ticket: id,
       message: { type: "invoke", operation: "threads.run", input: job.input, deadline: now,
-        author_context: { request_id: id, actor, authored_at: now, actor_label: personLabels[actor] }, job_context: job.context, ...(alarm && { alarm }) },
+        author_context: { request_id: id, actor: job.starter, authored_at: now, actor_label: personLabels[job.starter] }, job_context: job.context, ...(alarm && { alarm }) },
     };
     trace.push(["HostWorkerInvokeFrame", frame]);
     job.state = "running";

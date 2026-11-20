@@ -320,9 +320,30 @@ test("the broker refuses a changed contribution input on the same admitted attem
   }
 });
 
+test("several checked prompts and agent replies preserve personal discovery", async () => {
+  const { host, item, send } = await setup();
+  const creator = host.files.get(item)!.creator;
+  host.claude = async text => {
+    assert.equal(host.writeAuthor(item), creator);
+    assert.deepEqual(host.discoverAsAttempt(creator), [item]);
+    return `Reply to ${text}`;
+  };
+  for (const [index, text] of ["First", "Second", "Third"].entries()) {
+    const { job_id } = await send(`discovery-${index}`, text);
+    await host.run(job_id);
+    assert.equal(host.writeAuthor(item), creator);
+    assert.deepEqual(host.discoverAsAttempt(creator), [item]);
+  }
+  const { messages } = decode(host.markdown(item));
+  assert.deepEqual(messages.map(message => message.author.kind), ["person", "agent", "person", "agent", "person", "agent"]);
+  assert.equal(messages.at(-1)?.text, "Reply to Third");
+});
+
 test("an unproven staged replacement sets consent_only and a worker cannot clear it", async () => {
-  const { host, item } = await setup();
+  const { host, item, send } = await setup();
   const creator = "019a0000-0000-7000-8000-000000000001";
+  const { job_id } = await send("before-import", "Keep the conversation searchable");
+  await host.run(job_id);
   assert.deepEqual(host.discoverAsAttempt(creator), [item]);
   const body = Buffer.from(host.markdown(item) + "Imported material of unproven authorship\n" + "x".repeat(140 * 1024));
   const { begin, publish } = await host.stageUnproven(item, body);
@@ -334,6 +355,7 @@ test("an unproven staged replacement sets consent_only and a worker cannot clear
   await assert.rejects(publish("Different save"), /conflicting replay/);
   assert.equal(host.markdown(item), body.toString());
   assert.equal(host.files.get(item)!.discovery, "consent_only");
+  assert.equal(host.writeAuthor(item), undefined);
   assert.deepEqual(host.discoverAsAttempt(creator), []);
   const revision = host.files.get(item)!.revision;
   await assert.rejects(host.attemptRestoreDiscovery(item), /host-owned marker/);

@@ -2,8 +2,9 @@
 
 The lane starts from dev `80864d0d`. The spike has rerun against
 14.30 (`b89586dd`), 14.31 (`00828198`), 14.32 (`3ca11613`) and
-14.33 (`47024c0f`). The current pin for both packages is draft 14.34 at
-`b4d0f20df45961d9b5c4e1d44e63657de2752b73` on `origin/lane/v2-host-base`. It follows the November 20
+14.33 (`47024c0f`) and 14.34 (`b4d0f20d`). The current pin for both
+packages is draft 14.35 at `36d49713164ee0c56b8c1d3ffebfc844fd8b44cf`
+on `origin/lane/v2-host-base`. It follows the November 20
 decision that the Threads app (`calternal-threads`) owns the conversation file and the selected harness
 owns its working log. The lane issue is [#92](https://git.kayg.org/kayg/calternal-ai/issues/92).
 
@@ -22,23 +23,26 @@ placement.
 
 ## Evidence and reproduction
 
-Run on dev-01 in the lane directory with the draft commit available
+Run on dev-02 in the lane directory with the draft commit available
 locally and the dependency cache populated.
 
 ```sh
-export TMPDIR="$HOME/gate-tmp"
-nix develop -c npm ci --offline --ignore-scripts --no-audit
-nix develop -c npm run build -w @calternal/plugin-sdk
-nix develop -c npm test -w @calternal/threads
-nix develop -c npm run conformance -w @calternal/threads
+export TMPDIR="$HOME/Developer/lanes/threads-plugin-tmp"
+mkdir -p "$TMPDIR"
+flock -s /tmp/calternal-dev02.lock nix develop -c bash -c '
+  npm ci --offline --ignore-scripts --no-audit &&
+  npm run build -w @calternal/plugin-sdk &&
+  npm test -w @calternal/threads &&
+  npm run conformance -w @calternal/threads
+'
 ```
 
-The build uses the 14.34 revision-aware SDK builder. It pins both
+The build uses the 14.35 revision-aware SDK builder. It pins both
 manifest/worker packages, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-On dev-01, all 36 tests and both Conformance tool 1.1.0 checks passed
-at the 14.34 pin. The repository documentation gate passed in the earlier
-afternoon run. The verified entry asset still uses scripted
+All 38 tests and both Conformance tool 1.1.0 package checks passed
+on dev-02 at the 14.35 pin under the shared lock. The repository
+documentation gate passed in the earlier afternoon run. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
 The agent-thread tests exercise create, first Send with the contributed harness,
@@ -280,6 +284,31 @@ or a host recertification path.
 | --- | --- | --- |
 | **OPEN** · §3 and catalogue `execution_attempt_authority.discovery.item_policy.write` | The checked initial create can set `creator_only`. An ordinary worker body save or append has no generic way to prove sole-creator continuation. In the fixture a personal thread disappears from the creator's agent discovery after the first Send writes its prompt and reply. The job still completes. A rename that rewrites the Markdown likewise has no checked continuation. | Specify a generic checked path that binds exact authored and authorized derived material to the current revision and the creator's authority, or state which personal thread writes intentionally end discovery. Keep the fail-closed behavior until the checked path is enabled. |
 | **PARTLY** · §3 and catalogue `group_people_scope.lookup`, `group_people_scope.writes` | The old administration directory can show all accounts to `people.manage` and its ordinary visibility includes any shared group. The Threads picker may use only one checked common group. The old invite capability and the new own-group member rule also differ. | Keep management visibility separate. Pin the checked group selector and a group-scoped invite grant that uses the existing single-use redemption flow. Retain the checked, idempotent default-space bootstrap. |
+
+### Revision 14.35 disposition
+
+| Finding | Status | Evidence or remaining gap |
+| --- | --- | --- |
+| Personal discovery after normal writes (14.34) | **CLOSED** | Catalogue `item_policy.authorship` supplies the checked paths. Three Sends preserve creator-only discovery after each prompt and reply. The first prompt's owning worker save runs under the checked job invocation, and replies use the exact live attempt. The transcript still attributes replies to the agent. |
+| Kind-wide denial of discovery and import downgrade | **CLOSED** | Another person's agent cannot discover the personal item. A people thread remains excluded for both participants. A staged import into the proven personal item still becomes `consent_only` only when published. The worker still cannot clear the marker. |
+| Shared write attribution | **CLOSED** for discovery | One participant submits a message using the starter's display name. The fixture binds the other participant's account to the committed revision and the transcript keeps that participant's stable ID. This item-level attribution supplies no trusted per-message consent proof. |
+| Group separation and shared custody | **PARTLY** | `group_people_scope.loss_of_common_group` now pins the read-only transition and grant-change fence. The fixture preserves both readers' exports and blocks pending replies. Live lookup, named grants, write and disclosure fences, and default-space bootstrap still need a host. |
+| SDK and guide | **PARTLY** | The installable guide and reading-list reference now use the replayable alarm job and `alarm_set`. Both Threads packages build at the pin. Live parity and the generated contribution/alarm type gap remain. |
+| Guide for one-date alarms | **CLOSED** | The guide now identifies the checked reminder item and the one due time. |
+| Scope and consent, called-in data and output, placement, actor-private state, viewer-specific row fields, consultations | **PARTLY** | 14.35 distinguishes checked item-write attribution from per-message authorship. The previous trusted selection, grant, preference, placement, tools and delivery exchanges remain open. |
+| Rename and lifecycle, worker context and receipts, message tombstones, picker/grants, invites/contact identity | **PARTLY** | Each retains its 14.34 disposition. Live write attribution and read-only group enforcement add qualification cases. |
+| Generated contribution input and alarm dependency, receipt/typing/device routing, read-only v1 cutover reader | **OPEN** | No relevant wire or implementation change at this pin. |
+| File custody, harness ingress/egress and packaging, contribution target identity, item create/save/range/placement, create outcome, stable identifiers and message links, alarm lateness, snapshot bounds, verifier crash, harness egress/OCI, generated `ItemSave`/`ItemViewPage`, top-level Send target, encoded contribution limits, 413 preflight, logical participant identity, separate account and agent discovery | **CLOSED** | The previous dispositions hold. The package and fixture rerun covers the current schemas. |
+
+**New finding, OPEN.** The catalogue says an import, whole-file paste or
+hand edit is unproven even when submitted by the creator.
+`ItemSave` and `ItemAppend` expose opaque bytes and an optional
+`consent_only` request. The fixture knows its staged input came from a
+separate import entry. If an import enters through the same checked
+owning-package invocation as an authored write, the catalogue does not
+pin how the host distinguishes the two. Pin the generic checked source
+of that classification, including imported content assembled by a
+worker, and test that omitting the marker cannot preserve discovery.
 
 ### Messaging decisions fixture
 
@@ -571,7 +600,7 @@ require a cross-owner write grant that the design does not provide.
 The package worker code uses no native Threads dispatch, special plugin ID,
 direct package connection, inherited provider credential, or server-owned
 thread format. The fixture provider port stands in for live execution placement. The
-14.34 fake carries replies through the catalogue's checked contribution
+14.35 fake carries replies through the catalogue's checked contribution
 methods. People-thread invitations still use fixture ports. The harness manifest includes
 an image-shaped fixture digest and a pinned entry that fails closed.
 It cannot launch Claude Code. The real image, login mapping and reviewed
