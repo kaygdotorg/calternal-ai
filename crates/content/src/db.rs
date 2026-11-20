@@ -90,6 +90,7 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
             (6, crate::rooms::SCHEMA),
             (7, crate::trash_job::SCHEMA),
             (8, crate::rename_job::SCHEMA),
+            (9, crate::item_write::SCHEMA),
         ],
     );
 
