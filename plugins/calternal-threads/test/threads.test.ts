@@ -106,7 +106,8 @@ test("generic rename moves the folder, updates indexed links and preserves IDs a
   await host.rename(item, "Final title", "rename-2");
   assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Threads/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
   const moved = await host.rename(item, undefined, "move", undefined, ["Decisions"]);
-  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Threads/Decisions/Conversation.md#${anchor}>)\n`);
+  if (moved.state !== "ok") throw new Error("Expected inline move");
+  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Threads/Decisions/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
   await host.undoRename(moved.undo.ref, "undo-move");
   assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Threads/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
   const final = host.files.get(item)!;
@@ -121,6 +122,33 @@ test("generic rename moves the folder, updates indexed links and preserves IDs a
   assert.equal(host.jobs.get(pending.job_id)!.state, "stopped");
   await assert.rejects(send("post-archive", "Never admit"), /target unavailable/);
   assert.equal(host.thread(item).messages.length, 2);
+});
+
+test("rename commits the title and folder before deferred links finish and old links still follow the item", async () => {
+  const { host, item, send } = await setup();
+  await host.run((await send("before-relocation", "First")).job_id);
+  const path = host.files.get(item)!.path!;
+  const anchor = `m-${host.thread(item).messages[0].id}`;
+  host.linkTo(item, "Notes/First.md", anchor);
+  host.linkTo(item, "Notes/Later.md", anchor);
+  host.inlineBacklinkLimit = 1;
+  const later = host.linkedMarkdown.get("Notes/Later.md");
+  const outcome = await host.rename(item, "Deferred title", "rename-with-overflow");
+  if (outcome.state !== "pending") throw new Error("Expected deferred rewrites");
+  const expected = "Threads/2026-11-20 Deferred title/Conversation.md";
+  assert.notEqual(path, expected);
+  assert.equal(host.files.get(item)?.path, expected);
+  assert.equal(host.thread(item).title, "Deferred title");
+  assert.match(host.linkedMarkdown.get("Notes/First.md")!, /Deferred title/);
+  assert.equal(host.linkedMarkdown.get("Notes/Later.md"), later);
+  assert.deepEqual(host.followLink("Notes/Later.md"), { item, path: expected, anchor });
+  assert.throws(() => host.followLink("Notes/Later.md", "outsider"), /unavailable/);
+  assert.ok(!("undo" in outcome));
+  const complete = host.finishRelocation(outcome.status_ref);
+  assert.equal(complete.state, "ok");
+  assert.ok(complete.undo.ref);
+  assert.match(host.linkedMarkdown.get("Notes/Later.md")!, /Deferred title/);
+  assert.throws(() => host.finishRelocation(outcome.status_ref), /unavailable/);
 });
 
 test("alarm delivery retains checked harness and lets the worker decide whether to run late", async () => {
@@ -391,7 +419,7 @@ test("the shorter heading and suffix fit a long reply and keep a literal delimit
 
 test("a checked editor save qualifies complete bytes and downgrades unexplained bytes in the same checked path", async () => {
   const host = new FakeHost();
-  const { item } = await host.createEmptyCreatorItem();
+  const { created: item } = await handlers["threads.create"]({ title: "Field notes" }, host.createContext("editor-source", "Field notes"));
   const creator = host.files.get(item)!.creator;
   const snapshot = "---\ntitle: Field notes\n---\n\n# Field notes\n\n🐝 by the gate.\n";
   await host.saveCapturedText(item, snapshot, Buffer.from(snapshot));

@@ -1,7 +1,7 @@
 import type { ItemViewRead, ItemRef, Timestamp } from "../generated/wire.js";
 import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { checkedText, type HarnessInput, type HarnessOutput } from "./harnesses-v1.ts";
-import { agentParticipant, attest, checkedTitle, encode, folder, MAX_FILE_BYTES, messageId, messageRecord, page, personParticipant, step, threadHeader, messageView, type Thread } from "./format.ts";
+import { agentParticipant, attest, checkedTitle, encode, MAX_FILE_BYTES, messageId, messageRecord, page, personParticipant, step, threadHeader, messageView, type Thread } from "./format.ts";
 import type { Context, RunInput, Send } from "./interface.ts";
 import { appendRecord, inlineBody, kind, publish, read } from "./files.ts";
 
@@ -32,7 +32,7 @@ async function create({ title }: { title: string }, ctx: Context) {
   const attested = title === thread.title ? attest(threadHeader(thread), { kind: "input" }) : undefined;
   const head = await ctx.call("item_create", {
     request_id: step(ctx.author.request_id, "create"),
-    kind, folders: [folder(thread)], name: "Conversation.md",
+    kind, name: "Conversation.md",
     metadata: { title: thread.title },
     ...(attested ? { attested, attempt_discovery: "creator_only" } : { body: inlineBody(Buffer.from(encode(thread))) }),
   });

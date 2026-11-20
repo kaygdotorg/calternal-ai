@@ -67,16 +67,6 @@ export function checkedTitle(title: string): string {
   return trimmed;
 }
 
-export function folder(thread: Thread): string {
-  const readable = thread.title.replace(/[^\p{L}\p{N} -]/gu, "_");
-  let short = "";
-  for (const character of [...readable].slice(0, 40)) {
-    if (Buffer.byteLength(short + character) > 109) break;
-    short += character;
-  }
-  return `${thread.created.slice(0, 10)} ${short}`;
-}
-
 const messageBoundary = /^### [^\r\n]+ \{#m-[a-f0-9]{16}(?: [^{}\r\n]+)?\}$/u;
 const messageHeading = /^### (.+) \{#m-([a-f0-9]{16}) (by=p[1-9][0-9]*(?: [a-z]+(?:-[a-z]+)*=[^ {}]+)*)\}$/u;
 

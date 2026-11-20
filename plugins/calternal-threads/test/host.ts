@@ -15,7 +15,7 @@ import type { Context, RunInput } from "../src/interface.ts";
 import type { HarnessInput, HarnessOutput } from "../src/harnesses-v1.ts";
 import type { handlers as threadHandlers } from "../src/worker.ts";
 import { scoped } from "../src/people.ts";
-import { checkedTitle, decode, decodeIndexed, folder } from "../src/format.ts";
+import { checkedTitle, decode, decodeIndexed } from "../src/format.ts";
 import type { ConsultationTurn, InvitedInput, PeopleContext, Scope, peopleHandlers } from "../src/people.ts";
 import type { handlers as harnessHandlers } from "../../calternal-threads-claude-code/src/worker.ts";
 
@@ -49,7 +49,7 @@ const exchanges = {
 } as const;
 const trace: [name: string, value: unknown][] = [];
 
-/** Check the fake's revision 14.39 exchanges against the pinned schemas. */
+/** Check the fake's revision 14.40 exchanges against the pinned schemas. */
 export function checkTrace() {
   const check = fileURLToPath(new URL("../check-shapes.py", import.meta.url));
   const contract = fileURLToPath(new URL("../.build/contract/", import.meta.url));
@@ -58,11 +58,14 @@ export function checkTrace() {
 
 type SpanIndex = Pick<ItemSpansPage, "body_provenance" | "spans">;
 type Span = ItemSpansPage["spans"][number];
-type SpanBinding = { record: string; quotedRecord?: string };
+type QuoteSource = NonNullable<AttestedBody["quote"]>;
+type SpanBinding = { record: string; quotedRecord?: string; quoteSource?: QuoteSource };
+type IndexedLink = { source: string; anchor: string; path: string; item: string };
+type RelocationUndo = { item: string; title: string; folder: string[]; head: string; viewer: string };
 type File = { space: string; people?: readonly string[]; creator: string; discovery: "creator_only" | "consent_only"; owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; authors: Map<string, string>;
   spanHistory: Map<string, SpanIndex>; spans: Map<string, Span>; bindings: Map<string, SpanBinding>;
   withheldRevisions: Set<string>; provenance: SpanIndex["body_provenance"];
-  revision: string; path?: string; archived: boolean; title: string };
+  revision: string; path?: string; archived: boolean; title: string; createdAt: string };
 type Job = {
   context: ExecutionJobContext;
   starter: string;
@@ -81,6 +84,22 @@ type StagingMethod = "item_save_begin" | "item_save_chunk" | "item_save_seal";
 const actor = "019a0000-0000-7000-8000-000000000001";
 const space = "019a0000-0000-7000-8000-000000000010";
 const now = "2026-11-20T12:00:00Z";
+
+function titleFolder(createdAt: string, title: string) {
+  let stem = "";
+  for (const character of title.replace(/[^\p{L}\p{N} -]/gu, "_")) {
+    if (Buffer.byteLength(stem + character) > 105) break;
+    stem += character;
+  }
+  return `${createdAt.slice(0, 10)} ${stem}`;
+}
+
+function checkBoundTitle(body: Buffer, title: string, key: string) {
+  const close = body.indexOf("\n---\n", 3);
+  assert.ok(body.subarray(0, 4).equals(Buffer.from("---\n")) && close >= 0, "missing title metadata");
+  const lines = body.subarray(4, close).toString().split("\n").filter(line => line.startsWith(`${key}:`));
+  assert.deepEqual(lines, [`${key}: ${title}`], "incorrect title metadata");
+}
 const logicalHarness = {
   package: contribution.manifest.id,
   contribution: contribution.manifest.contributions![0].id,
@@ -105,8 +124,11 @@ export class FakeHost {
   private stages = new Map<string, Stage>();
   private scopes = new Map<string, { item: string; revision: string }>();
   private spanPages = new Map<string, { item: string; revision: string; viewer: string; owner: Owner; after: number }>();
-  private incomingLinks = new Map<string, { source: string; anchor: string }[]>();
-  private relocationUndo = new Map<string, { item: string; title: string; folder: string[]; head: string; viewer: string }>();
+  private incomingLinks = new Map<string, IndexedLink[]>();
+  private linksBySource = new Map<string, IndexedLink>();
+  private relocationUndo = new Map<string, RelocationUndo>();
+  private deferredRelocations = new Map<string, { activation: string; cursor: number; inverse: RelocationUndo }>();
+  inlineBacklinkLimit = 63;
   linkedMarkdown = new Map<string, string>();
   private serial = 0;
   private selected = { harness: "checked-harness", placement: "checked-desk" };
@@ -178,17 +200,6 @@ export class FakeHost {
     const span = [...this.files.get(item)!.spans.keys()].at(-1);
     assert.ok(span);
     return span;
-  }
-
-  /** Seed checked empty bytes for import tests independently of the app's formatted create. */
-  async createEmptyCreatorItem() {
-    const input: ItemCreate = {
-      request_id: this.id("empty"), kind: "threads", name: "Empty.md", metadata: { title: "Empty" },
-      attempt_discovery: "creator_only",
-    };
-    const result = await this.call("threads", input.request_id, "item_create", input, undefined, actor, true) as ItemContentReceipt;
-    trace.push(["ItemCreate", input], ["ItemContentReceipt", result]);
-    return result;
   }
 
   /** Exercise a synthetic checked editor save with independent capture and write bytes. */
@@ -501,7 +512,7 @@ export class FakeHost {
         assert.ok(allowsOutput && job?.attempt && job.result && source.seq === 1, "missing delivered output");
         text = job.result.text;
       }
-      let quoted: { text: string; record: string; attribution: NonNullable<Span["quote"]>["attribution"] } | undefined;
+      let quoted: { text: string; record: string; source: QuoteSource; attribution: NonNullable<Span["quote"]>["attribution"] } | undefined;
       if (quote) {
         assert.ok(file && quote.item === args.item && file.history.has(quote.revision), "quote source unavailable");
         const origin = file.spanHistory.get(quote.revision)?.spans.find(candidate => candidate.span === quote.span);
@@ -514,7 +525,16 @@ export class FakeHost {
         const source = file.history.get(quote.revision)!.subarray(origin.middle_offset, origin.middle_offset + origin.middle_length);
         const block = source.toString().split("\n").map(line => `> ${line}`).join("\n") + "\n\n";
         assert.ok(Buffer.byteLength(block) <= 65536, "quote byte limit");
-        quoted = { text: block, record, attribution: origin.attribution };
+        quoted = { text: block, record, source: quote, attribution: origin.attribution };
+      } else if (file && retiring && source.kind !== "empty") {
+        const existing = file.spans.get(retiring)?.quote;
+        if (existing) {
+          const { quotedRecord, quoteSource } = file.bindings.get(retiring)!;
+          assert.ok(quotedRecord && quoteSource && !file.withheldRevisions.has(quoteSource.revision), "quote cannot be retained");
+          const bytes = file.history.get(file.revision)!;
+          quoted = { text: bytes.subarray(existing.offset, existing.offset + existing.length).toString(),
+            record: quotedRecord, source: quoteSource, attribution: existing.attribution };
+        }
       }
       const bytes = Buffer.from(prefix + (quoted?.text ?? "") + text + suffix);
       return { bytes, prefixBytes: Buffer.byteLength(prefix), middleBytes: Buffer.byteLength(text), quoted };
@@ -534,7 +554,7 @@ export class FakeHost {
         middle_offset: offset + composed.prefixBytes + quoteLength, middle_length: composed.middleBytes, attribution,
         ...(composed.quoted && { quote: { offset: offset + composed.prefixBytes, length: quoteLength, attribution: composed.quoted.attribution } }),
       });
-      target.bindings.set(span, { record: record ?? span, quotedRecord: composed.quoted?.record });
+      target.bindings.set(span, { record: record ?? span, quotedRecord: composed.quoted?.record, quoteSource: composed.quoted?.source });
       return { span };
     };
     const shiftAfter = (target: File, start: number, delta: number) => {
@@ -564,12 +584,16 @@ export class FakeHost {
         const composed = create.attested && compose(create.attested);
         const body = composed ? composed.bytes : Buffer.from(create.body ?? "", "base64");
         const root = create.kind === "thread-consultations" ? ".calternal/thread-consultations" : owner === "threads" ? "Threads" : ".calternal";
-        const folders = create.folders ?? [];
+        const binding = application.manifest.kinds.find(kind => kind.id === create.kind)?.file_format?.title_binding;
+        const title = String(create.metadata.title);
+        if (binding?.frontmatter_key) checkBoundTitle(body, title, binding.frontmatter_key);
+        const folders = [...create.folders ?? []];
+        if (binding?.placement === "utc_date_folder") folders.push(titleFolder(now, title));
         const used = new Set([...this.files.values()].map(file => file.path));
         let path = [root, ...folders, create.name].join("/");
         for (let suffix = 2; used.has(path); suffix++) {
           path = folders.length
-            ? [root, `${folders[0]} (${suffix})`, ...folders.slice(1), create.name].join("/")
+            ? [root, ...folders.slice(0, -1), `${folders.at(-1)} (${suffix})`, create.name].join("/")
             : [root, `${suffix} ${create.name}`].join("/");
         }
         const discovery = create.attempt_discovery === "creator_only" && checkedInvocation && !shared && (create.attested || body.length === 0)
@@ -579,7 +603,7 @@ export class FakeHost {
         }
         const target: File = { owner, space: this.personalSpace(receiptActor), people: shared && [...shared], creator: receiptActor, discovery, revision, history: new Map([[revision, body]]),
           authors: new Map(), spans: new Map(), spanHistory: new Map(), bindings: new Map(), withheldRevisions: new Set(),
-          provenance: "attested", path, archived: false, title: String(create.metadata.title) };
+          provenance: "attested", path, archived: false, title, createdAt: now };
         const span = create.attested && composed ? recordSpan(target, 0, composed, create.attested) : {};
         if (create.attested) attributeWrite(target, revision, create.attested);
         publishIndex(target, revision, !create.attested && body.length !== 0);
@@ -873,9 +897,51 @@ export class FakeHost {
   linkTo(item: string, source: string, anchor: string) {
     const destination = this.files.get(item)!.path!;
     this.linkedMarkdown.set(source, `[Read the conversation](<${posix.relative(posix.dirname(source), destination)}#${anchor}>)\n`);
+    const link = { source, anchor, item, path: destination };
     const incoming = this.incomingLinks.get(item) ?? [];
-    incoming.push({ source, anchor });
+    incoming.push(link);
     this.incomingLinks.set(item, incoming);
+    this.linksBySource.set(source, link);
+  }
+
+  /** Resolve the indexed target even if the Markdown spelling is still waiting for rewrite. */
+  followLink(source: string, viewer = actor) {
+    const link = this.linksBySource.get(source);
+    assert.ok(link);
+    const file = this.files.get(link.item)!;
+    assert.ok(file.people ? file.people.includes(viewer) : file.creator === viewer, "link unavailable");
+    return { item: link.item, path: file.path, anchor: link.anchor };
+  }
+
+  private rewriteLinks(links: readonly IndexedLink[], path: string) {
+    for (const link of links) {
+      const stem = posix.dirname(link.source);
+      const oldHref = `<${posix.relative(stem, link.path)}#${link.anchor}>`;
+      const markdown = this.linkedMarkdown.get(link.source)!;
+      if (!markdown.includes(oldHref)) continue;
+      const newHref = `<${posix.relative(stem, path)}#${link.anchor}>`;
+      this.linkedMarkdown.set(link.source, markdown.replace(oldHref, newHref));
+      link.path = path;
+    }
+  }
+
+  private relocationComplete(activation_id: string, inverse: RelocationUndo) {
+    const ref = this.id("undo");
+    this.relocationUndo.set(ref, inverse);
+    const outcome = { activation_id, state: "ok" as const,
+      undo: { ref, label: "Undo conversation move", expires_at: "2026-11-20T13:00:00Z" } };
+    trace.push(["ActionOutcome", outcome]);
+    return outcome;
+  }
+
+  /** Finish the deferred part of this move using the already committed target placement. */
+  finishRelocation(status: string) {
+    const job = this.deferredRelocations.get(status);
+    assert.ok(job, "relocation status unavailable");
+    const file = this.files.get(job.inverse.item)!;
+    this.rewriteLinks((this.incomingLinks.get(job.inverse.item) ?? []).slice(job.cursor), file.path!);
+    this.deferredRelocations.delete(status);
+    return this.relocationComplete(job.activation, { ...job.inverse, head: file.revision });
   }
 
   /** Model folder placement and indexed link updates behind the generic host action. */
@@ -884,24 +950,21 @@ export class FakeHost {
     if (file.people && this.conversationAccess(item, viewer) !== "full") throw new Error("Conversation is read-only.");
     assert.ok(title !== undefined || destination !== undefined);
     const nextTitle = title === undefined ? file.title : checkedTitle(title);
-    const thread = this.thread(item);
     const oldPath = file.path!;
     const priorTitle = file.title;
-    const nextFolder = destination?.join("/") ?? folder({ ...thread, title: nextTitle });
-    const root = nextFolder ? `Threads/${nextFolder}` : "Threads";
+    const priorFolders = oldPath.split("/").slice(1, -2);
+    const nextFolder = titleFolder(file.createdAt, nextTitle);
+    const root = ["Threads", ...(destination ?? priorFolders), nextFolder].join("/");
     const occupied = new Set([...this.files.entries()].filter(([id]) => id !== item).map(([, sibling]) => sibling.path));
     let nextPath = `${root}/Conversation.md`;
     for (let suffix = 2; occupied.has(nextPath); suffix++) nextPath = `${root} (${suffix})/Conversation.md`;
-    const rewrites = (this.incomingLinks.get(item) ?? []).map(({ source, anchor }) => {
-      const oldHref = `<${posix.relative(posix.dirname(source), oldPath)}#${anchor}>`;
-      const newHref = `<${posix.relative(posix.dirname(source), nextPath)}#${anchor}>`;
-      const markdown = this.linkedMarkdown.get(source)!;
-      assert.ok(markdown.includes(oldHref), "outdated incoming link");
-      return [source, markdown.replace(oldHref, newHref)] as const;
-    });
+    const links = this.incomingLinks.get(item) ?? [];
     const original = file.history.get(file.revision)!;
-    const oldTitleLine = Buffer.from(`\ntitle: ${file.title}\n`);
-    const newTitleLine = Buffer.from(`\ntitle: ${nextTitle}\n`);
+    const titleKey = application.manifest.kinds.find(kind => kind.id === "threads")?.file_format?.title_binding?.frontmatter_key;
+    assert.ok(titleKey, "undeclared title binding");
+    checkBoundTitle(original, file.title, titleKey);
+    const oldTitleLine = Buffer.from(`\n${titleKey}: ${file.title}\n`);
+    const newTitleLine = Buffer.from(`\n${titleKey}: ${nextTitle}\n`);
     const start = original.indexOf(oldTitleLine);
     assert.ok(start >= 0, "missing title field");
     const delta = newTitleLine.length - oldTitleLine.length;
@@ -924,12 +987,14 @@ export class FakeHost {
     file.revision = revision;
     file.path = nextPath;
     file.title = nextTitle;
-    for (const [source, markdown] of rewrites) this.linkedMarkdown.set(source, markdown);
+    this.rewriteLinks(links.slice(0, this.inlineBacklinkLimit), nextPath);
     const snapshot = this.snapshots.get(item);
     if (snapshot) this.snapshots.set(item, { ...snapshot, source_revision: revision });
-    const ref = this.id("undo");
-    this.relocationUndo.set(ref, { item, title: priorTitle, folder: oldPath.split("/").slice(1, -1), head: revision, viewer });
-    const outcome = { activation_id, state: "ok", undo: { ref, label: "Undo conversation move", expires_at: "2026-11-20T13:00:00Z" } };
+    const inverse = { item, title: priorTitle, folder: priorFolders, head: revision, viewer };
+    if (links.length <= this.inlineBacklinkLimit) return this.relocationComplete(activation_id, inverse);
+    const status_ref = this.id("relocation-status");
+    this.deferredRelocations.set(status_ref, { activation: activation_id, cursor: this.inlineBacklinkLimit, inverse });
+    const outcome = { activation_id, state: "pending" as const, status_ref };
     trace.push(["ActionOutcome", outcome]);
     return outcome;
   }

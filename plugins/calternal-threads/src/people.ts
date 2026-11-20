@@ -1,6 +1,6 @@
 import type { AccountRef, ContributionIdentity, ItemContentReceipt, ItemCreate, ItemLocator, ItemRef, RevisionRef } from "../generated/wire.js";
 import { appendRecord, inlineBody, kind, publish, read, saveOpaque } from "./files.ts";
-import { agentParticipant, attest, checkedTitle, encode, folder, MAX_FILE_BYTES, messageId, messageRecord, messageView, personParticipant, step, type Message, type Thread } from "./format.ts";
+import { agentParticipant, attest, checkedTitle, encode, MAX_FILE_BYTES, messageId, messageRecord, messageView, personParticipant, step, type Message, type Thread } from "./format.ts";
 import { checkedText, type HarnessOutput } from "./harnesses-v1.ts";
 import type { Context } from "./interface.ts";
 
@@ -94,7 +94,7 @@ async function create(input: { title: string; participants: AccountRef[] }, ctx:
     participants: ids.map(id => personParticipant(id, (id === ctx.author.actor ? ctx.author.actor_label : undefined) ?? names.get(id))), messages: [],
   };
   const head = await ctx.createShared({
-    request_id: step(ctx.author.request_id, "people-create"), kind, folders: [folder(thread)], name: "Conversation.md", attempt_discovery: "consent_only",
+    request_id: step(ctx.author.request_id, "people-create"), kind, name: "Conversation.md", attempt_discovery: "consent_only",
     metadata: { title: thread.title }, body: inlineBody(Buffer.from(encode(thread))),
   }, ids);
   await publish(ctx, head.item, head.revision, thread);
@@ -140,7 +140,7 @@ async function message({ item, message }: MessageTarget, ctx: PeopleContext) {
   return messageView(thread, message);
 }
 
-async function change({ item, message }: MessageTarget, ctx: PeopleContext, text?: string) {
+async function change({ item, message }: MessageTarget, ctx: PeopleContext, text?: string, requote = false) {
   const { thread, revision, spans, quotes } = await writableMember(ctx, item);
   const entry = find(thread, message);
   if (entry.author.kind !== "person" || entry.author.id !== ctx.author.actor || (entry.deleted && text !== undefined)) {
@@ -150,9 +150,17 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
     const elapsed = Date.parse(ctx.author.authored_at) - Date.parse(entry.posted_at);
     if (!(elapsed >= 0 && elapsed < editWindowMs)) throw new Error("Messages can be edited for 48 hours.");
   }
-  if (entry.deleted || entry.text === text) {
+  if (entry.deleted || (entry.text === text && !requote)) {
     await publish(ctx, item, revision, thread);
     return;
+  }
+  let quote;
+  if (requote) {
+    const target = thread.messages.find(candidate => candidate.id === entry.replyTo && !candidate.deleted);
+    const sourceSpan = target && spans.get(target.id);
+    if (!target || sourceSpan === undefined) throw new Error("The original message is unavailable for a new quote.");
+    entry.replyQuote = checkedText(target.text);
+    quote = { item, revision, span: sourceSpan };
   }
   const quotedBy = text === undefined ? thread.messages.filter(reply => reply.replyTo === message && reply.replyQuote !== undefined) : [];
   if (text === undefined) {
@@ -174,11 +182,9 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
   if (quotedBy.every(reply => quotes.has(reply.id)) && replace_span !== undefined &&
       (text === undefined || (captured?.item === item && captured.text === text))) {
     const record = messageRecord(entry, thread.participants);
-    const target = entry.replyQuote === undefined ? undefined :
-      thread.messages.find(candidate => candidate.id === entry.replyTo && !candidate.deleted && candidate.text === entry.replyQuote);
-    const sourceSpan = target && spans.get(target.id);
-    const quote = sourceSpan === undefined ? undefined : { item, revision, span: sourceSpan };
-    const attested = attest(record, { kind: text === undefined ? "empty" : "input" }, quote);
+    // Omit the quote when replacing a checked reply so the host keeps its exact existing block.
+    const framing = !requote && quotes.has(message) ? { ...record, quote: undefined } : record;
+    const attested = attest(framing, { kind: text === undefined ? "empty" : "input" }, quote);
     if (attested) {
       const result = await ctx.call("item_save", { request_id: step(ctx.author.request_id, purpose),
         item, expected: revision, replace_span, attested });
@@ -187,6 +193,7 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
       return;
     }
   }
+  if (text !== undefined && entry.replyTo !== undefined) throw new Error("This reply cannot be edited without a checked write.");
   await save(ctx, item, revision, thread, purpose);
 }
 
@@ -399,6 +406,6 @@ async function consult({ item, prompt }: Target & { prompt: string }, ctx: Peopl
 /** Fixture-only entry points for people threads pending shared custody and consent APIs. */
 export const peopleHandlers = {
   create, post, message, getState, setState, getPreferences, setPreferences, row, delivery, callAgent, consult,
-  edit: (input: MessageTarget & { text: string }, ctx: PeopleContext) => change(input, ctx, input.text),
+  edit: (input: MessageTarget & { text: string; requote?: boolean }, ctx: PeopleContext) => change(input, ctx, input.text, input.requote),
   remove: (input: MessageTarget, ctx: PeopleContext) => change(input, ctx),
 };

@@ -166,6 +166,10 @@ test("a new reply cannot target a deleted message and an existing reply stays vi
   assert.equal((await get(bob, reply.message)).replyTo, first.message);
   assert.equal((await get(bob, reply.message)).replyQuote, "Alice visible");
   assert.match(host.markdown(item), /> Alice visible\n\nAlready sent/);
+  const prior = host.markdown(item);
+  await assert.rejects(people.edit({ item, message: reply.message, text: "Changed" },
+    host.peopleContext(bob, "unchecked-reply-edit", undefined, undefined, undefined, { item, text: "Changed" })), /checked write/);
+  assert.equal(host.markdown(item), prior);
   await people.remove({ item, message: first.message }, ctx(alice, "delete-target"));
   await assert.rejects(people.post({ item, text: "Late reply", replyTo: first.message }, ctx(bob, "late-reply")), /unavailable/i);
   assert.equal((await get(bob, reply.message)).text, "Already sent");
@@ -216,11 +220,27 @@ test("checked quotes retain the original author, survive a source edit and are r
   const longHead = await replyWriter.call("item_head", { item });
   const longSpan = (await replyWriter.call("item_spans", { item, revision: longHead.revision })).spans.at(-1)!;
   assert.ok(longSpan.quote && longSpan.quote.length > 512);
+  const quoteBytes = (range: NonNullable<typeof longSpan.quote>) =>
+    Buffer.from(host.markdown(item)).subarray(range.offset, range.offset + range.length);
+  const originalQuoteBytes = quoteBytes(longSpan.quote);
+  const bindings = host.files.get(item)!.bindings;
+  const originalSource = bindings.get(longSpan.span)?.quoteSource;
+  assert.ok(originalSource);
   await people.edit({ item, message: longTarget, text: "Revised source" }, writer(alice, "change-long-source", "Revised source"));
   await people.edit({ item, message: longReply, text: "Revised reply" }, writer(bob, "change-long-reply", "Revised reply"));
   const revised = await people.message({ item, message: longReply }, ctx(alice, "read-revised-reply"));
   assert.equal(revised.replyQuote, longQuote);
-  assert.equal(host.writeAuthor(item), undefined);
+  assert.equal(host.writeAuthor(item), bob);
+  assert.deepEqual(bindings.get(host.lastSpan(item))?.quoteSource, originalSource);
+  const revisedHead = await replyWriter.call("item_head", { item });
+  const revisedSpan = (await replyWriter.call("item_spans", { item, revision: revisedHead.revision })).spans.at(-1)!;
+  assert.ok(revisedSpan.quote);
+  assert.deepEqual(quoteBytes(revisedSpan.quote), originalQuoteBytes);
+
+  await people.edit({ item, message: longReply, text: "Revised reply", requote: true }, writer(bob, "requote", "Revised reply"));
+  const refreshed = await people.message({ item, message: longReply }, ctx(alice, "read-requoted-reply"));
+  assert.equal(refreshed.replyQuote, "Revised source");
+  assert.notDeepEqual(bindings.get(host.lastSpan(item))?.quoteSource, originalSource);
 });
 
 test("muted row counts are private and count a mention plus reply on one message once", async () => {

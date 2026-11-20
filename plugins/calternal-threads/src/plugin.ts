@@ -52,6 +52,7 @@ const metadata = {
     id: "threads", icon: "threads", title_field: "title", storage: { folder: "Threads" },
     claimed_text: true, searchable: true, file_format: {
       id: "calternal-thread", version: 2, default_app: "threads",
+      title_binding: { placement: "utc_date_folder", frontmatter_key: "title" },
       metadata_tokens: [
         { scope: "frontmatter_key", prefix: "format" },
         { scope: "frontmatter_key", prefix: "id" },

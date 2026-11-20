@@ -3,9 +3,9 @@
 The lane starts from dev `80864d0d`. The spike has rerun against
 14.30 (`b89586dd`), 14.31 (`00828198`), 14.32 (`3ca11613`) and
 14.33 (`47024c0f`), 14.34 (`b4d0f20d`), 14.35 (`36d49713`) and
-14.36 (`1c38c21d`), 14.37 (`0d684545`) and 14.38 (`430cb649`).
-The current pin for both plugins is draft 14.39 at
-`d07c380b00f14a28f999f66d96df27f9d1f40a7f`
+14.36 (`1c38c21d`), 14.37 (`0d684545`), 14.38 (`430cb649`) and
+14.39 (`d07c380b`). The current pin for both plugins is draft 14.40 at
+`35a5095980947ada8adb5b5431150d7490ab8691`
 on `origin/lane/v2-host-base`. It follows the November 20
 decision that the Threads app (`calternal-threads`) owns the conversation file and the selected harness
 owns its working log. The lane issue is [#92](https://git.kayg.org/kayg/calternal-ai/issues/92).
@@ -39,11 +39,11 @@ flock -s /tmp/calternal-dev02.lock nix develop -c bash -c '
 '
 ```
 
-The build uses the 14.39 revision-aware SDK builder. It pins both
+The build uses the 14.40 revision-aware SDK builder. It pins both
 plugin manifests and workers, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-All 46 tests and both Conformance tool 1.1.0 plugin checks passed
-on dev-02 at the 14.39 pin under the shared lock. The repository
+All 47 tests and both Conformance tool 1.1.0 plugin checks passed
+on dev-02 at the 14.40 pin under the shared lock. The repository
 documentation gate passed in the earlier afternoon run. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
@@ -767,7 +767,7 @@ require a cross-owner write grant that the design does not provide.
 The plugin worker code uses no native Threads dispatch, special plugin ID,
 direct plugin connection, inherited provider credential, or server-owned
 thread format. The fixture provider port stands in for live execution placement. The
-14.39 fake carries replies through the catalogue's checked contribution
+14.40 fake carries replies through the catalogue's checked contribution
 methods. People-thread invitations still use fixture ports. The harness manifest includes
 an image-shaped fixture digest and a pinned entry that fails closed.
 It cannot launch Claude Code. The real image, login mapping and reviewed
@@ -844,6 +844,16 @@ scanner are here.
 | Default app and hidden metadata | **CLOSED** in the manifest | The format declares `threads` as its default app and selects the trailing heading tag, generated link comments, and technical frontmatter as hideable. Visible author names, time, reply and edit markers, and quotes stay outside those selectors. The alternate editor still needs live qualification for preserving the bytes and hiding only the declared contexts. |
 | Local timestamps | **CLOSED** in the description | Snapshots emit the typed UTC `timestamp` on the heading. The contract assigns local formatting to the renderer. Tests verify the emitted value and schema. The current run has no native renderer evidence. |
 | Other evening and earlier findings | **UNCHANGED** | The one-minute consent wait, consultation result and Stop, default alarm grace, durable span reads and prior safeguards still run. The outstanding live host, consent and delivery, SDK and cutover findings remain. |
+
+## Revision 14.40 disposition
+
+| Finding | Status | Evidence or remaining gap |
+| --- | --- | --- |
+| Retain an existing quote on edit | **CLOSED** | Omitting `attested.quote` on a checked `replace_span` keeps the pinned quote bytes. The test edits the original, edits the reply, and compares both the exact quote bytes and original revision/span binding. An explicit re-quote supplies the current source and changes only the quotation and the requested reply content. An unindexed reply edit is refused without changing the file. |
+| Dated folder and on-disk title binding | **CLOSED** in the declaration and fixture | Threads declares `file_format.title_binding` with `utc_date_folder` and frontmatter key `title`. The worker supplies the file name, title metadata and checked body. The host chooses the dated leaf folder on create and whenever the title changes. A move supplies parent components above that folder. The fixture verifies collisions, a rename, and a move and Undo with stable message attribution. |
+| Bounded relocation and old links | **CLOSED** for the new exchange | The fixture commits the new folder, title and first rewrite before returning `pending` for overflow. The remaining unrewritten link resolves to the new location through the same item ID and fragment, and an unauthorized viewer is refused. Completing the pending work rewrites the remaining link and issues Undo. Live persistence, replay, path-reuse protection and rewrite cost still need qualification. |
+| Attribution for a host-patched title span | **OPEN** · new | `title_binding.frontmatter` allows the entire recorded title middle to become host-written metadata. `ItemRecordedSpan.attribution` still lists only person, attempt and empty. The app skips the frontmatter span for display, but a generic reader of `item_spans` needs a way to distinguish host title bytes from captured person text. Pin a host-metadata attribution or specify that title-only spans are excluded from returned author attribution. |
+| Earlier findings | **UNCHANGED** | Checked quotes and same-item redaction, default app and hidden metadata declarations, typed timestamps and other fixture behavior pass. The live host, performance, renderer, consent, delivery, SDK and cutover findings are still open. |
 
 ## Simplification opportunities
 
