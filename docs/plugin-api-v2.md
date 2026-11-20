@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.19 draft
+# Plugin API v2 · revision 14.20 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -869,6 +869,7 @@ pairs of `window_ref` and `result_version`. Changed grants or versions
 require fresh authorized windows. Ignore superseded replies and keep rows
 hidden on timeout or refusal. Explicit plugin pages always restart on
 accepted renewal under the [profile rule](../contract/host-catalogue-v2.json#/query/search/plugin/renewal).
+Item views reopen under the [item-view rule](../contract/host-catalogue-v2.json#/view_snapshots/body_content).
 Clear live rows on revocation, sign-out,
 account or audience switch, session end or guest link closure.
 
@@ -895,9 +896,9 @@ for a declared item slot, under the catalogue’s
 Its authored content follows the same read bound as a write to the item
 file: the package’s declared reads and the acting principal’s live grants.
 The host validates the description and binds it to the source revision
-and item audience. It serves the stored view under the same checked file
-audience, with no independent disclosure authority. The host checks
-shape and scope. The author controls what the text says.
+and item audience. Both retained and live views follow the
+[catalogue’s item-view rule](../contract/host-catalogue-v2.json#/view_snapshots/body_content).
+The host checks shape and scope. The author controls what the text says.
 
 Draw the retained view without waiting for a wake. When the revision
 has moved, mark a still-authorized snapshot stale. When absent, show the
@@ -906,7 +907,7 @@ authority can replace the retained view, normally the run that wrote the
 file. Check that authority at scope admission and commit.
 
 A member reader may request a live view through the pinned read operation.
-The reply belongs only to that reader and lease. Opening or refreshing
+Apply the same item-view rule to the transient reply. Opening or refreshing
 an item never replaces the retained view, even when the reader can edit.
 Guest and public delivery stays on the retained path. Revoke or purge
 drops the stored snapshot. Its `snapshot-text` leaves draw plain text
@@ -1378,7 +1379,11 @@ intentional refusal/retry with an actionable response.
   Require stale marking only under current read authority. Race write
   revocation against publication. Verify a reader refresh changes only
   that reader’s live view, including when the reader also has edit rights.
-  Meter wake separately from first paint.
+  Revoke body access with title access intact before admission and during
+  delivery, for retained, stale and live views. Require zero body content.
+  With a view already displayed, invalidate it or cut the lease or connection.
+  Require immediate clearing and a fresh open after renewal. Meter wake
+  separately from first paint.
 - **Execution and widening.** Prove freeze, exact reattachment and teardown
   under transport and server loss. Verify one admitted attempt on replay.
   Attempt widening through direct share, membership, collection and Undo.

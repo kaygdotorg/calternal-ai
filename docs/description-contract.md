@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.19 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.20 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -351,12 +351,14 @@ For a bound `item-view` component and declared slot, `item_view.open`
 returns the retained `ItemSnapshotView` without waiting for a wake.
 Mark a stale reply as belonging to an earlier revision. When absent,
 show the basic shell and loading state. For an open thread, the snapshot
-is its retained transcript view. Use the same audience check as for
-the file and preserve the bound revision.
+is its retained transcript view. Apply the
+[catalogue’s item-view rule](../contract/host-catalogue-v2.json#/view_snapshots/body_content)
+to both forms.
 
 An eligible member view separately requests `live:true` for the open
-item. Keep the retained view while that read is pending. Apply a `state:"live"` reply only on the
-requesting viewer’s current lease. It is transient. Only a separate
+item. Keep the retained view while that read is pending only as the
+item-view rule permits. Apply `state:"live"` on the requesting viewer’s
+current lease. It is transient. Only a separate
 write-authorized package run can publish a replacement snapshot. A guest
 or public view uses the retained request alone.
 
@@ -501,8 +503,9 @@ Hide live rows on lease loss. Repaint only retained exact
 authenticated renewal. A changed grant refetches. Explicit plugin-search
 pages, selections and tokens are discarded on accepted renewal, even
 with the same grant. Re-settle the current query on the renewed view with
-a fresh generation, then call `search.plugin` without a cursor. Guest and public
-sessions receive no member download or persisted row grant. Persist
+a fresh generation, then call `search.plugin` without a cursor. Clear and
+reopen item views under the [item-view rule](../contract/host-catalogue-v2.json#/view_snapshots/body_content).
+Guest and public sessions receive no member download or persisted row grant. Persist
 no live context, action proof or bearer. Every action rechecks live
 authority.
 
