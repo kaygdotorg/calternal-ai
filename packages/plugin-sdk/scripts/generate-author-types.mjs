@@ -7,12 +7,14 @@ import { contractPin } from "./contract-pin.mjs";
 const contract = await contractPin(new URL("../../../contract/", import.meta.url));
 const generated = new URL("../generated/", import.meta.url);
 const packagedContract = new URL("contract/", generated);
-const { text, windowSize } = await generateAuthorTypes(contract);
+const { text, windowSize, contributionFrameBytes } = await generateAuthorTypes(contract);
 if (windowSize !== 60) throw new Error("The SDK must agree with the contract's default Bind window.");
 
 await mkdir(packagedContract, { recursive: true });
 await Promise.all([
   writeFile(new URL("author-types.d.ts", generated), text),
+  writeFile(new URL("contribution-limit.mjs", generated),
+    `export const contributionFrameBytes = ${JSON.stringify(contributionFrameBytes)};\n`),
   ...[
     "verify-description.py",
     "description_verification.py",

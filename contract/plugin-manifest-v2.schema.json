@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 14.31 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 14.32 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -320,7 +320,7 @@
             "$ref": "#/definitions/searchProfile"
           }
         },
-        "attempt_discovery": { "const": "deny", "description": "Fence attempt access and discovery by default under execution_attempt_authority.discovery." },
+        "attempt_discovery": { "const": "item_policy", "description": "Opt into the host-owned per-item fact in catalogue execution_attempt_authority.discovery.item_policy." },
         "append_file": { "const": true, "description": "Opt into the catalogue file_append rule for the item body." },
         "execution_target": {
           "const": true,
@@ -704,6 +704,16 @@
         "image": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "image_source": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]{1,5})?/[a-z0-9._-]+(?:/[a-z0-9._-]+)*(?![\\s\\S])",
+          "description": "OCI registry host and repository, acquired over HTTPS at the pinned image digest. Omit only for an operator-provisioned verified image."
+        },
+        "execution_network": {
+          "$ref": "#/properties/network",
+          "description": "Separately approved harness egress. Omission means none."
         },
         "entry": {
           "$ref": "#/definitions/asset"

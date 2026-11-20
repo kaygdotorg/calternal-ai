@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.31 draft
+# Plugin API v2 · revision 14.32 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -251,17 +251,17 @@ containers, unknown fields and wrong-direction messages. A malformed child
 frame fences that process. Outer corruption or disconnect closes the channel.
 Check raw bytes before a parser that collapses keys.
 
-The outer header is `{v:1, epoch, seq, package, digest, ticket, message}`.
-The host-to-worker `HostWorkerInvokeFrame` carries an `invoke` message
-with operation, checked input and deadline. Claims and replays of a job
-declaring `execution: true` carry `message.job_context` under the
-[catalogue framing rule](../contract/host-catalogue-v2.json#/$defs/HostWorkerInvokeFrame). Refuse wrong-direction invokes or supplied context on worker
-input. `call` carries
-method, input and callback ID. `reply` correlates by callback ID and returns
-typed data or a safe error. `chunk` is bounded ephemeral job progress.
-`complete` is the only terminal worker result, including failure or park.
-`cancel` and `ready` are control messages. Credit/back-pressure control
-is independent of application callback completion.
+The [carrier catalogue](../contract/host-catalogue-v2.json#/carrier)
+pins the shared header and live directions. The host stamps `invoke` with
+the checked operation, inputs, deadline and author context, plus checked
+job and alarm metadata when applicable. The worker sends `call` with a
+method, input and invocation-local callback ID. The host sends a matching
+`reply` containing the checked result or a safe status and code. The worker
+sends terminal `complete` for success, refusal or park and may send
+ephemeral `chunk` progress for an admitted job. The host sends `cancel`
+after fencing. The worker sends `ready` during readiness. Credit and
+back-pressure control remain independent of callback completion. These
+are qualification targets for the live carrier (§8).
 
 Both directions give each package byte credits and a bounded queue. Debit
 encoded bytes before enqueue and return credit on receiver release. Keep a
@@ -489,18 +489,31 @@ with the actor, package digest, admitted harness, placement, audience
 generation, rights and quotas pinned. Apply the catalogue’s
 [successor rule](../contract/host-catalogue-v2.json#/execution_intents/successor)
 when an item already has a head job or active attempt. Admit the queued
-follow-up through the checked job path. Pin the typed harness binding at
+follow-up through the checked job path. Both execution `start_job` and
+`alarm_set` take the one checked target as top-level `item`. The host binds
+the run operation's declared target field from it. The author payload
+leaves that field out. Apply the [catalogue target rule](../contract/host-catalogue-v2.json#/execution_intents/target_operand).
+Pin the typed harness binding at
 admission and recheck it at promotion and claim. The authenticated job
 context supplies the target, pinned harness and admitted receipt. `execution_start`
 checks the resolved harness and optional continuation under that fence.
 An authorized retry returns the same admitted attempt. The owning job
 opens the [generic contribution call](../contract/host-catalogue-v2.json#/extension_points/calls)
-with the checked input and pinned contribution. Consume committed frames by
+with the checked input and pinned contribution. The catalogue meters the
+whole encoded JSON frame and its LF, including escapes and frame fields.
+Authors use the SDK's `encodeContributionFrame` to enforce the same bound.
+Consume committed frames by
 call and sequence. Use stable subeffect receipts to write owner output under
 the exact attempt fence before successful job completion. The contributor
 writes its own working files through checked host methods. The [entry
 ABI](../contract/host-catalogue-v2.json#/extension_points/harness_abi) applies
-to each verified placement. Stop can target
+to each verified placement. Review discloses the normalized OCI repository
+or verified operator-provisioned image, its digest and entry, and the
+separately approved execution network. Missing `execution_network` means
+no execution egress. Worker network approval grants no execution egress.
+The job's host-stamped `ContributionIdentity` is safe to store as an
+agent's logical participant identity. A fresh checked choice supplies
+authority for each admitted run. Stop can target
 the exact pending job or admitted attempt using generic host control.
 Protected approvals bind the checked effect to the actual dispatch.
 The catalogue’s execution wait compares the transition cursor and parks
@@ -575,13 +588,18 @@ and approval controls remain generic. A retained snapshot draws while
 the item owner sleeps (§4.2).
 
 **Threads participants.** People and agents are participant data in the
-Threads file. Threads denies attempt discovery on its kind. A run gets
-only the app's checked disclosure, and the harness has no direct writer
-authority on the thread. Calling in an agent selects a message, a range
+Threads file. Threads opts into the generic [per-item discovery rule](../contract/host-catalogue-v2.json#/execution_attempt_authority/discovery/item_policy).
+A person's own agent thread can be `creator_only` and stays discoverable
+to their own authorized attempts. A people conversation is `consent_only`
+and stays outside attempt list, search, direct reads and derived output.
+The harness has no direct writer authority on the thread. Calling in an agent selects a message, a range
 or the whole conversation. Apply the generic
 [author-consent rule](../contract/host-catalogue-v2.json#/attempt_disclosure)
-to every included author's material. Trusted authorship, recording and
-revoking consent, groups and cross-space delivery are OPEN. Keep the
+to every included author's material. People-thread custody and participant grants, deletion across history,
+search, caches and offline copies, actor-private per-item state, trusted
+authorship and consent recording and revocation, and the checked
+invitation placement exchange remain OPEN. Group membership and cross-space
+delivery also remain OPEN. Keep the
 affected invocation path disabled until pinned. People discovery is
 limited to one's group. There is no server-wide people discovery.
 [Recorded Threads decisions][threads-decisions] For an agent called into a conversation between people,
@@ -1562,7 +1580,12 @@ Qualify the real contribution path with separate packages. Test a wrong
 package, pinned-image mismatch, out-of-order output, lost output ACK,
 Stop between output and append, and replay of the owning job. Require
 zero unauthorized writes, no repeated provider start and one append per
-accepted publication receipt.
+accepted publication receipt. On one opted-in kind, test a creator-only
+item and a consent-only item. The creator's live attempt can find and
+read the first. The second contributes no match, rank, count, excerpt or
+direct bytes. Repeat with another actor and with a demotion racing a
+pending reply. Confirm that an alarm and an immediate Send get the same
+host-injected target and both refuse a target in author input.
 
 The Threads cutover requires measured product wake p95 at or below
 500 ms for both the plugin and agent placements on the perf VM.

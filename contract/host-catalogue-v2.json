@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Revision 14.31 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
+  "description": "Revision 14.32 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -41,6 +41,26 @@
       "proposal": "Group membership and cross-space message delivery are OPEN. People discovery is limited to a person's group.",
       "blocks": "Inviting or delivering across spaces under any new group or messaging path.",
       "cutover": "Keep those paths disabled until pinned."
+    },
+    "people_custody": {
+      "proposal": "People-thread file custody and trusted participant grants are OPEN.",
+      "blocks": "Adding a person with file access and delivering a people-thread message.",
+      "cutover": "Keep this path disabled until a later numbered revision pins the grant and file commit."
+    },
+    "message_deletion": {
+      "proposal": "Message deletion through history, search, display caches and offline replicas is OPEN.",
+      "blocks": "Deleting a people message and promising its removal on those surfaces.",
+      "cutover": "Keep deletion disabled until pinned."
+    },
+    "actor_private_item_state": {
+      "proposal": "Actor-private per-item read state and its compare-and-set and retention are OPEN.",
+      "blocks": "Persisting a person's private per-item read markers and preferences.",
+      "cutover": "Keep this path disabled until pinned."
+    },
+    "invitation_placement": {
+      "proposal": "The checked agent invitation placement exchange is OPEN.",
+      "blocks": "Binding the selected inviter or space login and machine to a consented invocation.",
+      "cutover": "Keep invitations disabled until that exchange and consent recording and revocation are pinned."
     }
   },
   "reserved_operation_prefixes": [
@@ -3852,7 +3872,11 @@
         "item": {
           "$ref": "#/$defs/ItemRef"
         },
-        "input": {},
+        "input": {
+          "type": "object",
+          "maxProperties": 32,
+          "description": "Author inputs without the declared target field. The host binds that field from the top-level checked item."
+        },
         "harness": {
           "$ref": "#/$defs/HarnessRef"
         },
@@ -3868,7 +3892,8 @@
       "required": [
         "intent",
         "item",
-        "harness"
+        "harness",
+        "contribution_identity"
       ],
       "properties": {
         "intent": {
@@ -3879,6 +3904,9 @@
         },
         "harness": {
           "$ref": "#/$defs/HarnessRef"
+        },
+        "contribution_identity": {
+          "$ref": "#/$defs/ContributionIdentity"
         }
       }
     },
@@ -3966,74 +3994,49 @@
       "description": "Renderer sequence per lease and resolved search Bind. A lower generation never supersedes a higher one. Reuse a generation only for exact replay."
     },
     "HostWorkerInvokeFrame": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "v",
-        "epoch",
-        "seq",
-        "package",
-        "digest",
-        "ticket",
-        "message"
-      ],
-      "properties": {
-        "v": {
-          "const": 1
+      "allOf": [
+        {
+          "$ref": "#/$defs/CarrierEnvelope"
         },
-        "epoch": {
-          "$ref": "#/$defs/Ref"
-        },
-        "seq": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "package": {
-          "$ref": "#/$defs/KindId"
-        },
-        "digest": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
-        },
-        "ticket": {
-          "$ref": "#/$defs/Ref"
-        },
-        "message": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "type",
-            "operation",
-            "input",
-            "deadline",
-            "author_context"
-          ],
+        {
           "properties": {
-            "type": {
-              "const": "invoke"
-            },
-            "operation": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            },
-            "input": {},
-            "deadline": {
-              "$ref": "#/$defs/Timestamp"
-            },
-            "job_context": {
-              "$ref": "#/$defs/ExecutionJobContext"
-            },
-            "alarm": {
-              "$ref": "#/$defs/AlarmDelivery"
-            },
-            "author_context": {
-              "$ref": "#/$defs/AuthorInvocationContext"
+            "message": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "operation",
+                "input",
+                "deadline",
+                "author_context"
+              ],
+              "properties": {
+                "type": {
+                  "const": "invoke"
+                },
+                "operation": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "input": {},
+                "deadline": {
+                  "$ref": "#/$defs/Timestamp"
+                },
+                "job_context": {
+                  "$ref": "#/$defs/ExecutionJobContext"
+                },
+                "alarm": {
+                  "$ref": "#/$defs/AlarmDelivery"
+                },
+                "author_context": {
+                  "$ref": "#/$defs/AuthorInvocationContext"
+                }
+              }
             }
           }
         }
-      },
+      ],
       "description": "Host-to-worker only. Stamp job_context on claim and replay only for an admitted job declaring execution:true. Stamp alarm only for a job admitted by an alarm. Both are host metadata outside operation input. An execution job's exact target is host checked at admission and replay."
     },
     "RowImageAttribution": {
@@ -4186,7 +4189,8 @@
         },
         "input": {
           "type": "object",
-          "maxProperties": 32
+          "maxProperties": 32,
+          "description": "Author inputs without the declared target field, which the host binds from top-level item."
         },
         "replace": {
           "$ref": "#/$defs/Ref"
@@ -4199,6 +4203,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 86400
+        },
+        "item": {
+          "$ref": "#/$defs/ItemRef",
+          "description": "Checked target for a targeted job. Required for execution alarms."
         }
       },
       "required": [
@@ -4206,7 +4214,12 @@
         "job",
         "at",
         "input"
-      ]
+      ],
+      "dependentRequired": {
+        "harness": [
+          "item"
+        ]
+      }
     },
     "AlarmCancel": {
       "type": "object",
@@ -4872,12 +4885,20 @@
               "harness_ref": {
                 "$ref": "#/$defs/HarnessRef",
                 "description": "Present on eligible harness choices. The durable form for use in checked jobs and alarms."
+              },
+              "contribution_identity": {
+                "$ref": "#/$defs/ContributionIdentity"
               }
             },
             "required": [
               "ref",
               "label"
-            ]
+            ],
+            "dependentRequired": {
+              "harness_ref": [
+                "contribution_identity"
+              ]
+            }
           }
         },
         "next": {
@@ -5505,6 +5526,12 @@
           "type": "string",
           "maxLength": 174764,
           "description": "Standard padded base64, at most 128 KiB decoded. Apply the enclosing frame bound too."
+        },
+        "attempt_discovery": {
+          "enum": [
+            "creator_only",
+            "consent_only"
+          ]
         }
       }
     },
@@ -5627,6 +5654,9 @@
         },
         "name": {
           "$ref": "#/$defs/ReadablePathSegment"
+        },
+        "attempt_discovery": {
+          "const": "consent_only"
         }
       },
       "anyOf": [
@@ -5648,6 +5678,11 @@
         {
           "required": [
             "name"
+          ]
+        },
+        {
+          "required": [
+            "attempt_discovery"
           ]
         }
       ],
@@ -6060,6 +6095,305 @@
           "description": "Optional host-checked placement label. Issue only when the actor's label is already readable by the entire pinned destination audience. Never a login name."
         }
       }
+    },
+    "ContributionIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "contribution"
+      ],
+      "properties": {
+        "package": {
+          "$ref": "#/$defs/KindId"
+        },
+        "contribution": {
+          "$ref": "#/$defs/ActionId"
+        }
+      },
+      "description": "Portable logical identity issued from the verified installed contribution, stable for the same declaring package and contribution ID across reinstall and new live bindings. Never a live operand, provider mark or proof of publisher continuity."
+    },
+    "CarrierEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "v",
+        "epoch",
+        "seq",
+        "package",
+        "digest",
+        "ticket",
+        "message"
+      ],
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "epoch": {
+          "$ref": "#/$defs/Ref"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "package": {
+          "$ref": "#/$defs/KindId"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "ticket": {
+          "$ref": "#/$defs/Ref"
+        },
+        "message": {}
+      },
+      "description": "Strict shared carrier envelope. Only the trusted endpoint stamps the checked identity and ticket."
+    },
+    "WorkerCallMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "callback_id",
+        "method",
+        "input"
+      ],
+      "properties": {
+        "type": {
+          "const": "call"
+        },
+        "callback_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "input": {}
+      }
+    },
+    "BrokerFailure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "code"
+      ],
+      "properties": {
+        "status": {
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 599
+        },
+        "code": {
+          "$ref": "#/$defs/ActionId"
+        }
+      }
+    },
+    "HostReplyMessage": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "callback_id",
+            "ok",
+            "data"
+          ],
+          "properties": {
+            "type": {
+              "const": "reply"
+            },
+            "callback_id": {
+              "$ref": "#/$defs/Ref"
+            },
+            "ok": {
+              "const": true
+            },
+            "data": {}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "callback_id",
+            "ok",
+            "error"
+          ],
+          "properties": {
+            "type": {
+              "const": "reply"
+            },
+            "callback_id": {
+              "$ref": "#/$defs/Ref"
+            },
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "#/$defs/BrokerFailure"
+            }
+          }
+        }
+      ]
+    },
+    "WorkerProgressMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "job",
+        "data"
+      ],
+      "properties": {
+        "type": {
+          "const": "chunk"
+        },
+        "job": {
+          "$ref": "#/$defs/Ref"
+        },
+        "data": {}
+      }
+    },
+    "WorkerCompleteMessage": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "state",
+            "data"
+          ],
+          "properties": {
+            "type": {
+              "const": "complete"
+            },
+            "state": {
+              "const": "ok"
+            },
+            "data": {}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "state",
+            "error"
+          ],
+          "properties": {
+            "type": {
+              "const": "complete"
+            },
+            "state": {
+              "const": "error"
+            },
+            "error": {
+              "$ref": "#/$defs/BrokerFailure"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "state",
+            "checkpoint",
+            "wait"
+          ],
+          "properties": {
+            "type": {
+              "const": "complete"
+            },
+            "state": {
+              "const": "parked"
+            },
+            "checkpoint": {},
+            "wait": {}
+          }
+        }
+      ]
+    },
+    "HostCancelMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "cancel"
+        }
+      }
+    },
+    "WorkerReadyMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "ready"
+        }
+      }
+    },
+    "WorkerToHostFrame": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/CarrierEnvelope"
+        },
+        {
+          "properties": {
+            "message": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/WorkerCallMessage"
+                },
+                {
+                  "$ref": "#/$defs/WorkerProgressMessage"
+                },
+                {
+                  "$ref": "#/$defs/WorkerCompleteMessage"
+                },
+                {
+                  "$ref": "#/$defs/WorkerReadyMessage"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "HostToWorkerReplyFrame": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/CarrierEnvelope"
+        },
+        {
+          "properties": {
+            "message": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/HostReplyMessage"
+                },
+                {
+                  "$ref": "#/$defs/HostCancelMessage"
+                }
+              ]
+            }
+          }
+        }
+      ]
     }
   },
   "activation_limits": {
@@ -6713,7 +7047,11 @@
         ],
         "in_flight": "Apply attempt_authority_end.actions.item_audience_widening on audience expansion. On loss of discovery source rights suppress affected pending output before delivery or commit. Resume the work only in a fresh attempt that excludes ineligible context."
       },
-      "kind_opt_out": "A kind declared attempt_discovery:deny is excluded from attempt searches, lists, direct reads and all derived matching, counts and excerpts by default. This excludes brokered discovery even if the actor can read the item. An owning app can prepare a separately authorized typed disclosure under attempt_disclosure."
+      "item_policy": {
+        "declaration": "A kind may declare attempt_discovery:item_policy. Carry a host-owned creator_only or consent_only fact on each item of that kind. Unknown state defaults to consent_only, including imports with no trusted authorship provenance. A package cannot use its participant metadata as authority.",
+        "write": "On a checked create, default to consent_only. The host may accept creator_only only for a checked creation by and for the authenticated person with no admitted other person or imported content of unknown authorship. The rule is the same in a shared space; read-only audience membership alone is not participation. The attestation is the checked sole-creator admission, not a parsed author list. Use consent_only for a people conversation. Protect a creator_only item durably in the same authority or content transaction before admitting another person as participant or writer, importing material of unproven authorship, or publishing a save declared consent_only. No save can restore creator_only. Until checked participant admission is pinned, adding another person as participant stays disabled. Apply the attempt authority fence on loss of eligibility.",
+        "read": "Before list, search, direct body, metadata or file reads, or derivative retrieval, exclude consent_only items from attempt discovery. Check the same rule before matching or deriving titles, excerpts, scores, counts, order, fetch refs or any output, including through another query or child attempt. A creator_only item remains discoverable by attempts acting for that same person under current sender-only or shared-audience checks and other ordinary grants. No other actor's attempt gains access through the creator_only state. A consent_only selection may go only through attempt_disclosure, never through discovery."
+      }
     },
     "provider_login": {
       "custody": "Mount only manifest-declared paths from the authorized binding for the space type. Reject escaping paths, symlinks and overlapping mount paths. Check the binding, its live approval, exact build and eligible placement at admission, reattachment and renewal. Fence access and affected work on binding revocation or replacement under attempt_authority_end.actions.grant_change. Keep login data out of unrelated accounts and spaces, output, backups and other mounts.",
@@ -6734,7 +7072,14 @@
       "$ref": "#/$defs/HostWorkerInvokeFrame"
     },
     "invoke_scope": "Dispatch to the exact admitted package, digest, epoch and ticket. Stamp protected job and alarm metadata as in HostWorkerInvokeFrame. Refuse worker-origin invoke or worker-supplied host metadata.",
-    "author_context": "The host stamps request_id, stable actor and authored_at once on admission and replays the same values, including jobs, alarms and contribution calls. Expose these plus checked job and alarm metadata only, without raw tickets or mutable machine data. Use the stable request ID as the namespace for caller-chosen subeffect keys; scope receipts to the originating authority, method and exact target and material. Equal subeffect keys replay and changed material conflicts. Authored time is not a live deadline. The optional actor_label is pinned to the already checked destination audience. If the audience is unresolved, omit it. An item writer must recheck that audience before using the label in a readable path."
+    "author_context": "The host stamps request_id, stable actor and authored_at once on admission and replays the same values, including jobs, alarms and contribution calls. Expose these plus checked job and alarm metadata only, without raw tickets or mutable machine data. Use the stable request ID as the namespace for caller-chosen subeffect keys; scope receipts to the originating authority, method and exact target and material. Equal subeffect keys replay and changed material conflicts. Authored time is not a live deadline. The optional actor_label is pinned to the already checked destination audience. If the audience is unresolved, omit it. An item writer must recheck that audience before using the label in a readable path.",
+    "worker_to_host_schema": {
+      "$ref": "#/$defs/WorkerToHostFrame"
+    },
+    "host_reply_schema": {
+      "$ref": "#/$defs/HostToWorkerReplyFrame"
+    },
+    "callback_scope": "Check direction, epoch, package digest and exact live invocation ticket before reading declared method input. A callback ID is local to the invocation and pairs with exactly one host reply; mismatched or late IDs produce no delivery or effect. Reply uses the checked method output or safe status and code. Complete is terminal; validate data or the declared park schema and saved checkpoint before the existing atomic park. Keep chunk progress ephemeral. Cancel fences first; ready uses the host-issued startup ticket and exact checked package and epoch, before any invocation. Neither side accepts author, job or alarm metadata from the worker. Carrier credit and fence control remain independent of callbacks."
   },
   "execution_placement": {
     "source": "Any app may declare a choice prompt with options.host:execution_placement for a single-item execution action, including its composer's Send action. Permit one placement slot per action. Resolve the live member, target item and action from the activation context. Validate the supplied HarnessRef against the installed contribution, requested item and activation's app and scope under the extension and placement rules. Read the eligible binding inventory on the host without waking a plugin. When that action also declares a harness extension choice, the submitted option must resolve to the same HarnessRef before dispatch.",
@@ -6753,10 +7098,11 @@
         "$ref": "#/$defs/ExecutionJobReceipt"
       }
     },
-    "admission": "Only a declared replayable job with execution:true and a checked live item whose installed kind declares execution_target. Keep one eligible head job or active attempt per item. The successor rule governs queued jobs. Pin the audience generation, actor, job, package, exact harness binding, selected placement and profile, and effect ceiling. Use the top-level ExecutionJobStart.harness or the already-pinned alarm binding. Apply execution_placement to the StartJob placement operand. Never select a harness or placement from opaque job input. Under the lifecycle fence refuse deleted, archived or retired targets. Reserve quotas once. Exact replay returns the current receipt without another admission. Refuse changed operands under the same receipt. Recheck the same bindings at promotion and claim, without substitution. No caller-supplied host job context.",
+    "admission": "Only a declared replayable job with execution:true and a checked live item whose installed kind declares execution_target. Keep one eligible head job or active attempt per item. The successor rule governs queued jobs. Pin the audience generation, actor, job, package, exact harness binding, selected placement and profile, and effect ceiling. Use the top-level ExecutionJobStart.harness or the already-pinned alarm binding. Apply execution_placement to the StartJob placement operand. Never select a harness or placement from opaque job input. Under the lifecycle fence refuse deleted, archived or retired targets. Reserve quotas once. Exact replay returns the current receipt without another admission. Refuse changed operands under the same receipt. Recheck the same bindings at promotion and claim, without substitution. No caller-supplied host job context. Apply target_operand.",
     "stop_and_archive": "Idle archive excludes unresolved execution jobs, live attempts and protected approvals. Protected archive pins the entire affected set, including head and successor. Stop pins its exact target and any affected descendants. Both apply attempt_authority_end.retirement_authority. Never retarget a replacement.",
     "cutover": "Fence new admission, drain unresolved execution jobs and verify zero live attempts before switching writers. Retain durable refusals and receipts across rollback.",
-    "successor": "The existing checked start_job may admit one durable FIFO successor per item while its head job or attempt is active. A queued successor has a receipt and no execution lease. Promote it only after the head is terminal and its attempt authority and teardown are settled. Recheck item, actor, grants, pinned harness, placement, profile and quota at promotion. Replay the receipt without adding a job. At capacity refuse with pending_limit. Stop pins the exact target. Archive, widening and revocation fence any affected queued jobs before publishing the authority change. One item never has two running attempts."
+    "successor": "The existing checked start_job may admit one durable FIFO successor per item while its head job or attempt is active. A queued successor has a receipt and no execution lease. Promote it only after the head is terminal and its attempt authority and teardown are settled. Recheck item, actor, grants, pinned harness, placement, profile and quota at promotion. Replay the receipt without adding a job. At capacity refuse with pending_limit. Stop pins the exact target. Archive, widening and revocation fence any affected queued jobs before publishing the authority change. One item never has two running attempts.",
+    "target_operand": "ExecutionJobStart and targeted AlarmSet name the checked item once, in top-level item. Resolve the installed run operation and its single-item target.field. Reject an input that supplies that field, even if equal; require live authority on the top-level item and exact declared kind. The host injects the checked item into that field before validating and dispatching the run input. HostWorkerInvokeFrame.message.job_context.item for execution jobs corroborates the same target and conveys no independent authority. Replay, promotion and claim reconstruct only from the pinned target. For an untargeted ordinary alarm, omit item and require a target-free run operation."
   },
   "attempt_authority_end": {
     "retirement_authority": "In addition to the action's own live authority, an actor-initiated action that retires jobs or attempts requires the actor to be the starter of every affected job and attempt, including any queued successor and affected descendants, or to hold current PluginsManage over every affected scope. Resolve and pin the entire set at admission, including for confirmation. Recompute it and recheck authority under the lifecycle fence in the commit that retires work. An unauthorized target refuses the whole action before effects. Require a fresh resolution and confirmation where applicable if the set changes. Mandatory safety fencing on authority loss or runtime failure uses its own fence rule and proceeds independently of starter consent.",
@@ -7013,14 +7359,19 @@
         },
         "scope": "Only the owning job with live exact attempt and checked call may read the bounded committed suffix after the last consumed sequence. Omit after for the first read. An empty batch means no committed suffix yet. Use a bounded wait on the same call or resume by checked job checkpoint. Never issue a second invocation to poll output."
       },
-      "output": "Validate output data against both declared output schemas. The host numbers accepted frames from seq 1, durably commits each before acknowledging it and fences further output on cancellation, revocation, replacement or wrong attempt. Replay by exact call and producer sequence or refuse changed input. Cap each encoded input and output frame at 16 KiB and total committed spool at 1 MiB per call including reserved space for the terminal. One exact terminal frame follows its last output. Exit without a verified terminal is failed. Rate-limit and refuse over-budget output, record a terminal failure, and reclaim after the existing receipt lifetime. Closing a consumer does not rerun the provider.",
-      "commit": "The contributor may write only its own eligible files and can return a portable locator for an independently authorized file. The calling owner reads committed frames and writes its own item using the exact live attempt fence and stable subeffect receipts keyed by call and sequence. An ok producer terminal seals output but the attempt remains fenced and eligible only for the owner's checked publication until the owning job completes; only then publish execution completion. Stop, revocation or failed recovery ends that authority immediately. Preserve already committed owner effects and the contributor's committed log. If a live owner retries after lost append ACK, replay that receipt without calling the entry again. Bind the owning job's writer ticket to this exact attempt. Replay can rebind only after validating the same admitted attempt and its publication fence."
+      "output": "Validate output data against both declared output schemas. The host numbers accepted frames from seq 1, durably commits each before acknowledging it and fences further output on cancellation, revocation, replacement or wrong attempt. Replay by exact call and producer sequence or refuse changed input. Apply calls.limits to each full ContributionCall, ContributionEntryInvoke and ContributionFrame: count UTF-8 encoded JSON including field names, escapes, sequence and terminal fields and one LF. Count the LF even inside a broker envelope; that envelope also has its own bound. The spool counts encoded committed frames including its reserved terminal. If input would exceed the bound, refuse contribution_frame_limit before launching the entry. One exact terminal frame follows its last output. Exit without a verified terminal is failed. Rate-limit and refuse over-budget output, record a terminal failure, and reclaim after the existing receipt lifetime. Closing a consumer does not rerun the provider.",
+      "commit": "The contributor may write only its own eligible files and can return a portable locator for an independently authorized file. The calling owner reads committed frames and writes its own item using the exact live attempt fence and stable subeffect receipts keyed by call and sequence. An ok producer terminal seals output but the attempt remains fenced and eligible only for the owner's checked publication until the owning job completes; only then publish execution completion. Stop, revocation or failed recovery ends that authority immediately. Preserve already committed owner effects and the contributor's committed log. If a live owner retries after lost append ACK, replay that receipt without calling the entry again. Bind the owning job's writer ticket to this exact attempt. Replay can rebind only after validating the same admitted attempt and its publication fence.",
+      "limits": {
+        "encoded_frame_bytes": 16384,
+        "encoded_spool_bytes": 1048576
+      }
     },
     "harness_abi": {
       "entry": "Run the verified digest-pinned executable entry at a fixed read-only mount with one UTF-8 newline-delimited JSON ContributionEntryInvoke on stdin. Deliver checked inputs only. Read one JSON ContributionFrame at a time on stdout; validate sequence, output schema, bounds and terminal. Broker-issued authority for declared own-file effects uses the attempt channel, never the stdout stream. Diagnostics are bounded, scrubbed and distinct from output. No session or login bytes on either frame. The entry receives a per-attempt broker endpoint for its declared methods, scoped to its own files and checked call. Never provide another package's item writer.",
-      "image": "Acquire only from the declared OCI source at the pinned digest or from a verified operator-provisioned local copy. Verify the image digest and reviewed build identity before placement, never fall back to a name or tag. Verify the packaged entry bytes against their asset pin at build, install and launch. Mount only the selected approved login paths and expose no shared file-tree mount. Stop or cancellation fences the channel first and tears down the entire existing supervised subtree. Expose the verified entry as executable inside the sandbox regardless of archive file mode.",
-      "egress": "Apply the contribution's explicit execution network declaration to the placement independently of the ordinary worker. Default none. Disclose publisher, image digest, entry, mount scope, placement and approved execution egress using the same approval path for all publishers."
-    }
+      "image": "Acquire only from the declared OCI source at the pinned digest or from a verified operator-provisioned local copy. Verify the image digest and reviewed build identity before placement, never fall back to a name or tag. Verify the packaged entry bytes against their asset pin at build, install and launch. Mount only the selected approved login paths and expose no shared file-tree mount. Stop or cancellation fences the channel first and tears down the entire existing supervised subtree. Expose the verified entry as executable inside the sandbox regardless of archive file mode. harness.image_source is an HTTPS OCI registry repository without a tag or digest; combine it with the separately pinned image digest. Disclose the normalized source at install, or that the image is operator-provisioned. Recheck and approve a changed source before use.",
+      "egress": "Apply the contribution's explicit execution network declaration to the placement independently of the ordinary worker. Default none. Disclose publisher, image digest, entry, mount scope, placement and approved execution egress using the same approval path for all publishers. Read harness.execution_network, independent of the worker's network declaration. Normalize and approve the requested destinations under the existing network rules. A contribution or worker grant cannot widen it. Enforce the separately approved execution policy at placement and on egress; recheck and fence a narrowed or revoked policy."
+    },
+    "identity": "The host stamps the logical ContributionIdentity from the installed manifest into the owning job's checked context and into its eligible extension options. The app may keep it as a participant identity. A package must not recycle a contribution ID for a different logical agent within that package. Do not resolve or launch from this stored identity alone. A fresh host choice and exact reviewed build, publisher, grant and live binding checks still apply; no auto-rebinding on an identity or display label match."
   },
   "alarms": {
     "set": {
@@ -7044,7 +7395,7 @@
       "pending_per_space": 128,
       "input_bytes": 16384
     },
-    "admission": "Only a declared replayable alarm job. Bind the pending alarm to a package generation, creator, checked target and due time. Protect replacement and cancellation by live authority and request receipt. Consume and admit exactly one durable job in the same recovery-visible transaction; delivery or restart replay can only replay that job. Resolve the installed job declaration. Require the top-level AlarmSet.harness operand for execution:true and refuse it otherwise. It is the sole harness operand. Never select a harness from the opaque job input. Resolve and pin that durable HarnessRef for the exact actor, space and target at alarm set. At due-job admission and claim, re-resolve the same binding and place it in the protected ExecutionJobContext. If it is ineligible, admit no execution and never substitute a harness. Execution alarms use the applicable default login binding and cannot opt in to a personal placement in a shared space. Replacement is a new checked admission; receipt replay preserves the exact binding.",
+    "admission": "Only a declared replayable alarm job. Bind the pending alarm to a package generation, creator, checked target and due time. Protect replacement and cancellation by live authority and request receipt. Consume and admit exactly one durable job in the same recovery-visible transaction; delivery or restart replay can only replay that job. Resolve the installed job declaration. Require the top-level AlarmSet.harness operand for execution:true and refuse it otherwise. It is the sole harness operand. Never select a harness from the opaque job input. Resolve and pin that durable HarnessRef for the exact actor, space and target at alarm set. At due-job admission and claim, re-resolve the same binding and place it in the protected ExecutionJobContext. If it is ineligible, admit no execution and never substitute a harness. Execution alarms use the applicable default login binding and cannot opt in to a personal placement in a shared space. Replacement is a new checked admission; receipt replay preserves the exact binding. Apply execution_intents.target_operand at set, admission and claim. An execution alarm requires item as well as harness.",
     "late": "An eligible missed alarm is still delivered once at durable job admission. The host stamps scheduled_at, actual_at and missed into that receipt and replays them unchanged. missed is true only when AlarmSet.grace_seconds is supplied and actual_at is strictly later than scheduled_at plus that grace. Omission reports false. This measures admitted delay, including a slow queue, rather than inferring an outage. The plugin decides whether to skip and computes its next time.",
     "disable": "Persist retirement of pending alarms and fence admitted work when the package is disabled, uninstalled or loses authority. A later enablement does not recreate retired alarms."
   },
@@ -7116,7 +7467,7 @@
     "retention_days": 30,
     "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action. Start retention at trash commit. No item kind or package overrides the retention period."
   },
-  "exchanges_revision": "14.31",
+  "exchanges_revision": "14.32",
   "view_result_retention": {
     "rule": "Host windows, plugin search pages and stored or live item-view pages use the same result_versions and retained_results exchange. On a successful renewal with an unchanged grant revision, re-confirm the exact result ref and version, current audience and checked scope, including the active settle generation for a plugin search, the slot for an item view, and live access to each exact item, asset and source revision represented in the result. Retain each still-authorized unchanged result by acknowledging the exact pair, without rerendering or invoking a plugin. Treat a changed or refused result as an invalidation of that result only. A changed audience requires a new view. Apply subscription_catch_up to each retained subscription and its result check.",
     "scope": "Retain only on the same authenticated view, account and cache partition. Rebind the acknowledged result's eligible continuation, follow and item-view asset refs to the renewed lease. Asset reads still apply view_snapshots.assets at admission and delivery. Supply current scoped contexts in retained_results for retained plugin-search pages. A missing context is unavailable. Replace old tokens as a set. Invalidate selections or activities whose originating result or context no longer holds. Acknowledge each exact result at most once under the existing aggregate cap. Reuse the recorded window scope_ref for an unchanged checked scope, and use the exact omitted result's scope for persisted row erasure.",
@@ -7266,7 +7617,7 @@
       "scope": "Check exact length and digest before sealing. The author passes staged to item_save; sealing publishes no item. Recheck expected head and authority at commit."
     },
     "placement": "The kind declares the root. Name and optional child folders are checked single human-readable components, at most 120 UTF-8 bytes each after normalization. Reject traversal, symlinks, empty or platform-reserved names and path separators. Normalize under the host file writer's collision rules. Reserve each final path atomically with item creation, suffixing collisions deterministically as 2, 3 and so on. Probe at most 32 candidates, then refuse with path_conflict before publishing. Exact replay retains its reserved path. A folder is not an item ref or an authorization boundary. Use author-provided title/date and only an audience-checked actor_label from AuthorInvocationContext; neither account display name nor raw account ref is a default. The earliest slice can use title and date alone. A leaf rename keeps the folder. Moving folders on title edit is OPEN.",
-    "locators": "ItemLocator is a stable space and item identity suitable for files, links and export. Resolve only through item.locate against current membership and item authority. Export keeps it as provenance; imports elsewhere use an explicit identity map if available. Never use it as a checked operand. Live ItemRef, HarnessRef, ChoiceRef, leases, receipts and provider session refs are not portable; regenerate or resolve them. App-owned stable message and participant IDs may be stored but confer no host authority."
+    "locators": "ItemLocator is a stable space and item identity suitable for files, links and export. Resolve only through item.locate against current membership and item authority. Export keeps it as provenance; imports elsewhere use an explicit identity map if available. Never use it as a checked operand. Live ItemRef, HarnessRef, ChoiceRef, leases, receipts and provider session refs are not portable; regenerate or resolve them. App-owned stable message and participant IDs and a checked ContributionIdentity may be stored but confer no host authority."
   },
   "created_outcome": "A manifest operation with creates declares a closed output object with exactly one required field, created typed ItemRef. This declaration governs activation navigation. Internal own-item writes, including log files, use the declared item_create method without creates. Output maps to ActionOutcome.created only if the broker recorded that exact new item of the declared kind for this authenticated invocation, or an exact replay of it. Check live delivery authority before exposing the ref. Do not accept a foreign, old or unrecorded ref or a create claim from an undeclared operation. Dispatch then.route uses only the host-confirmed outcome.",
   "attempt_disclosure": {

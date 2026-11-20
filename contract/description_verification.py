@@ -575,9 +575,9 @@ def check_manifest_install(manifest, kind_schema_links, errors):
         if job.get("execution") is not True:
             continue
         run = operations.get(job["run_operation"], {})
-        target_kind = run.get("target", {}).get("kind")
-        if not manifest["kinds"].get(target_kind, {}).get("execution_target"):
-            errors.append(f"$.jobs.{job_id}.execution: run operation must target an execution_target kind")
+        target = run.get("target", {})
+        if not target.get("field") or not manifest["kinds"].get(target.get("kind"), {}).get("execution_target"):
+            errors.append(f"$.jobs.{job_id}.execution: run operation needs a single item target on an execution_target kind")
     for operation_id, operation in errors.each(operations.items()):
         if "creates" not in operation:
             continue

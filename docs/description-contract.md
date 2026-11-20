@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.31 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.32 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -606,7 +606,9 @@ Start from an authenticated shell in the selected space, with an enabled
 app and a checked deep link to the empty, committed Threads-owned item
 `file-1`. This is the first Send for that item. The renderer holds no
 cached template, lease, option, context or result. The installed Threads app declares
-the `harnesses` extension point and a replayable `run` execution job. The checked placement supplies the destination for `threads.send`
+the `harnesses` extension point and a replayable `run` execution job
+whose operation declares `target: {kind: "threads", field: "item"}`.
+The checked placement supplies the destination for `threads.send`
 under the catalogue’s
 [plugin-operation confirmation rule](../contract/host-catalogue-v2.json#/confirmation/material_by_kind/plugin_operation).
 The same installed description serves both spaces.
@@ -628,7 +630,7 @@ challenge and confirms before dispatching.
 ```jsonl
 {"route":"app.open","request":{"type":"app","id":"threads"},"reply":{"view_ref":"threads-view","description":{"version":2,"kind":"app","revision":1,"view":{"root":{"type":"stack","children":[{"type":"component","component":{"type":"item-view","id":"transcript","config":{"item":{"route":"item"},"slot":"body"}}},{"type":"form","id":"composer","fields":[{"id":"message","label":"Message","input":"multiline","required":true}],"submit":{"id":"send","title":"Send","operation":"threads.send","inputs":{"item":{"route":"item"},"text":{"form":"composer","field":"message"},"harness":{"prompt":{"title":"Harness","kind":"choice","options":{"extension":"harnesses"}}},"placement":{"prompt":{"title":"Run on","kind":"choice","options":{"host":"execution_placement"}}}}}}]}}}}}
 {"route":"view.open","request":{"type":"view_open","view_ref":"threads-view","route":{"item":"file-1"}},"reply":{"lease":{"lease_ref":"lease-1","grant_revision":"grant-1","lease_seconds":15,"cache_partition":"partition-1"},"audience":"own_space_member","activation_contexts":{"send":"send-ctx"}}}
-{"route":"extension.choices","request":{"type":"extension_choices","app":"threads","point":"harnesses","activation_context":"send-ctx","slot":"harness"},"reply":{"options":[{"ref":"h-opt","label":"Example harness","harness_ref":"harness-1"}]}}
+{"route":"extension.choices","request":{"type":"extension_choices","app":"threads","point":"harnesses","activation_context":"send-ctx","slot":"harness"},"reply":{"options":[{"ref":"h-opt","label":"Example harness","harness_ref":"harness-1","contribution_identity":{"package":"example-harness","contribution":"agent"}}]}}
 {"route":"choice.options","request":{"type":"choice_options","activation_context":"send-ctx","slot":"placement","harness":"harness-1","activation_id":"send-1"},"reply":{"host":"execution_placement","options":[{"ref":"desk","label":"Desk machine · My login"},{"ref":"laptop","label":"Laptop · My login"}],"default_ref":"desk"}}
 {"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"desk"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Thread","value":"New thread"},{"name":"input:placement","label":"Machine and login","value":"Desk machine · My login"}]}}
 {"route":"activation.confirm","request":{"type":"invoke_confirm","activation_id":"send-1","resolution_ref":"send-res","confirmation_challenge":"send-challenge"},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirmation_proof":"send-proof"}}
@@ -664,6 +666,19 @@ personal arm. The shared arm replaces `desk` with `my-laptop`, or
 ```json
 {"job":"run","item":"file-1","input":{"text":"Say hello"},"harness":"harness-1","placement":"desk"}
 ```
+
+The alarm arm uses the same top-level item and omits the placement.
+Its author input also omits the operation's target field.
+
+```json
+{"request_id":"alarm-set-1","job":"run","item":"file-1","input":{"text":"Say hello"},"harness":"harness-1","at":"2026-11-21T00:00:00Z","grace_seconds":30}
+```
+
+On either admission path, the host supplies `input.item: "file-1"` to
+the run operation and the same item in its protected job context. The
+author never supplies `input.item` on either broker request. The job
+may store its host-stamped logical contribution identity as a participant.
+The checked harness ref still comes from the current host binding.
 
 ```json
 {"job_id":"admitted-job-1"}

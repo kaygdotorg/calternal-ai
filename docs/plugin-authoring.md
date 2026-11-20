@@ -151,12 +151,12 @@ on the same archive offline.
 ### Revision 14 draft packages
 
 Use one reviewed contract checkout for generation and package validation.
-For a revision 14.31 checkout, point the SDK at its absolute contract
+For a revision 14.32 checkout, point the SDK at its absolute contract
 directory and set the expected revision.
 
 ```sh
 export CALTERNAL_PLUGIN_CONTRACT="$PWD/contract"
-export CALTERNAL_PLUGIN_CONTRACT_REVISION=14.31
+export CALTERNAL_PLUGIN_CONTRACT_REVISION=14.32
 npm run build -w @calternal/plugin-sdk
 node packages/plugin-sdk/scripts/build-author-package.mjs ./plugin.ts ./dist ./worker.mjs
 python3 -B "$CALTERNAL_PLUGIN_CONTRACT/verify-description.py" --package ./dist
@@ -165,10 +165,11 @@ python3 -B "$CALTERNAL_PLUGIN_CONTRACT/verify-description.py" --package ./dist
 The [Threads walk](description-contract.md#93-threads) uses two packages.
 The app declares the extension point and owns the item. The contributor
 names the app as `{package: "calternal-threads", app: "threads"}`. Its
-manifest pins an image digest and entry bytes. The builder takes entry
-paths relative to the author module and packages verified bytes under a
-content-addressed name. Set execution egress in the harness declaration.
-The worker's network approval is separate.
+manifest pins an image digest and entry bytes and can declare
+`image_source: "registry.example.org/community/harness"`. The builder
+takes entry paths relative to the author module and packages verified
+bytes under a content-addressed name. Declare `execution_network` for
+harness egress. The worker's network approval is separate.
 
 Use `authorContext` from `@calternal/plugin-sdk/author-context` in the
 pinned carrier adapter. Supply the validated invoke and a broker call
@@ -177,7 +178,12 @@ operation. Use its host-authored clock, actor and request identity for
 deterministic writes and receipts. The app creates an item with
 `item_create`, and an operation declaring `creates` returns
 `{created: result.item}`. Send starts a job. The job reserves an attempt
-and calls the checked contribution. A fake host can return a typed output
+and calls the checked contribution. Use top-level `item` for the
+checked target on `start_job` and `alarm_set`. The host injects the
+declared run-operation field. Use `encodeContributionFrame` from
+`@calternal/plugin-sdk/contribution-frame` on the whole frame before
+sending it. It serializes UTF-8 JSON with LF and throws
+`contribution_frame_limit` when over the catalogue bound. A fake host can return a typed output
 frame and then a terminal frame. The real placement supplies the same
 frames through the [entry ABI](../contract/host-catalogue-v2.json#/extension_points/harness_abi).
 Only the owner commits its own item. Reuse a subeffect key for each

@@ -42,6 +42,30 @@ function bundle(documents) {
       return reference(target, "#" + fragment);
     }
 
+    // The compiler builds union arms independently. In a presence union,
+    // carry the declared object's properties and base requirements into each arm.
+    const presenceUnion = ["anyOf", "oneOf"].find(key =>
+      schema.type === "object" && schema.properties && schema[key]?.length &&
+      schema[key].every(arm => arm && typeof arm === "object" &&
+        Array.isArray(arm.required) && Object.keys(arm).every(field => ["required", "properties", "not"].includes(field)) &&
+        Object.keys(arm.properties ?? {}).every(field => Object.hasOwn(schema.properties, field))),
+    );
+    if (presenceUnion) {
+      const { [presenceUnion]: arms, ...base } = schema;
+      return {
+        [presenceUnion]: arms.map(arm => structural({
+          ...base,
+          required: [...new Set([...(base.required ?? []), ...arm.required])],
+          properties: {
+            ...base.properties,
+            ...Object.fromEntries(Object.entries(arm.properties ?? {}).map(([field, constraint]) =>
+              [field, { allOf: [base.properties[field], constraint] }],
+            )),
+          },
+        }, document)),
+      };
+    }
+
     const output = { ...schema };
     // Conditional and value constraints are checked by the build validators.
     for (const key of ["$id", "$schema", "$defs", "definitions", "if", "then", "else", "not", "dependentRequired"]) {
@@ -119,8 +143,13 @@ export async function generateAuthorTypes(directory) {
       }]));
     properties.broker = { type: "object", properties: methodSchemas, required: Object.keys(methodSchemas) };
     properties.author = reference(catalogue, "#/$defs/AuthorInvocationContext");
+    if (host.extension_points.calls.limits) {
+      properties.entry = reference(catalogue, "#/$defs/ContributionEntryInvoke");
+    }
     properties.job = reference(catalogue, "#/$defs/ExecutionJobContext");
     properties.alarm = reference(catalogue, "#/$defs/AlarmDelivery");
+    properties.itemViewRead = reference(catalogue, "#/$defs/ItemViewRead");
+    properties.itemViewPage = reference(catalogue, "#/$defs/ItemViewPage");
     context = `
 /** Stable handler data from an authenticated invocation and its typed host broker. */
 export interface RevisionedAuthorContext {
@@ -138,7 +167,7 @@ export interface RevisionedAuthorContext {
   if (windowSize !== documents.get(catalogue).query.window.default_rows) {
     throw new Error("The description and host catalogue must agree on the default Bind window.");
   }
-  return { text, windowSize };
+  return { text, windowSize, contributionFrameBytes: host.extension_points?.calls?.limits?.encoded_frame_bytes };
 }
 
 /**
