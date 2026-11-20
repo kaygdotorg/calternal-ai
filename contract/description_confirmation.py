@@ -6,15 +6,20 @@ from description_verification import check, json_equal
 def check_confirmation_material(resolution, kind, facts, errors, catalogue, *, inputs=(), material=None):
     """Require named checked material for the host-derived kind and facts."""
     policy = catalogue["confirmation"]
-    rule = policy["material_by_kind"].get(kind)
-    if rule is None:
+    widening = catalogue["attempt_authority_end"]["actions"]["conversation_audience_widening"]
+    disclosure = widening["confirmation"]
+    widens = disclosure["fact"] in facts and kind in widening["instances"]["catalogue_operations"]
+    rule = policy["material_by_kind"].get(kind, {})
+    if not rule and not widens:
         errors.append(f"$.material: {kind!r} has no confirmation challenge")
         return
     if resolution.get("confirm") != "challenge":
         errors.append("$.confirm: expected a protected challenge")
         return
-    required = set(rule["required"])
+    required = set(rule.get("required", ()))
     for fact in errors.each(facts):
+        if widens and fact == disclosure["fact"]:
+            continue
         entries = rule.get("when", {}).get(fact)
         if entries is None:
             errors.append(f"$.material: unknown checked confirmation fact {fact!r}")
@@ -26,6 +31,13 @@ def check_confirmation_material(resolution, kind, facts, errors, catalogue, *, i
     required.update(input_keys)
     checked = {prefix + key: value for key, (_, value) in (material or {}).items()}
     labels = {prefix + key: label for key, (label, _) in (material or {}).items()}
+    warning = disclosure["material"]
+    if widens:
+        required.add(warning["name"])
+        checked[warning["name"]] = warning["value"]
+        labels[warning["name"]] = warning["label"]
+    elif any(entry["name"] == warning["name"] for entry in errors.each(resolution["material"])):
+        errors.append("$.material: transcript disclosure requires checked audience widening")
     check_named_material(resolution["material"], required, errors, prefix, input_keys=input_keys,
                          require_labels=kind == "host.execution.resume", checked=checked,
                          checked_labels=labels)
@@ -55,7 +67,7 @@ def check_named_material(material, required, errors, prefix, *, input_keys=(), r
         if checked is not None and name in checked and not json_equal(value, checked[name], errors):
             errors.append(f"$.material: confirmation value for {name!r} differs from checked effect or input")
         if checked_labels is not None and name in checked_labels and entry["label"] != checked_labels[name]:
-            source = "checked effect or input" if exact else "the manifest"
+            source = "the manifest" if name.startswith(prefix) else "checked effect or input"
             errors.append(f"$.material: label for {name!r} differs from {source}")
     for name in errors.each(sorted(required - seen)):
         errors.append(f"$.material: missing confirmation entry {name!r}")

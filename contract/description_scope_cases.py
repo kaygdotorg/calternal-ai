@@ -10,6 +10,34 @@ from description_verification import CATALOGUE, parse_manifest, validate_reply
 class ScopeCases:
     """Run scope fixtures through the normal package and reply verifier paths."""
 
+    def test_window_result_states_at_each_anchor(self):
+        for anchor in (None, "start", "end"):
+            for state in ("ready", "empty", "loading", "throttled", "error", "refine_query"):
+                with self.subTest(anchor=anchor, state=state):
+                    reply = {"bind": "notes", "state": state, "audience": "member",
+                             "window_ref": None, "result_version": None, "rows": []}
+                    if anchor is not None:
+                        reply["anchor"] = anchor
+                    if anchor != "end" or state in ("ready", "empty"):
+                        reply["offset"] = 0
+                    if state in ("ready", "empty"):
+                        reply.update(window_ref="window", result_version="revision")
+                        if state == "ready":
+                            reply["rows"] = [{"id": "row", "fields": {"title": "Note"}}]
+                        if anchor == "end":
+                            reply["count"] = {"mode": "exact", "value": len(reply["rows"])}
+                    errors = Validation()
+                    validate_reply(reply, None, errors)
+                    self.assertEqual(bool(errors), anchor == "end" and state == "refine_query", list(errors))
+
+                    if anchor == "end" and state in ("loading", "throttled", "error"):
+                        for name, value in (("offset", 0), ("count", {"mode": "exact", "value": 0})):
+                            with self.subTest(unavailable_field=name):
+                                errors = Validation()
+                                validate_reply({**reply, name: value}, None, errors)
+                                self.assertTrue(any(f"$.{name}: not allowed here" in error for error in errors),
+                                                list(errors))
+
     def test_every_composer_renewal_uses_the_latest_authority(self):
         self.stage("threads-app")
         fixture = self.fixtures / "events/threads-app/event-catalogue-composer-chain-changed-grant-and-lease.json"

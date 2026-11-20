@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.14 draft
+# Plugin API v2 · revision 14.15 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic conversation and execution engines. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -642,11 +642,11 @@ can read it, every row, field and content input to discovery must be
 readable by both the sender and the whole transcript audience. Apply
 that intersection before matching, ranking, counting or returning
 material to the attempt, including snippets. The bound applies in both
-permission modes. Recheck at discovery delivery and fence pending
-derived output if the transcript audience widens or its source grants
-cease to cover that audience during the attempt. Suppress the affected
-output before any delivery or commit. Resume that work only in a fresh
-attempt whose context excludes the ineligible material.
+permission modes. Recheck at discovery delivery. If a source grant
+ceases to cover the audience, suppress affected pending output before
+delivery or commit. Resume the work only in a fresh attempt that
+excludes the ineligible context. For a change that adds readers, apply
+the [conversation audience widening action](../contract/host-catalogue-v2.json#/attempt_authority_end/actions/conversation_audience_widening).
 See the [catalogue’s transcript audience rule](../contract/host-catalogue-v2.json#/execution_attempt_authority/discovery).
 
 Token events are transient. Apply the sealed proposal’s spool and
@@ -840,8 +840,10 @@ authorized row, with zero at the last row. Use this form for End and
 near-end jumps only on non-search Binds with effective `exact` count
 authority. A ready or empty End result carries `count.mode: exact`.
 The offset identifies the returned row nearest the end when there are
-rows. During catch-up, the active request receives `loading` with
-`anchor:"end"`, without `offset` or `count`. Follow the [catalogue’s result ordering and correlation rules](../contract/host-catalogue-v2.json#/$defs/WindowResult).
+rows. On an eligible End request, `loading`, `throttled` and `error`
+retain `anchor:"end"` and the active request scope without `offset` or
+`count`. `refine_query` belongs to start-anchored search. Follow the
+[catalogue’s result ordering and correlation rules](../contract/host-catalogue-v2.json#/$defs/WindowResult).
 Refuse an end anchor with `WindowPlanError.reason: end_unavailable` for
 search Binds or when effective count mode is `estimate` or `none`.
 Search End pages forward. The catalogue’s `query.window` sets the
@@ -1157,9 +1159,9 @@ only against the issued context, never its current selection.
    For `host.item.create`, a checked route or literal collection may be
    part of the same shortcut. Creating an empty item exposes no existing
    material, so no challenge applies even in a shared collection.
-   For `host.collection.move`, the destination’s effective audience is
-   the only challenge predicate. The chosen destination comes from a checked
-   ChoiceRef. For other shortcut mutations the only material may be the
+   For `host.collection.move`, use the catalogue’s rule for the effective
+   audience of the checked ChoiceRef destination. Apply the §5 challenge
+   to any audience-widening effect, including an inverse. For other shortcut mutations the only material may be the
    drawn target or submitting form fields. Irreversible,
    external or access-widening effects, bulk sets, declared material
    inputs and any destination, recipient, audience or permission require
@@ -1240,11 +1242,10 @@ conditions and effective `confirm:none`. Bulk and protected actions stay
 on their designated surfaces. Move to collection resolves the chosen
 CollectionRef from the option Bind, authorizes every affected item and both
 collections, and rechecks the destination’s effective audience under the
-commit fence. Require a challenge only if that audience contains anyone
-other than the actor. A newly shared destination needs a fresh challenge.
-For an actor-only audience, one exchange after choice submits the move
-when the engine commits it and Undo together. Otherwise resolve and
-dispatch separately without a challenge for that destination. Leave
+commit fence. Apply the catalogue's confirmation rule and §5 when new
+transcript readers gain access. A newly shared destination needs a fresh
+challenge. When eligible for the shortcut, one exchange after choice
+submits the move and commits it with Undo. Leave
 unrelated memberships intact. Personal layout uses `host.layout.move_to`,
 `host.layout.move_up`, `host.layout.move_down` and
 `host.layout.section.create`, `host.layout.section.rename`,
@@ -1265,15 +1266,15 @@ revisions of all affected resources and refuses if any dependency moved.
 | Catalogue operation | Commit boundary and eligibility |
 | --- | --- |
 | `host.item.create` | Under one FULL content transaction’s fence, check live creation authority, optional collection-membership edit authority and the normal item and membership quotas. Then commit the empty item with its permitted defaults and the host’s empty-source extraction, requested membership and Undo together. An omitted route parameter skips placement. A supplied ref that is absent, foreign, unreadable or not editable returns the same opaque `collection_unavailable` outcome. Quota refusal returns `create_limit_reached` with no item, membership or Undo committed. Undo rechecks live authority and the item head, its membership and sharing revisions and the introduced membership revision, if any. Refuse on any change. On success remove the item and its introduced membership together. Return the created ref with no runtime wake or challenge, even in a shared collection. Any declared follow-up receives only the created ref under §1 after commit. |
-| `host.item.trash`, `host.item.restore` | The FULL content transaction records the item revision, recoverable placement and Undo. Full swipe covers single-item Trash and restore from Trash. Trash paths with separate lifecycle cleanup are ineligible. |
+| `host.item.trash`, `host.item.restore` | The FULL content transaction records the item revision, recoverable placement and Undo. Full swipe covers eligible single-item Trash and restore from Trash. Apply §5 to restores that add transcript readers. Trash paths with separate lifecycle cleanup are ineligible. |
 | `host.item.rename` | The FULL content transaction records the new head, placement and Undo for a single-item rename without deferred link rewrites. The current Notes job commits inbound-link changes in later transactions, so that path remains ineligible. |
-| `host.collection.move` | Challenge only if the destination’s effective audience contains anyone other than the actor. Otherwise the FULL content transaction can commit the complete move and Undo in one exchange. A two-collection move is ineligible for the shortcut until both membership changes commit together. |
+| `host.collection.move` | Use the catalogue's confirmation rule for the checked destination. Apply §5 whenever the move adds transcript readers. On an eligible shortcut, the FULL content transaction commits the complete move and Undo in one exchange. A two-collection move is ineligible for the shortcut until both membership changes commit together. |
 | `host.layout.move_to`, `host.layout.move_up`, `host.layout.move_down` | The per-person layout revision transaction records the complete placement or ordering edit and Undo for the actor, space and app. Move to still previews its destination. |
 | `host.layout.section.create` | The per-person layout revision transaction creates the section and commits Undo that removes it. |
 | `host.layout.section.rename` | The same layout transaction commits the title change and its prior title for Undo. |
 | `host.layout.section.remove` | One per-person layout revision transaction retires the section and its placement generation and records Undo naming that generation. Retired generations are excluded from reads. Undo rechecks live membership and the post-effect layout revision and reactivates the exact generation in one transaction before its expiry. Reactivation grants no item access. Reclaim expired retired generations in bounded background batches. Removal and Undo perform no per-placement work. |
 | `host.item.archive` | Idle archive uses the shared execution-intent predicate in §3. Saved authority requires a challenge unless it consists only of thread grants that the Step 2 writer retires in the same FULL thread content transaction as archive and that Undo restores together with the thread head. Retiring grants with head-only Undo requires a challenge. Check shared intent admission and archive eligibility under the same commit fence. The FULL thread content transaction records archive and its unarchive Undo together. The current writer commits the head without Undo and enters a separate protected authority transaction, so the shortcut stays ineligible until the Step 2 writer passes. After it passes, eligible idle archive takes one full-swipe exchange without a sheet. For an active attempt the host says “The running execution will be stopped.” The confirmed path applies the pinned-attempt fence or durable intent refusal in the archive transaction under the authority-ending table in §3. |
-| `host.item.unarchive` | The FULL thread content transaction records the new head and Undo. A full swipe may unarchive an eligible thread. |
+| `host.item.unarchive` | The FULL thread content transaction records the new head and Undo. A full swipe may unarchive an eligible thread. Apply §5 whenever unarchive or an Undo adds transcript readers. |
 | `host.item.snooze` | Ineligible. Today’s writer stores one shared manual deadline. The actor-scoped operation stays unavailable until the Step 2 actor-keyed writer commits the actor’s deadline, replay intent and Undo together. Apply §3’s shared snooze rule. |
 | `host.item.patch-metadata` | The room-checked FULL content transaction records the changed head and Undo for a single boolean toggle. Full swipe covers this case. |
 
@@ -1281,6 +1282,19 @@ On success, Invoke `then:{route}` may navigate using a
 host-minted created ref, reauthorized at open.
 
 ## 5. Sharing and aggregation
+
+**Widening a conversation's audience.** Apply the
+[one host action in the attempt authority table](../contract/host-catalogue-v2.json#/attempt_authority_end/actions/conversation_audience_widening)
+whenever a grant adds a transcript reader. Direct shares and links,
+space and group membership and role changes, invitation admission,
+collection moves and membership changes, and lifecycle operations
+including Undo all use this action when they expand corpus access.
+The host shows the sharer the disclosure of the whole committed
+transcript, including personal discoveries, and requires confirmation.
+Before publishing the grant, durably fence attempts with personal-only
+authority and drop their uncommitted output. Teardown follows commit.
+Later runs use the shared discovery and tools rules. The catalogue
+specifies the checked disclosure and the commit boundary.
 
 Members trust the Owner's installed plugins with data available to authorized
 calls in that space. A warm worker can remember an Owner value and return
@@ -1654,9 +1668,21 @@ Pass these end-to-end flows on the selected wall before app migration.
   Measure how often otherwise-idle threads carry saved thread grants.
   The Step 2 lane uses that result to choose one of two paths. Either
   retire the grants in the same FULL transaction as archive and have
-  Undo restore them with the thread head in one FULL transaction, or
+  Undo restore them with the thread head in one FULL transaction after
+  any widening confirmation required by §5, or
   retain the challenge for those threads and record the measured
   frequency as a parity exception for the Owner.
+- **Conversation audience widening.** Exercise each catalogue path that
+  grants a new transcript reader. Verify the host preview and race a
+  change to the target audience before confirmation. Run separate
+  full-rights discovery and personal-login tool attempts. Hold back
+  remote Stop, commit widening and crash before dispatch or reply.
+  The new reader sees the whole committed text, including the personal
+  discovery, and receives zero staged or queued output from the retired
+  attempt. After restart, reject stale renewal, egress, tool dispatch
+  and descendant effects. Replay one exact Stop, then start a later
+  run using only shared authority. Include title-only grants and an
+  unchanged corpus audience as controls.
 - **Actor-keyed snooze writer.** In one FULL thread content transaction,
   commit the actor-keyed deadline, replay intent and Undo. Crash on both
   sides, verify all three commit together, and check the published index
@@ -1822,7 +1848,7 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   Scratch activation and Photos-scale I/O and metadata stay outside
   this revision.
 
-### Revision 14.14 draft questions and implementation seams
+### Revision 14.15 draft questions and implementation seams
 
 - The canonical writer and who owns a cross-runner list remain owner
   questions in [the sealed proposal’s §C][generic-engines]. The interim

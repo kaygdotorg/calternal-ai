@@ -381,8 +381,9 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": true,
-      "atomic_undo_when": "Single-item Trash restore or history restore in the FULL content transaction with its Undo.",
-      "full_swipe_when": "First swipe action restoring one item from Trash, effective confirm:none and this operation’s atomic_undo_when condition."
+      "atomic_undo_when": "Single-item Trash restore or history restore in the FULL content transaction with its Undo. The shortcut requires no widening under attempt_authority_end.actions.conversation_audience_widening.",
+      "full_swipe_when": "First swipe action restoring one item from Trash, effective confirm:none and this operation’s atomic_undo_when condition.",
+      "audience_widening": "Apply attempt_authority_end.actions.conversation_audience_widening whenever corpus access expands."
     },
     "host.undo": {
       "engine": "item_rename_undo / protected eligible inverse",
@@ -413,7 +414,8 @@
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
       },
-      "atomic_undo": false
+      "atomic_undo": false,
+      "audience_widening": "Apply attempt_authority_end.actions.conversation_audience_widening whenever corpus access expands."
     },
     "host.trash.purge": {
       "engine": "item_purge / empty_trash",
@@ -680,7 +682,8 @@
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
       },
-      "atomic_undo": false
+      "atomic_undo": false,
+      "audience_widening": "Apply attempt_authority_end.actions.conversation_audience_widening whenever corpus access expands."
     },
     "host.item.patch-metadata": {
       "engine": "item_save metadata arm",
@@ -824,9 +827,10 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": true,
-      "atomic_undo_when": "Single-item unarchive in the FULL content transaction with its Undo. Undo refuses if the item revision or lifecycle dependencies changed.",
+      "atomic_undo_when": "Single-item unarchive in the FULL content transaction with its Undo. Undo refuses if the item revision or lifecycle dependencies changed. The shortcut requires no widening under attempt_authority_end.actions.conversation_audience_widening.",
       "full_swipe_when": "First swipe action, effective confirm:none and this operation’s atomic_undo_when condition.",
-      "kind_capability": "conversation"
+      "kind_capability": "conversation",
+      "audience_widening": "Apply attempt_authority_end.actions.conversation_audience_widening whenever corpus access expands."
     },
     "host.item.snooze": {
       "engine": "item lifecycle snooze",
@@ -938,8 +942,9 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": true,
-      "atomic_undo_when": "The destination’s effective audience contains only the actor and the FULL content transaction commits the complete move and its Undo. A move across two collections is ineligible until both membership changes commit together.",
-      "confirmation_when": "Require a challenge only if the destination collection’s effective audience contains anyone other than the actor. Recheck under the commit fence. If the destination becomes shared, require a fresh challenge before dispatch."
+      "atomic_undo_when": "The destination’s effective audience contains only the actor and the FULL content transaction commits the complete move and its Undo. A move across two collections is ineligible until both membership changes commit together. The shortcut requires no widening under attempt_authority_end.actions.conversation_audience_widening.",
+      "confirmation_when": "Require a challenge if the destination collection’s effective audience contains anyone other than the actor. Recheck under the commit fence. If the destination becomes shared, require a fresh challenge before dispatch. Apply attempt_authority_end.actions.conversation_audience_widening when the move adds transcript readers.",
+      "audience_widening": "Apply attempt_authority_end.actions.conversation_audience_widening whenever corpus access expands."
     },
     "host.layout.move_to": {
       "engine": "personal layout placement with complete effect and Undo committed together",
@@ -2036,7 +2041,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991,
-          "description": "Actual offset of the delivered range from the reply anchor. Start is measured at its first returned row; end is the distance of the nearest returned row to the end. The rows are always in normal Bind order. Omit offset for an End loading reply. Otherwise, if no rows are returned, use the requested from. The host checks this equality against the originating request before issuing the reply."
+          "description": "Actual offset of the delivered range from the reply anchor. Start is measured at its first returned row; end is the distance of the nearest returned row to the end. The rows are always in normal Bind order. Omit offset for an End reply in loading, throttled or error state. Otherwise, if no rows are returned, use the requested from. The host checks this equality against the originating request before issuing the reply."
         },
         "rows": {
           "type": "array",
@@ -2273,7 +2278,11 @@
             "if": {
               "properties": {
                 "state": {
-                  "const": "loading"
+                  "enum": [
+                    "loading",
+                    "throttled",
+                    "error"
+                  ]
                 }
               }
             },
@@ -2332,7 +2341,7 @@
           }
         }
       ],
-      "description": "An authenticated reply for the active view and its audience. At from zero, the host sends empty for a wholly empty result. A ready reply at offset zero contains rows. Check the session, lease partition and audience before consuming rows or a cache record. Any cache record must match this view and window. Only a non-search Bind in a view with exact count authority receives an end anchor. A ready or empty End result carries count.mode exact and offset. During catch-up return loading on the exact active End request with anchor:end and the same Bind and parent scope. Omit both offset and count. Check count policy for the active Bind and scope on each delivery. An absolute offset above max_offset is only returned to a contiguous forward continuation without exact count authority, with anchor:start and no count or persistent cache record. Bind states have no route-dependent action context."
+      "description": "An authenticated reply for the active view and its audience. At from zero, the host sends empty for a wholly empty result. A ready reply at offset zero contains rows. Check the session, lease partition and audience before consuming rows or a cache record. Any cache record must match this view and window. Only a non-search Bind in a view with exact count authority receives an end anchor. A ready or empty End result carries count.mode exact and offset. For loading, throttled or error, reply to the exact active End request with anchor:end and the same Bind and parent scope. Omit both offset and count. refine_query is a search-only state with a start anchor. Check count policy for the active Bind and scope on each delivery. An absolute offset above max_offset is only returned to a contiguous forward continuation without exact count authority, with anchor:start and no count or persistent cache record. Bind states have no route-dependent action context."
     },
     "ProviderId": {
       "type": "string",
@@ -5355,7 +5364,7 @@
       "$ref": "#/$defs/ConfirmMode"
     },
     "none": "A host catalogue read, or a host catalogue mutation marked atomic_undo whose engine commits the complete effect and Undo in one recovery-visible transaction and satisfies any atomic_undo_when condition. For mutations the only material may be the drawn target or fields of the submitting form. host.item.create may also use its checked route or literal CollectionRef. For host.collection.move, the checked ChoiceRef and its actor-only destination may use the shortcut under confirmation_when.",
-    "challenge": "Irreversible, external, widens_access, bulk sets, declared material_inputs, any destination, recipient, audience or permission, or unproven material. Never bypassed by atomic_undo. Use the confirmation_when rules for host.item.create and host.collection.move.",
+    "challenge": "Irreversible, external, widens_access, bulk sets, declared material_inputs, any destination, recipient, audience or permission, or unproven material. Never bypassed by atomic_undo. Use the confirmation_when rules for host.item.create and host.collection.move. On a widening, use the host material in attempt_authority_end.actions.conversation_audience_widening, including on any inverse that adds readers.",
     "ordinary": "Worker operations always use separate resolution and dispatch. A reversible manifest declaration never permits the shortcut. Return a challenge only for required material or effects; otherwise omit confirm.",
     "material_by_kind": {
       "composer.send": {
@@ -5627,10 +5636,10 @@
         "sender_only": "Use the sender's full scoped live read rights.",
         "shared": "Require the sender and every transcript reader to be authorized for each discovery input.",
         "required_reader_sets": [
-        "sender",
-        "transcript_readers"
-      ],
-        "in_flight": "Fence pending derived output if the transcript audience widens or source grants cease to cover it. Suppress delivery and commit. Resume the work only in a fresh attempt that excludes the ineligible context."
+          "sender",
+          "transcript_readers"
+        ],
+        "in_flight": "Apply attempt_authority_end.actions.conversation_audience_widening on audience expansion. On loss of discovery source rights suppress affected pending output before delivery or commit. Resume the work only in a fresh attempt that excludes ineligible context."
       }
     },
     "provider_login": {
@@ -5640,7 +5649,7 @@
       },
       "custody": "The verified provider program can read and refresh its own selected login and directories in the person's eligible sandbox. Provider tools there run as that person and can read those files. These native logins require no broker. Keep the directories out of other accounts, other packages, shared mounts, host-readable output and portable snapshots and backups.",
       "account_switching": "Automatic account switching is deferred.",
-      "shared_space": "Apply owner decision 74 in docs/open-questions.md. Keep tools off for the configured shared login until qualification proves a boundary that protects it from tools and other runs. For a shared transcript, choosing a personal native login or changing permission mode cannot enable tools."
+      "shared_space": "Apply owner decision 74 in docs/open-questions.md. Keep tools off for the configured shared login until qualification proves a boundary that protects it from tools and other runs. For a shared transcript, choosing a personal native login or changing permission mode cannot enable tools. Apply attempt_authority_end.actions.conversation_audience_widening before a personal run's transcript gains another reader."
     }
   },
   "carrier": {
@@ -5704,6 +5713,51 @@
       "grant_change": {
         "before_reply": "Changed effective grant or profile generation and a durable fence for attempts, descendants and intents whose admitted authority no longer holds. A widening grants no additional attempt rights.",
         "after_commit": "Stop affected exact attempts and reconcile the grant or credential references.",
+        "ends_authority": true
+      },
+      "conversation_audience_widening": {
+        "applies_when": "An authorized change makes one or more principals newly eligible to read a conversation transcript. Resolve effective direct and inherited corpus authority under the existing authority fence. Title-only access alone does not trigger this rule.",
+        "instances": {
+          "catalogue_operations": [
+            "host.item.share",
+            "host.collection.move",
+            "host.item.restore",
+            "host.item.unarchive",
+            "host.undo"
+          ],
+          "direct_and_inherited_grants": [
+            "sharing.grant",
+            "sharing.link_create",
+            "sharing.link_update"
+          ],
+          "space_and_group_membership": [
+            "spaces.add_member",
+            "spaces.set_role",
+            "spaces.transfer",
+            "groups.add_member",
+            "invites.create",
+            "invites.redeem",
+            "/api/v1/auth/setup/finish"
+          ],
+          "collection_membership": [
+            "collection_membership",
+            "collections.create",
+            "collections.set_members"
+          ],
+          "lifecycle_and_other_grants": "Any restore, unarchive, Undo, grant, membership or policy change that newly activates corpus access, including by inheritance. Scope the rule by the authority change, regardless of which surface makes it."
+        },
+        "confirmation": {
+          "fact": "widens_conversation_audience",
+          "material": {
+            "name": "transcript_disclosure",
+            "label": "Transcript sharing",
+            "value": "The new readers can read the whole transcript, including anything the agent found or wrote using your own access."
+          },
+          "rules": "Require host confirmation by an authorized sharer. Show the checked target or scope, new audience and permission with the host-written transcript disclosure. Bind the confirmation to the effective change. Recheck it under the authority fence and require fresh confirmation if the checked change differs. This overrides ordinary Undo and full-swipe shortcuts. For invitations, require sharer confirmation of the covered grant at issue and matching confirmed scope at either redemption path. A redeemer cannot supply the sharer's confirmation.",
+          "committed_text": "Publish access to the entire committed transcript text. The sharer decides whether to disclose it. Do not scan the records for source eligibility or refuse because the text includes personal discoveries. Attachment bytes retain independent delivery checks."
+        },
+        "before_reply": "Before the wider grant is visible, durably fence every exact attempt in the affected conversation with personal-only authority (full-rights discovery or tools with a personal native login). Retire affected personal-context intents and descendant authority and durably discard uncommitted output, including anything staged or queued for delivery. Pin the committed transcript boundary and persist deduplicated cleanup. Fence other pending derived output if the wider audience cannot read its sources. Use the commit_rule for changes that span databases.",
+        "after_commit": "Dispatch idempotent exact-attempt Stop and verify teardown. Later attempts use the shared discovery and tools rules. Do not carry forward discarded personal attempt context or reattach a fenced attempt.",
         "ends_authority": true
       },
       "conversation_erasure": {
@@ -5788,6 +5842,9 @@
         "space_erasure",
         "account_erasure",
         "conversation_erasure"
+      ],
+      "Conversation audience widening": [
+        "conversation_audience_widening"
       ]
     }
   },
