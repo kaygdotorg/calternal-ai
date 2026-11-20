@@ -59,6 +59,19 @@ CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" cargo test \
   --features chat-v2 --test isolation chat_v2 -- --test-threads=1
 ```
 
+## State when paused (owner's change of focus, 2026-11-20)
+
+- **Done.** Base 14.44, slices 1–4 and `lane/threads-ui` (Chat rename) are merged.
+  The full dev-01 gate ran at dfa78201; the later merge changed no Rust: workspace 874 passed, 1 failed, 4 ignored; release 480 passed, 1 failed,
+  3 ignored; conformance 180 of 181; `test:plugins` passed; Chat plugins 55 of 55
+  plus the conformance tool. Every failure is slice 2's migration chain (#95).
+- **Half-done.** The `chat_v2` case reached the real installer, which refused
+  `calternal-chat` on an untyped `shape` indexed field. Commit b933d60f fixes the
+  plugin. **Unverified:** the rerun was cancelled before it finished.
+- **Not started.** Glue for seams 1–7 (carrier dispatch, worker runtime, client
+  routes, harness dispatch), the Send/reply/replay/Stop steps, the restart gate,
+  the Claude Code harness run and the web interface on the real server.
+
 ## Simplification opportunities
 
 - One generic carrier method dispatch, from method name to engine call, would cover
