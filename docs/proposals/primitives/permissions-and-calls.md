@@ -237,7 +237,7 @@ Example used throughout: a community composer `acme-composer` calls `calternal-c
   | --- | --- | --- |
   | A names Lee's private chat (UUID read from a link) in `chat/send` | Designation: A has no reach and no handle; the person (Ann) has no write either | Yes |
   | A names a chat Ann can write but that A was never shown, to post in her name | Designation: no handle for that chat in A's context | Yes |
-  | A calls `chat/export {chat, to: "Shared/"}` so Chat copies a chat into a folder others read | Designation on `to`: A must reach `Shared/` itself or hold a handle; the move/copy widens an audience, so the host challenge appears to Ann | Yes |
+  | A calls `chat/export {chat, to: "Shared/"}` so Chat copies a chat into a folder others read | Designation on `to`: A must reach `Shared/` itself or hold a handle Ann gave it through the host's folder picker. Moving the chat there would be challenged; a copy is not (G5) | Yes for naming; a copy Ann directed is her choice |
   | A passes a raw path **string** (not a typed ref) and B builds a path from it | Host cannot see it. The SDK types refs; the manifest validator refuses operation inputs with untyped path-like fields named as targets; a B that parses strings anyway is a buggy deputy | **Partly.** A bug in B, bounded by `grant(B) ∩ rights(person)` |
   | A asks B for data and exfiltrates it | B's `returns` is shown on A's install screen; if A has network the chain is marked and B's reads skip non-consented records | Yes for consent; disclosure is by install wording, as in any OS |
   | A loops A→B→A to accumulate rights | Each hop is checked; rights do not accumulate; depth ≤ 8 | Yes |
@@ -266,12 +266,14 @@ move bytes off the host where no reader check follows them:
 
 **The rule.** In a marked chain, a read (file read, record read, query, search, count,
 excerpt, change feed) of a protected file returns a record authored by person X only if
-X is the acting person, or X holds an active consent grant covering this file and this
-chain. Other records are replaced by a **withheld marker** (`{withheld: true}` with no
+X is the acting person, or X holds an active consent grant for this file whose
+`harness` is `any` or names an outbound-capable plugin in the chain (and, for a one-run
+grant, whose run is `ctx.run`). Other records are replaced by a **withheld marker** (`{withheld: true}` with no
 author and no text); counts and search rank skip them. Which files are protected is
-question 2; the recommendation is "every file shared with more than one person, except in
-a space whose owner turned on *members' writing is open to members' agents*, shown at
-join".
+question 2; the recommendation: every file in which another person wrote, except files
+in a space whose owner turned on *members' agents may read members' writing here*
+(shown to everyone when they join). Per-file shares and chats between people are
+always protected; no space setting reaches them.
 
 Why this definition: a plugin with network can call a model API itself; if only program
 runs counted, any network plugin would be an unlabelled agent. It also catches non-agent
@@ -280,7 +282,7 @@ third parties). That is intended, and question 2 asks it.
 
 Agent replies: a record written by a run acting for Bob counts as Bob's writing.
 
-**Consent grants** are host-held (section 1.11):
+**Consent grants** are host-held (section 1.13):
 
 ```text
 consent = { space, file, author, scope: run(run_id) | standing, harness: any | plugin_id, at, by_session }
@@ -340,7 +342,9 @@ it (the files lane decides where). This section uses it:
   call. A write later in that same call is stamped `carries: [authors]` besides the
   person; marked chains treat a carried author like an author (consent needed). This
   costs one small set per call and closes laundering within a call, not across calls
-  (gap G2).
+  (gap G2). A run is one long context: its writes (the agent's reply in the chat)
+  carry every other author it read, so a later agent reading that reply needs Lee's
+  agreement too. Cost: the set of authors per run, bounded by the file's participants.
 - The drawn author of a record always comes from the stamp, never from its bytes
   ("**Lee:** I agree" typed by Ann draws as Ann's).
 
@@ -370,7 +374,7 @@ and open as plain Markdown. For a plugin from the official publisher it adds "Th
 part of Calternal; turn it off only if you know what you are doing." Owner only.
 
 Picks are preferences, but a pick decides which plugin acts with the person's rights,
-so a plugin must not be able to change it: picks are host-held (section 1.11), shown
+so a plugin must not be able to change it: picks are host-held (section 1.13), shown
 in Settings.
 
 ### 1.9 Contexts without a live request
@@ -414,6 +418,11 @@ space for a space-bound machine. No bucket is installation-wide.
 | --- | --- | --- |
 | `host.secrets.request(name)` | plugin | the shell draws a host form for the person (personal secret) or a manager (space secret); the value goes to `crates/secrets` |
 | `host.net.fetch({url, secret?: name, ...})` | plugin | the host checks the destination against the grant, injects the value at the declared place (`header Authorization: Bearer {}`), refuses redirects with a secret, strips occurrences of the value (raw, base64, URL-encoded) from the response, audits |
+
+Whose secret: a personal secret is used only in a context whose person owns it (a plugin
+acting for Bob cannot use Ann's mail password); a space secret in any context of that
+space whose plugin's grant names it. Values stay in `crates/secrets`, released only
+through its audited `use_value` into the one outbound request.
 
 What does not hold: a secret given to a **program** (env var, mounted login) is readable
 by that program. Harness logins (`.claude`, `.codex`) are readable by the harness by
@@ -541,6 +550,8 @@ copying text by hand into an agent.
 | # | Tries | What stops it | Holds? |
 | --- | --- | --- | --- |
 | A1 | Read kinds or folders outside its grant | Basic set + grant check per host method | yes |
+| A1b | Claim another person, space or run in its input | The call context is set by the host from the channel and session; input fields never select person, space or machine (rev 14 rule kept) | yes |
+| A1c | Reach another space (a ref or UUID from a different space) | A worker's channel is bound to one space; cross-space refs answer `404`; handles carry the space | yes |
 | A2 | Act beyond the acting person's rights | Intersection with `rights(person)` | yes |
 | A3 | Act with no person (alarm, change) after the person lost access | Rights re-read at fire | yes |
 | A4 | Confused deputy through another plugin | Designation rule (1.5) | yes for typed refs; B parsing raw strings is a bug in B |
@@ -830,9 +841,9 @@ in chats. *Example:* in your "Family" group space, you ask Claude "find the note
 the lease"; one of them was written by your partner. *Options for scope:* (a) **chats
 only** (kinds opt in): team notes stay searchable; protection depends on the kind's plugin
 opting in. (b) **every file with another author**: strongest; agents in group spaces see
-almost nothing without many prompts. (c) **every file shared with you, except in spaces
-whose owner turned on "members' agents may read members' writing", shown at join**:
-team spaces work, private shares and chats are protected. *Options for "agent":* (i)
+almost nothing without many prompts. (c) **(b), except in spaces whose owner turned on
+"members' agents may read members' writing here", shown to everyone at join**: team
+spaces work; files shared one by one and chats between people stay protected. *Options for "agent":* (i)
 programs only: simple, but a plugin with network can call a model itself unlabelled;
 (ii) **anything outbound-capable**: airtight against plugins, and link-preview or
 translation plugins also need consent in chats. *Recommendation:* (c) with (ii).
