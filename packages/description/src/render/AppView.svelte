@@ -2,7 +2,7 @@
   // The root of a drawn app: sidebar (with selectors and footer), header, the view's content and the panel, over one open host session. It keeps one WindowStore per (bind, parent) and one Selection per bind, shared by every
   // place that draws the bind, holds the route parameters (selectors and row `open` set them; binds that read a route parameter start over when it changes), and refuses a description it cannot draw. It holds no app-specific
   // code: what is drawn is only what the description declares; the page supplies the host components and the shell's own controls.
-  import { onDestroy, setContext, untrack, type Component } from "svelte";
+  import { onDestroy, onMount, setContext, untrack, type Component } from "svelte";
   import { Glass, Toasts, navHold } from "@calternal/ui";
   import type { Action, AppDescription, Bind } from "../model";
   import type { HostSession } from "../wire/session";
@@ -86,26 +86,34 @@
   const setBind = (a: Action): string | undefined => { for (const v of Object.values(("inputs" in a ? a.inputs : undefined) ?? {})) { const x = v as { selection?: string; set?: boolean }; if (x.selection && x.set) return x.selection; } return undefined; };
   const header = description.chrome?.header;
   const title = typeof header?.title === "string" ? header.title : description.view?.title;
-  // A header title taken from an item bind's field: the open item's, never a list's first row.
-  const itemTitle = $derived.by(() => { const t = header?.title; if (!t || typeof t === "string") return undefined; const s = storeFor(t.bind); return s ? String(s.row(0)?.fields[t.field] ?? "") : undefined; });
+  // A header title taken from an item bind's field: the open item's, never a list's first row. The store is made here, not inside the derived value: a signal created while a derived runs is not tracked by it, so a title
+  // read from a store born there would never update. It asks the host only once an item is open (the route change resets it).
+  const titleSpec = header?.title && typeof header.title !== "string" ? header.title : undefined;
+  const titleStore = titleSpec ? storeFor(titleSpec.bind) : undefined;
+  const itemTitle = $derived(titleSpec && titleStore ? String(titleStore.row(0)?.fields[titleSpec.field] ?? "") : undefined);
   const panel = description.chrome?.panel;
+  // A narrow window (a phone) shows one pane at a time: the list while no item is open, the card (with a Back control) once one is.
+  let compact = $state(false);
+  onMount(() => { const q = matchMedia("(max-width: 720px)"); compact = q.matches; const f = () => { compact = q.matches; }; q.addEventListener("change", f); return () => q.removeEventListener("change", f); });
+  const opened = $derived(!!route.item);
+  const listPane = $derived(!compact || !opened), cardPane = $derived(!compact || opened);
 </script>
 
 {#if refusal}
   <div class="refused" role="alert" data-refused>This app cannot be drawn here: {refusal.reason}.</div>
 {:else}
-  <div class="app" data-app>
-    {#if description.chrome?.sidebar || description.chrome?.footer}
-      <aside class="side" style:width="{description.chrome.sidebar?.width ?? 280}px"><Glass />
+  <div class="app" data-app data-compact={compact || undefined} data-pane={compact ? (opened ? "card" : "list") : undefined}>
+    {#if (description.chrome?.sidebar || description.chrome?.footer) && listPane}
+      <aside class="side" style:width={compact ? "100%" : `${description.chrome.sidebar?.width ?? 280}px`}><Glass />
         <Sidebar sidebar={description.chrome.sidebar ?? {}} footer={description.chrome.footer} role={props.role} initial={props.initial} />
       </aside>
     {/if}
-    <main class="main"><Glass />
-      <div class="head">{#if itemTitle ?? title}<h1 class="h1">{itemTitle ?? title}</h1>{/if}
+    {#if cardPane}<main class="main"><Glass />
+      <div class="head">{#if compact}<button class="back" type="button" aria-label="Back to the list" data-back onclick={() => setRoute("item", "")}>‹</button>{/if}{#if itemTitle ?? title}<h1 class="h1">{itemTitle ?? title}</h1>{/if}
         {#each [...(header?.leading ?? []), ...(header?.trailing ?? [])] as a (a.id)}{@const sb = setBind(a)}<ActionButton action={a} context={viewContext(a.id)} selection={sb ? selectionFor(sb) : undefined} setOf={sb} />{/each}</div>
       {#if description.view}<Node node={description.view.root} />{/if}
-    </main>
-    {#if panel && panel.open !== false}
+    </main>{/if}
+    {#if panel && panel.open !== false && !compact}
       <aside class="panel" data-panel={panel.id ?? "panel"} aria-label={panel.title ?? "Panel"}><Glass />
         {#if panel.title}<h2 class="ph">{panel.title}</h2>{/if}
         {#each panel.components as c (c.id)}<HostComponent component={c} />{/each}
@@ -124,6 +132,9 @@
   .panel { position: relative; flex: none; width: 320px; min-height: 0; display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); border-radius: var(--r-pane); isolation: isolate; }
   .ph { margin: 0; font-size: var(--text-ui); font-weight: var(--strong-weight); }
   .head { display: flex; align-items: center; gap: var(--s-3); }
-  .h1 { margin: 0; font-size: var(--text-title, 28px); }
+  .back { min-width: 44px; min-height: 44px; font-size: 28px; line-height: 1; color: var(--ink); border-radius: var(--r-select); }
+  .app[data-compact] { padding: var(--s-2); } .app[data-compact] .main { flex: 1; }
+  .h1 { margin: 0; font-size: var(--text-title, 28px); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app[data-compact] .h1 { font-size: var(--text-ui); }
   .refused { padding: var(--s-6); color: var(--danger); }
 </style>

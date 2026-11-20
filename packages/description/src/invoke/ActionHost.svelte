@@ -20,7 +20,7 @@
           <div class="row"><Button text="Cancel" variant="quiet" onclick={() => d.done(null)} /><Button text="OK" variant="primary" type="submit" /></div>
         </form>
       {:else if d.kind === "choose"}
-        <ul class="opts" role="listbox" aria-label={d.title}>{#each d.options as o (o.ref)}<li><button type="button" role="option" aria-selected="false" onclick={() => d.done(o.ref)}>{o.label}</button></li>{/each}</ul>
+        <ul class="opts" role="listbox" aria-label={d.title}>{#each d.options as o (o.ref)}<li><button type="button" role="option" aria-selected={o.ref === d.default_ref} data-default={o.ref === d.default_ref || undefined} onclick={() => d.done(o.ref)}>{o.label}{#if o.ref === d.default_ref}<span class="def">Default</span>{/if}</button></li>{/each}</ul>
         <div class="row"><Button text="Cancel" variant="quiet" onclick={() => d.done(null)} /></div>
       {:else}
         <dl class="mat" data-material>{#each d.material as m (m.name)}<dt>{m.label}</dt><dd>{show(m.value)}</dd>{/each}</dl>
@@ -37,6 +37,7 @@
   .row { display: flex; justify-content: flex-end; gap: var(--s-3); margin-top: var(--s-3); }
   .opts { list-style: none; margin: 0; padding: 0; display: grid; max-height: 50vh; overflow: auto; }
   .opts button { width: 100%; min-height: 44px; text-align: start; padding: 0 var(--s-4); border-radius: var(--r-select); color: var(--ink); }
+  .def { margin-inline-start: var(--s-3); color: var(--ink-3); font-size: var(--text-label); }
   .opts button:hover, .opts button:focus-visible { background: var(--hover); }
   .mat { display: grid; grid-template-columns: auto 1fr; gap: var(--s-2) var(--s-4); margin: 0; }
   .mat dt { color: var(--ink-3); } .mat dd { margin: 0; overflow-wrap: anywhere; }

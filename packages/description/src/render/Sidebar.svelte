@@ -42,7 +42,11 @@
 
   let accountOpen = $state(false), accountEl = $state<HTMLElement | null>(null);
   const accountItems = $derived<MenuItem[]>((footer?.account?.menu ?? []).map((a) => ({ id: a.id, label: a.title ?? a.id, danger: a.role === "destructive" })));
-  const options = (sel: NonNullable<Sidebar["selectors"]>[number]) => sel.options.map((o) => ({ value: o.id, label: o.title }));
+  // An option's count is a bind with an exact count. Its store is made here, at set-up, not while a template runs (a signal created inside a reaction is not tracked by it, so the label would never update); it is asked
+  // for once the selector is drawn (one row is enough), and the label says "Archived 2" when the host gave the count (an unavailable count is omitted).
+  const counts = new Map(sidebar.selectors?.flatMap((sel) => sel.options.filter((o) => o.count).map((o) => [o.id, app.storeFor(o.count!.bind)] as const)) ?? []);
+  $effect(() => { for (const [id, st] of counts) st?.ensure(`count:${id}`, 0, 1); });
+  const options = (sel: NonNullable<Sidebar["selectors"]>[number]) => sel.options.map((o) => { const n = counts.get(o.id)?.total; return { value: o.id, label: n ? `${o.title} ${n}` : o.title }; });
 </script>
 
 <nav class="sidebar" aria-label={sidebar.title ?? "Sidebar"} data-sidebar>
@@ -50,7 +54,7 @@
   {#each sidebar.selectors ?? [] as sel (sel.id)}
     <div class="sel" data-selector={sel.id}>
       <Selector options={options(sel)} value={app.route[sel.route ?? sel.id] ?? sel.selected ?? sel.options[0]!.id} label={sel.id} onchange={(v: string) => app.setRoute(sel.route ?? sel.id, v)} />
-      {#each sel.options as o (o.id)}{#if o.count}{@const c = app.storeFor(o.count.bind)}{#if c}<span class="cnt" data-count-of={o.id} hidden>{c.total ?? ""}</span>{/if}{/if}{/each}
+      {#each sel.options as o (o.id)}{#if o.count}{@const c = counts.get(o.id)}{#if c}<span class="cnt" data-count-of={o.id} hidden>{c.total ?? ""}</span>{/if}{/if}{/each}
     </div>
   {/each}
   <div class="scroll">

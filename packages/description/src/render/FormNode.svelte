@@ -7,7 +7,7 @@
   import ActionButton from "./ActionButton.svelte";
 
   let { node }: { node: FormNode } = $props();
-  const { viewContext } = useActions();
+  const { viewContext, session } = useActions();
   const initial = () => Object.fromEntries(node.fields.map((f) => [f.id, f.initial ?? (f.input === "toggle" ? false : "")]));
   let values = $state<Record<string, unknown>>(initial());
   let error = $state<string | null>(null);
@@ -26,7 +26,11 @@
   const valid = $derived(node.fields.every((f) => problem(f, values[f.id]) === null));
   const submit = $derived(node.submit);
   const context = $derived(viewContext(submit.id));
-  const interaction = () => ({ form: { ...values } as Record<string, unknown> });
+  /** A form of one multiline field is a message composer: the field and its submit sit on one line, Enter sends and Shift+Enter starts a new line (never while an input method is composing). */
+  const isCompose = $derived(node.fields.length === 1 && node.fields[0]!.input === "multiline");
+  let formEl = $state<HTMLFormElement>();
+  function enterSends(e: KeyboardEvent) { if (e.key === "Enter" && !e.shiftKey && !e.isComposing && valid) { e.preventDefault(); formEl?.querySelector<HTMLElement>("[data-action]")?.click(); } }
+  const interaction = () => ({ form: (session.formKeyed ? { [node.id]: { ...values } } : { ...values }) as Record<string, unknown> });
   function done(o: unknown) {
     const out = o as ActionOutcome | { state: string };
     if (out.state === "ok") { error = null; if ((node.clear ?? "onOk") === "onOk") values = initial(); }
@@ -34,11 +38,11 @@
   }
 </script>
 
-<form class="form" data-node="form" data-form={node.id} onsubmit={(e) => e.preventDefault()}>
+<form class="form" class:compose={isCompose} data-node="form" data-form={node.id} bind:this={formEl} onsubmit={(e) => e.preventDefault()}>
   {#if node.title}<h3 class="ft">{node.title}</h3>{/if}
   {#each node.fields as f (f.id)}
-    <label class="f"><span class="l">{f.label}{#if f.required}<span aria-hidden="true"> *</span>{/if}</span>
-      {#if f.input === "multiline"}<textarea maxlength={f.maxLength ?? 200} placeholder={f.placeholder} bind:value={values[f.id] as string}></textarea>
+    <label class="f"><span class="l" class:sr={isCompose}>{f.label}{#if f.required}<span aria-hidden="true"> *</span>{/if}</span>
+      {#if f.input === "multiline"}<textarea maxlength={f.maxLength ?? 200} placeholder={f.placeholder} rows={isCompose ? 1 : undefined} aria-label={f.label} bind:value={values[f.id] as string} onkeydown={isCompose ? enterSends : undefined}></textarea>
       {:else if f.input === "choice"}<select bind:value={values[f.id] as string}><option value=""></option>{#each f.options ?? [] as o (o.value)}<option value={o.value}>{o.label}</option>{/each}</select>
       {:else if f.input === "toggle"}<input type="checkbox" bind:checked={values[f.id] as boolean} />
       {:else}<input type={f.input === "url" ? "url" : f.input === "email" ? "email" : f.input === "number" ? "text" : f.input === "date" ? "date" : "text"} inputmode={f.input === "number" ? "decimal" : undefined} maxlength={f.maxLength ?? 200} placeholder={f.placeholder} bind:value={values[f.id] as string} />{/if}
@@ -54,5 +58,8 @@
   .f { display: grid; gap: var(--s-1); } .l { font-size: var(--text-label); color: var(--ink-3); }
   input:not([type=checkbox]), textarea, select { min-height: 44px; padding: 0 var(--s-4); border-radius: var(--r-select); border: 0; background: color-mix(in oklab, var(--ink) 8%, transparent); color: var(--ink); font-size: 16px; }
   textarea { padding: var(--s-3) var(--s-4); }
+  .compose { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+  .compose .err { grid-column: 1 / -1; } .compose textarea { min-height: 44px; max-height: 40vh; field-sizing: content; resize: none; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .err { padding: var(--s-3) var(--s-4); border-radius: var(--r-select); background: color-mix(in oklab, var(--danger) 12%, transparent); color: var(--danger); }
 </style>

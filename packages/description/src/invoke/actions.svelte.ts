@@ -10,7 +10,7 @@ import { Invoker, type InvokerHooks } from "./invoker";
 /** The dialog now open, or null. One at a time. */
 export type Dialog =
   | { kind: "prompt"; name: string; title: string; placeholder?: string; input: "text" | "date" | "datetime"; value: string; done: (v: string | null) => void }
-  | { kind: "choose"; name: string; title: string; options: ChoiceOptions["options"]; done: (ref: string | null) => void }
+  | { kind: "choose"; name: string; title: string; options: ChoiceOptions["options"]; default_ref?: string; done: (ref: string | null) => void }
   | { kind: "confirm"; title: string; material: ConfirmationMaterial[]; done: (yes: boolean) => void };
 
 /** The prompts, pickers and confirmation of one app, and the Invoker that uses them. */
@@ -34,8 +34,8 @@ export class ActionUi implements InvokerHooks {
     return new Promise((done) => { const n = ++this.#n; const d: Dialog = { kind: "prompt", name: spec.name, title: spec.title, placeholder: spec.placeholder, input: spec.kind, value: spec.initial ?? "", done: (v) => { if (this.#n === n) this.dialog = null; done(v); } }; this.#open(d); });
   }
   /** Shows the host's option labels and returns the picked ref; null when cancelled. */
-  choose(spec: { name: string; title: string; options: ChoiceOptions["options"] }): Promise<string | null> {
-    return new Promise((done) => { const n = ++this.#n; const d: Dialog = { kind: "choose", name: spec.name, title: spec.title, options: spec.options, done: (v) => { if (this.#n === n) this.dialog = null; done(v); } }; this.#open(d); });
+  choose(spec: { name: string; title: string; options: ChoiceOptions["options"]; default_ref?: string }): Promise<string | null> {
+    return new Promise((done) => { const n = ++this.#n; const d: Dialog = { kind: "choose", name: spec.name, title: spec.title, options: spec.options, default_ref: spec.default_ref, done: (v) => { if (this.#n === n) this.dialog = null; done(v); } }; this.#open(d); });
   }
   /**
    * The protected confirmation. Its title is the host's, fixed: a plugin's action title is plugin text and must not caption a host confirmation, so only the material (which the host wrote) varies. True only on the

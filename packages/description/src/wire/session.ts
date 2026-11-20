@@ -21,6 +21,10 @@ export class HostSession {
   #viewContexts: ActionContexts = {};
   /** The route parameters now in force (selector, open item), for hosts that read them from the transport. */
   route: Record<string, string> = {};
+  /** The id of the app this view belongs to (an extension choice names it); set by the page that opened the view. */
+  app?: string;
+  /** Contract 14.41 keys `interaction.form` by form id (`{composer: {message}}`); 13.18 sends the fields flat. The page that opens the view sets it for the host it talks to. */
+  formKeyed = false;
   #renewalSeq = 0;
   #closed = false;
   #lapsed = false;
