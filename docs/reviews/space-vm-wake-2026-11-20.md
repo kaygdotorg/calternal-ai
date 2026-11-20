@@ -346,20 +346,46 @@ If the request disappears during that handoff, dropping the result releases
 the poll and lets the sweeper expire the machine. Cleanup is scoped to the
 same machine session.
 
+The isolated readiness case passed on `f532cbbc` and `origin/dev`
+(`ee88c9f6`). The cancellation regression reproduced the stuck poll before
+the fix and passed afterward. At `ad20fa3e` the debug workspace run passed
+851 tests and the release workspace run passed 846, each with five ignored.
+Both runs passed the readiness and cancellation regressions and the Podman,
+Firecracker and provider sign-in leak checks. The release build was retried
+with one Cargo job after the shared disk filled during the first link.
+
 Before handing this lane to the merge gate, build the plugin bundles and run
-the full workspace with all features in both profiles on dev-01. Keep the
-shared lock and the lane's three-job and three-test-thread limits in both runs.
+the workspace with all features in both profiles on dev-01. Take
+`flock -x -w 14400 /tmp/calternal-dev01.lock` once around a full four-stage
+gate and run it at the end of a stretch of work. During iteration use
+`flock -s -w 7200 /tmp/calternal-dev01.lock` for focused tests and compile
+checks. Keep the three-job and three-test-thread limits in both profiles.
+Check `df -h /` before building and wait for 10 GB of free space. Keep one
+target directory, keep the lane under 8 GB, and delete the target directory
+after verification.
+Wait until the one-minute load is at most 12 before running the suites.
+The leak-check wrapper creates a private test directory under `/tmp` so the
+server's Unix sockets fit. Builds use the dev machine's `gate-tmp` directory.
+
+Commands to run inside the full gate's lock:
 
 ```sh
 export TMPDIR="$HOME/gate-tmp"
-flock -s -w 7200 /tmp/calternal-dev01.lock nice -n 10 nix develop -c npm run build:plugins
-flock -s -w 7200 /tmp/calternal-dev01.lock nice -n 10 nix develop -c \
-  scripts/check-podman-tests.sh cargo test --locked -j3 --workspace --all-features \
+nice -n 10 nix develop -c npm run build:plugins
+nice -n 10 nix develop -c \
+  env TMPDIR=/tmp scripts/check-podman-tests.sh cargo test --locked -j3 --workspace --all-features \
   --no-fail-fast -- --test-threads=3
-flock -s -w 7200 /tmp/calternal-dev01.lock nice -n 10 nix develop -c \
-  scripts/check-podman-tests.sh cargo test --locked -j3 --release --workspace --all-features \
+nice -n 10 nix develop -c \
+  env TMPDIR=/tmp scripts/check-podman-tests.sh cargo test --locked -j3 --release --workspace --all-features \
   --no-fail-fast -- --test-threads=3
 ```
+
+Run `npm run e2e:server` from `apps/web` in a quiet dev-01 window under the
+full gate's lock. Point `CALTERNAL_SERVER_BIN` at the workspace build with
+`test-plugins` enabled. At `ad20fa3e` all 15 suites passed against the
+release server under the shared lock in use when the gate started. The
+one-minute load was 7.00 at the start and 4.03 at the end. `notes-server`
+finished in 45.3 seconds and `live-real` in 28.8 seconds.
 
 ## Review gate
 
