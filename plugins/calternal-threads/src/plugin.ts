@@ -65,14 +65,13 @@ const metadata = {
     { ...execute, id: "threads.arm", title: "Schedule a run", target, methods: [...readBody, "alarm_set"],
       input_schema: object({ item, text: textSchema, harness, at: catalogueRef("Timestamp"), if_missed: ifMissed, grace_seconds: { type: "integer", minimum: 0, maximum: 86400 } },
         "item", "text", "harness", "at", "if_missed"), output_schema: catalogueRef("AlarmReceipt") },
-    { ...read, id: "threads.refresh", title: "Read thread page", target, methods: ["item_range"],
+    { ...read, id: "threads.refresh", title: "Read thread page", target, methods: [...readBody],
       input_schema: catalogueRef("ItemViewRead"), output_schema: catalogueRef("ItemViewPage") },
     { ...read, id: "threads.message", title: "Read message", target, methods: [...readBody],
       input_schema: object({ item, message: { type: "string", pattern: "^[0-9a-f]{32}$" } }, "item", "message"),
-      output_schema: { oneOf: [
-        object({ ...messageResult, text: textSchema, log: catalogueRef("ItemLocator"), edited: { const: true } }, "id", "author", "text"),
-        object({ ...messageResult, deleted: { const: true } }, "id", "author", "deleted"),
-      ] } },
+      output_schema: object({ ...messageResult, text: textSchema, posted_at: catalogueRef("Timestamp"),
+        log: catalogueRef("ItemLocator"), edited: { const: true }, replyTo: { type: "string" },
+        mentions: { type: "array", items: catalogueRef("AccountRef") } }, "id", "author", "text", "posted_at") },
   ],
 } satisfies Omit<ManifestV2, "apps" | "worker" | "network">;
 

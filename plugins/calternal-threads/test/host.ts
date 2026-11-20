@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AlarmDelivery, AlarmSet, ExecutionJobContext, ExecutionJobStart, ExecutionStatus,
   ExecutionStopRequest, ExecutionStopResult, HostWorkerInvokeFrame, ItemCreate, ItemSave, ItemStageBegin, ItemStageChunk, ItemStageSeal, ItemViewPublish } from "../generated/wire.js";
@@ -90,6 +92,7 @@ export class FakeHost {
   loseNextAppendAck = false;
   invitedInputs: InvitedInput[] = [];
   private personState = new Map<string, string>();
+  private personPreferences = new Map<string, string>();
   beforeTerminal = async () => {};
   claude = async (text: string) => `Reply to ${text}`;
 
@@ -151,7 +154,7 @@ export class FakeHost {
     });
   }
 
-  peopleContext(person: string, request: string): PeopleContext {
+  peopleContext(person: string, request: string, authored_at = now): PeopleContext {
     const call: Context["call"] = async (method, input) => {
       assert.ok(peopleMethods.has(method));
       const wire = exchanges[method as keyof typeof exchanges];
@@ -161,7 +164,7 @@ export class FakeHost {
       return result as never;
     };
     return {
-      author: { request_id: request, actor: person, authored_at: now }, checkedPeople, call,
+      author: { request_id: request, actor: person, authored_at }, checkedPeople, call,
       privateState: {
         read: async item => this.personState.get(JSON.stringify([person, item])),
         write: async (item, body, expected) => {
@@ -170,11 +173,18 @@ export class FakeHost {
           this.personState.set(key, body);
         },
       },
+      privatePreferences: {
+        read: async () => this.personPreferences.get(person),
+        write: async (body, expected) => {
+          assert.equal(this.personPreferences.get(person), expected, "private preferences changed");
+          this.personPreferences.set(person, body);
+        },
+      },
     };
   }
 
-  invitedContext(person: string, request: string, input: { item: string; scope: Scope; consent: string[] }): PeopleContext {
-    const ctx = this.peopleContext(person, request);
+  invitedContext(person: string, request: string, input: { item: string; scope: Scope; consent: string[] }, authored_at = now): PeopleContext {
+    const ctx = this.peopleContext(person, request, authored_at);
     const { item, scope, consent } = input;
     const invitation = {
       item, scope, consent: [...consent], revision: this.files.get(item)!.revision,
@@ -517,6 +527,20 @@ export class FakeHost {
     const delivery = this.admit({ job, item, input, harness, contribution_input });
     this.alarms.delete(alarm);
     return this.run(delivery.job_id, { alarm, scheduled_at: at, actual_at, missed: grace_seconds !== undefined && Date.parse(actual_at) > Date.parse(at) + 1000 * grace_seconds });
+  }
+
+  /** Materialize exact broker bytes for the report, without serializing them again. */
+  async materialize(directory: string, item: string, person: string) {
+    const file = this.files.get(item)!;
+    assert.ok(file.path);
+    const transcript = join(directory, file.path);
+    const privateFile = join(directory, ".calternal-private", person, "threads", `${item}.md`);
+    const state = this.personState.get(JSON.stringify([person, item]));
+    assert.ok(state);
+    await mkdir(dirname(transcript), { recursive: true });
+    await mkdir(dirname(privateFile), { recursive: true });
+    await writeFile(transcript, file.history.get(file.revision)!);
+    await writeFile(privateFile, state);
   }
 
   markdown(item: string) {

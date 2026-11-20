@@ -79,7 +79,7 @@ async function run(input: RunInput, ctx: Context) {
     const added = !thread.participants.some(participant => participant.id === agent.id);
     if (added && thread.participants.length >= 64) throw new Error("Thread participant limit reached.");
     if (added) thread.participants.push(agent);
-    const prompt = { id: promptId, author: person, text };
+    const prompt = { id: promptId, author: person, text, posted_at: ctx.author.authored_at };
     thread.messages.push(prompt);
     const body = Buffer.from(added ? encode(thread) : encodeMessage(prompt));
     currentSize = added ? body.length : size + body.length;
@@ -126,7 +126,7 @@ async function run(input: RunInput, ctx: Context) {
       if (thread.messages.some(message => message.id === id)) continue;
       // The contribution broker validates the data against both manifests.
       const output = frame.data as HarnessOutput;
-      const message = { id, author: agent, text: checkedText(output.text), log: output.log };
+      const message = { id, author: agent, text: checkedText(output.text), posted_at: ctx.author.authored_at, log: output.log };
       const bytes = Buffer.from(encodeMessage(message));
       if (currentSize + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
       const saved = await ctx.call("item_append", {
@@ -152,7 +152,14 @@ async function arm(input: Omit<Send, "placement"> & { at: Timestamp; if_missed: 
 
 async function refresh(input: ItemViewRead, ctx: Context) {
   const { thread } = await read(ctx, input.item, input.source_revision);
-  if (input.anchor !== undefined && !thread.messages.some(message => message.id === input.anchor)) {
+  if (thread.conversation === "people") {
+    const head = await ctx.call("item_head", { item: input.item });
+    if (head.revision !== input.source_revision) {
+      if (input.anchor !== undefined) return { anchor_unavailable: true as const };
+      throw new Error("This conversation page needs a fresh revision.");
+    }
+  }
+  if (input.anchor !== undefined && !thread.messages.some(message => message.id === input.anchor && !message.deleted)) {
     return { anchor_unavailable: true as const };
   }
   return page(thread, input.older, input.anchor);
@@ -161,9 +168,7 @@ async function refresh(input: ItemViewRead, ctx: Context) {
 async function message(input: { item: ItemRef; message: string }, ctx: Context) {
   const head = await ctx.call("item_head", { item: input.item });
   const { thread } = await read(ctx, input.item, head.revision);
-  const found = thread.messages.find(entry => entry.id === input.message);
-  if (!found) throw new Error("Message unavailable.");
-  return messageView(found);
+  return messageView(thread, input.message);
 }
 
 /** Draft application handlers. Protected Stop and archive use host controls. */

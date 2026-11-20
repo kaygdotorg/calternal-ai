@@ -36,7 +36,7 @@ nix develop -c npm run conformance -w @calternal/threads
 The build uses the 14.33 revision-aware SDK builder. It pins both
 manifest/worker packages, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-On dev-01, all 21 tests and the repository documentation gate passed. Conformance tool 1.1.0 independently
+On dev-01, all 26 tests and the repository documentation gate passed. Conformance tool 1.1.0 independently
 accepted both packages. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
@@ -230,6 +230,96 @@ and fence in-flight reads, search counts and derivatives from earlier
 revisions. The staged test covers discovery before and after publication
 and the attempted worker clear. It does not prove live ref invalidation
 or a host recertification path.
+
+
+### Messaging decisions fixture
+
+The edit window uses `author_context.authored_at` and the recorded
+original posting time. An edit one millisecond before 48 hours succeeds.
+A request at the deadline is refused. Deletion preserves the anchor and
+author on disk, removes the text, and omits the entire message from the
+current native page. A deleted anchor resolves as unavailable. Live
+people-thread pages must use the current head, so a superseded page
+cannot return an earlier copy of the message in the worker fixture.
+
+An existing reply remains visible after its target is deleted. The file
+keeps its `replyTo` for record integrity and message lookup omits that
+link from the visible reply. A new reply to a deleted anchor is refused.
+Unread counts exclude self-authored and deleted messages. Mentions and
+replies count only unread messages addressed to the viewer. A single
+message that qualifies both ways contributes one to the row attention
+count. A muted chat returns neither a ring nor a push decision. Counts
+remain available while muted.
+
+Receipts and typing share one account-level switch, enabled by default.
+The fixture disables push until configured and enables both iOS state
+options when push is enabled without a narrower choice. Account-level
+preferences are separate from each person's per-thread read position,
+draft and mute. The fixture covers preference storage and delivery
+decisions. Emitting receipts, typing signals, and device notifications
+still requires the host.
+
+| Reference | Remaining host or contract need |
+| --- | --- |
+| API §4.2 retained views and offline copies | Apply a deletion fence to existing results, caches, search and ordinary history delivery. The plugin omits tombstones at the current head and rejects superseded live people pages. Immediate clearing of already-rendered or downloaded content needs host policy. |
+| API §§3 and 4.2 viewer-scoped fields | Bind private read position, unread/mention/reply counts and the mute decision to the viewer. Pin the row surface and invalidation. The Claude UI lane owns visual placement and styling. |
+| API §3 notifications and owner messaging decisions | Pin delivery-time mute checks, the combined receipt/typing preference, and checked device routing for iOS lock state. The fixture makes decisions with supplied device state and sends no notifications. |
+
+### Conversation and private state on disk
+
+The package worker emitted these contents on dev-01. The fake host
+wrote its committed buffers directly to the files shown below. Alice
+and Bob are synthetic accounts ending in `0001` and `0002`. The
+called-in harness used scripted output and its own separate log. The
+private path is the fixture's account namespace. Product private custody
+is still open.
+
+`Threads/2026-11-20 Community Garden/Conversation.md`
+
+````markdown
+---
+format: calternal-thread-1
+id: e5119471e0af708b988694a46ffdd4a9
+title: "Community Garden"
+created: 2026-11-20T09:00:00Z
+participants: [{"kind":"person","id":"019a0000-0000-7000-8000-000000000001"},{"kind":"person","id":"019a0000-0000-7000-8000-000000000002"},{"kind":"agent","id":"a2816f2fd78322bbae0b8609cf0ed511","contribution":{"package":"calternal-threads-claude-code","contribution":"claude-code"}}]
+conversation: people
+---
+
+<a id="message-b31395e111a687c4b5eeed95e646a295"></a>
+## Person
+<!-- {"id":"b31395e111a687c4b5eeed95e646a295","author":{"kind":"person","id":"019a0000-0000-7000-8000-000000000001"},"posted_at":"2026-11-20T09:01:00Z","edited":true,"length":40} -->
+
+Can we meet by the garden gate at 10:30?
+
+<a id="message-eaa58816884f249237fd993ae7a10732"></a>
+## Person
+<!-- {"id":"eaa58816884f249237fd993ae7a10732","author":{"kind":"person","id":"019a0000-0000-7000-8000-000000000002"},"posted_at":"2026-11-20T09:02:00Z","replyTo":"b31395e111a687c4b5eeed95e646a295","mentions":["019a0000-0000-7000-8000-000000000001"],"length":24} -->
+
+Yes, I’ll bring the key.
+
+<a id="message-264b5e3f491fd782606620f01394bb09"></a>
+## Person
+<!-- {"id":"264b5e3f491fd782606620f01394bb09","author":{"kind":"person","id":"019a0000-0000-7000-8000-000000000002"},"posted_at":"2026-11-20T09:03:00Z","deleted":true,"length":0} -->
+
+[Message deleted]
+
+<a id="message-4daee5fd2fb71be42f941c076569e8a8"></a>
+## Agent
+<!-- {"id":"4daee5fd2fb71be42f941c076569e8a8","author":{"kind":"agent","id":"a2816f2fd78322bbae0b8609cf0ed511","contribution":{"package":"calternal-threads-claude-code","contribution":"claude-code"}},"posted_at":"2026-11-20T09:06:00Z","log":{"space":"019a0000-0000-7000-8000-000000000010","id":"item-14"},"length":30} -->
+
+Reply to the permitted context
+````
+
+`.calternal-private/019a0000-0000-7000-8000-000000000001/threads/item-1.md`
+
+````markdown
+---
+read-through: "b31395e111a687c4b5eeed95e646a295"
+draft: "I’ll bring the gloves."
+muted: true
+---
+````
 
 ## Needs host
 

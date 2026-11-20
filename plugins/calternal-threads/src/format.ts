@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ContributionIdentity, ItemSnapshotView, ItemLocator, SnapshotNode } from "../generated/wire.js";
+import type { ContributionIdentity, ItemSnapshotView, ItemLocator, SnapshotNode, Timestamp } from "../generated/wire.js";
 
 export type Participant = { kind: "person"; id: string } | { kind: "agent"; id: string; contribution: ContributionIdentity };
 
@@ -8,7 +8,17 @@ export function agentParticipant(thread: string, identity: ContributionIdentity)
   const { package: pkg, contribution } = identity;
   return { kind: "agent", id: step(thread, JSON.stringify([pkg, contribution])), contribution: { package: pkg, contribution } };
 }
-export type Message = { id: string; author: Participant; text: string; log?: ItemLocator; edited?: true; deleted?: true };
+export type Message = {
+  id: string;
+  author: Participant;
+  text: string;
+  posted_at: Timestamp;
+  replyTo?: string;
+  mentions?: string[];
+  log?: ItemLocator;
+  edited?: true;
+  deleted?: true;
+};
 export type Thread = {
   id: string;
   title: string;
@@ -44,8 +54,8 @@ export function folder(thread: Thread): string {
 }
 
 export function encodeMessage(message: Message): string {
-  const { id, author, text, log, edited, deleted } = message;
-  const frame = JSON.stringify({ id, author, log, edited, deleted, length: text.length }).replaceAll(">", "\\u003e");
+  const { id, author, text, posted_at, replyTo, mentions, log, edited, deleted } = message;
+  const frame = JSON.stringify({ id, author, posted_at, replyTo, mentions, log, edited, deleted, length: text.length }).replaceAll(">", "\\u003e");
   return `\n<a id="message-${id}"></a>\n## ${author.kind === "person" ? "Person" : "Agent"}\n<!-- ${frame} -->\n\n${deleted ? "[Message deleted]" : text}\n`;
 }
 
@@ -65,41 +75,46 @@ export function decode(body: string): Thread {
     frame.lastIndex = offset;
     const record = frame.exec(body);
     if (!record) throw new Error("Unreadable message record.");
-    const { id, author, log, edited, deleted, length } = JSON.parse(record[2]);
+    const { id, author, posted_at, replyTo, mentions, log, edited, deleted, length } = JSON.parse(record[2]);
     const tombstone = "[Message deleted]";
     const end = frame.lastIndex + (deleted === true ? tombstone.length : length);
     if (id !== record[1] || !Number.isSafeInteger(length) || body[end] !== "\n"
       || (deleted === true ? length !== 0 || body.slice(frame.lastIndex, end) !== tombstone : length < 1)) {
       throw new Error("Unreadable message record.");
     }
-    messages.push({ id, author, ...(log && { log }), ...(edited === true && { edited }), ...(deleted === true && { deleted }),
+    messages.push({ id, author, posted_at, ...(replyTo && { replyTo }), ...(mentions && { mentions }), ...(log && { log }), ...(edited === true && { edited }), ...(deleted === true && { deleted }),
       text: deleted === true ? "" : body.slice(frame.lastIndex, end) });
     offset = end + 1;
   }
   return { id: header[1], title: JSON.parse(header[2]), created: header[3], participants: JSON.parse(header[4]), ...(header[5] && { conversation: "people" }), messages };
 }
 
-/** Return a tombstone at the original anchor without carrying the deleted text. */
-export function messageView({ text, ...message }: Message): Omit<Message, "text"> & { text?: string } {
-  return message.deleted ? message : { ...message, text };
+/** Resolve a visible message and keep reply context only while its target is visible. */
+export function messageView(thread: Thread, id: string): Omit<Message, "deleted"> {
+  const message = thread.messages.find(entry => entry.id === id);
+  if (!message || message.deleted) throw new Error("Message unavailable.");
+  const { replyTo, deleted, ...fields } = message;
+  const target = replyTo && thread.messages.find(entry => entry.id === replyTo && !entry.deleted);
+  return { ...fields, ...(target && { replyTo }) };
 }
 
 export function page(thread: Thread, older?: string, anchor?: string): { view: ItemSnapshotView; older?: string; anchor?: string } {
   if (anchor !== undefined && older !== undefined) throw new Error("An anchored page cannot use a cursor.");
-  const index = anchor === undefined ? -1 : thread.messages.findIndex(message => message.id === anchor);
+  const visible = thread.messages.filter(message => !message.deleted);
+  const index = anchor === undefined ? -1 : visible.findIndex(message => message.id === anchor);
   if (anchor !== undefined && index === -1) throw new Error("Message unavailable.");
-  const end = anchor !== undefined ? index + 1 : older === undefined ? thread.messages.length : Number(older);
-  if (!Number.isSafeInteger(end) || end < 0 || end > thread.messages.length) {
+  const end = anchor !== undefined ? index + 1 : older === undefined ? visible.length : Number(older);
+  if (!Number.isSafeInteger(end) || end < 0 || end > visible.length) {
     throw new Error("Invalid thread page.");
   }
   let start = end;
   let children: SnapshotNode[] = [];
   while (start > 0 && end - start < 10) {
-    const message = thread.messages[start - 1];
+    const message = visible[start - 1];
     const nodes: SnapshotNode[] = [
-      { type: "snapshot-heading", anchor: message.id, title: (message.author.kind === "person" ? "Person" : "Agent") + (message.edited && !message.deleted ? " (edited)" : "") },
+      { type: "snapshot-heading", anchor: message.id, title: (message.author.kind === "person" ? "Person" : "Agent") + (message.edited ? " (edited)" : "") },
     ];
-    const text = [...(message.deleted ? "[Message deleted]" : message.text)];
+    const text = [...message.text];
     for (let offset = 0; offset < text.length; offset += 2000) {
       nodes.push({ type: "snapshot-text", text: text.slice(offset, offset + 2000).join("") });
     }

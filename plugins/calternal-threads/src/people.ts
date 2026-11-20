@@ -17,11 +17,20 @@ export type PeopleContext = Context & {
     read(item: ItemRef): Promise<string | undefined>;
     write(item: ItemRef, body: string, expected: string | undefined): Promise<void>;
   };
+  privatePreferences?: {
+    read(): Promise<string | undefined>;
+    write(body: string, expected: string | undefined): Promise<void>;
+  };
   invitation?: Invitation;
   runInvited?: (grant: Invitation, input: InvitedInput) => Promise<HarnessOutput>;
 };
 
 type State = { readThrough?: string; draft: string; muted: boolean };
+type Preferences = {
+  receiptsAndTyping: boolean;
+  push: { enabled: boolean; iosLocked: boolean; iosUnlocked: boolean };
+};
+const editWindowMs = 48 * 60 * 60 * 1000;
 
 async function member(ctx: Context, item: ItemRef) {
   const { revision } = await ctx.call("item_head", { item });
@@ -65,16 +74,28 @@ async function create(input: { title: string; participants: AccountRef[] }, ctx:
   return { created: head.item };
 }
 
-async function post({ item, text }: Target & { text: string }, ctx: PeopleContext) {
+async function post({ item, text, replyTo, mentions = [] }: Target & {
+  text: string; replyTo?: string; mentions?: AccountRef[];
+}, ctx: PeopleContext) {
   const { thread, revision, size } = await member(ctx, item);
   const id = step(ctx.author.request_id, `person-${ctx.author.actor}`);
+  const recipients = [...new Set(mentions)].sort();
+  if (recipients.some(id => !thread.participants.some(person => person.kind === "person" && person.id === id))) {
+    throw new Error("Mention unavailable.");
+  }
   const existing = thread.messages.find(message => message.id === id);
   if (existing) {
-    if (!existing.edited && !existing.deleted && existing.text !== text) throw new Error("Conflicting replay.");
+    if (!existing.edited && !existing.deleted && (
+      existing.text !== text || existing.replyTo !== replyTo || JSON.stringify(existing.mentions ?? []) !== JSON.stringify(recipients)
+    )) throw new Error("Conflicting replay.");
     await publish(ctx, item, revision, thread);
     return { message: id };
   }
-  const message = { id, author: { kind: "person" as const, id: ctx.author.actor }, text: checkedText(text) };
+  if (replyTo !== undefined) messageView(thread, replyTo);
+  const message = {
+    id, author: { kind: "person" as const, id: ctx.author.actor }, text: checkedText(text), posted_at: ctx.author.authored_at,
+    ...(replyTo !== undefined && { replyTo }), ...(recipients.length && { mentions: recipients }),
+  };
   const bytes = Buffer.from(encodeMessage(message));
   if (size + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
   const saved = await ctx.call("item_append", {
@@ -87,7 +108,7 @@ async function post({ item, text }: Target & { text: string }, ctx: PeopleContex
 
 async function message({ item, message }: MessageTarget, ctx: PeopleContext) {
   const { thread } = await member(ctx, item);
-  return messageView(find(thread, message));
+  return messageView(thread, message);
 }
 
 async function change({ item, message }: MessageTarget, ctx: PeopleContext, text?: string) {
@@ -95,6 +116,10 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
   const entry = find(thread, message);
   if (entry.author.kind !== "person" || entry.author.id !== ctx.author.actor || (entry.deleted && text !== undefined)) {
     throw new Error("Message unavailable.");
+  }
+  if (text !== undefined) {
+    const elapsed = Date.parse(ctx.author.authored_at) - Date.parse(entry.posted_at);
+    if (!(elapsed >= 0 && elapsed < editWindowMs)) throw new Error("Messages can be edited for 48 hours.");
   }
   if (entry.deleted || entry.text === text) {
     await publish(ctx, item, revision, thread);
@@ -104,6 +129,8 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
     entry.text = "";
     entry.deleted = true;
     delete entry.edited;
+    delete entry.replyTo;
+    delete entry.mentions;
   } else {
     entry.text = checkedText(text);
     entry.edited = true;
@@ -119,10 +146,14 @@ function stateOf(body: string | undefined): State {
   return { ...(readThrough && { readThrough }), draft: JSON.parse(fields[2]), muted: fields[3] === "true" };
 }
 
-async function getState({ item }: Target, ctx: PeopleContext) {
-  await member(ctx, item);
+async function readState(item: ItemRef, ctx: PeopleContext) {
   if (!ctx.privateState) throw new Error("Private state unavailable.");
   return stateOf(await ctx.privateState.read(item));
+}
+
+async function getState({ item }: Target, ctx: PeopleContext) {
+  await member(ctx, item);
+  return readState(item, ctx);
 }
 
 async function setState({ item, draft, muted, readThrough }: Target & State, ctx: PeopleContext) {
@@ -136,6 +167,58 @@ async function setState({ item, draft, muted, readThrough }: Target & State, ctx
   const last = thread.messages.findIndex(message => message.id === prior.readThrough);
   const anchor = JSON.stringify(thread.messages[Math.max(last, next)]?.id ?? null);
   await ctx.privateState.write(item, `---\nread-through: ${anchor}\ndraft: ${JSON.stringify(draft)}\nmuted: ${muted}\n---\n`, body);
+}
+
+async function getPreferences(ctx: PeopleContext): Promise<Preferences> {
+  if (!ctx.privatePreferences) throw new Error("Private preferences unavailable.");
+  const body = await ctx.privatePreferences.read();
+  if (body === undefined) return { receiptsAndTyping: true, push: { enabled: false, iosLocked: true, iosUnlocked: true } };
+  const match = /^---\nreceipts-and-typing: (true|false)\npush: (true|false)\nios-locked: (true|false)\nios-unlocked: (true|false)\n---\n$/u.exec(body);
+  if (!match) throw new Error("Unreadable preferences.");
+  return {
+    receiptsAndTyping: match[1] === "true",
+    push: { enabled: match[2] === "true", iosLocked: match[3] === "true", iosUnlocked: match[4] === "true" },
+  };
+}
+
+async function setPreferences(preferences: Preferences, ctx: PeopleContext) {
+  if (!ctx.privatePreferences) throw new Error("Private preferences unavailable.");
+  const expected = await ctx.privatePreferences.read();
+  const { receiptsAndTyping, push: { enabled, iosLocked, iosUnlocked } } = preferences;
+  await ctx.privatePreferences.write(
+    `---\nreceipts-and-typing: ${receiptsAndTyping}\npush: ${enabled}\nios-locked: ${iosLocked}\nios-unlocked: ${iosUnlocked}\n---\n`,
+    expected,
+  );
+}
+
+async function row({ item }: Target, ctx: PeopleContext) {
+  const { thread } = await member(ctx, item);
+  const state = await readState(item, ctx);
+  const actor = ctx.author.actor;
+  const after = thread.messages.findIndex(entry => entry.id === state.readThrough);
+  const own = new Set(thread.messages.filter(entry => !entry.deleted && entry.author.id === actor).map(entry => entry.id));
+  const counts = { unread: 0, mentions: 0, replies: 0, muted: state.muted, attention: 0 };
+  for (const message of thread.messages.slice(after + 1)) {
+    if (message.deleted || message.author.id === actor) continue;
+    const mentioned = message.mentions?.includes(actor) ?? false;
+    const replied = message.replyTo !== undefined && own.has(message.replyTo);
+    counts.unread++;
+    counts.mentions += Number(mentioned);
+    counts.replies += Number(replied);
+    counts.attention += Number(mentioned || replied);
+  }
+  return counts;
+}
+
+async function delivery(input: MessageTarget & ({ device: "ios"; locked: boolean } | { device: "other" }), ctx: PeopleContext) {
+  const { thread } = await member(ctx, input.item);
+  const message = find(thread, input.message);
+  if (message.deleted || message.author.id === ctx.author.actor || (await readState(input.item, ctx)).muted) {
+    return { ring: false, push: false };
+  }
+  const { push } = await getPreferences(ctx);
+  const deviceAllowed = input.device !== "ios" || (input.locked ? push.iosLocked : push.iosUnlocked);
+  return { ring: true, push: push.enabled && deviceAllowed };
 }
 
 function scoped(messages: Message[], scope: Scope) {
@@ -172,14 +255,14 @@ async function callAgent({ item, prompt }: Target & { prompt: string }, ctx: Peo
   // Refuse before dispatch when the fixture cannot save the reply inline.
   inlineBody(Buffer.concat([Buffer.from(encode(thread)), Buffer.alloc(18 * 1024)]));
   const result = await ctx.runInvited(grant, payload);
-  thread.messages.push({ id, author: agent, text: checkedText(result.text), log: result.log });
+  thread.messages.push({ id, author: agent, text: checkedText(result.text), posted_at: ctx.author.authored_at, log: result.log });
   await save(ctx, item, revision, thread, "invited-reply");
   return { message: id };
 }
 
 /** Fixture-only entry points for people threads pending shared custody and consent APIs. */
 export const peopleHandlers = {
-  create, post, message, getState, setState, callAgent,
+  create, post, message, getState, setState, getPreferences, setPreferences, row, delivery, callAgent,
   edit: (input: MessageTarget & { text: string }, ctx: PeopleContext) => change(input, ctx, input.text),
   remove: (input: MessageTarget, ctx: PeopleContext) => change(input, ctx),
 };
