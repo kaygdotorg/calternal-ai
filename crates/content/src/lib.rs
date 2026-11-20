@@ -33,6 +33,7 @@ pub mod contribution_spool;
 mod db;
 mod discovery;
 pub use discovery::ItemOrder;
+pub mod execution;
 mod files;
 mod instructions;
 mod settings;
