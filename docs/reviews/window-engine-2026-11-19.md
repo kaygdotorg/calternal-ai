@@ -7,6 +7,11 @@ summary shape. The API also qualifies live explicit Notes collections ordered
 by their exposed title, using SQLite’s ASCII lowercasing and UUID as the tie break. Other sources, sort/filter
 shapes and parent windows require their own qualified plan.
 
+The storage, work accounting, and timing sections below record the original
+same-transaction candidate. The owner approved journal-backed publication
+on 2026-11-20. [Product background publication](#product-background-publication)
+describes the implementation and its qualification.
+
 ## Storage and authority
 
 - Reuses the live reverse membership index in `collection_members.sql`, the
@@ -635,11 +640,95 @@ show that every row still qualifies. If immediate window freshness remains
 a requirement, retain the sealed same-transaction contract and keep the
 merge held.
 
+## Product background publication
+
+The owner approved option C on 2026-11-20. A durable save can acknowledge
+before the ordered window catches up. While its journal epoch, watermark,
+source configuration, or outbox check is unsettled, an authorized window
+returns `state: loading`, an empty row array, null version and window
+references, and omits the count. The host clears its retained seek boundary.
+Publication advances keys, scope totals and the watermark in one sidecar
+transaction. The reader loads row fields from the live source snapshot.
+Once the checks match, exact counts describe the same current set as its
+covering index. A stale generation grants no row, count, or cursor access.
+
+The content schema adds version 9 to the previous release's version 8. The
+existing release migration runner marks already opened databases after
+additive migration. The first image-pair trial at `3a2620e6` found that
+the previous release refused a space first opened after cutover. That
+creation now uses the shared schema runner's exact predecessor marker
+for version 8. The migration
+reuses the existing Notes head and reverse membership indexes, the content
+outbox, the durable journal, and the shared search projection worker. The
+32-scope bound is checked in the authoritative transaction. Earlier
+releases could already have saved an oversized membership. Such a space's
+windows stay loading until the authoritative lists are repaired. Authorized
+native callers can still read the content and list records. The index and
+count rows live in a separate private SQLite WAL database with
+`synchronous=NORMAL`. The first authorized v2 window requests a build.
+Subsequent durable item publications send a best-effort wake. The legacy
+`notes.list` timestamp and UUID cursor queries the live heads as on dev.
+
+| Path | Reads and index work | Synchronous flushes |
+| --- | --- | --- |
+| Existing-item ACK | Existing content and journal statements plus one nonblocking queue wake. The projection adds zero reads or SQLite statements. | Same three FULL transaction boundaries as dev. |
+| Warm ready v2 window | One journal binding lookup, two journal head statements, two source outbox/config checks, one content binding lookup, one scope lookup, one scoped range, and one source point lookup per materialized row. Declared orders and parents add point checks. The host checks live authority on admission and before delivery. | 0 |
+| Background step | One page of at most 128 source IDs or journal entries. Repeated item changes in one journal page are coalesced. A collection edit uses the authoritative membership delta, bounded by the existing 10,000-member limit. | At most one NORMAL sidecar transaction per step. Checkpoint and first file creation occur on the worker. |
+
+The sustained-save fixture starts with one published note, commits 260
+updates and one additional note, then commits another 64 updates between
+the first and second replay pages. It sees loading after 0, 128,
+and 256 entries have replayed. The final 69 entries publish two rows and
+an exact count of two. The HTTP suite holds a prepared sidecar behind
+its writer lock, verifies loading after an item commit, revokes the active
+member, and verifies the old lease returns HTTP 404. The content fixture
+sends SIGKILL to a writer subprocess after the item is durably acknowledged.
+It separately restores a checkpointed sidecar image and removes its WAL
+and SHM to deterministically discard a published sidecar tail. Both
+recovery paths withhold rows and count until replay restores the exact
+authoritative result. A real power cut on a disposable VM was not
+exercised. It would additionally test persistence ordering across the
+guest OS, hypervisor and block device, including interrupted checkpoint
+and file creation writes.
+
+On dev-01, `2c6cb481` passed 57 content tests, 31 HTTP tests with
+`test-plugins`, formatting, Rust contract export and the sealed fixture
+verifier. On the branch as checked in, `scripts/check-docs.sh` reached the
+generated-site check and refused two stale installer pages inherited
+from dev. The command inputs for `calternal plugin install` and
+`calternal plugin review` are identical on dev and on this branch.
+Regenerating those pages in the disposable checkout let the complete
+docs gate pass, including all 436 pages. The two installer pages remain
+for the upstream lane to update.
+
+`scripts/verify-additive-upgrade.sh` passed in both directions on dev-01
+with the running release `localhost/calternal-ai:31fb41179460` and the
+candidate `localhost/calternal-ai-ca85:2c6cb4813a26`. The proof binds
+the previous image ID
+`563931284f834459ed3e242de5496b722714e82373d60b8a6bba0b893601d710`
+to candidate image ID
+`3db2a71cc106cfb40e54636b02e23414419272b85304c7a6194f93e63f687a56`.
+Both images were exercised against disposable data on dev-01.
+
+### Inherited HTTP Notes gate
+
+The locked perf-01 comparison uses the static server binaries extracted
+from those same two images. Their SHA-256 digests are
+`10b63189edf7f0b4218b5307287e8c69fb3de2b77e6d9f09366147011f5481c9`
+(running release) and
+`95e5950f30b96d9df8b84be770858788c1310536914bb90d883c649d815c5ed4`
+(candidate). The runner restores a common stopped 100,000-note baseline
+seed under the same pinned plugin distribution. It alternates three warm
+100-save pairs and times real HTTP `notes.update` with short changing
+bodies, with separate file placement and subscriber observations. This
+fixture exercises native Notes reads and saves before any v2 window has
+requested a sidecar. It measures the inherited 40 ms p95 save gate.
+
 ## Review gate
 
-The series was replayed onto `origin/dev` at `f41c3429`. The replay had
-no conflicts and the measured candidate's crate sources, Cargo inputs and
-sealed contract bytes match the rebased runtime files.
+The background publication candidate is based on `origin/dev` at
+`37cadea0`, which includes the #89 Notes delivery fix. The running release
+`31fb4117` has the same server, plugin and Cargo build inputs as this base.
 
 1. **Shared types.** Reuses `SpaceId`, `AccountId`, `Page`, the shared
    `ErrorCode` and the directory's capability set. The window envelopes
@@ -649,8 +738,9 @@ sealed contract bytes match the rebased runtime files.
    Bind declarations, content owns SQL and durability, and existing lower
    crates supply shared types and filesystem/journal services. SQLite is
    accessed through rusqlite.
-3. **Request isolation.** Reads use the content lane's per-space SQLite
-   readers. Server lease mutexes are sharded and only protect bounded
+3. **Request isolation.** Readers open the selected space's read-only
+   databases under its owner lifecycle guard. Server lease mutexes are
+   sharded and only protect bounded
    in-memory bookkeeping. No mutex introduced by this lane spans I/O or
    an async yield. Rate and permit shards are conservative shared quotas
    for IDs that hash to the same shard. The existing process-wide authority
@@ -662,15 +752,12 @@ sealed contract bytes match the rebased runtime files.
    authority checks inside the content callback. Start-up installs fixture
    rows through the same blocking boundary. The async route performs typed
    decoding, in-memory admission, and bounded response encoding.
-5. **Hot path.** Native Notes parses a cursor once and executes one covering
-   range with up to 101 head probes. The v2 engine takes two indexed scope
-   probes, a covering range, and one head lookup and metadata parse per
-   returned row. Registered kinds add one order lookup. A child adds
-   parent-live checks before and after the snapshot. Both routes use
-   existing authority checks and zero write flushes. A save retains the
-   existing head, placement, receipt and publication reads and three FULL
-   boundaries. Projection maintenance adds bounded index work in the
-   content transaction.
+5. **Hot path.** Native Notes decodes its cursor once and reads its existing
+   live head page. V2 reads the covering index once and materializes only
+   returned rows, with the authority and freshness reads counted in the
+   product table. Both routes issue zero write flushes. A save retains
+   the existing head, placement, receipt and journal reads and three FULL
+   boundaries. The wake has no additional reads, statements or flushes.
 6. **Constant work.** The sealed catalogue is decoded once per owning
    layer with `OnceLock`. SQLite statements use the connection's prepared
    cache. The fixture checks the pinned package and compiles its Bind at
@@ -678,28 +765,31 @@ sealed contract bytes match the rebased runtime files.
    discovery.
 7. **Bounds and retention.** Per item, the engine admits at most 32 window
    scopes. Scope counts disappear when empty, and projection rows follow
-   live membership and the content lifecycle. Each query is capped by the
+   live membership and the content lifecycle. The 128-slot wake queue
+   holds space IDs. Each sidecar holds one publication watermark and
+   bootstrap cursor. Each query is capped by the
    sealed 4,096 materialized-row and 250,000 skip budgets, with the request
    size further bounded by the catalogue. Leases expire after 15 seconds,
    with at most 128 retained entries per shard and one preceding result
    per lease. Expiration is pruned on admission and saturation. The lane
    uses existing content retention, including the configured receipt
    retention and its seven-day default.
-8. **Compatibility.** Existing native cursor and response contracts stay
-   stable. The v2 routes are additive. The feature-gated Reading List
-   fixture explicitly fails when the old installer starts accepting the
-   pinned v2 manifest. There is no fallback in the ordinary installer.
+8. **Additive upgrade.** The existing native cursor and response remain
+   usable on either release. Source schema 9 adds the definitions and
+   admission trigger to schema 8. The sidecar contains rebuildable state.
+   The Reading List install fixture remains explicitly development-only.
 9. **Space identity.** Use typed UUIDs at the route and content boundaries.
    Index keys are local to a space. Notes and Reading List are kind and
    app identities.
 10. **Single declarations.** The sealed catalogue supplies query caps. Its
-    32-scope ceiling is enforced in SQLite triggers so concurrent and
-    indirect writes receive the same atomic refusal. The SQL literal is a
-    second representation of that limit, covered by the scope boundary
-    test. Resolve package field and Bind policy against the pinned
+    32-scope ceiling is enforced in the authoritative SQLite trigger and
+    checked during replay for inherited memberships. The scope boundary
+    test checks these SQL limits against the catalogue. Resolve package
+    field and Bind policy against the pinned
     description and manifest before building a trusted projection.
-11. **Callers.** Native Notes and the leased Notes and Reading List routes
-    use the engine. The **v2 scoped collection and nested host route lane**
+11. **Callers.** Leased Notes windows and the Reading List fixture use the
+    engine, and the existing projection worker calls replay. The
+    **v2 scoped collection and nested host route lane**
     must wire explicit collections, Trash, parent scopes, public/guest
     variants, and collection-order provisioning. The **v2 host activation
     and authority lane** must call `WindowResult::item_for_row` when
@@ -711,25 +801,20 @@ sealed contract bytes match the rebased runtime files.
     `Registry::snapshot` and `Catalog::v2_kind` plus `ManifestV2::reads`
     to qualify package declarations. Those lookups confer no activation
     or viewer authority.
-12. **Reuse.** Uses the existing per-space content index, reverse collection
-    membership, item commit/outbox and journal/receipt path, and existing
-    directory/session authority. SQLite triggers extend that transaction
-    and reuse its rollback. The host uses its existing signing key and
-    blocking adapter. There is no rank table, per-plugin store or separate
-    projection writer.
-13. **Documentation.** Public items carry API comments. On dev-01, the
-    archived rebase at `299257a0` passed formatting, 54 content tests and
-    30 HTTP tests with `test-plugins`, contract export, the sealed fixture
-    verifier and `scripts/check-docs.sh` (429 pages). Later commits in
-    this series record results in this report.
+12. **Reuse.** Uses the existing head and reverse membership indexes,
+    the item commit/outbox and durable journal, the search projection
+    worker and its queue, and the existing directory/session authority.
+    The host uses its existing signing key and blocking adapter.
+13. **Documentation.** Public items carry API comments. The qualification
+    records the format, contract, fixture and documentation gates.
 14. **Code and report.** The crate README and storage reference describe
     the scoped projection. This dated report records measurement and
     product-route limitations. The sealed source contracts remain
     unchanged by this lane.
-15. **Formatting and file size.** The measured candidate passed
-    `cargo fmt --all -- --check`. Content SQL, registration, query and
-    tests live in separate files. The server route module is 601 lines.
-    Its package fixture has its own module.
+15. **Formatting and file size.** The implementation passed
+    `cargo fmt --all -- --check`. Content SQL, registration, query, replay
+    and recovery tests live in separate files. The server route module is
+    605 lines and its package fixture has its own module.
 
 ## Simplification opportunities
 
@@ -739,6 +824,6 @@ sealed contract bytes match the rebased runtime files.
 - Use a space-local authority revision when the installed-view service can
   identify its complete dependency scope. The current process epoch can
   retire a view after unrelated authority or session activity.
-- Move the timestamp-to-key conversion into a single shared primitive if
-  another native cursor needs this sort. The current formats are locked
-  together by the notes cursor contract.
+- Share the bounded journal cursor and epoch-reset logic with Search. The
+  projections can use a common replay loop while bearing their own row
+  derivation and publication checks.
