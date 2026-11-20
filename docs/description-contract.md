@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.25 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.26 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -246,7 +246,7 @@ host  -> shell { activation_id, state: ok | pending | error | stale | refused | 
   accepted resolve. Check a row action against its current authorized
   window, including a first window before any renewal. The window,
   Bind, row context, lease, grant and audience must agree.
-  Manifest entries use the `input:<key>` preview name and its declared label. A description cannot add, remove or relabel anything here. **Typing is never consent**: no value counts as
+  Manifest entries use the `input:<key>` preview name under the catalogue’s confirmation table. A description cannot add, remove or relabel anything here. **Typing is never consent**: no value counts as
   confirmed because it was typed; where a challenge is required, the person's confirmation through the protected step is the consent.
 * **Retry and idempotency are the host's.** A description cannot declare an action retry-safe or waive a check: effect class and idempotency come from the catalogue and the manifest, and
   the host de-duplicates by `activation_id` (a retry after a dropped connection repeats no effect).
@@ -363,8 +363,10 @@ Only a write-authorized package run can replace the retained page.
 Guest and public views use the retained page alone. If the live head
 supplies a `follow` ref, subscribe with `item_view.follow`. A `changed`
 signal asks the shell to fetch the newest live head. An `invalidated`
-signal clears affected content. Apply the catalogue’s paging and follow
-rules before drawing the next reply.
+signal clears affected content. The catalogue’s
+[catch-up rule](../contract/host-catalogue-v2.json#/subscription_catch_up)
+also applies to window pushes, search and renewal. Apply the paging and
+follow rules before drawing the next reply.
 
 The native nodes are stack, `snapshot-text`, `snapshot-code`,
 `snapshot-heading`, `snapshot-image` and `snapshot-attachment`. Text,
@@ -589,8 +591,10 @@ app and a checked deep link to the empty, committed harness-owned item
 `file-1`. This is the first Send for that item. The renderer holds no
 cached template, lease, option, context or result. The installed example
 app declares the `harnesses` extension point and a replayable `run` execution
-job. Its `threads-example.send` operation declares `placement` as a material
-input. The same installed description serves both spaces.
+job. The checked placement supplies the destination for `threads-example.send`
+under the catalogue’s
+[plugin-operation confirmation rule](../contract/host-catalogue-v2.json#/confirmation/material_by_kind/plugin_operation).
+The same installed description serves both spaces.
 
 Each line below gives the route, complete request body and reply body.
 Use the current authenticated shell and, from `view.open` onward, its active
@@ -611,7 +615,7 @@ challenge and confirms before dispatching.
 {"route":"view.open","request":{"type":"view_open","view_ref":"threads-view","route":{"item":"file-1"}},"reply":{"lease":{"lease_ref":"lease-1","grant_revision":"grant-1","lease_seconds":15,"cache_partition":"partition-1"},"audience":"own_space_member","activation_contexts":{"send":"send-ctx"}}}
 {"route":"extension.choices","request":{"type":"extension_choices","app":"threads-example","point":"harnesses","activation_context":"send-ctx","slot":"harness"},"reply":{"options":[{"ref":"h-opt","label":"Example harness","harness_ref":"harness-1"}]}}
 {"route":"choice.options","request":{"type":"choice_options","activation_context":"send-ctx","slot":"placement","harness":"harness-1","activation_id":"send-1"},"reply":{"host":"execution_placement","options":[{"ref":"desk","label":"Desk machine · My login"},{"ref":"laptop","label":"Laptop · My login"}],"default_ref":"desk"}}
-{"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"desk"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Thread","value":"New thread"},{"name":"input:placement","label":"Run on","value":"Desk machine · My login"}]}}
+{"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"desk"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Thread","value":"New thread"},{"name":"input:placement","label":"Machine and login","value":"Desk machine · My login"}]}}
 {"route":"activation.confirm","request":{"type":"invoke_confirm","activation_id":"send-1","resolution_ref":"send-res","confirmation_challenge":"send-challenge"},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirmation_proof":"send-proof"}}
 {"route":"activation.dispatch","request":{"type":"invoke_dispatch","activation_id":"send-1","resolution_ref":"send-res","confirmation_proof":"send-proof"},"reply":{"activation_id":"send-1","state":"ok"}}
 {"route":"item_view.open","request":{"type":"item_view","item":"file-1","component":"transcript","slot":"body","live":true},"reply":{"state":"live","source_revision":"rev-1","window_ref":"page-1","result_version":"version-1","follow":"tail-1","view":{"content":{"type":"snapshot-text","text":"Starting"}}}}
@@ -633,7 +637,7 @@ placement slot and shows that option's host label in the protected preview.
 ```jsonl
 {"route":"view.open","request":{"type":"view_open","view_ref":"threads-view","route":{"item":"file-1"}},"reply":{"lease":{"lease_ref":"lease-1","grant_revision":"grant-1","lease_seconds":15,"cache_partition":"partition-1"},"audience":"member","activation_contexts":{"send":"send-ctx"}}}
 {"route":"choice.options","request":{"type":"choice_options","activation_context":"send-ctx","slot":"placement","harness":"harness-1","activation_id":"send-1"},"reply":{"host":"execution_placement","options":[{"ref":"space-machine","label":"Space machine · Space login"},{"ref":"my-laptop","label":"My laptop · My login"}],"default_ref":"space-machine"}}
-{"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"my-laptop"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Thread","value":"New thread"},{"name":"input:placement","label":"Run on","value":"My laptop · My login"}]}}
+{"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"my-laptop"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Thread","value":"New thread"},{"name":"input:placement","label":"Machine and login","value":"My laptop · My login"}]}}
 ```
 
 In either space, the host resolves `h-opt` to `harness-1` and gives Send
@@ -652,8 +656,9 @@ personal arm. The shared arm replaces `desk` with `my-laptop`, or
 
 Send's `ok` follows durable admission. The first live page precedes any
 agent output. The harness starts the pinned attempt and appends output to
-the item. The host signals the committed revision, including if it landed
-between open and follow. The renderer then requests the new head and
+the item. The host catches up under the registered follow subscription
+and signals the committed revision, including if it landed between open
+and follow. The renderer then requests the new head and
 follows its replacement ref. In a shared space the attempt uses
 whole-audience discovery and the shared tools rule for either placement.
 Stop uses the context for the exact running attempt, and its `ok` follows

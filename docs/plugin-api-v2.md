@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.25 draft
+# Plugin API v2 · revision 14.26 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -880,7 +880,9 @@ Keyboard viewport prefetch is bounded host I/O during repeated keys.
 Apply prefetch replies for the result version already drawn at once.
 Hold pushes that change the version while selection settles. Navigation
 waits for settling. Selection-dependent activation follows §4.3. Prefetch
-and pushes never wake a worker.
+and pushes never wake a worker. Live window, search and item-view
+subscriptions and lease renewal use the catalogue’s
+[catch-up rule](../contract/host-catalogue-v2.json#/subscription_catch_up).
 
 Keep filled live windows in bounded memory, partitioned by account,
 session, space, audience and view. Hide them on lease expiry or disconnect.
@@ -1049,8 +1051,8 @@ only against the issued context, never its current selection.
    entries from live checked inputs and effects, including manifest
    material inputs. Check table coverage, uniqueness and required material. Refuse a missing, empty or partial preview.
    Resolve authored operations in the originating manifest. Applicable
-   material keys appear as `input:<key>` and retain their declared labels
-   and checked values. Host keys are separate. A captured confirmation
+   material keys appear as `input:<key>` with labels and values checked
+   under the catalogue’s confirmation table. Independent host keys are separate. A captured confirmation
    must use the originating activation ID, resolution ref and challenge.
    Apply the catalogue’s confirmation schema.
    The host issues a one-use proof after the authorized protected control
@@ -1410,7 +1412,13 @@ intentional refusal/retry with an actionable response.
   Page beyond one native page and follow new committed output. Revoke
   an asset grant during a bounded range read. Confirm no further bytes.
   Renew an unchanged retained page and an unchanged live page. Require
-  neither blanking nor a plugin call. Invalidate an affected view or
+  neither blanking nor a plugin call. For item-view follow, live windows,
+  default and explicit search and renewal, commit an authorized change
+  just before subscription registration, between registration and the
+  baseline read, and after the read before first delivery. Require the
+  current result or its scoped invalidation, with no missed update or
+  version regression. Repeat with revocation and a hidden-only edit.
+  Invalidate an affected view or
   cut the lease or connection and require immediate clearing. Reopen
   under fresh authority. Meter wake separately from first paint.
 - **Execution and widening.** Prove freeze, exact reattachment and teardown
