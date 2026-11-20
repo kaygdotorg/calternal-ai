@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
-const pin = "430cb649c5bcff7c04b856f88b0527d633c0d2e8";
+const pin = "d07c380b00f14a28f999f66d96df27f9d1f40a7f";
 const here = new URL("./", import.meta.url);
 const root = new URL("../../", here);
 const scratch = new URL(".build/", here);
@@ -16,7 +16,7 @@ execFileSync("git", ["archive", "-o", fileURLToPath(new URL("contract.tar", scra
 execFileSync("tar", ["-xf", "contract.tar"], { cwd: scratch });
 const sdk = new URL("packages/plugin-sdk/scripts/", scratch);
 const sdkGenerated = new URL("../generated/", sdk);
-const env = { ...process.env, CALTERNAL_PLUGIN_CONTRACT: fileURLToPath(contract), CALTERNAL_PLUGIN_CONTRACT_REVISION: "14.38" };
+const env = { ...process.env, CALTERNAL_PLUGIN_CONTRACT: fileURLToPath(contract), CALTERNAL_PLUGIN_CONTRACT_REVISION: "14.39" };
 execFileSync(process.execPath, [fileURLToPath(new URL("generate-author-types.mjs", sdk))], { env, stdio: "inherit" });
 await copyFile(new URL("author-types.d.ts", sdkGenerated), new URL("author.d.ts", generated));
 await copyFile(new URL("contribution-limit.mjs", sdkGenerated), new URL("contribution-limit.mjs", generated));

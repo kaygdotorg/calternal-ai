@@ -50,7 +50,7 @@ async function run(input: RunInput, ctx: Context) {
   if (ctx.alarm?.missed && input.if_missed === "skip") return {};
   const { item, harness } = ctx.job;
   const head = await ctx.call("item_head", { item });
-  let { thread, size } = await read(ctx, item, head.revision);
+  let { thread, size, spans } = await read(ctx, item, head.revision);
   requireAgentThread(thread, ctx);
   const agent = agentParticipant(thread.id, ctx.job.contribution_identity);
   const person = personParticipant(ctx.author.actor, ctx.author.actor_label ?? thread.participants.find(p => p.id === ctx.author.actor)?.name);
@@ -76,6 +76,8 @@ async function run(input: RunInput, ctx: Context) {
     const saved = await appendRecord(ctx, item, revision, request_id, size, thread, record, attested);
     revision = saved.revision;
     currentSize = saved.end_offset;
+    if ("span" in saved && saved.span) spans.set(promptId, saved.span);
+    else if (!attested) spans.clear();
   }
   await publish(ctx, item, revision, thread);
   const attempt = await ctx.call("execution_start", { request_id: step(ctx.author.request_id, "start"), harness });
@@ -99,7 +101,7 @@ async function run(input: RunInput, ctx: Context) {
       // Another actor may have renamed the thread while the contributor was running.
       const latest = await ctx.call("item_head", { item });
       if (latest.revision !== revision) {
-        ({ thread, size } = await read(ctx, item, latest.revision));
+        ({ thread, size, spans } = await read(ctx, item, latest.revision));
         currentSize = size;
         revision = latest.revision;
       }
@@ -111,12 +113,15 @@ async function run(input: RunInput, ctx: Context) {
       const message = { id, author: agent, text: checkedText(output.text), posted_at: ctx.author.authored_at, log: output.log,
         ...(prompt && { replyTo: prompt.id, replyToName: prompt.author.name, replyQuote: text }) };
       const record = messageRecord(message, thread.participants, true);
-      const attested = attest(record, { kind: "output", seq: frame.seq });
+      const promptSpan = prompt?.text === text ? spans.get(promptId) : undefined;
+      const quote = promptSpan === undefined ? undefined : { item, revision, span: promptSpan };
+      const attested = attest(record, { kind: "output", seq: frame.seq }, quote);
       thread.messages.push(message);
       const saved = await appendRecord(ctx, item, revision, step(ctx.author.request_id, `append-${call}-${frame.seq}-${revision}`),
         currentSize, thread, record, attested);
       currentSize = saved.end_offset;
       revision = saved.revision;
+      if (!attested) spans.clear();
       await publish(ctx, item, revision, thread);
     }
   }

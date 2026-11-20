@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { MAX_V2_FRAME_BYTES } from "@calternal/plugin-sdk";
 import type { AttestedBody, ItemRef, ItemSave, ItemSpansPage, RevisionRef } from "../generated/wire.js";
-import { decode, decodeIndexed, encode, encodeRecord, MAX_FILE_BYTES, type messageRecord, needsOpaqueEscape, page, step, type Thread } from "./format.ts";
+import { decode, decodeIndexed, encode, encodeRecord, MAX_FILE_BYTES, type messageRecord, needsOpaqueEscape, page, quoteBlock, step, type Thread } from "./format.ts";
 import type { Context } from "./interface.ts";
 
 /** The installed item kind shared by both conversation shapes. */
@@ -45,7 +45,7 @@ export async function read(ctx: Context, item: ItemRef, revision: RevisionRef) {
       } while (cursor);
       const parsed: ReturnType<typeof decodeIndexed> = index.length || provenance === "attested" ? decodeIndexed(bytes, index, provenance!) : {
         thread: decode(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
-        spans: new Map(),
+        spans: new Map(), quotes: new Set(),
       };
       return { ...parsed, size: end };
     }
@@ -84,7 +84,7 @@ export async function saveOpaque(ctx: Context, target: Pick<ItemSave, "request_i
 /** Append a record, preserving literal text if an opaque write would discard earlier spans. */
 export async function appendRecord(ctx: Context, item: ItemRef, revision: RevisionRef, request_id: string, size: number,
   thread: Thread, record: ReturnType<typeof messageRecord>, attested?: AttestedBody) {
-  const bytes = Buffer.from(attested ? record.prefix + record.text + record.suffix : encodeRecord(record));
+  const bytes = Buffer.from(attested ? record.prefix + quoteBlock(record.quote) + record.text + record.suffix : encodeRecord(record));
   if (!attested && thread.messages.slice(0, -1).some(message => needsOpaqueEscape(message.text))) {
     const body = Buffer.from(encode(thread));
     const saved = await saveOpaque(ctx, { request_id, item, expected: revision }, body);

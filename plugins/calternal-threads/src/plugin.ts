@@ -50,7 +50,20 @@ const metadata = {
     claimed_text: true, schema: object({ title }, "title"),
   }, {
     id: "threads", icon: "threads", title_field: "title", storage: { folder: "Threads" },
-    claimed_text: true, searchable: true, file_format: { id: "calternal-thread", version: 2 },
+    claimed_text: true, searchable: true, file_format: {
+      id: "calternal-thread", version: 2, default_app: "threads",
+      metadata_tokens: [
+        { scope: "frontmatter_key", prefix: "format" },
+        { scope: "frontmatter_key", prefix: "id" },
+        { scope: "frontmatter_line", prefix: "participants:" },
+        { scope: "frontmatter_line", prefix: "  - p" },
+        { scope: "frontmatter_key", prefix: "agent-p", suffix: "-plugin" },
+        { scope: "frontmatter_key", prefix: "agent-p", suffix: "-harness" },
+        { scope: "framing_suffix", prefix: " {#m-", suffix: "}" },
+        { scope: "framing_line", prefix: "<!-- run-log=", suffix: " -->" },
+        { scope: "framing_line", prefix: "<!-- consultation=", suffix: " -->" },
+      ],
+    },
     append_file: true, attempt_discovery: "item_policy", execution_target: true, view_snapshots: [{ id: "body", refresh: "threads.refresh" }],
     schema: object({ title }, "title"),
   }],

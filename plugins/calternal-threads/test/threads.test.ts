@@ -19,15 +19,16 @@ async function setup() {
 test("create, select a contributed harness, append its reply and Stop an exact attempt", async () => {
   const { host, item, send, context } = await setup();
   assert.match(host.files.get(item)!.path!, /^Threads\/2026-11-20 Review the lease\/Conversation\.md$/);
-  assert.deepEqual(decode(host.markdown(item)).participants.map(p => p.kind), ["person"]);
+  assert.deepEqual(host.thread(item).participants.map(p => p.kind), ["person"]);
   const first = await send("send-1", "Say hello 🦊\n\n---\n<!-- ## Agent -->");
   assert.deepEqual(await send("send-1", "Say hello 🦊\n\n---\n<!-- ## Agent -->"), first);
   await host.run(first.job_id);
-  const thread = decode(host.markdown(item));
+  const thread = host.thread(item);
   const reply = thread.messages[1];
   assert.deepEqual(thread.participants.map(p => p.kind), ["person", "agent"]);
   assert.equal(reply.text, "Reply to Say hello 🦊\n\n---\n<!-- ## Agent -->");
   assert.equal(reply.replyQuote, thread.messages[0].text);
+  assert.match(JSON.stringify(host.snapshots.get(item)!.view), /"timestamp":"2026-11-20T12:00:00Z"/);
   assert.match(host.markdown(reply.log!.id), /## Reply/);
   assert.ok(host.markdown(item).includes(`{#m-${reply.id} `));
   assert.equal((await handlers["threads.message"]({ item, message: reply.id }, context("read-1", "threads.message"))).text, reply.text);
@@ -74,7 +75,7 @@ test("one durable successor waits for the head and exact attempt teardown", asyn
   host.settle(first.job_id);
   host.claude = async text => `Reply to ${text}`;
   await host.run(queued.job_id);
-  assert.deepEqual(decode(host.markdown(item)).messages.map(message => message.text), ["First", "Second", "Reply to Second"]);
+  assert.deepEqual(host.thread(item).messages.map(message => message.text), ["First", "Second", "Reply to Second"]);
 });
 
 test("generic rename moves the folder, updates indexed links and preserves IDs and old read pins", async () => {
@@ -82,14 +83,14 @@ test("generic rename moves the folder, updates indexed links and preserves IDs a
   const original = host.snapshots.get(item)!;
   const { job_id } = await send("rename-head", "First");
   await host.run(job_id);
-  const before = decode(host.markdown(item));
+  const before = host.thread(item);
   const path = host.files.get(item)!.path;
   const anchor = `m-${before.messages[0].id}`;
   host.linkTo(item, "Notes/Meeting.md", anchor);
   host.linkTo(item, "Notes/Nested/Agenda.md", anchor);
   host.linkedMarkdown.set("Notes/Unrelated.md", "No conversation link\n");
   await host.rename(item, "Later title", "rename-1");
-  const after = decode(host.markdown(item));
+  const after = host.thread(item);
   assert.equal(after.title, "Later title");
   assert.equal(after.id, before.id);
   assert.deepEqual(after.messages, before.messages);
@@ -104,6 +105,14 @@ test("generic rename moves the folder, updates indexed links and preserves IDs a
   assert.equal(host.snapshots.get(item)!.source_revision, host.files.get(item)!.revision);
   await host.rename(item, "Final title", "rename-2");
   assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Threads/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
+  const moved = await host.rename(item, undefined, "move", undefined, ["Decisions"]);
+  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Threads/Decisions/Conversation.md#${anchor}>)\n`);
+  await host.undoRename(moved.undo.ref, "undo-move");
+  assert.equal(host.linkedMarkdown.get("Notes/Meeting.md"), `[Read the conversation](<../Threads/2026-11-20 Final title/Conversation.md#${anchor}>)\n`);
+  const final = host.files.get(item)!;
+  const spanIndex = final.spanHistory.get(final.revision)!;
+  assert.deepEqual(decodeIndexed(Buffer.from(host.markdown(item)), spanIndex.spans, spanIndex.body_provenance).thread.messages, before.messages);
+  assert.deepEqual(spanIndex.spans.at(-1)?.quote?.attribution, { kind: "person", actor: final.creator });
 
   const pending = await send("pre-archive", "Never start");
   const queued = await send("pre-archive-queued", "Never promote");
@@ -111,7 +120,7 @@ test("generic rename moves the folder, updates indexed links and preserves IDs a
   assert.equal(host.jobs.get(queued.job_id)!.state, "stopped");
   assert.equal(host.jobs.get(pending.job_id)!.state, "stopped");
   await assert.rejects(send("post-archive", "Never admit"), /target unavailable/);
-  assert.equal(decode(host.markdown(item)).messages.length, 2);
+  assert.equal(host.thread(item).messages.length, 2);
 });
 
 test("alarm delivery retains checked harness and lets the worker decide whether to run late", async () => {
@@ -122,16 +131,16 @@ test("alarm delivery retains checked harness and lets the worker decide whether 
     }, context(request, "threads.arm"));
   const skipped = await arm("skip", "alarm-skip");
   await host.deliver(skipped.alarm, "2026-11-20T13:01:01Z");
-  assert.equal(decode(host.markdown(item)).messages.length, 0);
+  assert.equal(host.thread(item).messages.length, 0);
   const due = await arm("skip", "alarm-on-time");
   assert.equal(host.alarms.get(due.alarm)?.grace_seconds, 60);
   await host.deliver(due.alarm, "2026-11-20T13:01:00Z");
-  assert.equal(decode(host.markdown(item)).messages.length, 2);
+  assert.equal(host.thread(item).messages.length, 2);
   const late = await arm("run", "alarm-run");
   assert.deepEqual(await arm("run", "alarm-run"), late);
   await host.deliver(late.alarm, "2026-11-20T14:00:00Z");
   assert.equal(host.deliver(late.alarm, "2026-11-20T14:00:00Z"), undefined);
-  assert.deepEqual(decode(host.markdown(item)).messages.map(message => message.text), ["skip", "Reply to skip", "run", "Reply to run"]);
+  assert.deepEqual(host.thread(item).messages.map(message => message.text), ["skip", "Reply to skip", "run", "Reply to run"]);
 });
 
 test("newest pages keep complete messages and older reads stay on the same revision", async () => {
@@ -203,7 +212,7 @@ test("a rename while the harness is running preserves the reply and snapshot", a
   await host.rename(item, "New title", "rename-in-flight-edit");
   release!();
   await run;
-  const thread = decode(host.markdown(item));
+  const thread = host.thread(item);
   assert.equal(thread.title, "New title");
   assert.equal(thread.messages.at(-1)!.text, "Finished");
   assert.equal(host.snapshots.get(item)?.source_revision, host.files.get(item)?.revision);
@@ -230,7 +239,7 @@ test("first contribution output and log survive Stop before the terminal frame",
   const { job_id } = await send("stop-after-output", "Say hello");
   const run = host.run(job_id);
   await outputCommitted;
-  const reply = decode(host.markdown(item)).messages.at(-1)!;
+  const reply = host.thread(item).messages.at(-1)!;
   const source_revision = host.files.get(item)!.revision;
   const refresh = (anchor: string) => handlers["threads.refresh"]({ item, source_revision, anchor }, context("open-anchor", "threads.refresh"));
   assert.deepEqual(await refresh("unknown-message"), { anchor_unavailable: true });
@@ -256,7 +265,7 @@ test("a fresh checked harness binding reuses the stored logical agent participan
   const { job_id } = await handlers["threads.send"]({ item, text: "Second binding", ...fresh },
     host.composerContext("new-binding", item, "Second binding"));
   await host.run(job_id);
-  const agents = decode(host.markdown(item)).participants.filter(person => person.kind === "agent");
+  const agents = host.thread(item).participants.filter(person => person.kind === "agent");
   assert.equal(agents.length, 1);
   assert.deepEqual(agents[0].contribution, { package: "calternal-threads-claude-code", contribution: "claude-code" });
   assert.doesNotMatch(host.markdown(item), /checked-harness/);
@@ -346,7 +355,7 @@ test("the creator retains discovery across several attested prompts and replies"
     assert.equal(host.writeAuthor(item), creator);
     assert.deepEqual(host.discoverAsAttempt(creator), [item]);
   }
-  const { messages } = decode(host.markdown(item));
+  const { messages } = host.thread(item);
   assert.deepEqual(messages.map(message => message.author.kind), ["person", "agent", "person", "agent", "person", "agent"]);
   assert.equal(messages.at(-1)?.text, "Reply to Third");
 });
@@ -465,11 +474,14 @@ test("opaque fallback stages a large reframe without losing formerly indexed lit
     at: "2026-11-20T13:00:00Z", if_missed: "run" }, context("arm-fallback", "threads.arm"));
   await host.deliver(alarm.alarm, "2026-11-20T13:00:01Z");
   assert.equal(file.discovery, "consent_only");
-  assert.equal(file.spanHistory.get(file.revision)?.spans.length, 1);
+  assert.equal(file.spanHistory.get(file.revision)?.spans.length, 0);
   assert.equal(file.spanHistory.get(oldRevision)?.spans.length, 25);
   assert.ok(host.markdown(item).includes(`\\${delimiter}`));
   const result = await handlers["threads.message"]({ item, message: first.id }, context("read-after-fallback", "threads.message"));
   assert.equal(result.text, first.text);
+  await host.run((await send("after-opaque", "New checked message")).job_id);
+  assert.equal(file.spanHistory.get(file.revision)?.spans.length, 2);
+  assert.equal(file.discovery, "consent_only");
 });
 
 test("an unproven staged replacement sets consent_only and a worker cannot clear it", async () => {

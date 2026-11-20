@@ -175,25 +175,51 @@ test("a new reply cannot target a deleted message and an existing reply stays vi
   assert.equal(decode(host.markdown(item)).messages.find(entry => entry.id === reply.message)?.replyTo, first.message);
 });
 
-test("a checked reply quotes multiple paragraphs outside its attested text", async () => {
+test("checked quotes retain the original author, survive a source edit and are redacted with it", async () => {
   const { host, people, item, ctx } = await setup();
+  const writer = (person: string, request: string, text: string) =>
+    host.peopleContext(person, request, undefined, undefined, undefined, { item, text });
   const original = "First paragraph\n\nSecond paragraph";
-  const { message: target } = await people.post({ item, text: original }, ctx(alice, "two-paragraphs"));
+  const { message: target } = await people.post({ item, text: original }, writer(alice, "two-paragraphs", original));
   const text = "> My own words\n\nThe reply";
-  const writer = host.peopleContext(bob, "quoted-reply", undefined, undefined, undefined, { item, text });
-  const { message } = await people.post({ item, text, replyTo: target }, writer);
-  assert.match(host.markdown(item), /> First paragraph\n>\n> Second paragraph\n\n> My own words/);
+  const replyWriter = writer(bob, "quoted-reply", text);
+  const { message } = await people.post({ item, text, replyTo: target }, replyWriter);
+  assert.match(host.markdown(item), /> First paragraph\n> \n> Second paragraph\n\n> My own words/);
   assert.equal((await people.message({ item, message }, ctx(alice, "read-quote"))).replyQuote, original);
-  const { revision } = await writer.call("item_head", { item });
-  const { spans } = await writer.call("item_spans", { item, revision });
+  const { revision } = await replyWriter.call("item_head", { item });
+  const { spans } = await replyWriter.call("item_spans", { item, revision });
   const span = spans.at(-1)!;
   assert.equal(Buffer.from(host.markdown(item)).subarray(span.middle_offset, span.middle_offset + span.middle_length).toString(), text);
   assert.deepEqual(span.attribution, { kind: "person", actor: bob });
+  assert.deepEqual(span.quote?.attribution, { kind: "person", actor: alice });
+  const { message: nested } = await people.post({ item, text: "Acknowledged", replyTo: message },
+    writer(alice, "nested-quote", "Acknowledged"));
+  assert.equal((await people.message({ item, message: nested }, ctx(bob, "read-nested-quote"))).replyQuote, text);
+
+  await people.edit({ item, message: target, text: "Changed" }, writer(alice, "edit-quoted-source", "Changed"));
+  assert.equal((await people.message({ item, message }, ctx(alice, "read-original-quote"))).replyQuote, original);
+  await people.remove({ item, message: target }, ctx(alice, "delete-quoted-source"));
+  assert.doesNotMatch(host.markdown(item), /First paragraph|Second paragraph|Changed/);
+  const live = await replyWriter.call("item_head", { item });
+  const after = (await replyWriter.call("item_spans", { item, revision: live.revision })).spans.find(entry => entry.span === span.span);
+  assert.ok(after);
+  assert.equal(after.quote, undefined);
+  assert.deepEqual(after.attribution, span.attribution);
+  assert.equal((await people.message({ item, message }, ctx(alice, "read-after-redaction"))).text, text);
+  await assert.rejects(replyWriter.call("item_range", { item, revision, offset: 0, length: 10 }), /withheld after redaction/);
+
   const longQuote = "Long quote ".repeat(100);
-  const { message: longTarget } = await people.post({ item, text: longQuote }, ctx(alice, "long-quote-target"));
-  const { message: longReply } = await people.post({ item, text, replyTo: longTarget },
-    host.peopleContext(bob, "long-quoted-reply", undefined, undefined, undefined, { item, text }));
+  const { message: longTarget } = await people.post({ item, text: longQuote }, writer(alice, "long-quote-target", longQuote));
+  const { message: longReply } = await people.post({ item, text, replyTo: longTarget }, writer(bob, "long-quoted-reply", text));
   assert.equal((await people.message({ item, message: longReply }, ctx(alice, "read-long-quote"))).replyQuote, longQuote);
+  assert.equal(host.writeAuthor(item), bob);
+  const longHead = await replyWriter.call("item_head", { item });
+  const longSpan = (await replyWriter.call("item_spans", { item, revision: longHead.revision })).spans.at(-1)!;
+  assert.ok(longSpan.quote && longSpan.quote.length > 512);
+  await people.edit({ item, message: longTarget, text: "Revised source" }, writer(alice, "change-long-source", "Revised source"));
+  await people.edit({ item, message: longReply, text: "Revised reply" }, writer(bob, "change-long-reply", "Revised reply"));
+  const revised = await people.message({ item, message: longReply }, ctx(alice, "read-revised-reply"));
+  assert.equal(revised.replyQuote, longQuote);
   assert.equal(host.writeAuthor(item), undefined);
 });
 

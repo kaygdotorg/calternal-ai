@@ -109,14 +109,15 @@ function timestamp(value: string): Timestamp {
   return date.toISOString().replace(/\.000Z$/u, "Z");
 }
 
-type FramedText = { prefix: string; text: string; suffix: string };
+type FramedText = { prefix: string; text: string; suffix: string; quote?: string };
 const maxFramingBytes = 512;
 
 /** Select a host source only when each framing operand fits the host byte bound. */
-export function attest(parts: FramedText, source: AttestedBody["source"]): AttestedBody | undefined {
+export function attest(parts: FramedText, source: AttestedBody["source"], quote?: AttestedBody["quote"]): AttestedBody | undefined {
   const { prefix, suffix } = parts;
-  if (Buffer.byteLength(prefix) > maxFramingBytes || Buffer.byteLength(suffix) > maxFramingBytes) return;
-  return { source, prefix, suffix };
+  if (Buffer.byteLength(prefix) > maxFramingBytes || Buffer.byteLength(suffix) > maxFramingBytes ||
+      (parts.quote !== undefined && !quote)) return;
+  return { source, prefix, suffix, ...(quote && { quote }) };
 }
 
 /** Frame one message around the exact original text. Inline agent identities let replies append without rewriting frontmatter. */
@@ -139,7 +140,6 @@ export function messageRecord(message: Message, participants: Participant[], inl
   if (message.replyTo && message.replyToName) {
     heading.push(`reply to ${escapeLabel(message.replyToName)}`);
     attrs.push(`reply-to=m-${message.replyTo}`);
-    if (message.replyQuote !== undefined) attrs.push("quote=1");
   }
   if (message.askedBy) {
     heading.push(`asked by ${escapeLabel(message.askedBy.name)}`);
@@ -151,15 +151,19 @@ export function messageRecord(message: Message, participants: Participant[], inl
     if (link) links.push(`${name}=${encodeURIComponent(link.space)}/${encodeURIComponent(link.id)}`);
   }
   if (links.length) attrs.push("links=1");
-  const quote = message.replyQuote === undefined ? "" :
-    message.replyQuote.split("\n").map(line => line === "" ? ">" : `> ${line}`).join("\n") + "\n\n";
-  return { prefix: `### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n${quote}`, text: message.text,
+  return { prefix: `### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n`, quote: message.replyQuote, text: message.text,
     suffix: links.length ? `\n\n<!-- ${links.join(" ")} -->\n\n` : "\n\n" };
 }
 
 /** Render the opaque Markdown for a record that cannot use host composition. */
-export function encodeRecord({ prefix, text, suffix }: FramedText): string {
-  return prefix + escapeBodyHeadings(text, true) + suffix;
+export function encodeRecord({ prefix, text, suffix, quote }: FramedText): string {
+  const heading = quote === undefined ? prefix : prefix.replace(/\}\n\n$/u, " quote=1}\n\n");
+  return heading + quoteBlock(quote) + escapeBodyHeadings(text, true) + suffix;
+}
+
+/** Render the fixed Markdown quote representation for byte budgeting or opaque export. */
+export function quoteBlock(quote: string | undefined): string {
+  return quote === undefined ? "" : quote.split("\n").map(line => `> ${line}`).join("\n") + "\n\n";
 }
 
 /** Identify a previously stored middle that needs escaping if its span index is discarded. */
@@ -197,7 +201,7 @@ export function encode(thread: Thread): string {
 
 type SpanRef = NonNullable<ItemSave["replace_span"]>;
 type IndexedSpan = ItemSpansPage["spans"][number];
-type MessageRecord = { heading: string; body: string[]; indexed?: { span: IndexedSpan; text: string } };
+type MessageRecord = { heading: string; body: string[]; indexed?: { span: IndexedSpan; text: string; quote?: string } };
 
 function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: Map<string, Participant>, threadId: string): Message {
   const match = messageHeading.exec(line);
@@ -239,14 +243,14 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
         (indexed && (indexed.text !== "" || attribution?.kind !== "empty"))) throw new Error("Could not read the deleted message marker.");
     return { id, author, posted_at, text: "", deleted: true };
   }
-  let replyQuote: string | undefined;
+  let replyQuote = indexed?.quote;
   if (attrs.has("quote")) {
     const quote = [];
     while (body[start] === ">" || body[start]?.startsWith("> ")) {
       quote.push(body[start].slice(2));
       start++;
     }
-    if (attrs.get("quote") !== "1" || !attrs.has("reply-to") || !quote.length || body[start++] !== "") {
+    if (indexed || attrs.get("quote") !== "1" || !attrs.has("reply-to") || !quote.length || body[start++] !== "") {
       throw new Error("Could not read the quoted message.");
     }
     replyQuote = quote.join("\n");
@@ -266,6 +270,7 @@ function decodeMessage({ heading: line, body, indexed }: MessageRecord, people: 
   if (indexed && (framingBody !== "" || attribution?.kind === "empty")) throw new Error("Could not read where the message text starts and ends.");
   const message: Message = { id, author, posted_at, text: indexed?.text ?? escapeBodyHeadings(framingBody, false) };
   const reply = attrs.get("reply-to");
+  if (replyQuote !== undefined && !reply) throw new Error("Could not identify the quoted message.");
   const replyLabel = markers.find(marker => marker.startsWith("reply to "));
   if (reply || replyLabel) {
     if (!reply || !/^m-[a-f0-9]{16}$/u.test(reply) || !replyLabel) throw new Error("Unreadable reply reference.");
@@ -325,6 +330,7 @@ function decodeRecords(frontmatter: string[], records: Iterable<MessageRecord>) 
     }
   }
   const spans = new Map<string, SpanRef>();
+  const quotes = new Set<string>();
   const anchors = new Set<string>();
   const messages: Message[] = [];
   for (const record of records) {
@@ -332,11 +338,12 @@ function decodeRecords(frontmatter: string[], records: Iterable<MessageRecord>) 
     if (anchors.has(message.id)) throw new Error("Two messages use the same ID.");
     anchors.add(message.id);
     if (record.indexed) spans.set(message.id, record.indexed.span.span);
+    if (record.indexed?.span.quote) quotes.add(message.id);
     messages.push(message);
   }
   const thread: Thread = { id, title, created: timestamp(created), participants: [...people.values()],
     ...(fields.get("conversation") === "people" && { conversation: "people" }), messages };
-  return { thread, spans };
+  return { thread, spans, quotes };
 }
 
 function documentLines(document: string): string[] {
@@ -378,7 +385,7 @@ export function decodeIndexed(bytes: Buffer, index: readonly IndexedSpan[], prov
     let cursor = headerEnd;
     const refs = new Set<SpanRef>();
     for (const [position, entry] of index.entries()) {
-      const { offset, length, span, middle_offset, middle_length } = entry;
+      const { offset, length, span, middle_offset, middle_length, quote } = entry;
       const end = offset + length;
       const middleEnd = middle_offset + middle_length;
       if (![offset, length, middle_offset, middle_length].every(Number.isSafeInteger) || length <= 0 || end > bytes.length ||
@@ -396,11 +403,20 @@ export function decodeIndexed(bytes: Buffer, index: readonly IndexedSpan[], prov
         if (provenance === "attested") throw new Error("Some saved message ranges are missing.");
         yield* opaqueRecords(documentLines(utf8.decode(bytes.subarray(cursor, offset))));
       }
-      const prefix = utf8.decode(bytes.subarray(offset, middle_offset));
+      let quoted: string | undefined;
+      if (quote) {
+        if (!Number.isSafeInteger(quote.offset) || !Number.isSafeInteger(quote.length) || quote.length < 1 ||
+            quote.offset < offset || quote.offset + quote.length !== middle_offset) throw new Error("Invalid saved quote range.");
+        const block = utf8.decode(bytes.subarray(quote.offset, middle_offset));
+        const lines = block.slice(0, -2).split("\n");
+        if (!block.endsWith("\n\n") || lines.some(line => !line.startsWith("> "))) throw new Error("Could not read the quoted message.");
+        quoted = lines.map(line => line.slice(2)).join("\n");
+      }
+      const prefix = utf8.decode(bytes.subarray(offset, quote?.offset ?? middle_offset));
       const suffix = utf8.decode(bytes.subarray(middleEnd, end));
       if (!prefix.endsWith("\n\n")) throw new Error("Could not read where the message text starts and ends.");
       const [heading, ...body] = documentLines(prefix + suffix);
-      yield { heading, body, indexed: { span: entry, text: utf8.decode(bytes.subarray(middle_offset, middleEnd)) } };
+      yield { heading, body, indexed: { span: entry, text: utf8.decode(bytes.subarray(middle_offset, middleEnd)), quote: quoted } };
       cursor = end;
     }
     if (cursor < bytes.length) {
@@ -434,7 +450,8 @@ export function page(thread: Thread, older?: string, anchor?: string): { view: I
   while (start > 0 && end - start < 10) {
     const message = visible[start - 1];
     const nodes: SnapshotNode[] = [
-      { type: "snapshot-heading", anchor: message.id, title: (message.author.kind === "person" ? "Person" : "Agent") + (message.edited ? " (edited)" : "") },
+      { type: "snapshot-heading", anchor: message.id, title: (message.author.kind === "person" ? "Person" : "Agent") + (message.edited ? " (edited)" : ""),
+        author: message.author.name, timestamp: message.posted_at },
     ];
     const text = [...message.text];
     for (let offset = 0; offset < text.length; offset += 2000) {

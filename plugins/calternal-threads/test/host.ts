@@ -49,7 +49,7 @@ const exchanges = {
 } as const;
 const trace: [name: string, value: unknown][] = [];
 
-/** Check the fake's revision 14.38 exchanges against the pinned schemas. */
+/** Check the fake's revision 14.39 exchanges against the pinned schemas. */
 export function checkTrace() {
   const check = fileURLToPath(new URL("../check-shapes.py", import.meta.url));
   const contract = fileURLToPath(new URL("../.build/contract/", import.meta.url));
@@ -57,8 +57,11 @@ export function checkTrace() {
 }
 
 type SpanIndex = Pick<ItemSpansPage, "body_provenance" | "spans">;
+type Span = ItemSpansPage["spans"][number];
+type SpanBinding = { record: string; quotedRecord?: string };
 type File = { space: string; people?: readonly string[]; creator: string; discovery: "creator_only" | "consent_only"; owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; authors: Map<string, string>;
-  spanHistory: Map<string, SpanIndex>; spans: Map<string, ItemSpansPage["spans"][number]>; provenance: SpanIndex["body_provenance"];
+  spanHistory: Map<string, SpanIndex>; spans: Map<string, Span>; bindings: Map<string, SpanBinding>;
+  withheldRevisions: Set<string>; provenance: SpanIndex["body_provenance"];
   revision: string; path?: string; archived: boolean; title: string };
 type Job = {
   context: ExecutionJobContext;
@@ -103,6 +106,7 @@ export class FakeHost {
   private scopes = new Map<string, { item: string; revision: string }>();
   private spanPages = new Map<string, { item: string; revision: string; viewer: string; owner: Owner; after: number }>();
   private incomingLinks = new Map<string, { source: string; anchor: string }[]>();
+  private relocationUndo = new Map<string, { item: string; title: string; folder: string[]; head: string; viewer: string }>();
   linkedMarkdown = new Map<string, string>();
   private serial = 0;
   private selected = { harness: "checked-harness", placement: "checked-desk" };
@@ -486,7 +490,7 @@ export class FakeHost {
     const requestId = args.request_id ?? request;
     const receiptKey = (name: string) => `${owner}:${receiptActor}:${name}:${requestId}`;
     const commit = (effect: () => unknown) => this.receipt(receiptKey(method), input, effect);
-    const compose = ({ source, prefix = "", suffix = "" }: AttestedBody) => {
+    const compose = ({ source, prefix = "", suffix = "", quote }: AttestedBody, retiring?: string) => {
       assert.ok(checkedInvocation);
       assert.ok(Buffer.byteLength(prefix) <= 512 && Buffer.byteLength(suffix) <= 512, "framing exceeds 512 bytes");
       let text = "";
@@ -497,22 +501,49 @@ export class FakeHost {
         assert.ok(allowsOutput && job?.attempt && job.result && source.seq === 1, "missing delivered output");
         text = job.result.text;
       }
-      return Buffer.from(prefix + text + suffix);
+      let quoted: { text: string; record: string; attribution: NonNullable<Span["quote"]>["attribution"] } | undefined;
+      if (quote) {
+        assert.ok(file && quote.item === args.item && file.history.has(quote.revision), "quote source unavailable");
+        const origin = file.spanHistory.get(quote.revision)?.spans.find(candidate => candidate.span === quote.span);
+        assert.ok(origin && file.spans.has(quote.span) && origin.middle_length > 0 && origin.attribution.kind !== "empty" &&
+          !file.withheldRevisions.has(quote.revision), "quote source unavailable");
+        const record = file.bindings.get(origin.span)!.record;
+        const copies = [...file.spans.values()].filter(entry => entry.span !== retiring &&
+          file.bindings.get(entry.span)?.quotedRecord === record);
+        assert.ok(copies.length < 64, "quote copy limit");
+        const source = file.history.get(quote.revision)!.subarray(origin.middle_offset, origin.middle_offset + origin.middle_length);
+        const block = source.toString().split("\n").map(line => `> ${line}`).join("\n") + "\n\n";
+        assert.ok(Buffer.byteLength(block) <= 65536, "quote byte limit");
+        quoted = { text: block, record, attribution: origin.attribution };
+      }
+      const bytes = Buffer.from(prefix + (quoted?.text ?? "") + text + suffix);
+      return { bytes, prefixBytes: Buffer.byteLength(prefix), middleBytes: Buffer.byteLength(text), quoted };
     };
     const attributeWrite = (target: File, revision: string, attested?: AttestedBody) => {
       if (attested && attested.source.kind !== "empty") target.authors.set(revision, receiptActor);
       if (!attested || receiptActor !== target.creator || args.attempt_discovery === "consent_only") target.discovery = "consent_only";
     };
-    const recordSpan = (target: File, offset: number, length: number, attested: AttestedBody) => {
-      if (!length) return {};
+    const recordSpan = (target: File, offset: number, composed: ReturnType<typeof compose>, attested: AttestedBody, record?: string) => {
+      if (!composed.bytes.length) return {};
       const span = this.id("span");
-      const prefix = Buffer.byteLength(attested.prefix ?? "");
-      const suffix = Buffer.byteLength(attested.suffix ?? "");
+      const quoteLength = Buffer.byteLength(composed.quoted?.text ?? "");
       const attribution = attested.source.kind === "input" ? { kind: "person" as const, actor: receiptActor }
         : attested.source.kind === "output" ? { kind: "attempt" as const, attempt: job!.attempt!.execution }
         : { kind: "empty" as const };
-      target.spans.set(span, { span, offset, length, middle_offset: offset + prefix, middle_length: length - prefix - suffix, attribution });
+      target.spans.set(span, { span, offset, length: composed.bytes.length,
+        middle_offset: offset + composed.prefixBytes + quoteLength, middle_length: composed.middleBytes, attribution,
+        ...(composed.quoted && { quote: { offset: offset + composed.prefixBytes, length: quoteLength, attribution: composed.quoted.attribution } }),
+      });
+      target.bindings.set(span, { record: record ?? span, quotedRecord: composed.quoted?.record });
       return { span };
+    };
+    const shiftAfter = (target: File, start: number, delta: number) => {
+      for (const span of target.spans.values()) {
+        if (span.offset <= start) continue;
+        span.offset += delta;
+        span.middle_offset += delta;
+        if (span.quote) span.quote.offset += delta;
+      }
     };
     const publishIndex = (target: File, revision: string, opaque = false) => {
       if (opaque) {
@@ -530,7 +561,8 @@ export class FakeHost {
         assert.ok(create.kind === owner || (owner === "threads" && create.kind === "thread-consultations"));
         const item = this.id("item");
         const revision = this.id("rev");
-        const body = create.attested ? compose(create.attested) : Buffer.from(create.body ?? "", "base64");
+        const composed = create.attested && compose(create.attested);
+        const body = composed ? composed.bytes : Buffer.from(create.body ?? "", "base64");
         const root = create.kind === "thread-consultations" ? ".calternal/thread-consultations" : owner === "threads" ? "Threads" : ".calternal";
         const folders = create.folders ?? [];
         const used = new Set([...this.files.values()].map(file => file.path));
@@ -546,8 +578,9 @@ export class FakeHost {
           assert.equal(application.manifest.kinds.find(kind => kind.id === create.kind)?.attempt_discovery, "item_policy");
         }
         const target: File = { owner, space: this.personalSpace(receiptActor), people: shared && [...shared], creator: receiptActor, discovery, revision, history: new Map([[revision, body]]),
-          authors: new Map(), spans: new Map(), spanHistory: new Map(), provenance: "attested", path, archived: false, title: String(create.metadata.title) };
-        const span = create.attested ? recordSpan(target, 0, body.length, create.attested) : {};
+          authors: new Map(), spans: new Map(), spanHistory: new Map(), bindings: new Map(), withheldRevisions: new Set(),
+          provenance: "attested", path, archived: false, title: String(create.metadata.title) };
+        const span = create.attested && composed ? recordSpan(target, 0, composed, create.attested) : {};
         if (create.attested) attributeWrite(target, revision, create.attested);
         publishIndex(target, revision, !create.attested && body.length !== 0);
         this.files.set(item, target);
@@ -607,23 +640,38 @@ export class FakeHost {
           let body = stage?.sealed ?? (save.body === undefined ? original : Buffer.from(save.body, "base64"));
           let span = {};
           if (save.attested) {
-            const replacement = compose(save.attested);
+            const replacement = compose(save.attested, save.replace_span);
             if (save.replace_span) {
               const prior = target.spans.get(save.replace_span);
               assert.ok(prior, "span unavailable");
-              body = Buffer.concat([original.subarray(0, prior.offset), replacement, original.subarray(prior.offset + prior.length)]);
+              const { record } = target.bindings.get(prior.span)!;
+              body = Buffer.concat([original.subarray(0, prior.offset), replacement.bytes, original.subarray(prior.offset + prior.length)]);
               target.spans.delete(save.replace_span);
-              for (const other of target.spans.values()) {
-                if (other.offset > prior.offset) {
-                  other.offset += replacement.length - prior.length;
-                  other.middle_offset += replacement.length - prior.length;
+              shiftAfter(target, prior.offset, replacement.bytes.length - prior.length);
+              span = recordSpan(target, prior.offset, replacement, save.attested, record);
+              if (save.attested.source.kind === "empty") {
+                for (const dependent of target.spans.values()) {
+                  const quote = dependent.quote;
+                  const binding = target.bindings.get(dependent.span)!;
+                  if (!quote || binding.quotedRecord !== record) continue;
+                  body = Buffer.concat([body.subarray(0, quote.offset), body.subarray(quote.offset + quote.length)]);
+                  dependent.length -= quote.length;
+                  dependent.middle_offset -= quote.length;
+                  delete dependent.quote;
+                  shiftAfter(target, dependent.offset, -quote.length);
+                }
+                for (const [older, index] of target.spanHistory) {
+                  if (index.spans.some(entry => {
+                    const binding = target.bindings.get(entry.span)!;
+                    return entry.attribution.kind !== "empty" &&
+                      (binding.record === record || (entry.quote && binding.quotedRecord === record));
+                  })) target.withheldRevisions.add(older);
                 }
               }
-              span = recordSpan(target, prior.offset, replacement.length, save.attested);
             } else {
-              body = replacement;
+              body = replacement.bytes;
               target.spans.clear();
-              span = recordSpan(target, 0, replacement.length, save.attested);
+              span = recordSpan(target, 0, replacement, save.attested);
             }
           }
           if (save.staged !== undefined) this.stages.delete(save.staged);
@@ -644,6 +692,7 @@ export class FakeHost {
       }
       case "item_range": {
         assert.equal(file?.owner, owner);
+        assert.ok(!file.withheldRevisions.has(args.revision), "revision withheld after redaction");
         const body = file.history.get(args.revision);
         assert.ok(body, "obsolete range");
         const { offset, length } = input as { offset: number; length: number };
@@ -655,6 +704,7 @@ export class FakeHost {
       case "item_spans": {
         assert.equal(file?.owner, owner);
         const { item, revision, cursor } = input as ItemSpansRequest;
+        assert.ok(!file.withheldRevisions.has(revision), "revision withheld after redaction");
         const index = file.spanHistory.get(revision);
         assert.ok(index, "span revision unavailable");
         const location = { item, revision, viewer: receiptActor, owner };
@@ -719,13 +769,14 @@ export class FakeHost {
           assert.equal(args.expected_revision, target.revision, "stale head");
           const revision = this.id("rev");
           const prior = target.history.get(target.revision)!;
-          const addition = append.attested ? compose(append.attested) : Buffer.from(append.bytes ?? "", "base64");
+          const composed = append.attested && compose(append.attested);
+          const addition = composed ? composed.bytes : Buffer.from(append.bytes ?? "", "base64");
           assert.ok(addition.length <= 65536);
           const body = Buffer.concat([prior, addition]);
           target.history.set(revision, body);
           target.revision = revision;
           attributeWrite(target, revision, append.attested);
-          const span = append.attested ? recordSpan(target, prior.length, addition.length, append.attested) : {};
+          const span = append.attested && composed ? recordSpan(target, prior.length, composed, append.attested) : {};
           publishIndex(target, revision, !append.attested);
           return { revision, end_offset: body.length, receipt: requestId,
             ...span };
@@ -828,16 +879,19 @@ export class FakeHost {
   }
 
   /** Model folder placement and indexed link updates behind the generic host action. */
-  async rename(item: string, title: string, activation_id: string, viewer = actor) {
+  async rename(item: string, title: string | undefined, activation_id: string, viewer = actor, destination?: string[]) {
     const file = this.files.get(item)!;
     if (file.people && this.conversationAccess(item, viewer) !== "full") throw new Error("Conversation is read-only.");
-    const nextTitle = checkedTitle(title);
+    assert.ok(title !== undefined || destination !== undefined);
+    const nextTitle = title === undefined ? file.title : checkedTitle(title);
     const thread = this.thread(item);
     const oldPath = file.path!;
-    const nextFolder = folder({ ...thread, title: nextTitle });
+    const priorTitle = file.title;
+    const nextFolder = destination?.join("/") ?? folder({ ...thread, title: nextTitle });
+    const root = nextFolder ? `Threads/${nextFolder}` : "Threads";
     const occupied = new Set([...this.files.entries()].filter(([id]) => id !== item).map(([, sibling]) => sibling.path));
-    let nextPath = `Threads/${nextFolder}/Conversation.md`;
-    for (let suffix = 2; occupied.has(nextPath); suffix++) nextPath = `Threads/${nextFolder} (${suffix})/Conversation.md`;
+    let nextPath = `${root}/Conversation.md`;
+    for (let suffix = 2; occupied.has(nextPath); suffix++) nextPath = `${root} (${suffix})/Conversation.md`;
     const rewrites = (this.incomingLinks.get(item) ?? []).map(({ source, anchor }) => {
       const oldHref = `<${posix.relative(posix.dirname(source), oldPath)}#${anchor}>`;
       const newHref = `<${posix.relative(posix.dirname(source), nextPath)}#${anchor}>`;
@@ -859,6 +913,7 @@ export class FakeHost {
       } else {
         span.offset += delta;
         span.middle_offset += delta;
+        if (span.quote) span.quote.offset += delta;
       }
     }
     const revision = this.id("rev");
@@ -872,9 +927,20 @@ export class FakeHost {
     for (const [source, markdown] of rewrites) this.linkedMarkdown.set(source, markdown);
     const snapshot = this.snapshots.get(item);
     if (snapshot) this.snapshots.set(item, { ...snapshot, source_revision: revision });
-    const outcome = { activation_id, state: "ok" };
+    const ref = this.id("undo");
+    this.relocationUndo.set(ref, { item, title: priorTitle, folder: oldPath.split("/").slice(1, -1), head: revision, viewer });
+    const outcome = { activation_id, state: "ok", undo: { ref, label: "Undo conversation move", expires_at: "2026-11-20T13:00:00Z" } };
     trace.push(["ActionOutcome", outcome]);
     return outcome;
+  }
+
+  /** Apply the generic inverse only for the same viewer and unchanged head. */
+  async undoRename(ref: string, activation_id: string, viewer = actor) {
+    const undo = this.relocationUndo.get(ref);
+    assert.ok(undo?.viewer === viewer && this.files.get(undo.item)?.revision === undo.head, "stale relocation Undo");
+    const result = await this.rename(undo.item, undo.title, activation_id, viewer, undo.folder);
+    this.relocationUndo.delete(ref);
+    return result;
   }
 
   archive(item: string) {
@@ -917,7 +983,8 @@ export class FakeHost {
     }
   }
 
-  private thread(item: string) {
+  /** Decode the fixture's exact head using its committed index when available. */
+  thread(item: string) {
     const file = this.files.get(item)!;
     const bytes = file.history.get(file.revision)!;
     const index = file.spanHistory.get(file.revision)!;

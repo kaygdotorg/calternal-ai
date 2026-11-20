@@ -3,8 +3,9 @@
 The lane starts from dev `80864d0d`. The spike has rerun against
 14.30 (`b89586dd`), 14.31 (`00828198`), 14.32 (`3ca11613`) and
 14.33 (`47024c0f`), 14.34 (`b4d0f20d`), 14.35 (`36d49713`) and
-14.36 (`1c38c21d`) and 14.37 (`0d684545`). The current pin for both
-plugins is draft 14.38 at `430cb649c5bcff7c04b856f88b0527d633c0d2e8`
+14.36 (`1c38c21d`), 14.37 (`0d684545`) and 14.38 (`430cb649`).
+The current pin for both plugins is draft 14.39 at
+`d07c380b00f14a28f999f66d96df27f9d1f40a7f`
 on `origin/lane/v2-host-base`. It follows the November 20
 decision that the Threads app (`calternal-threads`) owns the conversation file and the selected harness
 owns its working log. The lane issue is [#92](https://git.kayg.org/kayg/calternal-ai/issues/92).
@@ -38,11 +39,11 @@ flock -s /tmp/calternal-dev02.lock nix develop -c bash -c '
 '
 ```
 
-The build uses the 14.38 revision-aware SDK builder. It pins both
+The build uses the 14.39 revision-aware SDK builder. It pins both
 plugin manifests and workers, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
 All 46 tests and both Conformance tool 1.1.0 plugin checks passed
-on dev-02 at the 14.38 pin under the shared lock. The repository
+on dev-02 at the 14.39 pin under the shared lock. The repository
 documentation gate passed in the earlier afternoon run. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
@@ -513,8 +514,10 @@ private file calls its saved position `last-read-message`, and the
 notification preferences spell out when push is enabled. Consultation
 logs identify the conversation, lead agent and consulted agent.
 Bob's reply quotes Alice's text as it was when he replied. Alice's later
-edit changes her message and keeps the quoted wording. The quote is
-framing outside Bob's authored text.
+edit changes her message and keeps the quoted wording. The checkout
+fixture can attest the quote while its source span is live. The later
+opaque invitation and consultation writes retire the live index, so the
+exported example uses a `quote=1` tag to label that block.
 
 The host's recorded ranges delimit attested messages. For a hand-edited
 or imported file, a message ends at the next unescaped `###` heading
@@ -549,7 +552,7 @@ Can we meet by the garden gate at 10:30?
 
 The rain should clear by then.
 
-### Bob · 2026-11-20 09:02 UTC · reply to Alice {#m-eaa58816884f2492 by=p2 reply-to=m-b31395e111a687c4 quote=1 mentions=p1}
+### Bob · 2026-11-20 09:02 UTC · reply to Alice {#m-eaa58816884f2492 by=p2 reply-to=m-b31395e111a687c4 mentions=p1 quote=1}
 
 > Can we meet by the garden gate at 10?
 
@@ -764,7 +767,7 @@ require a cross-owner write grant that the design does not provide.
 The plugin worker code uses no native Threads dispatch, special plugin ID,
 direct plugin connection, inherited provider credential, or server-owned
 thread format. The fixture provider port stands in for live execution placement. The
-14.38 fake carries replies through the catalogue's checked contribution
+14.39 fake carries replies through the catalogue's checked contribution
 methods. People-thread invitations still use fixture ports. The harness manifest includes
 an image-shaped fixture digest and a pinned entry that fails closed.
 It cannot launch Claude Code. The real image, login mapping and reviewed
@@ -812,8 +815,9 @@ when visibility changes before confirmation. [ADR 0060][adr0060]
 
 ## Evening decisions and findings
 
-The worker and fixtures cover the evening decisions under the 14.38
-pin. The owner record and reused Notes link scanner are here.
+This table records the evening findings at the 14.38 pin. The next
+section records the 14.39 dispositions. The owner record and Notes link
+scanner are here.
 [Evening decisions](https://git.kayg.org/kayg/calternal-ai/src/commit/340c0472f846b5855f0824765a019d177a9763b0/docs/morning-2026-11-20.md#evening-decisions-owner-2026-11-20) · [Notes link scanner](https://git.kayg.org/kayg/calternal-ai/src/commit/340c0472f846b5855f0824765a019d177a9763b0/crates/server/src/notes/links.rs)
 
 | Area and disposition | What works and what the contract needs |
@@ -827,6 +831,19 @@ pin. The owner record and reused Notes link scanner are here.
 | Consultation completion and Stop · **PARTLY** | A fixture passes five exchanges, logs each turn and publishes one result. A stopped consultation leaves its private log and no result in the conversation. The live host still needs the checked result stream and Stop fence for the linked run and its children, with ordinary run limits. |
 | Missed runs · **CLOSED** in the fixture | Threads supplies a default grace of 60 seconds and forwards an explicit grace when given. At exactly the deadline the fake runs normally. A delivery one second later is missed, and the worker follows Run when back or Skip from the pinned job. |
 | Default app and Markdown editor · **OPEN** | The worker declares `calternal-thread/v2` and the app `threads`. The manifest's `file_format` has only ID and version. Add an install-checked default app for the format, with opening in Notes as an explicit choice. The file already isolates hideable metadata in the trailing `{#m-… …}` heading tag, the link comment after the body, and the IDs, participant aliases and plugin identifiers in frontmatter. The host editor needs a format-aware declaration for hiding those ranges in its block view while preserving raw bytes, anchors and editing. Keep the author, date, edit/delete/reply markers and quote visible. |
+
+## Revision 14.39 disposition
+
+| Finding | Status | Evidence or remaining gap |
+| --- | --- | --- |
+| Generic relocation and Undo | **CLOSED** at the contract level | Catalogue `item_engine.relocate` pins one checked transaction for backlink rewrites, path, attribution ranges and Undo. The fixture renames a folder twice, moves it, and undoes the move. It preserves linked anchors and the original quote attribution throughout. Encoded and reference-style paths, outbound rebasing, authority changes, crash-atomic publication and the latency gate still need live host qualification. The contract calls for p95 of 40 ms with zero links and 100 ms at the cap (64 affected files, 4 MiB of rewritten bytes and 4,096 link edits). |
+| Threads folder and on-disk title binding | **PARTLY** · new | The generic rename now accepts `folder`, but the template supplies item and title. The contract calls for a dedicated-folder placement policy and an already declared host-writable title slot. There is no pinned declaration for deriving Threads' dated folder name or binding its Markdown `title:` bytes to the host title. The fixture models both. Pin those two bindings in the installing kind, so a title-only rename can stay host-owned and shift spans correctly. |
+| Checked quotes | **CLOSED** for recorded sources | Threads sends an item, revision and span ref to the host with zero copied quote bytes in the prefix. The fixture keeps a quote larger than 512 bytes attested, records its original author separately from the reply author, and verifies that quoting a reply copies its middle only. An unindexed source can still be represented by explicit opaque Markdown, with no checked source attribution. |
+| Same-item quote redaction | **CLOSED** in the checked fixture | Deleting an original after editing it still removes its dependent quote bytes. The reply keeps its anchor, authored middle and span identity. A historical read containing the deleted material is withheld. Live delivery, source audiences, and cross-item qualification remain open. Current opaque transcripts still use a whole-file replacement for copied-quote removal. |
+| Preserve a checked quote when editing its reply | **OPEN** · new | `ItemQuoteRange` exposes offset, length and attribution, but no way to keep the existing quote while replacing the reply's middle. If the original was edited, quoting its current span changes the quotation and its old span may be retired. The test preserves the original wording through an opaque replacement. Add a checked carry-forward choice for the existing quote on `replace_span`, independent of eligibility for a new quote. |
+| Default app and hidden metadata | **CLOSED** in the manifest | The format declares `threads` as its default app and selects the trailing heading tag, generated link comments, and technical frontmatter as hideable. Visible author names, time, reply and edit markers, and quotes stay outside those selectors. The alternate editor still needs live qualification for preserving the bytes and hiding only the declared contexts. |
+| Local timestamps | **CLOSED** in the description | Snapshots emit the typed UTC `timestamp` on the heading. The contract assigns local formatting to the renderer. Tests verify the emitted value and schema. The current run has no native renderer evidence. |
+| Other evening and earlier findings | **UNCHANGED** | The one-minute consent wait, consultation result and Stop, default alarm grace, durable span reads and prior safeguards still run. The outstanding live host, consent and delivery, SDK and cutover findings remain. |
 
 ## Simplification opportunities
 

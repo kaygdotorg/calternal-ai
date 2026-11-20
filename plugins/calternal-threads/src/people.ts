@@ -51,11 +51,11 @@ const consentWaitSeconds = 60;
 
 async function member(ctx: Context, item: ItemRef) {
   const { revision, locator } = await ctx.call("item_head", { item });
-  const { thread, size, spans } = await read(ctx, item, revision);
+  const { thread, size, spans, quotes } = await read(ctx, item, revision);
   if (thread.conversation !== "people" || !thread.participants.some(p => p.kind === "person" && p.id === ctx.author.actor)) {
     throw new Error("Conversation unavailable.");
   }
-  return { thread, revision, size, locator, spans };
+  return { thread, revision, size, locator, spans, quotes };
 }
 
 /** Refuse shared mutations and agent calls unless the host confirms current common group membership. */
@@ -104,7 +104,7 @@ async function create(input: { title: string; participants: AccountRef[] }, ctx:
 async function post({ item, text, replyTo, mentions = [] }: Target & {
   text: string; replyTo?: string; mentions?: AccountRef[];
 }, ctx: PeopleContext) {
-  const { thread, revision, size } = await writableMember(ctx, item);
+  const { thread, revision, size, spans } = await writableMember(ctx, item);
   const id = messageId(ctx.author.request_id, `person-${ctx.author.actor}`);
   const recipients = [...new Set(mentions)].sort();
   if (recipients.some(id => !thread.participants.some(person => person.kind === "person" && person.id === id))) {
@@ -126,7 +126,9 @@ async function post({ item, text, replyTo, mentions = [] }: Target & {
   };
   const record = messageRecord(message, thread.participants);
   const captured = ctx.messageWrite;
-  const attested = captured?.item === item && captured.text === text ? attest(record, { kind: "input" }) : undefined;
+  const sourceSpan = replyTo === undefined ? undefined : spans.get(replyTo);
+  const quote = sourceSpan === undefined ? undefined : { item, revision, span: sourceSpan };
+  const attested = captured?.item === item && captured.text === text ? attest(record, { kind: "input" }, quote) : undefined;
   thread.messages.push(message);
   const saved = await appendRecord(ctx, item, revision, step(ctx.author.request_id, "person-post"), size, thread, record, attested);
   await publish(ctx, item, saved.revision, thread);
@@ -139,7 +141,7 @@ async function message({ item, message }: MessageTarget, ctx: PeopleContext) {
 }
 
 async function change({ item, message }: MessageTarget, ctx: PeopleContext, text?: string) {
-  const { thread, revision, spans } = await writableMember(ctx, item);
+  const { thread, revision, spans, quotes } = await writableMember(ctx, item);
   const entry = find(thread, message);
   if (entry.author.kind !== "person" || entry.author.id !== ctx.author.actor || (entry.deleted && text !== undefined)) {
     throw new Error("Message unavailable.");
@@ -169,9 +171,14 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
   const purpose = text === undefined ? "person-delete" : "person-edit";
   const captured = ctx.messageWrite;
   const replace_span = spans.get(message);
-  if (!quotedBy.length && replace_span !== undefined && (text === undefined || (captured?.item === item && captured.text === text))) {
+  if (quotedBy.every(reply => quotes.has(reply.id)) && replace_span !== undefined &&
+      (text === undefined || (captured?.item === item && captured.text === text))) {
     const record = messageRecord(entry, thread.participants);
-    const attested = attest(record, { kind: text === undefined ? "empty" : "input" });
+    const target = entry.replyQuote === undefined ? undefined :
+      thread.messages.find(candidate => candidate.id === entry.replyTo && !candidate.deleted && candidate.text === entry.replyQuote);
+    const sourceSpan = target && spans.get(target.id);
+    const quote = sourceSpan === undefined ? undefined : { item, revision, span: sourceSpan };
+    const attested = attest(record, { kind: text === undefined ? "empty" : "input" }, quote);
     if (attested) {
       const result = await ctx.call("item_save", { request_id: step(ctx.author.request_id, purpose),
         item, expected: revision, replace_span, attested });
