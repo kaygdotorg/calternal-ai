@@ -15,10 +15,28 @@ Why this matters: on the revision 14 contract, the plugin SDK (#106) removed
 Chat's hand-written test host and build script, but Chat's own source only
 went from 1,884 to 1,767 lines (about 6 percent). The rest was contract
 vocabulary that no SDK can hide. This document shows the same plugins when
-the contract is seven primitives.
+the contract is seven primitives (the integrated design now has five parts, explained as three ideas).
 
 Where the sections disagree on a name, I use one name and say which section
 it comes from; section 3 lists the disagreements.
+
+
+> **Integrator's revision note (2026-11-21, `lane/v2-host-base`).** This file
+> is the authoring lane's paper prototype. The integrated design
+> (`docs/proposals/primitives-only-host-2026-11-21.md`, revision 2) changed
+> it in place where the simplicity review found bugs: request IDs are derived
+> by the host (no `request` arguments); official IDs use the `calternal-`
+> prefix; facets are collections with `group`; there are no declarative
+> `create`/`set` operations (a kind's write grant lets the interface call the
+> host's create and set); the read position key is stated; mute is the kind
+> owner's state and the host drops pushes for muted recipients; the agent
+> prompt is posted only after the consent freeze; mentions are person
+> references from the composer, not `@` tokens; the composer no longer names
+> its target (the host fills it); the harness is resolved from the pick;
+> only the actor may steer a run; unsnooze cancels the wake; recurring work
+> uses `every`. `where` strings below are shorthand for the one object form
+> (`{ read: false }`) defined in the integrated design. Line counts and the
+> rest of the text are the lane's and were not recounted.
 
 ## 1. The whole author-facing API
 
@@ -52,14 +70,14 @@ declare function kind<F extends Fields>(k: {
 }): Kind;
 type Policy = "author" | "author-or-manager" | "writers";
 interface Files {                        // ctx.files (files section 1.2)
-  create(kind: string, f: { fields: object; body?: string; folder?: string; name?: string; request: string }): Promise<FileRef>;
+  create(kind: string, f: { fields: object; body?: string; folder?: string; name?: string }): Promise<FileRef>;
   read(file: FileRef, at?: { revision?: string }): Promise<{ fields: any; body: string; revision: string }>;
-  replace(file: FileRef, w: { fields?: object; body: string; expected: string; request: string }): Promise<{ revision: string }>;
+  replace(file: FileRef, w: { fields?: object; body: string; expected: string }): Promise<{ revision: string }>;
   set(file: FileRef, fields: object, expected?: string): Promise<{ revision: string }>;
   history(file: FileRef): Promise<{ revision: string; change: string; stamp: Stamp }[]>;
 }
 interface Records {                      // ctx.records (files section 1.3)
-  append(file: FileRef, r: { body: string; fields?: object; request: string }): Promise<{ anchor: Anchor }>;
+  append(file: FileRef, r: { body: string; fields?: object }): Promise<{ anchor: Anchor }>;
   edit(file: FileRef, anchor: Anchor, r: { body: string; expected: string }): Promise<{ revision: string }>;
   redact(file: FileRef, anchor: Anchor): Promise<void>;
   read(file: FileRef, q: { anchors?: Anchor[]; after?: Anchor | { revision: string }; limit?: number }): Promise<Rec[]>;
@@ -69,7 +87,6 @@ interface State { get(key: string): Promise<unknown>; set(key: string, value: un
 
 // ── 2. Questions ─────────────────────────────────────────────────────────
 declare function collection(title: string, q: Query & { hand?: true; view?: "list" | "board" | "gallery" | "strip" }): Collection;
-declare function facet(title: string, q: { kind: string; by: string }): Facet;
 type Query = { kind?: string | string[]; where?: string; sort?: string; linksTo?: FileRef | "this"; text?: string; limit?: number };
 interface Questions { query(q: Query): Promise<{ rows: Row[]; count?: number; next?: string }> }   // ctx.query
 
@@ -87,11 +104,11 @@ interface People {                       // ctx.people
 
 // ── 4. Running code ──────────────────────────────────────────────────────
 interface Work {                         // ctx.work (running-code section 1.2)
-  start(w: { request: string; op?: string; program?: string; input: object; at?: string; key?: string;
+  start(w: { op?: string; slot?: string; input: object; at?: string; every?: string; key?: string;   // every: a repeating schedule the host re-arms; a key replaces or cancels
              deadline?: string; place?: "space" | "hosted" | "mine" | "ask";
              reads?: { records: RecordRef[]; consent: "ask" } }): Promise<{ id: WorkRef; state: string }>;
-  send(id: WorkRef, record: object, request: string): Promise<{ seq: number }>;
-  stop(id: WorkRef, request: string): Promise<void>;
+  send(id: WorkRef, record: object): Promise<{ seq: number }>;
+  stop(target: WorkRef | { key: string }): Promise<void>;   // any reader of the target may Stop; only the actor may send
   list(q: { key?: string; state?: string }): Promise<WorkRow[]>;
 }
 type Watch = { target: Query | { file: FileRef }; op: string };
@@ -108,8 +125,6 @@ declare function operation<I extends Fields, O>(o: {
   public?: true; confirm?: string;                   // callable by other plugins; a host-drawn "are you sure"
   handler: (input: Values<I>, ctx: Ctx) => Promise<O>;
 }): Operation;
-declare function create(kind: string, o: { inputs: string[] }): Operation;     // declarative, no handler
-declare function set(kind: string, fields: object): Operation;                 // declarative, no handler
 interface Calls { call<O>(name: string, input: object): Promise<O> }           // ctx.call("calternal-chat/send", …)
 
 // ── 6. Drawing ───────────────────────────────────────────────────────────
@@ -129,7 +144,7 @@ interface Outside {
 
 // ── The context ──────────────────────────────────────────────────────────
 interface Ctx extends Questions, Calls, Outside {
-  me: Person; request: string; key(purpose: string): string;
+  me: Person;   // request IDs are derived by the host from the call's request and the order of its writes
   files: Files; records: Records; state: State; people: People; work: Work;
   change?: { target: FileRef; from: string; to: string };   // set when a watch fired
   scheduled?: string;                                         // set when a time fired
@@ -168,13 +183,15 @@ plugin on revision 14 (Chat at contract 14.43, on `lane/threads-ui`).
 ### 2.1 Reading List: 10 lines, plus 8 for reminders (today 226)
 
 ```ts
-import { plugin, kind, text, url, bool, collection, create, set } from "@calternal/sdk";
+import { plugin, kind, text, url, bool, collection } from "@calternal/sdk";
 export default plugin({
-  id: "reading-list", name: "Reading List", version: "2.0.0", icon: "book",
+  id: "calternal-reading-list", name: "Reading List", version: "2.0.0", icon: "book",
   kinds: { reading: kind({ fields: { url: url(), title: text().index(), read: bool(false).index() },
     row: { title: "title", detail: ["site(url)", "created"], trailing: [{ dot: { when: "!read" } }] },
     card: { title: "title", detail: ["site(url)"] } }) },
-  operations: { add: create("reading", { inputs: ["url", "title"] }), done: set("reading", { read: true }) },
+  // No operations: the kind's write grant lets the interface call the host's create (a form derived from the kind)
+  // and set ({ set: { read: true } } as a row action) directly.
+  actions: { done: { set: { read: true }, place: "swipe" } },
   sidebar: [collection("Unread", { kind: "reading", where: "!read", sort: "-created" }),
     collection("All", { kind: "reading", sort: "-created" })],
 });
@@ -186,7 +203,7 @@ The reminder needs code, because a time trigger is `work.start` with `at`
 ```ts
 remind: operation({ title: "Remind me", input: { item: link(), at: datetime() },
   async handler({ item, at }, ctx) {
-    await ctx.work.start({ request: ctx.request, op: "reading-list/nudge", input: { item }, at, key: `remind:${item}` });
+    await ctx.work.start({ op: "calternal-reading-list/nudge", input: { item }, at, key: `remind:${item}` });
     return {};
   } }),
 nudge: operation({ title: "Nudge", input: { item: link() },
@@ -202,9 +219,9 @@ own count for its interface is 7 lines.
 ### 2.2 Notes: 29 lines (today: a 67-line package plus the host's native notes engine)
 
 ```ts
-import { plugin, kind, text, list, datetime, link, collection, facet, create, operation } from "@calternal/sdk";
+import { plugin, kind, text, list, datetime, link, collection, operation } from "@calternal/sdk";
 export default plugin({
-  id: "notes", name: "Notes", version: "2.0.0", icon: "notes", phrases: { back: "A note is back" },
+  id: "calternal-notes", name: "Notes", version: "2.0.0", icon: "notes", phrases: { back: "A note is back" },
   kinds: { notes: kind({
     fields: { title: text().index(), tags: list(text()).index(), snooze: datetime().index() },
     folder: "Notes",
@@ -213,11 +230,11 @@ export default plugin({
       { panel: { history: "this", undo: "host.change.revert" } }] },
   }) },
   operations: {
-    create: create("notes", { inputs: ["title"] }),
-    snooze: operation({ title: "Snooze", input: { note: link(), until: datetime() },
+    snooze: operation({ title: "Snooze", input: { note: link(), until: datetime().optional() },
       async handler({ note, until }, ctx) {
-        await ctx.files.set(note, { snooze: until });
-        await ctx.work.start({ request: ctx.request, op: "notes/wake", input: { note }, at: until, key: `snooze:${note}` });
+        await ctx.files.set(note, { snooze: until ?? null });
+        if (!until) { await ctx.work.stop({ key: `snooze:${note}` }); return {}; }     // unsnooze cancels the wake
+        await ctx.work.start({ op: "calternal-notes/wake", input: { note }, at: until, key: `snooze:${note}` });   // same key replaces
         return {};
       } }),
     wake: operation({ title: "Wake", input: { note: link() },
@@ -228,7 +245,7 @@ export default plugin({
       } }),
   },
   sidebar: [collection("All notes", { kind: "notes", where: "snooze = null", sort: "-updated" }),
-    facet("Tags", { kind: "notes", by: "tags" }),
+    collection("Tags", { kind: "notes", group: "tags" }),
     collection("Snoozed", { kind: "notes", where: "snooze > now", sort: "snooze" })],
 });
 ```
@@ -253,7 +270,7 @@ export default plugin({
   id: "calternal-chat", name: "Chat", version: "2.0.0", icon: "chat", grant: { people: true },
   kinds: { chats: kind({
     fields: { title: text().index(), people: list(person()).index(), archived: bool(false).index() },
-    records: { fields: { mentions: list(person()).index() }, edit: "author", redact: "author-or-manager", position: "read", segment: "monthly" },
+    records: { fields: { mentions: list(person()).index() }, edit: "author", redact: "author-or-manager", position: "read", segment: "monthly"   /* position: the host keeps the key read.<file id> in this plugin's state; me.unread counts records after it */ },
     folder: "Chats",
     row: { title: "title", leading: { avatar: "people" }, detail: ["last.excerpt"], trailing: ["last.at", { count: "me.unread", quiet: "me.muted" }] },
     page: { records: { composer: "composer", actions: {
@@ -267,23 +284,22 @@ export default plugin({
   operations: {
     create: operation({ title: "New chat", input: { title: text(), people: list(person()) },
       async handler({ title, people }, ctx) {
-        const chat = await ctx.files.create("chats", { fields: { title, people: [ctx.me.id, ...people] }, request: ctx.request });
+        const chat = await ctx.files.create("chats", { fields: { title, people: [ctx.me.id, ...people] } });
         if (people.length) await ctx.people.share(chat, { people, role: "editor" });
         return { created: chat };
       } }),
-    send: operation({ title: "Send", public: true, input: { chat: link(), text: text(), quote: text().optional() },
-      async handler({ chat, text, quote }, ctx) {
-        const { fields } = await ctx.files.read(chat);
+    send: operation({ title: "Send", public: true, input: { chat: link(), text: text(), quote: text().optional(), mentions: list(person()).optional() },
+      async handler({ chat, text, quote, mentions = [] }, ctx) {
+        // mentions come from the composer's people picker as person references, never as @tokens in the text
         const body = quote ? `[↩](<#^${quote}>)\n${text}` : text;       // a quote is a link to the record (files 1.12)
-        const mentions = fields.people.filter((p: PersonRef) => text.includes(`@${p}`));
-        const { anchor } = await ctx.records.append(chat, { body, fields: { mentions }, request: ctx.request });
+        const { anchor } = await ctx.records.append(chat, { body, fields: { mentions } });
         await ctx.state.set(`read.${chat}`, anchor);
         return { anchor };
       } }),
     reply: operation({ title: "Agent reply", public: true, input: { chat: link(), call: text(), text: text() },
       // Called by a run from its log (running section 2.7), once per log record, so ctx.request is unique per reply.
       handler: ({ chat, call, text }, ctx) =>
-        ctx.records.append(chat, { body: `[↩](<#^${call}>)\n${text}`, request: ctx.request }) }),
+        ctx.records.append(chat, { body: `[↩](<#^${call}>)\n${text}` }) }),
     edit: operation({ title: "Edit", input: { chat: link(), anchor: text(), text: text() },
       async handler({ chat, anchor, text }, ctx) {
         const [rec] = await ctx.records.read(chat, { anchors: [anchor] });
@@ -310,27 +326,28 @@ export default plugin({
   grant: { kinds: { chats: "read" }, calls: ["calternal-chat/send"] },
   slots: { harness: slot({ effect: "viewer", recommended: "calternal-chat-claude-code" }) },
   operations: {
-    call: operation({ title: "Ask an agent", input: { chat: link(), range: list(text()), prompt: text(), harness: text() },
-      async handler({ chat, range, prompt, harness }, ctx) {
-        const { anchor: call } = await ctx.call<{ anchor: string }>("calternal-chat/send", { chat, text: prompt });
-        // The host asks each other author, waits up to a minute, then freezes the input (permissions 1.6).
+    call: operation({ title: "Ask an agent", input: { chat: link(), range: list(text()), prompt: text() },
+      async handler({ chat, range, prompt }, ctx) {
+        // The host asks each other author and resolves this call only after the consent freeze (up to a minute),
+        // so the prompt is posted only for a run that will start. The host resolves the program from the pick.
         const run = await ctx.work.start({
-          request: ctx.request, program: `${harness}/agent`, place: "ask", key: `chat:${chat}`,
+          slot: "harness", place: "ask", key: `chat:${chat}`,
           reads: { records: range.map(anchor => ({ file: chat, anchor })), consent: "ask" },
-          input: { chat, call, prompt },
+          input: { chat, prompt },
         });
+        await ctx.call("calternal-chat/send", { chat, text: prompt });
         return { run: run.id };
       } }),
     stop: operation({ title: "Stop the agent", input: { chat: link() },
       async handler({ chat }, ctx) {
-        for (const row of await ctx.work.list({ key: `chat:${chat}`, state: "running" })) await ctx.work.stop(row.id, ctx.key(row.id));
+        for (const row of await ctx.work.list({ key: `chat:${chat}`, state: "running" })) await ctx.work.stop(row.id);
         return {};
       } }),
     steer: operation({ title: "Tell the agent", input: { chat: link(), text: text() },
       async handler({ chat, text }, ctx) {
         const [row] = await ctx.work.list({ key: `chat:${chat}`, state: "running" });
         if (!row) throw new Error("No agent is working in this chat.");
-        return ctx.work.send(row.id, { type: "input", text }, ctx.request);
+        return ctx.work.send(row.id, { type: "input", text });   // the host refuses anyone but the run's actor: "Only the person who called this agent can tell it more."
       } }),
   },
 });
@@ -343,7 +360,6 @@ export default plugin({
   id: "calternal-chat-notify", name: "Chat notifications", version: "2.0.0", icon: "bell",
   depends: [{ plugin: "calternal-chat", version: "^2" }],
   grant: { kinds: { chats: "read" } },
-  phrases: { mention: "You were mentioned" },
   watches: [{ target: { kind: "chats" }, op: "calternal-chat-notify/changed" }],   // delivered per subscribing person
   operations: {
     changed: operation({ title: "Notify", input: {},
@@ -351,7 +367,9 @@ export default plugin({
         const { target, from } = ctx.change!;
         const fresh = await ctx.records.read(target, { after: { revision: from } });
         const mentioned = fresh.some(r => !r.withheld && r.fields.mentions?.includes(ctx.me.id) && r.stamp.person !== ctx.me.id);
-        if (mentioned && !(await ctx.state.get(`muted.${target}`))) await ctx.notify([ctx.me.id], { item: target, phrase: "mention" });
+        // The host drops the push if the recipient muted the item (key muted.<file> in the state of the kind's
+        // owner, calternal-chat): this plugin cannot and need not read another plugin's state.
+        if (mentioned) await ctx.notify([ctx.me.id], { item: target });
         return {};
       } }),
   },
@@ -384,19 +402,19 @@ export default plugin({
   depends: [{ plugin: "calternal-chat", version: "^2" }],
   grant: { calls: ["calternal-chat/send"] },
   operations: {
-    send: operation({ title: "Send", input: { chat: link(), text: text(), quote: text().optional() },
-      handler: ({ chat, text, quote }, ctx) =>
-        ctx.call("calternal-chat/send", { chat, quote, text: text.replace(/\/\w+/g, word => SNIPPETS[word] ?? word) }) }),
+    send: operation({ title: "Send", input: { text: text(), quote: text().optional() },
+      handler: ({ text, quote }, ctx) =>   // the host adds the target: the chat open in the slot
+        ctx.call("calternal-chat/send", { quote, text: text.replace(/\/\w+/g, word => SNIPPETS[word] ?? word) }) }),
   },
   fills: { "calternal-chat/composer": { composer: { send: "acme-composer/send", draft: true, mention: "this.people",
     insert: Object.keys(SNIPPETS) } } },
 });
 ```
 
-The composer never reads the chat: it gets a host handle for the open chat
-when mounted in the slot (permissions 1.5, designation rule), names it to
-`calternal-chat/send`, and Chat writes under its own grant and the person's
-rights.
+The composer never reads the chat and never names it: the host fills the
+slot's target (the open chat) when it calls `calternal-chat/send`, and Chat
+writes under its own grant and the person's rights (integrated design §6,
+the reach set).
 
 **Harness: 23 lines (today: 70 lines for the fixture harness, which cannot run
 anything, plus 692 lines of the real v1 Claude Code runtime).**
@@ -661,7 +679,7 @@ a worker. *Recommendation:* (a), limited to those forms.
 **5. Does every write need an explicit request ID?**
 *What:* every host write takes a request ID so that a retry does not write
 twice. *Why now:* it appears on almost every line of every plugin.
-*Example:* `ctx.records.append(chat, { body, request: ctx.request })`.
+*Example:* `ctx.records.append(chat, { body })`.
 *Options:* (a) the host derives it from the invocation's request and a
 per-invocation counter unless the author passes one: shorter code; a handler
 that changes its call order on retry would write twice (the SDK's fake host

@@ -223,6 +223,10 @@ reshaped.
 
 ## 5. Build plan
 
+> Superseded by §7 of the integrated design (revision 2), which starts with a
+> one-day files spike and a drawing spike and lists the measurements that
+> gate decisions. Kept for the record.
+
 Each step ends with a test on a running server. The first step already
 does one real thing end to end: the integration lane showed that four
 libraries were still far from one running Send.
