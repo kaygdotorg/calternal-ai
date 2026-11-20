@@ -147,3 +147,44 @@ format, screenshot requirements, permissions statement and review checklist.
 Run `calternal plugin package . NAME.calsubmission` after the package checks
 pass. The submissions repository can run `calternal plugin verify-package`
 on the same archive offline.
+
+### Revision 14 draft packages
+
+Use one reviewed contract checkout for generation and package validation.
+For a revision 14.31 checkout, point the SDK at its absolute contract
+directory and set the expected revision.
+
+```sh
+export CALTERNAL_PLUGIN_CONTRACT="$PWD/contract"
+export CALTERNAL_PLUGIN_CONTRACT_REVISION=14.31
+npm run build -w @calternal/plugin-sdk
+node packages/plugin-sdk/scripts/build-author-package.mjs ./plugin.ts ./dist ./worker.mjs
+python3 -B "$CALTERNAL_PLUGIN_CONTRACT/verify-description.py" --package ./dist
+```
+
+The [Threads walk](description-contract.md#93-threads) uses two packages.
+The app declares the extension point and owns the item. The contributor
+names the app as `{package: "calternal-threads", app: "threads"}`. Its
+manifest pins an image digest and entry bytes. The builder takes entry
+paths relative to the author module and packages verified bytes under a
+content-addressed name. Set execution egress in the harness declaration.
+The worker's network approval is separate.
+
+Use `authorContext` from `@calternal/plugin-sdk/author-context` in the
+pinned carrier adapter. Supply the validated invoke and a broker call
+already bound to it. Hand the returned `RevisionedAuthorContext` to the
+operation. Use its host-authored clock, actor and request identity for
+deterministic writes and receipts. The app creates an item with
+`item_create`, and an operation declaring `creates` returns
+`{created: result.item}`. Send starts a job. The job reserves an attempt
+and calls the checked contribution. A fake host can return a typed output
+frame and then a terminal frame. The real placement supplies the same
+frames through the [entry ABI](../contract/host-catalogue-v2.json#/extension_points/harness_abi).
+Only the owner commits its own item. Reuse a subeffect key for each
+consumed frame, and handle `head_conflict` by rereading and checking the
+new head before issuing a different write receipt. An alarm handler checks
+host-stamped `missed` and applies the app's chosen behavior. A write run
+can publish an authorized snapshot for the saved revision.
+
+The draft package checks validate declarations, types and asset pins.
+Live execution and publication qualify through the API's Step 2 gates.

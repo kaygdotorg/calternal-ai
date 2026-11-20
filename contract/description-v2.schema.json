@@ -1722,6 +1722,9 @@
           "$ref": "host-catalogue-v2.json#/$defs/ExecutionControlRequest"
         },
         {
+          "$ref": "host-catalogue-v2.json#/$defs/ItemLocateRequest"
+        },
+        {
           "$ref": "host-catalogue-v2.json#/$defs/DeviceReconcileRequest"
         }
       ]
@@ -2935,6 +2938,7 @@
     "SnapshotText": {
       "type": "object",
       "properties": {
+        "anchor": {"$ref": "host-catalogue-v2.json#/$defs/ItemAnchor"},
         "type": {
           "const": "snapshot-text"
         },
@@ -2964,12 +2968,13 @@
         "type",
         "text"
       ],
-      "description": "Plain item content in a checked item view. Draw the string as literal text without markup or host controls."
+      "description": "Plain item content in a checked item view, at most 2,000 Unicode code points. The aggregate UTF-8 byte cap is independent. Draw literal text without markup or host controls."
     },
     "SnapshotCode": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "anchor": {"$ref": "host-catalogue-v2.json#/$defs/ItemAnchor"},
         "type": {
           "const": "snapshot-code"
         },
@@ -2992,6 +2997,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "anchor": {"$ref": "host-catalogue-v2.json#/$defs/ItemAnchor"},
         "type": {
           "const": "snapshot-heading"
         },
@@ -3014,6 +3020,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "anchor": {"$ref": "host-catalogue-v2.json#/$defs/ItemAnchor"},
         "type": {
           "const": "snapshot-image"
         },
@@ -3035,6 +3042,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "anchor": {"$ref": "host-catalogue-v2.json#/$defs/ItemAnchor"},
         "type": {
           "const": "snapshot-attachment"
         },

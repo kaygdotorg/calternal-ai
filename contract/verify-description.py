@@ -933,6 +933,26 @@ def verify_package(args, path, inputs):
         owners.append(owner)
     manifest, *installed = owners
     check_package_owners(owners, errors)
+    by_package = {package["id"]: package for package in owners}
+    for contribution in errors.each(manifest.get("contributions", [])):
+        target = contribution["app"]
+        owner = by_package.get(target["package"])
+        if owner is None:
+            continue  # The installer must resolve targets absent from an offline package check.
+        app = next((entry for entry in errors.each(owner["apps"]) if entry["id"] == target["app"]), None)
+        point = next((entry for entry in errors.each((app or {}).get("extension_points", []))
+                      if entry["id"] == contribution["point"]), None)
+        if not point or (point["kind"], point["version"]) != (contribution["kind"], contribution["version"]):
+            errors.append(f"$.contributions.{contribution['id']}.app: no matching qualified extension point")
+    if args.package:
+        for contribution in errors.each(manifest.get("contributions", [])):
+            entry = contribution.get("harness", {}).get("entry")
+            if entry is None:
+                continue
+            entry_path = package_dir / entry["path"]
+            _, data = inputs.bytes(entry_path, implicit_root=package_dir)
+            if hashlib.sha256(data).hexdigest() != entry["sha256"]:
+                errors.append(f"{entry_path}: harness entry SHA-256 mismatch")
     if not report_fixture(path, errors, {}):
         return 1
 
@@ -987,7 +1007,7 @@ def verify_package(args, path, inputs):
 
 def main():
     parser = argparse.ArgumentParser(description="Verify pinned description fixtures or emitted package artifacts.")
-    parser.add_argument("--version", action="version", version="Calternal v2 conformance tool 1.0.0")
+    parser.add_argument("--version", action="version", version="Calternal v2 conformance tool 1.1.0")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--package", type=pathlib.Path, metavar="DIR", help="read manifest.json, declared templates and optional replies/*.json from DIR")
     mode.add_argument("--fixture-testing", action="store_true", help="allow CALTERNAL_HOST_CATALOGUE for fixture diagnostics")

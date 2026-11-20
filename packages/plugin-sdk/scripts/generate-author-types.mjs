@@ -2,7 +2,9 @@
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { generateAuthorTypes } from "../../contracts/scripts/schema-to-types.mjs";
 
-const contract = new URL("../../../contract/", import.meta.url);
+import { contractPin } from "./contract-pin.mjs";
+
+const contract = await contractPin(new URL("../../../contract/", import.meta.url));
 const generated = new URL("../generated/", import.meta.url);
 const packagedContract = new URL("contract/", generated);
 const { text, windowSize } = await generateAuthorTypes(contract);
@@ -16,6 +18,9 @@ await Promise.all([
     "description_verification.py",
     "description_input.py",
     "description_events.py",
+    "description_confirmation.py",
+    "description_intent_trace.py",
+    "description_title.py",
     "json-schema-draft-07.json",
     "description-v2.schema.json",
     "host-catalogue-v2.json",

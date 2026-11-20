@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Revision 14.30 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
+  "description": "Revision 14.31 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -23,7 +23,7 @@
       "missing": "A portable upload and pinned file ref for item attachments.",
       "blocks": "Attaching and reopening files for the harness app before cutover.",
       "cutover": "Disabled until a later numbered revision pins this requirement.",
-      "proposal": "A generic upload shape is still required for the orchestrator cutover."
+      "proposal": "A generic upload shape is still required for the Threads cutover."
     },
     "collection_creation": {
       "status": "OPEN",
@@ -31,6 +31,16 @@
       "missing": "A portable renderer action for creating a host-owned collection, including in the bulk workflow.",
       "blocks": "Create a collection from Notes or as part of placing bulk-selected items.",
       "cutover": "Disabled until a later numbered revision pins this requirement."
+    },
+    "participant_disclosure": {
+      "proposal": "Trusted authorship and per-author consent for exact selected material are OPEN.",
+      "blocks": "Calling an agent into a conversation that includes another person’s messages.",
+      "cutover": "Keep that feature disabled until a later numbered revision pins the missing mechanics."
+    },
+    "people_delivery": {
+      "proposal": "Group membership and cross-space message delivery are OPEN. People discovery is limited to a person's group.",
+      "blocks": "Inviting or delivering across spaces under any new group or messaging path.",
+      "cutover": "Keep those paths disabled until pinned."
     }
   },
   "reserved_operation_prefixes": [
@@ -3996,7 +4006,8 @@
             "type",
             "operation",
             "input",
-            "deadline"
+            "deadline",
+            "author_context"
           ],
           "properties": {
             "type": {
@@ -4016,6 +4027,9 @@
             },
             "alarm": {
               "$ref": "#/$defs/AlarmDelivery"
+            },
+            "author_context": {
+              "$ref": "#/$defs/AuthorInvocationContext"
             }
           }
         }
@@ -4145,12 +4159,16 @@
         },
         "actual_at": {
           "$ref": "#/$defs/Timestamp"
+        },
+        "missed": {
+          "type": "boolean"
         }
       },
       "required": [
         "alarm",
         "scheduled_at",
-        "actual_at"
+        "actual_at",
+        "missed"
       ]
     },
     "AlarmSet": {
@@ -4176,6 +4194,11 @@
         "harness": {
           "$ref": "#/$defs/HarnessRef",
           "description": "Required exactly when the referenced installed alarm job declares execution:true. Apply alarms.admission."
+        },
+        "grace_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
         }
       },
       "required": [
@@ -4416,6 +4439,9 @@
         "cursor": {
           "$ref": "#/$defs/Ref",
           "description": "Host-issued older-page ref. Only on the live path."
+        },
+        "anchor": {
+          "$ref": "#/$defs/ItemAnchor"
         }
       },
       "required": [
@@ -4436,6 +4462,23 @@
               "live"
             ]
           }
+        },
+        {
+          "if": {
+            "required": [
+              "anchor"
+            ]
+          },
+          "then": {
+            "required": [
+              "live"
+            ],
+            "not": {
+              "required": [
+                "cursor"
+              ]
+            }
+          }
         }
       ]
     },
@@ -4452,6 +4495,18 @@
           "required": [
             "state"
           ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "const": "anchor_unavailable"
+            }
+          }
         },
         {
           "type": "object",
@@ -4481,6 +4536,9 @@
             },
             "follow": {
               "$ref": "#/$defs/Ref"
+            },
+            "anchor": {
+              "$ref": "#/$defs/ItemAnchor"
             }
           },
           "required": [
@@ -4502,6 +4560,21 @@
                   "state": {
                     "const": "live"
                   }
+                }
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "anchor"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "state": {
+                    "const": "live"
+                  },
+                  "follow": false
                 }
               }
             }
@@ -4922,12 +4995,47 @@
         },
         "older": {
           "$ref": "#/$defs/Ref"
+        },
+        "anchor": {
+          "$ref": "#/$defs/ItemAnchor"
+        },
+        "anchor_unavailable": {
+          "const": true
         }
       },
-      "required": [
-        "view"
-      ],
-      "description": "Plugin output for one checked page. older is an optional private continuation for the pinned revision. Keep it opaque and never deliver it directly to the renderer."
+      "required": [],
+      "description": "Plugin output for one checked page. older is an optional private continuation for the pinned revision. Keep it opaque and never deliver it directly to the renderer.",
+      "oneOf": [
+        {
+          "required": [
+            "view"
+          ]
+        },
+        {
+          "required": [
+            "anchor_unavailable"
+          ],
+          "properties": {
+            "anchor_unavailable": {
+              "const": true
+            }
+          },
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "older"
+                ]
+              },
+              {
+                "required": [
+                  "anchor"
+                ]
+              }
+            ]
+          }
+        }
+      ]
     },
     "ItemViewRead": {
       "type": "object",
@@ -4941,13 +5049,22 @@
         },
         "older": {
           "$ref": "#/$defs/Ref"
+        },
+        "anchor": {
+          "$ref": "#/$defs/ItemAnchor"
         }
       },
       "required": [
         "item",
         "source_revision"
       ],
-      "description": "Host supplies the checked item and source revision and, for a continuation only, the pinned plugin cursor."
+      "description": "Host supplies the checked item and source revision and, for a continuation only, the pinned plugin cursor.",
+      "not": {
+        "required": [
+          "anchor",
+          "older"
+        ]
+      }
     },
     "ItemViewFollowRequest": {
       "type": "object",
@@ -5347,6 +5464,602 @@
           "description": "True on the final inventory page. The result echoes this flag."
         }
       }
+    },
+    "ReadablePathSegment": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^(?!\\.{1,2}(?![\\s\\S]))[^/\\\\\\x00-\\x1F\\x7F-\\x9F\\u202A-\\u202E\\u2066-\\u2069]+(?![\\s\\S])"
+    },
+    "ItemCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "kind",
+        "name",
+        "metadata"
+      ],
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "kind": {
+          "$ref": "#/$defs/KindId"
+        },
+        "name": {
+          "$ref": "#/$defs/ReadablePathSegment"
+        },
+        "folders": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/ReadablePathSegment"
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "maxProperties": 64
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 174764,
+          "description": "Standard padded base64, at most 128 KiB decoded. Apply the enclosing frame bound too."
+        }
+      }
+    },
+    "ItemHeadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item"
+      ],
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        }
+      }
+    },
+    "OwnedItemHead": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item",
+        "revision",
+        "locator",
+        "bytes",
+        "metadata"
+      ],
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "revision": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "locator": {
+          "$ref": "#/$defs/ItemLocator"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "metadata": {
+          "type": "object",
+          "maxProperties": 64
+        }
+      }
+    },
+    "ItemContentReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item",
+        "revision",
+        "locator",
+        "receipt"
+      ],
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "revision": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "locator": {
+          "$ref": "#/$defs/ItemLocator"
+        },
+        "receipt": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "HeadConflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "code",
+        "current"
+      ],
+      "properties": {
+        "status": {
+          "const": 409
+        },
+        "code": {
+          "const": "head_conflict"
+        },
+        "current": {
+          "$ref": "#/$defs/OwnedItemHead"
+        }
+      }
+    },
+    "ItemSave": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "item",
+        "expected"
+      ],
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "expected": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 174764,
+          "description": "Standard padded base64, at most 128 KiB decoded. Apply the enclosing frame bound too."
+        },
+        "patch": {
+          "type": "object",
+          "maxProperties": 64
+        },
+        "staged": {
+          "$ref": "#/$defs/Ref"
+        },
+        "name": {
+          "$ref": "#/$defs/ReadablePathSegment"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "body"
+          ]
+        },
+        {
+          "required": [
+            "patch"
+          ]
+        },
+        {
+          "required": [
+            "staged"
+          ]
+        },
+        {
+          "required": [
+            "name"
+          ]
+        }
+      ],
+      "not": {
+        "required": [
+          "body",
+          "staged"
+        ]
+      }
+    },
+    "ItemRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item",
+        "revision",
+        "offset",
+        "length"
+      ],
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "revision": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        }
+      }
+    },
+    "ItemRangeResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bytes"
+      ],
+      "properties": {
+        "bytes": {
+          "type": "string",
+          "maxLength": 87384
+        },
+        "next_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ItemStageBegin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "item",
+        "expected",
+        "length",
+        "sha256"
+      ],
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "expected": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2097152
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}(?![\\s\\S])"
+        }
+      }
+    },
+    "ItemStageHandle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "handle"
+      ],
+      "properties": {
+        "handle": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ItemStageChunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "handle",
+        "offset",
+        "bytes"
+      ],
+      "properties": {
+        "handle": {
+          "$ref": "#/$defs/Ref"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2097151
+        },
+        "bytes": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 87384
+        }
+      }
+    },
+    "ItemStageChunkAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "next_offset"
+      ],
+      "properties": {
+        "next_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2097152
+        }
+      }
+    },
+    "ItemStageSeal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "handle"
+      ],
+      "properties": {
+        "handle": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ItemStageSealed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "staged"
+      ],
+      "properties": {
+        "staged": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ItemSaveReply": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ItemContentReceipt"
+        },
+        {
+          "$ref": "#/$defs/HeadConflict"
+        }
+      ]
+    },
+    "ItemStageBeginReply": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ItemStageHandle"
+        },
+        {
+          "$ref": "#/$defs/ItemContentReceipt"
+        },
+        {
+          "$ref": "#/$defs/HeadConflict"
+        }
+      ]
+    },
+    "ItemLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "space",
+        "id"
+      ],
+      "properties": {
+        "space": {
+          "$ref": "#/$defs/Ref"
+        },
+        "id": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ItemAnchor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]+(?![\\s\\S])"
+    },
+    "ItemLocateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "locator"
+      ],
+      "properties": {
+        "type": {
+          "const": "item_locate"
+        },
+        "locator": {
+          "$ref": "#/$defs/ItemLocator"
+        }
+      }
+    },
+    "ItemLocateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item"
+      ],
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        }
+      }
+    },
+    "ExtensionAppId": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "app"
+      ],
+      "properties": {
+        "package": {
+          "$ref": "#/$defs/KindId"
+        },
+        "app": {
+          "$ref": "#/$defs/ActionId"
+        }
+      }
+    },
+    "ContributionCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "execution",
+        "contribution",
+        "input"
+      ],
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        },
+        "contribution": {
+          "$ref": "#/$defs/Ref"
+        },
+        "input": {}
+      }
+    },
+    "ContributionCallReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "call"
+      ],
+      "properties": {
+        "call": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ContributionRead": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "call"
+      ],
+      "properties": {
+        "call": {
+          "$ref": "#/$defs/Ref"
+        },
+        "after": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "wait_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      }
+    },
+    "ContributionFrame": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "seq",
+            "kind",
+            "data"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "kind": {
+              "const": "output"
+            },
+            "data": {}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "seq",
+            "kind",
+            "state"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "kind": {
+              "const": "terminal"
+            },
+            "state": {
+              "enum": [
+                "ok",
+                "failed",
+                "stopped"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ContributionReadResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frames"
+      ],
+      "properties": {
+        "frames": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/ContributionFrame"
+          }
+        }
+      },
+      "description": "Bound the encoded batch to the enclosing frame budget as well as the frame count. Deliver committed frames in increasing sequence order."
+    },
+    "ContributionEntryInvoke": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "call",
+        "input"
+      ],
+      "properties": {
+        "call": {
+          "$ref": "#/$defs/Ref"
+        },
+        "input": {}
+      }
+    },
+    "AuthorInvocationContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "actor",
+        "authored_at"
+      ],
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "actor": {
+          "$ref": "#/$defs/AccountRef"
+        },
+        "authored_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "actor_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Optional host-checked placement label. Issue only when the actor's label is already readable by the entire pinned destination audience. Never a login name."
+        }
+      }
     }
   },
   "activation_limits": {
@@ -5362,7 +6075,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStatus"
       },
-      "scope": "Apply execution_intents.admission. Resolve checked harness, image and placement. Derive the target and owning job receipt from the authenticated job. If continuation is supplied, require a live binding with the exact protected profile and current audience and reconcile uncertain effects. Refuse stale or foreign continuation without starting another attempt. Replay returns the existing admitted result. The named harness must match the already admitted job. Apply execution_attempt_authority.harness_placement to the exact build and acting person.",
+      "scope": "Apply execution_intents.admission. Resolve checked harness, image and placement. Derive the target and owning job receipt from the authenticated job. If continuation is supplied, require a live binding with the exact protected profile and current audience and reconcile uncertain effects. Refuse stale or foreign continuation without starting another attempt. Replay returns the existing admitted result. The named harness must match the already admitted job. Apply execution_attempt_authority.harness_placement to the exact build and acting person. This reserves and reports the exact attempt in starting state. Start contributor code only after the typed contribution_call passes its checked input and authority.",
       "invocation_context_schema": {
         "$ref": "#/$defs/ExecutionJobContext"
       }
@@ -5595,7 +6308,7 @@
       "output_schema": {
         "$ref": "#/$defs/ItemViewResult"
       },
-      "scope": "Check the active view lease, exact bound item-view component and declared slot. Reconstruct item and slot and refuse a different operand. Apply view_snapshots.body_content to both forms. With live omitted, use only retained content. With live:true, apply view_snapshots.live_view. A guest or public view gets the retained path only. Resolve any cursor through view_snapshots.paging. Issue retention refs for the delivered result only."
+      "scope": "Check the active view lease, exact bound item-view component and declared slot. Reconstruct item and slot and refuse a different operand. Apply view_snapshots.body_content to both forms. With live omitted, use only retained content. With live:true, apply view_snapshots.live_view. A guest or public view gets the retained path only. Resolve any cursor through view_snapshots.paging. Issue retention refs for the delivered result only. Apply view_snapshots.anchored_open when anchor is supplied."
     },
     "offline.download": {
       "input_schema": {
@@ -5658,7 +6371,7 @@
       "output_schema": {
         "$ref": "#/$defs/ExtensionChoicePage"
       },
-      "scope": "Authenticated member renderer and current view lease. Resolve the current app and slot from the activation context. The app must match, and the slot must declare this exact extension point. Apply extension_points.choices and check authority before delivery. Reject foreign, disabled or stale scopes opaquely. Read installed contributions without a plugin wake."
+      "scope": "Authenticated member renderer and current view lease. Resolve the current app and slot from the activation context. Resolve the owning package from that current view, and require the app to match, and the slot must declare this exact extension point. Apply extension_points.choices and check authority before delivery. Reject foreign, disabled or stale scopes opaquely. Read installed contributions without a plugin wake."
     },
     "execution.control": {
       "input_schema": {
@@ -5705,6 +6418,16 @@
       },
       "scope": "Authenticated account and device on current host contact. No space selection, app, view, lease or worker wake. Apply device_reconciliation.",
       "surface": "direct_shell"
+    },
+    "item.locate": {
+      "input_schema": {
+        "$ref": "#/$defs/ItemLocateRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/ItemLocateResult"
+      },
+      "surface": "direct_shell",
+      "scope": "Authenticated shell resolves the exact locator to an ItemRef within live authorized space and item scope. Opaque refusal on absent, revoked or foreign locator. Item/body and anchor checks still apply on view open."
     }
   },
   "generic_item_fields": {
@@ -5745,6 +6468,13 @@
       "audience": "shared_projection",
       "nullable": true,
       "description": "Host-reserved verified mark for an eligible harness-associated row. See provider_marks. Omit when ineligible."
+    },
+    "archived": {
+      "type": "Boolean",
+      "index_owner": "content",
+      "audience": "member_item",
+      "nullable": false,
+      "description": "Generic lifecycle fact. Authorize before projecting, filtering or counting. Supports eq on a declared Bool predicate. Publish archive, unarchive and Undo through the same list replay; no package metadata mirror."
     }
   },
   "confirmation": {
@@ -5982,7 +6712,8 @@
           "file_readers"
         ],
         "in_flight": "Apply attempt_authority_end.actions.item_audience_widening on audience expansion. On loss of discovery source rights suppress affected pending output before delivery or commit. Resume the work only in a fresh attempt that excludes ineligible context."
-      }
+      },
+      "kind_opt_out": "A kind declared attempt_discovery:deny is excluded from attempt searches, lists, direct reads and all derived matching, counts and excerpts by default. This excludes brokered discovery even if the actor can read the item. An owning app can prepare a separately authorized typed disclosure under attempt_disclosure."
     },
     "provider_login": {
       "custody": "Mount only manifest-declared paths from the authorized binding for the space type. Reject escaping paths, symlinks and overlapping mount paths. Check the binding, its live approval, exact build and eligible placement at admission, reattachment and renewal. Fence access and affected work on binding revocation or replacement under attempt_authority_end.actions.grant_change. Keep login data out of unrelated accounts and spaces, output, backups and other mounts.",
@@ -6002,7 +6733,8 @@
     "invoke_schema": {
       "$ref": "#/$defs/HostWorkerInvokeFrame"
     },
-    "invoke_scope": "Dispatch to the exact admitted package, digest, epoch and ticket. Stamp protected job and alarm metadata as in HostWorkerInvokeFrame. Refuse worker-origin invoke or worker-supplied host metadata."
+    "invoke_scope": "Dispatch to the exact admitted package, digest, epoch and ticket. Stamp protected job and alarm metadata as in HostWorkerInvokeFrame. Refuse worker-origin invoke or worker-supplied host metadata.",
+    "author_context": "The host stamps request_id, stable actor and authored_at once on admission and replays the same values, including jobs, alarms and contribution calls. Expose these plus checked job and alarm metadata only, without raw tickets or mutable machine data. Use the stable request ID as the namespace for caller-chosen subeffect keys; scope receipts to the originating authority, method and exact target and material. Equal subeffect keys replay and changed material conflicts. Authored time is not a live deadline. The optional actor_label is pinned to the already checked destination audience. If the audience is unresolved, omit it. An item writer must recheck that audience before using the label in a readable path."
   },
   "execution_placement": {
     "source": "Any app may declare a choice prompt with options.host:execution_placement for a single-item execution action, including its composer's Send action. Permit one placement slot per action. Resolve the live member, target item and action from the activation context. Validate the supplied HarnessRef against the installed contribution, requested item and activation's app and scope under the extension and placement rules. Read the eligible binding inventory on the host without waking a plugin. When that action also declares a harness extension choice, the submitted option must resolve to the same HarnessRef before dispatch.",
@@ -6229,20 +6961,20 @@
     }
   },
   "application_cutover_requirements": {
-    "orchestrator": [
-      "Attribute existing files and messages through the owning harness, including historical heading, author, time, machine and login where authorized.",
-      "Attach files through a generic upload and checked item refs.",
-      "Provide queued follow-ups through plugin-owned state and jobs.",
-      "Apply item_audience_widening.item_record to the entire retained legacy thread inventory before switching readers."
-    ],
     "notes": [
       "History browser over the item revision engine.",
       "Checked linked-user comments.",
       "Collection creation."
+    ],
+    "threads": [
+      "Attribute existing files and messages through the owning app and independently authorized harness log, including historical heading, author, time, machine and login where authorized.",
+      "Attach files through a generic upload and checked item refs.",
+      "Provide queued follow-ups through plugin-owned state and jobs.",
+      "Apply item_audience_widening.item_record to the entire retained legacy thread inventory before switching readers."
     ]
   },
   "extension_points": {
-    "resolve": "An app declares versioned extension points and interface schemas in its installed manifest. Resolve the exact app, point, version and contribution kind; pin both package generations and validated signatures. A contribution references an operation owned by the contributing package. Require an exact version in the first slice. Reject conflicts without replacing the live owner. App descriptions attach contributions through ExtensionUse. At each use require the matching contribution kind and declared operation.",
+    "resolve": "An app declares versioned extension points and interface schemas in its installed manifest. Resolve the qualified owner package and app, point, version and contribution kind; pin both package generations and validated signatures. A contribution references an operation owned by the contributing package. Require an exact version in the first slice. Reject conflicts without replacing the live owner. App descriptions attach contributions through ExtensionUse. At each use require the matching contribution kind and declared operation.",
     "authority": "Show the relationship, requested data and effects at install. Both packages must be enabled and the contribution selected by the app or viewer as applicable. Invoke through the broker with the caller's checked rights intersected with the approved declarations and live item and field grants. No direct package-to-package sockets, automatic rights, undeclared UI injection or access to the other package's files.",
     "limits": {
       "payload_bytes": 16384,
@@ -6261,6 +6993,33 @@
       },
       "rule": "Only the owning app or its checked device interface can request choices. Bind the short-lived option to the exact declared point and scope. For an eligible harness option also issue the durable HarnessRef. Reuse the binding for the same exact tuple. Limit stored bindings to the installed contribution inventory and retire them when their pinned digests or enrollment lose eligibility. Recheck membership, placement, publisher approval, installed contribution, digest, point and profile at each job or alarm claim. Refuse a stale ref instead of substituting another build. Receipt replay never reissues or widens authority. A worker request cannot assert renderer context, issue renderer refs or reuse its pagination cursor on the renderer route.",
       "renderer": "The renderer requests extension.choices using its app and the exact prompt slot declared as options.extension with the point ID. Option refs and the continuation are scoped to the active authenticated view, lease, actor, checked action, slot, declared point and installed generations. For harness choices return both ref and harness_ref. The renderer uses harness_ref to fetch placement, but submits the picked option ref under its slot in ResolveActivation.interaction.choices. Resolve it at activation to the same checked HarnessRef, and supply that typed ref as the operation's named input. Other extension choices resolve to their scoped opaque contribution refs. Recheck choices at dispatch. Discard dependent placement options on harness change. If both choices are present, require that the resolved harness equals the placement's pinned harness before dispatch. Never accept a raw contribution ID or renderer-supplied HarnessRef as the submitted choice."
+    },
+    "calls": {
+      "contribution_call": {
+        "input": {
+          "$ref": "#/$defs/ContributionCall"
+        },
+        "output": {
+          "$ref": "#/$defs/ContributionCallReceipt"
+        },
+        "scope": "The owning checked job may start one pinned contribution per admitted attempt. Resolve the checked point, installed contributor and exact attempt from its ticket. Validate input against both declared interfaces and apply authority and disclosure before starting the entry. Resolve an existing receipt first; exact replay returns the same call without invoking the contributor again."
+      },
+      "contribution_read": {
+        "input": {
+          "$ref": "#/$defs/ContributionRead"
+        },
+        "output": {
+          "$ref": "#/$defs/ContributionReadResult"
+        },
+        "scope": "Only the owning job with live exact attempt and checked call may read the bounded committed suffix after the last consumed sequence. Omit after for the first read. An empty batch means no committed suffix yet. Use a bounded wait on the same call or resume by checked job checkpoint. Never issue a second invocation to poll output."
+      },
+      "output": "Validate output data against both declared output schemas. The host numbers accepted frames from seq 1, durably commits each before acknowledging it and fences further output on cancellation, revocation, replacement or wrong attempt. Replay by exact call and producer sequence or refuse changed input. Cap each encoded input and output frame at 16 KiB and total committed spool at 1 MiB per call including reserved space for the terminal. One exact terminal frame follows its last output. Exit without a verified terminal is failed. Rate-limit and refuse over-budget output, record a terminal failure, and reclaim after the existing receipt lifetime. Closing a consumer does not rerun the provider.",
+      "commit": "The contributor may write only its own eligible files and can return a portable locator for an independently authorized file. The calling owner reads committed frames and writes its own item using the exact live attempt fence and stable subeffect receipts keyed by call and sequence. An ok producer terminal seals output but the attempt remains fenced and eligible only for the owner's checked publication until the owning job completes; only then publish execution completion. Stop, revocation or failed recovery ends that authority immediately. Preserve already committed owner effects and the contributor's committed log. If a live owner retries after lost append ACK, replay that receipt without calling the entry again. Bind the owning job's writer ticket to this exact attempt. Replay can rebind only after validating the same admitted attempt and its publication fence."
+    },
+    "harness_abi": {
+      "entry": "Run the verified digest-pinned executable entry at a fixed read-only mount with one UTF-8 newline-delimited JSON ContributionEntryInvoke on stdin. Deliver checked inputs only. Read one JSON ContributionFrame at a time on stdout; validate sequence, output schema, bounds and terminal. Broker-issued authority for declared own-file effects uses the attempt channel, never the stdout stream. Diagnostics are bounded, scrubbed and distinct from output. No session or login bytes on either frame. The entry receives a per-attempt broker endpoint for its declared methods, scoped to its own files and checked call. Never provide another package's item writer.",
+      "image": "Acquire only from the declared OCI source at the pinned digest or from a verified operator-provisioned local copy. Verify the image digest and reviewed build identity before placement, never fall back to a name or tag. Verify the packaged entry bytes against their asset pin at build, install and launch. Mount only the selected approved login paths and expose no shared file-tree mount. Stop or cancellation fences the channel first and tears down the entire existing supervised subtree. Expose the verified entry as executable inside the sandbox regardless of archive file mode.",
+      "egress": "Apply the contribution's explicit execution network declaration to the placement independently of the ordinary worker. Default none. Disclose publisher, image digest, entry, mount scope, placement and approved execution egress using the same approval path for all publishers."
     }
   },
   "alarms": {
@@ -6286,7 +7045,7 @@
       "input_bytes": 16384
     },
     "admission": "Only a declared replayable alarm job. Bind the pending alarm to a package generation, creator, checked target and due time. Protect replacement and cancellation by live authority and request receipt. Consume and admit exactly one durable job in the same recovery-visible transaction; delivery or restart replay can only replay that job. Resolve the installed job declaration. Require the top-level AlarmSet.harness operand for execution:true and refuse it otherwise. It is the sole harness operand. Never select a harness from the opaque job input. Resolve and pin that durable HarnessRef for the exact actor, space and target at alarm set. At due-job admission and claim, re-resolve the same binding and place it in the protected ExecutionJobContext. If it is ineligible, admit no execution and never substitute a harness. Execution alarms use the applicable default login binding and cannot opt in to a personal placement in a shared space. Replacement is a new checked admission; receipt replay preserves the exact binding.",
-    "late": "An eligible missed alarm is delivered once, late, with the original scheduled_at and the actual admission time actual_at. The plugin decides to run or skip from its own per-schedule setting and computes the next time.",
+    "late": "An eligible missed alarm is still delivered once at durable job admission. The host stamps scheduled_at, actual_at and missed into that receipt and replays them unchanged. missed is true only when AlarmSet.grace_seconds is supplied and actual_at is strictly later than scheduled_at plus that grace. Omission reports false. This measures admitted delay, including a slow queue, rather than inferring an outage. The plugin decides whether to skip and computes its next time.",
     "disable": "Persist retirement of pending alarms and fence admitted work when the package is disabled, uninstalled or loses authority. A later enablement does not recreate retired alarms."
   },
   "file_append": {
@@ -6334,7 +7093,8 @@
     "body_content": "Item views are body content, whether retained, stale or live. Every production and delivery path uses the same live revision-specific body-read check as a file read for that exact item and source revision. Check the acting principal at production admission and again before committing or returning produced content. Check the viewer at open admission and immediately before delivery. Title access alone is insufficient. On a relevant invalidation, fence outstanding delivery and invalidate affected results on the authenticated lease. Close the lease if the host cannot signal invalidation. Clear displayed and buffered content on relevant invalidation, lease loss or disconnect, and ignore superseded replies. Apply view_result_retention on renewal. With no authorized result, show the basic item shell.",
     "paging": "A snapshot holds the newest page and optionally its private older boundary. An authorized member can request older pages through item_view.open with live:true and the issued cursor. Bind each external cursor to its checked viewer, view, item, slot, source revision, and plugin boundary. Resolve and reauthorize the exact pinned revision before invoking the owner. No offset or count. Absence of older ends the chain. Do not mix revisions in one chain. The plugin supplies older pages when awake, under admitted wake rules. Guest and public views receive the retained newest page alone. Meter each page against the snapshot bounds.",
     "follow": "The cursorless latest live page supplies a follow ref to its eligible active member. On a committed item change send changed on the authenticated subscription so the renderer requests the latest live head without a cursor. Keep still-authorized pages while refreshing, then replace the chain if the pinned revision changed. On body or asset authority loss, purge, retired source or other relevant invalidation send invalidated and apply body_content before any further output. Bind and fence the follow ref with the result and lease. Keep one follow per open item-view slot under the existing per-view subscription cap. Coalesce signals and meter them with the existing live update cap. Apply subscription_catch_up to report an authorized advance after the followed revision. An enabled refresh slot can return a readable empty-file page with a follow ref before the attempt emits its first output.",
-    "assets": "Accept only checked immutable image and attachment references at publish or refresh. Bind them to the item-view source, verified asset revision and audience. Omit an inaccessible leaf and its metadata. On delivery mint a scoped ItemViewAssetRef and check both the item body authority and the asset's independent live access again at every range open and delivery. Fence on source or asset revoke. Serve normalized still PNG or JPEG images with at most 512 KiB and 2,048 pixels on either edge. Attachments use the existing file limits and checked ranges. Each response is at most 64 KiB decoded. Treat labels and author lines as plain authored data."
+    "assets": "Accept only checked immutable image and attachment references at publish or refresh. Bind them to the item-view source, verified asset revision and audience. Omit an inaccessible leaf and its metadata. On delivery mint a scoped ItemViewAssetRef and check both the item body authority and the asset's independent live access again at every range open and delivery. Fence on source or asset revoke. Serve normalized still PNG or JPEG images with at most 512 KiB and 2,048 pixels on either edge. Attachments use the existing file limits and checked ranges. Each response is at most 64 KiB decoded. Treat labels and author lines as plain authored data.",
+    "anchored_open": "The renderer resolves a portable locator, then opens the checked item view with live:true and the opaque anchor instead of cursor. Resolve one authorized source revision under body_content. The owning reader selects the page containing that anchored leaf and echoes the exact anchor; verify the leaf is present once. The same bounds and older continuation apply. On absent, unreadable or unknown anchor disclose no anchor result or body; use opaque refusal for item access and anchor_unavailable only for an already readable item. An anchored page is not the live head and has no follow ref. Stamp only app-owned anchor values; the renderer can copy a locator plus anchor as a link."
   },
   "offline_download": {
     "request": {
@@ -6356,7 +7116,7 @@
     "retention_days": 30,
     "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action. Start retention at trash commit. No item kind or package overrides the retention period."
   },
-  "exchanges_revision": "14.30",
+  "exchanges_revision": "14.31",
   "view_result_retention": {
     "rule": "Host windows, plugin search pages and stored or live item-view pages use the same result_versions and retained_results exchange. On a successful renewal with an unchanged grant revision, re-confirm the exact result ref and version, current audience and checked scope, including the active settle generation for a plugin search, the slot for an item view, and live access to each exact item, asset and source revision represented in the result. Retain each still-authorized unchanged result by acknowledging the exact pair, without rerendering or invoking a plugin. Treat a changed or refused result as an invalidation of that result only. A changed audience requires a new view. Apply subscription_catch_up to each retained subscription and its result check.",
     "scope": "Retain only on the same authenticated view, account and cache partition. Rebind the acknowledged result's eligible continuation, follow and item-view asset refs to the renewed lease. Asset reads still apply view_snapshots.assets at admission and delivery. Supply current scoped contexts in retained_results for retained plugin-search pages. A missing context is unavailable. Replace old tokens as a set. Invalidate selections or activities whose originating result or context no longer holds. Acknowledge each exact result at most once under the existing aggregate cap. Reuse the recorded window scope_ref for an unchanged checked scope, and use the exact omitted result's scope for persisted row erasure.",
@@ -6440,5 +7200,78 @@
     "sign_out": "Signing out is local terminal reconciliation with an empty surviving inventory. Retire the active reconciliation ID before accepting any further reply. Close the display gate and durably erase all row records, offline grants and their dependent data and keys for the signed-out account on this device before sign-out completes. Do it even if the host is unreachable. Resume any interrupted local erasure before later disk prepaint.",
     "attempt": "Use a fresh reconciliation_id for every attempt, including retries, on the current authenticated device connection. Retire the previous ID before sending a replacement and restart paging from zero against the remaining held inventory. Accept only the reply from the current authenticated connection that echoes the active ID and pending page and last flag. Ignore delayed, duplicate and retired replies. A retry checks live authority again and never reuses a saved validity reply.",
     "launch": "On any launch paint immediately from the inventory left by the last completed reconciliation, within local expiry and after local signature and scope checks. Pending reconnect work has no first-paint dependency. Do not treat cached display as live authority. Remove anything already erased or pending durable erasure before prepaint. Fresh verified downloads and signed records accepted after reconciliation join that session's reconciled inventory. Before publishing staged acquisitions to this inventory, recheck their live authority under the current authenticated session."
+  },
+  "item_engine": {
+    "item_create": {
+      "input": {
+        "$ref": "#/$defs/ItemCreate"
+      },
+      "output": {
+        "$ref": "#/$defs/ItemContentReceipt"
+      },
+      "scope": "Owning kind and live create authority. Resolve the declared root, check readable placement, validate metadata and extractors, and commit file, head, readable path, publication intent and receipt together."
+    },
+    "item_head": {
+      "input": {
+        "$ref": "#/$defs/ItemHeadRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/OwnedItemHead"
+      },
+      "scope": "Check exact item and live read authority. Metadata follows its field authority. Require body-read authority for the head revision and byte length; refuse without body access."
+    },
+    "item_range": {
+      "input": {
+        "$ref": "#/$defs/ItemRange"
+      },
+      "output": {
+        "$ref": "#/$defs/ItemRangeResult"
+      },
+      "scope": "Check item, exact revision and live body authority on admission and delivery. Return bounded padded base64 and next_offset only when another range remains. Apply the existing range pin and purge rules."
+    },
+    "item_save": {
+      "input": {
+        "$ref": "#/$defs/ItemSave"
+      },
+      "output": {
+        "$ref": "#/$defs/ItemSaveReply"
+      },
+      "scope": "Check live item writer, expected head and receipt. Body or checked sealed stage replaces the body. Omit both for a metadata-only change. Apply patch to declared metadata. The owner can commit body, title metadata and an optional leaf rename as one existing content transaction, including intent and receipt; keep the creation folder. Stale expected head yields head_conflict with the separately authorized current head. Reuse the room fence and preserve live checkpoints for metadata-only changes."
+    },
+    "item_save_begin": {
+      "input": {
+        "$ref": "#/$defs/ItemStageBegin"
+      },
+      "output": {
+        "$ref": "#/$defs/ItemStageBeginReply"
+      },
+      "scope": "Reserve the staged save under the existing receipt, body length and digest. Check writer and head. Replay a committed save as ItemContentReceipt."
+    },
+    "item_save_chunk": {
+      "input": {
+        "$ref": "#/$defs/ItemStageChunk"
+      },
+      "output": {
+        "$ref": "#/$defs/ItemStageChunkAck"
+      },
+      "scope": "Check scoped live handle. Accept bounded decoded base64 and check offsets and overlaps against the staged-save rule."
+    },
+    "item_save_seal": {
+      "input": {
+        "$ref": "#/$defs/ItemStageSeal"
+      },
+      "output": {
+        "$ref": "#/$defs/ItemStageSealed"
+      },
+      "scope": "Check exact length and digest before sealing. The author passes staged to item_save; sealing publishes no item. Recheck expected head and authority at commit."
+    },
+    "placement": "The kind declares the root. Name and optional child folders are checked single human-readable components, at most 120 UTF-8 bytes each after normalization. Reject traversal, symlinks, empty or platform-reserved names and path separators. Normalize under the host file writer's collision rules. Reserve each final path atomically with item creation, suffixing collisions deterministically as 2, 3 and so on. Probe at most 32 candidates, then refuse with path_conflict before publishing. Exact replay retains its reserved path. A folder is not an item ref or an authorization boundary. Use author-provided title/date and only an audience-checked actor_label from AuthorInvocationContext; neither account display name nor raw account ref is a default. The earliest slice can use title and date alone. A leaf rename keeps the folder. Moving folders on title edit is OPEN.",
+    "locators": "ItemLocator is a stable space and item identity suitable for files, links and export. Resolve only through item.locate against current membership and item authority. Export keeps it as provenance; imports elsewhere use an explicit identity map if available. Never use it as a checked operand. Live ItemRef, HarnessRef, ChoiceRef, leases, receipts and provider session refs are not portable; regenerate or resolve them. App-owned stable message and participant IDs may be stored but confer no host authority."
+  },
+  "created_outcome": "A manifest operation with creates declares a closed output object with exactly one required field, created typed ItemRef. This declaration governs activation navigation. Internal own-item writes, including log files, use the declared item_create method without creates. Output maps to ActionOutcome.created only if the broker recorded that exact new item of the declared kind for this authenticated invocation, or an exact replay of it. Check live delivery authority before exposing the ref. Do not accept a foreign, old or unrecorded ref or a create claim from an undeclared operation. Dispatch then.route uses only the host-confirmed outcome.",
+  "attempt_disclosure": {
+    "rule": "Disclosing authored material to an attempt requires live scope authority and consent of each author whose material is included. Bind the approval to the exact receiving attempt, selected material, immutable source revisions and purpose. Check both admission and delivery under the attempt fence. Narrowing or revoke fences queued material. A checked explicit Send of the acting author's own submitted text supplies that author's consent for that run. Consent cannot widen item grants or permit arbitrary further discovery or cross-space delivery.",
+    "open": "A trusted way to identify authors, pin one message, a range or the whole file and collect and revoke each person's consent is OPEN. Until pinned, refuse agent-invitation disclosure of conversations with another person's messages. Do not treat package-declared participant data or a boolean as proof. People discovery is limited to a person's group. Server-wide discovery is unavailable. Group membership mechanics and cross-space delivery are OPEN.",
+    "placement": "For the future consent-gated invocation into a conversation between people, use the caller's own approved login and enrolled machine outside a shared space, or the space binding in a shared space. Apply the existing shared tools rule. This policy grants no authority without the disclosure check."
   }
 }

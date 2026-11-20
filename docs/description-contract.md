@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.30 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.31 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -22,7 +22,7 @@ Everything below is one contract for chrome (sidebar, header, footer, panel) and
 
 | Term | Meaning |
 | --- | --- |
-| **kind** | A type of item a plugin or the host declares (the host's `requests` and `collections`; a package's `notes` or `threads` kind) with its **indexed fields**; every item kind has the host's generic fields (`id`, `title`, `updated`, `trashed`, `trashed_at`). |
+| **kind** | A type of item a plugin or the host declares (the host's `requests` and `collections`; a package's `notes` or `threads` kind) with its **indexed fields**; every item kind has the host's generic fields (`id`, `title`, `updated`, `archived`, `trashed`, `trashed_at`). |
 | **app description** | One app's `binds` (declared once), its `chrome` (sidebar, header, footer, panel) and its `view` (the card's content). |
 | **bind** | A data-free request: a list window, one item, or a search, with filter, sort and the fields wanted. |
 | **row template** | How an item becomes a row: fields to title, icon, marks and actions. |
@@ -437,7 +437,7 @@ read-only. Limit each
 delivery to 16 KiB including material. A refusal discloses no card contents.
 
 
-**Item content and actions.** For append-only files, the host serves
+**Item content and actions.** Resolve portable item links with `item.locate`. For a message link, open the checked item view with `live:true` and its opaque `anchor`. Draw the returned anchored leaf or the authorized item’s unavailable-anchor state. For append-only files, the host serves
 revision-pinned bounded ranges without waking the owner. The owning
 plugin supplies the live presentation and its own read cursors and
 record boundaries. It may request an ordinary job or use a protected
@@ -592,24 +592,21 @@ The `item-editor` edits the routed `yjs-v1` item. New note invokes `host.item.cr
 
 ### 9.3 Threads
 
-The app binds its list entries to checked harness-owned item refs. Indexed
-rows and counts use source authority. Contributed row fields arrive later
-from the matching extension point. Personal sections use the same layout
-and per-parent window APIs as any app. The harness owns the file and
-live transcript view. A sleeping item opens its checked stored native
-snapshot. The live view follows committed appends and loads older pages.
-Only a write-authorized run updates the retained view. The app owns Send,
-options, queued follow-ups and continuation. The host owns admission,
-file writes, approval dispatch and widening fences.
+Threads owns the Markdown thread item and its view. Participant IDs,
+message IDs and file encoding are Threads data. The harness owns a separate
+working log. The list binds the app's own item refs and uses the generic
+`archived` predicate. Share, Trash and archive act on the thread. The
+sleeping view shows the authorized last snapshot. A live page follows
+committed appends and can open a stable message anchor. The same view does
+not grant access to the linked working log.
 
 #### First Send from a fresh renderer
 
 Start from an authenticated shell in the selected space, with an enabled
-app and a checked deep link to the empty, committed harness-owned item
+app and a checked deep link to the empty, committed Threads-owned item
 `file-1`. This is the first Send for that item. The renderer holds no
-cached template, lease, option, context or result. The installed example
-app declares the `harnesses` extension point and a replayable `run` execution
-job. The checked placement supplies the destination for `threads-example.send`
+cached template, lease, option, context or result. The installed Threads app declares
+the `harnesses` extension point and a replayable `run` execution job. The checked placement supplies the destination for `threads.send`
 under the catalogue’s
 [plugin-operation confirmation rule](../contract/host-catalogue-v2.json#/confirmation/material_by_kind/plugin_operation).
 The same installed description serves both spaces.
@@ -629,9 +626,9 @@ are submitted only in the Send resolve. The shell displays the host
 challenge and confirms before dispatching.
 
 ```jsonl
-{"route":"app.open","request":{"type":"app","id":"threads-example"},"reply":{"view_ref":"threads-view","description":{"version":2,"kind":"app","revision":1,"view":{"root":{"type":"stack","children":[{"type":"component","component":{"type":"item-view","id":"transcript","config":{"item":{"route":"item"},"slot":"body"}}},{"type":"form","id":"composer","fields":[{"id":"message","label":"Message","input":"multiline","required":true}],"submit":{"id":"send","title":"Send","operation":"threads-example.send","inputs":{"item":{"route":"item"},"text":{"form":"composer","field":"message"},"harness":{"prompt":{"title":"Harness","kind":"choice","options":{"extension":"harnesses"}}},"placement":{"prompt":{"title":"Run on","kind":"choice","options":{"host":"execution_placement"}}}}}}]}}}}}
+{"route":"app.open","request":{"type":"app","id":"threads"},"reply":{"view_ref":"threads-view","description":{"version":2,"kind":"app","revision":1,"view":{"root":{"type":"stack","children":[{"type":"component","component":{"type":"item-view","id":"transcript","config":{"item":{"route":"item"},"slot":"body"}}},{"type":"form","id":"composer","fields":[{"id":"message","label":"Message","input":"multiline","required":true}],"submit":{"id":"send","title":"Send","operation":"threads.send","inputs":{"item":{"route":"item"},"text":{"form":"composer","field":"message"},"harness":{"prompt":{"title":"Harness","kind":"choice","options":{"extension":"harnesses"}}},"placement":{"prompt":{"title":"Run on","kind":"choice","options":{"host":"execution_placement"}}}}}}]}}}}}
 {"route":"view.open","request":{"type":"view_open","view_ref":"threads-view","route":{"item":"file-1"}},"reply":{"lease":{"lease_ref":"lease-1","grant_revision":"grant-1","lease_seconds":15,"cache_partition":"partition-1"},"audience":"own_space_member","activation_contexts":{"send":"send-ctx"}}}
-{"route":"extension.choices","request":{"type":"extension_choices","app":"threads-example","point":"harnesses","activation_context":"send-ctx","slot":"harness"},"reply":{"options":[{"ref":"h-opt","label":"Example harness","harness_ref":"harness-1"}]}}
+{"route":"extension.choices","request":{"type":"extension_choices","app":"threads","point":"harnesses","activation_context":"send-ctx","slot":"harness"},"reply":{"options":[{"ref":"h-opt","label":"Example harness","harness_ref":"harness-1"}]}}
 {"route":"choice.options","request":{"type":"choice_options","activation_context":"send-ctx","slot":"placement","harness":"harness-1","activation_id":"send-1"},"reply":{"host":"execution_placement","options":[{"ref":"desk","label":"Desk machine · My login"},{"ref":"laptop","label":"Laptop · My login"}],"default_ref":"desk"}}
 {"route":"activation.resolve","request":{"type":"invoke","action_id":"send","activation_id":"send-1","activation_context":"send-ctx","interaction":{"form":{"composer":{"message":"Say hello"}},"choices":{"harness":"h-opt","placement":"desk"}}},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirm":"challenge","confirmation_challenge":"send-challenge","material":[{"name":"operation","label":"Operation","value":"Send"},{"name":"effect","label":"Effect","value":"Start an agent run"},{"name":"target","label":"Thread","value":"New thread"},{"name":"input:placement","label":"Machine and login","value":"Desk machine · My login"}]}}
 {"route":"activation.confirm","request":{"type":"invoke_confirm","activation_id":"send-1","resolution_ref":"send-res","confirmation_challenge":"send-challenge"},"reply":{"activation_id":"send-1","resolution_ref":"send-res","confirmation_proof":"send-proof"}}
@@ -673,8 +670,25 @@ personal arm. The shared arm replaces `desk` with `my-laptop`, or
 ```
 
 Send's `ok` follows durable admission. The first live page precedes any
-agent output. The harness starts the pinned attempt and appends output to
-the item. The host catches up under the registered follow subscription
+agent output. The Threads job calls `execution_start` for its pinned harness,
+then `contribution_call` with its checked prompt. The host passes that input
+to the qualified contributor. It can return a link to its own working log.
+The Threads job reads the bounded committed contribution frames and appends
+the reply to the Threads item using its own checked writer and the exact
+attempt fence. Here are the broker payloads for one output frame.
+
+```jsonl
+{"method":"execution_start","request":{"request_id":"start-1","harness":"harness-1"},"reply":{"execution":"attempt-1","phase":"starting","transition_cursor":"phase-1"}}
+{"method":"contribution_call","request":{"execution":"attempt-1","contribution":"harness-1","request_id":"call-1","input":{"text":"Say hello"}},"reply":{"call":"call-ref-1"}}
+{"method":"contribution_read","request":{"call":"call-ref-1"},"reply":{"frames":[{"seq":1,"kind":"output","data":{"text":"Hello. I’m working on it.","log":{"space":"space-1","id":"log-1"}}}]}}
+```
+
+Threads records the portable log locator. Opening it requires a separate
+live authority check. On normal completion, the next contribution read
+can return the ordered terminal frame. Threads finalizes its own writes
+before completing the job. In this walk the user stops the running
+attempt after its first output. Already committed output and the harness
+log survive. The host catches up under the registered follow subscription
 and signals the committed revision, including if it landed between open
 and follow. The renderer then requests the new head and
 follows its replacement ref. In a shared space the attempt uses

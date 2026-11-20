@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.30 draft
+# Plugin API v2 · revision 14.31 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -100,11 +100,14 @@ pinned contribution under live authority at claim. Use the catalogue’s
 [extension points](../contract/host-catalogue-v2.json#/extension_points).
 
 A **harness** is a plugin that runs an agent program such as Claude Code
-or Codex. The orchestrator declares a harness point for its Threads app.
-Bundled and community harnesses contribute through it. Another app can
-declare its own point or reuse the same interface. **The harness’s file
-is the thread item.** The orchestrator’s list entry points to that item.
-Share, Trash and archive target the file item through its checked ref.
+or Codex. Threads (`calternal-threads`) declares a harness point. Bundled
+and community harnesses contribute through the same interface. Another app
+can publish its own point. A contribution names its owner package and app,
+point and interface version. **Threads owns the Markdown thread item.**
+A harness keeps a separate working log in its own files. Threads may link
+to that log by an authorized item locator and writes replies to its own
+file. Share, Trash and archive target the thread item. They confer no
+access to the working log.
 Source authorization applies before rows or counts are computed.
 A base indexed row is available while a contributor sleeps. Fetch optional
 plugin fields only for visible rows, with the exact source revision and audience.
@@ -450,8 +453,8 @@ its receipt, with long work as a durable job.
 
 | Engine / methods | Input → output, refusal and bound |
 | --- | --- |
-| Items · `item_head`, `item_range`, `item_history` | Kind/item ref → head metadata and opaque revision. Range adds revision, offset and maximum bytes → base64 bytes and next offset (fixture 64 KiB decoded, frame budget after encoding). History adds cursor/limit → authorized revision summaries. Unknown/foreign ref is `404`, obsolete range pin `409`. |
-| Items · `item_save` | Create or item ref, expected head, and full body or metadata patch → committed revision. A metadata patch on a live kind checks the expected revision against the room-backed head under the same write fence as CRDT commits. Preserve current body and CRDT checkpoint. Return `409` with a fresh head when stale and avoid a full body upload. Large writes use the staged protocol below. |
+| Items · `item_create`, `item_head`, `item_range`, `item_history` | Apply the [catalogue item schemas](../contract/host-catalogue-v2.json#/item_engine). Create returns a checked item, revision, portable locator and receipt. Range is pinned and bounded. History uses the existing cursor and authorized revision summaries. |
+| Items · `item_save` | The owner commits body, declared metadata, including its indexed title, and an optional leaf rename in one receipt. The creation directory stays fixed. Use the typed `head_conflict` reply to reread and reapply an edit on a checked newer head. Metadata-only changes preserve the room checkpoint. Large writes use the typed staged protocol below. |
 | Items · `item_trash`, `item_restore` | Editor or higher. Trash records a tombstone. Restore from Trash uses the current trashed head and restores a live placement. Restore from history takes a source revision and expected live head and appends that version as a new revision. No history restore against a trashed item. Stale heads give `409`. |
 | Items · `item_rename`, `item_rename_status`, `item_rename_undo` | Rename accepts ref, expected head and name and returns a durable action ID. Status uses that ID and checks live item authority. Completion can return a protected Undo action bound to the result and expected revisions. Undo is a fresh receipt-backed operation, with conflict if affected heads moved. Publish progress and actions through the host result route, with no worker payload. |
 | Items · `item_purge`, `empty_trash`, `collection_create`, `collection_membership` | Purge and Empty Trash are Manager/Owner-only, irreversible and one confirmed durable job over a pinned Trash selection. Reauthorize per batch and resume by receipt. Apply catalogue `trash` for retention. Collection creation and bounded membership changes commit once with expected revision. |
@@ -490,7 +493,14 @@ follow-up through the checked job path. Pin the typed harness binding at
 admission and recheck it at promotion and claim. The authenticated job
 context supplies the target, pinned harness and admitted receipt. `execution_start`
 checks the resolved harness and optional continuation under that fence.
-An authorized retry returns the same admitted attempt. Stop can target
+An authorized retry returns the same admitted attempt. The owning job
+opens the [generic contribution call](../contract/host-catalogue-v2.json#/extension_points/calls)
+with the checked input and pinned contribution. Consume committed frames by
+call and sequence. Use stable subeffect receipts to write owner output under
+the exact attempt fence before successful job completion. The contributor
+writes its own working files through checked host methods. The [entry
+ABI](../contract/host-catalogue-v2.json#/extension_points/harness_abi) applies
+to each verified placement. Stop can target
 the exact pending job or admitted attempt using generic host control.
 Protected approvals bind the checked effect to the actual dispatch.
 The catalogue’s execution wait compares the transition cursor and parks
@@ -558,10 +568,27 @@ discovery in Full access and Approve for me. Recheck live access at
 delivery, record checked access, and suppress data before egress or
 commit when authority changes. Section 5 applies to audience expansion.
 
-The harness chooses how to turn authorized append and range data into a
-native transcript or other content and how to retain its own record
-boundaries. Host-owned job and approval cards remain generic. A renderer
-can draw an authorized item snapshot while the harness sleeps (§4.2).
+The app owning the item chooses its record boundaries, native view and
+stable message anchors. The renderer can open a locator plus anchor under
+the same live item and revision checks as any other item page. Host job
+and approval controls remain generic. A retained snapshot draws while
+the item owner sleeps (§4.2).
+
+**Threads participants.** People and agents are participant data in the
+Threads file. Threads denies attempt discovery on its kind. A run gets
+only the app's checked disclosure, and the harness has no direct writer
+authority on the thread. Calling in an agent selects a message, a range
+or the whole conversation. Apply the generic
+[author-consent rule](../contract/host-catalogue-v2.json#/attempt_disclosure)
+to every included author's material. Trusted authorship, recording and
+revoking consent, groups and cross-space delivery are OPEN. Keep the
+affected invocation path disabled until pinned. People discovery is
+limited to one's group. There is no server-wide people discovery.
+[Recorded Threads decisions][threads-decisions] For an agent called into a conversation between people,
+use the caller's own enrolled machine and login outside a shared space
+and the space binding in a shared space. Shared-space tool restrictions
+still apply. Calling a person into an agent conversation follows the
+existing audience fence. Any new invite or delivery mechanics remain open.
 
 #### Declarative extraction and retention
 
@@ -607,7 +634,7 @@ scope work before opening the new indexed plan.
 Item lifecycle uses the [space Trash policy](../contract/host-catalogue-v2.json#/trash)
 with bounded host cleanup and the same purge and revocation fences.
 
-**Staged save.** Begin reserves total decoded bytes against the existing
+**Staged save.** Call `item_save_begin`, `item_save_chunk` and `item_save_seal` from the [catalogue](../contract/host-catalogue-v2.json#/item_engine), then commit the sealed ref with `item_save`. Begin reserves total decoded bytes against the existing
 receipt namespace (space, actor, request ID), checked operation fingerprint,
 resolved target, expected head, total length and digest. Concurrent identical
 begins return one handle and reservation. Changed input in the namespace
@@ -664,7 +691,7 @@ purge on revision erasure or item purge.
 
 The [catalogue’s `Timestamp`](../contract/host-catalogue-v2.json) uses RFC 3339 with seconds 00 to 59 only, and the host records any leap second as second 59 with the fraction clamped.
 
-The catalogue owns generic `id`, `title`, `updated`, `trashed` and
+The catalogue owns generic `id`, `title`, `updated`, `archived`, `trashed` and
 `trashed_at` fields for every item kind. `collections` and
 `requests` are host-owned. Notes declares its own `notes` kind and
 `pinned` metadata through the same manifest API a community app uses.
@@ -1069,7 +1096,8 @@ only against the issued context, never its current selection.
    `ResolveActivation{dispatch:true}` resolves and dispatches in one
    exchange. Otherwise return a resolution without running the operation.
    Dispatch returns an ActionOutcome and may include a checked created ref,
-   status ref or Undo ref.
+   status ref or Undo ref. A package-created ref uses the catalogue’s
+   [created convention](../contract/host-catalogue-v2.json#/created_outcome).
 
 A replay checks actor, space, package digest, action, activation and
 normalized input fingerprint plus current delivery authority. Retry
@@ -1263,7 +1291,12 @@ concepts: package, app, kind, placement, item schema, Bind, list and sidebar
 section. Add explicit author choices for actions, fields and presentation as
 the app needs them.
 
-A retry keeps the same request ID and typed target. Authors never pass
+The SDK generates the author context and typed broker inputs and replies
+from the pinned catalogue. The host supplies the stable request identity,
+actor, authored time and checked job and alarm metadata. Use deterministic
+subeffect keys under that request identity. Authority, cancellation and
+live timestamps remain host-owned. A retry keeps the same request ID and
+typed target. Authors never pass
 `space_id` to broker methods or see tickets, epochs, leases, seq, callback
 IDs or renderer keys. Host-mediated client operations may still select an
 authorized space. Authors choose the manifest API version. Templates
@@ -1513,8 +1546,8 @@ intentional refusal/retry with an actionable response.
 
 ### Step 3 — Application cutover
 
-Build in order: orchestrator, Notes, Mail, Files, Photos. Before using
-the generic path, the orchestrator supplies historical headings and
+Build in order: Threads, Notes, Mail, Files, Photos. Before using
+the generic path, Threads supplies historical headings and
 attribution, attachments and queued follow-ups. Verify old and new
 rendering from retained files, restart recovery and rollback. Notes
 requires the history browser, linked-user comments and collection
@@ -1524,7 +1557,14 @@ Hold each affected cutover until its required behavior is pinned and
 qualified. Mention picker and snooze presets or custom date may follow
 as plugin features. Photos product questions wait for that plugin.
 
-The orchestrator cutover requires measured product wake p95 at or below
+The [Threads spike][threads-spike] records the app and harness fixture.
+Qualify the real contribution path with separate packages. Test a wrong
+package, pinned-image mismatch, out-of-order output, lost output ACK,
+Stop between output and append, and replay of the owning job. Require
+zero unauthorized writes, no repeated provider start and one append per
+accepted publication receipt.
+
+The Threads cutover requires measured product wake p95 at or below
 500 ms for both the plugin and agent placements on the perf VM.
 Measure the actual cold Send path through its acknowledgement and
 first agent output. Report both user-visible intervals separately.
@@ -1568,3 +1608,6 @@ and queued follow-ups are owned by the app and harness contract.
 [decisions]: https://git.kayg.org/kayg/calternal-ai/src/commit/18e467b6/docs/morning-2026-11-20.md#third-set-of-answers-owner-2026-11-20
 
 [placement-decision]: https://git.kayg.org/kayg/calternal-ai/src/commit/a4154906/docs/morning-2026-11-20.md#third-set-of-answers-owner-2026-11-20
+
+[threads-decisions]: https://git.kayg.org/kayg/calternal-ai/src/commit/d3d37a4cffa4ad4faff053a255caab70b3fee8b7/docs/morning-2026-11-20.md#threads-with-people-first-answers-owner-2026-11-20
+[threads-spike]: https://git.kayg.org/kayg/calternal-ai/src/commit/c3c70b73/docs/reviews/threads-plugin-spike-2026-11-20.md

@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 14.30 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 14.31 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -320,6 +320,7 @@
             "$ref": "#/definitions/searchProfile"
           }
         },
+        "attempt_discovery": { "const": "deny", "description": "Fence attempt access and discovery by default under execution_attempt_authority.discovery." },
         "append_file": { "const": true, "description": "Opt into the catalogue file_append rule for the item body." },
         "execution_target": {
           "const": true,
@@ -340,6 +341,12 @@
     },
     "hostMethod": {
       "enum": [
+        "item_create",
+        "item_save_begin",
+        "item_save_chunk",
+        "item_save_seal",
+        "contribution_call",
+        "contribution_read",
         "item_head",
         "item_range",
         "item_history",
@@ -412,7 +419,7 @@
             }
           ]
         },
-        "creates": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
+        "creates": { "$ref": "host-catalogue-v2.json#/$defs/KindId", "description": "Declare a typed created output under catalogue created_outcome." },
         "material_inputs": {
           "description": "Labels by original input key for extra required material. The host writes each into the preview key space input:<key>. Host material occupies a separate key space.",
           "type": "object", "maxProperties": 32,
@@ -609,7 +616,7 @@
       "additionalProperties": false,
       "properties": {
         "app": {
-          "$ref": "#/definitions/localId"
+          "$ref": "host-catalogue-v2.json#/$defs/ExtensionAppId"
         },
         "point": {
           "$ref": "#/definitions/localId"

@@ -210,7 +210,7 @@ def check(node, value, path, errors, ctx=None, *, depth=0):
         if node.get("format") == "date-time" and not is_date_time(value):
             reject(f"{path}: must be an RFC 3339 date-time with seconds 00 to 59")
         if "pattern" in node and not re.search(node["pattern"], value): reject(f"{path}: {short_value(value)} does not match {node['pattern']}")
-        if "maxLength" in node and len(value.encode()) > node["maxLength"]: reject(f"{path}: longer than {node['maxLength']} bytes")
+        if "maxLength" in node and len(value) > node["maxLength"]: reject(f"{path}: longer than {node['maxLength']} Unicode code points")
         if "minLength" in node and len(value) < node["minLength"]: reject(f"{path}: shorter than {node['minLength']}")
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if "minimum" in node and value < node["minimum"]: reject(f"{path}: below {node['minimum']}")
@@ -493,11 +493,13 @@ def check_worker_invocation(frame, manifest, job_id, errors):
         errors.append("$.message.operation: invocation must name an operation of the pinned package")
     if job_id is not None and (job is None or job["run_operation"] != message["operation"]):
         errors.append("$.message.operation: invocation must match the admitted job entry")
-    if job and job.get("execution_intent") is True:
+    if job and job.get("execution") is True:
         if "job_context" not in message:
-            errors.append("$.message.job_context: required for the composer intent job")
+            errors.append("$.message.job_context: required for the admitted execution job")
     elif "job_context" in message:
-        errors.append("$.message.job_context: allowed only for an admitted composer intent job")
+        errors.append("$.message.job_context: allowed only for an admitted execution job")
+    if "alarm" in message and (not job or job.get("alarm") is not True):
+        errors.append("$.message.alarm: allowed only for an admitted alarm job")
 
 
 def check_manifest_install(manifest, kind_schema_links, errors):
@@ -505,37 +507,14 @@ def check_manifest_install(manifest, kind_schema_links, errors):
     if CATALOGUE is None:
         return
     generic = CATALOGUE["generic_item_fields"]
-    projected = CATALOGUE["conversation_capability"]["field_projections"]
     provider_projection = CATALOGUE["provider_marks"]["field"]
     operations = manifest.get("operations", {})
     jobs = manifest.get("jobs", {})
     send_operations = composer_send_operations(manifest, errors)
-    composer_jobs = set()
     for kind_id, kind in errors.each(manifest.get("kinds", {}).items()):
         path = f"$.kinds.{kind_id}"
         for field in errors.each(sorted(field_names(kind, errors) & generic.keys())):
             errors.append(f"{path}.indexed_fields.{field}: reserved host generic field")
-        if kind.get("conversation") is not True and provider_projection in kind.get("fields", {}):
-            errors.append(f"{path}.indexed_fields.{provider_projection}: reserved host provider projection")
-        if kind.get("conversation") is True:
-            for field in errors.each(sorted(field_names(kind, errors) & projected.keys())):
-                errors.append(f"{path}.indexed_fields.{field}: reserved host conversation field")
-        composer = kind.get("composer")
-        if composer:
-            send = operations.get(composer.get("send"), {})
-            run_job = jobs.get(composer.get("job"), {})
-            run = operations.get(run_job.get("run_operation"), {})
-            if kind.get("conversation") is not True or send.get("target", {}).get("kind") != kind_id:
-                errors.append(f"{path}.composer.send: must name a same-package operation targeting this conversation kind")
-            if run_job.get("replayable") is not True or run.get("target", {}).get("kind") != kind_id:
-                errors.append(f"{path}.composer.job: must name a replayable job targeting this conversation kind")
-            else:
-                composer_jobs.add(composer["job"])
-                target_field = run["target"].get("field")
-                if run_job.get("execution_intent") is not True:
-                    errors.append(f"{path}.composer.job: must opt into host execution_intent context")
-                if not target_field or not is_only_item_input(run.get("input_schema"), target_field, errors):
-                    errors.append(f"{path}.composer.job: run input must accept only its target ItemRef")
         fields = kind.get("fields", {})
         outputs = {field for field, meta in errors.each(fields.items()) if meta.get("source") == "body_excerpt"}
         separators = {}
@@ -564,7 +543,7 @@ def check_manifest_install(manifest, kind_schema_links, errors):
         title_meta = fields.get(title, {})
         if title in outputs or body_derived_field(kind, title, title_meta):
             errors.append(f"{path}.title_field: generic title cannot use a body-derived source")
-        elif (title == provider_projection or (kind.get("conversation") is True and title in projected)
+        elif (title == provider_projection
               or (title in generic and title != "title") or (title_meta and (
                   title_meta.get("type") != "Text" or title_meta.get("audience") != generic["title"]["audience"]
               ))):
@@ -582,8 +561,8 @@ def check_manifest_install(manifest, kind_schema_links, errors):
             continue
         operation_id = after.get("operation")
         if "job" in after:
-            if jobs.get(after["job"], {}).get("execution_intent") is True:
-                errors.append(f"{path}.host_create.after: a composer intent job can only be admitted by the host composer")
+            if jobs.get(after["job"], {}).get("execution") is True:
+                errors.append(f"{path}.host_create.after: execution job requires checked execution admission")
             operation_id = jobs.get(after["job"], {}).get("run_operation")
         if operation_id in send_operations:
             errors.append(f"{path}.host_create.after: prepared Send is reserved for the host composer")
@@ -593,14 +572,23 @@ def check_manifest_install(manifest, kind_schema_links, errors):
         if not field or target.get("kind") != kind_id or not is_only_item_input(operation.get("input_schema"), field, errors):
             errors.append(f"{path}.host_create.after: entry must accept only the created ItemRef of {kind_id!r} at target.field")
     for job_id, job in errors.each(jobs.items()):
-        if job.get("execution_intent") is True and job_id not in composer_jobs:
-            errors.append(f"$.jobs.{job_id}.execution_intent: must belong to a conversation composer")
-    for collection, field in (("jobs", "run_operation"), ("schedule_eligibility", "operation"),
-                              ("wait_webhooks", "schema_operation")):
-        entries = jobs.values() if collection == "jobs" else manifest.get(collection, [])
-        for entry in errors.each(entries):
-            if entry[field] in send_operations:
-                errors.append(f"$.{collection}.{entry['id']}: prepared Send is reserved for the host composer")
+        if job.get("execution") is not True:
+            continue
+        run = operations.get(job["run_operation"], {})
+        target_kind = run.get("target", {}).get("kind")
+        if not manifest["kinds"].get(target_kind, {}).get("execution_target"):
+            errors.append(f"$.jobs.{job_id}.execution: run operation must target an execution_target kind")
+    for operation_id, operation in errors.each(operations.items()):
+        if "creates" not in operation:
+            continue
+        path = f"$.operations.{operation_id}.creates"
+        if operation["creates"] not in manifest["kinds"]:
+            errors.append(f"{path}: must name the package's own created kind")
+        if not is_only_item_input(operation["output_schema"], "created", errors):
+            errors.append(f"{path}: output must be a closed created ItemRef")
+    for entry in errors.each(manifest.get("contributions", [])):
+        if entry["operation"] not in operations:
+            errors.append(f"$.contributions.{entry['id']}.operation: must name a local operation")
 
 
 def project_kind(kind, catalogue):
@@ -755,7 +743,7 @@ def check_window_rows(reply, origin, catalogue, errors, *, body_allowed=None):
         if bind.get("persist") is not True:
             errors.append(f"$.member_cache_record: origin Bind {bind['id']!r} does not opt in to persistence")
         record = reply["member_cache_record"]
-        for field in errors.each(("bind", "window_ref", "offset")):
+        for field in errors.each(("bind", "scope_ref", "window_ref", "offset")):
             if record[field] != reply[field]:
                 errors.append(f"$.member_cache_record.{field}: must match its window reply")
         check_cached_display(reply, bind, kind, generic, catalogue, errors)

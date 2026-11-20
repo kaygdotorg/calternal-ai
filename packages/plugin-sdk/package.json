@@ -12,7 +12,11 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
     },
-    "./verify-package": "./scripts/verify-package.mjs"
+    "./verify-package": "./scripts/verify-package.mjs",
+    "./author-context": {
+      "types": "./scripts/author-context.d.mts",
+      "import": "./scripts/author-context.mjs"
+    }
   },
   "scripts": {
     "build": "node scripts/generate-author-types.mjs && tsc -p tsconfig.json",
