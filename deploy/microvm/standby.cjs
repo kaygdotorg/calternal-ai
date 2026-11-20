@@ -51,7 +51,8 @@ assertDenials();
 crypto.randomUUID();
 Math.random();
 
-const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+const controlInput = process.stdin;
+const lines = readline.createInterface({ input: controlInput, crlfDelay: Infinity });
 const pluginInput = new PassThrough();
 let phase = 'parked';
 lines.on('line', (line) => {
@@ -64,6 +65,17 @@ lines.on('line', (line) => {
     process.stdout.write('REFRESHED\n');
   } else if (phase === 'refreshed' && line === 'load') {
     phase = 'package';
+    // The control pipe must not keep a one-shot package alive. Reference it
+    // when the package attaches a reader, like the original Node stdin.
+    controlInput.unref();
+    const reads = event => event === 'data' || event === 'readable';
+    pluginInput.on('newListener', event => {
+      if (reads(event)) controlInput.ref();
+    });
+    pluginInput.on('removeListener', event => {
+      if (reads(event) && !pluginInput.listenerCount('data') && !pluginInput.listenerCount('readable'))
+        controlInput.unref();
+    });
     Object.defineProperty(process, 'stdin', { value: pluginInput });
     import('/plugin/worker.js').catch((error) => {
       console.error(error);

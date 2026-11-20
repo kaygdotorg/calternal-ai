@@ -176,8 +176,14 @@ two restores of one checkpoint through the guest agent. The proof checks
 distinct random bytes, UUID, Web Crypto bytes, Ed25519 keys, TLS ClientHello
 and random field, main-realm and new-context Math.random, plus all six
 permission denials. A fresh Node fallback cannot satisfy the standby proof.
-The dev-01 gate passed for image manifest `1cebe7316ed5` and native module
-`fc880b6ab431`. The proof package used an ES module with top-level await.
+The dev-01 gate passed for image manifest `276055f161c5` and native module
+`fc880b6ab431`. The proof package used an ES module with top-level await and
+exited naturally. The checkpoint regression and all four enrolled-runner KVM
+tests also passed on this image.
+
+The final release image `5fe5337cf2a7` passed the additive upgrade script
+against `localhost/calternal-ai:31fb41179460`. The machine worker and CLI
+tests and `scripts/check-docs.sh` passed on dev-01.
 
 ## Simplification opportunities
 

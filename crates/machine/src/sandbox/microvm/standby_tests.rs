@@ -43,10 +43,13 @@ const socket = new Duplex({
             context: digest(vm.runInNewContext('Math.random()').toString()),
         }));
         done();
-        process.exit(0);
+        setImmediate(() => {
+            client.destroy();
+            socket.destroy();
+        });
     },
 });
-tls.connect({socket, servername:'fixture.invalid'});
+const client = tls.connect({socket, servername:'fixture.invalid'});
 "#;
 
 async fn draw(worker: &Placement) -> serde_json::Value {
