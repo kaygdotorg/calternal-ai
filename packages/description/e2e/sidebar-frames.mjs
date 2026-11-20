@@ -9,7 +9,7 @@ const { page: p } = await open(browser, `fixture=threads-next&scheme=${sc}`, { w
 await p.waitForSelector("[data-tree] .sh"); await p.waitForTimeout(900);
 const shot = async (n) => { await p.waitForTimeout(120); await p.screenshot({ path: `${dir}/${sc}-frame-${n}.png`, clip: { x: 0, y: 0, width: 300, height: 760 } }); };
 const c = async (l) => { const b = await l.boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
-const row = p.locator('[data-in="groups"][data-row-id="t-design"]'), strip = p.locator("[data-strip=conv-pins]");
+const row = p.locator('[data-in="groups"][data-row-id="t-design"]'), strip = p.locator("[data-strip=pins]");
 const a = await c(row), z = await c(strip);
 await shot("1-rest");
 await p.mouse.move(a.x, a.y); await p.mouse.down(); await shot("2-press");

@@ -13,7 +13,7 @@
   import ChildRows from "./ChildRows.svelte";
   import { useApp } from "../invoke/context";
 
-  let { template, row, store, kindIcon, selected, depth = 0, onclick, extra = [], onextra }: { template: RowTemplate; row: WindowRow; store: WindowStore; kindIcon?: string; selected: boolean; depth?: number; onclick?: (e: MouseEvent) => void; /** Further menu items (Move up, Move down) a list adds for its own arrangement, and what picking one does. */ extra?: MenuItem[]; onextra?: (id: string) => void } = $props();
+  let { template, row, store, kindIcon, selected, depth = 0, flat = false, onclick, extra = [], onextra }: { template: RowTemplate; row: WindowRow; store: WindowStore; kindIcon?: string; selected: boolean; depth?: number; flat?: boolean; /** No indentation at any depth (the sidebar of sections draws a Cal's threads at the same margin). */ onclick?: (e: MouseEvent) => void; /** Further menu items (Move up, Move down) a list adds for its own arrangement, and what picking one does. */ extra?: MenuItem[]; onextra?: (id: string) => void } = $props();
   const app = useApp();
   const kids = $derived(template.children ? app?.storeFor(template.children.bind, row.parent_refs?.[template.children.bind]) : undefined);
   let open = $state(false);
@@ -56,7 +56,7 @@
       {#if every.length}<button type="button" tabindex="-1" class="more" aria-label="More actions" bind:this={moreEl} onclick={() => { menuAnchor = null; menuOpen = true; }}>…</button>{/if}
     </div>
   {/if}
-  {#if open && kids}<ChildRows store={kids} depth={depth + 1} {kindIcon} />{/if}
+  {#if open && kids}<ChildRows store={kids} depth={flat ? 0 : depth + 1} {kindIcon} />{/if}
   {#if items.length}<Menu open={menuOpen} {items} label="Actions" onpick={pick} onclose={() => (menuOpen = false)} trigger={moreEl} anchor={menuAnchor ? { left: menuAnchor.x, top: menuAnchor.y, right: menuAnchor.x, bottom: menuAnchor.y } : null} />{/if}
 </div>
 

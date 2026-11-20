@@ -13,7 +13,7 @@ const go = async (query, size) => { const r = await open(browser, `fixture=threa
 const snap = async (p, name) => { if (shots) { name = `${process.env.SCHEME ?? "light"}-${name}`; await p.waitForTimeout(500); await p.screenshot({ path: `${shots}/${name}.png` }); } };
 const DESK = { width: 1280, height: 800 }, PHONE = { width: 390, height: 844 };
 const log = (p, f) => p.evaluate((src) => window.__transport.log.filter(new Function("l", `return ${src}`)), f);
-const openFirst = async (p) => { await p.waitForSelector("[data-strip=conv-pins] [data-row-id=t-lunch] button", { timeout: 20000 }); await p.locator("[data-strip=conv-pins] [data-row-id=t-lunch] button").evaluate((e) => e.click()); await p.waitForSelector("[data-entry]", { timeout: 10000 }); };
+const openFirst = async (p) => { await p.waitForSelector("[data-strip=pins] [data-row-id=t-lunch] button", { timeout: 20000 }); await p.locator("[data-strip=pins] [data-row-id=t-lunch] button").evaluate((e) => e.click()); await p.waitForSelector("[data-entry]", { timeout: 10000 }); };
 
 // ---- the list rows (the sidebar's own arrangement is in threads-sidebar.mjs)
 {
@@ -21,7 +21,7 @@ const openFirst = async (p) => { await p.waitForSelector("[data-strip=conv-pins]
   await p.waitForSelector("[data-tree] button.row", { timeout: 20000 });
   ok((await p.locator("[data-tree] [data-row-id] button.row .s").count()) === 0 && (await p.locator("[data-tree] [data-row-id] button.row").first().locator("[data-mark=text]").count()) === 1, "every thread row is one line, with its time at the end");
   const mk = (id) => p.locator(`[data-row-id="${id}"] [data-mark=count]`).allTextContents();
-  ok((await mk("t-bug")).join() === "12", "an unmuted thread shows its unread count in the accent, after its time", (await mk("t-bug")).join());
+  ok((await mk("t-p1")).join() === "4", "an unmuted thread shows its unread count in the accent, after its time", (await mk("t-p1")).join());
   ok((await mk("t-design")).join() === "2", "a muted thread (it never rings) keeps only its mention count, in the accent", (await mk("t-design")).join());
   ok((await mk("t-trip")).length === 0, "a thread with nothing unread shows no count");
   await snap(p, "next-desktop-1-list");

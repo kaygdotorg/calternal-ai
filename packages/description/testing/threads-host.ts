@@ -74,11 +74,11 @@ export function threadsHost(o: ThreadsHostOptions) {
   const empty = o.scenario === "empty";
   type Th = { id: string; title: string; ago: number };
   // The sidebar of the owner's guidance: pinned conversations on a strip (more than fit, so it scrolls), Groups and People, pinned agents, Cals (each a row that opens its threads), Harnesses, Archived.
-  const MORE: Th[] = ["Anna Lindqvist", "Ben Okafor", "Chloe Martin", "Dev Patel", "Eva Rossi", "Femi Adeyemi", "Gus Hansen", "Hana Sato", "Ivo Novak", "Jun Park"].map((t, i) => ({ id: `t-p${i}`, title: t, ago: 600 + i * 5000 }));
-  const MORE_EX = (id: string) => ({ shape: "person", unread: id === "t-p1" ? 4 : id === "t-p4" ? 1 : 0, mentions: 0, muted: false, preview: "" });
+  const MORE: Th[] = ["Anna Lindqvist", "Ben Okafor", "Chloe Martin", "Dev Patel", "Eva Rossi", "Femi Adeyemi", "Gus Hansen", "Hana Sato", "Ivo Novak", "Jun Park"].map((t, i) => ({ id: `t-p${i}`, title: t, ago: 600 + i * 5000 })).concat([{ id: "t-a1", title: "Dependency audit", ago: 40000 }]);
+  const MORE_EX = (id: string) => ({ shape: id === "t-a1" ? "agent" : "person", unread: id === "t-p1" ? 4 : id === "t-p4" ? 1 : 0, mentions: 0, muted: false, preview: "" });
   const pins = new Set<string>([...Object.entries(EXTRA).filter(([, e]) => e.pinned).map(([id]) => id), ...MORE.slice(0, 7).map((t) => t.id)]);
   const CALS: Th[] = [{ id: "cal-release", title: "Release captain", ago: 1800 }, { id: "cal-research", title: "Researcher", ago: 86400 * 2 }];
-  const CAL_OF: Record<string, string> = { "t-release": "cal-release", "t-recipe": "cal-research" };
+  const CAL_OF: Record<string, string> = { "t-release": "cal-release", "t-bug": "cal-release", "t-recipe": "cal-research" };
   const ex = (id: string) => ({ ...(EXTRA[id] ?? MORE_EX(id)), pinned: pins.has(id) });
   const ALL = [...THREADS, ...MORE];
   const sortPin = (l: Th[]) => [...l].sort((x, y) => Number(pins.has(y.id)) - Number(pins.has(x.id)) || x.ago - y.ago);
@@ -90,7 +90,7 @@ export function threadsHost(o: ThreadsHostOptions) {
       case "people": return sortPin(THREADS).filter((t) => ["person", "group"].includes(EXTRA[t.id]!.shape));
       case "agents": return sortPin(THREADS).filter((t) => EXTRA[t.id]!.shape === "agent");
       case "threads": return empty ? [] : THREADS;
-      case "conv-pinned": return sortPin(ALL).filter((t) => pins.has(t.id) && ex(t.id).shape !== "agent");
+      case "pinned": return sortPin(ALL).filter((t) => pins.has(t.id));
       case "groups": return ALL.filter((t) => !pins.has(t.id) && ["group", "mixed"].includes(ex(t.id).shape));
       case "contacts": return ALL.filter((t) => !pins.has(t.id) && ex(t.id).shape === "person");
       case "agent-pinned": return ALL.filter((t) => pins.has(t.id) && ex(t.id).shape === "agent");

@@ -1,4 +1,4 @@
-// DRAFT SIDEBAR (issue #78): the sidebar below uses shapes the contract does not have yet (subsections, a pinned strip, avatar marks, per-person arrangement); everything else is 14.43.
+// DRAFT SIDEBAR (issue #78): the sidebar below uses shapes the contract does not have yet (a pinned strip, avatar marks, per-person arrangement of flat sections: no subsections, no indentation); everything else is 14.43.
 // The Threads interface at contract revision 14.43 (generic entry views, viewer-private fields, read position, checked per-entry actions, range selection, composer drafts and mentions, literal choices, quiet marks,
 // panel content). It is NOT yet wired into the plugin: the build pins 4a1e099b (14.41), whose schema and manifest do not carry these shapes, and the manifest still has to declare the kind's `viewer_fields`
 // (`unread` and `mentions` from the entry order, `muted`, `pinned`, `draft`, `preview`) and the operations named below (`threads.state`, `threads.edit`, `threads.delete`, `threads.call`, `threads.send` without a harness).
@@ -49,10 +49,9 @@ const pins = (id: string, bind: string) => ({ id, presentation: "strip", bind, d
 export const descriptionNext = {
   version: 2, kind: "app", revision: 3, cache: { templates: "keep" },
   binds: [
-    list("conv-pinned", [notArchived, pinnedOnly, { field: "shape", op: "in", value: { literal: ["person", "group", "mixed"] } }], none),
+    list("pinned", [notArchived, pinnedOnly], none),
     list("groups", [notArchived, unpinned, { field: "shape", op: "in", value: { literal: ["group", "mixed"] } }], { title: "No groups yet", detail: "A conversation with several people appears here." }),
     list("contacts", [notArchived, unpinned, eq("shape", "person")], { title: "No conversations yet", detail: "Start one with New thread." }),
-    list("agent-pinned", [notArchived, pinnedOnly, eq("shape", "agent")], none),
     // A Cal is a saved assistant definition (docs/architecture-proposal.md): its row opens to its threads (nested child rows).
     { id: "cals", source: { type: "list", kind: "cals" }, fields: ["title", "updated"], sort: newest, window: { size: 60, count: "exact" },
       row: { title: { field: "title" }, icon: { avatar: { label: "title" } }, children: { bind: "cal-threads" } }, states: { empty: { title: "No Cals yet", detail: "Save an assistant as a Cal to see its threads here." } } },
@@ -69,8 +68,12 @@ export const descriptionNext = {
     sidebar: { open: true, title: "Threads", refresh: true, width: 280,
       sections: [
         { id: "shortcuts", rows: [{ id: "new-thread", title: "New thread", icon: "plus", open: { invoke: { id: "create-thread", title: "New thread", operation: "threads.create", inputs: { title: { prompt: { title: "New thread", placeholder: "What is it about?" } } }, then: { route: { name: "item" } } } } }] },
-        { id: "conversations", title: "Conversations", customise: { folders: true }, sections: [pins("conv-pins", "conv-pinned"), { id: "groups", title: "Groups", bind: "groups" }, { id: "people", title: "People", bind: "contacts" }] },
-        { id: "agents", title: "Agents", customise: { folders: true }, sections: [pins("agent-pins", "agent-pinned"), { id: "cals", title: "Cals", bind: "cals" }, { id: "harnesses", title: "Harnesses", bind: "harnesses" }] },
+        // ONE pinned strip holds every pin (the owner may want one per kind later); then plain sections in the default order. A folder the person makes is just another section.
+        pins("pins", "pinned"),
+        { id: "groups", title: "Groups", bind: "groups" },
+        { id: "people", title: "People", bind: "contacts" },
+        { id: "cals", title: "Cals", bind: "cals" },
+        { id: "harnesses", title: "Harnesses", bind: "harnesses" },
         { id: "archive", title: "Archived", collapsed: true, bind: "archived", customise: { hide: false, rename: false } },
       ] },
     header: { title: { bind: "thread", field: "title" }, trailing: [callIn("call-in", "Call an agent in", { literal: "all" })] },

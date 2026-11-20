@@ -1,7 +1,7 @@
 <script lang="ts">
-  // The sidebar as a tree the person arranges (DRAFT shapes, issue #78/#99): sections with collapsible subsections, a pinned strip of round thumbnails, avatar marks, and the person's own layout of all of it: reorder
-  // sections, subsections and rows (by drag, or Move up and Move down in the menu), pin by dragging a row onto the strip and unpin by dragging it off, collapse, hide (with a way back at the foot), rename, and make folders
-  // (subsections of their own) to drag rows into. The arrangement is the person's and the host's to store (`layout-state.svelte.ts`); a description only says what exists and what may be changed. A row under a section is
+  // The sidebar as a list of sections the person arranges (DRAFT shapes, issue #78/#99; flat, no subsections and no indentation): sections with collapsible bodies, one pinned strip of round thumbnails, avatar marks, and the person's own layout of all of it: reorder
+  // sections, subsections and rows (by drag, or Move up and Move down in the menu), pin by dragging a row onto the strip and unpin by dragging it off, collapse, hide (with a way back at the foot), rename, and make sections of their own
+  // (a folder is simply another section) to drag rows into. The arrangement is the person's and the host's to store (`layout-state.svelte.ts`); a description only says what exists and what may be changed. A row under a section is
   // drawn exactly as everywhere else (RowActions, the bind's template); only the rows of folders and the order are the person's. Motion: folding, a section opening to receive a drag, the insertion line and a drop's
   // rearrangement all run on the motion tokens, in the order drag starts, targets open, line follows, drop lands (FLIP); reduced motion turns them to nothing. Every drag has a menu or keyboard equivalent.
   import { onDestroy, onMount, tick, untrack } from "svelte";
@@ -46,9 +46,9 @@
     const order = layout.rowOrder(s.id, rows.map((x) => x.r.id));
     return order.map((id) => rows.find((x) => x.r.id === id)!);
   }
-  const topOf = (id: string): string => { for (const t of sections) { if (t.id === id || collectIds(t).includes(id)) return t.id; } return id; };
+  const topOf = (id: string): string => id;
   const collectIds = (s: SectionD): string[] => (s.sections ?? []).flatMap((c) => [c.id, ...collectIds(c)]);
-  const leavesUnder = (topId: string): string[] => { const t = sections.find((x) => x.id === topId); if (!t) return []; const out: string[] = []; const walk = (s: SectionD) => { if (s.bind) out.push(s.id); s.sections?.forEach(walk); }; walk(t); return out; };
+  const leavesUnder = (_top: string): string[] => leaves.map((l) => l.id);
   const findSection = (id: string): SectionD | undefined => { let f: SectionD | undefined; const walk = (s: SectionD) => { if (s.id === id) f = s; s.sections?.forEach(walk); }; sections.forEach(walk); return f; };
   const folderOf = (id: string) => layout.folders.find((f) => f.id === id);
   const titleOf = (id: string, own?: string) => layout.titles[id] ?? own ?? folderOf(id)?.title ?? "";
@@ -56,12 +56,8 @@
   const may = (s: SectionD | undefined, what: "reorder" | "collapse" | "hide" | "rename" | "folders") => (s ? s.customise !== false && (typeof s.customise !== "object" || s.customise[what] !== false) : true);
 
   // ---- what is shown at each level: the person's order, hidden ones left out
-  const visibleTop = $derived(layout.sorted("", sections.filter((s) => shown(s) && !layout.hidden[s.id]).map((s) => s.id)).map((id) => sections.find((s) => s.id === id)!));
-  const kidsOf = (s: SectionD): { id: string; own?: SectionD; folder?: boolean }[] => {
-    const ids = [...(s.sections ?? []).map((c) => ({ id: c.id, own: c })), ...layout.folders.filter((f) => f.parent === s.id).map((f) => ({ id: f.id, folder: true }))].filter((k) => !layout.hidden[k.id]);
-    return layout.sorted(s.id, ids.map((k) => k.id)).map((id) => ids.find((k) => k.id === id)!);
-  };
-  const hiddenAll = $derived([...sections.filter((s) => shown(s) && layout.hidden[s.id]), ...sections.flatMap((s) => [...(s.sections ?? []).filter((c) => layout.hidden[c.id]), ...layout.folders.filter((f) => f.parent === s.id && layout.hidden[f.id]).map((f) => ({ id: f.id, title: f.title } as SectionD))])]);
+  const visibleTop = $derived(layout.sorted("", [...sections.filter((s) => shown(s) && !layout.hidden[s.id]).map((s) => s.id), ...layout.folders.filter((f) => !layout.hidden[f.id]).map((f) => f.id)]).map((id) => sections.find((s) => s.id === id) ?? { id, folder: true as const }));
+  const hiddenAll = $derived([...sections.filter((s) => shown(s) && layout.hidden[s.id]), ...layout.folders.filter((f) => layout.hidden[f.id]).map((f) => ({ id: f.id, title: f.title } as SectionD))]);
 
   // ---- opening a row, and the action a drop runs
   function openRow(store: WindowStore, r: WindowRow) {
@@ -85,7 +81,7 @@
   let root = $state<HTMLElement>(), dnd = $state<Dnd>(), line = $state<{ x: number; y: number; w: number; h: number } | null>(null);
   const dragging = $derived(dnd?.active ?? null);
   const accepts = (s: Source, o: Over): boolean => {
-    if (s.kind === "section") return o.type === "head" && o.section !== s.id && (findSection(o.section) ? true : !!folderOf(o.section)) && siblingsOf(o.section) === s.parent && may(findSection(s.id) ?? undefined, "reorder");
+    if (s.kind === "section") return o.type === "head" && o.section !== s.id && !findSection(o.section)?.presentation && may(findSection(s.id) ?? undefined, "reorder");
     const src = findRow(s.id); if (!src) return false;
     const fromStrip = !!stripSec(s.section)?.presentation && stripSec(s.section)?.presentation === "strip";
     if (o.type === "strip") { const st = stripSec(o.section); return !fromStrip && !!st?.drop && !!rowAction(templateOf(src.store), st.drop.action); }
@@ -102,10 +98,9 @@
     }
     return false;
   };
-  const siblingsOf = (id: string): string => { for (const t of sections) { if (t.id === id) return ""; if ((t.sections ?? []).some((c) => c.id === id)) return t.id; } return folderOf(id)?.parent ?? ""; };
   async function drop(s: Source, o: Over) {
     if (!root) return;
-    if (s.kind === "section") { const parent = s.parent, ids = parent ? kidsOf(findSection(parent)!).map((k) => k.id) : visibleTop.map((x) => x.id); const idx = ids.indexOf(o.type === "head" ? o.section : ""); const before = o.type === "head" ? (o.after ? ids[idx + 1] ?? null : o.section) : null; await flip(root, () => layout.moveSection(parent, ids, s.id, before)); return; }
+    if (s.kind === "section") { const parent = "", ids = visibleTop.map((x) => x.id); const idx = ids.indexOf(o.type === "head" ? o.section : ""); const before = o.type === "head" ? (o.after ? ids[idx + 1] ?? null : o.section) : null; await flip(root, () => layout.moveSection(parent, ids, s.id, before)); return; }
     const src = findRow(s.id); if (!src) return;
     const fromStrip = stripSec(s.section)?.presentation === "strip";
     if (o.type === "strip" || (o.type === "row" && stripSec(o.in)?.presentation === "strip" && !fromStrip)) { const st = stripSec(o.type === "strip" ? o.section : o.in)!; if (await runRowAction(src.store, src.r, st.drop!.action)) { const ids = rowsOfStrip(st.id).map((x) => x.r.id); if (o.type === "row") { const at = ids.indexOf(o.id); layout.rows[st.id] = [...ids.slice(0, o.after ? at + 1 : at), s.id, ...ids.slice(o.after ? at + 1 : at)]; layout.save(); } } return; }
@@ -116,7 +111,7 @@
     else await flip(root, () => layout.place(s.id, null));
   }
   const rowsOfStrip = (id: string) => shownRows({ id, bind: findSection(id)?.bind }, id);
-  const ctxOf = (id: string): string => folderOf(id)?.parent ?? topOf(id);
+  const ctxOf = (id: string): string => id;
   onMount(() => { dnd = new Dnd(root!, { accepts, drop, open: (id) => { if (layout.collapsed[id] ?? findSection(id)?.collapsed) layout.fold(id, false); } }); });
   onDestroy(() => dnd?.destroy());
   // The insertion line follows the target (a transform, so it glides); the targets that can take the drop show it by a class.
@@ -136,23 +131,24 @@
   const menuItems = $derived.by((): MenuItem[] => {
     if (!menu) return [];
     const s = findSection(menu.id), items: MenuItem[] = [];
-    const sibs = menu.parent ? kidsOf(findSection(menu.parent)!).map((k) => k.id) : visibleTop.map((x) => x.id), i = sibs.indexOf(menu.id);
+    const sibs = visibleTop.filter((x) => !(x as SectionD).presentation).map((x) => x.id), i = sibs.indexOf(menu.id);
     if (may(s, "reorder")) { items.push({ id: "up", label: "Move up", disabled: i <= 0 }, { id: "down", label: "Move down", disabled: i < 0 || i >= sibs.length - 1 }); }
     if (may(s, "rename") || menu.folder) items.push({ id: "rename", label: "Rename" });
-    if (s && may(s, "folders") && s.sections) items.push({ id: "folder", label: "New folder" });
-    if (menu.folder) items.push({ id: "delete", label: "Delete folder", danger: true });
+    items.push({ id: "folder", label: "New section" });
+    if (menu.folder) items.push({ id: "delete", label: "Delete section", danger: true });
     else if (may(s, "hide")) items.push({ id: "hide", label: "Hide" });
     return items;
   });
   async function pickMenu(id: string) {
+    if (id === "folder-new") { const v = await ui.prompt({ name: "title", title: "New section", placeholder: "Section name", kind: "text" }); if (v) layout.addFolder("", v); return; }
     const m = menu; menu = null; if (!m || !root) return;
-    const sibs = m.parent ? kidsOf(findSection(m.parent)!).map((k) => k.id) : visibleTop.map((x) => x.id), i = sibs.indexOf(m.id);
+    const sibs = visibleTop.filter((x) => !(x as SectionD).presentation).map((x) => x.id), i = sibs.indexOf(m.id);
     if (id === "up") await flip(root, () => layout.moveSection(m.parent, sibs, m.id, sibs[i - 1] ?? null));
     else if (id === "down") await flip(root, () => layout.moveSection(m.parent, sibs, m.id, sibs[i + 2] ?? null));
     else if (id === "hide") layout.hide(m.id, true);
     else if (id === "delete") await flip(root, () => layout.removeFolder(m.id));
     else if (id === "rename") { const v = await ui.prompt({ name: "title", title: "Rename", kind: "text", initial: titleOf(m.id, findSection(m.id)?.title) }); if (v !== null) layout.rename(m.id, v); }
-    else if (id === "folder") { const v = await ui.prompt({ name: "title", title: "New folder", placeholder: "Folder name", kind: "text" }); if (v) { const f = layout.addFolder(m.id, v); if (f) layout.fold(m.id, false); } }
+    else if (id === "folder") { const v = await ui.prompt({ name: "title", title: "New section", placeholder: "Section name", kind: "text" }); if (v) { const f = layout.addFolder("", v); void f; } }
   }
   async function moveRow(section: string, rowId: string, dir: -1 | 1) {
     const ids = (stripSec(section)?.presentation === "strip" ? rowsOfStrip(section) : shownRows(findSection(section) ?? { id: section }, ctxOf(section))).map((x) => x.r.id), i = ids.indexOf(rowId); if (i < 0 || !root) return;
@@ -173,7 +169,7 @@
 
 {#snippet head(s: { id: string; title?: string; actions?: SectionD["actions"] }, parent: string, folder: boolean, depth: number)}
   {@const own = findSection(s.id)}
-  <div class="sh" class:sub={depth > 0} data-sec-head={s.id} data-drag={may(own, "reorder") ? "section" : undefined} data-sec-id={s.id} data-parent={parent} data-flip={`head:${s.id}`}
+  <div class="sh" data-sec-head={s.id} data-drag={may(own, "reorder") ? "section" : undefined} data-sec-id={s.id} data-parent={parent} data-flip={`head:${s.id}`}
     oncontextmenu={(e) => { e.preventDefault(); menu = { id: s.id, parent, folder, x: e.clientX, y: e.clientY }; }}>
     <button type="button" class="fold-btn" aria-expanded={!isFolded(own ?? { id: s.id })} aria-label={`${isFolded(own ?? { id: s.id }) ? "Expand" : "Collapse"} ${titleOf(s.id, s.title)}`} disabled={!may(own, "collapse") && !folder} onclick={() => layout.fold(s.id, !isFolded(own ?? { id: s.id }))}>
       <span class="chev" class:shut={isFolded(own ?? { id: s.id })}><Icon name="chevron-down" inline /></span><span class="ttl">{titleOf(s.id, s.title)}</span>
@@ -187,7 +183,7 @@
   {#each shownRows(s, topId) as x (x.r.id)}
     {@const t = templateOf(x.store)}
     <div class="dr" data-drag="row" data-row-id={x.r.id} data-in={s.id} data-flip={`row:${x.r.id}`}>
-      <RowActions template={t} row={x.r} store={x.store} kindIcon={app.kindIconFor(x.store.bind.id)} selected={app.route[routeOf(t)] === x.r.id} onclick={() => openRow(x.store, x.r)}
+      <RowActions flat template={t} row={x.r} store={x.store} kindIcon={app.kindIconFor(x.store.bind.id)} selected={app.route[routeOf(t)] === x.r.id} onclick={() => openRow(x.store, x.r)}
         extra={may(findSection(s.id), "reorder") || !!folderOf(s.id) ? [{ id: "\u0000up", label: "Move up" }, { id: "\u0000down", label: "Move down" }] : []} onextra={(id) => void moveRow(s.id, x.r.id, id === "\u0000up" ? -1 : 1)} />
     </div>
   {/each}
@@ -196,7 +192,7 @@
 {#snippet body(s: SectionD | { id: string; folder: true }, parent: string, depth: number)}
   {@const own = findSection(s.id)}
   {@const real = own ?? undefined}
-  <section class="sec" class:drop-on={armed(s.id) && !real?.presentation} data-sec={s.id} data-flip={`sec:${s.id}`} data-depth={depth}>
+  <section class="sec" class:drop-on={armed(s.id) && !real?.presentation} data-sec={s.id} data-flip={`sec:${s.id}`}>
     {#if titleOf(s.id, real?.title)}{@render head(real ?? { id: s.id }, parent, !real, depth)}{/if}
     <div class="sfold" class:shut={isFolded(real ?? { id: s.id })} inert={isFolded(real ?? { id: s.id })}><div class="in">
       {#if real?.rows}{#each real.rows as r (r.id)}
@@ -204,9 +200,6 @@
         <div class="lit"><Row title={r.title} icon={ic} onclick={() => literalOpen(r)} /></div>
       {/each}{/if}
       {#if real?.bind || !real}{@render rowsOf(real ?? { id: s.id }, real ? topOf(s.id) : parent)}{#if !real && shownRows({ id: s.id }, parent).length === 0}<p class="hint" data-folder-empty>Drag conversations here.</p>{/if}{/if}
-      {#if real?.sections || layout.folders.some((f) => f.parent === s.id)}
-        {#each kidsOf(real!) as k (k.id)}{#if k.own?.presentation === "strip"}{@render stripOf(k.own)}{:else if k.own}{@render body(k.own, s.id, depth + 1)}{:else}{@render body({ id: k.id, folder: true }, s.id, depth + 1)}{/if}{/each}
-      {/if}
     </div></div>
   </section>
 {/snippet}
@@ -233,9 +226,10 @@
 
 <div class="tree" bind:this={root} data-tree>
   {#each visibleTop as s (s.id)}
-    {#if s.presentation === "strip"}{@render stripOf(s)}
-    {:else}{@render body(s, "", 0)}{/if}
+    {#if "presentation" in s && s.presentation === "strip"}{@render stripOf(s as SectionD)}
+    {:else}{@render body(s as SectionD | { id: string; folder: true }, "", 0)}{/if}
   {/each}
+  <button type="button" class="hid newsec" data-new-section onclick={() => void pickMenu("folder-new")}><Icon name="plus" inline /> New section</button>
   {#if hiddenAll.length}<button type="button" class="hid" bind:this={hiddenEl} data-hidden-entry aria-haspopup="menu" onclick={() => (hiddenOpen = true)}><Icon name="more" inline /> Hidden ({hiddenAll.length})</button>{/if}
   <div class="dropline" class:on={!!line} style:transform={line ? `translate(${line.x}px, ${line.y}px)` : undefined} style:width={line ? `${line.w}px` : undefined} style:height={line ? `${line.h}px` : undefined} aria-hidden="true" data-dropline></div>
   <Menu open={!!menu} items={menuItems} label="Section options" onpick={pickMenu} onclose={() => (menu = null)} trigger={null} anchor={menu ? { left: menu.x, top: menu.y, right: menu.x, bottom: menu.y } : null} />
@@ -247,7 +241,6 @@
   .sec { display: flex; flex-direction: column; border-radius: var(--r-select); transition: background-color var(--dur-fast) var(--ease-out); }
   .sec.drop-on { background: var(--accent-soft); }
   .sh { display: flex; align-items: center; gap: var(--s-1); min-height: var(--row-h); padding: 0 var(--s-2) 0 var(--s-3); margin-top: var(--s-3); touch-action: pan-y; user-select: none; cursor: default; }
-  .sh.sub { margin-top: var(--s-1); padding-inline-start: var(--s-6); }
   .fold-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s-2); min-height: var(--row-h); text-align: start; color: var(--ink-3); font-size: var(--text-section); font-weight: var(--strong-weight); border-radius: var(--r-select); }
   .ttl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chev { display: inline-grid; transition: rotate var(--dur-base) var(--ease-out); } .chev.shut { rotate: -90deg; }

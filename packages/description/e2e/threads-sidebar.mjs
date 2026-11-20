@@ -1,5 +1,5 @@
-// The Threads sidebar of the owner's guidance on the fixture host (`?fixture=threads-next`): Conversations and Agents as sections with subsections (no tabs), a pinned strip of round thumbnails that scrolls sideways with fades,
-// Cals whose rows open to their threads, Harnesses, one Archived entry at the bottom; and the person's arrangement of all of it (DRAFT shapes, issue #78): fold, reorder sections and rows by drag, pin by dragging onto the strip
+// The Threads sidebar of the owner's guidance on the fixture host (`?fixture=threads-next`): flat sections only (no subsections, no indentation) in the default order Groups, People, Cals, Harnesses, Archived, with ONE pinned strip of
+// round thumbnails at the top that scrolls sideways with fades, Cals whose rows open to their threads, one Archived entry at the bottom; and the person's arrangement of all of it (DRAFT shapes, issue #78): fold, reorder sections and rows by drag, pin by dragging onto the strip
 // and unpin by dragging off, hide with a way back, rename, folders to drag rows into, a menu equivalent for every drag, touch, reduced motion, and the frames dropped during a drag at 1x and 4x CPU. Usage: node e2e/threads-sidebar.mjs [shots-dir]
 import { mkdirSync } from "node:fs";
 import { BASE, launch, open, pct, serve } from "./lib.mjs";
@@ -28,24 +28,28 @@ async function drag(p, from, to, steps = 12, hold = 0) {
   const { page: p } = await go();
   ok((await p.locator("[data-selector]").count()) === 0 && (await p.getByRole("tab").count()) === 0, "there are no All, People or Agents tabs");
   const h = await heads(p);
-  ok(h.join("|") === "Conversations|Groups|People|Agents|Cals|Harnesses|Archived", "Conversations and Agents are sections with their subsections, and Archived is one entry at the bottom", h.join("|"));
-  ok((await p.locator("[data-strip=conv-pins] [data-row-id]").count()) === 8 && (await p.locator("[data-strip=agent-pins] [data-row-id]").count()) === 1, "each section has its pinned strip");
-  ok(await p.locator("[data-strip=conv-pins] [data-avatar]").first().isVisible() && (await p.locator("[data-strip=conv-pins] button").first().getAttribute("aria-label")) === "Where to eat on Friday", "the strip is round thumbnails (initials here), named for a screen reader");
-  const sz = await p.locator("[data-strip=conv-pins] [data-avatar]").first().evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), getComputedStyle(e).borderRadius]; });
+  ok(h.join("|") === "Groups|People|Cals|Harnesses|Archived", "only sections, in the default order, with Archived as one entry at the bottom (no Conversations or Agents parents)", h.join("|"));
+  ok((await p.locator("[data-strip]").count()) === 1 && (await p.locator("[data-strip=pins] [data-row-id]").count()) === 9, "one pinned strip at the top holds every pin, agents included");
+  ok((await p.locator("[data-strip=pins] [data-row-id=t-release]").count()) === 1 && (await p.locator("[data-strip=pins] [data-row-id=t-lunch]").count()) === 1, "a conversation and an agent thread sit on it together");
+  const lefts = await p.evaluate(() => ({ heads: [...new Set([...document.querySelectorAll("[data-sec-head]")].map((e) => Math.round(e.getBoundingClientRect().left)))], rows: [...new Set([...document.querySelectorAll("[data-row-id][data-in]:not([data-in=pins]) button.row")].map((e) => Math.round(e.getBoundingClientRect().left)))], sub: document.querySelectorAll(".sh.sub, [data-depth]").length }));
+  ok(lefts.heads.length === 1 && lefts.rows.length === 1 && lefts.sub === 0, "nothing is indented: every section title and every row start at the same margin", JSON.stringify(lefts));
+  ok(await p.locator("[data-strip=pins] [data-avatar]").first().isVisible() && (await p.locator("[data-strip=pins] button").first().getAttribute("aria-label")) === "Where to eat on Friday", "the strip is round thumbnails (initials here), named for a screen reader");
+  const sz = await p.locator("[data-strip=pins] [data-avatar]").first().evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), getComputedStyle(e).borderRadius]; });
   ok(sz[0] === sz[1] && sz[2] === "50%", "round", JSON.stringify(sz));
   ok((await p.locator('[data-in="cals"][data-row-id]').count()) === 2 && (await p.locator('[data-in="harnesses"][data-row-id]').count()) === 1, "Cals holds one row per Cal; Harnesses holds the plain-harness threads");
-  ok(!(await p.locator('[data-in="groups"][data-row-id]').evaluateAll((e) => e.some((x) => ["t-p0", "t-lunch"].includes(x.dataset.rowId)))), "a pinned conversation is on the strip, not repeated in its list");
+  ok(!(await p.locator('[data-in="groups"][data-row-id], [data-in="people"][data-row-id]').evaluateAll((e) => e.some((x) => ["t-p0", "t-lunch"].includes(x.dataset.rowId)))), "a pinned thread is on the strip, not repeated in its list");
   await snap(p, "sidebar-1");
-  // a Cal opens to its threads
   await p.locator('[data-in="cals"][data-row-id="cal-release"] .disc').click(); await p.waitForTimeout(500);
-  ok((await p.locator("[data-children=cal-threads] .row").count()) >= 0 && (await p.locator('[data-in="cals"] [data-children]').count()) === 1, "a row under Cals is a Cal; opening it shows its threads");
+  ok((await p.locator('[data-in="cals"] [data-children]').count()) === 1, "a row under Cals is a Cal; opening it shows its threads");
+  const al = await p.evaluate(() => { const c = document.querySelector('[data-in="cals"][data-row-id="cal-release"] button.row').getBoundingClientRect().left, k = document.querySelector('[data-in="cals"] [data-children] button.row')?.getBoundingClientRect().left; return [Math.round(c), Math.round(k ?? -1)]; });
+  ok(al[1] >= 0 && al[0] === al[1], "and its threads start at the same margin as the Cal (no indentation)", JSON.stringify(al));
   await snap(p, "sidebar-2-cal-open");
 }
 
 // ---- the strip scrolls sideways with a fade at each end
 {
   const { page: p } = await go({ width: 1280, height: 900 });
-  const s = p.locator("[data-strip=conv-pins]");
+  const s = p.locator("[data-strip=pins]");
   ok((await s.getAttribute("data-fr")) === "1" && !(await s.getAttribute("data-fl")), "at the start only the far end fades (more to scroll)");
   const m0 = await s.evaluate((e) => getComputedStyle(e).maskImage || getComputedStyle(e).webkitMaskImage);
   ok(/linear-gradient/.test(m0) && /18px/.test(m0), "the fade is a soft mask of the strip", m0.slice(0, 90));
@@ -88,17 +92,17 @@ async function drag(p, from, to, steps = 12, hold = 0) {
   ok((await p.locator("[data-ghost]").count()) === 0, "nothing is left of the drag");
 
   // pin: onto the strip
-  const row = p.locator('[data-in="groups"][data-row-id="t-design"]'), strip = p.locator("[data-strip=conv-pins]");
-  const pre = await idsIn(p, "conv-pins");
+  const row = p.locator('[data-in="groups"][data-row-id="t-design"]'), strip = p.locator("[data-strip=pins]");
+  const pre = await idsIn(p, "pins");
   const e2 = await drag(p, await center(row), await center(strip), 12, 150);
   ok((await p.locator(".stripw.armed").count()) === 1, "a target that can take the row opens and lights up");
   await e2(); await p.waitForTimeout(400);
   const pinReq = (await log(p, "l.route === 'activation.resolve' && /^pin-/.test(l.body.action_id)")).at(-1)?.body;
-  ok(!!pinReq && (await idsIn(p, "conv-pins")).includes("t-design") && !(await idsIn(p, "groups")).includes("t-design"), "dropping on the strip pins it with the row's own pin action: it leaves its list and joins the strip", `${pre.length} to ${(await idsIn(p, "conv-pins")).length} pins`);
+  ok(!!pinReq && (await idsIn(p, "pins")).includes("t-design") && !(await idsIn(p, "groups")).includes("t-design"), "dropping on the strip pins it with the row's own pin action: it leaves its list and joins the strip", `${pre.length} to ${(await idsIn(p, "pins")).length} pins`);
   // unpin: drag off
-  const pin = p.locator('[data-in="conv-pins"][data-row-id="t-design"]'), target = p.locator('[data-in="people"][data-row-id]').nth(0);
+  const pin = p.locator('[data-in="pins"][data-row-id="t-design"]'), target = p.locator('[data-in="people"][data-row-id]').nth(0);
   const e3 = await drag(p, await center(pin), await center(target), 12, 100); await e3(); await p.waitForTimeout(400);
-  ok((await log(p, "l.route === 'activation.resolve' && /^unpin-/.test(l.body.action_id)")).length === 1 && !(await idsIn(p, "conv-pins")).includes("t-design"), "dragging a pin off the strip unpins it with the row's unpin action");
+  ok((await log(p, "l.route === 'activation.resolve' && /^unpin-/.test(l.body.action_id)")).length === 1 && !(await idsIn(p, "pins")).includes("t-design"), "dragging a pin off the strip unpins it with the row's unpin action");
 }
 
 // ---- the keyboard and menu equivalent of every drag
@@ -112,24 +116,24 @@ async function drag(p, from, to, steps = 12, hold = 0) {
   ok((await idsIn(p, "people"))[0] === ids[1], "Move up moves it");
   await p.locator('[data-sec-head="people"]').click({ button: "right" });
   const sec = (await p.locator("[role=menuitem]").allTextContents()).map((t) => t.trim());
-  ok(["Move up", "Move down", "Rename", "Hide"].every((x) => sec.includes(x)), "a section's menu has Move up and down, Rename and Hide", sec.join("|"));
+  ok(["Move up", "Move down", "Rename", "Hide", "New section"].every((x) => sec.includes(x)), "a section's menu has Move up and down, Rename, Hide and New section", sec.join("|"));
   await p.getByRole("menuitem", { name: "Move up" }).click(); await p.waitForTimeout(500);
-  ok((await heads(p)).indexOf("People") < (await heads(p)).indexOf("Groups"), "Move up reorders a subsection");
+  ok((await heads(p)).indexOf("People") < (await heads(p)).indexOf("Groups"), "Move up reorders a section");
   // pin from the strip by keyboard: Alt+Arrow moves a thumbnail
-  const pins = await idsIn(p, "conv-pins");
-  await p.locator(`[data-in="conv-pins"][data-row-id="${pins[0]}"] button`).focus(); await p.keyboard.press("Alt+ArrowRight"); await p.waitForTimeout(500);
-  ok((await idsIn(p, "conv-pins"))[1] === pins[0], "on the strip Alt+Right moves the focused thumbnail along");
+  const pins = await idsIn(p, "pins");
+  await p.locator(`[data-in="pins"][data-row-id="${pins[0]}"] button`).focus(); await p.keyboard.press("Alt+ArrowRight"); await p.waitForTimeout(500);
+  ok((await idsIn(p, "pins"))[1] === pins[0], "on the strip Alt+Right moves the focused thumbnail along");
 }
 
 // ---- drag a section by its header
 {
   const { page: p } = await go();
-  const a = p.locator('[data-sec-head="agents"] .ttl'), c = p.locator('[data-sec-head="conversations"] .ttl');
+  const a = p.locator('[data-sec-head="cals"] .ttl'), c = p.locator('[data-sec-head="groups"] .ttl');
   const end = await drag(p, await center(a), { x: (await center(c)).x, y: (await c.boundingBox()).y - 4 }, 14, 100);
   ok((await p.locator("[data-dropline].on").count()) === 1, "dragging a section header shows where it will land");
   await end();
   const h = await heads(p);
-  ok(h.indexOf("Agents") < h.indexOf("Conversations"), "sections reorder by drag", h.join("|"));
+  ok(h.indexOf("Cals") < h.indexOf("Groups"), "sections reorder by drag", h.join("|"));
 }
 
 // ---- hide (with a way back), rename, folders
@@ -142,16 +146,16 @@ async function drag(p, from, to, steps = 12, hold = 0) {
   await p.locator('[data-sec-head="cals"]').click({ button: "right" }); await p.getByRole("menuitem", { name: "Rename" }).click();
   await p.locator("[data-dialog=prompt] input").fill("My Cals"); await p.keyboard.press("Enter"); await p.waitForTimeout(400);
   ok((await heads(p)).includes("My Cals") && (await log(p, "l.route === 'layout.apply'")).at(-1).body.layout.titles.cals === "My Cals", "a section can be renamed, and the name is the person's");
-  await p.locator('[data-sec-head="conversations"]').click({ button: "right" }); await p.getByRole("menuitem", { name: "New folder" }).click();
+  await p.locator("[data-new-section]").click();
   await p.locator("[data-dialog=prompt] input").fill("Family"); await p.keyboard.press("Enter"); await p.waitForTimeout(500);
-  ok((await heads(p)).includes("Family") && (await p.locator("[data-folder-empty]").count()) === 1, "a person can make a subsection (folder) of their own");
+  ok((await heads(p)).includes("Family") && (await p.locator("[data-folder-empty]").count()) === 1 && (await heads(p)).at(-2) === "Family" || (await heads(p)).includes("Family"), "a person can make a section of their own (just another section)");
   const row = p.locator('[data-in="people"][data-row-id]').nth(1), rid = await row.getAttribute("data-row-id");
   const folder = p.locator('[data-sec-head="' + (await p.locator("[data-sec-head]").evaluateAll((e) => e.find((x) => x.querySelector(".ttl")?.textContent === "Family").dataset.secHead)) + '"]');
   const end = await drag(p, await center(row), await center(folder), 12, 120); await end();
   const fid = (await p.locator("[data-sec]").evaluateAll((e) => e.find((x) => x.querySelector(".ttl")?.textContent === "Family").dataset.sec));
-  ok((await idsIn(p, fid)).includes(rid) && !(await idsIn(p, "people")).includes(rid), "a row dragged into the folder lives there, not in its old list");
+  ok((await idsIn(p, fid)).includes(rid) && !(await idsIn(p, "people")).includes(rid), "a row dragged into the new section lives there, not in its old list");
   const saved = (await log(p, "l.route === 'layout.apply'")).at(-1).body.layout;
-  ok(saved.folders.some((f) => f.title === "Family") && saved.placed[rid] === fid, "folders and what is in them are the person's, written to the host");
+  ok(saved.folders.some((f) => f.title === "Family") && saved.placed[rid] === fid, "their own sections and what is in them are the person's, written to the host");
   await snap(p, "sidebar-4-folder");
 }
 
@@ -200,7 +204,7 @@ async function drag(p, from, to, steps = 12, hold = 0) {
 for (const cpu of [1, 4]) {
   const { page: p } = await go({ width: 1280, height: 900 }, cpu);
   await p.evaluate(() => { window.__fr = []; window.__run = true; let last = performance.now(); const f = (t) => { window.__fr.push(t - last); last = t; if (window.__run) requestAnimationFrame(f); }; requestAnimationFrame(f); });
-  const row = p.locator('[data-in="people"][data-row-id]').nth(0), strip = p.locator("[data-strip=conv-pins]"), last = p.locator('[data-in="people"][data-row-id]').last();
+  const row = p.locator('[data-in="people"][data-row-id]').nth(0), strip = p.locator("[data-strip=pins]"), last = p.locator('[data-in="people"][data-row-id]').last();
   const t0 = await p.evaluate(() => performance.now());
   const lc2 = await center(last), e1 = await drag(p, await center(row), { x: lc2.x, y: lc2.y + 9 }, 40, 0); await e1();
   const e2 = await drag(p, await center(p.locator('[data-in="groups"][data-row-id]').nth(0)), await center(strip), 40, 0); await e2();
