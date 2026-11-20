@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.18 draft
+# Plugin API v2 · revision 14.19 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -789,9 +789,12 @@ a children target. Section rows present `LayoutEntryRef`. Child rows
 present their kind’s row reference. Only live space members may read
 their own layout, scoped to space and app. Layout membership grants no item access.
 
-Default ranking and paging always run in the host index, even with an
-installed search profile. A Bind that names an explicitly chosen profile
-can call that package’s read operation independently. It can rerank checked
+Default ranking and paging always run in the host index. Resolve the
+effective search path before settle from the authenticated view audience.
+An explicit profile is available only to a live member view. Guest and
+public views use default host search and its normal qualification, even
+when the template names a profile. An eligible member profile can call its
+package’s read operation independently. It can rerank checked
 candidates or consult its own index built by the package’s background job.
 Apply the catalogue’s [plugin search rule](../contract/host-catalogue-v2.json#/query/search/plugin)
 to index inputs, matching, ranking and delivery. Use the explicit
@@ -897,12 +900,19 @@ audience, with no independent disclosure authority. The host checks
 shape and scope. The author controls what the text says.
 
 Draw the retained view without waiting for a wake. When the revision
-has moved, mark a still-authorized snapshot stale. A fresh publication
-replaces it. When absent, show the basic item shell and loading state.
-Revoke or purge drops the snapshot. It is regenerable, and its nodes
-cannot draw host chrome or confirmation UI, or carry action context.
-Notes’ row images reuse the revision, audience and stale checks under
-their own size and delivery limits.
+has moved, mark a still-authorized snapshot stale. When absent, show the
+basic item shell and loading state. Only a run with live item-write
+authority can replace the retained view, normally the run that wrote the
+file. Check that authority at scope admission and commit.
+
+A member reader may request a live view through the pinned read operation.
+The reply belongs only to that reader and lease. Opening or refreshing
+an item never replaces the retained view, even when the reader can edit.
+Guest and public delivery stays on the retained path. Revoke or purge
+drops the stored snapshot. Its `snapshot-text` leaves draw plain text
+inside the checked item view. They carry no markup, host chrome,
+confirmation UI or action context. Notes’ row images reuse the revision,
+audience and stale checks under their own size and delivery limits.
 
 Row images use the existing `RowImageIcon` and read route. Notes declares
 a portrait aspect and the existing snippet fallback. An editing device
@@ -1365,8 +1375,10 @@ intentional refusal/retry with an actionable response.
   Check the publishing run’s declared reads and live principal. Refuse
   access through an undeclared read and verify delivery only to eligible
   file readers. Reject a snapshot carrying chrome or confirmation UI.
-  Require stale marking only under current read authority. A live
-  projection replaces the snapshot. Meter wake separately from first paint.
+  Require stale marking only under current read authority. Race write
+  revocation against publication. Verify a reader refresh changes only
+  that reader’s live view, including when the reader also has edit rights.
+  Meter wake separately from first paint.
 - **Execution and widening.** Prove freeze, exact reattachment and teardown
   under transport and server loss. Verify one admitted attempt on replay.
   Attempt widening through direct share, membership, collection and Undo.
@@ -1391,6 +1403,8 @@ intentional refusal/retry with an actionable response.
   or continuation. Exercise default and explicit settle, a cursor chain
   ending without rows, and renewal that fences every profile page and
   restarts from a new settle. Reject old cursors, selection and contexts.
+  Settle the same template as a member, guest and public viewer. Require
+  zero plugin calls for guest or public, including a forged profile cursor.
 - **Generic idle archive.** Use an ordinary declared kind and the real
   item writer. Under the lifecycle fence check idle eligibility. Crash
   before and after the FULL transaction that commits the archived head,

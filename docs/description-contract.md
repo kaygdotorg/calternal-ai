@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.18 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.19 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -82,8 +82,12 @@ The catalogue defines one `WindowRequest` envelope and one `WindowReply` union o
 
 **List freshness.** After a save, the window engine replays the durable publication intent in the background. An affected Bind returns `loading` without rows, counts, contexts or an end distance until its current authorized generation is verified. Suspend use of affected old results, cached rows and action contexts when invalidated. Resume the viewport request when the new generation is ready.
 
-**Explicit plugin search.** A settled Bind with `source.search_profile`
-uses [`search.plugin`](../contract/host-catalogue-v2.json#/component_routes/search.plugin).
+**Explicit plugin search.** Decide the path before settle from the
+authenticated view-open audience. A live member view with
+`source.search_profile` uses [`search.plugin`](../contract/host-catalogue-v2.json#/component_routes/search.plugin).
+Guest and public views use default host search even when the template
+names a profile. Use normal host qualification and window defaults.
+An audience change requires a fresh view.
 Apply replies only to the current Bind, generation and lease. A batch
 contains authorized rows and an optional next cursor. A ready batch
 without a cursor ends the chain. Show the Bind’s empty message if that
@@ -343,16 +347,23 @@ content with checked Invoke actions. An app can declare a panel, row-field
 or action extension point whose installed contributions are validated and
 bound like its other descriptions.
 
-For a bound `item-view` component and declared slot, `item_view.open` supplies a bounded
-`ItemSnapshotView` for its checked item and current view lease. The
-snapshot uses a read-only native-description subset. The renderer shows
-it immediately while the plugin sleeps. A stale reply shows that the
-item's revision moved. A missing reply shows the basic shell and loading
-until the plugin publishes an authorized projection. For an open thread,
-the snapshot is its stored transcript view. Apply the same audience
-check as for the file, with the bound revision. A fresh plugin projection
-replaces it. Snapshot nodes carry neither host chrome nor confirmation
-UI or live actions.
+For a bound `item-view` component and declared slot, `item_view.open`
+returns the retained `ItemSnapshotView` without waiting for a wake.
+Mark a stale reply as belonging to an earlier revision. When absent,
+show the basic shell and loading state. For an open thread, the snapshot
+is its retained transcript view. Use the same audience check as for
+the file and preserve the bound revision.
+
+An eligible member view separately requests `live:true` for the open
+item. Keep the retained view while that read is pending. Apply a `state:"live"` reply only on the
+requesting viewer’s current lease. It is transient. Only a separate
+write-authorized package run can publish a replacement snapshot. A guest
+or public view uses the retained request alone.
+
+The `snapshot-text` leaf carries literal item text up to the same
+2,000-character limit as the fixed-copy `TextNode`. It uses native text
+and accepts no markup or host controls. Snapshot nodes carry no host
+chrome, confirmation UI or live actions.
 
 ### 5.2 Host surfaces and navigation on the wire
 
@@ -448,8 +459,8 @@ and checked parent when present. Fence older settles and accept only exact
 replay of the current one. A different query, route, collection or parent
 needs a new generation. Clear the old results and selections after the
 matching acknowledgement. For default search request a host window at
-offset zero. For an explicit profile call `search.plugin` without a
-cursor. Send the same parent on per-parent windows and selections, and
+offset zero, including guest and public views. For an eligible member
+profile call `search.plugin` without a cursor. Send the same parent on per-parent windows and selections, and
 the same generation on all search pages, settled selections and
 selection sets. The host checks the exact scope again before issuing rows, counts,
 contexts or set refs. Match the lease, Bind, requested parent scope and
@@ -552,7 +563,8 @@ rows and counts use source authority. Contributed row fields arrive later
 from the matching extension point. Personal sections use the same layout
 and per-parent window APIs as any app. The harness owns the file and
 live transcript view. A sleeping item opens its checked stored native
-snapshot and refreshes when the package wakes. The app owns Send,
+snapshot and can show a transient reader view when the package wakes.
+Only a write-authorized run updates the retained view. The app owns Send,
 options, queued follow-ups and continuation. The host owns admission,
 file writes, approval dispatch and widening fences.
 

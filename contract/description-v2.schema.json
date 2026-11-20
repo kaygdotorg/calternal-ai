@@ -339,7 +339,7 @@
         },
         "search_profile": {
           "$ref": "#/$defs/Id",
-          "description": "An explicitly chosen installed profile. Only search sources use it. Page through catalogue search.plugin using a checked cursor, not through host windows."
+          "description": "An explicit installed profile for live member views. Select the effective path before settle under query.search.plugin.eligibility. Guest and public views use the default host search."
         }
       },
       "additionalProperties": false,
@@ -2788,7 +2788,7 @@
     "SnapshotNode": {
       "oneOf": [
         {
-          "$ref": "#/$defs/TextNode"
+          "$ref": "#/$defs/SnapshotText"
         },
         {
           "$ref": "#/$defs/SnapshotStack"
@@ -2806,7 +2806,7 @@
       "required": [
         "content"
       ],
-      "description": "Read-only native description for plugin-authored item content under view_snapshots. The host checks aggregate byte, depth and node limits. Content cannot carry host chrome, a confirmation or action contexts."
+      "description": "Read-only native description for plugin-authored item content. Use SnapshotText for item text. The host checks byte, depth and node limits. No markup, host chrome, confirmation UI or action context."
     },
     "ExtensionUse": {
       "type": "object",
@@ -2855,6 +2855,40 @@
         "id",
         "config"
       ]
+    },
+    "SnapshotText": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "snapshot-text"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "style": {
+          "enum": [
+            "title",
+            "heading",
+            "body",
+            "caption"
+          ],
+          "default": "body"
+        },
+        "tone": {
+          "enum": [
+            "good",
+            "warn",
+            "bad"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "text"
+      ],
+      "description": "Plain item content in a checked item view. Draw the string as literal text without markup or host controls."
     }
   }
 }
