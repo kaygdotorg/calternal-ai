@@ -50,7 +50,7 @@ the repository holds placeholders only.
 
 ## Simulator results (2026-11-20, iOS 27.0 Simulator)
 
-- Builds clean; the keyboard extension loads, draws all rows (11 MB footprint) and types.
+- Builds clean; the keyboard extension loads, draws all rows (11 MB footprint). Keys were not tapped: there is no touch input on that Simulator.
 - Apple's speech model does not run there: `SpeechTranscriber.isAvailable` is false,
   `DictationTranscriber` starts but returns no text for a recorded file. The microphone and
   speech paths are device-only.
