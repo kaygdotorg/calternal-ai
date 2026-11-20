@@ -49,6 +49,7 @@ impl PodmanBackend {
                 .to_string_lossy()
         );
         let attempt_label = format!("org.calternal.entry-ticket={ticket}");
+        let timeout = format!("--timeout={}", super::super::entry::RUNTIME_LIMIT.as_secs());
         let created = podman(
             &self.podman,
             &[
@@ -71,7 +72,7 @@ impl PodmanBackend {
                 "--memory-swap=256m",
                 "--pids-limit=64",
                 "--cpus=1",
-                "--timeout=60",
+                &timeout,
                 "--stop-timeout=0",
                 "--workdir=/",
                 "--entrypoint",

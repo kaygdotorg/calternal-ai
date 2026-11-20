@@ -249,6 +249,8 @@ impl MachineService {
     /// and authorize the installed package, image, egress and login first.
     /// One blocking scheduler reservation and one machine round trip. Holds
     /// the scheduler lock only while verifying and queueing the reservation.
+    /// Persist the returned assignment before sending StartEntry. A later
+    /// checked reconnect uses it to prove the existing machine runtime.
     pub(crate) async fn open_entry_channel(
         self: &Arc<Self>,
         account: AccountId,
@@ -256,7 +258,7 @@ impl MachineService {
         machine: Uuid,
         ticket: Uuid,
         package: PackagePin,
-    ) -> Result<SpaceChannel, Error> {
+    ) -> Result<(Uuid, SpaceChannel), Error> {
         let service = self.clone();
         let receive = blocking(move || {
             let mut st = service.lock()?;
@@ -300,10 +302,11 @@ impl MachineService {
                     ticket,
                 },
             );
-            Ok(receive)
+            Ok((assignment, receive))
         })
         .await?;
-        wait_connected(receive).await
+        let (assignment, receive) = receive;
+        Ok((assignment, wait_connected(receive).await?))
     }
 
     /// Consume the one-time reservation on cold connect. The scheduler lock

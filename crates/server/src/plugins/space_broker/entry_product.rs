@@ -32,6 +32,10 @@ setTimeout(() => {
   if (input.wait_for_stop) {
     setTimeout(() => process.stdout.write('{"seq":2,"kind":"output","data":{"text":"still live"}}\n'), 40);
     setInterval(() => {}, 1000);
+  } else if (input.disconnect) {
+    setTimeout(() => {
+      process.stdout.write('{"seq":2,"kind":"output","data":{"text":"offline"}}\n{"seq":3,"kind":"terminal","state":"ok"}\n');
+    }, 6200);
   } else {
     process.stdout.write('{"seq":2,"kind":"terminal","state":"ok"}\n');
   }
@@ -48,7 +52,8 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
     let root = tempfile::tempdir().unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let relay = TlsRelay::start(root.path(), listener.local_addr().unwrap()).await;
-    let (state, service, ids, machine, token, hosted) = tokio::task::block_in_place(|| {
+    let boot = Uuid::new_v4();
+    let (state, service, ids, machine, key, token, hosted) = tokio::task::block_in_place(|| {
         let roots = calternal_roots::Roots {
             appdata: root.path().join("appdata"),
             userdata_ssd: root.path().join("ssd"),
@@ -73,7 +78,8 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
         )
         .unwrap();
         store.bind_machines(&service);
-        let (machine, token) = product_http::enroll(&service, Owner::Account { id: ids.owner });
+        let (machine, key) = product_http::enroll_key(&service, Owner::Account { id: ids.owner });
+        let token = product_http::session(&service, machine, &key, boot);
         let (hosted, _) = product_http::enroll(&service, Owner::Pool);
         let state = Arc::new(AppState {
             inputs: store.account_inputs(),
@@ -85,7 +91,7 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
             jobs: Jobs::disabled(),
             allowed_hosts: allowed_hosts(relay.port),
         });
-        (state, service, ids, machine, token, hosted)
+        (state, service, ids, machine, key, token, hosted)
     });
     let worker_revision = tokio::task::block_in_place(|| {
         state
@@ -104,10 +110,12 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
         "unused",
     ));
     backend.initialize().await.unwrap();
-    let runner = Arc::new(Runner::new(backend, link, 2));
+    let runner = Arc::new(Runner::new(backend, link.clone(), 2));
     let sync_service = service.clone();
+    let (session, mut sessions) = tokio::sync::watch::channel(token);
     let sync = tokio::spawn(async move {
         let mut ack = 0;
+        let mut token = sessions.borrow_and_update().clone();
         loop {
             let request = SyncRequest {
                 ack,
@@ -119,7 +127,23 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
                     ..Capacity::default()
                 },
             };
-            for envelope in sync_service.sync(machine, &token, request).await.unwrap() {
+            let result = tokio::select! {
+                biased;
+                changed = sessions.changed() => {
+                    changed.unwrap();
+                    token = sessions.borrow_and_update().clone();
+                    ack = 0;
+                    continue;
+                }
+                result = sync_service.sync(machine, &token, request) => result,
+            };
+            let Ok(envelopes) = result else {
+                sessions.changed().await.unwrap();
+                token = sessions.borrow_and_update().clone();
+                ack = 0;
+                continue;
+            };
+            for envelope in envelopes {
                 ack = ack.max(envelope.seq);
                 runner.handle(envelope.message).await;
             }
@@ -139,7 +163,7 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
     }
     for (valid_ticket, stop) in [(false, false), (true, false), (true, true)] {
         let ticket = Uuid::new_v4();
-        let mut channel = service
+        let (_, mut channel) = service
             .open_entry_channel(ids.owner, ids.personal, machine, ticket, pin.clone())
             .await
             .unwrap();
@@ -189,6 +213,8 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
                 matches!(&terminal.frame().message, SpaceMessage::Complete { result: Ok(result) }
                 if result == &json!({"seq": 2, "kind": "terminal", "state": "ok"}))
             );
+            channel.sender().send(&pin, ticket, SpaceMessage::EntryAck { through: 2 }).unwrap();
+            assert!(channel.receive().await.is_none());
         })
         .await
         .unwrap();
@@ -217,6 +243,68 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
             assert!(!tokio::fs::try_exists(staged).await.unwrap());
         }
     }
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let ticket = Uuid::new_v4();
+        let (origin, mut channel) = service.open_entry_channel(
+            ids.owner, ids.personal, machine, ticket, pin.clone(),
+        ).await.unwrap();
+        assert!(matches!(channel.receive().await.unwrap().frame().message, SpaceMessage::Ready {}));
+        channel.sender().send_checked_wait(
+            &pin,
+            ticket,
+            SpaceMessage::StartEntry { program: EntryProgram {
+                image_source: source.into(),
+                image_digest: digest.into(),
+                entry_sha256: sha256_hex(SCRIPT),
+                entry_base64: STANDARD.encode(SCRIPT),
+                invocation: json!({"call":"fixture-call","input":{"text":"fixture","disconnect":true}}),
+            }},
+            || true,
+        ).await.unwrap();
+        assert!(matches!(&channel.receive().await.unwrap().frame().message,
+            SpaceMessage::Chunk { data } if data["seq"] == 1));
+        // Simulate a lost machine session. The receiver committed frame one
+        // but the old link disappears before it sends the commit ACK.
+        link.set_token(None);
+        assert!(channel.receive().await.is_none());
+        drop(channel);
+        let staged = root.path().join("placements/entries");
+        loop {
+            if tokio::fs::read_dir(&staged).await.unwrap().next_entry().await.unwrap().is_none() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let token = tokio::task::block_in_place(|| product_http::session(&service, machine, &key, boot));
+        link.set_token(Some(Arc::from(token.as_str())));
+        session.send_replace(token);
+        for exact in [false, true] {
+            let (_, mut recovered) = service.open_entry_channel(
+                ids.owner, ids.personal, machine, ticket, pin.clone(),
+            ).await.unwrap();
+            assert!(matches!(recovered.receive().await.unwrap().frame().message, SpaceMessage::Ready {}));
+            recovered.sender().send_checked_wait(
+                &pin,
+                ticket,
+                SpaceMessage::ResumeEntry { origin: if exact { origin } else { Uuid::new_v4() }, after: 1 },
+                || true,
+            ).await.unwrap();
+            if !exact {
+                assert!(recovered.receive().await.is_none());
+                continue;
+            }
+            assert!(matches!(&recovered.receive().await.unwrap().frame().message,
+                SpaceMessage::EntryAttached { origin: proof, buffered_through: 3 } if *proof == origin));
+            let output = recovered.receive().await.unwrap();
+            assert!(matches!(&output.frame().message, SpaceMessage::Chunk { data }
+                if data == &json!({"seq":2,"kind":"output","data":{"text":"offline"}})));
+            let terminal = recovered.receive().await.unwrap();
+            assert!(matches!(&terminal.frame().message, SpaceMessage::Complete { result: Ok(data) }
+                if data == &json!({"seq":3,"kind":"terminal","state":"ok"})));
+            recovered.sender().send(&pin, ticket, SpaceMessage::EntryAck { through: 3 }).unwrap();
+            assert!(recovered.receive().await.is_none());
+        }
+    }).await.unwrap();
     assert!(worker_revision.current().is_some());
     sync.abort();
     server.abort();

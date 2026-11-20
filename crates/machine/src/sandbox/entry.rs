@@ -4,6 +4,10 @@ use serde_json::Value;
 
 use super::{Exec, OutputEvent};
 use crate::protocol::Stream;
+use std::time::Duration;
+
+/// Hard process deadline for the network-none entry.
+pub(crate) const RUNTIME_LIMIT: Duration = Duration::from_secs(60);
 
 /// Bounded, ordered stdout for one contribution process.
 pub(crate) struct EntryOutput {
