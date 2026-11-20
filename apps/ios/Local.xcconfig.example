@@ -1,0 +1,7 @@
+// Copy to Local.xcconfig (untracked) and fill in. Never commit the real file.
+// The app's bundle identifier (reverse-domain, as registered for the app). Build settings, Info.plist and the scripts read it from here.
+PRODUCT_BUNDLE_IDENTIFIER = com.example.calternal
+// Apple developer team that signs the app (a 10-character identifier from developer.apple.com).
+DEVELOPMENT_TEAM = XXXXXXXXXX
+// UDID of the iPhone that ./install-on-phone.sh installs on (xcrun devicectl list devices).
+PHONE_UDID = 00000000-0000000000000000

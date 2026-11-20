@@ -1,0 +1,66 @@
+<!doctype html>
+<!-- Bundled test page for the native bridge (start address "demo"). Also the living example of how a page
+     calls calternalNative and what it must do to paint under the keyboard. See docs/ios-shell.md. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- interactive-widget decides what the keyboard does: resizes-visual keeps the layout viewport (and a fixed wallpaper) full height under the keyboard, so its glass shows the page; resizes-content shrinks it and leaves flat colour. Open with #resizes-content to see the difference. -->
+<script>document.write('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=' + (location.hash.slice(1) || 'resizes-visual') + '">');</script>
+<meta name="color-scheme" content="dark">
+<title>Bridge demo</title>
+<style>
+  :root { color-scheme: dark; --bg: #14130f; }
+  html { background: var(--bg); }
+  html, body { margin: 0; height: 100%; color: #eee; font: 17px -apple-system, system-ui; }
+  /* The wallpaper layer: fixed to the layout viewport, so it also sits under the keyboard. */
+  .wall { position: fixed; inset: 0; z-index: -1; background-color: var(--bg);
+    background-image: radial-gradient(circle at 30% 25%, #c8693a, transparent 55%), radial-gradient(circle at 70% 80%, #3a78c8, transparent 55%); }
+  header { position: fixed; top: env(safe-area-inset-top); left: 12px; right: 12px; display: flex; gap: 8px; }
+  header span { padding: 10px 16px; border-radius: 99px; background: rgba(255,255,255,.12); backdrop-filter: blur(20px); }
+  main { padding: calc(env(safe-area-inset-top) + 64px) 16px calc(env(safe-area-inset-bottom) + 90px); }
+  button { font: inherit; color: inherit; background: rgba(255,255,255,.14); border: 0; border-radius: 12px; padding: 10px 14px; margin: 4px 4px 4px 0; }
+  textarea { width: 100%; box-sizing: border-box; height: 90px; font: inherit; color: inherit; background: rgba(255,255,255,.1); border: 0; border-radius: 14px; padding: 12px; }
+  pre { white-space: pre-wrap; font-size: 12px; opacity: .85; }
+  .list { height: 160px; overflow: auto; background: rgba(0,0,0,.3); border-radius: 14px; margin: 12px 0; }
+  .list div { padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.08); }
+</style>
+</head>
+<body>
+<div class="wall"></div>
+<header><span>Bridge demo</span><span>pill</span></header>
+<main>
+  <p id="state">calternalNative: …</p>
+  <div>
+    <button data-h="selection">selection</button><button data-h="light">light</button><button data-h="medium">medium</button>
+    <button data-h="success">success</button><button data-h="warning">warning</button><button data-h="error">error</button>
+  </div>
+  <div>
+    <button id="share">Share</button><button id="menu">Menu</button><button id="light">Light page</button><button id="dark">Dark page</button>
+    <button id="bar">Bar on</button><button id="nobar">Bar off</button>
+  </div>
+  <textarea id="note" placeholder="Type here; unsaved text survives the web process ending"></textarea>
+  <div class="list" id="list"></div>
+  <pre id="log"></pre>
+</main>
+<script>
+  const N = window.calternalNative, log = (m) => { document.getElementById('log').textContent = m + '\n' + document.getElementById('log').textContent; };
+  document.getElementById('state').textContent = N ? 'calternalNative v' + N.version + ' (' + N.platform + ')' : 'no native bridge (plain web)';
+  document.getElementById('list').innerHTML = Array.from({ length: 40 }, (_, i) => '<div>Row ' + (i + 1) + '</div>').join('');
+  if (N) {
+    document.querySelectorAll('[data-h]').forEach(b => b.onclick = () => { N.haptic(b.dataset.h); log('haptic ' + b.dataset.h); });
+    share.onclick = async () => log('share ' + JSON.stringify(await N.share({ text: 'Calternal', url: 'https://calternal.cloud/' })));
+    menu.onclick = async (e) => { const r = e.target.getBoundingClientRect(); log('menu ' + JSON.stringify(await N.menu({ anchor: { x: r.x, y: r.y, width: r.width, height: r.height }, items: [
+      { id: 'rename', title: 'Rename', symbol: 'pencil' }, { id: 'pin', title: 'Pin', symbol: 'pin' }, { id: 'delete', title: 'Delete', symbol: 'trash', destructive: true }] }))); };
+    light.onclick = () => { document.documentElement.style.setProperty('--bg', '#f4f1ec'); document.documentElement.style.colorScheme = 'light'; N.appearance({ scheme: 'light', background: '#f4f1ec' }); };
+    dark.onclick = () => { document.documentElement.style.setProperty('--bg', '#14130f'); document.documentElement.style.colorScheme = 'dark'; N.appearance({ scheme: 'dark', background: '#14130f' }); };
+    bar.onclick = () => N.bar({ selected: 'threads', items: [{ id: 'threads', title: 'Threads', symbol: 'bubble.left' }, { id: 'notes', title: 'Notes', symbol: 'doc.text' }, { id: 'settings', title: 'Settings', symbol: 'gearshape' }] });
+    nobar.onclick = () => N.bar(null);
+    note.oninput = () => N.saveState({ note: note.value, listScroll: document.getElementById('list').scrollTop });
+    addEventListener('calternal:restore', (e) => { if (e.detail) { note.value = e.detail.note || ''; document.getElementById('list').scrollTop = e.detail.listScroll || 0; } log('restored ' + JSON.stringify(e.detail)); });
+    addEventListener('calternal:bar', (e) => log('bar tapped ' + JSON.stringify(e.detail)));
+    N.appearance({ scheme: 'dark', background: '#14130f' });
+    requestAnimationFrame(() => N.ready());
+  }
+</script>
+</body>
+</html>

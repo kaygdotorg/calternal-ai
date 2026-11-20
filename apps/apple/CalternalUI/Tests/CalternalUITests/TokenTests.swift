@@ -29,7 +29,8 @@ final class TokenTests: XCTestCase {
         XCTAssertEqual(Tokens.desktop.pillHeight, toolbar["buttonCapsule"] as! Double)
         XCTAssertEqual(Tokens.desktop.rowHeight, sidebar["rowHeight"] as! Double)
         XCTAssertEqual(Tokens.Radius.select, sidebar["rowTintRadius"] as! Double)
-        XCTAssertEqual(Tokens.Radius.pane, sidebar["panelRadiusDerived"] as! Double)
+        // The study measured Craft's panel radius (20); ours is the decided `--r-pane` 28 (docs/ui-design-system.md), so it is not compared with the study.
+        XCTAssertEqual(Tokens.Radius.pane, 28)
         XCTAssertEqual(Tokens.Layout.inset, sidebar["inset"] as! Double)
         XCTAssertEqual(Tokens.desktop.settingsRowHeight, settings["rowHeight"] as! Double)
         XCTAssertEqual(Tokens.desktop.text.ui.size, type["body"] as! Double)

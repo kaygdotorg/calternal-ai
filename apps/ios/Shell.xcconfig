@@ -1,0 +1,6 @@
+// Project-wide build settings that are not in the project file. Local.xcconfig (untracked: see
+// Local.xcconfig.example) supplies the developer team and the phone to install on; without it the
+// app still builds for the Simulator, which needs no signing.
+// A placeholder so the Simulator build works without Local.xcconfig; the real identifier is set there.
+PRODUCT_BUNDLE_IDENTIFIER = com.example.calternal
+#include? "Local.xcconfig"

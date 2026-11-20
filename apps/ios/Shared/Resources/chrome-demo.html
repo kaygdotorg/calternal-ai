@@ -1,0 +1,139 @@
+<!doctype html>
+<!-- Bundled proof of the native chrome contract (start address "chrome-demo"): a tiny in-page store (threads, filter,
+     selection, search) publishes a chrome description to the shell and reacts to its events. This is the reference
+     publisher for docs/ios-shell.md, "Chrome description"; the real page publishes from its own stores the same way. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual">
+<title>Chrome demo</title>
+<style>
+  :root { color-scheme: dark; --bg: #16120e; --chrome-top: env(safe-area-inset-top); }
+  html { background: var(--bg); }
+  html, body { margin: 0; height: 100%; color: #eee; font: 17px -apple-system, system-ui; }
+  .wall { position: fixed; inset: 0; z-index: -1; background-color: var(--bg);
+    background-image: radial-gradient(circle at 25% 20%, #8a4b25, transparent 55%), radial-gradient(circle at 75% 85%, #25507f, transparent 55%); }
+  main { box-sizing: border-box; height: 100%; overflow: auto; padding: calc(var(--chrome-top) + 12px) 18px 120px; overscroll-behavior: contain; }
+  /* The page's own header, shown only when the shell does not draw it. */
+  body:not([data-x]) .own { display: block; } .own { display: none; padding: 8px 0; opacity: .8; }
+  /* Floating sidebar: the page moves its own card from the shell's --sidebar-p / --sidebar-w (no CSS transition: the shell animates p itself). */
+  [data-sidebar-floating] main { transform: translateX(calc(var(--sidebar-p, 0) * var(--sidebar-w, 0px))); border-radius: calc(var(--sidebar-p, 0) * var(--device-r, 0px));
+    background: rgba(20, 18, 14, .45); backdrop-filter: blur(24px); height: 100%; }
+  /* Native chrome: the shell draws the layer under the page (wallpaper, frost or glass), so the page paints none. */
+  [data-native-chrome] .wall { display: none; }
+  [data-native-chrome], [data-native-chrome] body { background: transparent; }
+  h1 { font-size: 26px; margin: 8px 0; } p { line-height: 1.5; opacity: .9; }
+  textarea { position: fixed; left: 14px; right: 14px; bottom: calc(env(safe-area-inset-bottom) + 10px); height: 50px; box-sizing: border-box;
+    border-radius: 25px; border: 0; padding: 14px 18px; font: inherit; color: inherit; background: rgba(255,255,255,.12); backdrop-filter: blur(20px); }
+  #stats { font: 12px ui-monospace, monospace; white-space: pre-wrap; opacity: .8; }
+</style>
+</head>
+<body>
+<div class="wall"></div>
+<main>
+  <div class="own">[no native chrome: the page would draw its own sidebar and header here]</div>
+  <h1 id="title"></h1>
+  <p id="body"></p>
+  <pre id="stats"></pre>
+</main>
+<textarea placeholder="Message…"></textarea>
+<script src="chrome-demo-wallpaper.js"></script>
+<script>
+  const N = window.calternalNative, $ = (id) => document.getElementById(id);
+  const store = {
+    threads: Array.from({ length: 14 }, (_, i) => ({ id: 't' + i, title: ['Expired invite test', 'Plan the storage layout', 'Passkey flake on dev VM', 'Notes editor port', 'Release checklist', 'Why is CI slow', 'Wallpaper picker', 'Sidebar rework', 'Haptics bridge', 'Push design', 'Icon ideas', 'Settings copy', 'Keyboard glass', 'Top band'][i],
+      time: ['06:10', '06:07', 'Yesterday', 'Yesterday', 'Mon', 'Mon', 'Sun', 'Sun', 'Sat', 'Sat', 'Fri', 'Fri', 'Thu', 'Thu'][i], unread: i % 4 === 1, pinned: false })),
+    selected: location.hash.includes('notes') ? 'n0' : 't0', app: location.hash.includes('notes') ? 'notes' : location.hash.includes('settings') ? 'settings' : 'threads', card: true, win: { from: 0, to: 20 }, filter: 'all', query: '', open: false, revision: 0, toast: '', lat: [],
+  };
+  const shown = () => store.threads.filter(t => (store.filter === 'all' || t.unread) && t.title.toLowerCase().includes(store.query.toLowerCase()))
+    .sort((a, b) => b.pinned - a.pinned);
+  const row = (t) => ({ id: t.id, title: t.title, selected: t.id === store.selected, trailing: [...(t.unread ? [{ kind: 'dot' }] : []), ...(t.id === 't2' ? [{ kind: 'icon', value: 'warning', tone: 'warn' }] : [])],
+    icon: parseInt(t.id.slice(1), 10) % 2 ? 'spark' : 'claude',   // the provider's icon leads, as in the web
+    leadingActions: [{ id: 'pin', title: t.pinned ? 'Unpin' : 'Pin', icon: 'spark', tone: 'warn' }],
+    trailingActions: [{ id: 'read', title: t.unread ? 'Mark read' : 'Mark unread', icon: 'mail', tone: 'good', fullSwipe: true }, { id: 'archive', title: 'Archive', icon: 'trash', role: 'destructive' }],
+    menu: [{ id: 'rename', title: 'Rename', icon: 'edit', input: { placeholder: 'Name', value: t.title } }, { id: 'pin', title: 'Pin', icon: 'spark' }, { id: 'archive', title: 'Archive', icon: 'trash', role: 'destructive' }] });
+  const noteOffset = () => Math.max(0, store.win.from - 20);
+  // A small preview of a note, drawn on a canvas: a tinted page with a few lines of "text" (eight variants, cached).
+  const thumbs = {};
+  const thumb = (i) => thumbs[i % 8] ||= (() => { const c = document.createElement('canvas'); c.width = 90; c.height = 108; const g = c.getContext('2d'); const hue = [28, 200, 140, 320, 60, 260, 10, 180][i % 8];
+    g.fillStyle = `hsl(${hue} 30% 92%)`; g.fillRect(0, 0, 90, 108); g.fillStyle = `hsl(${hue} 35% 35%)`; g.fillRect(10, 14, 44, 7);
+    g.fillStyle = `hsl(${hue} 15% 62%)`; for (let l = 0; l < 5; l++) g.fillRect(10, 32 + l * 13, 70 - ((i + l) % 3) * 14, 5); return c.toDataURL('image/png'); })();
+  const noteRows = () => { const o = noteOffset(), n = Math.min(4999, store.win.to + 20) - o + 1; return Array.from({ length: Math.max(0, n) }, (_, i) => ({ id: 'n' + (o + i), icon: { image: thumb(o + i) }, title: 'Note ' + (o + i + 1) })); };
+  const describe = () => ({
+    version: 1, revision: ++store.revision, scheme: 'dark', accent: '#d9822b',
+    appearance: { image: window.DEMO_WALLPAPER, blur: true, dim: true, tint: true, uiSize: 1, material: 'wallpaper', frost: 0.2 },   // the web app's defaults and default wallpaper
+    header: { title: store.app === 'settings' ? 'Settings' : store.app === 'notes' ? (/^n\d+$/.test(store.selected) ? 'Note ' + (Number(store.selected.slice(1)) + 1) : 'Notes') : (store.threads.find(t => t.id === store.selected) || { title: 'Threads' }).title,
+      trailing: [{ id: 'more', title: 'More', icon: 'more', menu: [{ id: 'rename', title: 'Rename', icon: 'edit' }, { id: 'share', title: 'Share', icon: 'share' }, { id: 'archive', title: 'Archive', icon: 'trash', role: 'destructive' }] }] },
+    sidebar: { open: store.open, title: 'Calternal', refresh: true,
+      cards: store.app === 'threads' && store.card ? [{ id: 'wait1', title: 'Passkey needs your approval', detail: 'The dev VM is asking to continue.', tone: 'warn', icon: 'warning', primary: { id: 'approve', title: 'Approve' }, secondary: { id: 'deny', title: 'Deny' } }] : [],
+      selectors: store.app !== 'threads' ? [] : [{ id: 'filter', options: [{ id: 'inbox', title: 'Inbox', badge: String(store.threads.filter(t => t.unread).length) }, { id: 'all', title: 'All Threads' }], selected: store.filter }],
+      sections: store.app === 'settings'
+        ? [{ id: 'settings', title: 'Settings', rows: ['Account', 'Appearance', 'Notifications', 'Privacy', 'Storage', 'Devices', 'Plugins', 'Keyboard', 'Language', 'About'].map((t, i) => ({ id: 's' + i, title: t, icon: { symbol: ['person.crop.circle', 'paintbrush', 'bell', 'lock', 'externaldrive', 'iphone', 'puzzlepiece', 'keyboard', 'globe', 'info.circle'][i] } })) }]
+        : store.app === 'notes'
+        ? [{ id: 'notes-main', rows: [{ id: 'new-note', title: 'New note', icon: 'plus' }] },
+           ...(location.hash.includes('sectioned') ? ['Personal', 'Collections', 'Shared with me'].map((t, k) => ({ id: 'ns' + k, title: t, rows: Array.from({ length: 40 }, (_, i) => ({ id: 'n' + (k * 40 + i), title: t + ' note ' + (i + 1), icon: { image: thumb(k * 40 + i) } })) })) : location.hash.includes('small') ? [] : location.hash.includes('flat') ? [{ id: 'notes', title: 'Notes', rows: Array.from({ length: 5000 }, (_, i) => ({ id: 'n' + i, title: 'Note ' + (i + 1), icon: { image: thumb(i) } })) }] : [{ id: 'notes', title: 'Notes', count: 5000, offset: noteOffset(), rows: noteRows() }])]
+        : [{ id: 'main', rows: [{ id: 'new', title: 'New thread', icon: 'plus' }, { id: 'automations', title: 'Automations', icon: 'pulse' }, { id: 'skills', title: 'Skills', icon: 'terminal' }] },
+           { id: 'threads', title: 'Threads', actions: [{ id: 'add', title: 'New thread', icon: 'plus' }], menu: [{ id: 'read-all', title: 'Mark all read', icon: 'check' }], rows: shown().map(row) }],
+      apps: [{ id: 'threads', title: 'Threads', icon: 'threads', selected: store.app === 'threads' }, { id: 'notes', title: 'Notes', icon: 'notes', selected: store.app === 'notes' },  { id: 'settings', title: 'Settings', icon: 'settings', selected: store.app === 'settings' }],
+      account: { id: 'account', initial: 'K', title: 'Account', menu: [{ id: 'space-personal', title: 'Personal', checked: true, sub: 'kayg' }, { id: 'settings', title: 'Settings', icon: 'settings' }, { id: 'signout', title: 'Sign out', icon: 'back', role: 'destructive' }] }, search: { placeholder: 'Search threads' } },
+  });
+  let native = false;
+  async function publish() {
+    if (!N || !N.chromeVersions.includes(1)) return;   // version negotiation: publish only a version the shell draws, else keep the page's own chrome
+    const t0 = performance.now();
+    const first = store.lat.length === 0;
+    const description = describe();
+    if (first) N.log('stage page_describe_done epoch ' + Date.now() + ' (describe took ' + (performance.now() - t0).toFixed(1) + ' ms)');
+    if (first) for (const ms of [0, 20, 50, 100]) setTimeout(() => N.log('stage page_timer_' + ms + ' epoch ' + Date.now()), ms);
+    const reply = await N.chrome(description);
+    if (first) N.log('stage page_reply_received epoch ' + Date.now());
+    store.lat.push(performance.now() - t0);
+    native = reply.native; document.body.toggleAttribute('data-x', native); render();
+  }
+  function render() {
+    const t = store.threads.find(x => x.id === store.selected);
+    $('title').textContent = t ? t.title : 'Choose a thread';
+    $('body').textContent = t ? 'Body of the thread card. The sidebar, header, app capsule and account control around it are drawn by the shell from the description this page publishes.' : '';
+    const avg = (a) => a.length ? (a.reduce((x, y) => x + y, 0) / a.length).toFixed(1) : '-';
+    $('stats').textContent = 'native chrome: ' + native + ' | revision ' + store.revision + ' | publish round trip ms (avg of ' + store.lat.length + '): ' + avg(store.lat) + '\n' + store.toast;
+  }
+  addEventListener('calternal:chrome', (e) => {
+    const ev = e.detail, lat = Date.now() - ev.sentAt;
+    store.toast = 'event ' + JSON.stringify({ type: ev.type, id: ev.id, rowId: ev.rowId, option: ev.option, text: ev.text }) + ' arrived ' + lat.toFixed(0) + ' ms after it was sent';
+    N.log(store.toast);
+    let skip = false;
+    if (ev.type === 'app') { store.app = ev.id; store.selected = ev.id === 'notes' ? 'n0' : ev.id === 'settings' ? 's0' : 't0'; store.win = { from: 0, to: 20 }; store.open = false; }
+    else if (ev.type === 'row' && /^[ns]\d+$/.test(ev.id)) { store.selected = ev.id; store.open = false; }
+    else if (ev.type === 'row') { if (!store.threads.some(t => t.id === ev.id) && ev.id !== 'new' && ev.id !== 'new-note') skip = true; if (ev.id === 'new') { store.toast = 'new thread (not wired)'; } else if (store.threads.some(t => t.id === ev.id)) { store.selected = ev.id; store.open = false; } }
+    else if (ev.type === 'selector') store.filter = ev.option;
+    else if (ev.type === 'refresh') store.toast = 'refresh requested'
+    else if (ev.type === 'window') store.win = { from: ev.from, to: ev.to }
+    else if (ev.type === 'action' && ev.rowId === 'wait1') store.card = false
+    else if (ev.type === 'search') store.query = ev.text || '';
+    else if (ev.type === 'sidebar') store.open = ev.open;
+    else if (ev.type === 'action' || ev.type === 'menu') {
+      const t = store.threads.find(x => x.id === ev.rowId);
+      if (t && ev.id === 'archive') { store.threads = store.threads.filter(x => x !== t); if (store.selected === t.id) store.selected = null; }
+      if (t && ev.id === 'pin') t.pinned = !t.pinned;
+      if (t && ev.id === 'rename' && ev.text) t.title = ev.text;
+      if (t && ev.id === 'read') t.unread = !t.unread;
+    }
+    if (!skip) publish();   // the shell keeps the selection highlight itself: nothing to republish for a row the page does not track
+  });
+  addEventListener('calternal:lag', (e) => { store.toast = 'drag lag (ms) ' + JSON.stringify(e.detail); N.log(store.toast); render(); });
+  addEventListener('calternal:textsize', (e) => { store.toast = 'text size scale ' + e.detail.scale; render(); });
+  if (N) {
+    N.appearance({ scheme: 'dark', background: '#16120e' });
+    publish().then(async () => {
+      if (location.hash === '#republish') { for (let i = 0; i < 3; i++) { await publish(); await new Promise(r => setTimeout(r, 300)); } for (let i = 0; i < 3; i++) { store.threads[3].unread = !store.threads[3].unread; await publish(); await new Promise(r => setTimeout(r, 300)); } }
+      const n = 300, a = performance.now(); for (let i = 0; i < n; i++) await N.ping(); const per = (performance.now() - a) / n;
+      N.log('bridge round trip ms (page to shell and back, mean of ' + n + '): ' + per.toFixed(3));
+      store.lat.push(per);
+      N.ready();
+    });
+    addEventListener('calternal:restore', () => {});
+  } else { $('stats').textContent = 'no native bridge (plain web)'; render(); }
+  render();
+</script>
+</body>
+</html>

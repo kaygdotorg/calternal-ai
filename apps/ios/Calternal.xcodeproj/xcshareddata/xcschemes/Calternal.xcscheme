@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Shared scheme. Run arguments below are the start-address switches (see docs/ios-shell.md): tick one to test against the fixtures build instead of production. -->
+<Scheme LastUpgradeVersion = "2720" version = "1.7">
+   <BuildAction parallelizeBuildables = "YES" buildImplicitDependencies = "YES">
+      <BuildActionEntries>
+         <BuildActionEntry buildForTesting = "YES" buildForRunning = "YES" buildForProfiling = "YES" buildForArchiving = "YES" buildForAnalyzing = "YES">
+            <BuildableReference BuildableIdentifier = "primary" BlueprintIdentifier = "AA0000000000000000000020" BuildableName = "Calternal.app" BlueprintName = "Calternal" ReferencedContainer = "container:Calternal.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+      </BuildActionEntries>
+   </BuildAction>
+   <LaunchAction buildConfiguration = "Debug" selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB" launchStyle = "0" useCustomWorkingDirectory = "NO" ignoresPersistentStateOnLaunch = "NO" debugDocumentVersioning = "YES" debugServiceExtension = "internal" allowLocationSimulation = "YES">
+      <BuildableProductRunnable runnableDebuggingMode = "0">
+         <BuildableReference BuildableIdentifier = "primary" BlueprintIdentifier = "AA0000000000000000000020" BuildableName = "Calternal.app" BlueprintName = "Calternal" ReferencedContainer = "container:Calternal.xcodeproj">
+         </BuildableReference>
+      </BuildableProductRunnable>
+      <CommandLineArguments>
+         <CommandLineArgument argument = "-CalternalStartURL http://10.69.69.222:4310/" isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument argument = "-CalternalStartURL demo" isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument argument = "-CalternalNativeBar YES" isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument argument = "-CalternalProbe YES" isEnabled = "NO">
+         </CommandLineArgument>
+      </CommandLineArguments>
+   </LaunchAction>
+   <ArchiveAction buildConfiguration = "Release" revealArchiveInOrganizer = "YES">
+   </ArchiveAction>
+</Scheme>

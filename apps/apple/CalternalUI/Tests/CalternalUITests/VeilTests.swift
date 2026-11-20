@@ -27,14 +27,16 @@ final class VeilTests: XCTestCase {
     func testAllOffIsOpaquePaper() {
         let ink = VeilInk(Tokens.light)
         let v = VeilSolver.solve(dark: false, role: .card, flags: .off, pixels: field(40, 250), ink: ink)
-        XCTAssertEqual(v.dimAlpha, 1); XCTAssertEqual(v.tintAlpha, 0); XCTAssertEqual(v.dimColour, ink.paper)
+        XCTAssertEqual(v.dimAlpha, 1); XCTAssertEqual(v.tintAlpha, 0)
+        XCTAssertEqual(v.dimColour, RGB255(255, 255, 255), "the card's dim layer is white in the light scheme (black in the dark), as on the web")
+        XCTAssertEqual(VeilSolver.solve(dark: false, role: .side, flags: .off, pixels: field(40, 250), ink: ink).dimColour, ink.paper)
         XCTAssertTrue(MaterialSettings.off.isOpaque)
     }
 
     func testACalmBackdropKeepsTheSidebarFloors() {
         let ink = VeilInk(Tokens.light)
         let v = VeilSolver.solve(dark: false, role: .side, flags: MaterialSettings(), pixels: field(225, 245), ink: ink)
-        XCTAssertEqual(v.tintAlpha, 0.35, accuracy: 1e-9); XCTAssertEqual(v.dimAlpha, 0.25, accuracy: 1e-9)
+        XCTAssertEqual(v.tintAlpha, 0.35, accuracy: 1e-9); XCTAssertEqual(v.dimAlpha, 0, accuracy: 1e-9)
     }
 
     func testSecondaryInksMeetTheirTargets() {
@@ -53,11 +55,12 @@ final class VeilTests: XCTestCase {
     func testFloorsMatchTheWebVeil() throws {
         let src = try Repo.text("apps/web/src/appearance/veil.ts")
         XCTAssertTrue(src.contains("export const TINT_A: Record<Role, number> = { side: 0.35, card: 0.85 };"))
-        XCTAssertTrue(src.contains("export const DIM_A: Record<Role, number> = { side: 0.25, card: 0.6 };"))
+        XCTAssertTrue(src.contains("export const DIM_A: Record<Role, number> = { side: 0, card: 0.3 };"))
+        XCTAssertTrue(src.contains("export const CARD_DIM_DARK = 0.45;"))
         XCTAssertTrue(src.contains("const GAIN: Record<Scheme, number> = { light: 0.25, dark: 0.33 };"))
-        XCTAssertTrue(src.contains("const C_CAP = 0.05, A_MAX = 0.9, MARGIN = 0.02, FLIP_GAIN = 0.12;"))
+        XCTAssertTrue(src.contains("const C_CAP = 0.05, A_MAX = 0.9, FLIP_GAIN = 0.12;"))
         XCTAssertTrue(src.contains("const HEAD = 0.35;"))
-        XCTAssertEqual(VeilSolver.tintFloor[.side], 0.35); XCTAssertEqual(VeilSolver.dimFloor[.card], 0.6)
+        XCTAssertEqual(VeilSolver.tintFloor[.side], 0.35); XCTAssertEqual(VeilSolver.dimFloor[.card], 0.3); XCTAssertEqual(VeilSolver.cardDimDark, 0.45)
     }
 
     func testWallpaperPipelineProducesGridsAndAnAccentThatPassesContrast() {

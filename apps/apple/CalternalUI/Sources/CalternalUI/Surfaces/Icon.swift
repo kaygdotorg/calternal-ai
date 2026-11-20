@@ -1,10 +1,25 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 /// The one icon set, drawn with SF Symbols on Apple platforms (the web draws the same names from its own stroke set). Icons are decoration; the
 /// accessible name always comes from the control around them.
 public enum IconName: String, CaseIterable, Sendable {
-    case threads, notes, tasks, files, search, plus, close, check, chevron, up, down, back, more, sidebar, sidebarRight, apps, settings, terminal, file, folder
+    case threads, notes, tasks, files, search, plus, close, check, chevron, up = "arrow-up", down = "arrow-down", back, more, sidebar, sidebarRight = "sidebar-right", apps, settings, terminal, file, folder
     case code, table, pulse, changes, branch, spark, send, stop, play, lock, key, shield, bell, warning, info, person, copy, reply, mail
+    case trash, edit, share, question, claude, codex, archive, book, clock, link
+
+    /// The symbol for a catalogue name or an SF Symbol name; a name that is neither draws the neutral placeholder, so an unknown icon is visible, never dropped.
+    public static func symbol(for name: String) -> String {
+        if let known = IconName(rawValue: name) { return known.symbol }
+        #if os(macOS)
+        let valid = NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil
+        #else
+        let valid = UIImage(systemName: name) != nil
+        #endif
+        return valid ? name : "questionmark.square.dashed"
+    }
 
     /// The SF Symbol drawn for the name.
     public var symbol: String {
@@ -48,6 +63,16 @@ public enum IconName: String, CaseIterable, Sendable {
         case .copy: "doc.on.doc"
         case .reply: "arrowshape.turn.up.left"
         case .mail: "envelope"
+        case .trash: "trash"
+        case .edit: "pencil"
+        case .share: "square.and.arrow.up"
+        case .question: "questionmark.circle"
+        case .claude: "sparkle"
+        case .codex: "chevron.left.forwardslash.chevron.right"
+        case .archive: "archivebox"
+        case .book: "book"
+        case .clock: "clock"
+        case .link: "link"
         }
     }
 }

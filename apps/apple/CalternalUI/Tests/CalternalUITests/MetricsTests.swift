@@ -6,7 +6,7 @@ final class MetricsTests: XCTestCase {
     func testDesktopMetricsAtDefaultSize() {
         let m = Metrics(form: .desktop)
         XCTAssertEqual(m.rowHeight, 32); XCTAssertEqual(m.pillHeight, 38); XCTAssertEqual(m.barHeight, 52); XCTAssertEqual(m.inset, 8)
-        XCTAssertEqual(m.radiusSelect, 8); XCTAssertEqual(m.radiusPane, 20); XCTAssertEqual(m.size(of: .ui), 13); XCTAssertEqual(m.glyph, 18)
+        XCTAssertEqual(m.radiusSelect, 8); XCTAssertEqual(m.radiusPane, 28)   // --r-pane is 28 (was 20): docs/ui-design-system.md, radius table; XCTAssertEqual(m.size(of: .ui), 13); XCTAssertEqual(m.glyph, 18)
         XCTAssertEqual(m.sidebarWidth, 240); XCTAssertEqual(m.rightWidth, 340); XCTAssertEqual(m.blurScale, 1)
     }
 

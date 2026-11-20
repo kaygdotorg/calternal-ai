@@ -39,11 +39,14 @@ public struct Veil: Equatable, Sendable {
 /// Cost: a sort of at most a few thousand numbers per probe, about 60 probes per surface; run it when the wallpaper, scheme, boxes or window size change,
 /// never per frame and never on the main thread for a large grid.
 public enum VeilSolver {
-    /// Tint and Dim floors for a sidebar; the card's veil is computed.
+    /// The starting Tint and Dim of each surface (the plugin's defaults: a sidebar 0.35 tint and no dim, the card 0.85 tint and 0.3 dim); the readability floor only raises them
+    /// (docs/ui-design-system.md, "What changed", materials #24, 2026-11-18).
     public static let tintFloor: [VeilRole: Double] = [.side: 0.35, .card: 0.85]
-    public static let dimFloor: [VeilRole: Double] = [.side: 0.25, .card: 0.6]
+    public static let dimFloor: [VeilRole: Double] = [.side: 0, .card: 0.3]
+    /// The card's Dim in the dark scheme: deeper than 0.3, so the card stays clearly darker than the sidebars the floor keeps dim over the default photograph.
+    public static let cardDimDark = 0.45
     static let gain: [Bool: Double] = [false: 0.25, true: 0.33]
-    static let chromaCap = 0.05, alphaMax = 0.9, margin = 0.02, flipGain = 0.12, headroom = 0.35
+    static let chromaCap = 0.05, alphaMax = 0.9, flipGain = 0.12, headroom = 0.35
     static let targetInk = 7.0, targetInk2 = 5.5, targetInk3 = 4.5
 
     private static func lin(_ v: Double) -> Double { let x = v / 255; return x <= 0.04045 ? x / 12.92 : pow((x + 0.055) / 1.055, 2.4) }
@@ -96,22 +99,17 @@ public enum VeilSolver {
 
     private static func solveOne(dark: Bool, role: VeilRole, flags: MaterialSettings, px: [RGB255], hue: (c: Double, h: Double), ink T: VeilInk) -> Veil {
         let tintRGB = paperWithChroma(T.paper, c: min(gain[dark]! * hue.c, chromaCap), h: hue.h)
-        func composite(_ w: RGB255, _ aT: Double, _ aD: Double) -> RGB255 { over(over(w, tintRGB, aT), T.paper, aD) }
+        // The dim layer deepens a surface toward its scheme: black over a dark card, white over a light one (the plugin's rule); a sidebar's is the plain paper.
+        let dimRGB = role == .card ? (dark ? RGB255(0, 0, 0) : RGB255(255, 255, 255)) : T.paper
+        func composite(_ w: RGB255, _ aT: Double, _ aD: Double) -> RGB255 { over(over(w, tintRGB, aT), dimRGB, aD) }
         let inkLum = luminance(T.ink)
         func worst(_ aT: Double, _ aD: Double) -> Double { p01(px.map { ratio(luminance(composite($0, aT, aD)), inkLum) }) }
         var aT = 0.0, aD = 0.0
         if !flags.tint && !flags.dim {
             aT = 0; aD = 1   // Nothing is on: an opaque surface, the one fallback that is always readable.
-        } else if role == .card {
-            // The card's veil is the floor plus a margin, split between the layers that are on.
-            func split(_ v: Double) -> (Double, Double) {
-                flags.tint && flags.dim ? (1 - sqrt(1 - v), 1 - sqrt(1 - v)) : flags.tint ? (v, 0) : (0, v)
-            }
-            let t = smallest { v in let s = split(min(alphaMax, v)); return worst(s.0, s.1) >= targetInk + headroom }
-            (aT, aD) = split(min(alphaMax, t + margin))
         } else {
             aT = flags.tint ? tintFloor[role]! : 0
-            aD = flags.dim ? dimFloor[role]! : 0
+            aD = flags.dim ? (role == .card && dark ? cardDimDark : dimFloor[role]!) : 0
             if worst(aT, aD) < targetInk + headroom {
                 // The readability floor: raise Dim (or Tint, when Dim is off) until the target is met, never above alphaMax.
                 let raiseDim = flags.dim || !flags.tint
@@ -127,7 +125,7 @@ public enum VeilSolver {
             let t = smallest { t in p01(ground.map { ratio(luminance($0), luminance(at(t))) }) >= target }
             return at(t)
         }
-        return Veil(dark: dark, tintAlpha: aT, tintColour: tintRGB, dimAlpha: aD, dimColour: T.paper,
+        return Veil(dark: dark, tintAlpha: aT, tintColour: tintRGB, dimAlpha: aD, dimColour: dimRGB,
                     ink2: toward(T.ink2, targetInk2 + headroom), ink3: toward(T.ink3, targetInk3 + headroom),
                     total: 1 - (1 - aT) * (1 - aD), ratio: worst(aT, aD))
     }

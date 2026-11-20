@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>StringsTable</key>
+	<string>Root</string>
+	<key>PreferenceSpecifiers</key>
+	<array>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>Experiments</string>
+			<key>FooterText</key>
+			<string>Restart the app after changing these. An empty address opens calternal.cloud; "demo" opens the bundled bridge test page.</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTextFieldSpecifier</string>
+			<key>Title</key>
+			<string>Start address</string>
+			<key>Key</key>
+			<string>CalternalStartURL</string>
+			<key>DefaultValue</key>
+			<string></string>
+			<key>KeyboardType</key>
+			<string>URL</string>
+			<key>AutocapitalizationType</key>
+			<string>None</string>
+			<key>AutocorrectionType</key>
+			<string>No</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSToggleSwitchSpecifier</string>
+			<key>Title</key>
+			<string>Native glass bar</string>
+			<key>Key</key>
+			<string>CalternalNativeBar</string>
+			<key>DefaultValue</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSToggleSwitchSpecifier</string>
+			<key>Title</key>
+			<string>Native chrome (experiment)</string>
+			<key>Key</key>
+			<string>CalternalNativeChrome</string>
+			<key>DefaultValue</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>Diagnostics</string>
+			<key>FooterText</key>
+			<string>For finding what paints a band or gap: "Clear page cache" drops the app's cached files (you stay signed in) the next time the app starts; with "Tint shell layers" on, anything the app itself draws (rather than the page) shows magenta.</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSToggleSwitchSpecifier</string>
+			<key>Title</key>
+			<string>Tint shell layers</string>
+			<key>Key</key>
+			<string>CalternalProbeMagenta</string>
+			<key>DefaultValue</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSToggleSwitchSpecifier</string>
+			<key>Title</key>
+			<string>iOS scroll edge fade</string>
+			<key>Key</key>
+			<string>CalternalProbeEdgeEffects</string>
+			<key>DefaultValue</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSToggleSwitchSpecifier</string>
+			<key>Title</key>
+			<string>Clear page cache</string>
+			<key>Key</key>
+			<string>CalternalClearCache</string>
+			<key>DefaultValue</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSToggleSwitchSpecifier</string>
+			<key>Title</key>
+			<string>Measure performance at start</string>
+			<key>Key</key>
+			<string>CalternalMeasure</string>
+			<key>DefaultValue</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>Native chrome read-out</string>
+			<key>FooterText</key>
+			<string>What the page and the shell agreed (send this to the page lane if the page draws its own chrome next to the native one) and what the sidebar gestures have done.</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>Negotiation</string>
+			<key>Key</key>
+			<string>CalternalDiagChrome</string>
+			<key>DefaultValue</key>
+			<string>no page has published yet</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>Page document</string>
+			<key>Key</key>
+			<string>CalternalDiagPage</string>
+			<key>DefaultValue</key>
+			<string>-</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>Gestures</string>
+			<key>Key</key>
+			<string>CalternalDiagGestures</string>
+			<key>DefaultValue</key>
+			<string>none yet</string>
+		</dict>
+	</array>
+</dict>
+</plist>
