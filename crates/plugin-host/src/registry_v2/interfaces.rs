@@ -1,7 +1,9 @@
 //! Extension declarations use the same offline schema registry as ordinary operations.
 
 use super::{catalogue, embedded_schema, entries, str_field};
-use calternal_types::{Error, ErrorCode, HarnessRef, Result};
+use calternal_types::{
+    Error, ErrorCode, ExecutionRef, HarnessRef, RequestId, Result, contribution_limits,
+};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::{collections::BTreeSet, sync::OnceLock};
@@ -117,9 +119,7 @@ impl ContributionInterface {
         static BOUNDS: OnceLock<(usize, String)> = OnceLock::new();
         let (limit, max_ref) = BOUNDS.get_or_init(|| {
             let contract = catalogue();
-            let limit = contract["extension_points"]["calls"]["limits"]["encoded_frame_bytes"]
-                .as_u64()
-                .expect("pinned contribution frame limit");
+            let limit = contribution_limits().encoded_frame_bytes;
             let ref_size = contract["$defs"]["Ref"]["maxLength"]
                 .as_u64()
                 .expect("pinned reference length");
@@ -138,11 +138,7 @@ impl ContributionInterface {
         if crate::bounded::check(&call, *limit).is_err()
             || crate::bounded::check(&entry, *limit).is_err()
         {
-            return Err(Error::new(
-                ErrorCode::TooLarge,
-                "Contribution input exceeds the frame limit",
-            )
-            .with_details(json!({"reason":"contribution_frame_limit"})));
+            return Err(frame_limit());
         }
         if !self.accepts_input(input) {
             return Err(Error::input_field(
@@ -152,6 +148,54 @@ impl ContributionInterface {
         }
         Ok(())
     }
+
+    /// Encode the one accepted entry invocation with its exact host-assigned
+    /// references. The caller rechecks the binding under the attempt fence
+    /// and dispatches only after claiming launch durably. Changed input
+    /// cannot consume a call. Cost: two bounded encodings and one validation.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_entry(
+        &self,
+        request: &RequestId,
+        execution: &ExecutionRef,
+        harness: &HarnessRef,
+        call: &str,
+        admitted: &Value,
+        offered: &Value,
+    ) -> Result<Vec<u8>> {
+        if admitted != offered {
+            return Err(Error::request_reused());
+        }
+        let limit = (contribution_limits().encoded_frame_bytes - 1) as usize;
+        let call_frame = CallEnvelope {
+            request_id: &request.0,
+            execution: &execution.0,
+            contribution: harness,
+            input: admitted,
+        };
+        crate::bounded::check(&call_frame, limit).map_err(|_| frame_limit())?;
+        let entry = EntryEnvelope {
+            call,
+            input: admitted,
+        };
+        let mut bytes = crate::bounded::json(&entry, limit).map_err(|_| frame_limit())?;
+        if !self.accepts_input(admitted) {
+            return Err(Error::input_field(
+                "/input",
+                "must match the checked contribution interface",
+            ));
+        }
+        bytes.push(b'\n');
+        Ok(bytes)
+    }
+}
+
+fn frame_limit() -> Error {
+    Error::new(
+        ErrorCode::TooLarge,
+        "Contribution input exceeds the frame limit",
+    )
+    .with_details(json!({"reason":"contribution_frame_limit"}))
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 use super::*;
 use base64::{Engine, engine::general_purpose::STANDARD};
-use calternal_types::PackageId;
+use calternal_types::{ErrorCode, HarnessRef, PackageId};
 
 const TEMPLATE: &[u8] = br#"{"version":2,"kind":"app","revision":1}"#;
 const ENTRY: &[u8] = b"scripted entry";
@@ -148,6 +148,52 @@ fn v2_installer_resolves_qualified_harness_interfaces() {
         .checked_contributions(&owner, "home", "runner", 1, "harness", |_| true)
         .next()
         .unwrap();
+    let harness = HarnessRef("checked-harness".into());
+    let (mut job_writes, mut alarm_writes) = (0, 0);
+    let oversized = json!({"text":"\t".repeat(9000)});
+    for writes in [&mut job_writes, &mut alarm_writes] {
+        let error = catalogue
+            .preflight_admission(
+                &owner,
+                original,
+                &harness,
+                &oversized,
+                |_| true,
+                |_, _| {
+                    *writes += 1;
+                    Ok(())
+                },
+            )
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::TooLarge);
+    }
+    assert_eq!((job_writes, alarm_writes), (0, 0));
+    let input = json!({"text":"Approved"});
+    let pinned = catalogue
+        .preflight_admission(
+            &owner,
+            original,
+            &harness,
+            &input,
+            |_| true,
+            |identity, data| Ok((identity.clone(), data.clone())),
+        )
+        .unwrap();
+    assert_eq!(pinned, (original.identity.clone(), input.clone()));
+    assert_eq!(
+        catalogue
+            .preflight_admission::<()>(
+                &PackageId("beta".into()),
+                original,
+                &harness,
+                &input,
+                |_| true,
+                |_, _| panic!("a different app owner cannot admit the call"),
+            )
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
     let removed = catalog(&catalogue, "helper", None).unwrap();
     package_store::remove(appdata.path(), "helper").unwrap();
     assert_eq!(
@@ -164,4 +210,18 @@ fn v2_installer_resolves_qualified_harness_interfaces() {
     assert_eq!(replacement.identity, original.identity);
     assert_eq!(replacement.owner_revision, original.owner_revision);
     assert!(replacement.contributor_revision > original.contributor_revision);
+    assert_eq!(
+        reinstalled
+            .preflight_admission::<()>(
+                &owner,
+                original,
+                &harness,
+                &input,
+                |_| true,
+                |_, _| { panic!("stale bindings cannot commit an admission") }
+            )
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
 }

@@ -59,8 +59,8 @@ are tracked on [#78](https://git.kayg.org/kayg/calternal-ai/issues/78).
 ## Development gate
 
 Run focused tests and the docs and format gates on dev-01 from this lane's
-directory. The coordinator runs `scripts/verify-additive-upgrade.sh` with
-the exact lane candidate and `localhost/calternal-ai:31fb41179460`.
+directory. Run `scripts/verify-additive-upgrade.sh` with the exact lane
+candidate and `localhost/calternal-ai:31fb41179460`.
 Record the commands, candidate hash, and test counts.
 
 Run a focused migration test that preserves a pre-existing job and receipt,
@@ -95,7 +95,50 @@ installer. No runtime launch is involved in these tests.
 
 This milestone implements the installed registry and preflight primitive.
 Job and alarm admission wiring, the durable spool, and call/read delivery
-are pending. The coordinator runs the additive release-image check.
+follow this registry-only image in the release check.
+
+The exact ec3ff78c build passed `scripts/verify-additive-upgrade.sh` on
+dev-01. The previous image was `localhost/calternal-ai:31fb41179460`
+(`563931284f83`). The candidate was
+`localhost/calternal-ai-registry:ec3ff78cdf82` (`878fc8a55c28`).
+The rollback and forward data-preservation case and all three leak checks
+passed. The proof is `~/Developer/lanes/v2-host-registry/upgrade-ec3ff78c.json`
+on dev-01. A first run with a lane-deep temporary directory exceeded the
+admin socket's Unix path limit. The same image pair passed with a short
+private directory under the dev account's home.
+
+## Scripted spool qualification on draft 14.36
+
+The spool uses rusqlite inside the existing per-space content writer's
+FULL transaction. The execution engine supplies the exact attempt and
+generation check in that transaction. The broker uses the existing
+execution command receipt for call reservation. The spool records the
+launch claim before the outer broker dispatches and gives reconnect no
+second claim. A packet replay reads the bound call and frame and has no
+write or flush. A fresh packet reads its call and space credit, writes
+the frame and both counters, and has one outer FULL commit. These costs
+exclude the execution engine's reused fence check.
+
+Read uses two indexed queries and has no flush. It bounds the page by
+16 frames and the remaining broker envelope. Cursor wait and delivery
+revalidation belong outside the writer transaction. The spool reserves
+terminal capacity within each call's 1 MiB cap. Space storage is capped
+at 128 MiB and 4,096 retained calls. Attempt and space ingest credits
+come from the pinned catalogue and persist across reconnect. Retirement
+starts the configured receipt lifetime, and one sweep removes at most
+eight expired calls.
+
+The isolated fixture applies the draft SQL through the additive
+migration harness. Production registration awaits the item lane's
+confirmation of content.db version 12 on #78. The job and alarm
+admission adapters share one preflight gate. Their live entry points and
+carrier delivery still need the combined item, execution and carrier lanes.
+
+Dev-01 passed six spool tests, two envelope tests, the installed
+admission test, and formatting under the shared lock. The admission
+test checks both job and alarm callbacks for zero writes on oversized
+input and refuses another app's choice and a byte-identical reinstall's
+old generation.
 
 ## Simplification opportunities
 
