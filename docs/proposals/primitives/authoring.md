@@ -487,6 +487,8 @@ Each item: what I had to write or invent, and which section should own it.
    this month's file. I declared `segment: "monthly"` and assumed the host
    presents the folder as one logical record file; the files section's table
    says the plugin rolls over, its example says the kind declares it.
+   Anchors are unique across the space, so a quote into last month still
+   resolves; appends, positions, watches and sharing still need the rule.
    *Files.* (Question 1.)
 7. **Names differ between sections.** Edit and delete are `record.edit` and
    `record.redact` (files), `host.records.replace` and
@@ -598,7 +600,8 @@ to fake the box as well.
   shared group. Example: Chat cannot see who muted a chat.
 - Hand another person's writing to anything that can send it out without
   that person's consent. Example: Lee's messages reach Claude only if Lee
-  said yes.
+  said yes, and Claude's reply carries Lee as an author, so a later agent
+  reading that reply needs Lee's consent too.
 - Run code in a client except in a sealed frame, draw outside the
   catalogue, or draw or skip the host's challenge. Example: sharing always
   shows the host's sheet.
