@@ -8,12 +8,17 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use calternal_auth::db::GrantRevision;
-use calternal_machine::protocol::{Down, SPACE_CHANNEL_UPGRADE, SpaceChannelAssignment};
+use calternal_machine::protocol::{
+    Down, PluginWorker, SPACE_CHANNEL_UPGRADE, SpaceChannelAssignment,
+};
 use calternal_plugin_host::space_channel::{PackagePin, SpaceChannel};
 use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{oneshot, watch};
 use uuid::Uuid;
+
+mod residency;
+pub(crate) use residency::{Invocation, Residency};
 
 /// Durable terminal cause for recovering a pending checkpoint acknowledgement.
 pub(super) const SMALL_VM_IDLE_REASON: &str = "small plugin runtime idle";
@@ -29,6 +34,8 @@ pub(crate) struct Connected {
     pub(crate) grants: GrantRevision,
     /// Readiness for first invocation after any checkpoint proof is spent.
     pub(crate) restore_consumed: watch::Receiver<bool>,
+    /// Idle policy and admission state shared with the placement scheduler.
+    pub(crate) residency: Arc<Residency>,
 }
 
 pub(super) struct Reservation {
@@ -38,6 +45,7 @@ pub(super) struct Reservation {
     session: [u8; 32],
     closing: watch::Sender<bool>,
     restore_consumed: watch::Sender<bool>,
+    residency: Arc<Residency>,
     reply: Option<oneshot::Sender<Connected>>,
 }
 
@@ -45,6 +53,43 @@ impl Drop for Reservation {
     fn drop(&mut self) {
         self.closing.send_replace(true);
     }
+}
+
+/// One admitted small-VM lease. Dropping a cancelled wake queues normal teardown.
+pub(crate) struct HeldPlacement {
+    service: Arc<MachineService>,
+    account: AccountId,
+    /// Server-assigned lease used to bind the authenticated carrier.
+    pub(crate) lease: Uuid,
+    runtime: tokio::runtime::Handle,
+    settled: bool,
+}
+
+impl HeldPlacement {
+    /// Schedule the current lease's checkpoint and await physical teardown.
+    pub(crate) async fn suspend(&mut self) -> Result<(), Error> {
+        let (service, account, lease) = (self.service.clone(), self.account, self.lease);
+        blocking(move || service.sleep_space_run(account, lease)).await?;
+        self.settled = true;
+        self.service.clone().wait_worker_stopped(lease).await
+    }
+}
+
+impl Drop for HeldPlacement {
+    fn drop(&mut self) {
+        if self.settled {
+            return;
+        }
+        let (service, account, lease) = (self.service.clone(), self.account, self.lease);
+        self.runtime.spawn(async move {
+            let _ = crate::blocking::spawn(move || service.stop_run(account, lease)).await;
+        });
+    }
+}
+
+enum Eviction {
+    Carrier(watch::Receiver<bool>),
+    Stopping(Uuid),
 }
 
 impl State {
@@ -62,6 +107,50 @@ impl State {
             ));
         }
         Ok(())
+    }
+
+    fn evict_small_vm(
+        &self,
+        account: AccountId,
+        space: SpaceId,
+        settings: &super::Settings,
+    ) -> Result<Option<Eviction>, Error> {
+        let (_, excluded) = super::checkpoint::placement(&self.db, space)?;
+        let needs_slot = |id: Uuid| {
+            self.machines.get(&id).is_some_and(|machine| {
+                !excluded.contains(&id)
+                    && self.may_use(machine, account)
+                    && Self::worker_machine(machine, settings, true)
+                    && self.small_vm_slots(machine) == 0
+            })
+        };
+        if let Some(lease) = self.worker_stops.iter().find_map(|(id, stop)| {
+            (needs_slot(stop.machine)
+                && self.leases.get(id).is_some_and(|lease| lease.is_small_vm()))
+            .then_some(*id)
+        }) {
+            return Ok(Some(Eviction::Stopping(lease)));
+        }
+        let eligible = self.space_channels.values().filter(|slot| {
+            slot.binding.space != space && !*slot.closing.borrow() && needs_slot(slot.machine)
+        });
+        let mut idle = Vec::new();
+        for reservation in eligible {
+            if let Some(waiter) = reservation.residency.drain_waiter() {
+                return Ok(Some(Eviction::Carrier(waiter)));
+            }
+            if let Some(last) = reservation.residency.last_idle() {
+                idle.push((last, reservation));
+            }
+        }
+        idle.sort_unstable_by_key(|(last, reservation)| (*last, reservation.binding.space));
+        Ok(idle.into_iter().find_map(|(last, slot)| {
+            if slot.residency.sleep(last) {
+                slot.residency.drain_waiter().map(Eviction::Carrier)
+            } else {
+                None
+            }
+        }))
     }
 
     /// Persist consumption for the exact running carrier before admitting calls.
@@ -125,12 +214,7 @@ impl MachineService {
         let placement = st
             .leases
             .get(&lease)
-            .filter(|l| {
-                l.row.account == account
-                    && l.row.worker
-                    && l.row.image.as_deref()
-                        == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE)
-            })
+            .filter(|l| l.row.account == account && l.is_small_vm())
             .ok_or_else(no_assignment)?;
         if matches!(
             placement.state,
@@ -145,10 +229,80 @@ impl MachineService {
         Ok(())
     }
 
-    /// Cold wake preflight. One scheduler lock for memory-only reservation
-    /// cleanup and capacity checking before placement can start a sandbox.
-    pub(crate) fn check_space_channel_available(&self, space: SpaceId) -> Result<(), Error> {
-        self.lock()?.require_channel_capacity(space)
+    /// Reserve a cold placement, waiting for an idle eviction only when an
+    /// otherwise eligible machine has spent its small-VM reservations.
+    /// The registry lock covers selection. Checkpoint I/O runs outside it.
+    pub(crate) async fn place_space_vm(
+        self: &Arc<Self>,
+        account: AccountId,
+        worker: PluginWorker,
+    ) -> Result<HeldPlacement, Error> {
+        let thread = Uuid::new_v4();
+        let runtime = tokio::runtime::Handle::current();
+        let result = async {
+            loop {
+                let service = self.clone();
+                let worker = worker.clone();
+                let runtime = runtime.clone();
+                let (run, eviction) = blocking(move || {
+                    let space = worker.space_id;
+                    if service
+                        .lock()?
+                        .space_channels
+                        .get(&space)
+                        .is_some_and(|slot| !*slot.closing.borrow())
+                    {
+                        return Err(no_assignment());
+                    }
+                    match service.request_space_vm(account, thread, worker) {
+                        Ok(run) => Ok((
+                            Some(HeldPlacement {
+                                service,
+                                account,
+                                lease: run.lease_id,
+                                runtime,
+                                settled: false,
+                            }),
+                            None,
+                        )),
+                        Err(error)
+                            if error
+                                .details
+                                .as_ref()
+                                .and_then(|value| value["reason"].as_str())
+                                == Some("worker_capacity") =>
+                        {
+                            let eviction = service.lock()?.evict_small_vm(
+                                account,
+                                space,
+                                &service.settings,
+                            )?;
+                            if eviction.is_none() {
+                                return Err(error);
+                            }
+                            Ok((None, eviction))
+                        }
+                        Err(error) => Err(error),
+                    }
+                })
+                .await?;
+                if let Some(run) = run {
+                    return Ok(run);
+                }
+                match eviction.expect("pressure requires a pending eviction") {
+                    Eviction::Stopping(lease) => self.clone().wait_worker_stopped(lease).await?,
+                    Eviction::Carrier(mut drained) => {
+                        drained
+                            .wait_for(|done| *done)
+                            .await
+                            .map_err(|_| no_assignment())?;
+                    }
+                }
+            }
+        };
+        tokio::time::timeout(crate::plugins::worker::WORKER_START_TIMEOUT, result)
+            .await
+            .map_err(|_| Error::unavailable("small plugin VM is still sleeping; retry shortly"))?
     }
 
     /// Reserve the v2 carrier under the scheduler lock on the blocking worker.
@@ -177,11 +331,11 @@ impl MachineService {
                 package,
                 checkpoint: super::checkpoint::proof(&st.db, lease.row.space, machine)?,
             };
-            let session = st
+            let (session, idle_seconds) = st
                 .machines
                 .get(&machine)
                 .and_then(|record| record.live.as_ref())
-                .map(|live| live.session)
+                .and_then(|live| Some((live.session, live.capacity.small_vm?.idle_seconds)))
                 .ok_or_else(no_assignment)?;
             st.require_channel_capacity(binding.space)?;
             let (reply, receive) = oneshot::channel();
@@ -194,6 +348,9 @@ impl MachineService {
                     session,
                     closing: watch::channel(false).0,
                     restore_consumed: watch::channel(binding.checkpoint.is_none()).0,
+                    residency: Arc::new(Residency::new(Duration::from_secs(u64::from(
+                        idle_seconds,
+                    )))),
                     reply: Some(reply),
                 },
             );
@@ -221,6 +378,7 @@ impl MachineService {
             SpaceChannelAssignment,
             watch::Sender<bool>,
             watch::Receiver<bool>,
+            Arc<Residency>,
             oneshot::Sender<Connected>,
         ),
         Error,
@@ -265,6 +423,7 @@ impl MachineService {
             reservation.binding.clone(),
             reservation.closing.clone(),
             reservation.restore_consumed.subscribe(),
+            reservation.residency.clone(),
             reply,
         ))
     }
@@ -309,8 +468,8 @@ pub(super) async fn upgrade<D: Directory>(
             .protected_spaces()
             .cloned()
             .ok_or_else(no_assignment)?;
-        let (binding, grants, closing, restore_consumed, reply) = blocking(move || {
-            let (machine, binding, closing, restore_consumed, reply) =
+        let (binding, grants, closing, restore_consumed, residency, reply) = blocking(move || {
+            let (machine, binding, closing, restore_consumed, residency, reply) =
                 service.claim_channel(&token, space, assignment)?;
             let grants = match authority.grant_revision(space, machine) {
                 Ok(grants) => grants,
@@ -319,7 +478,7 @@ pub(super) async fn upgrade<D: Directory>(
                     return Err(super::authority_error(error));
                 }
             };
-            Ok((binding, grants, closing, restore_consumed, reply))
+            Ok((binding, grants, closing, restore_consumed, residency, reply))
         })
         .await?;
         let upgraded = hyper::upgrade::on(&mut request);
@@ -349,6 +508,7 @@ pub(super) async fn upgrade<D: Directory>(
                         channel,
                         grants,
                         restore_consumed,
+                        residency,
                     })
                     .ok()?;
                 tokio::select! {

@@ -65,7 +65,7 @@ pub(crate) async fn run_at(
     let runner = Arc::new(runner);
     #[cfg(target_os = "linux")]
     let offline_storage = async {
-        if config.backend.supports_small_plugin_vm() {
+        if config.backend.small_vm_capacity().is_some() {
             std::future::pending::<()>().await;
         }
         crate::sandbox::microvm::sweep_unconfigured(&config.dir.join("sandboxes")).await;

@@ -2,6 +2,7 @@
 use super::*;
 use crate::machines as registry;
 use calternal_machine::protocol::{LeaseReport, SandboxState};
+use calternal_types::SpaceId;
 
 impl State {
     pub(in super::super) fn may_use(&self, m: &Machine, account: AccountId) -> bool {
@@ -44,9 +45,7 @@ impl State {
                 self.end_for_placement(lease, "shared space machine changed", false);
                 continue;
             }
-            let small = l.row.worker
-                && l.row.image.as_deref()
-                    == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE);
+            let small = l.is_small_vm();
             let (checkpoint, erasures) = if small {
                 match registry::checkpoint::placement(&self.db, l.row.space) {
                     Ok(placement) => placement,
@@ -71,7 +70,11 @@ impl State {
                 })
                 .filter(|m| registry::readiness::connected(m, settings))
                 .map(|m| {
-                    let free = self.free_for(m, sponsor, settings);
+                    let free = if small {
+                        self.free_small_vm(m)
+                    } else {
+                        self.free_for(m, sponsor, settings)
+                    };
                     memory_blocked |= free == 0 && self.free_slots(m) > 0;
                     (m, free)
                 })
@@ -101,7 +104,12 @@ impl State {
         };
         let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
         if self.machines.get(&machine).is_none_or(|m| {
-            !registry::readiness::connected(m, settings) || self.free_for(m, sponsor, settings) == 0
+            !registry::readiness::connected(m, settings)
+                || if l.is_small_vm() {
+                    self.free_small_vm(m) == 0
+                } else {
+                    self.free_for(m, sponsor, settings) == 0
+                }
         }) {
             return;
         }
@@ -169,12 +177,11 @@ impl State {
                 );
                 continue;
             };
-            let l = self
-                .leases
-                .get_mut(&r.lease_id)
-                .expect("existing lease under registry lock");
+            let small = l.is_small_vm();
             let keep_files = !l.row.worker && !l.row.background_title;
             let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
+            let (space, fence) = (l.row.space, l.row.fence);
+            let returning = l.state == LeaseState::Waiting && l.row.last_machine == Some(machine);
             let current = l.row.machine == Some(machine)
                 && l.row.fence == r.fence
                 && !matches!(l.state, LeaseState::Ended | LeaseState::Stopping);
@@ -203,24 +210,16 @@ impl State {
                     }
                     _ => {}
                 }
-            } else if self.worker_stops.get(&r.lease_id).is_some_and(|stop| {
-                stop.checkpoint
-                    && stop.machine == machine
-                    && self
-                        .machines
-                        .get(&machine)
-                        .and_then(|m| m.live.as_ref())
-                        .is_some_and(|live| live.session == stop.session)
-            }) {
-                // This session already has the numbered sleep command. A
-                // second Stop could retire the slot before its proof is sent.
+            } else if self.keep_checkpoint_save(machine, r, space, fence)? {
                 continue;
-            } else if l.state == LeaseState::Waiting
-                && l.row.last_machine == Some(machine)
-                && self
-                    .machines
-                    .get(&machine)
-                    .is_some_and(|m| self.free_for(m, sponsor, settings) > 0)
+            } else if returning
+                && self.machines.get(&machine).is_some_and(|m| {
+                    if small {
+                        self.free_small_vm(m) > 0
+                    } else {
+                        self.free_for(m, sponsor, settings) > 0
+                    }
+                })
             {
                 self.assign(r.lease_id, machine, settings);
             } else {
@@ -235,5 +234,50 @@ impl State {
             }
         }
         Ok(())
+    }
+
+    // A new session can report SleepPending before it has received any
+    // command. Replay the same authorized checkpoint so an interrupted close
+    // can retry and a live close can finish through the runner's OnceCell.
+    fn keep_checkpoint_save(
+        &mut self,
+        machine: Uuid,
+        report: &LeaseReport,
+        space: SpaceId,
+        latest_fence: u64,
+    ) -> Result<bool, Error> {
+        let Some(stop) = self
+            .worker_stops
+            .get_mut(&report.lease_id)
+            .filter(|stop| stop.checkpoint && stop.machine == machine)
+        else {
+            return Ok(false);
+        };
+        let Some(live) = self.machines.get(&machine).and_then(|m| m.live.as_ref()) else {
+            return Ok(false);
+        };
+        if live.session == stop.session {
+            // A generic Stop must not retire this slot before its proof.
+            return Ok(true);
+        }
+        if report.sandbox != SandboxState::SleepPending
+            || report.fence.checked_add(1) != Some(latest_fence)
+        {
+            return Ok(false);
+        }
+        let Some(counter) = registry::checkpoint::sleep_counter(&self.db, report.lease_id, space)?
+        else {
+            return Ok(false);
+        };
+        stop.session = live.session;
+        stop.seq = live.next_seq;
+        self.push(
+            machine,
+            Down::SleepSpace {
+                lease_id: report.lease_id,
+                counter,
+            },
+        );
+        Ok(true)
     }
 }

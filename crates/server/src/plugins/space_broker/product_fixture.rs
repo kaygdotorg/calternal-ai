@@ -51,8 +51,17 @@ impl Backend for FixtureBackend {
         self.direct.erase(account, thread)
     }
 
-    fn supports_small_plugin_vm(&self) -> bool {
-        true
+    fn small_vm_capacity(&self) -> Option<calternal_machine::protocol::SmallVmCapacity> {
+        use calternal_machine::protocol::{
+            SMALL_VM_IDLE_SECONDS, SMALL_VM_MEMORY_MIB, SmallVmCapacity,
+        };
+        Some(SmallVmCapacity {
+            idle_seconds: SMALL_VM_IDLE_SECONDS,
+            memory_limit_bytes: u64::from(SMALL_VM_MEMORY_MIB) << 21,
+            max_residents: 2,
+            resident_count: 0,
+            resident_memory_bytes: 0,
+        })
     }
 
     fn start_space<'a>(

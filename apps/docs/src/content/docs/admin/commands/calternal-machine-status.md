@@ -19,7 +19,14 @@ title: "calternal machine status"
   "server": "string",
   "credentials_file": "string",
   "erasure_status": "string",
-  "pending_erasures?": "integer"
+  "pending_erasures?": "integer",
+  "small_vm?": {
+    "idle_seconds": "integer",
+    "memory_limit_bytes": "integer",
+    "max_residents": "integer",
+    "resident_count": "integer",
+    "resident_memory_bytes": "integer"
+  }
 }
 ```
 

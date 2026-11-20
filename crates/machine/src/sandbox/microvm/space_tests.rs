@@ -4,18 +4,24 @@ use crate::{
     sandbox::{ExecRequest, OutputEvent, worker::SPACE_VM_IMAGE},
 };
 
+const ENTROPY_PACKAGE: &str = r#"
+    const fs = require('node:fs');
+    const crypto = require('node:crypto');
+    if (process.getuid() !== 1100 || process.getgid() !== 1100 || process.pid !== 1)
+        process.exit(1);
+    if (process.permission.has('fs.write', 'worker.js')) process.exit(2);
+    if (!fs.readFileSync('worker.js', 'utf8').includes('crypto')) process.exit(3);
+    console.log(JSON.stringify({
+        node: crypto.randomBytes(32).toString('hex'),
+        uuid: crypto.randomUUID()
+    }));
+"#;
+
 async fn entropy(vm: &Placement) -> serde_json::Value {
-    // Draw from the guest kernel and the freshly launched Node process.
-    let js = r#"
-        const fd = require('node:fs').openSync('/dev/urandom','r');
-        const kernel = Buffer.alloc(32);
-        if (require('node:fs').readSync(fd, kernel) !== 32) process.exit(1);
-        const node = require('node:crypto').randomBytes(32);
-        console.log(JSON.stringify({kernel:kernel.toString('hex'), node:node.toString('hex')}));
-    "#;
     let mut exec = vm
         .exec(ExecRequest {
-            argv: vec!["node".into(), "-e".into(), js.into()],
+            argv: crate::sandbox::worker::ARGV.map(str::to_owned).to_vec(),
+            interactive: true,
             ..Default::default()
         })
         .await
@@ -99,7 +105,7 @@ exec "$profile/real-firecracker" "$@"
         image: Some(SPACE_VM_IMAGE.into()),
         worker: Some(PluginWorker {
             space_id: space,
-            source: "/* fixture */".into(),
+            source: ENTROPY_PACKAGE.into(),
         }),
         limits: Limits::default(),
         code_directory: None,
@@ -156,18 +162,22 @@ exec "$profile/real-firecracker" "$@"
         .unwrap();
         assert!(vm.control(&Request::SmallReady).await.is_err());
         assert!(
-            vm.control(&Request::Start(space, spec.clone()))
+            vm.control(&Request::StartSmall(space, spec.clone(), true))
                 .await
                 .is_err()
         );
         let mut unmarked = spec.clone();
         unmarked.image = None;
-        assert!(vm.control(&Request::Start(space, unmarked)).await.is_err());
+        assert!(
+            vm.control(&Request::StartSmall(space, unmarked, true))
+                .await
+                .is_err()
+        );
         let mut seed = [0; 32];
         ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut seed).unwrap();
         vm.control(&Request::ReseedSmall(seed)).await.unwrap();
         vm.control(&Request::SmallReady).await.unwrap();
-        vm.control(&Request::Start(space, spec.clone()))
+        vm.control(&Request::StartSmall(space, spec.clone(), true))
             .await
             .unwrap();
         vm.stop().await.unwrap();
@@ -207,7 +217,7 @@ exec "$profile/real-firecracker" "$@"
         Some(base.id)
     );
     let second_draw = entropy(&second).await;
-    assert_ne!(first_draw["kernel"], second_draw["kernel"]);
+    assert_ne!(first_draw["uuid"], second_draw["uuid"]);
     assert_ne!(first_draw["node"], second_draw["node"]);
     assert!(second.checkpoint(2).await.unwrap());
     drop(second);
@@ -397,4 +407,97 @@ exec "$profile/real-firecracker" "$@"
     runtime.sweep_expired().await;
     assert!(!saved.exists());
     assert!(other.exists());
+}
+
+#[path = "restart_tests.rs"]
+mod restart_tests;
+#[path = "standby_tests.rs"]
+mod standby_tests;
+
+#[tokio::test]
+#[ignore = "requires the native proof image and real KVM"]
+async fn native_worker_isolation_and_kernel_randomness_survive_restore() {
+    let config = PathBuf::from(
+        std::env::var_os("CALTERNAL_SMALL_VM_NATIVE_TEST_CONFIG")
+            .expect("native KVM proof requires CALTERNAL_SMALL_VM_NATIVE_TEST_CONFIG"),
+    );
+    let root = tempfile::Builder::new()
+        .prefix("nv")
+        .rand_bytes(5)
+        .tempdir_in(config.parent().unwrap())
+        .unwrap();
+    let runtime = Arc::new(
+        SmallRuntime::load(root.path().to_owned(), &config)
+            .await
+            .unwrap(),
+    );
+    runtime.initialize().await.unwrap();
+    let space = SpaceId::new();
+    let mut spec = SandboxSpec {
+        account_id: Uuid::new_v4(),
+        thread_id: Uuid::new_v4(),
+        space_id: Some(space),
+        image: Some(SPACE_VM_IMAGE.into()),
+        worker: Some(PluginWorker {
+            space_id: space,
+            source: r#"
+                const resident = [];
+                for (let i = 0; i < 20; i++) resident.push(Buffer.alloc(16 * 1024 * 1024, 93));
+                process.exit(23);
+            "#
+            .into(),
+        }),
+        limits: Limits::default(),
+        code_directory: None,
+        provider_login: false,
+        shared_provider_sponsor: None,
+        shared_tools: None,
+    };
+    let exec = || ExecRequest {
+        argv: crate::sandbox::worker::ARGV.map(str::to_owned).to_vec(),
+        interactive: true,
+        ..Default::default()
+    };
+    let cold = runtime.start(&spec, None).await.unwrap();
+    let (_, _, oom) = tokio::time::timeout(
+        Duration::from_secs(12),
+        crate::sandbox::collect(cold.exec(exec()).await.unwrap()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        oom.code,
+        Some(137),
+        "worker must be killed at its cgroup bound"
+    );
+    assert!(
+        cold.checkpoint(1).await.unwrap(),
+        "agent and helper must survive OOM"
+    );
+    let generation = Generation::current(&cold.saved, &cold.binding)
+        .unwrap()
+        .unwrap()
+        .id;
+    spec.worker.as_mut().unwrap().source = "// calternal native launcher proof\n".into();
+    let mut samples = Vec::new();
+    for _ in 0..2 {
+        spec.thread_id = Uuid::new_v4();
+        let restored = runtime.start(&spec, Some(1)).await.unwrap();
+        assert_eq!(
+            restored.slot.lock().await.vm.as_ref().unwrap().restored,
+            Some(generation)
+        );
+        let (out, _, status) = tokio::time::timeout(
+            Duration::from_secs(12),
+            crate::sandbox::collect(restored.exec(exec()).await.unwrap()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(status.code, Some(0), "{status:?}");
+        let sample: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(sample["kernel"].as_str().unwrap().len(), 64);
+        samples.push(sample);
+        restored.stop().await.unwrap();
+    }
+    assert_ne!(samples[0], samples[1]);
 }

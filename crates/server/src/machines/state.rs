@@ -77,6 +77,12 @@ pub(super) struct Lease {
 }
 
 impl Lease {
+    /// Identify the small plugin VM profile on the existing worker lease.
+    pub(super) fn is_small_vm(&self) -> bool {
+        self.row.worker
+            && self.row.image.as_deref() == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE)
+    }
+
     /// A live assignment's machine. Stopping worker reservations are in
     /// `worker_stops` until teardown proof or revocation.
     pub(super) fn assigned_machine(&self) -> Option<Uuid> {

@@ -1,4 +1,9 @@
 use super::*;
+#[path = "product_pressure.rs"]
+mod product_pressure;
+use product_pressure::check_pressure;
+#[path = "product_retirement.rs"]
+mod product_retirement;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
 async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_spaces() {
@@ -32,15 +37,37 @@ async fn small_kvm_guest_is_reaped_after_carrier_lease_loss() {
     exercise_enrolled_runner(Some(path.into()), VmEnd::LeaseLoss).await;
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn small_kvm_guest_sleeps_when_another_space_needs_its_ram() {
+    let Some(path) = std::env::var_os("CALTERNAL_SMALL_VM_TEST_CONFIG") else {
+        eprintln!("SKIP live KVM fixture: CALTERNAL_SMALL_VM_TEST_CONFIG is unset");
+        return;
+    };
+    exercise_enrolled_runner(Some(path.into()), VmEnd::Pressure).await;
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum VmEnd {
     Fence,
     Sleep,
     LeaseLoss,
+    Pressure,
+    Revoke,
+    Erase,
 }
 
 async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
     let wait_sleep = end == VmEnd::Sleep;
+    let pressure = end == VmEnd::Pressure;
+    let retirement = matches!(end, VmEnd::Revoke | VmEnd::Erase);
+    let package = if pressure {
+        child_source().replace(
+            "if (m.operation === 'fixture.other' || !firstBurst) callback();",
+            "if (m.operation === 'fixture.other') callback();\n    else if (!firstBurst) setTimeout(callback, 1200);",
+        )
+    } else {
+        child_source()
+    };
     use crate::{
         api::{AppState, allowed_hosts, dispatch, router},
         auth::StoredDirectory,
@@ -147,7 +174,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                 space,
                 PackagePin {
                     package: "calternal-head-fixture".into(),
-                    digest: sha256_hex(child_source().as_bytes()),
+                    digest: sha256_hex(package.as_bytes()),
                 },
                 if space == ids.personal {
                     "fixture.head"
@@ -156,7 +183,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                 }
                 .into(),
                 "notes".into(),
-                child_source(),
+                package.clone(),
             )
             .unwrap()
         });
@@ -178,20 +205,6 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
     });
     let api = router(state.clone(), None).layer(axum::Extension(service.clone()));
     let server = tokio::spawn(async move { axum::serve(listener, api).await.unwrap() });
-    let request = move |ack| SyncRequest {
-        ack,
-        draining: false,
-        discards: vec![],
-        leases: vec![],
-        capacity: Capacity {
-            cpus: 1,
-            small_plugin_vm: true,
-            available_memory_bytes: Some(64 << 30),
-            max_sandboxes: 2,
-            ..Default::default()
-        },
-    };
-    service.sync(machine, &token, request(0)).await.unwrap();
     let link = Arc::new(relay.link);
     link.set_token(Some(Arc::from(token.as_str())));
     let placement_root = if vm_config.is_some() {
@@ -199,21 +212,52 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
     } else {
         root.path().join("placements")
     };
-    let backend: Arc<dyn Backend> = if let Some(path) = &vm_config {
-        let configured = calternal_machine::sandbox::configured::ConfiguredBackend::new(
-            placement_root.clone(),
-            "podman".into(),
-            "unused".into(),
-        )
-        .with_small_vm(placement_root.clone(), path)
-        .await
-        .unwrap();
-        configured.initialize().await.unwrap();
-        Arc::new(configured)
+    let override_config = if let Some(path) = vm_config.as_ref().filter(|_| wait_sleep || pressure)
+    {
+        let mut config: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        if wait_sleep {
+            config["idle_seconds"] = json!(2);
+        }
+        if pressure {
+            config["resident_memory_mib"] = json!(calternal_machine::protocol::SMALL_VM_MEMORY_MIB);
+        }
+        let path = root.path().join("small.json");
+        std::fs::write(&path, config.to_string()).unwrap();
+        Some(path)
     } else {
-        Arc::new(FixtureBackend::new(&placement_root, relay.node))
+        None
     };
+    let backend: Arc<dyn Backend> =
+        if let Some(path) = override_config.as_ref().or(vm_config.as_ref()) {
+            let configured = calternal_machine::sandbox::configured::ConfiguredBackend::new(
+                placement_root.clone(),
+                "podman".into(),
+                "unused".into(),
+            )
+            .with_small_vm(placement_root.clone(), path)
+            .await
+            .unwrap();
+            configured.initialize().await.unwrap();
+            Arc::new(configured)
+        } else {
+            Arc::new(FixtureBackend::new(&placement_root, relay.node))
+        };
     let runner = Arc::new(Runner::new(backend, link, 2));
+    let small_vm = runner.capacity().small_vm;
+    let request = move |ack| SyncRequest {
+        ack,
+        draining: false,
+        discards: vec![],
+        leases: vec![],
+        capacity: Capacity {
+            cpus: 1,
+            small_vm,
+            available_memory_bytes: Some(64 << 30),
+            max_sandboxes: 2,
+            ..Default::default()
+        },
+    };
+    service.sync(machine, &token, request(0)).await.unwrap();
     let sync_runner = runner.clone();
     let (assignments, mut assigned) = tokio::sync::mpsc::channel(3);
     let routes = tokio::task::block_in_place(|| {
@@ -231,6 +275,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
     let (draining, mut drain) = tokio::sync::mpsc::channel(1);
     let continue_drain = Arc::new(tokio::sync::Semaphore::new(0));
     let drain_gate = continue_drain.clone();
+    let connection = service.clone();
     let supervisor = tokio::spawn(async move {
         let mut ack = 0;
         let mut opened = 0;
@@ -239,10 +284,11 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
             let mut report = request(ack);
             // During sleep, report the real slot until reaping is complete.
             // The fault cases withhold reports to isolate the carrier fence.
-            if wait_sleep {
+            if wait_sleep || pressure || retirement {
                 report.leases = sync_runner.reports();
+                report.capacity.small_vm = sync_runner.capacity().small_vm;
             }
-            for envelope in service.sync(machine, &token, report).await.unwrap() {
+            for envelope in connection.sync(machine, &token, report).await.unwrap() {
                 ack = ack.max(envelope.seq);
                 let message = envelope.message;
                 if matches!(message, Down::Assign { .. }) {
@@ -251,7 +297,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                 if let Down::OpenSpaceChannel { channel } = &message {
                     opened += 1;
                     if opened == 1 {
-                        let unavailable = before_claim.check(&service, channel, &token).await;
+                        let unavailable = before_claim.check(&connection, channel, &token).await;
                         claimed.try_send((channel.clone(), unavailable)).unwrap();
                     } else if wait_sleep && opened == 2 {
                         assert_eq!(
@@ -268,7 +314,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                     drain_gate.acquire().await.unwrap().forget();
                 }
                 sync_runner.handle(message).await;
-                if opened == (if wait_sleep { 3 } else { 2 }) {
+                if !pressure && !retirement && opened == (if wait_sleep { 3 } else { 2 }) {
                     return;
                 }
             }
@@ -324,6 +370,23 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
     if vm_config.is_some() {
         let run = placement_root.join("space-runtime/microvm/run");
         let pid = firecracker_pid(&run).await;
+        if retirement {
+            product_retirement::check_retirement(
+                &state,
+                &service,
+                &runner,
+                ids.owner,
+                [ids.personal, ids.shared],
+                &items,
+                end,
+            )
+            .await;
+            supervisor.abort();
+            let _ = supervisor.await;
+            server.abort();
+            let _ = server.await;
+            return;
+        }
         if end == VmEnd::LeaseLoss {
             tokio::fs::write(&relay.stall, []).await.unwrap();
             let lost = Instant::now();
@@ -338,6 +401,23 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
             supervisor.abort();
             server.abort();
             let _ = supervisor.await;
+            let _ = server.await;
+            return;
+        }
+        if pressure {
+            check_pressure(
+                &state,
+                &runner,
+                ids.owner,
+                [ids.personal, ids.shared],
+                &items,
+                &run,
+                &pid,
+            )
+            .await;
+            supervisor.abort();
+            let _ = supervisor.await;
+            server.abort();
             let _ = server.await;
             return;
         }

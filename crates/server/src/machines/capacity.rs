@@ -1,6 +1,6 @@
 //! Machine and account capacity accounting under the existing registry lock.
 
-use calternal_machine::protocol::{MIN_SANDBOX_MEMORY_BYTES, Owner};
+use calternal_machine::protocol::{MIN_SANDBOX_MEMORY_BYTES, Owner, SMALL_VM_MEMORY_MIB};
 use calternal_types::AccountId;
 use uuid::Uuid;
 
@@ -71,10 +71,16 @@ impl State {
     /// work conservatively even when some of its RSS is reflected in the sample.
     /// No reads outside the in-memory machine record.
     pub(super) fn memory_slots(&self, m: &Machine) -> usize {
+        let required = m
+            .live
+            .as_ref()
+            .and_then(|live| live.guest_size)
+            .map_or(MIN_SANDBOX_MEMORY_BYTES, |size| size.host_memory_bytes());
+        self.memory_slots_for(m, required)
+    }
+
+    fn memory_slots_for(&self, m: &Machine, required: u64) -> usize {
         m.live.as_ref().map_or(0, |live| {
-            let required = live
-                .guest_size
-                .map_or(MIN_SANDBOX_MEMORY_BYTES, |size| size.host_memory_bytes());
             let bytes = live.capacity.available_memory_bytes.unwrap_or(0);
             let bytes = if live.capacity.memory_bytes == 0 {
                 bytes
@@ -85,6 +91,39 @@ impl State {
                 .unwrap_or(usize::MAX)
                 .saturating_sub(live.memory_reservations)
         })
+    }
+
+    /// Count server reservations and machine-held guests against the same RAM
+    /// ceiling. A placement or teardown may be newer than the heartbeat.
+    pub(super) fn small_vm_slots(&self, m: &Machine) -> usize {
+        let Some(capacity) = m.live.as_ref().and_then(|live| live.capacity.small_vm) else {
+            return 0;
+        };
+        let reserved = self
+            .workers
+            .keys()
+            .chain(self.worker_stops.keys())
+            .filter(|&lease_id| {
+                self.leases.get(lease_id).is_some_and(|lease| {
+                    lease.is_small_vm()
+                        && (lease.assigned_machine() == Some(m.row.id)
+                            || self
+                                .worker_stops
+                                .get(lease_id)
+                                .is_some_and(|stop| stop.machine == m.row.id))
+                })
+            })
+            .count();
+        (capacity.max_residents as usize)
+            .saturating_sub(reserved.max(capacity.resident_count as usize))
+    }
+
+    /// Apply the small-guest limit before creating a lease, accounting for
+    /// host headroom and general sandbox slots in the existing registry.
+    pub(super) fn free_small_vm(&self, m: &Machine) -> usize {
+        self.small_vm_slots(m)
+            .min(self.free_slots(m))
+            .min(self.memory_slots_for(m, u64::from(SMALL_VM_MEMORY_MIB) << 20))
     }
 
     /// Available placements after the operator ceiling and host reservations.

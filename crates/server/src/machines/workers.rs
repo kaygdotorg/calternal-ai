@@ -259,7 +259,12 @@ impl super::state::State {
             enrolled = true;
             if Self::worker_machine(machine, settings, small_vm) {
                 online = true;
-                if self.free_for(machine, account, settings) > 0 {
+                let free = if small_vm {
+                    self.free_small_vm(machine)
+                } else {
+                    self.free_for(machine, account, settings)
+                };
+                if free > 0 {
                     return Ok(());
                 }
             }
@@ -286,7 +291,7 @@ impl super::state::State {
             && machine.live.as_ref().is_some_and(|live| {
                 !live.direct
                     && live.capacity.max_sandboxes > 0
-                    && (!small_vm || live.capacity.small_plugin_vm)
+                    && (!small_vm || live.capacity.small_vm.is_some())
             })
     }
 

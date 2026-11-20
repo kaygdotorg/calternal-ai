@@ -211,7 +211,7 @@
     "calternal plugin disable": { "plugin": "any" },
     "calternal plugin-digest": { "workers": [{ "id": "string", "worker": "string", "sha256": "string?", "pinned": "bool", "state": "string" }] },
     "calternal machine enroll": { "machine_id": "string", "owner": "string", "server": "string", "credentials_file": "string" },
-    "calternal machine status": { "machine_id": "string", "owner": "string", "server": "string", "credentials_file": "string", "erasure_status":"string", "pending_erasures?":"integer" },
+    "calternal machine status": { "machine_id": "string", "owner": "string", "server": "string", "credentials_file": "string", "erasure_status":"string", "pending_erasures?":"integer", "small_vm?":{"idle_seconds":"integer", "memory_limit_bytes":"integer", "max_residents":"integer", "resident_count":"integer", "resident_memory_bytes":"integer"} },
     "calternal machine onboarding": {
       "required": ["attached", "ready", "machine_id"],
       "optional": []

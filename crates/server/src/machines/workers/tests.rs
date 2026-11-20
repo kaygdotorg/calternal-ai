@@ -59,6 +59,19 @@ fn connect(service: &MachineService, machine: Uuid, key: &MachineKey) -> String 
         .token
 }
 
+fn small_vm_capacity(max_residents: u32) -> calternal_machine::protocol::SmallVmCapacity {
+    use calternal_machine::protocol::{
+        SMALL_VM_IDLE_SECONDS, SMALL_VM_MEMORY_MIB, SmallVmCapacity,
+    };
+    SmallVmCapacity {
+        idle_seconds: SMALL_VM_IDLE_SECONDS,
+        memory_limit_bytes: (u64::from(SMALL_VM_MEMORY_MIB) << 20) * u64::from(max_residents),
+        max_residents,
+        resident_count: 0,
+        resident_memory_bytes: 0,
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn space_channel_is_single_use_and_bound_to_the_enrolled_assignee() {
     let dir = tempfile::tempdir().unwrap();
@@ -81,9 +94,10 @@ async fn space_channel_is_single_use_and_bound_to_the_enrolled_assignee() {
                 .unwrap();
             live.capacity.max_sandboxes = 3;
             live.capacity.available_memory_bytes = Some(64 << 30);
+            live.capacity.small_vm = Some(small_vm_capacity(3));
         }
         let worker = service
-            .request_worker(
+            .request_space_vm(
                 ids.owner,
                 Uuid::new_v4(),
                 PluginWorker {
@@ -151,7 +165,7 @@ async fn space_channel_is_single_use_and_bound_to_the_enrolled_assignee() {
                 .claim_channel(&token, SpaceId::new(), binding.assignment)
                 .is_err()
         );
-        let (_, _, closing, _, reply) = service2
+        let (_, _, closing, _, _, reply) = service2
             .claim_channel(&token, binding.space, binding.assignment)
             .unwrap();
         assert!(
