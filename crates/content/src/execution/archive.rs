@@ -11,19 +11,23 @@ pub struct ArchiveTarget {
     pub attempt: Option<Attempt>,
     /// Account whose admission would be retired.
     pub starter: AccountId,
-    /// Whether the intent has yet to become the head.
+    /// Whether the intent has yet to become the head (successor or held).
     pub queued: bool,
 }
 
-/// Resolve the set whose retirement the archive would authorize. Already
-/// fenced attempts retain cleanup storage but need no new retirement.
-/// Cost: one indexed item lookup returning at most the head and successor.
+/// Resolve the set whose retirement the archive would authorize: the head,
+/// the successor and any Sends held behind the updater fence, in delivery
+/// order. Already fenced attempts retain cleanup storage but need no new
+/// retirement. Cost: two indexed item lookups, bounded by two slots plus the
+/// held rows for this item.
 pub fn archive_targets(tx: &Transaction<'_>, item: &ItemRef) -> Result<Vec<ArchiveTarget>> {
     let mut select = tx
         .prepare_cached(
-            "SELECT i.intent,i.actor,a.execution,a.generation,i.slot=1
+            "SELECT i.intent,i.actor,a.execution,a.generation,i.slot=1,i.slot AS ord,0 AS seq
              FROM execution_intents i LEFT JOIN execution_attempts a ON a.intent=i.intent
-             WHERE i.item=?1 AND a.end_reason IS NULL ORDER BY i.slot",
+             WHERE i.item=?1 AND a.end_reason IS NULL
+             UNION ALL SELECT intent,actor,NULL,NULL,1,2,seq FROM execution_held WHERE item=?1
+             ORDER BY ord,seq",
         )
         .map_err(internal)?;
     let rows = select
@@ -70,7 +74,7 @@ pub fn fence_archive(
     authorize(&targets)?;
     for target in targets {
         if let Some(attempt) = target.attempt {
-            fence::mark_stopped(tx, &attempt.execution)?;
+            fence::end_attempt(tx, &attempt.execution, "stopped", "archive")?;
         } else {
             fence::discard_pending(tx, &target.intent)?;
         }

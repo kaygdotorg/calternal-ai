@@ -1,6 +1,10 @@
 //! Durable execution admission on the per-space content writer. Every operation
 //! runs on a blocking worker inside the caller's FULL transaction. The hosting
 //! layer authenticates callers and supplies current install and grant checks.
+//!
+//! Admission, held Sends, launch bindings and the control ledger are rows in
+//! `content.db`, so every identity is durable before its acknowledgement and a
+//! restarted server recovers them from the same file.
 use crate::{Error, Result, types::internal};
 use calternal_types::{
     AccountId, ContributionIdentity, ExecutionIntentRef, ExecutionRef, HarnessRef, InstallationId,
@@ -13,12 +17,25 @@ use uuid::Uuid;
 
 mod archive;
 pub use archive::{ArchiveTarget, archive_targets, fence_archive};
+mod control;
+pub use control::{
+    ControlDelivery, ControlKind, ControlState, ENCODED_STEER_BYTES, PENDING_STEERS_PER_ATTEMPT,
+    ack_control, outstanding, steer,
+};
 mod fence;
 pub use fence::{
     Attempt, StartedAttempt, cleanup, fence_installation, is_current, settle, start, stop,
     stop_pending,
 };
+mod held;
+pub use held::{Released, held_count, hold, release_held, unsettled};
+mod launch;
+pub use launch::{Attached, LaunchBinding, Reattach, bind_launch, reattach, verify_attached};
 mod writer;
+
+/// Execution tables in the per-space `content.db` baseline. Edited in place
+/// until the Threads cutover; there is no migration chain for them.
+pub const SCHEMA: &str = include_str!("schema.sql");
 
 /// Host-checked execution bindings retained between admission and dispatch.
 /// Only trusted host code constructs this, after checking the kind, installed
@@ -97,6 +114,18 @@ pub struct ClaimedExecution {
 /// this same transaction. Refuses queue or space capacity without writing.
 /// Cost: one bounded space count, one indexed item-slot read and one insert.
 pub fn admit(tx: &Transaction<'_>, pin: &PinnedExecution, capacity: usize) -> Result<Admission> {
+    let encoded = encode(pin)?;
+    let admission = Admission {
+        job: JobId(Uuid::now_v7().to_string()),
+        intent: ExecutionIntentRef(Uuid::now_v7().to_string()),
+    };
+    insert_intent(tx, pin, &encoded, &admission, capacity)?;
+    Ok(admission)
+}
+
+/// Check the live installation window and the host frame bound, and return
+/// the stored pin. Cost: one serialization.
+fn encode(pin: &PinnedExecution) -> Result<String> {
     if pin.installation_expiry_ms <= now_ms() {
         return Err(unavailable());
     }
@@ -107,6 +136,20 @@ pub fn admit(tx: &Transaction<'_>, pin: &PinnedExecution, capacity: usize) -> Re
             "Execution bindings exceed the host frame limit",
         ));
     }
+    Ok(encoded)
+}
+
+/// Insert one head or successor under the item's two slots and the space
+/// capacity, using identities chosen by the caller. Shared by fresh
+/// admission and release of held Sends. Cost: one indexed slot read, one
+/// bounded count and one insert.
+fn insert_intent(
+    tx: &Transaction<'_>,
+    pin: &PinnedExecution,
+    encoded: &str,
+    admission: &Admission,
+    capacity: usize,
+) -> Result<()> {
     let slot = tx
         .prepare_cached("SELECT max(slot) FROM execution_intents WHERE item=?1")
         .map_err(internal)?
@@ -124,10 +167,6 @@ pub fn admit(tx: &Transaction<'_>, pin: &PinnedExecution, capacity: usize) -> Re
     if count >= capacity {
         return Err(pending_limit());
     }
-    let admission = Admission {
-        job: JobId(Uuid::now_v7().to_string()),
-        intent: ExecutionIntentRef(Uuid::now_v7().to_string()),
-    };
     tx.prepare_cached(
         "INSERT INTO execution_intents(intent,job,item,slot,actor,installation,pin)
          VALUES(?1,?2,?3,?4,?5,?6,?7)",
@@ -143,7 +182,7 @@ pub fn admit(tx: &Transaction<'_>, pin: &PinnedExecution, capacity: usize) -> Re
         encoded
     ])
     .map_err(internal)?;
-    Ok(admission)
+    Ok(())
 }
 
 /// Promote one queued intent only after its predecessor has settled. The live
@@ -223,6 +262,23 @@ fn discard(tx: &Transaction<'_>, job: &JobId) -> Result<()> {
     Ok(())
 }
 
+/// Load the live pin of one exact unretired attempt with its item, or `None`
+/// when it has ended or never existed. Cost: one indexed join and one decode.
+fn live_pin(tx: &Transaction<'_>, attempt: &fence::Attempt) -> Result<Option<PinnedExecution>> {
+    tx.prepare_cached(
+        "SELECT i.pin FROM execution_attempts a JOIN execution_intents i ON i.intent=a.intent
+         WHERE a.execution=?1 AND a.generation=?2 AND a.end_reason IS NULL",
+    )
+    .map_err(internal)?
+    .query_row(params![attempt.execution.0, attempt.generation], |r| {
+        r.get::<_, String>(0)
+    })
+    .optional()
+    .map_err(internal)?
+    .map(|encoded| serde_json::from_str(&encoded).map_err(internal))
+    .transpose()
+}
+
 fn live(
     pin: &PinnedExecution,
     check: impl FnOnce(&PinnedExecution) -> Result<bool>,
@@ -241,5 +297,7 @@ fn unavailable() -> Error {
     Error::not_found("Execution is unavailable")
 }
 
+#[cfg(test)]
+mod recovery_tests;
 #[cfg(test)]
 mod tests;

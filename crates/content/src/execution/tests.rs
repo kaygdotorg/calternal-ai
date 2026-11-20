@@ -4,24 +4,13 @@ use tempfile::tempdir;
 
 use super::*;
 
-fn upgrade(db: &Connection) {
+/// Open a fresh space store: the execution tables are in the baseline.
+pub(super) fn upgrade(db: &Connection) {
     db.pragma_update(None, "foreign_keys", "ON").unwrap();
     calternal_store::migrations::migrate(db, SPACE_SCHEMA).unwrap();
-    let previous = SPACE_SCHEMA.version();
-    let changes = [(previous + 1, include_str!("schema.sql"))];
-    calternal_store::migrations::migrate_release(
-        db,
-        calternal_store::migrations::Schema::new("space content.db", previous, &[], &changes),
-        true,
-    )
-    .unwrap();
-    assert_eq!(
-        calternal_store::migrations::inspect(db, SPACE_SCHEMA).unwrap(),
-        previous + 1
-    );
 }
 
-fn seed_item(db: &Connection, item: &ItemRef) {
+pub(super) fn seed_item(db: &Connection, item: &ItemRef) {
     db.execute(
         "INSERT INTO items(id,kind,metadata,revision,seq,updated_at,path,folded_path,mat_state)
          VALUES(?1,'example','{}','initial',1,'today','demo.md','demo.md','ok')",
@@ -30,7 +19,7 @@ fn seed_item(db: &Connection, item: &ItemRef) {
     .unwrap();
 }
 
-fn pin(item: ItemRef, actor: AccountId) -> PinnedExecution {
+pub(super) fn pin(item: ItemRef, actor: AccountId) -> PinnedExecution {
     PinnedExecution {
         item: item.clone(),
         kind: "example".into(),
@@ -62,7 +51,7 @@ fn pin(item: ItemRef, actor: AccountId) -> PinnedExecution {
 }
 
 #[test]
-fn upgrade_can_store_one_head_and_one_successor() {
+fn baseline_stores_one_head_and_one_successor() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("content.db");
     let mut db = Connection::open(&path).unwrap();
@@ -127,10 +116,15 @@ fn stop_fences_only_its_head_and_teardown_gates_successor() {
         Some(json!({"reason": "pending_limit"}))
     );
     assert!(claim(&tx, &successor.job, |_| Ok(true)).unwrap().is_none());
-    assert!(stop(&tx, &attempt, |_, _| Err(Error::forbidden("foreign"))).is_err());
+    assert!(
+        stop(&tx, &attempt, "stop", |_, _| Err(Error::forbidden(
+            "foreign"
+        )))
+        .is_err()
+    );
     assert!(is_current(&tx, &attempt, |_| Ok(true)).unwrap());
     assert!(
-        !stop(&tx, &attempt, |target, starter| {
+        !stop(&tx, &attempt, "stop", |target, starter| {
             assert_eq!(target, &item);
             assert_eq!(starter, first_actor);
             Ok(())
@@ -195,12 +189,6 @@ fn lost_admission_and_stop_acks_replay_the_content_writer_receipts() {
     let mut lost_reply = None;
     let content = open(|_| {});
     content
-        .with_space(space, |s| {
-            upgrade(&s.conn);
-            Ok(())
-        })
-        .unwrap();
-    content
         .register_kind(
             space,
             "example",
@@ -237,6 +225,7 @@ fn lost_admission_and_stop_acks_replay_the_content_writer_receipts() {
     let cut = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         content.execution_command(
             space,
+            &|_| {},
             request,
             || Ok(()),
             |tx| {
@@ -253,6 +242,7 @@ fn lost_admission_and_stop_acks_replay_the_content_writer_receipts() {
     let content = open(|_| {});
     let replay = content.execution_command(
         space,
+        &|_| {},
         request,
         || Ok(()),
         |_| panic!("the committed effect cannot repeat"),
@@ -276,13 +266,20 @@ fn lost_admission_and_stop_acks_replay_the_content_writer_receipts() {
         ..request
     };
     let err = content
-        .execution_command(space, reused, || Ok(()), |_| panic!("conflicting replay"))
+        .execution_command(
+            space,
+            &|_| {},
+            reused,
+            || Ok(()),
+            |_| panic!("conflicting replay"),
+        )
         .unwrap_err();
     assert_eq!(err, Error::request_reused());
     assert!(
         content
             .execution_command(
                 space,
+                &|_| {},
                 request,
                 || Err(Error::forbidden("revoked")),
                 |_| { panic!("revoked replay") }
@@ -312,8 +309,8 @@ fn lost_admission_and_stop_acks_replay_the_content_writer_receipts() {
         }
     });
     let stopped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        content.execution_command(space, stop_request, || Ok(()), |tx| {
-            let transition = stop(tx, &attempt, |item, starter| {
+        content.execution_command(space, &|_| {}, stop_request, || Ok(()), |tx| {
+            let transition = stop(tx, &attempt, "confirmed-stop", |item, starter| {
                 assert_eq!(item, &pin.item);
                 assert_eq!(starter, actor);
                 Ok(())
@@ -328,6 +325,7 @@ fn lost_admission_and_stop_acks_replay_the_content_writer_receipts() {
     let content = open(|_| {});
     let replay = content.execution_command(
         space,
+        &|_| {},
         stop_request,
         || Ok(()),
         |_| panic!("the committed Stop cannot repeat"),

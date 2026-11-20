@@ -1,4 +1,5 @@
 //! Execution broker methods called only after installed package resolution.
+use super::update::{Admission, UpdateGate};
 use super::*;
 use calternal_content::execution::{ClaimedExecution, PinnedExecution};
 
@@ -63,11 +64,15 @@ impl CheckedAdmission {
     /// Accept one execution `start_job` broker request. The supplied validators
     /// check the installed run schema and preflight both contribution frames.
     /// `live` checks installed authority and the current item under the content
-    /// writer before a receipt or effect. Call from the blocking host pool.
+    /// writer before a receipt or effect. The admission and its receipt commit
+    /// before the reply. While `gate` is closed (update fence or startup
+    /// recovery) the Send is held durably with the same receipt shape and is
+    /// admitted once on release. Call from the blocking host pool.
     /// Cost: one canonical fingerprint, bounded validation and one receipt path.
     pub fn start_job(
         mut self,
         content: &Content,
+        gate: &UpdateGate,
         request: &RequestId,
         input: JsonObject,
         validate_run: impl FnOnce(&Value) -> Result<()>,
@@ -108,15 +113,24 @@ impl CheckedAdmission {
         let via = Via::Plugin {
             plugin: self.pin.package.0.clone(),
         };
+        let receipt = Request {
+            account: self.pin.actor,
+            via: Some(&via),
+            id: &request.0,
+            operation: OP,
+            fingerprint: &fingerprint,
+        };
+        let _permit = match gate.admission() {
+            Admission::Open(permit) => permit,
+            Admission::Closed => {
+                return gate.hold(content, self.space, receipt, &self.pin, || live(&self.pin));
+            }
+        };
+        let space = self.space;
         content.execution_command(
             self.space,
-            Request {
-                account: self.pin.actor,
-                via: Some(&via),
-                id: &request.0,
-                operation: OP,
-                fingerprint: &fingerprint,
-            },
+            &|n| gate.observe(space, n),
+            receipt,
             || live(&self.pin),
             |tx| {
                 let admitted =
@@ -146,15 +160,21 @@ pub struct OwningJob {
 }
 
 /// Claim one eligible execution head through the blocking content writer.
-/// A permanent live refusal retires the pin. Cost: one indexed job lookup and
-/// at most one FULL commit, plus the supplied live check.
+/// A permanent live refusal retires the pin. Returns `None` without touching
+/// storage while `gate` is closed, so nothing launches past the update fence;
+/// the job stays claimable. Cost: one indexed job lookup and at most one FULL
+/// commit, plus the supplied live check.
 pub fn claim_job(
     content: &Content,
+    gate: &UpdateGate,
     space: SpaceId,
     job: JobId,
     live: impl FnOnce(&PinnedExecution) -> Result<bool>,
 ) -> Result<Option<OwningJob>> {
-    content.execution_transaction(space, |tx| {
+    let Admission::Open(_permit) = gate.admission() else {
+        return Ok(None);
+    };
+    content.execution_transaction(space, &|n| gate.observe(space, n), |tx| {
         Ok(execution::claim(tx, &job, live)?.map(|claimed| OwningJob {
             space,
             job,
@@ -188,11 +208,13 @@ impl OwningJob {
 
     /// Accept `execution_start` for the owning job on a blocking worker. The
     /// live check must verify the whole pinned authority even on receipt replay.
-    /// Returns starting status. Contribution launch is a separate checked call.
+    /// Returns starting status. Contribution launch is a separate checked call
+    /// that must first commit [`OwningJob::bind_launch`].
     /// Cost: one fingerprint, the receipt path and one exact attempt lookup.
     pub fn start_attempt(
         &self,
         content: &Content,
+        gate: &UpdateGate,
         input: JsonObject,
         live: impl FnOnce(&PinnedExecution) -> Result<()>,
     ) -> Result<Value> {
@@ -215,8 +237,10 @@ impl OwningJob {
         };
         // Different jobs can legitimately author the same request ID.
         let receipt = format!("execution/{}/{request_id}", self.job.0);
+        let space = self.space;
         content.execution_command(
             self.space,
+            &|n| gate.observe(space, n),
             Request {
                 account: pin.actor,
                 via: Some(&via),
@@ -237,5 +261,29 @@ impl OwningJob {
                 }))
             },
         )
+    }
+}
+
+impl OwningJob {
+    /// Commit the carrier's launch reservation for this job's exact attempt,
+    /// machine and boot. Call after `open_entry_channel` returns its
+    /// assignment and before sending StartEntry; never send StartEntry if this
+    /// fails. Repeating the same binding is a no-op. Cost: one execution
+    /// transaction with indexed reads and one insert.
+    pub fn bind_launch(
+        &self,
+        content: &Content,
+        gate: &UpdateGate,
+        binding: &execution::LaunchBinding,
+        live: impl Fn(&PinnedExecution) -> Result<bool>,
+    ) -> Result<execution::Attempt> {
+        let space = self.space;
+        let pin = &self.claimed.pin;
+        content.execution_transaction(space, &|n| gate.observe(space, n), |tx| {
+            let started =
+                execution::start(tx, &self.job, &pin.harness, |stored| Ok(stored == pin))?;
+            execution::bind_launch(tx, &started.attempt, binding, &live)?;
+            Ok(started.attempt)
+        })
     }
 }

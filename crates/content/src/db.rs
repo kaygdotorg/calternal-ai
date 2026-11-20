@@ -77,6 +77,7 @@ const SPACE_INITIAL: &[&str] = &[
     SPACE_BASE,
     crate::linked_write::SCHEMA,
     crate::trash::SCHEMA,
+    crate::execution::SCHEMA,
 ];
 
 pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =

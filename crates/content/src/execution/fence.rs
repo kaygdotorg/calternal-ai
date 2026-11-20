@@ -94,31 +94,23 @@ pub fn is_current(
     attempt: &Attempt,
     check: impl FnOnce(&PinnedExecution) -> Result<bool>,
 ) -> Result<bool> {
-    let encoded = tx
-        .prepare_cached(
-            "SELECT i.pin FROM execution_attempts a JOIN execution_intents i ON i.intent=a.intent
-             WHERE a.execution=?1 AND a.generation=?2 AND a.end_reason IS NULL",
-        )
-        .map_err(internal)?
-        .query_row(params![attempt.execution.0, attempt.generation], |r| {
-            r.get::<_, String>(0)
-        })
-        .optional()
-        .map_err(internal)?;
-    let Some(encoded) = encoded else {
-        return Ok(false);
-    };
-    live(&serde_json::from_str(&encoded).map_err(internal)?, check)
+    match live_pin(tx, attempt)? {
+        Some(pin) => live(&pin, check),
+        None => Ok(false),
+    }
 }
 
 /// Fence the exact attempt selected by the confirmed Stop context. The host
 /// checks the live target and starter or management authority in `authorize`
-/// and records the Stop receipt in this transaction. Returns the durable
-/// transition cursor; a stale or retired target is unavailable. The
-/// successor is outside the effect. Cost: one indexed lookup and one update.
+/// and records the Stop receipt in this transaction. The exact Stop delivery
+/// under `request` is committed with the fence, so a restart before machine
+/// delivery still dispatches it to this attempt and never to a successor.
+/// Returns the durable transition cursor; a stale or retired target is
+/// unavailable. Cost: one indexed lookup, one update and two ledger writes.
 pub fn stop(
     tx: &Transaction<'_>,
     attempt: &Attempt,
+    request: &str,
     authorize: impl FnOnce(&ItemRef, AccountId) -> Result<()>,
 ) -> Result<String> {
     let (item, actor) = tx
@@ -134,22 +126,32 @@ pub fn stop(
         .map_err(internal)?
         .ok_or_else(unavailable)?;
     authorize(&item, AccountId::parse(&actor).map_err(internal)?)?;
-    mark_stopped(tx, &attempt.execution)
+    end_attempt(tx, &attempt.execution, "stopped", request)
 }
 
-pub(super) fn mark_stopped(tx: &Transaction<'_>, execution: &ExecutionRef) -> Result<String> {
+/// Retire one live attempt for `reason`, queue its exact Stop delivery under
+/// `request` and retire steers that were never sent. Already ended attempts
+/// keep their first reason and Stop. Cost: one update and two ledger writes.
+pub(super) fn end_attempt(
+    tx: &Transaction<'_>,
+    execution: &ExecutionRef,
+    reason: &str,
+    request: &str,
+) -> Result<String> {
     let transition = Uuid::now_v7().to_string();
     tx.prepare_cached(
-        "UPDATE execution_attempts SET end_reason='stopped',transition=?2 WHERE execution=?1",
+        "UPDATE execution_attempts SET end_reason=?2,transition=?3
+         WHERE execution=?1 AND end_reason IS NULL",
     )
     .map_err(internal)?
-    .execute(params![execution.0, transition])
+    .execute(params![execution.0, reason, transition])
     .map_err(internal)?;
+    control::queue_stop(tx, execution, request)?;
     Ok(transition)
 }
 
-/// Retire only the exact pending intent from a protected Stop context.
-/// Refuse if an attempt has since been admitted for it. The caller writes
+/// Retire only the exact pending or held intent from a protected Stop
+/// context. Refuse if an attempt has since been admitted for it. The caller writes
 /// the receipt in the same transaction after the live retirement check.
 /// Cost: one indexed intent/attempt lookup and one delete.
 pub fn stop_pending(
@@ -160,7 +162,8 @@ pub fn stop_pending(
     let (item, actor) = tx
         .prepare_cached(
             "SELECT item,actor FROM execution_intents
-             WHERE intent=?1 AND NOT EXISTS(SELECT 1 FROM execution_attempts WHERE intent=?1)",
+             WHERE intent=?1 AND NOT EXISTS(SELECT 1 FROM execution_attempts WHERE intent=?1)
+             UNION ALL SELECT item,actor FROM execution_held WHERE intent=?1",
         )
         .map_err(internal)?
         .query_row([&intent.0], |r| {
@@ -173,19 +176,27 @@ pub fn stop_pending(
     discard_pending(tx, intent)
 }
 
+/// Remove one pending or held intent that has no attempt. Cost: two indexed
+/// deletes.
 pub(super) fn discard_pending(tx: &Transaction<'_>, intent: &ExecutionIntentRef) -> Result<()> {
-    tx.prepare_cached("DELETE FROM execution_intents WHERE intent=?1")
-        .map_err(internal)?
-        .execute([&intent.0])
-        .map_err(internal)?;
+    for sql in [
+        "DELETE FROM execution_intents WHERE intent=?1",
+        "DELETE FROM execution_held WHERE intent=?1",
+    ] {
+        tx.prepare_cached(sql)
+            .map_err(internal)?
+            .execute([&intent.0])
+            .map_err(internal)?;
+    }
     Ok(())
 }
 
 /// Retire all work pinned to one revoked installation of this actor. The host
 /// invokes this before publishing revocation under the cross-store guard.
-/// Affected attempts become cleanup records and retain quota. Pending intents
-/// lose dispatch authority immediately. Cost: two indexed mutations, bounded
-/// by the number of admissions in the space.
+/// Affected attempts become cleanup records with a queued exact Stop and
+/// retain quota. Pending and held intents lose dispatch authority
+/// immediately. Cost: one indexed scan and per-attempt ledger writes, bounded
+/// by the space's admission capacity, plus two deletes.
 pub fn fence_installation(
     tx: &Transaction<'_>,
     actor: AccountId,
@@ -193,15 +204,21 @@ pub fn fence_installation(
 ) -> Result<usize> {
     let actor = actor.to_string();
     let installation = installation.to_string();
-    let fenced = tx
+    let live: Vec<String> = tx
         .prepare_cached(
-            "UPDATE execution_attempts SET end_reason='interrupted',transition=?3
-             WHERE end_reason IS NULL AND intent IN
-                (SELECT intent FROM execution_intents WHERE actor=?1 AND installation=?2)",
+            "SELECT a.execution FROM execution_attempts a
+             JOIN execution_intents i ON i.intent=a.intent
+             WHERE a.end_reason IS NULL AND i.actor=?1 AND i.installation=?2",
         )
         .map_err(internal)?
-        .execute(params![actor, installation, Uuid::now_v7().to_string()])
+        .query_map(params![actor, installation], |r| r.get(0))
+        .map_err(internal)?
+        .collect::<rusqlite::Result<_>>()
         .map_err(internal)?;
+    let fence = format!("installation/{installation}");
+    for execution in &live {
+        end_attempt(tx, &ExecutionRef(execution.clone()), "interrupted", &fence)?;
+    }
     let discarded = tx
         .prepare_cached(
             "DELETE FROM execution_intents WHERE actor=?1 AND installation=?2 AND NOT EXISTS
@@ -209,8 +226,12 @@ pub fn fence_installation(
         )
         .map_err(internal)?
         .execute(params![actor, installation])
-        .map_err(internal)?;
-    Ok(fenced + discarded)
+        .map_err(internal)?
+        + tx.prepare_cached("DELETE FROM execution_held WHERE actor=?1 AND installation=?2")
+            .map_err(internal)?
+            .execute(params![actor, installation])
+            .map_err(internal)?;
+    Ok(live.len() + discarded)
 }
 
 /// Read one bounded cleanup batch. Dispatch exact Stops only after releasing

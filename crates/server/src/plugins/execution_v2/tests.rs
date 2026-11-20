@@ -38,7 +38,7 @@ fn stop_context_is_only_redeemable_by_its_original_scope() {
         starter: scope.actor,
         queued: false,
     };
-    let context = StopContext {
+    let context = ControlContext {
         scope: scope.clone(),
         target,
     };
@@ -106,27 +106,10 @@ fn send_start_and_confirmed_stop_share_the_durable_job() {
         .unwrap();
     let item = ItemRef(item.id.to_string());
     drop(content);
-    let db = rusqlite::Connection::open(
-        roots
-            .appdata
-            .join("spaces")
-            .join(space.to_string())
-            .join("content.db"),
-    )
-    .unwrap();
-    let prior = calternal_content::SPACE_SCHEMA.version();
-    let changes = [(
-        prior + 1,
-        include_str!("../../../../content/src/execution/schema.sql"),
-    )];
-    calternal_store::migrations::migrate_release(
-        &db,
-        calternal_store::migrations::Schema::new("space content.db", prior, &[], &changes),
-        true,
-    )
-    .unwrap();
-    drop(db);
     let content = open();
+    let gate = UpdateGate::recovering(None);
+    assert!(gate.finish_recovery().is_empty());
+    assert!(gate.reopen().is_empty());
     let scope = || CheckedAdmission {
         space,
         target_field: "target".into(),
@@ -173,6 +156,7 @@ fn send_start_and_confirmed_stop_share_the_durable_job() {
     let do_send = |text| {
         scope().start_job(
             &content,
+            &gate,
             &request,
             send(text),
             |input| {
@@ -190,7 +174,7 @@ fn send_start_and_confirmed_stop_share_the_durable_job() {
     assert_eq!(do_send("hello").unwrap(), admission);
     assert_eq!(do_send("changed").unwrap_err(), Error::request_reused());
     let job: JobId = serde_json::from_value(admission["job_id"].clone()).unwrap();
-    let claimed = claim_job(&content, space, job, |_| Ok(true))
+    let claimed = claim_job(&content, &gate, space, job, |_| Ok(true))
         .unwrap()
         .unwrap();
     assert_eq!(claimed.operation(), "example.run");
@@ -204,12 +188,18 @@ fn send_start_and_confirmed_stop_share_the_durable_job() {
     ]);
     let mut resume = start.clone();
     resume.insert("continuation".into(), json!("unqualified-continuation"));
-    assert!(claimed.start_attempt(&content, resume, |_| Ok(())).is_err());
+    assert!(
+        claimed
+            .start_attempt(&content, &gate, resume, |_| Ok(()))
+            .is_err()
+    );
     let attempt = claimed
-        .start_attempt(&content, start.clone(), |_| Ok(()))
+        .start_attempt(&content, &gate, start.clone(), |_| Ok(()))
         .unwrap();
     assert_eq!(
-        claimed.start_attempt(&content, start, |_| Ok(())).unwrap(),
+        claimed
+            .start_attempt(&content, &gate, start, |_| Ok(()))
+            .unwrap(),
         attempt
     );
     let controls = ControlScope {
@@ -223,15 +213,17 @@ fn send_start_and_confirmed_stop_share_the_durable_job() {
     let mut peer = controls.clone();
     peer.actor = AccountId::new();
     assert!(
-        stop_controls(&content, &peer, || Ok(false))
+        stop_controls(&content, &gate, &peer, || Ok(false))
             .unwrap()
             .is_empty()
     );
-    let context = stop_controls(&content, &controls, || Ok(false))
+    let context = stop_controls(&content, &gate, &controls, || Ok(false))
         .unwrap()
         .pop()
         .unwrap();
-    context.resolve(&content, &controls, || Ok(false)).unwrap();
+    context
+        .resolve(&content, &gate, &controls, || Ok(false))
+        .unwrap();
     let confirmed = context
         .confirm(&controls, RequestId("confirmed-stop".into()), |request| {
             assert_eq!(request.0, "confirmed-stop");
@@ -239,18 +231,18 @@ fn send_start_and_confirmed_stop_share_the_durable_job() {
         })
         .unwrap();
     let stopped = confirmed
-        .dispatch(&content, &controls, || Ok(false))
+        .dispatch(&content, &gate, &controls, || Ok(false))
         .unwrap();
     assert_eq!(stopped["execution"], attempt["execution"]);
     assert_eq!(stopped["phase"], "stopped");
     assert_eq!(
         confirmed
-            .dispatch(&content, &controls, || Ok(false))
+            .dispatch(&content, &gate, &controls, || Ok(false))
             .unwrap(),
         stopped
     );
     assert!(
-        stop_controls(&content, &controls, || Ok(false))
+        stop_controls(&content, &gate, &controls, || Ok(false))
             .unwrap()
             .is_empty()
     );

@@ -10,7 +10,11 @@ use serde_json::{Value, json};
 mod broker;
 pub use broker::{CheckedAdmission, OwningJob, claim_job};
 mod control;
-pub use control::{ConfirmedStop, ControlScope, StopContext, stop_controls};
+pub use control::{ConfirmedStop, ControlContext, ControlScope, stop_controls};
+mod recover;
+pub use recover::{Recovery, ack_control, reattach, verify_attached};
+mod update;
+pub use update::{Admission, FenceState, MAX_FENCE_MS, Permit, UpdateGate};
 
 fn invalid() -> Error {
     Error::invalid_input("invalid execution operands")
@@ -22,3 +26,5 @@ fn unavailable() -> Error {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod update_tests;
