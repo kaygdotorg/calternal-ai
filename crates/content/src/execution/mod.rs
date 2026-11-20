@@ -15,7 +15,8 @@ mod archive;
 pub use archive::{ArchiveTarget, archive_targets, fence_archive};
 mod fence;
 pub use fence::{
-    Attempt, cleanup, fence_installation, is_current, settle, start, stop, stop_pending,
+    Attempt, StartedAttempt, cleanup, fence_installation, is_current, settle, start, stop,
+    stop_pending,
 };
 mod writer;
 
@@ -80,6 +81,15 @@ pub struct Admission {
     pub job: JobId,
     /// Exact execution intent used for pending Stop.
     pub intent: ExecutionIntentRef,
+}
+
+/// Checked, claimed job and its host-owned context.
+#[derive(Debug, PartialEq)]
+pub struct ClaimedExecution {
+    /// Exact admitted intent that owns this invocation.
+    pub intent: ExecutionIntentRef,
+    /// Bindings and inputs recovered from the writer after the live check.
+    pub pin: PinnedExecution,
 }
 
 /// Reserve one head or successor and return its identities. The caller checks
@@ -179,14 +189,18 @@ pub fn claim(
     tx: &Transaction<'_>,
     job: &JobId,
     check: impl FnOnce(&PinnedExecution) -> Result<bool>,
-) -> Result<Option<PinnedExecution>> {
-    let encoded = tx
-        .prepare_cached("SELECT pin FROM execution_intents WHERE job=?1 AND slot=0 AND claimed=0")
+) -> Result<Option<ClaimedExecution>> {
+    let row = tx
+        .prepare_cached(
+            "SELECT intent,pin FROM execution_intents WHERE job=?1 AND slot=0 AND claimed=0",
+        )
         .map_err(internal)?
-        .query_row([&job.0], |r| r.get::<_, String>(0))
+        .query_row([&job.0], |r| {
+            Ok((ExecutionIntentRef(r.get(0)?), r.get::<_, String>(1)?))
+        })
         .optional()
         .map_err(internal)?;
-    let Some(encoded) = encoded else {
+    let Some((intent, encoded)) = row else {
         return Ok(None);
     };
     let pin = serde_json::from_str(&encoded).map_err(internal)?;
@@ -198,7 +212,7 @@ pub fn claim(
         .map_err(internal)?
         .execute([&job.0])
         .map_err(internal)?;
-    Ok(Some(pin))
+    Ok(Some(ClaimedExecution { intent, pin }))
 }
 
 fn discard(tx: &Transaction<'_>, job: &JobId) -> Result<()> {

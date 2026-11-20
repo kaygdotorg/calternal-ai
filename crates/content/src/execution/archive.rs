@@ -11,6 +11,8 @@ pub struct ArchiveTarget {
     pub attempt: Option<Attempt>,
     /// Account whose admission would be retired.
     pub starter: AccountId,
+    /// Whether the intent has yet to become the head.
+    pub queued: bool,
 }
 
 /// Resolve the set whose retirement the archive would authorize. Already
@@ -19,7 +21,7 @@ pub struct ArchiveTarget {
 pub fn archive_targets(tx: &Transaction<'_>, item: &ItemRef) -> Result<Vec<ArchiveTarget>> {
     let mut select = tx
         .prepare_cached(
-            "SELECT i.intent,i.actor,a.execution,a.generation
+            "SELECT i.intent,i.actor,a.execution,a.generation,i.slot=1
              FROM execution_intents i LEFT JOIN execution_attempts a ON a.intent=i.intent
              WHERE i.item=?1 AND a.end_reason IS NULL ORDER BY i.slot",
         )
@@ -31,14 +33,16 @@ pub fn archive_targets(tx: &Transaction<'_>, item: &ItemRef) -> Result<Vec<Archi
                 r.get::<_, String>(1)?,
                 r.get::<_, Option<String>>(2)?
                     .zip(r.get::<_, Option<i64>>(3)?),
+                r.get::<_, bool>(4)?,
             ))
         })
         .map_err(internal)?;
     rows.map(|row| {
-        let (intent, actor, attempt) = row.map_err(internal)?;
+        let (intent, actor, attempt, queued) = row.map_err(internal)?;
         Ok(ArchiveTarget {
             intent: ExecutionIntentRef(intent),
             starter: AccountId::parse(&actor).map_err(internal)?,
+            queued,
             attempt: attempt.map(|(execution, generation)| Attempt {
                 execution: ExecutionRef(execution),
                 generation,

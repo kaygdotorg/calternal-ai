@@ -20,6 +20,7 @@ pub(crate) use agent_settings::UPGRADE_SCHEMA as AGENT_SETTINGS_SCHEMA;
 pub mod broker;
 #[cfg(feature = "dev-plugin-drafts")]
 mod draft_diagnostics;
+pub mod execution_v2;
 pub(crate) mod harness_admin;
 pub(crate) mod installed_diagnostics;
 pub mod job_api;

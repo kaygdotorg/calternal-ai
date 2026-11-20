@@ -11,6 +11,15 @@ pub struct Attempt {
     pub generation: i64,
 }
 
+/// Exact start result while contribution dispatch is still pending.
+#[derive(Debug, PartialEq, Eq)]
+pub struct StartedAttempt {
+    /// Identity of the newly reserved or replayed attempt.
+    pub attempt: Attempt,
+    /// Cursor for its current transition.
+    pub transition: String,
+}
+
 /// Reserve the exact attempt for a claimed job under a current live check.
 /// Repeating the start returns the same live attempt. No carrier dispatch
 /// occurs here. Cost: one indexed job/attempt lookup, one bounded pin decode
@@ -20,10 +29,10 @@ pub fn start(
     job: &JobId,
     harness: &HarnessRef,
     check: impl FnOnce(&PinnedExecution) -> Result<bool>,
-) -> Result<Attempt> {
-    let (intent, encoded, execution, generation, retired) = tx
+) -> Result<StartedAttempt> {
+    let (intent, encoded, execution, generation, transition, retired) = tx
         .prepare_cached(
-            "SELECT i.intent,i.pin,a.execution,a.generation,a.end_reason IS NOT NULL
+            "SELECT i.intent,i.pin,a.execution,a.generation,a.transition,a.end_reason IS NOT NULL
              FROM execution_intents i LEFT JOIN execution_attempts a ON a.intent=i.intent
              WHERE i.job=?1 AND i.slot=0 AND i.claimed=1",
         )
@@ -34,7 +43,8 @@ pub fn start(
                 r.get::<_, String>(1)?,
                 r.get::<_, Option<String>>(2)?,
                 r.get::<_, Option<i64>>(3)?,
-                r.get::<_, bool>(4)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, bool>(5)?,
             ))
         })
         .optional()
@@ -45,15 +55,19 @@ pub fn start(
         return Err(unavailable());
     }
     if let Some(execution) = execution {
-        return Ok(Attempt {
-            execution: ExecutionRef(execution),
-            generation: generation.ok_or_else(|| internal("missing attempt generation"))?,
+        return Ok(StartedAttempt {
+            attempt: Attempt {
+                execution: ExecutionRef(execution),
+                generation: generation.ok_or_else(|| internal("missing attempt generation"))?,
+            },
+            transition: transition.ok_or_else(|| internal("missing attempt transition"))?,
         });
     }
     let attempt = Attempt {
         execution: ExecutionRef(Uuid::now_v7().to_string()),
         generation: 1,
     };
+    let transition = Uuid::now_v7().to_string();
     tx.prepare_cached(
         "INSERT INTO execution_attempts(execution,intent,generation,transition) VALUES(?1,?2,?3,?4)",
     )
@@ -62,10 +76,13 @@ pub fn start(
         attempt.execution.0,
         intent,
         attempt.generation,
-        Uuid::now_v7().to_string()
+        transition
     ])
     .map_err(internal)?;
-    Ok(attempt)
+    Ok(StartedAttempt {
+        attempt,
+        transition,
+    })
 }
 
 /// Check current exact-attempt authority before a local effect. The supplied
@@ -101,23 +118,23 @@ pub fn is_current(
 /// successor is outside the effect. Cost: one indexed lookup and one update.
 pub fn stop(
     tx: &Transaction<'_>,
-    execution: &ExecutionRef,
+    attempt: &Attempt,
     authorize: impl FnOnce(&ItemRef, AccountId) -> Result<()>,
 ) -> Result<String> {
     let (item, actor) = tx
         .prepare_cached(
             "SELECT i.item,i.actor FROM execution_attempts a JOIN execution_intents i ON i.intent=a.intent
-             WHERE a.execution=?1 AND a.end_reason IS NULL",
+             WHERE a.execution=?1 AND a.generation=?2 AND a.end_reason IS NULL",
         )
         .map_err(internal)?
-        .query_row([&execution.0], |r| {
+        .query_row(params![attempt.execution.0, attempt.generation], |r| {
             Ok((ItemRef(r.get(0)?), r.get::<_, String>(1)?))
         })
         .optional()
         .map_err(internal)?
         .ok_or_else(unavailable)?;
     authorize(&item, AccountId::parse(&actor).map_err(internal)?)?;
-    mark_stopped(tx, execution)
+    mark_stopped(tx, &attempt.execution)
 }
 
 pub(super) fn mark_stopped(tx: &Transaction<'_>, execution: &ExecutionRef) -> Result<String> {
