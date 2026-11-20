@@ -1,0 +1,7 @@
+{
+  "definition": "ExecutionUpdateFenceRequest",
+  "value": {
+    "mode": "acquire"
+  },
+  "error": "missing request_id"
+}

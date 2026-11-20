@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Revision 14.43 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
+  "description": "Revision 14.44 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -2393,6 +2393,304 @@
           "$ref": "#/$defs/ExecutionChildRequestRef"
         }
       }
+    },
+    "ActivationReceiptRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "activation_receipt"
+        },
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
+        }
+      },
+      "required": [
+        "type",
+        "activation_id"
+      ]
+    },
+    "ActivationReceiptResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "const": "absent"
+            }
+          },
+          "required": [
+            "state"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "const": "committed"
+            },
+            "outcome": {
+              "$ref": "#/$defs/ActionOutcome"
+            }
+          },
+          "required": [
+            "state",
+            "outcome"
+          ]
+        }
+      ]
+    },
+    "ExecutionInputReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        },
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "applied",
+            "refused",
+            "stale"
+          ]
+        }
+      },
+      "required": [
+        "execution",
+        "request_id",
+        "state"
+      ]
+    },
+    "ExecutionControlDelivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "kind": {
+          "enum": [
+            "steer",
+            "stop"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        }
+      },
+      "required": [
+        "execution",
+        "seq",
+        "request_id",
+        "kind"
+      ],
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "steer"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "text"
+        ]
+      },
+      "else": {
+        "properties": {
+          "text": false
+        }
+      }
+    },
+    "ExecutionControlAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "state": {
+          "enum": [
+            "applied",
+            "refused",
+            "stale"
+          ]
+        }
+      },
+      "required": [
+        "execution",
+        "seq",
+        "request_id",
+        "state"
+      ]
+    },
+    "ExecutionRecoverRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        },
+        "call": {
+          "$ref": "#/$defs/Ref"
+        },
+        "proof": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "execution",
+        "call",
+        "proof"
+      ]
+    },
+    "ExecutionRecoverResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "const": "reattached"
+            },
+            "after_output": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "state",
+            "after_output"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "const": "settling"
+            },
+            "after_output": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "state",
+            "after_output"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "const": "retired"
+            }
+          },
+          "required": [
+            "state"
+          ]
+        }
+      ]
+    },
+    "ExecutionUpdateFenceRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "observe",
+            "acquire"
+          ]
+        },
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "acquire"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "request_id"
+        ]
+      },
+      "else": {
+        "properties": {
+          "request_id": false
+        }
+      }
+    },
+    "ExecutionUpdateFenceResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "enum": [
+                "idle",
+                "busy",
+                "recovering",
+                "released"
+              ]
+            }
+          },
+          "required": [
+            "state"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "const": "held"
+            },
+            "expires_at": {
+              "$ref": "#/$defs/Timestamp"
+            }
+          },
+          "required": [
+            "state",
+            "expires_at"
+          ]
+        }
+      ]
     },
     "ExecutionInput": {
       "type": "object",
@@ -7733,7 +8031,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStatus"
       },
-      "scope": "Apply execution_intents.admission. Resolve checked harness, image and placement. Derive the target and owning job receipt from the authenticated job. If continuation is supplied, require a live binding with the exact protected profile and current audience and reconcile uncertain effects. Refuse stale or foreign continuation without starting another attempt. Replay returns the existing admitted result. The named harness must match the already admitted job. Apply execution_attempt_authority.harness_placement to the exact build and acting person. This reserves and reports the exact attempt in starting state. Start contributor code only after the typed contribution_call passes its checked input and authority.",
+      "scope": "Apply execution_intents.admission. Resolve checked harness, image and placement. Derive the target and owning job receipt from the authenticated job. If continuation is supplied, require a live binding with the exact protected profile and current audience and reconcile uncertain effects. Refuse stale or foreign continuation without starting another attempt. Replay returns the existing admitted result. The named harness must match the already admitted job. Apply execution_attempt_authority.harness_placement to the exact build and acting person. This reserves and reports the exact attempt in starting state only while the execution update fence is open. Start contributor code only after the typed contribution_call passes its checked input and authority.",
       "invocation_context_schema": {
         "$ref": "#/$defs/ExecutionJobContext"
       }
@@ -7752,9 +8050,9 @@
         "$ref": "#/$defs/ExecutionInput"
       },
       "output": {
-        "$ref": "#/$defs/ExecutionStatus"
+        "$ref": "#/$defs/ExecutionInputReceipt"
       },
-      "scope": "Check the exact attempt, input scope and live steer authority. Reject inputs to a retired or replaced attempt."
+      "scope": "Check the exact attempt, input scope and live steer authority. Commit a delivery ledger entry before replying queued. Replaying the request returns its current durable delivery state. Apply execution_recovery.controls. Reject input to a retired or replaced attempt."
     },
     "execution_spawn_child": {
       "input": {
@@ -8048,6 +8346,16 @@
         "$ref": "#/$defs/AttachmentUploadResult"
       },
       "scope": "Authenticated exact uploader and live stage. Recheck field, item and digest. Apply item_views_entries.attach."
+    },
+    "activation.receipt": {
+      "input_schema": {
+        "$ref": "#/$defs/ActivationReceiptRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/ActivationReceiptResult"
+      },
+      "surface": "direct_shell",
+      "scope": "Authenticated account and active space. Look up the exact activation ID through execution_recovery.submissions. Recheck live delivery authority, including current item grants. Reply absent only to the bound account and space with no stored receipt. Use the ordinary opaque refusal for inaccessible receipt state. No action or worker wake follows lookup."
     },
     "offline.download": {
       "input_schema": {
@@ -8516,11 +8824,46 @@
         "$ref": "#/$defs/ExecutionJobReceipt"
       }
     },
-    "admission": "Only a declared replayable job with execution:true and a checked live item whose installed kind declares execution_target. Keep one eligible head job or active attempt per item. The successor rule governs queued jobs. Pin the audience generation, actor, job, package, exact harness binding, selected placement and profile, and effect ceiling. Use the top-level ExecutionJobStart.harness or the already-pinned alarm binding. Apply execution_placement to the StartJob placement operand. Never select a harness or placement from opaque job input. Under the lifecycle fence refuse deleted, archived or retired targets. Reserve quotas once. Exact replay returns the current receipt without another admission. Refuse changed operands under the same receipt. Recheck the same bindings at promotion and claim, without substitution. No caller-supplied host job context. Apply initiating_installation and target_operand. Apply extension_points.calls.preflight before issuing an admission receipt.",
+    "admission": "Only a declared replayable job with execution:true and a checked live item whose installed kind declares execution_target. Keep one eligible head job or active attempt per item. The successor rule governs queued jobs. Pin the audience generation, actor, job, package, exact harness binding, selected placement and profile, and effect ceiling. Apply execution_recovery.update_fence before admission or launch. Use the top-level ExecutionJobStart.harness or the already-pinned alarm binding. Apply execution_placement to the StartJob placement operand. Never select a harness or placement from opaque job input. Under the lifecycle fence refuse deleted, archived or retired targets. Reserve quotas once. Exact replay returns the current receipt without another admission. Refuse changed operands under the same receipt. Recheck the same bindings at promotion and claim, without substitution. No caller-supplied host job context. Apply initiating_installation and target_operand. Apply extension_points.calls.preflight before issuing an admission receipt.",
     "initiating_installation": "For an interactive execution, pin the authenticated initiating device installation in host-owned admission state. Recheck its ownership, validity, generation and expiry at admission, promotion, claim, reattachment, renewal and effect or egress authorization. Loss of a view lease or transport alone does not retire work. An autonomous alarm uses its own pinned alarm principal. Apply session_or_job_retirement on loss of the installation, including for the exact queued successor and descendants; unrelated authorized work remains live.",
     "stop_and_archive": "Idle archive excludes unresolved execution jobs, live attempts and protected approvals. Protected archive pins the entire affected set, including head and successor. Stop pins its exact target and any affected descendants. Both apply attempt_authority_end.retirement_authority. Never retarget a replacement.",
     "successor": "The existing checked start_job may admit one durable FIFO successor per item while its head job or attempt is active. A queued successor has a receipt and no execution lease. Promote it only after the head is terminal and its attempt authority and teardown are settled. Recheck item, actor, grants, pinned harness, placement, profile and quota at promotion. Replay the receipt without adding a job. At capacity refuse with pending_limit. Stop pins the exact target. Archive, widening and revocation fence any affected queued jobs before publishing the authority change. One item never has two running attempts.",
     "target_operand": "ExecutionJobStart and targeted AlarmSet name the checked item once, in top-level item. Resolve the installed run operation and its single-item target.field. Reject an input that supplies that field, even if equal; require live authority on the top-level item and exact declared kind. The host injects the checked item into that field before validating and dispatching the run input. HostWorkerInvokeFrame.message.job_context.item for execution jobs corroborates the same target and conveys no independent authority. Replay, promotion and claim reconstruct only from the pinned target. For an untargeted ordinary alarm, omit item and require a target-free run operation."
+  },
+  "execution_recovery": {
+    "submissions": "The renderer records a submitted Send, follow-up, steer or Stop in its encrypted account- and space-scoped outbox before transmission, including the activation ID, intended action, checked target as a portable locator, and submitted values. A queued control also records the old exact attempt or intent identity as a non-authorizing ref. When renewing the action context for an absent control receipt, compare it with the newly eligible execution.control target. Retry only with the same exact target. If the target is gone, settle the control as stale without any effect on another attempt. Store no lease, challenge proof or placement secret. On reconnect authenticate and use activation.receipt to recover a lost ACK. Replay only that same activation with freshly authorized context and any required confirmation if no receipt exists. Bind the receipt to actor, space, exact action, target and normalized input and recheck before returning it. Changed operands refuse under the same ID. An uncertain or expired receipt never becomes an automatic fresh Send. Erase unauthorized entries on revoke or sign-out. While the update fence is held or startup admission recovery is in progress, commit the checked input, request ID, order and pending outcome into the durable queue before ACK, or leave it in the device outbox until authenticated admission is available. Keep one logical submission across the device, job and attempt. Loss of a receipt ACK cannot duplicate prompts, successor admissions or provider starts.",
+    "controls": "Keep a bounded durable delivery ledger for the exact attempt. Check the complete encoded UTF-8 steer delivery including LF under control_limits before admitting it. A steer appends its request ID, checked text, sequence and target before reply. Stop atomically commits its attempt or pending-job fence, logical outcome and any outstanding remote delivery. Reserve one Stop slot independently of the steer budget. On reconnect dispatch an outstanding Stop for its old exact attempt before any delivery or renewed effects for it. An old target already terminal acknowledges stale; never retarget a successor. Retire undelivered steers on Stop, authority loss or attempt completion. Preserve outstanding deliveries and their deduplication records until settled, then apply the ordinary receipt retention period. A plugin may explicitly queue an undelivered steer as a new submission only after proof it was not applied. The harness records deduplicated acceptance and reconciles actual application by exact request ID. Transport ACK is not effect ACK. If a provider lacks proof for ambiguous delivery, do not blindly reissue. Such a harness cannot pass the exactly-once gate.",
+    "control_input": {
+      "$ref": "#/$defs/ExecutionControlDelivery"
+    },
+    "control_ack": {
+      "$ref": "#/$defs/ExecutionControlAck"
+    },
+    "control_limits": {
+      "pending_steers_per_attempt": 32,
+      "encoded_steer_bytes": 65536,
+      "reserved_stop_slots": 1
+    },
+    "recover_input": {
+      "$ref": "#/$defs/ExecutionRecoverRequest"
+    },
+    "recover_output": {
+      "$ref": "#/$defs/ExecutionRecoverResult"
+    },
+    "reattach": "Persist enrollment, machine boot, runtime reservation, exact attempt, call, build, effect fence and committed cursor before starting. Reconnect on the enrolled carrier with fresh proof of the same execution and contiguous immutable log, bound to the current authenticated session and one-use host challenge. Recheck actor, job and current scope, stop state and placement before fresh renewal or egress. Do not expose proof to the renderer. A forged or foreign proof has no effect. Accept same-run continuation only with live proof. An exact recorded terminal can settle and publish that old call after verification without granting further harness execution. A new boot, an unproven execution or an uncertain effect follows failed_reattachment. Retain committed output. A fresh continuation is a choice of the owning plugin using execution_session_bind and current authority, independent of automatic reattachment. After failed continuity it requires a new request from the authorized person. Do not start it as an implicit replay.",
+    "machine_log": "The harness owns the durable working log on its enrolled machine. Commit immutable ordered output records and the terminal there before acknowledging producer acceptance. Relay only a bounded window from the last contiguous host-durable acknowledgement; the working log is the buffer. Server or carrier absence has no time limit of its own and drops no output. The run retains its own deadline and disk and execution quotas. On quota exhaustion apply the ordinary visible run limit after retaining the terminal and all accepted output. Charge durable unacknowledged bytes to that run and keep them through reconnect until accepted or durably retired by Stop or another authority fence. Never evict unacknowledged output to make room. Replaying a previously accepted position neither reruns the harness nor republishes an item effect. The host acknowledges contiguous durable commits only on the checked call and carrier generation. The relay ignores stale epoch acknowledgements. The owning job appends with the existing call-and-sequence receipt.",
+    "outage_authority": "Transport loss alone does not close an intact enrolled attempt or its already authorized inference path. Keep the machine-local supervisor, containment and own run deadline. Park host-mediated effects, tool approvals and any new operation that needs live host authority until the server reauthorizes it. Do not grant new destinations, credentials or broker capabilities while disconnected. A host revoke fences server effects and delivery at commit and queues the exact Stop for the first reachable machine connection. Verified local containment loss still freezes and tears down the runtime. The absence of authenticated host renewals by itself does not arm teardown on this enrolled recovery path.",
+    "update_fence": {
+      "surface": "Authenticated local operator socket. Expose no per-space names, job IDs or output.",
+      "input_schema": {
+        "$ref": "#/$defs/ExecutionUpdateFenceRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/ExecutionUpdateFenceResult"
+      },
+      "max_seconds": 30,
+      "rule": "Report recovering until startup reconstructs admission and live execution state. Idle means no admitted start, running, reconnecting, frozen, stopping or unsettled accepted execution work remains. Future alarms are not admitted starts. Observe is advisory and reports held while an update fence is held. Acquire atomically compares the execution count and outstanding admission transitions with idle and closes execution admission before returning held. Keep a lightweight admission permit through the transition, with no host-wide lock across storage work. While held, pin new checked execution submissions durably as queued, without an execution capacity reservation or launch. Expose the queued exact intent to the authorized Stop control and allow its durable cancellation before admission. Alarms, children, promotion and claim cannot start execution past the fence. Ordinary authorization and queue limits still apply. Release only on successful restart recovery or after at most max_seconds from the original grant. Retry does not extend the fence or acquire it again after release. On release deliver queued work once in original scoped order under live admission checks. A forced update does not wait for or acquire an idle fence and relies on exact reattachment."
+    }
   },
   "attempt_authority_end": {
     "retirement_authority": "In addition to the action's own live authority, an actor-initiated action that retires jobs or attempts requires the actor to be the starter of every affected job and attempt, including any queued successor and affected descendants, or to hold current PluginsManage over every affected scope. Resolve and pin the entire set at admission, including for confirmation. Recompute it and recheck authority under the lifecycle fence in the commit that retires work. An unauthorized target refuses the whole action before effects. Require a fresh resolution and confirmation where applicable if the set changes. Mandatory safety fencing on authority loss or runtime failure uses its own fence rule and proceeds independently of starter consent.",
@@ -8628,7 +8971,7 @@
         "ends_authority": true
       },
       "runtime_freeze": {
-        "before_reply": "Persist the attempt generation and arm the runtime's independent heartbeat and renewal deadlines before admission. At the earlier freeze cutoff the runtime closes its gateway, fences queued dispatch and freezes the full subtree, including during server loss. Freeze blocks effects and egress while hold and quota remain.",
+        "before_reply": "Persist the attempt generation and arm independent runtime deadlines before admission. At a qualifying local containment or authority cutoff close the gateway, fence queued dispatch and freeze the full subtree. Apply execution_recovery.outage_authority to an intact enrolled runtime during transport loss. Freeze blocks effects and egress while hold and quota remain.",
         "after_commit": "Dispatch no Stop on a mere freeze. Thaw only after fresh same-execution proof and one-use renewal. Failed recovery or elapsed teardown deadline follows its own retirement row.",
         "ends_authority": false,
         "fences_effects": true,
@@ -8642,7 +8985,7 @@
         "cleanup_durable": true
       },
       "attempt_terminal": {
-        "before_reply": "Persist the exact attempt's terminal or interrupted state, fence its scoped work and descendants, and record cleanup and spool retirement. This includes verified process termination and the sealed live-link drain-stall interruption.",
+        "before_reply": "Persist the exact attempt's terminal or interrupted state, fence its scoped work and descendants, and record cleanup and spool retirement. This includes verified process termination and a reached run deadline or quota. On the enrolled recovery path, a stalled relay waits on the durable working log instead of marking the run failed.",
         "after_commit": "Verify teardown of remaining workers, tools and gateway, stopping the exact attempt if needed. Preserve the committed file boundary and uncertain-effect reconciliation.",
         "ends_authority": true
       }
@@ -8769,7 +9112,7 @@
         },
         "scope": "Only the owning job with live exact attempt and checked call may read the bounded committed suffix after the last consumed sequence. Omit after for the first read. An empty batch means no committed suffix yet. Use a bounded wait on the same call or resume by checked job checkpoint. Never issue a second invocation to poll output."
       },
-      "output": "Validate output data against both declared output schemas. The host numbers accepted frames from seq 1, durably commits each before acknowledging it and fences further output on cancellation, revocation, replacement or wrong attempt. Replay by exact call and producer sequence or refuse changed input. Apply calls.limits to each full ContributionCall, ContributionEntryInvoke and ContributionFrame: count UTF-8 encoded JSON including field names, escapes, sequence and terminal fields and one LF. Count the LF even inside a broker envelope; that envelope also has its own bound. The spool counts encoded committed frames including its reserved terminal. If input would exceed the bound, refuse contribution_frame_limit before launching the entry. One exact terminal frame follows its last output. Exit without a verified terminal is failed. Apply both encoded-byte and frame ingest budgets from calls.limits at the same admission boundary, before committing any producer frame. Replays of already accepted frames consume no additional durable admission. Limit each bucket to one second of burst and do not refill it merely on reconnect. On exhaustion refuse the frame and record a host-owned terminal failure using reserved capacity. Reclaim after the existing receipt lifetime. Closing a consumer does not rerun the provider.",
+      "output": "Validate output data against both declared output schemas. Number outward frames from seq 1 in the machine log under the exact checked call. The host accepts a contiguous sequence and durably commits it before acknowledging it and fences further output on cancellation, revocation, replacement or wrong attempt. Replay by exact call and producer sequence or refuse changed input. Apply calls.limits to each full ContributionCall, ContributionEntryInvoke and ContributionFrame: count UTF-8 encoded JSON including field names, escapes, sequence and terminal fields and one LF. Count the LF even inside a broker envelope; that envelope also has its own bound. The host spool bounds the unconsumed relay window including its reserved terminal. Apply execution_recovery.machine_log for durable output while disconnected. When the window is full, pause relay and keep the machine log. Return credit as the owning job consumes the committed prefix. If input would exceed the bound, refuse contribution_frame_limit before launching the entry. One exact terminal frame follows its last output. A link loss is not an entry exit. An observed exit with neither verified terminal nor continuity proof is interrupted. Apply encoded-byte and frame budgets from calls.limits before accepting new producer output. Limit each bucket to one second of burst and do not refill it on reconnect. The machine meters producer admission and records exhaustion as an ordinary quota terminal with reserved capacity. Host and relay pace catch-up under the same host ingest limits, using credit and bounded reads. A temporarily full host window or ingest budget delays replay of accepted records and never turns them into an output failure. Replays of already accepted positions consume no additional durable admission. Keep active cursors and pending receipts for as long as their work remains unsettled. Apply the existing receipt lifetime after completion. Closing a consumer does not rerun the provider.",
       "commit": "The contributor may write only its own eligible files and can return a portable locator for an independently authorized file. The calling owner reads committed frames and writes its own item using the exact live attempt fence and stable subeffect receipts keyed by call and sequence. An ok producer terminal seals output but the attempt remains fenced and eligible only for the owner's checked publication until the owning job completes; only then publish execution completion. Stop, revocation or failed recovery ends that authority immediately. Preserve already committed owner effects and the contributor's committed log. If a live owner retries after lost append ACK, replay that receipt without calling the entry again. Bind the owning job's writer ticket to this exact attempt. Replay can rebind only after validating the same admitted attempt and its publication fence.",
       "limits": {
         "encoded_frame_bytes": 16384,
@@ -8914,7 +9257,7 @@
     "retention_days": 30,
     "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action. Start retention at trash commit. No item kind or package overrides the retention period."
   },
-  "exchanges_revision": "14.43",
+  "exchanges_revision": "14.44",
   "view_result_retention": {
     "rule": "Host windows, plugin search pages and stored or live item-view pages use the same result_versions and retained_results exchange. On a successful renewal with an unchanged grant revision, re-confirm the exact result ref and version, current audience and checked scope, including the active settle generation for a plugin search, the slot for an item view, and live access to each exact item, asset, quote dependency and source revision represented in the result. Retain each still-authorized unchanged result by acknowledging the exact pair, without rerendering or invoking a plugin. Treat a changed or refused result as an invalidation of that result only. A changed audience requires a new view. Apply subscription_catch_up to each retained subscription and its result check.",
     "scope": "Retain only on the same authenticated view, account and cache partition. Rebind the acknowledged result's eligible continuation, follow and item-view asset refs to the renewed lease. Asset reads still apply view_snapshots.assets at admission and delivery. Supply current scoped contexts in retained_results for retained plugin-search pages. Entry actions and composer contexts must be rebound or unavailable on renewal. Keep unchanged content while opening the live entry overlays under the renewed lease. An old entry, selection or composer ref may not cross a scope loss. A missing context is unavailable. Replace old tokens as a set. Invalidate selections or activities whose originating result or context no longer holds. Acknowledge each exact result at most once under the existing aggregate cap. Reuse the recorded window scope_ref for an unchanged checked scope, and use the exact omitted result's scope for persisted row erasure.",

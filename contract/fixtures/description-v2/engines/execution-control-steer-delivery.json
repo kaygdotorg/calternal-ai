@@ -1,0 +1,10 @@
+{
+  "definition": "ExecutionControlDelivery",
+  "value": {
+    "execution": "old-attempt",
+    "seq": 1,
+    "request_id": "steer-1",
+    "kind": "steer",
+    "text": "Check the latest item."
+  }
+}

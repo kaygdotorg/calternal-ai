@@ -1,0 +1,9 @@
+{
+  "definition": "ExecutionControlDelivery",
+  "value": {
+    "execution": "old-attempt",
+    "seq": 2,
+    "request_id": "stop-1",
+    "kind": "stop"
+  }
+}

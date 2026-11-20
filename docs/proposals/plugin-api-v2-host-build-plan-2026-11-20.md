@@ -26,7 +26,9 @@ Reuse `crates/plugin-host/src/registry_v2.rs` and `claims.rs`, and
 `crates/server/src/plugins/{registry_v2.rs,package_store/v2.rs,space_broker.rs}`. Use the
 existing job receipt namespace in `api/plugins/receipts.rs` and the durable job and bounded progress
 boundaries in `plugins/{jobs,job_streams.rs}`. The current job progress stream is
-ephemeral. Put committed contribution output in a bounded durable spool.
+ephemeral. Use the bounded host window and durable acknowledge cursor from
+`execution_recovery.machine_log`. The harness owns the disconnected suffix on the
+machine. Recover ordered output by call and cursor without a second launch.
 
 Qualify two installed packages, same local app IDs with different owners, wrong-version
 and denied interfaces, and uninstall while a call is queued. Try escape-heavy input with
@@ -68,7 +70,10 @@ space_execution.rs}`, `api/request_action.rs` and `crates/core/src/requests.rs`.
 SQLite work per scope using rusqlite and the existing writer. Slice 2 owns the per-space content writer transaction
 and its migration sequence. Slice 3 owns the execution lifecycle rows and
 supplies the archive fences and cleanup in that same FULL transaction. Dispatch
-remote cleanup after the fence commits. Hold quota until verified teardown.
+remote cleanup after the fence commits. Hold quota until verified teardown. Persist
+steer and Stop delivery by exact attempt and request ID. Add the authenticated
+operator update fence and durable Send queue in `execution_recovery` before the
+automatic update gate.
 
 Qualify lost receipt replay, two actors and a queued successor, commit before Stop or
 archive reply followed by crash, device and grant revoke, and server restart with live or
@@ -81,8 +86,11 @@ first Send gate keep child, Resume and tool paths disabled until qualified.
 Implement `extension_points.harness_abi`, the live `carrier` shapes and the placement
 rules in `execution_attempt_authority`. Verify source and digest, mount the separately
 pinned entry and selected login scope, and run with the declared execution network and
-exact attempt ticket. Wire the bounded, ordered entry stream and terminal to slice 1.
-Runtime deadlines and teardown must work independently of supervisor and server liveness.
+exact attempt ticket. Wire the bounded entry relay and terminal to slice 1. Append to the durable harness
+log before acknowledging producer acceptance. Continue an intact enrolled attempt
+during server or carrier loss. Keep local containment and run deadlines independent
+of the server. Rebind only on the exact proof and replay outstanding control receipts
+with slice 3.
 
 Reuse `crates/machine/src/runner/{lifecycle.rs,space_channel.rs}`,
 `sandbox/{podman.rs,provider_home.rs,worker.rs}` and the supported `sandbox/microvm`

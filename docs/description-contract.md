@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.43 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.44 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -284,7 +284,7 @@ An activation names the host-issued **activation context** (an opaque snapshot o
 ### 3.4 Outcomes
 
 A successful separate resolve returns `ActivationResolution`. A combined resolve and dispatch, a typed refusal, or any dispatch returns an `ActionOutcome` (the catalogue's): `ok`, `pending` (with a host-owned `status_ref`, polled through the
-host's own status control, not by the description), `error`, `refused`, `stale` and `unknown` (the interface shows an unknown outcome instead of retrying a non-idempotent action); on `ok`
+host's own status control, not by the description), `error`, `refused`, `stale` and `unknown` (the interface shows an unknown outcome instead of retrying a non-idempotent action). For an interrupted Send, recover the durable receipt before replay from the private submission outbox under the [recovery rule](../contract/host-catalogue-v2.json#/execution_recovery/submissions). Keep a live execution in its working state while its enrolled machine reconnects. On `ok`
 an optional host-owned **undo** `{ref, label, expires_at}` and, when the operation created an item, **`created`** (a host-minted reference an invoke's `then: {route}` opens: a new note,
 a new thread). Error text is written by the host. Draw only validated host replies and checked native descriptions. A row with an action in flight keeps its place with a quiet progress mark; it leaves the
 list only when the host's next window no longer contains it.

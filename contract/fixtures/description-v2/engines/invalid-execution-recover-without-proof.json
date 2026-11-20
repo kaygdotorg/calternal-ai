@@ -1,0 +1,8 @@
+{
+  "definition": "ExecutionRecoverRequest",
+  "value": {
+    "execution": "old-attempt",
+    "call": "call-1"
+  },
+  "error": "missing proof"
+}

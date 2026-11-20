@@ -1827,6 +1827,9 @@
           "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/UndoRequest"
         },
         {
+          "$ref": "host-catalogue-v2.json#/$defs/ActivationReceiptRequest"
+        },
+        {
           "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/StatusRequest"
         },
         {
