@@ -186,7 +186,9 @@ export class FakeHost {
   }
 
   conversationAccess(item: string, person: string) {
-    return this.files.get(item)?.people?.includes(person) ? "full" : undefined;
+    const people = this.files.get(item)?.people;
+    if (!people?.includes(person)) return;
+    return this.directoryGroups.some(group => people.every(id => group.members.includes(id))) ? "full" : "read";
   }
 
   setAlwaysConsent(item: string, person: string, always: boolean) {
@@ -222,6 +224,7 @@ export class FakeHost {
     };
     return {
       author: { request_id: request, actor: person, authored_at, ...(actor_label && { actor_label }) }, call,
+      canWriteConversation: async item => this.conversationAccess(item, person) === "full",
       visiblePeople: async (ids = directoryAccounts) => ids.filter(id => this.canPickPerson(group, person, id))
         .map(id => ({ id, name: personLabels[id] })),
       createShared: async (input, people) => {
@@ -270,6 +273,7 @@ export class FakeHost {
     const canDisclose: NonNullable<PeopleContext["canDisclose"]> = (grant, author) => {
       const pinned = grants.get(author);
       return grant === invitation && state !== "done" && pinned !== undefined
+        && this.conversationAccess(item, person) === "full"
         && pinned.generation === permission(author).generation && this.invitationClock(authored_at) < pinned.until;
     };
     return {
@@ -278,6 +282,7 @@ export class FakeHost {
         assert.equal(state, "ready", "invitation already used");
         assert.equal(grant, invitation, "unchecked invitation");
         assert.equal(payload.tools, true);
+        assert.equal(this.conversationAccess(item, person), "full", "Conversation is read-only.");
         const selected = new Map(payload.messages.map(message => [message.id, message]));
         const readMessage = (id: string) => {
           const original = chosen.get(id);
@@ -300,6 +305,7 @@ export class FakeHost {
               return "Reply to the permitted context";
             },
           });
+          assert.equal(this.conversationAccess(item, person), "full", "Conversation is read-only.");
           assert.ok(payload.messages.every(message => readMessage(message.id)), "invitation consent changed");
           return reply;
         } finally {
@@ -377,6 +383,9 @@ export class FakeHost {
     if (file?.people) assert.ok(file.people.includes(receiptActor), "Conversation unavailable.");
     const writable = () => {
       assert.ok(file?.owner === owner && !file.archived, "target unavailable");
+      if (file.people && this.conversationAccess(args.item, receiptActor) !== "full") {
+        throw new Error("Conversation is read-only.");
+      }
       return file;
     };
     const requestId = args.request_id ?? request;
@@ -522,8 +531,8 @@ export class FakeHost {
         return { frames: [{ seq: 1, kind: "output", data: job.result }] };
       }
       case "item_append": {
+        const target = writable();
         const receipt = commit(() => {
-          const target = writable();
           assert.equal(args.expected_revision, target.revision, "stale head");
           const revision = this.id("rev");
           const prior = target.history.get(target.revision)!;
@@ -625,6 +634,7 @@ export class FakeHost {
 
   archive(item: string) {
     const file = this.files.get(item)!;
+    if (file.people && this.conversationAccess(item, file.creator) !== "full") throw new Error("Conversation is read-only.");
     for (const job of this.jobs.values()) {
       if (job.context.item === item && ["pending", "running"].includes(job.state)) job.state = "stopped";
     }

@@ -21,6 +21,8 @@ export type PeopleContext = Context & {
   visiblePeople?: (ids?: readonly AccountRef[]) => Promise<readonly { id: AccountRef; name: string }[]>;
   // The host rechecks current visibility when committing named grants (ADRs 0058 and 0060).
   createShared?: (input: ItemCreate, people: readonly AccountRef[]) => Promise<ItemContentReceipt>;
+  // Checks current common membership using the host's item grants and account directory.
+  canWriteConversation?: (item: ItemRef) => Promise<boolean>;
   privateState?: {
     read(item: ItemRef): Promise<string | undefined>;
     write(item: ItemRef, body: string, expected: string | undefined): Promise<void>;
@@ -49,6 +51,17 @@ async function member(ctx: Context, item: ItemRef) {
     throw new Error("Conversation unavailable.");
   }
   return { thread, revision, size, locator };
+}
+
+/** Refuse shared mutations and agent calls unless the host confirms current common group membership. */
+export async function requireConversationWrite(ctx: PeopleContext, item: ItemRef) {
+  if (!await ctx.canWriteConversation?.(item)) throw new Error("Conversation is read-only.");
+}
+
+async function writableMember(ctx: PeopleContext, item: ItemRef) {
+  const current = await member(ctx, item);
+  await requireConversationWrite(ctx, item);
+  return current;
 }
 
 function find(thread: Thread, id: string) {
@@ -88,7 +101,7 @@ async function create(input: { title: string; participants: AccountRef[] }, ctx:
 async function post({ item, text, replyTo, mentions = [] }: Target & {
   text: string; replyTo?: string; mentions?: AccountRef[];
 }, ctx: PeopleContext) {
-  const { thread, revision, size } = await member(ctx, item);
+  const { thread, revision, size } = await writableMember(ctx, item);
   const id = messageId(ctx.author.request_id, `person-${ctx.author.actor}`);
   const recipients = [...new Set(mentions)].sort();
   if (recipients.some(id => !thread.participants.some(person => person.kind === "person" && person.id === id))) {
@@ -124,7 +137,7 @@ async function message({ item, message }: MessageTarget, ctx: PeopleContext) {
 }
 
 async function change({ item, message }: MessageTarget, ctx: PeopleContext, text?: string) {
-  const { thread, revision } = await member(ctx, item);
+  const { thread, revision } = await writableMember(ctx, item);
   const entry = find(thread, message);
   if (entry.author.kind !== "person" || entry.author.id !== ctx.author.actor || (entry.deleted && text !== undefined)) {
     throw new Error("Message unavailable.");
@@ -267,7 +280,7 @@ async function callAgent({ item, prompt }: Target & { prompt: string }, ctx: Peo
   if (!grant || !ctx.runInvited || !canDisclose || grant.item !== item || grant.inviter !== ctx.author.actor) {
     throw new Error("A checked agent invitation is required.");
   }
-  const { thread, revision } = await member(ctx, item);
+  const { thread, revision } = await writableMember(ctx, item);
   const id = messageId(ctx.author.request_id, `invited-${ctx.author.actor}`);
   if (thread.messages.some(message => message.id === id)) return { message: id };
   const original = revision === grant.revision ? thread : (await read(ctx, item, grant.revision)).thread;
@@ -285,7 +298,7 @@ async function callAgent({ item, prompt }: Target & { prompt: string }, ctx: Peo
   addAgent(thread, grant.contribution_identity);
   inlineBody(Buffer.concat([Buffer.from(encode(thread)), Buffer.alloc(18 * 1024)]));
   const result = await ctx.runInvited(grant, payload);
-  const latest = await member(ctx, item);
+  const latest = await writableMember(ctx, item);
   latest.thread.messages.push({
     ...resultMessage(latest.thread, ctx, id, grant.contribution_identity, result.text), log: result.log,
   });
@@ -297,7 +310,7 @@ async function consult({ item, prompt, exchanges }: Target & { prompt: string; e
   const agents = ctx.consultation;
   if (!agents) throw new Error("A checked consultation is required.");
   if (!Number.isInteger(exchanges) || exchanges < 1 || exchanges > 3) throw new Error("Consultation exchange limit exceeded.");
-  const { thread, locator } = await member(ctx, item);
+  const { thread, locator } = await writableMember(ctx, item);
   const id = messageId(ctx.author.request_id, `consultation-${ctx.author.actor}`);
   const prior = thread.messages.find(message => message.id === id);
   if (prior?.consultation) return { message: id, consultation: prior.consultation };
@@ -307,6 +320,7 @@ async function consult({ item, prompt, exchanges }: Target & { prompt: string; e
   const turns: ConsultationTurn[] = [];
   const { invoke } = agents;
   async function take(role: ConsultationTurn["role"]) {
+    await requireConversationWrite(ctx, item);
     const text = checkedText(await invoke(role, question, [...turns]));
     if (Buffer.byteLength(text) > 4096) throw new Error("Consultation reply exceeds 4 KiB.");
     turns.push({ role, text });
@@ -317,6 +331,7 @@ async function consult({ item, prompt, exchanges }: Target & { prompt: string; e
     await take("consultant");
   }
   const summary = await take("summary");
+  await requireConversationWrite(ctx, item);
   const title = "Agent consultation";
   const body = [
     "---", `title: ${title}`, `parent: ${locator.space}/${locator.id}`,
@@ -328,7 +343,7 @@ async function consult({ item, prompt, exchanges }: Target & { prompt: string; e
     request_id: step(ctx.author.request_id, "consultation-file"), kind: "thread-consultations",
     name: "Consultation.md", metadata: { title }, body: inlineBody(Buffer.from(body)),
   });
-  const latest = await member(ctx, item);
+  const latest = await writableMember(ctx, item);
   const result = resultMessage(latest.thread, ctx, id, agents.lead, summary);
   const consultation: ItemLocator = saved.locator;
   latest.thread.messages.push({ ...result, consultation });

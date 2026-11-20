@@ -263,7 +263,56 @@ test("the people picker and new shares use current shared-group visibility", asy
   host.setDirectoryGroups([]);
   assert.deepEqual(await ctx.visiblePeople!(), []);
   await assert.rejects(people.create(input, ctx), /Participants unavailable/);
-  assert.equal(host.conversationAccess(item, bob), "full");
+  assert.equal(host.conversationAccess(item, bob), "read");
+});
+
+test("losing the last common group preserves an exportable transcript and blocks both participants from writing", async () => {
+  const host = new FakeHost();
+  const people = peopleFromBundle();
+  const ctx = (actor: string, request: string) => host.peopleContext(actor, request);
+  const { created: item } = await people.create({ title: "Shared history", participants: [bob] }, ctx(alice, "start"));
+  const first = await people.post({ item, text: "Keep this" }, ctx(alice, "before"));
+  const invitations = [alice, bob].map(actor => host.invitedContext(actor, `invite-${actor}`, {
+    item, scope: { message: first.message }, consent: [alice],
+  }));
+  const original = host.markdown(item);
+  host.setDirectoryGroups([
+    { id: "left", source: "local", members: [alice] },
+    { id: "right", source: "oidc", members: [bob] },
+  ]);
+
+  for (const [index, actor] of [alice, bob].entries()) {
+    const read = ctx(actor, "read");
+    assert.equal((await people.message({ item, message: first.message }, read)).text, "Keep this");
+    const { revision } = await read.call("item_head", { item });
+    const { bytes } = await read.call("item_range", { item, revision, offset: 0, length: 65536 });
+    assert.equal(Buffer.from(bytes, "base64").toString(), original);
+    await assert.rejects(people.post({ item, text: "Blocked" }, ctx(actor, "post")), /read-only/);
+    await assert.rejects(people.callAgent({ item, prompt: "Blocked" }, invitations[index]), /read-only/);
+    await assert.rejects(people.consult({ item, prompt: "Blocked", exchanges: 1 },
+      host.consultationContext(actor, "consult")), /read-only/);
+  }
+  await assert.rejects(people.edit({ item, message: first.message, text: "Changed" }, ctx(alice, "edit")), /read-only/);
+  await assert.rejects(people.remove({ item, message: first.message }, ctx(alice, "delete")), /read-only/);
+  await assert.rejects(handlers["threads.rename"]({ item, title: "Changed" }, ctx(alice, "rename")), /read-only/);
+  assert.deepEqual(host.invitedInputs, []);
+  assert.deepEqual(host.consultationTurns, []);
+  assert.equal(host.markdown(item), original);
+});
+
+test("losing a common group during an agent call fences tool reads and the pending reply", async () => {
+  const { host, people, item, first } = await setup();
+  const invitation = host.invitedContext(alice, "active-invitation", {
+    item, scope: { message: first.message }, consent: [alice],
+  });
+  const original = host.markdown(item);
+  host.onInvited = async ({ readMessage }) => {
+    assert.equal(readMessage(first.message)?.text, "Alice visible");
+    host.setDirectoryGroups([]);
+    assert.equal(readMessage(first.message), undefined);
+  };
+  await assert.rejects(people.callAgent({ item, prompt: "Summarize" }, invitation), /read-only|consent changed/);
+  assert.equal(host.markdown(item), original);
 });
 
 test("a membership change between picker lookup and shared creation blocks the write", async () => {

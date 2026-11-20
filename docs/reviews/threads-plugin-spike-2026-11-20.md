@@ -36,7 +36,7 @@ nix develop -c npm run conformance -w @calternal/threads
 The build uses the 14.34 revision-aware SDK builder. It pins both
 manifest/worker packages, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-On dev-01, all 34 tests and both Conformance tool 1.1.0 checks passed
+On dev-01, all 36 tests and both Conformance tool 1.1.0 checks passed
 at the 14.34 pin. The repository documentation gate passed in the earlier
 afternoon run. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
@@ -271,7 +271,7 @@ or a host recertification path.
 | Agent consultation | **PARTLY** | §3 and `attempt_disclosure.consultation` specify a linked item, child-execution ceilings and an independent disclosure check. Live child admission and result authority are unqualified. |
 | Account picker and atomic named grants | **PARTLY** | `group_people_scope` pins one checked common group. The fixture exercises mixed-group refusal and revalidation at write. Package-facing exchange and live bootstrap remain open. |
 | Account invites and contact identity | **PARTLY** | Group members may issue scoped invites under 14.34. Contact association and package-facing invitation, redemption and default-space bootstrap remain for Contacts. |
-| Existing sharing rights and group removal | **PARTLY** | 14.34 grants editing and sharing rights within the item. The named-grant operation mapping and consequences for an existing cross-space item grant after removal from the group remain open. |
+| Existing sharing rights and group removal | **PARTLY** | 14.34 grants editing and sharing rights within the item. The owner settled the read-only rule below. The named-grant exchange and live downgrade still need host qualification. |
 | Account lookup versus agent discovery | **CLOSED** | `group_people_scope` and `attempt_disclosure` explicitly govern separate checks. Future Contacts policy and live host paths remain open. |
 
 #### Findings added at 14.34
@@ -532,7 +532,7 @@ Contacts adds one. [ADR 0059][adr0059] · [ADR 0063][adr0063] · [ADR 0064][adr0
 | --- | --- |
 | API §§1, 3, 5 and ADRs 0058, 0060. The catalogue has no checked account selector or atomic named-share creation for community plugins. A `people.invite` or `groups.manage` capability alone grants no broader selector visibility. | Provide a host-owned picker source and checked named-share creation driven by the same live visibility predicate. Recheck access before returning saved receipts and when committing grants. Return stable account IDs and display names from the checked group and keep private group and account details in the directory. |
 | ADRs 0059, 0063, 0064 and the Contacts handoff. An account invite grants onboarding and group membership. The existing contact file ID and imported card UID identify contact data. Neither supplies a named share for an unregistered recipient. | Keep onboarding in the host. If Contacts later supports an invite from the picker, establish the account through the existing invite flow and check current visibility before sharing. Leave card-to-account association with Contacts. |
-| Afternoon full participant privileges and the [existing sharing decisions][sharing]. One starter-owned file agrees with the existing owner's-file and named-share model. Existing named grants expose read or edit and leave share management with the owner. 14.34 explicitly includes changing shares within the item. The fixture proves transcript reads and writes with author-only message edits and deletion. | Pin the checked exchange and map whole-item lifecycle operations such as deletion to existing capabilities. The fixture keeps an existing named grant when group visibility changes. ADR 0060 affects directory eligibility immediately, and the existing sharing model revokes named grants separately. Decide whether Threads needs a different rule during the Contacts work. |
+| Afternoon full participant privileges and the [existing sharing decisions][sharing]. One starter-owned file agrees with the existing owner's-file and named-share model. Existing named grants expose read or edit and leave share management with the owner. 14.34 explicitly includes changing shares within the item. | Pin the checked exchange and map whole-item lifecycle operations such as deletion to existing capabilities. The owner's follow-up keeps named read and export access when common group membership ends and removes item write and agent invocation authority for all participants. |
 | ADR 0060 and the afternoon discovery rules govern different checks. Local and mirrored groups control whom people can find and select. Attempt discovery is per item and remains consent-scoped for conversations between people. | Keep group membership as an input to account selection. Keep the agent's selected-content and author-consent check on its separate admission path. Leave live group audiences and further discovery rules to Contacts. |
 
 [adr0058]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0058-roles-are-capability-sets.md
@@ -542,6 +542,24 @@ Contacts adds one. [ADR 0059][adr0059] · [ADR 0063][adr0063] · [ADR 0064][adr0
 [adr0064]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0064-contacts-sync-over-carddav.md
 [share-commit]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/crates/auth/src/sharing.rs#L2546
 [sharing]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/grills/sharing.md
+
+#### Group separation
+
+The owner decided on November 20 that when the people in a conversation
+no longer share a group, they keep reading and can export its history.
+The Threads app refuses posting, editing, deletion, rename, invitations
+and consultations. Both readers can still obtain the exact Markdown
+through the checked range path. The fixture derives writability from a
+currently common group across all named people, using the host's grants
+and live directory. Private read position remains writable. The tests
+also exercise loss of membership during a called-in agent's run, fencing
+further tool reads and the pending reply.
+
+The host still needs a checked conversation-write surface and must
+apply the downgrade under its authority fence at admission, tool
+delivery and commit, including host-driven archive and shares. It must
+preserve named read and export access to the same item when it fences
+writes. The fixture models those permissions with the in-memory directory.
 
 ## Scope and limits
 
@@ -617,14 +635,6 @@ when visibility changes before confirmation. [ADR 0060][adr0060]
   usable, with an old folder name beside a new title. Recommend the
   original folder for the first release and message links based on
   stable item/message IDs.
-- **When someone leaves a group, do they keep conversations already
-  shared with them?** Contacts needs this answer before enabling named
-  conversation grants. If Bob leaves the garden group, retaining his
-  named grant lets him keep the conversation he helped write until the
-  grant is removed. Revoking it automatically cuts off that history and
-  requires the host to fence access to starter-space items as part of
-  group removal. Follow existing named sharing for the first slice and
-  let the group change immediately restrict future picks. [ADR 0060][adr0060] · [Existing sharing decisions][sharing]
 
 ## Simplification opportunities
 

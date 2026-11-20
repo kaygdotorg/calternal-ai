@@ -4,6 +4,7 @@ import { checkedText, type HarnessInput, type HarnessOutput } from "./harnesses-
 import { agentParticipant, checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, messageId, page, personParticipant, step, messageView, type Thread } from "./format.ts";
 import type { Context, RunInput, Send } from "./interface.ts";
 import { inlineBody, kind, publish, read } from "./files.ts";
+import { requireConversationWrite, type PeopleContext } from "./people.ts";
 
 export { peopleHandlers } from "./people.ts";
 
@@ -43,9 +44,10 @@ async function send({ item, text, harness, placement }: Send, ctx: Context) {
   return ctx.call("start_job", { job: "run", item, harness, placement, input: {}, contribution_input: { text: checkedText(text) } });
 }
 
-async function rename({ item, title }: { item: ItemRef; title: string }, ctx: Context) {
+async function rename({ item, title }: { item: ItemRef; title: string }, ctx: PeopleContext) {
   const { revision } = await ctx.call("item_head", { item });
   const { thread } = await read(ctx, item, revision);
+  if (thread.conversation === "people") await requireConversationWrite(ctx, item);
   const nextTitle = checkedTitle(title);
   if (thread.title === nextTitle) {
     await publish(ctx, item, revision, thread);
