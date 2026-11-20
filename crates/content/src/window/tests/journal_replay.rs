@@ -232,7 +232,7 @@ fn consecutive_windows_return_the_attached_reader_to_its_slot() {
         .conn
         .execute_batch("CREATE TEMP TABLE reused_reader (test INTEGER)")
         .unwrap();
-    slot.windows.put_reader(reader);
+    slot.windows.put_reader(reader, &content.window_handles);
     assert_eq!(
         result(member_window(&content, space)).count.unwrap().value,
         1
@@ -247,6 +247,35 @@ fn consecutive_windows_return_the_attached_reader_to_its_slot() {
             row.get::<_, i64>(0)
         })
         .unwrap();
+}
+
+#[test]
+fn a_full_retained_connection_cache_still_serves_other_spaces() {
+    let dir = tempfile::tempdir().unwrap();
+    let content = content(&dir);
+    let actor = AccountId::new();
+    let mut pins = Vec::new();
+    for _ in 0..8 {
+        let space = SpaceId::new();
+        pins.push(content.pin_slot(space).unwrap());
+        seed_note(&content, space, actor);
+        project(&content, space);
+        assert_eq!(
+            result(member_window(&content, space)).count.unwrap().value,
+            1
+        );
+    }
+    let space = SpaceId::new();
+    let last = content.pin_slot(space).unwrap();
+    seed_note(&content, space, actor);
+    project(&content, space);
+    assert_eq!(
+        result(member_window(&content, space)).count.unwrap().value,
+        1
+    );
+    assert!(last.windows.take_reader().is_none());
+    let first = pins.first().unwrap();
+    assert!(first.windows.take_reader().is_some());
 }
 
 #[test]

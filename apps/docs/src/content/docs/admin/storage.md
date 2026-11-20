@@ -211,8 +211,11 @@ checks live authority before storage access and before delivery. A missing
 or relevant lagging publication returns loading without rows, a count or a
 cursor. A root Notes window can keep serving exact results across up to 128
 proved unrelated journal entries. The native Notes cursor remains a head
-query. The worker reuses its per-space handles and skips idle published
-heads in memory. Bootstrap, epoch reset and collection replay use bounded
+query. Published heads stay in memory independently of SQLite handles.
+Each space can retain one writer pair and two reader pairs. Across the
+content service, at most eight of each pair are retained, for up to five
+idle seconds. A full cache still allows on-demand reads and replay.
+Bootstrap, epoch reset and collection replay use bounded
 resumable pages. A broken sidecar produces typed unavailability while the
 worker retries with backoff and rebuilds derived files. Replay records and
 omits inherited over-limit notes until their memberships are repaired.

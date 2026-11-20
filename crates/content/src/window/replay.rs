@@ -201,6 +201,7 @@ impl Content {
     pub(crate) fn advance_window(&self, space: SpaceId, create: bool) -> Result<bool> {
         let slot = self.pin_slot(space)?;
         let cache = &slot.windows;
+        cache.expire_handles();
         if !create && cache.idle_at(None) {
             return Ok(false);
         }
@@ -238,7 +239,7 @@ impl Content {
                 }
             }
             let revision = cache.revision();
-            let mut writer = match cache.take_writer() {
+            let writer = match cache.take_writer() {
                 Some(writer) => writer,
                 None => {
                     if !create
@@ -259,28 +260,26 @@ impl Content {
                     writer(&source, &self.roots.appdata, space)?
                 }
             };
-            writer.published = None;
             let head = writer.journal.head().map_err(internal)?;
             let more = match advance(&writer.conn, &writer.journal, &head) {
                 Ok(more) => more,
                 Err(error) if error.code == ErrorCode::Conflict => {
-                    cache.put_writer(writer);
+                    cache.put_writer(writer, &self.window_handles);
                     return Ok(false);
                 }
                 Err(error) => return Err(error),
             };
-            writer.revision = revision;
             if !more {
                 if let Some(publication) = Publication::read(&writer.conn)?
                     && publication.ready
                     && publication.head == head
                     && publication.matches_source(&writer.conn)?
                 {
-                    writer.published = Some(head);
                     cache.recovered(&source)?;
+                    cache.published(head, revision);
                 }
             }
-            cache.put_writer(writer);
+            cache.put_writer(writer, &self.window_handles);
             Ok(more)
         })();
         if let Err(error) = result {
@@ -312,12 +311,7 @@ fn writer(source: &Path, appdata: &Path, space: SpaceId) -> Result<Writer> {
         .map_err(sql_error)?;
     calternal_store::migrations::migrate(&conn, SCHEMA).map_err(sql_error)?;
     attach(&conn, source)?;
-    Ok(Writer {
-        conn,
-        journal,
-        published: None,
-        revision: 0,
-    })
+    Ok(Writer { conn, journal })
 }
 
 pub(super) fn sql_error(error: rusqlite::Error) -> Error {

@@ -89,6 +89,7 @@ pub struct Content {
     // Drop the placement worker before the stores and their root guards.
     sweeper: lifecycle::Sweeper,
     roots: Roots,
+    window_handles: window::runtime::HandleBudget,
     search_readers: search::Readers,
     search_writers: search::Writers,
     search_worker: std::sync::OnceLock<std::sync::mpsc::SyncSender<(SpaceId, bool)>>,
@@ -194,6 +195,7 @@ impl Content {
         let journals = Journals::open(roots.appdata.clone(), secrets, receipt_retention)?;
         let catalog = ReadPool::new(catalog_path);
         let content = Self {
+            window_handles: window::runtime::HandleBudget::default(),
             search_readers: search::Readers::default(),
             search_writers: search::Writers::default(),
             search_worker: std::sync::OnceLock::new(),

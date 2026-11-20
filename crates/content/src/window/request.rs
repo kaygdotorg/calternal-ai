@@ -154,7 +154,7 @@ impl Content {
             Err(error) => Err(error),
         };
         if result.is_ok() {
-            cache.put_reader(reader);
+            cache.put_reader(reader, &self.window_handles);
         }
         drop(pin);
         match result {

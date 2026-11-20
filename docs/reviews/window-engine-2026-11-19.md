@@ -1,9 +1,8 @@
 # Window query engine, 2026-11-19
 
 Issue [#85](https://git.kayg.org/kayg/calternal-ai/issues/85) implements
-the first ordered content projections. Unfiltered `notes.list` uses the same
-covering seek as the sealed API and keeps its signed timestamp/UUID cursor and
-summary shape. The API also qualifies live explicit Notes collections ordered
+the first ordered content projections. Unfiltered `notes.list` queries live
+heads and keeps its signed timestamp/UUID cursor and summary shape. The API also qualifies live explicit Notes collections ordered
 by their exposed title, using SQLite’s ASCII lowercasing and UUID as the tie break. Other sources, sort/filter
 shapes and parent windows require their own qualified plan.
 
@@ -641,7 +640,7 @@ timestamp and UUID cursor queries the live heads as on dev.
 | Existing-item ACK | Existing content and journal statements. The projection adds zero reads, SQLite statements or queue requests. | Same three FULL transaction boundaries as dev. |
 | Warm ready v2 window, current head | No opens or attachments when reusing a reader. One publication read, two journal head statements (two seeks each), two source config/outbox checks, one source binding lookup, one scope lookup, one covering range, and one source point lookup per returned row. Declared orders and parents add point checks. The host checks live authority before storage and before delivery. | 0 |
 | Warm root Notes with unrelated lag | Each freshness check may add one journal range, at most 128 indexed kind probes and one epoch recheck. The outbox check examines at most 129 pending intents and probes kinds for at most that many. Unknown entries fail closed. | 0 |
-| Cold v2 window | May stat/open the sidecar, attach the source and open the journal reader with one journal binding lookup. Each active slot retains up to two attached-reader/journal pairs and one writer/journal pair. | 0 |
+| Cold v2 window | May stat/open the sidecar, attach the source and open the journal reader with one journal binding lookup. Each slot can cache up to two reader/journal pairs and one writer/journal pair. The service retains at most eight pairs of each class and expires them after five idle seconds. The cap controls retention only. A request or replay can open a pair on demand. | 0 |
 | Replay or rebuild step | One page of up to 128 journal entries, source items or rows removed. A collection event advances a separate member UUID cursor in batches of up to 128, drawing from bounded seeks into source edges, prior edges and the recorded omissions. | At most one NORMAL sidecar commit per step. The worker also performs creation, checkpointing and recovery. |
 | Collection save | Unchanged member arrays still require old/new JSON comparison. A retitle does zero reverse-edge mutations and no scope-cap probes. Adding an edge checks whether it already exists and probes the capped reverse-note range. Membership changes compare bounded arrays of up to 10,000 entries. | Existing authoritative flushes. |
 
@@ -982,7 +981,9 @@ full 436-page docs gate using the installer pages inherited from dev.
    live membership and the content lifecycle. The 128-slot wake queue
    holds space IDs. Each sidecar holds one publication watermark, a
    bootstrap cursor, a membership cursor and at most one omission per
-   inherited over-limit note. The private retry marker is one bounded record. Each query is capped by the
+   inherited over-limit note. The private retry marker is one bounded record.
+   Published heads survive idle handle eviction. The service retains at most
+   eight reader and eight writer pairs, with a five-second idle expiry. Each query is capped by the
    sealed 4,096 materialized-row and 250,000 skip budgets, with the request
    size further bounded by the catalogue. Leases expire after 15 seconds,
    with at most 128 retained entries per shard and one preceding result

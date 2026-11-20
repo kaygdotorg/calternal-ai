@@ -8,12 +8,52 @@ use std::{
     io::Read,
     path::Path,
     sync::{
-        Mutex, RwLock,
+        Arc, Mutex, RwLock,
         atomic::{AtomicU64, Ordering},
     },
+    time::{Duration, Instant},
 };
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+const CACHE_IDLE: Duration = Duration::from_secs(5);
+const KEPT_PAIRS: usize = 8;
 const KEEP: usize = 2;
+
+/// Bound retained SQLite pairs across the service. Exhausting the cache
+/// budget drops an idle handle; it never delays or refuses an operation.
+pub(crate) struct HandleBudget {
+    readers: Arc<Semaphore>,
+    writers: Arc<Semaphore>,
+}
+
+impl Default for HandleBudget {
+    fn default() -> Self {
+        Self {
+            readers: Arc::new(Semaphore::new(KEPT_PAIRS)),
+            writers: Arc::new(Semaphore::new(KEPT_PAIRS)),
+        }
+    }
+}
+
+struct Cached<T> {
+    value: T,
+    retained_at: Instant,
+    _permit: OwnedSemaphorePermit,
+}
+
+impl<T> Cached<T> {
+    fn retain(value: T, budget: &Arc<Semaphore>) -> Option<Self> {
+        Some(Self {
+            value,
+            retained_at: Instant::now(),
+            _permit: budget.clone().try_acquire_owned().ok()?,
+        })
+    }
+
+    fn expired(&self) -> bool {
+        self.retained_at.elapsed() >= CACHE_IDLE
+    }
+}
 
 #[derive(Default)]
 pub(crate) struct Runtime {
@@ -25,8 +65,9 @@ pub(crate) struct Runtime {
 #[derive(Default)]
 struct State {
     dormant: bool,
-    writer: Option<Writer>,
-    readers: Vec<Reader>,
+    published: Option<(SyncToken, u64)>,
+    writer: Option<Cached<Writer>>,
+    readers: Vec<Cached<Reader>>,
     failure: Option<Failure>,
     checked_failure: bool,
 }
@@ -34,8 +75,6 @@ struct State {
 pub(super) struct Writer {
     pub(super) conn: Connection,
     pub(super) journal: ProjectionJournal,
-    pub(super) published: Option<SyncToken>,
-    pub(super) revision: u64,
 }
 
 pub(super) struct Reader {
@@ -64,41 +103,70 @@ impl Runtime {
         state.failure.is_none()
             && (state.dormant
                 || state
-                    .writer
+                    .published
                     .as_ref()
-                    .filter(|w| w.revision == self.revision())
-                    .and_then(|w| w.published.as_ref())
-                    .is_some_and(|published| Some(published) == head))
+                    .is_some_and(|(published, revision)| {
+                        *revision == self.revision() && Some(published) == head
+                    }))
     }
 
     pub(super) fn dormant(&self) {
         lock(&self.state).dormant = true;
     }
 
-    pub(super) fn take_writer(&self) -> Option<Writer> {
-        lock(&self.state).writer.take()
+    pub(super) fn published(&self, head: SyncToken, revision: u64) {
+        lock(&self.state).published = Some((head, revision));
     }
 
-    pub(super) fn put_writer(&self, writer: Writer) {
+    pub(super) fn take_writer(&self) -> Option<Writer> {
+        let mut state = lock(&self.state);
+        state.published = None;
+        state.writer.take().map(|cached| cached.value)
+    }
+
+    pub(super) fn put_writer(&self, writer: Writer, budget: &HandleBudget) {
+        let cached = Cached::retain(writer, &budget.writers);
         let mut state = lock(&self.state);
         state.dormant = false;
-        state.writer = Some(writer);
+        state.writer = cached;
     }
 
     pub(super) fn take_reader(&self) -> Option<Reader> {
-        lock(&self.state).readers.pop()
+        lock(&self.state).readers.pop().map(|cached| cached.value)
     }
 
-    pub(super) fn put_reader(&self, reader: Reader) {
+    pub(super) fn put_reader(&self, reader: Reader, budget: &HandleBudget) {
+        let Some(reader) = Cached::retain(reader, &budget.readers) else {
+            return;
+        };
         let mut state = lock(&self.state);
         if state.failure.is_none() && state.readers.len() < KEEP {
             state.readers.push(reader);
         }
     }
 
+    pub(super) fn expire_handles(&self) {
+        let (writer, readers) = {
+            let mut state = lock(&self.state);
+            let writer = state
+                .writer
+                .as_ref()
+                .is_some_and(Cached::expired)
+                .then(|| state.writer.take())
+                .flatten();
+            let readers = state
+                .readers
+                .extract_if(.., |reader| reader.expired())
+                .collect::<Vec<_>>();
+            (writer, readers)
+        };
+        drop((writer, readers));
+    }
+
     pub(super) fn drain(&self) {
         let (writer, readers) = {
             let mut state = lock(&self.state);
+            state.published = None;
             (state.writer.take(), std::mem::take(&mut state.readers))
         };
         drop((writer, readers));
