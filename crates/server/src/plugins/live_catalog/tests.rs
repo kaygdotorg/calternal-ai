@@ -191,6 +191,10 @@ fn kind(id: &str, folder: &str) -> Value {
         "storage":{"folder":folder},"schema":{"type":"object","properties":{"title":{"type":"string"}}}})
 }
 
+fn provider(id: &str) -> Value {
+    json!({"id":id,"name":"Provider","engine":"turns","adapter":{"path":"adapter.json","sha256":"0".repeat(64)}})
+}
+
 fn op(id: &str) -> Value {
     json!({"id":id,"title":"Read","input_schema":{},"output_schema":{},"required_capability":"space.read",
         "risk":"read","idempotency":"read_only","methods":[]})
