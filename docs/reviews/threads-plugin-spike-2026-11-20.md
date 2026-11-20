@@ -1,15 +1,15 @@
-# Threads plugin spike · 2026-11-20
+# Threads app spike · 2026-11-20
 
 The lane starts from dev `80864d0d`. The spike has rerun against
 14.30 (`b89586dd`), 14.31 (`00828198`) and 14.32 (`3ca11613`).
 The current package pin is draft 14.33 at
 `47024c0f0b31c3db6406feaf4950b0f95553ec02`. It follows the November 20
-decision that Threads owns the conversation file and the selected harness
+decision that the Threads app (`calternal-threads`) owns the conversation file and the selected harness
 owns its working log. The lane issue is [#92](https://git.kayg.org/kayg/calternal-ai/issues/92).
 
 Threads creates one Markdown item per conversation, in a readable dated
 folder. Its frontmatter holds the stable conversation ID and people and
-agent participants. Length-framed Markdown message records hold stable
+agent participants. Markdown message headings hold stable
 message anchors, with the harness-owned log reference on the reply. Send
 admits the checked harness and placement through one replayable job. Send
 while a job is active uses the same admission for the single successor.
@@ -458,6 +458,39 @@ outside this fixture change.
 | Tools | Enable the called-in agent's tools under the checked call. Enforce the selected-content ceiling across every read surface and prevent broader search or follow-on reads. The fixture demonstrates only a scoped read tool. |
 | Consultation | Authorize both placements independently, bound the exchange, persist replay and cancellation, and publish just the final linked result. Require separate authority before sharing parent transcript content with a second agent. |
 
+### Contacts and sharing findings
+
+The Threads app follows the existing account model. The picker lists
+host-verified accounts visible to the starter. A person can see themself
+and fellow members of local or mirrored groups. `people.manage` grants
+visibility across the directory. The fixture uses the same predicate for
+the picker, selected-account lookup and commit of the named grants. It
+rejects hidden and unknown IDs with the same error, including on a replay.
+[ADR 0058][adr0058] · [ADR 0060][adr0060] · [Existing share commit][share-commit]
+
+Account invites are single-use onboarding links issued under
+`people.invite`. Redemption creates the account and applies any assigned
+local memberships together. An account becomes eligible to pick when the
+same directory rule can see it. The picker deals in account IDs. Contact
+cards and CardDAV lists have their own identities and can supply contact
+information through an explicitly verified account association if
+Contacts adds one. [ADR 0059][adr0059] · [ADR 0063][adr0063] · [ADR 0064][adr0064]
+
+| Finding | Smallest contract change or decision |
+| --- | --- |
+| **OPEN** · API §§1, 3, 5 and ADRs 0058, 0060. The catalogue has no checked account selector or atomic named-share creation for community plugins. A `people.invite` or `groups.manage` capability alone grants no broader selector visibility. | Provide a host-owned picker source and checked named-share creation driven by the same live visibility predicate. Recheck access before returning saved receipts and when committing grants. Return stable account IDs and display names and keep private group and account details in the directory. |
+| **OPEN** · ADRs 0059, 0063, 0064 and the Contacts handoff. An account invite grants onboarding and group membership. The existing contact file ID and imported card UID identify contact data. Neither supplies a named share for an unregistered recipient. | Keep onboarding in the host. If Contacts later supports an invite from the picker, establish the account through the existing invite flow and check current visibility before sharing. Leave card-to-account association with Contacts. |
+| **OPEN** · Afternoon full participant privileges and the [existing sharing decisions][sharing]. One starter-owned file agrees with the existing owner's-file and named-share model. Existing named grants expose read or edit and leave share management with the owner. The afternoon decision uses “full privileges.” The fixture proves transcript reads and writes with author-only message edits and deletion. | Pin whether full privileges include changing shares or whole-item lifecycle operations such as deletion, and map each operation to an existing capability. The fixture keeps an existing named grant when group visibility changes. ADR 0060 affects directory eligibility immediately, and the existing sharing model revokes named grants separately. Decide whether Threads needs a different rule during the Contacts work. |
+| **OPEN** · ADR 0060 and the afternoon discovery rules govern different checks. Local and mirrored groups control whom people can find and select. Attempt discovery is per item and remains consent-scoped for conversations between people. | Keep group membership as an input to account selection. Keep the agent's selected-content and author-consent check on its separate admission path. Leave live group audiences and further discovery rules to Contacts. |
+
+[adr0058]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0058-roles-are-capability-sets.md
+[adr0059]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0059-invites-and-storage-quota.md
+[adr0060]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0060-groups-and-person-visibility.md
+[adr0063]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0063-contact-notes-keep-original-vcard-lines.md
+[adr0064]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0064-contacts-sync-over-carddav.md
+[share-commit]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/crates/auth/src/sharing.rs#L2546
+[sharing]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/grills/sharing.md
+
 ## Scope and limits
 
 Live Claude Code execution and result delivery today would require the
@@ -502,13 +535,17 @@ verified result survives that replay without invoking the provider again.
 
 ## Claude UI handoff
 
-Design the Threads list and its active/archived states, transcript and
+Design the Threads app list and its active/archived states, transcript and
 per-message link affordance, composer with harness and placement choices,
 queued-follow-up and Stop controls, and the automation date and missed-run
 settings. Check cold-to-live transcript replacement and attribution in
 the native renderers. The spike template is a form-level operation
 fixture. The real UI should use the host confirmation and execution
 controls for sensitive actions.
+
+Use the host account selector for the people picker when Contacts supplies
+it. Submit named account selections and handle an unavailable selection
+when visibility changes before confirmation. [ADR 0060][adr0060]
 
 ## Owner questions
 

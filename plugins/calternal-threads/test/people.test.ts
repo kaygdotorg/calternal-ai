@@ -236,6 +236,50 @@ test("one starter-owned file gives both people full access", async () => {
   assert.equal((await people.message({ item, message: sent.message }, host.peopleContext(bob, "shared-read"))).text, "Same file");
 });
 
+test("the people picker and new shares use current shared-group visibility", async () => {
+  const host = new FakeHost();
+  const people = peopleFromBundle();
+  const pendingInvite = "019a0000-0000-7000-8000-000000000004";
+  host.setDirectoryGroups([
+    { source: "local", members: [alice] },
+    { source: "oidc", members: [alice, bob] },
+  ]);
+  const ctx = host.peopleContext(alice, "pick");
+  assert.deepEqual((await ctx.visiblePeople!()).map(({ id }) => id), [alice, bob]);
+  assert.deepEqual((await ctx.visiblePeople!([cara, pendingInvite])), []);
+  for (const id of [cara, pendingInvite]) {
+    await assert.rejects(people.create({ title: "Unavailable", participants: [id] }, ctx), /^Error: Participants unavailable\.$/);
+  }
+  assert.equal(host.files.size, 0);
+  host.setDirectoryCapabilities(alice, ["people.invite", "groups.manage"]);
+  assert.deepEqual((await ctx.visiblePeople!()).map(({ id }) => id), [alice, bob]);
+  host.setDirectoryCapabilities(alice, ["people.manage"]);
+  assert.deepEqual((await ctx.visiblePeople!()).map(({ id }) => id), [alice, bob, cara]);
+  host.setDirectoryCapabilities(alice, []);
+
+  const input = { title: "Named share", participants: [bob] };
+  const { created: item } = await people.create(input, ctx);
+  assert.deepEqual(decode(host.markdown(item)).participants.map(({ id }) => id), [alice, bob]);
+  host.setDirectoryGroups([]);
+  assert.deepEqual((await ctx.visiblePeople!()).map(({ id }) => id), [alice]);
+  await assert.rejects(people.create(input, ctx), /Participants unavailable/);
+  assert.equal(host.conversationAccess(item, bob), "full");
+});
+
+test("a membership change between picker lookup and shared creation blocks the write", async () => {
+  const host = new FakeHost();
+  const people = peopleFromBundle();
+  const ctx = host.peopleContext(alice, "stale-picker");
+  await assert.rejects(people.create({ title: "Uncommitted", participants: [bob] }, {
+    ...ctx,
+    createShared: async (input, ids) => {
+      host.setDirectoryGroups([]);
+      return ctx.createShared!(input, ids);
+    },
+  }), /Participants unavailable/);
+  assert.equal(host.files.size, 0);
+});
+
 test("a call keeps its selection across later posts, with revocable one-call and always consent", async () => {
   const { host, people, ctx, item, first, second, post } = await setup();
   host.setAlwaysConsent(item, bob, true);

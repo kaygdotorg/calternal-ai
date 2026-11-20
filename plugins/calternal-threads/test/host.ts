@@ -74,10 +74,11 @@ const logicalHarness = {
   package: contribution.manifest.id,
   contribution: contribution.manifest.contributions![0].id,
 };
-const checkedPeople = [
+const directoryAccounts = [
   actor, "019a0000-0000-7000-8000-000000000002", "019a0000-0000-7000-8000-000000000003",
 ];
-const personLabels: Record<string, string> = Object.fromEntries(checkedPeople.map((id, index) => [id, ["Alice", "Bob", "Cara"][index]]));
+const personLabels: Record<string, string> = Object.fromEntries(directoryAccounts.map((id, index) => [id, ["Alice", "Bob", "Cara"][index]]));
+type DirectoryGroup = { source: "local" | "oidc"; members: readonly string[] };
 const peopleMethods = new Set(["item_create", "item_head", "item_range", "item_save", "item_append", "item_view_context", "item_view_publish"]);
 
 /** One in-memory space. Validates package ownership, exact revisions and
@@ -100,6 +101,8 @@ export class FakeHost {
   invitationClock = (authoredAt: string) => Date.parse(authoredAt);
   private personState = new Map<string, string>();
   private personPreferences = new Map<string, string>();
+  private directoryGroups: readonly DirectoryGroup[] = [{ source: "local", members: directoryAccounts }];
+  private directoryCapabilities = new Map<string, readonly string[]>();
   beforeTerminal = async () => {};
   claude = async (text: string) => `Reply to ${text}`;
 
@@ -162,8 +165,26 @@ export class FakeHost {
   }
 
   personalSpace(person: string) {
-    assert.ok(checkedPeople.includes(person));
-    return space.slice(0, -1) + checkedPeople.indexOf(person);
+    assert.ok(directoryAccounts.includes(person));
+    return space.slice(0, -1) + directoryAccounts.indexOf(person);
+  }
+
+  /** Set fixture memberships supplied by the account system, including mirrored groups. */
+  setDirectoryGroups(groups: readonly DirectoryGroup[]) {
+    this.directoryGroups = groups;
+  }
+
+  /** Set the viewer's named capabilities independently of their group memberships. */
+  setDirectoryCapabilities(viewer: string, capabilities: readonly string[]) {
+    this.directoryCapabilities.set(viewer, capabilities);
+  }
+
+  // Mirrors Auth::can_see_person on existing accounts (ADR 0060).
+  private canSeePerson(viewer: string, person: string) {
+    return directoryAccounts.includes(viewer) && directoryAccounts.includes(person) && (
+      viewer === person || this.directoryCapabilities.get(viewer)?.includes("people.manage") ||
+      this.directoryGroups.some(group => group.members.includes(viewer) && group.members.includes(person))
+    );
   }
 
   conversationAccess(item: string, person: string) {
@@ -202,9 +223,13 @@ export class FakeHost {
       return result as never;
     };
     return {
-      author: { request_id: request, actor: person, authored_at, ...(actor_label && { actor_label }) }, checkedPeople, personLabels, call,
+      author: { request_id: request, actor: person, authored_at, ...(actor_label && { actor_label }) }, call,
+      visiblePeople: async (ids = directoryAccounts) => ids.filter(id => this.canSeePerson(person, id))
+        .map(id => ({ id, name: personLabels[id] })),
       createShared: async (input, people) => {
-        assert.ok(people.includes(person) && people.every(id => checkedPeople.includes(id)));
+        if (!people.includes(person) || people.some(id => !this.canSeePerson(person, id))) {
+          throw new Error("Participants unavailable.");
+        }
         assert.equal(input.kind, "threads");
         trace.push(["ItemCreate", input]);
         const result = await this.call("threads", request, "item_create", input, undefined, person, false, people);

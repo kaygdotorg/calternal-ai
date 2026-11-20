@@ -17,10 +17,10 @@ type Consultation = {
 };
 
 export type PeopleContext = Context & {
-  // Fixture ports for checked participants, account-private storage and invocation.
-  checkedPeople?: readonly AccountRef[];
+  // Fixture port for the host account directory (ADR 0060). An omitted filter lists picker candidates.
+  visiblePeople?: (ids?: readonly AccountRef[]) => Promise<readonly { id: AccountRef; name: string }[]>;
+  // The host rechecks current visibility when committing named grants (ADRs 0058 and 0060).
   createShared?: (input: ItemCreate, people: readonly AccountRef[]) => Promise<ItemContentReceipt>;
-  personLabels?: Readonly<Record<AccountRef, string>>;
   privateState?: {
     read(item: ItemRef): Promise<string | undefined>;
     write(item: ItemRef, body: string, expected: string | undefined): Promise<void>;
@@ -68,15 +68,15 @@ async function save(ctx: Context, item: ItemRef, revision: RevisionRef, thread: 
 
 async function create(input: { title: string; participants: AccountRef[] }, ctx: PeopleContext) {
   const ids = [...new Set([ctx.author.actor, ...input.participants])];
-  if (ids.length < 2 || ids.length > 64 || ids.some(id => id !== ctx.author.actor && !ctx.checkedPeople?.includes(id))) {
-    throw new Error("Participants unavailable.");
-  }
+  if (ids.length < 2 || ids.length > 64) throw new Error("Participants unavailable.");
+  if (!ctx.visiblePeople || !ctx.createShared) throw new Error("Shared conversation creation unavailable.");
+  const names = new Map((await ctx.visiblePeople(ids)).map(({ id, name }) => [id, name]));
+  if (ids.some(id => !names.has(id))) throw new Error("Participants unavailable.");
   const thread: Thread = {
     id: step(ctx.author.request_id, `thread-${ctx.author.actor}`),
     title: checkedTitle(input.title), created: ctx.author.authored_at, conversation: "people",
-    participants: ids.map(id => personParticipant(id, id === ctx.author.actor ? ctx.author.actor_label : ctx.personLabels?.[id])), messages: [],
+    participants: ids.map(id => personParticipant(id, (id === ctx.author.actor ? ctx.author.actor_label : undefined) ?? names.get(id))), messages: [],
   };
-  if (!ctx.createShared) throw new Error("Shared conversation creation unavailable.");
   const head = await ctx.createShared({
     request_id: step(ctx.author.request_id, "people-create"), kind, folders: [folder(thread)], name: "Conversation.md", attempt_discovery: "consent_only",
     metadata: { title: thread.title }, body: inlineBody(Buffer.from(encode(thread))),
