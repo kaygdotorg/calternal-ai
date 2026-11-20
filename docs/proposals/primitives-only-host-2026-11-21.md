@@ -36,7 +36,7 @@ a plugin built from the same parts a stranger's plugin gets.
 | Area | Was (on `dev` and in revision 14) | Is | Example |
 | --- | --- | --- | --- |
 | Size | About 160,000 lines of Rust, about 17,900 of them app-specific; a 17,200-line contract with about 60 concepts and 312 numbers | A file server with five parts and no app code | Chat's 1,884 lines and 1,317-line test host become about 100 lines |
-| Storage | Files, plus per-app engines, spans, a viewer record, layout tables | Markdown files with four writes; host state for stamps, grants and consent | A chat is `Chats/Lisbon crew/2026-11.md` |
+| Storage | Files, plus per-app engines, spans, a viewer record, layout tables | Markdown files with four writes; host state for stamps, grants and consent | A chat is `Chats/Lisbon crew/chat.md` |
 | Lists | Binds, sources, extractors, search profiles, layout sections | One query shape; a collection is a file holding a saved query and hand-added items | "Unread" is `{ kind: reading, where: { read: false } }` |
 | Who may do what | Six audiences, activation contexts, leases, five write checks | One check per call at one table; consent per author for anything that can send data out | Claude sees Lee's messages only after Lee says yes |
 | Running things | Jobs, intents, attempts, successors, controls, a spool, a relay, acknowledgements | One work table; a box; a run talks through three host calls | A run survives a server restart because its log just syncs |
@@ -124,7 +124,7 @@ sections):
 | Class | What | Rebuildable | Example |
 | --- | --- | --- | --- |
 | Userdata (files) | Items, collections, sidebars, per-person state, attachments | No: it is the truth | `.people/<uuid>/calternal-chat.md` holds Lee's read positions |
-| Host state | Stamps and history, each file's kind and ID, receipts, grants, consent, approvals, picks, sign-in, the work table, the audit trail | No | "Lee agreed that Claude may read Lee's messages in Lisbon crew" |
+| Host state | Stamps and history, each file's kind and ID, receipts, grants, consent, approvals, picks, sign-in, the work table, the audit trail (and a copy of each record's text only if fork D5 chooses it) | No | "Lee agreed that Claude may read Lee's messages in Lisbon crew" |
 | Appdata | Index, search, link table, caches, live windows | Yes, from userdata plus host state | Unread counts |
 
 Host state is the same class as `auth.db` and history are today (ADR 0062:
@@ -242,8 +242,24 @@ outbound-capable readers.
 - Edit in place: the file shows the latest text; old versions live in
   history, shown to the author. Delete for everyone leaves `*deleted*` and
   scrubs history and search.
-- Long files: whether record files are split into monthly segments waits
-  for the large-file measurement (question D5).
+- **No segments** (measured, [record-files measurement](https://git.kayg.org/kayg/calternal-ai/src/commit/1cf1172d/docs/measurements/record-files-2026-11-21.md); confirm A24): a chat is one record file.
+  Append costs the same at every size (13 ms p50 from 1 MiB to 256 MiB:
+  two lookups, two flushes). An edit or delete of a recent record is flat.
+  A delete, or any change that makes a record shorter, is written in place
+  padded to the old length and is flat anywhere in the file. Only an edit
+  that grows an old record rewrites the rest of the file (about 16 ms per
+  MiB after it), which Chat's 48-hour window never does; a kind that allows
+  growing edits anywhere may cap its file size (64 MiB keeps the worst case
+  near 1 s).
+- **A tampered header** (a changed name or a mangled anchor) is a byte
+  change that is not a pure append, so it becomes a conflict copy like any
+  other, and the record file keeps what host state knows. Renderers draw
+  the author's name from the stamp, never from the header line, so a
+  changed name is never shown as the author. Checking a file after an
+  outside edit re-reads it (2.2 s at 256 MiB), so it runs off the request
+  path.
+- What host state keeps of each record (a copy of its text, or only hashes,
+  offsets and stamps) is owner question D5.
 
 ### 4.6 Runs
 
@@ -291,37 +307,38 @@ record, paging, composer, actions) from the same declarations, with a
 Svelte renderer and a SwiftUI renderer in the iPhone Simulator. About 22
 lines of declaration for both apps; about 650 lines of generic renderer
 per platform; no app-specific drawing code. It holds with these changes,
-which are now part of the design:
+which are now part of the design (the spike numbers them D and W; here
+they are SD and SW to keep them apart from the Data questions):
 
 **Declarations**
 
 | # | Change |
 | --- | --- |
-| D1 | A kind's row action carries a title, icon, `when` and placement: `actions: { done: { set: { read: true }, title: "Mark read", icon: "check", when: { read: false }, place: "swipe" } }`. These are interface declarations over the kind's write grant, not operations. |
-| D2 | A kind's create form has a title: `create: { title: "Add link", inputs: ["url", "title"] }`. |
-| D3 | Fields carry a label: `url().label("Link")` (and later translations). |
-| D4 | Fields with few values name them: `bool(false).values({ false: "To read", true: "Read" })`; a `choice([...])` field does the same for other types. Boards and group headings show these names. |
-| D5 | A collection may `group` by a field; a board needs it. |
-| D6 | **A quote is a field of the record** (`quote: link()` to the quoted record's anchor), drawn by the record look's `quote` place, not a link at the start of the body. |
-| D7 | An action may set `defaults` (a form's starting values, such as the record's text for Edit) beside fixed `inputs`. |
-| D8 | **Choosing an agent's harness is a pick among the parts filling a slot** (`pick: { harness: "calternal-chat-ai/harness" }`), never a typed field. |
-| D9 | **A composer part says which of its values feeds each input of the operation it calls**: `inputs: { text: "draft", quote: "quote" }`. The target is filled by the host (§4.3). |
-| D10 | Every collection a package declares has an `id`; sidebars link collections by `<plugin>/<id>`. |
-| D11 | A look place may list fallbacks, the first non-empty wins: `title: ["title", "people"]` (a one-to-one chat has no title). A list, not an expression. |
+| SD1 | A kind's row action carries a title, icon, `when` and placement: `actions: { done: { set: { read: true }, title: "Mark read", icon: "check", when: { read: false }, place: "swipe" } }`. These are interface declarations over the kind's write grant, not operations. |
+| SD2 | A kind's create form has a title: `create: { title: "Add link", inputs: ["url", "title"] }`. |
+| SD3 | Fields carry a label: `url().label("Link")` (and later translations). |
+| SD4 | Fields with few values name them: `bool(false).values({ false: "To read", true: "Read" })`; a `choice([...])` field does the same for other types. Boards and group headings show these names. |
+| SD5 | A collection may `group` by a field; a board needs it. |
+| SD6 | **A quote is a field of the record** (`quote: link()` to the quoted record's anchor), drawn by the record look's `quote` place, not a link at the start of the body. |
+| SD7 | An action may set `defaults` (a form's starting values, such as the record's text for Edit) beside fixed `inputs`. |
+| SD8 | **Choosing an agent's harness is a pick among the parts filling a slot** (`pick: { harness: "calternal-chat-ai/harness" }`), never a typed field. |
+| SD9 | **A composer part says which of its values feeds each input of the operation it calls**: `inputs: { text: "draft", quote: "quote" }`. The target is filled by the host (§4.3). |
+| SD10 | Every collection a package declares has an `id`; sidebars link collections by `<plugin>/<id>`. |
+| SD11 | A look place may list fallbacks, the first non-empty wins: `title: ["title", "people"]` (a one-to-one chat has no title). A list, not an expression. |
 
 **Wire format and generic components**
 
 | # | Change |
 | --- | --- |
-| W1 | Values carry their type: an instant is `{ "at": "…Z" }`, a person list is `{ "people": [{ id, name, me }] }`; other values are JSON scalars. The client formats times in the viewer's zone. |
-| W2 | A window carries exactly the values the looks and their `when` conditions name, keyed by those names (including derived ones such as `site(url)`, `me.unread`), plus the collection's `group` field. This is how a list draws while its plugin sleeps. |
-| W3 | A records window carries the viewer's position, the unread count and pages with a cursor for paging from the bottom. |
-| W4 | **The host sends quoted records already resolved for the viewer** (`refs: { anchor: { author, excerpt } }`, or `{ gone: true }` for a deleted one), as plain text. The client never fetches another person's record to draw a quote. |
-| W5 | **A stamp carries the run's display name and icon** (`run: { name: "Claude", icon: "claude" }`), so "Claude for you" draws without the plugin. |
-| W6 | The viewer's picks and a slot's eligible parts are sent as values, for `pick:` inputs. |
-| W7 | **A closed icon list**, mapped per platform (the web icon set and SF Symbols); a declaration naming an unknown icon fails at install. |
-| W8 | A mention in a body is a Markdown link with the `person:` scheme (`[@Ana](person:p-ana)`); the composer inserts it from its people picker, and the renderer draws it as a mention. |
-| W9 | **Order in declarations is meaningful** (field order is form order, action order is menu order). The wire format uses arrays for ordered things, because Swift's JSON decoders lose object key order. |
+| SW1 | Values carry their type: an instant is `{ "at": "…Z" }`, a person list is `{ "people": [{ id, name, me }] }`; other values are JSON scalars. The client formats times in the viewer's zone. |
+| SW2 | A window carries exactly the values the looks and their `when` conditions name, keyed by those names (including derived ones such as `site(url)`, `me.unread`), plus the collection's `group` field. This is how a list draws while its plugin sleeps. |
+| SW3 | A records window carries the viewer's position, the unread count and pages with a cursor for paging from the bottom. |
+| SW4 | **The host sends quoted records already resolved for the viewer** (`refs: { anchor: { author, excerpt } }`, or `{ gone: true }` for a deleted one), as plain text. The client never fetches another person's record to draw a quote. |
+| SW5 | **A stamp carries the run's display name and icon** (`run: { name: "Claude", icon: "claude" }`), so "Claude for you" draws without the plugin. |
+| SW6 | The viewer's picks and a slot's eligible parts are sent as values, for `pick:` inputs. |
+| SW7 | **A closed icon list**, mapped per platform (the web icon set and SF Symbols); a declaration naming an unknown icon fails at install. |
+| SW8 | A mention in a body is a Markdown link with the `person:` scheme (`[@Ana](person:p-ana)`); the composer inserts it from its people picker, and the renderer draws it as a mention. |
+| SW9 | **Order in declarations is meaningful** (field order is form order, action order is menu order). The wire format uses arrays for ordered things, because Swift's JSON decoders lose object key order. |
 
 ## 5. Security
 
@@ -385,8 +402,8 @@ not recounted after the fixes.
 | Part | How |
 | --- | --- |
 | Kind | `reading`: `url`, `title`, `read`. Row: title and site; card: title, site, image. |
-| Writes | No operations. The kind's write grant lets the interface call the host's create and set: a create form titled "Add link" (D2) and a "Mark read" swipe shown only on unread items (D1). Fields carry labels ("Link", D3). |
-| Sidebar | Collections "Unread" (`{ kind: reading, where: { read: false } }`) and "All", which can be drawn as a board grouped by `read` with columns "To read" and "Read" (D4, D5). Drawn on the web and in the iPhone Simulator by the drawing spike. |
+| Writes | No operations. The kind's write grant lets the interface call the host's create and set: a create form titled "Add link" (SD2) and a "Mark read" swipe shown only on unread items (SD1). Fields carry labels ("Link", SD3). |
+| Sidebar | Collections "Unread" (`{ kind: reading, where: { read: false } }`) and "All", which can be drawn as a board grouped by `read` with columns "To read" and "Read" (SD4, SD5). Drawn on the web and in the iPhone Simulator by the drawing spike. |
 | Plugin | `calternal-reading-list`, about 10 lines; no box ever starts. |
 
 ### 6.2 Notes
@@ -405,12 +422,12 @@ not recounted after the fixes.
 
 | Part | Plugin | How |
 | --- | --- | --- |
-| The chat | `calternal-chat` | A record kind in `Chats/<name>/`. Each message is a record; only its author edits (48 hours, Chat's rule; the Edit form starts from the record's text, D7) or deletes it for everyone. A one-to-one chat's row falls back from its title to its people (D11). |
+| The chat | `calternal-chat` | One record file per chat, `Chats/Lisbon crew/chat.md` (a folder per chat, as the owner decided for chat files, which also holds its attachments; no monthly files). Each message is a record; only its author edits (48 hours, Chat's rule; the Edit form starts from the record's text, SD7) or deletes it for everyone. A one-to-one chat's row falls back from its title to its people (SD11). |
 | Unread, draft, mute | `calternal-chat` | Per-person state; `read.<chat>` drives `unread`; `muted.<chat>` makes the host drop pushes for that person. |
 | Sidebar | `calternal-chat` | Pinned (a strip view of a personal collection), Groups, People, Cals, Harnesses, Archived; each a collection. |
-| Quotes | `calternal-chat` | A `quote` field of the record holding the quoted record's anchor (D6). The host sends it resolved for the viewer (W4); a deleted message shows as gone wherever it is quoted. |
-| Composer | `calternal-chat-composer` | Fills the composer slot (picked per person); declares which of its values feeds each input of `send` (D9); inserts mentions as `person:` links (W8); the host fills the target. |
-| Agents | `calternal-chat-ai` + `calternal-chat-claude-code` | Outbound-capable, so they receive only consented writing. `chat-ai` starts the harness the person picked from the parts filling its slot (D8, W6); the host asks other authors and resolves the start after the consent freeze, and only then is the prompt posted. The run's target is the chat; its reads are the selected records. Replies are fenced calls from the run, drawn with the run's name and icon from the stamp ("Claude for Ana", W5). Only the actor may steer it; anyone in the chat may Stop it. |
+| Quotes | `calternal-chat` | A `quote` field of the record holding the quoted record's anchor (SD6). The host sends it resolved for the viewer (SW4); a deleted message shows as gone wherever it is quoted. |
+| Composer | `calternal-chat-composer` | Fills the composer slot (picked per person); declares which of its values feeds each input of `send` (SD9); inserts mentions as `person:` links (SW8); the host fills the target. |
+| Agents | `calternal-chat-ai` + `calternal-chat-claude-code` | Outbound-capable, so they receive only consented writing. `chat-ai` starts the harness the person picked from the parts filling its slot (SD8, SW6); the host asks other authors and resolves the start after the consent freeze, and only then is the prompt posted. The run's target is the chat; its reads are the selected records. Replies are fenced calls from the run, drawn with the run's name and icon from the stamp ("Claude for Ana", SW5). Only the actor may steer it; anyone in the chat may Stop it. |
 | Notifications | `calternal-chat-notify` | Watches changes, notifies mentioned people; picked per space; the host drops pushes for muted recipients. |
 | Restart | host | The log syncs when the server returns; inputs arrive once; Stop reaches the exact run. |
 
@@ -447,7 +464,7 @@ server. Estimates are rough.
 
 | Measurement | Decides |
 | --- | --- |
-| Append, edit and delete-with-history-scrub on a 64 MiB record file | D5: if cost is flat in file size, there are no segments |
+| ~~Append, edit and delete on large record files~~ **Done** ([record-files measurement](https://git.kayg.org/kayg/calternal-ai/src/commit/1cf1172d/docs/measurements/record-files-2026-11-21.md), 1 to 256 MiB): append flat at 13 ms p50; recent edits and shrinking changes flat; only growing an old record rewrites the rest; the ledger is 1.6 times the chat file | No segments (A24); fork D5 (what the ledger keeps). Not run as its own layout: one file with padding on shrink |
 | ~~Plugin process memory and cold start (#103)~~ **Done**: about 16 MiB per process, nothing when idle, 35 to 51 ms cold start cached; shared runtime rejected | T2 (recommendation stands), A23, operator defaults |
 | Still unmeasured from #103: the product's in-guest sandbox (seccomp, user separation), the real broker, and several spaces waking at once | Space wake budget and the per-account ceiling (T10) |
 | A live window's save path against the 40 ms gate without stored row sets | Step 2's window design |
@@ -477,7 +494,7 @@ Accepted unless you object.
 
 | # | Decision | Reason |
 | --- | --- | --- |
-| A1 | Host state (stamps, grants, consent, approvals, picks, sign-in, work) is a store beside the files, backed up with them, with a read-only Markdown copy for people to read. A file's kind and ID are host-state facts. | It is the class `auth.db`, history and sharing already are (ADR 0062); a file a share or plugin can edit cannot hold who agreed to what. |
+| A1 | Host state (stamps, grants, consent, approvals, picks, sign-in, work) is a store beside the files, backed up with them, with a read-only Markdown copy for people to read. A file's kind and ID are host-state facts. Whether it also keeps a copy of each record's text is fork D5. | It is the class `auth.db`, history and sharing already are (ADR 0062); a file a share or plugin can edit cannot hold who agreed to what. |
 | A2 | Every plugin, official or not, always runs in the sandbox. | First-party plugins are not special. |
 | A3 | A generic records view (authors, times, edits, deletes, quotes) is in the host's catalogue. | Native system controls first. **Shown to work** by the drawing spike: one generic records component per platform drew Chat's transcript on the web and in SwiftUI with no chat words. |
 | A4 | GenUI is deleted; agents show forms through declarations, anything richer in a frame. | One description language; closed drawing. |
@@ -500,6 +517,7 @@ Accepted unless you object.
 | A21 | Record files accept outside changes only as pure appends; anything else becomes a conflict copy. | Only authors change records. |
 | A22 | Request IDs are derived by the host; authors never write them. | Retries stay exact without author bookkeeping. |
 | A23 | No shared runtime per publisher: the earlier agreement to try one is answered by measurement. | [#103 measurement](https://git.kayg.org/kayg/calternal-ai/src/branch/lane/plugin-memory/docs/measurements/plugin-split-memory-2026-11-20.md): worker threads in one runtime saved only 10 MiB at seven plugins and cost more at one or two; calls took about twice as long; a native crash or the OOM killer took every plugin in the runtime; one plugin wrote a frame the host accepted as another's reply; and in Node 24.21.0 a worker thread could read any file below the process's current directory regardless of its permissions. |
+| A24 | No monthly segments for record files: a chat is one file. Shrinking changes and deletes are written in place with padding; a kind that allows growing edits of old records may cap its file size (64 MiB keeps the worst case near 1 s). | Measured ([record-files measurement](https://git.kayg.org/kayg/calternal-ai/src/commit/1cf1172d/docs/measurements/record-files-2026-11-21.md)): append is 13 ms p50 at every size from 1 to 256 MiB; only growing an old record costs more (about 16 ms per MiB after it), which Chat's 48-hour edit window never does. |
 
 ### B. The real forks
 
@@ -743,19 +761,36 @@ edit), shown as "deleted by a manager"**; chats between people (T8) stay
 authors only.
 *Recommendation:* (b).
 
-**D5. Are long record files split into monthly segments?** *(pending
-measurement)*
-*What:* a record file could be capped and rolled over monthly, so a long
-chat becomes a folder of files.
-*Why now:* every record app is written against one answer.
-*Example:* Lee quotes a message from last year in a two-year-old chat.
-*What removes the question:* if append, edit and delete with history
-scrub on a 64 MiB record file cost about the same as on a small one (the
-measurement running tonight), there are no segments.
-*Options if the cost grows:* (a) the host shows a segmented kind as one
-logical file (reads, unread, triggers and sharing span the segments).
-(b) Plugins handle segments. Cost: every record app re-implements rollover.
-*Recommendation:* no segments if flat; otherwise (a).
+**D5. Does host state keep a copy of every record's text?**
+*What:* the measured design keeps, beside each record's stamp, a copy of
+its current text in host state (the ledger). It could instead keep only
+what identifies a record: a hash of its bytes, where it sits in the file,
+and its stamp.
+*Why now:* it decides whether chat text lives anywhere except the files,
+against your rule "userdata is strictly files", and how big the ledger is.
+*Example:* Lee edits a chat file directly on the server's disk with Vim and
+rewrites one of Sam's messages; or the disk damages the file.
+*Options:*
+- (a) **The ledger keeps the text.** A damaged or outside-edited file can be
+  repaired from it, and edits can be checked word for word. Cost: the ledger
+  is 1.6 times the size of the chat files (measured); every message is held
+  a second time outside the files; delete for everyone must also scrub the
+  ledger (secure delete plus a WAL truncate: three more flushes), which
+  still does not reach free disk space, snapshots or existing backups.
+- (b) **The ledger keeps only hashes, offsets and stamps.** The files are
+  the only copy. Changes made through Calternal or the file share are still
+  checked before they land, because the host serves the share and has the
+  current file when the write arrives, so it can refuse the change and
+  write a conflict copy. A change made directly on the server's disk is
+  detected (the hash no longer matches): the changed records are stamped
+  `outside` and left out for agents, but the old words can only be restored
+  from a backup. Cost: no repair of direct disk edits or disk damage.
+  History (about 250 bytes per edit, measured) still holds old versions for
+  their author, as history does today.
+
+*Recommendation:* (b). The copy only buys repair of edits made on the
+server's own disk, which needs administrator access anyway, and it costs
+1.6 times the space and a second copy of every message outside the files.
 
 **D6. Do collections and sidebars span spaces?**
 *What:* a collection is a file in one space; you may want one sidebar
@@ -903,7 +938,7 @@ on `dev`, of `6c432d33`.
 | --- | --- |
 | 60 author names; different names across sections | One vocabulary and one query form (§4.2); `authoring.md` corrected |
 | Record policy knobs | Cut: one rule (§4.5); manager deletion is fork D4 |
-| Monthly segments | Kept as fork D5, pending the large-file measurement |
+| Monthly segments | Settled by measurement: no segments (A24); what the ledger keeps is fork D5 |
 | Handles and the designation rule | Replaced by the reach set (§4.3), with what is left open stated |
 | Marked chains | Replaced by consent at the point of delivery (§4.4) |
 | Withheld markers | Replaced by one `omitted` count |
