@@ -382,7 +382,7 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                     errors.append(f"$.binds[{index}]{relative_path[1:]}.{key}: RowImageRef cannot be a predicate operand")
         for pred in errors.each(predicates):
             meta = field_meta(entry, pred["field"])
-            if meta.get("audience") == "viewer_self" and not (pred.get("op") == "eq" and pred.get("value") == {"viewer": "person"}):
+            if meta.get("audience") == "viewer_self" and meta.get("type") == "AccountRef" and not (pred.get("op") == "eq" and pred.get("value") == {"viewer": "person"}):
                 errors.append(f"{path}: {pred['field']!r} is viewer-only: it accepts only `eq` with {{viewer: person}}")
 
 
