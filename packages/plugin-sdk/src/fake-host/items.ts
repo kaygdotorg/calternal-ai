@@ -74,7 +74,7 @@ export class Items {
   private scopes = new Map<string, { item: string; slot: string; revision: string }>();
   private cursors = new Map<string, { item: string; revision: string; actor: string; after: number }>();
   private viewers = new Map<string, { version: string; fields: Record<string, string | number | boolean>; read?: number }>();
-  private quoteCopies = new Map<string, number>();
+  private quoteCopies = new Map<string, Set<string>>();
 
   /** Create an engine using the host's ID source, clock and space ref. */
   constructor(private id: (prefix: string) => string, private now: () => string, private space: string) {}
@@ -146,7 +146,8 @@ export class Items {
       ensure(origin && origin.package === inv.pkg.manifest.id && span && span.middle_length > 0 && span.attribution && origin.bindings.has(quote.span),
         403, "quote_unavailable", "The quoted message is unavailable.");
       const record = origin.bindings.get(quote.span)!.record;
-      ensure((this.quoteCopies.get(record) ?? 0) < QUOTE_COPIES_PER_SOURCE, 409, "quote_copy_limit", `A message can be quoted at most ${QUOTE_COPIES_PER_SOURCE} times.`);
+      const copies = this.liveCopies(record).reduce((sum, [, count]) => sum + count, 0);
+      ensure(copies < QUOTE_COPIES_PER_SOURCE, 409, "quote_copy_limit", `A message can be quoted at most ${QUOTE_COPIES_PER_SOURCE} times.`);
       block = quoteBlock(origin.revisions.get(quote.revision)!.subarray(span.middle_offset, span.middle_offset + span.middle_length));
       ensure(Buffer.byteLength(block) <= QUOTE_BYTES, 413, "quote_limit", `The quote exceeds ${QUOTE_BYTES} bytes.`);
       quoted = { record, source: quote, origin: span.attribution };
@@ -163,6 +164,15 @@ export class Items {
     return { bytes, prefix: Buffer.byteLength(prefix), quote: Buffer.byteLength(block), middle: Buffer.byteLength(middle), attribution, quoted };
   }
 
+  /** Destinations still holding live quote copies of `record`, with their copy counts. */
+  private liveCopies(record: string): [string, number][] {
+    return [...this.quoteCopies.get(record) ?? []].flatMap(destination => {
+      const item = this.items.get(destination);
+      const count = item?.spans.filter(entry => item.bindings.get(entry.span)?.quoted?.record === record).length ?? 0;
+      return count ? [[destination, count] as [string, number]] : [];
+    });
+  }
+
   private record(stored: StoredItem, offset: number, composed: Composed, anchor?: string, record?: string): string | undefined {
     if (!composed.bytes.length) return undefined;
     const span = this.id("span");
@@ -177,7 +187,7 @@ export class Items {
     }
     const entry = prior?.anchor ? { anchor: prior.anchor, ordinal: prior.ordinal } : anchor ? { anchor, ordinal: ++stored.entries } : {};
     stored.bindings.set(span, { record: record ?? span, ...entry, ...(composed.quoted && { quoted: { record: composed.quoted.record, source: composed.quoted.source } }) });
-    if (composed.quoted) this.quoteCopies.set(composed.quoted.record, (this.quoteCopies.get(composed.quoted.record) ?? 0) + 1);
+    if (composed.quoted) this.quoteCopies.set(composed.quoted.record, (this.quoteCopies.get(composed.quoted.record) ?? new Set()).add(stored.id));
     return span;
   }
 
@@ -327,8 +337,13 @@ export class Items {
     let span: string | undefined;
     const opaque = Boolean(stage) || input.body !== undefined;
     if (opaque) {
-      const quoted = stored.spans.some(entry => stored.bindings.get(entry.span)?.quoted);
-      ensure(!quoted, 409, "quote_tracking", "A whole-body change cannot discard a checked quote.");
+      // Same-item quotes go with the rewrite; a quote from or into another item would lose its tracking.
+      const foreign = stored.spans.some(entry => {
+        const binding = stored.bindings.get(entry.span);
+        return (binding?.quoted && binding.quoted.source.item !== stored.id) ||
+          this.liveCopies(binding?.record ?? "").some(([destination]) => destination !== stored.id);
+      });
+      ensure(!foreign, 409, "quote_tracking", "A whole-body change cannot discard a checked quote from or into another item.");
     }
     if (input.attested && input.replace_span) {
       const prior = stored.spans.find(entry => entry.span === input.replace_span);

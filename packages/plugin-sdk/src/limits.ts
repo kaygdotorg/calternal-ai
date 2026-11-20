@@ -64,8 +64,9 @@ type Node = { type?: unknown; children?: unknown; text?: unknown };
 
 /**
  * Check an item view page against the snapshot byte, node and depth bounds
- * and each snapshot-text node against its character and byte bound. Cost:
- * one serialization plus one walk of the tree.
+ * and each snapshot-text node against its code point bound (the description
+ * counts code points; the page byte bound applies separately). Cost: one
+ * serialization plus one walk of the tree.
  */
 export function checkItemView(view: { content: unknown }): void {
   checkLimit("VIEW_SNAPSHOT_BYTES", utf8Length(JSON.stringify(view)), "The item view page");
@@ -75,7 +76,6 @@ export function checkItemView(view: { content: unknown }): void {
     checkLimit("VIEW_SNAPSHOT_NODES", ++nodes, "The item view node count");
     if (node.type === "snapshot-text" && typeof node.text === "string") {
       checkLimit("SNAPSHOT_TEXT_CHARACTERS", [...node.text].length, "A snapshot-text node");
-      checkLimit("SNAPSHOT_TEXT_CHARACTERS", utf8Length(node.text), "A snapshot-text node, in UTF-8 bytes,");
     }
     if (Array.isArray(node.children)) for (const child of node.children) walk(child as Node, depth + 1);
   };

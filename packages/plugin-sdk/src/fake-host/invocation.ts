@@ -82,6 +82,8 @@ export interface Invocation {
   readonly captured?: Captured;
   /** The job this invocation runs, if any. */
   readonly job?: Job;
+  /** The job whose attempt runs this contribution entry; Stop fences its calls. */
+  readonly attempt?: Job;
   /** Items created in this invocation, for the `creates` check. */
   readonly created: Set<string>;
 }

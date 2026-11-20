@@ -58,7 +58,7 @@ const table = [
   ["VIEW_SNAPSHOT_DEPTH", "catalogue", "/view_snapshots/bounds/max_depth", "levels", undefined,
     "Deepest nesting of one item view page."],
   ["SNAPSHOT_TEXT_CHARACTERS", "description", "/$defs/SnapshotText/properties/text/maxLength", "characters", undefined,
-    "Longest text in one snapshot-text node; the SDK also refuses text over this many UTF-8 bytes."],
+    "Most Unicode code points in one snapshot-text node; the page byte bound applies separately."],
   ["VIEWER_FIELDS", "catalogue", "/$defs/ViewerItemState/properties/fields/maxProperties", "fields", undefined,
     "Most viewer-private fields one item may hold for one account."],
   ["REF_CHARACTERS", "catalogue", "/$defs/Ref/maxLength", "characters", undefined,

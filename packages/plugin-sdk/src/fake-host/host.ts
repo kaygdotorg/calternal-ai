@@ -149,9 +149,12 @@ export class FakeHost {
     this.extras.set(packageId, { ...this.extras.get(packageId), ...extras });
   }
 
-  /** Make the next call of `method` refuse before any effect, or commit and then lose its acknowledgement. */
-  failNext(method: BrokerMethod, failure: Failure): void {
-    this.failures.set(method, failure);
+  /**
+   * Make the next call of `method` refuse before any effect, or commit and
+   * then lose its acknowledgement. `packageId` limits it to one package.
+   */
+  failNext(method: BrokerMethod, failure: Failure, packageId?: string): void {
+    this.failures.set(packageId === undefined ? method : `${packageId}/${method}`, failure);
   }
 
   /** Issue a checked harness and placement for an installed harness contribution. */
@@ -343,16 +346,19 @@ export class FakeHost {
     const record: BrokerCall = { package: inv.pkg.manifest.id, operation: inv.operation.id, method, input: structuredClone(input) };
     this.calls.push(record);
     try {
-      if (inv.job) ensure(inv.job.state === "running", 409, "attempt_retired", "This attempt was stopped (attempt retired).");
+      const fence = inv.job ?? inv.attempt;
+      if (fence) ensure(fence.state === "running", 409, "attempt_retired", "This attempt was stopped (attempt retired).");
       if (!(inv.operation.methods as readonly string[]).includes(method)) {
         throw notDeclared(`Method ${method}`, `operations[${inv.index}].methods`, `Add "${method}" to the methods of ${inv.operation.id}.`);
       }
       const exchange = (BROKER_METHODS as Record<string, { input: string; output: string }>)[method];
       ensure(exchange, 501, "not_pinned", `The pinned contract has no exchange for ${method}.`);
       this.schemas.check(exchange.input, input, `The ${method} input`);
-      const failure = this.failures.get(method);
+      const scoped = `${inv.pkg.manifest.id}/${method}`;
+      const failureKey = this.failures.has(scoped) ? scoped : method;
+      const failure = this.failures.get(failureKey);
       if (failure instanceof HostRefusal) {
-        this.failures.delete(method);
+        this.failures.delete(failureKey);
         throw failure;
       }
       const request = (input as { request_id?: string }).request_id ?? (method === "start_job" ? inv.request_id : undefined);
@@ -363,14 +369,20 @@ export class FakeHost {
       if (saved) {
         ensure(saved.fingerprint === fingerprint, 409, "request_conflict", "This request ID was used with different input (conflicting replay).");
         output = structuredClone(saved.result);
+        // An exact replay of a create still names this invocation's created item.
+        if (method === "item_create") inv.created.add((output as { item: string }).item);
       } else {
         output = await this.effect(inv, method, input);
         this.schemas.check(exchange.output, output, `The ${method} reply`);
         const conflict = output && typeof output === "object" && "code" in output;
         if (key !== undefined && !conflict) this.receipts.set(key, { fingerprint, result: structuredClone(output) });
+        // A replayed begin of a committed staged save returns the save's receipt.
+        const begin = method === "item_save" && (input as { staged?: string }).staged !== undefined && !conflict
+          ? this.receipts.get(JSON.stringify([inv.pkg.manifest.id, inv.actor, "item_save_begin", request])) : undefined;
+        if (begin) this.receipts.set(JSON.stringify([inv.pkg.manifest.id, inv.actor, "item_save_begin", request]), { ...begin, result: structuredClone(output) });
       }
       if (failure === "lose_ack") {
-        this.failures.delete(method);
+        this.failures.delete(failureKey);
         throw new HostRefusal(503, "ack_lost", "The connection dropped after the host committed the call (acknowledgement lost).");
       }
       record.output = output;
@@ -384,7 +396,7 @@ export class FakeHost {
   private async *entry(job: Job, call: string, input: unknown, choice: Choice): AsyncIterable<unknown> {
     const inv: Invocation = {
       pkg: choice.contributor, operation: choice.operation, index: choice.contributor.manifest.operations.indexOf(choice.operation),
-      actor: job.starter, request_id: call, created: new Set(),
+      actor: job.starter, request_id: call, created: new Set(), attempt: job,
     };
     const ctx = this.contextFor(inv);
     const handler = choice.contributor.handlers[choice.operation.id];

@@ -189,6 +189,7 @@ describe("limits", () => {
     expect(() => encodeContributionFrame({ text: "x".repeat(20000) })).toThrow(LimitError);
     expect(() => encodeContributionFrame({ text: "x".repeat(20000) }))
       .toThrow(/CONTRIBUTION_FRAME_BYTES allows 16384 \(catalogue#\/extension_points\/calls\/limits\/encoded_frame_bytes\)/);
-    expect(() => checkItemView({ content: { type: "snapshot-text", text: "é".repeat(1500) } })).toThrow(/SNAPSHOT_TEXT_CHARACTERS/);
+    expect(() => checkItemView({ content: { type: "snapshot-text", text: "é".repeat(2001) } })).toThrow(/SNAPSHOT_TEXT_CHARACTERS/);
+    expect(() => checkItemView({ content: { type: "snapshot-text", text: "🦊".repeat(2000) } })).not.toThrow();
   });
 });
