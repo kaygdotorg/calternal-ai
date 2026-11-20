@@ -1,0 +1,7 @@
+// Build settings for the keyboard spike. Placeholders only: the real team, bundle identifier
+// and App Group live in Local.xcconfig (untracked; copy Local.xcconfig.example). Without it the
+// project still builds for the Simulator.
+SPIKE_BUNDLE_ID = com.example.kbspike
+SPIKE_APP_GROUP = group.$(SPIKE_BUNDLE_ID)
+DEVELOPMENT_TEAM =
+#include? "Local.xcconfig"
