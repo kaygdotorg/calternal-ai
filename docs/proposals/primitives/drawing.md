@@ -43,9 +43,9 @@ not redesign them.
 | **App** (name, icon, kinds, default sidebar, slots it offers) | plugin author | package | package |
 | **Part** (fills a named slot) | plugin author | package | package |
 | **Collection** (query, hand-added items, views, collection fields) | person, or a plugin's default | a Markdown file in the space (Questions section), or read-only inside a package | userdata: kept until deleted, like a note; size cap (operator default, proposed 256 KiB) |
-| **Sidebar** (ordered collections, each shown small) | person; default from the app | a Markdown file (owner decided: a visible file with the collections) | as a collection |
-| **Interface state** (last view per collection, sort override, picked parts) | the shell, for the person | one private file per person per space, `People/<me>/interface.md` | one file; size cap (proposed 64 KiB); entries for deleted items are dropped on write |
-| **Drafts** (composer text, an unsent form) | the shell, for the person | one private file per person per space, `People/<me>/drafts.md` | removed on send or when the item is trashed; count cap (proposed 500 per person, operator default) |
+| **Sidebar** (ordered collections, each shown small) | person; default from the app | a Markdown file (owner decided: a visible file with the collections). The app's default is in the package; the person's copy, made on first edit, is `.people/<person-uuid>/sidebars/<app>.md` (question 2) | as a collection |
+| **Interface state** (last view per collection, sort override, picked parts) | the shell, for the person | the Files section's per-person state file, `.people/<person-uuid>/calternal-shell.md`, through its buffered `state.set` | that file's bounds (64 KiB, 256 keys, proposed by the Files section); entries for deleted items are dropped on write |
+| **Drafts** (composer text, an unsent form) and **seen positions** | the shell, for the person, under the plugin's keys (`draft.<item>`, the kind's `position` key) | the plugin's per-person file, `.people/<person-uuid>/<plugin-id>.md` | removed on send or when the item is trashed; same bounds |
 | **Device state** (sidebar widths, open windows on the canvas, card size step 3/5/7, scroll positions) | the client | on the device only, never on the server | wiped at sign-out |
 
 Why the last row is not a file: it describes one screen, not the person's content. The
@@ -63,15 +63,16 @@ file or index read that is not already in memory, "flush" means an `fsync`.
 | `view.open` | what to open (app, collection, item, or a part's slot), the space | the checked declaration (from the package cache), the person's sidebar and interface state, the resolved part for each slot | `not_found`, `no_access`, `part_missing` (with the recommended part to turn on) | package declarations: 0 reads (parsed and checked once at install, kept in memory: constant work, gate item 6). Sidebar and interface files: 1 read each the first time, then cached by revision. **0 flushes.** |
 | `window` (Questions section) | a collection, a record file or a facet; a range; the fields the looks need | rows with look fields filled as the viewer | `no_access`; a query the index cannot run fast is refused by the Questions section | index only, 0 file reads; 0 flushes. One query per visible list. |
 | `look.fields` (part of `window`) | none extra: derived from the kinds present in the window | the fields each kind's look names | an unknown field draws blank, never an error | included in the window's read |
-| `state.write` | file (`sidebar`, `interface`, `drafts`), a patch, the expected revision | new revision | `conflict` (another device wrote first: the client merges per entry and retries once) | 1 write, **1 flush**, coalesced: at most one per file per second while the person drags or types, and at once on leave |
+| `state.set` (Files section 1.10) | a key (`draft.<item>`, a seen position, `view.<collection>`), a value | none | over the file's bounds | memory only; the file is written at most every 5 s (operator default) and when the last session closes: **1 flush per interval** |
+| sidebar or collection edit | the file, a patch, the expected revision | new revision | `conflict` (another device wrote first: the client reapplies its one change and retries once) | 1 write, **1 flush** per settled gesture (a drag counts once, when it is dropped) |
 | `action` = a call (Calls section) | operation, inputs from value sources | the operation's result | the call's error, drawn in place | the call's own cost; drawing adds none |
 | `challenge` | an effect the host knows is risky (widen sharing, let an agent read others' writing, a new network destination, install) | the person's yes or no | `declined`, `expired` | 0 flushes until confirmed; then the effect's own write |
 | `frame.open` | a package file (HTML bundle) and the item it is opened on | a sealed frame and a bridge handle | `no_access`, `frame_disabled` | 1 package read (cached); 0 flushes |
 
-Per window request: **0 flushes**. Per sidebar drag: **1 flush** (coalesced). Per typed
-draft: **at most 1 flush a second** per open composer. Nothing on the request path takes
-an installation-wide lock; sidebar and interface files are per person per space, so two
-people never wait on each other.
+Per window request: **0 flushes**. Per sidebar drag: **1 flush**, when dropped. Per typed
+draft or scrolled chat: **at most 1 flush per 5 s** per person and plugin. Nothing on the
+request path takes an installation-wide lock; per-person files are per person per space,
+so two people never wait on each other.
 
 ### 1.3 Kind looks
 
@@ -93,9 +94,11 @@ Rules:
   origin stamps) and from host fields every item has (`title`, `kind`, `created`,
   `updated`, `author`, `excerpt`, `trashed`). A look can therefore be drawn **while its
   plugin sleeps**: no wake, no snapshot.
-- **Per-person fields** use the prefix `me.` (`me.unread`, `me.pinned`). The Questions
-  section computes them from the person's own state, as the person. Nobody else's value is
-  ever visible.
+- **Per-person fields** use the prefix `me.` (`me.unread`, `me.muted`). `me.unread` is
+  the Files section's per-asker value `after_position` (records after the asker's stored
+  anchor, excluding their own; 1 indexed seek and 1 range count per row); other `me.`
+  fields are keys of the person's state file for that item. Nobody else's value is ever
+  visible.
 - **Order is priority.** When room runs out, `detail` drops from its end, `trailing` keeps
   its first entry and folds the rest, `title` ellipsises. There is no maximum count.
 - **Conditions** are one small predicate on a field (`when: "!read"`), nothing more. No
@@ -115,7 +118,7 @@ facet) and the view's options. The view picks the look; the author writes nothin
 | --- | --- | --- | --- | --- | --- | --- |
 | compact list | small | row (one line) | sort, limit shown before "Show more" | `packages/description` `Sidebar.svelte` rows | `List` sidebar style, `Section` | `List` sidebar style |
 | strip | small | leading (avatar or icon), title as label | order (hand-added) | horizontal scroller with edge fade (mockup `ChatSidebar.svelte`) | `ScrollView(.horizontal)` with a gradient mask | same |
-| facet | small | value and count | field, sort by count or name | rows | `List` rows with `.badge` | same |
+| facet | small | value and count | a query with `group: <field>` (Files section's query shape); sort by count or name | rows | `List` rows with `.badge` | same |
 | list | big | row (two lines) | sort, group by a field | `ContentList.svelte` | `List` | `List` |
 | table | big | cell + columns | columns (fields), sort | `<table>` with sticky header | `Table` | `Table` shows only the first column in compact width ([Apple: Table](https://developer.apple.com/documentation/swiftui/table)); the renderer draws the row look instead |
 | board | big | card | group by a choice field, column order | columns that scroll sideways | custom (no system board; written reason: none exists) using `LazyHStack` of `List`s | one column per page, paged sideways |
@@ -161,7 +164,7 @@ crew]]` is a collection file the person made.
 
 | The person does | What changes | Cost |
 | --- | --- | --- |
-| reorder sections | line order | 1 coalesced flush |
+| reorder sections | line order | 1 flush, when dropped |
 | collapse, hide, show | `collapsed` / `hidden` on the line; hidden ones are listed under a "Hidden" entry at the end | same |
 | rename a section | `as "Teams"` on the line: renames it in this sidebar only. Renaming the collection itself is "Rename collection" in its menu | same |
 | make an own section | a new collection file with no query (hand-added only), linked in | 1 file create + 1 sidebar write |
@@ -177,8 +180,10 @@ with `from: <plugin>@<version>`. When the plugin later adds a section to its def
 shell appends it to the person's copy once, marked new; a section the person hid stays
 hidden. No migration code: the rule is "append default entries the file has never listed".
 
-Who sees it: question 2. Recommended: the person's copy lives in `People/<me>/Sidebars/`,
-private; "Share sidebar" copies it into the space's collections.
+Who sees it: question 2 (the Files section asks the same as its question 6). Recommended:
+the person's copy is private, under `.people/<person-uuid>/`; "Share sidebar" copies it
+into the space's collections. Within one collection, hand-added members come first and
+the query's rows follow without duplicates (Files section 1.9).
 
 **Items in two sections.** A chat hand-placed in "Lisbon crew" also matches the "People"
 query. Revision 14 had `repeat.exclusive`. Here: question 5.
@@ -190,9 +195,16 @@ each window's title bar: kind icon, title, the kind's actions in a menu, close, 
 Stop control for any work running for the person in that item (1.8). The arrangement of
 windows is question 3.
 
+**Things waiting for the person** (a consent request, a plugin's question or approval
+from a waiting work unit) are a host collection, "Needs you", shown small at the top of
+the sidebar as the attention card (ui-shell). Revision 14's request cards and its "at most
+3 items" become that collection's compact view, which shows what fits and scrolls. A
+plugin's question is a form declaration bound to its waiting work unit's resume
+operation; a consent request is host-drawn.
+
 **The right panel** is a slot with tabs at its foot (ui-shell decided). Its first tab is
-the AI chat part (picked per space, since what an agent receives is what others' data
-feeds). Further tabs come from the current window's kind (`panels:` in the app) and from
+the AI chat part (picked per space: owner decided that AI parts, whose effects reach
+other people, are the space's pick). Further tabs come from the current window's kind (`panels:` in the app) and from
 parts filling the app's declared panel slots. Every item kind gets an **inspector** tab
 for free: its declared fields as labelled values, editable when the person may write.
 
@@ -212,6 +224,13 @@ declaration (catalogue components) or, where nothing else will do, a sealed fram
 | `<app>.list` (how the app's items are listed) | the app | the kind's own looks | person | the kind's own looks |
 | `<app>.<named>` (any slot an app declares) | the app | the app's recommendation | by the slot's declared effect | as above |
 
+Prior art (prior-art section 1.3): bb fills slots the same way, a slot is declared by
+the plugin that reads it, a crash in one entry is contained by a mount wrapper, and safe
+mode stops all plugins. We copy those three. We do not copy bb's `wrap` (a plugin changing
+what another plugin put in a slot): here only the person's pick decides what fills a slot.
+A part whose declaration fails to load or whose frame crashes draws an error **in its own
+slot only**; the rest of the shell keeps working.
+
 **Not replaceable** (host only, drawn in the host's own layer): sign-in; the profile
 popover and the Settings and Plugins pages behind it; every challenge and consent request;
 the Stop control; the safe-mode switch (all parts off for this session, reachable by a
@@ -221,7 +240,7 @@ movable by a plugin"; this keeps that, and keeps a way back.
 
 **The wordmark morph** is shell behaviour, not a part: the top line shows "calternal" when
 nothing is open and morphs (torph, MIT) into the open app's `name` or the open
-collection's title (owner decided). A plugin supplies only its name. The face is the
+collection's title (owner decided for apps; the mockup does the same for collections). A plugin supplies only its name. The face is the
 person's Appearance setting. On the Mac it sits below the traffic lights (owner decided).
 
 ### 1.7 Forms and actions
@@ -251,17 +270,18 @@ person's Appearance setting. On the Mac it sits below the traffic lights (owner 
   and time from the host's origin stamp, the person's own records on the right, consecutive
   records of one author grouped, day lines, the edited mark, tombstones drawn as nothing,
   quotes as references drawn with the reader's rights (a deleted record shows nothing where
-  it is quoted: owner decided), an unread line from `me.seen`, jump to latest, paging both
+  it is quoted: owner decided), an unread line from the kind's `position` key, jump to latest, paging both
   ways anchored on a record. It is generic: chats, comments on a note, a mail thread, an
   agent's working log. **It needs no plugin and no snapshot to draw.**
 - **Selection in records** gives a range (first and last anchor). An action may take it
-  (`{records: selection}`), for example "Ask Claude about these".
-- **Seen position:** the component writes `me.seen` for the record file into the person's
-  interface file, coalesced (one flush a second at most). Read receipts that others see are
-  the plugin's: when the person's switch is on, the plugin appends its own record.
-- **Drafts:** the composer component keeps its text on the device at once and writes it to
-  `People/<me>/drafts.md` at most once a second and when the window closes. A part filling
-  the composer slot reads its own draft through the slot contract.
+  (`"records.selection"`), for example "Ask Claude about these".
+- **Seen position:** the component stores the last record scrolled into view under the
+  kind's declared `position` key with `state.set` (buffered, one write per 5 s). Read
+  receipts that others see are the plugin's: when the person's switch is on, the plugin
+  appends its own record.
+- **Drafts:** the composer component keeps its text on the device at once and stores it as
+  `draft.<item>` with `state.set`. A part filling the composer slot reads its own draft
+  through the slot contract.
 - **Running work:** a window whose item has work running for the person shows a working
   line from the work unit's state (Running code section) and the run's linked output file;
   Stop is a host control on the window title bar. After a server restart the client
@@ -276,11 +296,28 @@ library). The frame draws inside one window's content area or one part's area.
 | Property | Web | Apple |
 | --- | --- | --- |
 | No access to the host page | `<iframe sandbox="allow-scripts">` without `allow-same-origin`, served from a separate origin per package | `WKWebView` with a non-persistent `WKWebsiteDataStore`, no cookies shared |
-| No network | CSP `default-src 'none'` plus the bundle's own files; `connect-src 'none'` | `WKContentRuleList` blocking every load except the bundle (not sure it covers every path, see 3) |
+| No network (**not fully achievable**, see below) | CSP `default-src 'none'` plus the bundle's own files; `connect-src 'none'`; WebRTC is not covered by CSP or sandbox | served through a `WKURLSchemeHandler` with the same CSP, plus a `WKContentRuleList` blocking every other load; WebRTC not proven blocked |
 | One door out | `postMessage` to a bridge that accepts only `call(operation, inputs)` and `read(item it was opened on)`, checked like any call | one `WKScriptMessageHandler` with the same two messages |
 | Cannot cover host UI | clipped to its rectangle, opaque, no pop-ups, no top navigation, no fullscreen | same |
 | Looks like the app | receives the design tokens (colours, type, motion) as CSS variables | same |
 | Keyboard | Escape and the shell shortcuts always reach the host first | same |
+
+Prior art (prior-art section 1.4): Figma splits a plugin into a sandbox with data and no
+network and an iframe with a screen and no data, joined by messages. Our frame is the
+second half; the plugin's worker (Running code section) is the first.
+
+**The network hole.** In Chromium a sandboxed iframe can still open a WebRTC peer
+connection, which ignores CSP and the sandbox; Google's own tracker calls it "still an
+exfiltration hole in sandboxed iframes"
+([issuetracker 580343321](https://issuetracker.google.com/issues/580343321),
+[chromium 429838706](https://issues.chromium.org/issues/429838706)). Delta Chat's webxdc
+apps hit the same hole and work around it by exhausting Chromium's peer connection limit
+before app code runs ([Delta Chat audit, 2023](https://delta.chat/en/2023-05-22-webxdc-security)).
+So this design does **not** promise that frame code is offline. It promises less, and
+that it can keep: a frame reads the one item it was opened on, plus whatever its own
+plugin's operations return to it through the bridge. That is the most it can leak, so the
+install screen of a plugin with frames says its pages may reach the internet with what
+they show. The workaround is applied as a second layer, not relied on (question 8).
 
 ### 1.10 Motion as tokens
 
@@ -316,7 +353,7 @@ of rejecting. What remains protects the renderer or the server:
 | live windows per open window | each is a live query | resource, operator default | 32 |
 | rows per window page | chosen by the renderer from the viewport, never by the author | none for the author | renderer |
 | form value size | the request size | security, fixed (Calls section) | the request cap |
-| sidebar, interface and draft file sizes | userdata bound | resource, operator default | 256 / 64 / 256 KiB |
+| collection and sidebar file size; per-person state file | userdata bound | resource, operator default | 256 KiB; 64 KiB and 256 keys (Files section) |
 
 How "shorten or wrap" works where revision 14 rejected:
 
@@ -345,8 +382,9 @@ How "shorten or wrap" works where revision 14 rejected:
   and title fields.
 - Replace a part of the shell or of another app, where a slot exists. *Example:* a
   community composer with a different emoji picker.
-- Draw anything in a sealed frame, which has no network and can only call operations.
-  *Example:* an interactive chart of a budget.
+- Draw anything in a sealed frame, which can read the item it is opened on and call its
+  plugin's operations, and may be able to reach the internet (1.9). *Example:* an
+  interactive chart of a budget.
 - Show the person's own counts and state without knowing them. *Example:* "3 unread".
 
 **Plugins cannot:**
@@ -355,7 +393,7 @@ How "shorten or wrap" works where revision 14 rejected:
 - Choose sizes, colours, fonts, spacing or animation. *Example:* no red 18-point title.
 - See what is drawn on someone's screen. *Example:* a look shows a contact's name, but the
   plugin that declared the look never receives it.
-- Load anything from the internet into the interface. *Example:* no remote image or
+- Load anything from the internet into the interface outside a frame. *Example:* no remote image or
   tracking pixel; a picture must first be saved as a file.
 - Draw a host screen, a password field, a sharing challenge, a consent request or the Stop
   button. *Example:* a plugin cannot show a fake "sign in again".
@@ -376,7 +414,7 @@ How "shorten or wrap" works where revision 14 rejected:
 | Learn hidden members from a collection's count | counts are computed per viewer over readable members only | Questions index |
 | Hand-add a file to a shared collection to reach it | membership grants nothing; members the viewer cannot read are not drawn and not counted | Questions index |
 | Track the person with remote images or links | declarations hold no URLs except links; links open through the host, which shows the destination; images are only files of the space | installer validator and renderer |
-| Exfiltrate from a sealed frame | no network (CSP, sandbox, content rules), only `call` and `read` on its own item through the bridge, checked at the call table | renderer and call table |
+| Exfiltrate from a sealed frame | CSP, sandbox and content rules block ordinary requests; **WebRTC is a known hole** (1.9), so the real limit is what the frame can read: its own item and what its plugin's operations return to it, through a bridge checked at the call table | renderer and call table; not fully held (see below) |
 | A replacement composer records what the person types | picking a part is the person's (or the space owner's for others-facing slots); the pick screen says "this part sees what you type here"; it may call only the slot's operations within its grant | package install and pick screen; call table |
 | Lock the person out with a blank switcher or sidebar | profile popover, Settings, Plugins and safe mode are host-only and always reachable | shell |
 | Keep a run going where the person cannot see it | Stop and the working line are host-drawn for every work unit started by or for the person | shell and work table |
@@ -384,16 +422,16 @@ How "shorten or wrap" works where revision 14 rejected:
 | Overload the server from a view | one window per visible list, a live-window quota per open window, the page size chosen by the renderer | Questions index (quota) |
 | Inject markup through data | text is plain; record and note bodies use the closed inline Markdown subset; no HTML outside a frame | renderer |
 | Call operations the declaration did not name | allowed, and harmless: every call is checked as the person ∩ the plugin's grant | call table |
-| Read the person's sidebar, drafts or interface state | `People/<me>/` files are readable by that person only; a part reads its own draft through the slot contract | Files grants |
+| Read the person's sidebar, drafts or interface state | `.people/<person-uuid>/` files are readable by that person only (managers included: Files section 1.10); a plugin reads only its own file, for the acting person; a part reads its own draft through the slot contract | Files host reader |
 | Pose as another app by name or icon | names unique among installed apps; host names reserved; host pages carry the host mark | installer |
 | Drag a row into a frame to smuggle its content | a drop passes only the item's ID; the frame must read it through its own grant | renderer and call table |
 
 **Where I am not sure it holds:**
 
-1. **Native frame isolation.** I have not verified that `WKContentRuleList` blocks every
-   network path in `WKWebView` (WebRTC, DNS prefetch, media). A safer fallback is a frame
-   with JavaScript but no network permission at the process level; that needs research on
-   a device.
+1. **Frame isolation from the network does not hold in browsers** (WebRTC, cited in 1.9),
+   and is unproven in `WKWebView` (WebRTC, DNS prefetch, media). What holds is the smaller
+   promise: a frame reads only its own item and what its plugin's operations return. Native needs a test on
+   a device before frames ship there.
 2. **Deleting activation contexts.** Revision 14 bound each action to where it was drawn.
    I believe the call check (person ∩ grant) is enough, because a client acting outside a
    declaration only does what the person may do. A guest with title-only access is the
@@ -423,7 +461,7 @@ How "shorten or wrap" works where revision 14 rejected:
 | Confirmation | n/a | `confirmation.material_by_kind` table | host challenge for host-known effects; a declared sentence otherwise |
 | Shell parts | ui-shell regions, hard-coded | chrome description: header, footer, panel, extension points | slots and parts, picked by effect, host-only safety screens |
 | Two description languages | GenUI (`crates/genui`, `packages/genui`, `apps/apple/.../GenUI`) and the description | both | one catalogue; GenUI's portable program model is superseded (open-questions, 2026-11-19) |
-| Limits | some | 312 numbers, about 20 of them layout | 6 numbers, none about layout |
+| Limits | some | 312 numbers, about 15 of them about layout (listed in 1.11) | 6 numbers, none about layout |
 
 **Deleted:** binds as a list per app; row templates per bind; marks caps; `Section.repeat`,
 `layout_sections`, `host.layout.*`, `host.viewer.reorder`, `sidebar_arrangement`, drag
@@ -554,9 +592,13 @@ How each Chat requirement is drawn:
 | composer | a slot; the official composer part is about 5 lines (`composer({ send: "chat.send", attach: true, mention: "chat.people", draft: true })`) |
 
 **Totals.** Reading List 7, Notes 11, Chat 19 (24 with its composer part), against 285,
-584 and 143 to 493 JSON lines in revision 14. The comparison is unfair in one way: JSON
-spreads one value over several lines. Counting values instead, revision 14's Reading List
-holds about 70 and this one about 25.
+584 and 143 to 493 JSON lines in revision 14. Line counts flatter this design, because
+JSON spreads one value over several lines. Counting leaf values (measured on the
+fixtures): Reading List 121 in revision 14 against about 16 here; Notes 235 against about
+21; Chat 59 (`threads-app.json`, which has no consent, quotes, edit or delete actions) and
+201 (`threads-nested-catalogue-app.json`) against about 45 here. The real saving is less
+the syntax than what is derived (forms, cell and page looks, menus, inspector, empty
+states) and what moved to the host (records, the sidebar file).
 
 ## 6. Where the thesis is wrong or incomplete
 
@@ -568,9 +610,9 @@ holds about 70 and this one about 25.
 | "The shell itself is made of replaceable parts." | If everything is replaceable, one broken plugin can trap the person or fake a host screen. | Host-only screens (sign-in, Settings and Plugins, challenge, consent, Stop) and safe mode. |
 | (silent) how authority flows from the interface | Revision 14's activation contexts and leases existed to tie actions to the screen. | Deleted: the call table is the only check. Re-checked with the People section (3, item 2). |
 | (silent) sleeping plugins | Revision 14 needed view snapshots for chats. | Not needed: everything drawn comes from the index and record files. |
-| (silent) per-person state | One small file is right, but writing it on every drag or keystroke is not. Some state belongs to a screen, not a person. | Coalesced writes (at most one flush a second); device state never leaves the device. |
+| (silent) per-person state | One small file is right, but writing it on every drag or keystroke is not. Some state belongs to a screen, not a person. | The Files section's buffered `state.set` (one write per 5 s); device state never leaves the device. |
 | "about fifteen concepts" | Drawing adds four: **look**, **view**, **slot/part**, **action**. Component, form and frame are things the author uses rather than learns. | Counted in the fifteen if "component" is replaced by "look". |
-| "A sealed frame covers what the catalogue cannot express." | True on the web; on Apple platforms isolation of a `WKWebView` from the network is not proven. | Marked unproven (3, item 1). |
+| "A sealed frame covers what the catalogue cannot express." | Its isolation is weaker than assumed: in browsers WebRTC escapes CSP and the sandbox; in `WKWebView` it is unproven. | The frame promises only "it reads what you open in it" (question 8). |
 | (silent) GenUI | A second, older description language with its own interpreter exists in three places. | Deleted unless question 7 keeps it. |
 
 ## 7. Questions for the owner
@@ -601,8 +643,8 @@ holds about 70 and this one about 25.
   rename all write it.
 - **Example:** in the family space you hide "Harnesses" and add "Lisbon crew". Does your
   partner's Chat sidebar change?
-- **Options:** (a) **yours alone**: the first change writes a private copy in
-  `People/<me>/Sidebars/`; "Share sidebar" puts a copy into the space's collections for
+- **Options:** (a) **yours alone**: the first change writes a private copy under
+  `.people/<person-uuid>/`; "Share sidebar" puts a copy into the space's collections for
   others to add. Costs one file per person per app that they changed. (b) **the space's**:
   one file per app, editable by editors or managers; everyone sees the same sidebar. Costs
   surprise when someone else reorders yours.
@@ -653,8 +695,10 @@ holds about 70 and this one about 25.
   People; costs an exclusion in the index query (cheap: hand-added lists are short). (b)
   **wherever it matches**: simplest, but the sidebar repeats rows and a drag looks like a
   copy. (c) a per-sidebar switch.
-- **Recommendation:** (a), which matches the Telegram-style folders you referenced and
-  revision 14's `exclusive` without its machinery.
+- **Recommendation:** (a): a drag then always moves, which is what a sidebar of folders
+  suggests, and it is revision 14's `exclusive` without its machinery. Cost to know:
+  Telegram does (b) (a chat may sit in several folders), so people coming from it may
+  expect copies.
 
 ### 6. Is a "records view" (a timeline of messages) part of the host's catalogue?
 
@@ -688,16 +732,26 @@ holds about 70 and this one about 25.
   every platform.
 - **Recommendation:** (a): delete GenUI; the form in a reply covers the common case.
 
-### 8. May a sealed frame ever load remote content?
+### 8. What does a sealed frame promise, given that browsers cannot cut it off the network?
 
-- **What:** a mail's HTML body or an agent's page may reference remote images.
-- **Why now:** the frame's isolation rules are written once; Mail (your third app) needs an
-  answer.
-- **Example:** a newsletter shows a picture from a shop's server, which also tells the shop
-  you opened it.
-- **Options:** (a) **never**: images missing in HTML mail. (b) **on your tap, per message,
-  through a host proxy** that strips cookies and your address. (c) **per sender, remembered**.
-- **Recommendation:** (b), then (c) as a setting; never automatic.
+- **What:** the sealed frame runs a plugin's own web code (an agent's HTML page, a mail's
+  HTML body, a chart). The thesis says it has no network. In browsers that is not true:
+  WebRTC escapes both CSP and the iframe sandbox (sources in 1.9).
+- **Why now:** it decides what a frame may read, what the install screen says, and how
+  Mail shows HTML mail with remote images.
+- **Example:** a community "budget chart" plugin opens your Taxes 2026 note in a frame. A
+  hostile version could send the numbers to its server through WebRTC.
+- **Options:** (a) **promise only "it reads what you open in it"**: a frame gets its one
+  item plus what its own plugin's operations return to it; the install screen says "pages of this plugin may be able
+  to reach the internet"; the WebRTC workaround is a second layer. Honest, works today.
+  (b) **no frames on the web** until browsers close the hole; frames only in native apps
+  after a device test. Safest, but Mail's HTML and agents' pages cannot show in browsers.
+  (c) **frames for first-party plugins only**: against "first-party plugins are not
+  special".
+- **Remote images inside a frame** (Mail): never automatic; on your tap, per message,
+  through a host proxy that strips cookies and your address; later "always for this
+  sender" as a setting.
+- **Recommendation:** (a), with remote images as above.
 
 ## Report: summary and top three questions
 
@@ -706,7 +760,8 @@ cell, page, record); every list is a collection, a record file or a facet, drawn
 views (compact list, strip, facet; list, table, board, gallery, calendar) that work while
 the plugin sleeps. The sidebar is a Markdown file listing collections; every edit (reorder,
 collapse, hide, rename, own sections, drag, pin) is a write to that file or to a
-collection's hand-added list, coalesced to one flush a second. The shell is slots filled by
+collection's hand-added list, one flush per settled gesture; drafts and seen positions
+are buffered to one write per 5 s. The shell is slots filled by
 parts, picked by effect, with host-only screens (Settings, challenge, consent, Stop, safe
 mode) so a part can never trap or fool the person. Forms are derived from operations;
 authority comes only from the call table, which deletes activation contexts, leases and
