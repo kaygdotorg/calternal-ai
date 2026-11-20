@@ -55,7 +55,7 @@ const metadata = {
       ],
     },
     append_file: true, attempt_discovery: "item_policy", execution_target: true, view_snapshots: [{ id: "body", refresh: "chat.refresh" }],
-    schema: object({ title, shape: { enum: ["person", "group", "agent", "mixed"] } }, "title"),
+    schema: object({ title, shape: { type: "string", enum: ["person", "group", "agent", "mixed"] } }, "title"),
     indexed_fields: { shape: { type: "Text", audience: "shared_projection" } },
     viewer_fields: viewerFields,
   }],
