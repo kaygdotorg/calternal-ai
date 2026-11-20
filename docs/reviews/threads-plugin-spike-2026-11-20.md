@@ -42,8 +42,9 @@ flock -s /tmp/calternal-dev02.lock nix develop -c bash -c '
 The build uses the 14.41 revision-aware SDK builder. It pins both
 plugin manifests and workers, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
-All 48 tests and both Conformance tool 1.1.0 plugin checks passed
-on dev-02 at the 14.41 pin under the shared lock. The repository
+All 52 tests and both Conformance tool 1.1.0 plugin checks passed
+on dev-02 at the 14.41 pin under the shared lock. This includes four
+v1 reader tests. The repository
 documentation gate passed in the earlier afternoon run. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
 
@@ -669,30 +670,41 @@ already logged and suppresses the conversation reply. The two agents
 receive the person's explicit prompt and the private exchange. Passing
 the parent transcript would require its own checked disclosure.
 
-### Cutover finding for the v1 reader
+### Read-only v1 reader and cutover findings
 
-The plugin writes `calternal-thread/v2` and declares file-format
-version 2. At cutover it also needs a bounded, read-only
-`calternal-thread/v1` reader following the existing writer and reader in
-`crates/server/src/threads/document.rs` and
-`crates/server/src/threads/records.rs`. That reader and migration are
-outside this fixture change.
+The Threads worker opens `calternal-thread/v1` through its read operations.
+It reads each exact revision with bounded item ranges, recognizes the v1
+envelope, and uses the old writer's UTF-8 byte counts to locate records.
+It retains the original message UUID, role, historical heading, original
+turn reference and exact Markdown body. An offset in a saved heading
+becomes a typed UTC instant for the view. Large messages page without
+splitting a Unicode character. Version 1 files stay byte-for-byte
+unchanged. Send and alarm admission refuse them before recording an effect.
 
-- Parse the v1 UTF-8 envelope, materialized `calternal-id`, JSON-escaped
-  title, `date`, `last edited`, archive fact and generated title heading.
-  Apply the existing rules for stripping the provider notice and private
-  session marker. Provider session data stays outside the public view.
-- Honor the v1 record's exact UTF-8 **byte** count, framing separators and
-  duplicate-ID checks. Authored Markdown can contain lookalike headings
-  and comments. Preserve message UUIDs, person/agent/automation role,
-  historical heading and offset-aware time, optional agent turn UUID and
-  provenance such as provider/model, machine and durations.
-- Resolve old deep links using the original item and message UUIDs.
-  The 16-hex v2 anchors cannot be used to infer those UUIDs. Preserve
-  existing source authority, and default ambiguous authorship to
-  consent-only for discovery. Exercise the existing examples, malformed
-  records, historical links, and private session suppression before
-  enabling the reader at cutover.
+The v1 test fixtures came from the server at dev `340c0472` on dev-02.
+A disposable loopback server and machine ran the existing
+`provider_turns` integration harness with the scripted Claude Code CLI.
+The sampler called `threads.create` for both files, sent
+`scripted-tool-steps long-output` with an offset of +330 minutes, waited
+for completion, and copied the materialized Markdown under `AI/Chats`.
+It also captured the public `threads.get` Markdown. The committed
+`tool-output.md` is the unmodified disk sample from disposable accounts
+and contains a fixture-only session binding. The public copy omits that
+binding. The test compares their parsed transcripts and checks the
+recorded offset, original UUIDs, multibyte text, body delimiter lookalike,
+relative Markdown link and saved tool notices.
+
+| Area and reference | Disposition | What a faithful cutover needs |
+| --- | --- | --- |
+| Framed records and headings · dev `threads/document.rs`, `records.rs`, `headings.rs` | **CLOSED** for the plugin reader | Preserve the Markdown and the original label as written, together with the offset-aware instant, UUID and role. Keep the old archive flag, title, created and activity dates in host item metadata and keep the old relative ordering. The old sign-in notices are skipped as managed framing in the current view. |
+| Binding the version 1 file to Threads · API §8 and manifest `file_format` | **OPEN** | One manifest version declares the writer and its title binding. Cutover needs a read-only version-1 binding on retained items while version 2 stays writable. Route directly to the installed Threads app and deny generic editor, relocation and execution mutations for retained v1 items until their treatment is decided. Preserve the old item ID, locators and routes through the switch so a message UUID still resolves under the current reader's grant. Never infer a v2 anchor by shortening a v1 UUID. |
+| Historical attribution and private state · API §8 and catalogue `item_spans`, `attempt_disclosure` | **OPEN** | A v1 heading supplies a display name, and a saved agent turn supplies a historical reference. The file cannot prove an account or exact authorized attempt. Retain any protected account evidence the old journal can actually prove. Keep the remaining material `consent_only`, and apply the required widening protection to every retained item, including restorable copies. Strip the private resume binding before granting a plugin raw read, export or offline access. A renderer that skips the comment still leaves the binding in the raw bytes. |
+| Attachments and links · dev `docs/threads.md` under “Identity and exact body bytes” and catalogue `ItemViewAssetRef` | **OPEN** | The reader keeps relative Markdown links verbatim. The v1 writer has no dedicated attachment payload in its records. For referenced files that exist, keep the original base path or resolve relative links from the old placement to stable host locators. Mint checked asset refs against the reader's current rights. Empty text is a valid record and keeps its UUID. |
+| Saved versus live tool output · dev `docs/threads.md` under “Tool steps and the saved output limit” | **PARTLY** | The saved file preserves scrubbed tool statuses and byte counts as Markdown, including a 98,326-byte notice in the sample. The transcript cannot reconstruct the omitted bytes. Retain lawful existing linked run artifacts where available. Future tool output needs a separate bounded, access-checked artifact, with an ordinary link from the message. |
+
+The tests exercise the built plugin against the fake v2 host with the
+server-produced files. Live v2 ownership and native-route replacement
+remain cutover work.
 
 ### Host needs from the afternoon decisions
 
@@ -784,8 +796,8 @@ same-title path obtains a numeric suffix in the fake. Titles use a
 and 64 participants. Inline saves stop at 128 KiB. Moving from the fixture
 to durable storage needs scoped receipt retention and bounded history,
 and the per-space snapshot and alarm caps already in the catalogue. The
-spike has no format migration, attachment upload, historical attribution,
-continuation or provider tools. The people-thread operations are fixture-only.
+spike has no format migration, attachment upload, attested historical authorship,
+agent-session continuation or provider tools. The people-thread operations are fixture-only.
 
 Send and alarm setup each read the current document to check whether
 an invitation is required. With a launched run, the worker reads one
@@ -862,7 +874,7 @@ scanner are here.
 | Attribution for a host-patched title span | **CLOSED** | The fixture changes the title middle to `{kind: "host"}` on rename and preserves the sender and the original quote on the neighboring records. Moving without a title change preserves the existing origin. |
 | Durable span reads and host substitutions | **CLOSED** for the catalogue exchange | A checked read joins the chunks for one span before decoding it and rejects overlapping host-written ranges. It keeps message boundaries, sender metadata and attempt metadata intact. An empty tombstone middle has no origin. The fixture does not exercise live rewrite or redaction origin transactions. |
 | 14.40 rename and reply edits, checked quotes and redaction | **CLOSED** at their previous scope | Both builds and all exchange tests pass. The prior live rewrite, Undo, provenance durability and latency qualification remains open. |
-| Earlier findings | **UNCHANGED** | The revision adds no further contract findings for the v2 flows. The prior consent, delivery, renderer, SDK and cutover work remains. |
+| Earlier findings | **UNCHANGED** | The revision adds no further contract findings for the v2 flows. The prior consent, delivery, renderer and SDK work remains. See the v1 cutover findings for remaining host work. |
 
 ## Simplification opportunities
 

@@ -3,7 +3,8 @@ import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { checkedText, type HarnessInput, type HarnessOutput } from "./harnesses-v1.ts";
 import { agentParticipant, attest, checkedTitle, encode, MAX_FILE_BYTES, messageId, messageRecord, page, personParticipant, step, threadHeader, messageView, type Thread } from "./format.ts";
 import type { Context, RunInput, Send } from "./interface.ts";
-import { appendRecord, inlineBody, kind, publish, read } from "./files.ts";
+import { appendRecord, inlineBody, kind, publish, read, readConversation } from "./files.ts";
+import { legacyMessage, legacyPage } from "./legacy.ts";
 
 export { peopleHandlers } from "./people.ts";
 
@@ -139,7 +140,9 @@ async function arm(input: Omit<Send, "placement"> & { at: Timestamp; if_missed: 
 }
 
 async function refresh(input: ItemViewRead, ctx: Context) {
-  const { thread } = await read(ctx, input.item, input.source_revision);
+  const saved = await readConversation(ctx, input.item, input.source_revision);
+  if (saved.legacy) return legacyPage(saved.thread, input.older, input.anchor);
+  const { thread } = saved;
   if (thread.conversation === "people") {
     const head = await ctx.call("item_head", { item: input.item });
     if (head.revision !== input.source_revision) {
@@ -153,10 +156,12 @@ async function refresh(input: ItemViewRead, ctx: Context) {
   return page(thread, input.older, input.anchor);
 }
 
-async function message(input: { item: ItemRef; message: string }, ctx: Context) {
+async function message(input: { item: ItemRef; message: string; offset?: number }, ctx: Context) {
   const head = await ctx.call("item_head", { item: input.item });
-  const { thread } = await read(ctx, input.item, head.revision);
-  return messageView(thread, input.message);
+  const saved = await readConversation(ctx, input.item, head.revision);
+  if (saved.legacy) return legacyMessage(saved.thread, input.message, input.offset);
+  if (input.offset !== undefined) throw new Error("Message paging is only available for version 1 threads.");
+  return messageView(saved.thread, input.message);
 }
 
 /** Draft application handlers. Protected Stop and archive use host controls. */

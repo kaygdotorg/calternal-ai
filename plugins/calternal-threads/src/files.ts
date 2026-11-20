@@ -4,6 +4,7 @@ import { MAX_V2_FRAME_BYTES } from "@calternal/plugin-sdk";
 import type { AttestedBody, ItemRef, ItemSave, ItemSpansPage, RevisionRef } from "../generated/wire.js";
 import { decode, decodeIndexed, encode, encodeRecord, MAX_FILE_BYTES, type messageRecord, needsOpaqueEscape, page, quoteBlock, step, type Thread } from "./format.ts";
 import type { Context } from "./interface.ts";
+import { decodeLegacy, isLegacy } from "./legacy.ts";
 
 /** The installed item kind shared by both conversation shapes. */
 export const kind = "threads";
@@ -35,8 +36,7 @@ export function inlineBody(body: Buffer): string {
   return body.toString("base64");
 }
 
-/** Read and decode one exact file revision using bounded range calls. */
-export async function read(ctx: Context, item: ItemRef, revision: RevisionRef) {
+async function readBytes(ctx: Context, item: ItemRef, revision: RevisionRef) {
   const chunks: Buffer[] = [];
   let offset = 0;
   while (true) {
@@ -47,31 +47,48 @@ export async function read(ctx: Context, item: ItemRef, revision: RevisionRef) {
       throw new Error("The conversation file could not be read within its size limit.");
     }
     chunks.push(chunk);
-    if (part.next_offset === undefined) {
-      const bytes = Buffer.concat(chunks);
-      const index: ItemSpansPage["spans"] = [];
-      let provenance: ItemSpansPage["body_provenance"] | undefined;
-      let cursor: string | undefined;
-      const seen = new Set<string>();
-      do {
-        const page = await ctx.call("item_spans", { item, revision, ...(cursor && { cursor }) });
-        if (page.item !== item || page.revision !== revision ||
-            (provenance !== undefined && page.body_provenance !== provenance) ||
-            page.spans.length > 128 || (page.next && (!page.spans.length || seen.has(page.next))) ||
-            index.length + page.spans.length > bytes.length) throw new Error("The saved message ranges are invalid.");
-        mergeSpanPage(index, page);
-        provenance = page.body_provenance;
-        cursor = page.next;
-        if (cursor) seen.add(cursor);
-      } while (cursor);
-      const parsed: ReturnType<typeof decodeIndexed> = index.length || provenance === "attested" ? decodeIndexed(bytes, index, provenance!) : {
-        thread: decode(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
-        spans: new Map(), quotes: new Set(),
-      };
-      return { ...parsed, size: end };
-    }
+    if (part.next_offset === undefined) return Buffer.concat(chunks, end);
     offset = part.next_offset;
   }
+}
+
+async function readCurrent(ctx: Context, item: ItemRef, revision: RevisionRef, bytes: Buffer) {
+  const index: ItemSpansPage["spans"] = [];
+  let provenance: ItemSpansPage["body_provenance"] | undefined;
+  let cursor: string | undefined;
+  let hostRanges = 0;
+  const seen = new Set<string>();
+  do {
+    const page = await ctx.call("item_spans", { item, revision, ...(cursor && { cursor }) });
+    for (const span of page.spans) hostRanges += span.host_ranges?.length ?? 0;
+    if (page.item !== item || page.revision !== revision ||
+        (provenance !== undefined && page.body_provenance !== provenance) ||
+        page.spans.length > 128 || (page.next && (!page.spans.length || seen.has(page.next))) ||
+        index.length + page.spans.length > bytes.length || hostRanges > bytes.length) throw new Error("The saved message ranges are invalid.");
+    mergeSpanPage(index, page);
+    provenance = page.body_provenance;
+    cursor = page.next;
+    if (cursor) seen.add(cursor);
+  } while (cursor);
+  const parsed: ReturnType<typeof decodeIndexed> = index.length || provenance === "attested" ? decodeIndexed(bytes, index, provenance!) : {
+    thread: decode(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
+    spans: new Map(), quotes: new Set(),
+  };
+  return { ...parsed, size: bytes.length };
+}
+
+/** Load either supported format, with old transcripts available to read handlers only. */
+export async function readConversation(ctx: Context, item: ItemRef, revision: RevisionRef) {
+  const bytes = await readBytes(ctx, item, revision);
+  if (isLegacy(bytes)) return { legacy: true as const, thread: decodeLegacy(bytes) };
+  return { legacy: false as const, ...await readCurrent(ctx, item, revision, bytes) };
+}
+
+/** Read a writable version 2 document at one exact revision. */
+export async function read(ctx: Context, item: ItemRef, revision: RevisionRef) {
+  const bytes = await readBytes(ctx, item, revision);
+  if (isLegacy(bytes)) throw new Error("Version 1 threads are read-only in Threads.");
+  return readCurrent(ctx, item, revision, bytes);
 }
 
 /** Commit an opaque replacement, staging large files before the same checked save. */

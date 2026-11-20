@@ -190,7 +190,7 @@ test("newest pages keep complete messages and older reads stay on the same revis
   assert.deepEqual(page.view, snapshot.view);
   let transcript = "";
   while (true) {
-    assert.ok("view" in page);
+    assert.ok(page.view);
     const root: SnapshotNode = page.view.content;
     assert.equal(root.type, "stack");
     transcript += root.children.flatMap(node => node.type === "snapshot-text" ? [node.text] : []).join("");

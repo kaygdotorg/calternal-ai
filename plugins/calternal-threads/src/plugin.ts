@@ -19,6 +19,13 @@ const messageResult = {
   id: { type: "string" },
   author: object({ kind: { enum: ["person", "agent"] }, id: { type: "string" }, name: { type: "string" }, contribution: catalogueRef("ContributionIdentity") }, "kind", "id", "name"),
 };
+const messageIdPattern = "^(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$";
+const messageOffset = { type: "integer", minimum: 0, maximum: 2 * 1024 * 1024 };
+const legacyMessageResult = object({
+  id: { type: "string" }, role: { enum: ["person", "agent", "automation"] }, heading: { type: "string" },
+  text: { type: "string", maxLength: 8000 }, posted_at: catalogueRef("Timestamp"), turn: { type: "string" },
+  next_offset: messageOffset,
+}, "id", "role", "heading", "text", "posted_at");
 const itemRoute = { route: "item" };
 const harnessChoice = { prompt: { title: "Agent", kind: "choice", options: { extension: "harnesses" } } } as const;
 const description: AppDescription = {
@@ -87,11 +94,11 @@ const metadata = {
     { ...read, id: "threads.refresh", title: "Read thread page", target, methods: [...readBody],
       input_schema: catalogueRef("ItemViewRead"), output_schema: catalogueRef("ItemViewPage") },
     { ...read, id: "threads.message", title: "Read message", target, methods: [...readBody],
-      input_schema: object({ item, message: { type: "string", pattern: "^[0-9a-f]{16}$" } }, "item", "message"),
-      output_schema: object({ ...messageResult, text: textSchema, posted_at: catalogueRef("Timestamp"),
+      input_schema: object({ item, message: { type: "string", pattern: messageIdPattern }, offset: messageOffset }, "item", "message"),
+      output_schema: { oneOf: [object({ ...messageResult, text: textSchema, posted_at: catalogueRef("Timestamp"),
         log: catalogueRef("ItemLocator"), consultation: catalogueRef("ItemLocator"), edited: { const: true }, replyTo: { type: "string" }, replyToName: { type: "string" }, replyQuote: textSchema,
         askedBy: object({ kind: { const: "person" }, id: { type: "string" }, name: { type: "string" } }, "kind", "id", "name"),
-        mentions: { type: "array", items: catalogueRef("AccountRef") } }, "id", "author", "text", "posted_at") },
+        mentions: { type: "array", items: catalogueRef("AccountRef") } }, "id", "author", "text", "posted_at"), legacyMessageResult] } },
   ],
 } satisfies Omit<ManifestV2, "apps" | "worker" | "network">;
 
