@@ -1,659 +1,685 @@
 # Authoring against the primitives: a paper prototype
 
-Status: a proposal for #107, written on 2026-11-20 against the thesis
-(`docs/proposals/primitives-only-thesis-2026-11-21.md` on `dev`) and the
+Status: a proposal for #107, written on the night of 2026-11-20 against the
+thesis (`docs/proposals/primitives-only-thesis-2026-11-21.md` on `dev`), the
 contract owner's draft (`docs/proposals/primitives-only-host-2026-11-21.md` on
-`lane/v2-host-base`). Nothing here is decided. The TypeScript is not built; it
-is written to be type-shaped and plausible, so that what an author has to
-write, and where it gets awkward, can be measured.
+`lane/v2-host-base`) and the four design sections under
+`docs/proposals/primitives/` (first versions, read at 18:00 UTC):
+`files-and-questions.md` (`lane/design-files`), `permissions-and-calls.md`
+(`lane/design-authority`), `running-code.md` (`lane/design-run`) and
+`drawing.md` (`lane/design-interface`). Nothing here is decided. The
+TypeScript is not built; it is written to be type-shaped and plausible, so
+that what an author writes, and where it gets awkward, can be measured.
 
 Why this matters: on the revision 14 contract, the plugin SDK (#106) removed
-the hand-written test host and the build script, but Chat's own source only
+Chat's hand-written test host and build script, but Chat's own source only
 went from 1,884 to 1,767 lines (about 6 percent). The rest was contract
-vocabulary that no SDK can hide. This document shows what the same plugins
-look like when the contract is seven primitives.
+vocabulary that no SDK can hide. This document shows the same plugins when
+the contract is seven primitives.
 
-The API below uses the thesis's seven primitives. The draft's twelve map onto
-them: records are part of files; index and collections are questions; people,
-grants and packages are permissions; work, sandboxes and sync are running
-code.
+Where the sections disagree on a name, I use one name and say which section
+it comes from; section 3 lists the disagreements.
 
 ## 1. The whole author-facing API
 
-One import, `@calternal/sdk`. Every handler receives one context `ctx`. The
-host checks every call against the plugin's grant and the acting person's
-rights; nothing below is a capability by itself.
+One import, `@calternal/sdk`. A plugin is a manifest written in TypeScript;
+every handler receives one context, `ctx`. Every call goes through the
+host's call table and its one check (the permissions section's
+`authorize`); nothing below is a capability by itself.
 
 ```ts
-// ── Package ──────────────────────────────────────────────────────────────
+// ── The package ──────────────────────────────────────────────────────────
 declare function plugin(p: {
   id: string; name: string; version: string; icon?: string;
-  needs?: { plugin: string; version: string; optional?: true }[];   // dependencies
-  grant: Grant;                                                     // what it asks for at install (3)
-  kinds?: Kind[]; collections?: Collection[]; operations?: Operation[];
-  triggers?: Trigger[]; slots?: Slot[]; parts?: Part[];
+  depends?: { plugin: string; version: string }[];
+  grant?: Grant;                         // what it asks for beyond its own kinds (primitive 3)
+  kinds?: Record<string, Kind>;
+  operations?: Record<string, Operation>;
+  sidebar?: (Collection | Facet)[];      // the app's default arrangement
+  watches?: Watch[];                     // change triggers created at install (primitive 4)
+  programs?: Record<string, Program>;    // programs it runs in boxes (primitive 4)
+  slots?: Record<string, Slot>;          // places others may fill (primitive 6)
+  fills?: Record<string, Part>;          // places it fills
+  phrases?: Record<string, string>;      // the only texts a push may carry (primitive 7)
 }): Plugin;
 
 // ── 1. Files ─────────────────────────────────────────────────────────────
-declare function kind<F extends Fields, R extends Fields = {}>(id: string, k: {
-  fields: F;                         // frontmatter: "text" | "number" | "bool" | "date" | "datetime" | "url" | "link" | "person", "[]" for lists; "!" marks indexed
-  records?: { fields?: R; edit: Policy; redact: Policy; segment?: "monthly" };  // the body is a list of host-headed records
-  position?: string;                 // a state key holding the asker's last read anchor; rows gain after_position
-  folder?: string;                   // where new files go
-  title?: keyof F;
-  row: Show<F>; card?: Show<F>; cell?: Show<F>;  // how it looks small, medium, tiny
+declare function kind<F extends Fields>(k: {
+  fields: F;                             // text() url() bool() number() date() datetime() link() person() file() list(x); .index() to query it
+  records?: { fields?: Fields; edit: Policy; redact: Policy; position?: string; segment?: "monthly" };
+  folder?: string;
+  row?: Look; card?: Look; cell?: Look; page?: Page; record?: Look;   // drawing, primitive 6
 }): Kind;
 type Policy = "author" | "author-or-manager" | "writers";
-interface Files {
-  create(kind: string, f: { fields: object; body?: string; folder?: string; name?: string; key: string }): Promise<FileRef>;
+interface Files {                        // ctx.files (files section 1.2)
+  create(kind: string, f: { fields: object; body?: string; folder?: string; name?: string; request: string }): Promise<FileRef>;
   read(file: FileRef, at?: { revision?: string }): Promise<{ fields: any; body: string; revision: string }>;
-  replace(file: FileRef, w: { fields?: object; body: string; expected: string; key: string }): Promise<{ revision: string }>;
+  replace(file: FileRef, w: { fields?: object; body: string; expected: string; request: string }): Promise<{ revision: string }>;
   set(file: FileRef, fields: object, expected?: string): Promise<{ revision: string }>;
-  append(file: FileRef, r: { body: string; fields?: object; key: string }): Promise<{ anchor: Anchor }>;
-  edit(file: FileRef, anchor: Anchor, r: { body: string; expected: string }): Promise<{ revision: string }>;
-  redact(file: FileRef, anchor: Anchor): Promise<void>;          // delete for everyone: scrubbed from history and search
-  records(file: FileRef, q?: { anchors?: Anchor[]; after?: Anchor; limit?: number }): Promise<Rec[]>;
   history(file: FileRef): Promise<{ revision: string; change: string; stamp: Stamp }[]>;
 }
-interface State { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }  // per person and plugin
-// Host operations, called like any other: "host.move", "host.trash", "host.restore", "host.revert" (one change).
+interface Records {                      // ctx.records (files section 1.3)
+  append(file: FileRef, r: { body: string; fields?: object; request: string }): Promise<{ anchor: Anchor }>;
+  edit(file: FileRef, anchor: Anchor, r: { body: string; expected: string }): Promise<{ revision: string }>;
+  redact(file: FileRef, anchor: Anchor): Promise<void>;
+  read(file: FileRef, q: { anchors?: Anchor[]; after?: Anchor | { revision: string }; limit?: number }): Promise<Rec[]>;
+}
+interface State { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }  // ctx.state, per person and plugin
+// Host operations, called like any other: host.files.move, host.files.trash, host.files.restore, host.change.revert.
 
 // ── 2. Questions ─────────────────────────────────────────────────────────
-declare function collection(id: string, c: { title: string; query: Query; hand?: true; big?: View; small?: View }): Collection;
-type Query = {
-  kind?: string | string[]; where?: Where; text?: string; linksTo?: FileRef | "$file";
-  sort?: string; group?: string; limit?: number; count?: true;
-};
-interface Questions { query(q: Query): Promise<{ rows: Row[]; count?: number; next?: string }> }
+declare function collection(title: string, q: Query & { hand?: true; view?: "list" | "board" | "gallery" | "strip" }): Collection;
+declare function facet(title: string, q: { kind: string; by: string }): Facet;
+type Query = { kind?: string | string[]; where?: string; sort?: string; linksTo?: FileRef | "this"; text?: string; limit?: number };
+interface Questions { query(q: Query): Promise<{ rows: Row[]; count?: number; next?: string }> }   // ctx.query
 
 // ── 3. People and permissions ────────────────────────────────────────────
 type Grant = {
-  read?: string[]; write?: string[];         // kinds, own kinds are implied
-  call?: string[];                           // other plugins' operations
-  agent?: true;                              // its reads of shared files are filtered by author consent
-  outside?: { hosts?: string[]; secrets?: string[]; notify?: true };  // primitive 7
+  kinds?: Record<string, "read" | "write">; paths?: string[];   // other plugins' kinds, narrowed to folders
+  calls?: string[];                                              // other plugins' operations
+  people?: true;                                                 // look up people in shared groups
+  network?: string[]; secrets?: { name: string; for: string }[]; // primitive 7, declared here
 };
-interface People {
-  find(text: string): Promise<Person[]>;                         // only people in a shared group
-  share(file: FileRef, s: { people?: PersonRef[]; group?: string; role: "reader" | "editor" }): Promise<void>;
-  consent(c: { file: FileRef; anchors: Anchor[]; to: string; why: string }): Promise<{ granted: PersonRef[]; asked: PersonRef[] }>;
+interface People {                       // ctx.people
+  find(text: string): Promise<Person[]>;
+  share(file: FileRef, s: { people?: PersonRef[]; group?: string; role: "reader" | "editor" }): Promise<void>;  // widening draws the host challenge
 }
 
 // ── 4. Running code ──────────────────────────────────────────────────────
-declare const on: {
-  time(kind: string, field: string, operation: string): Trigger;            // when a time field comes due
-  change(q: Query & { records?: Where }, operation: string): Trigger;       // when a query's result or a file's records change
-};
-interface Running {
-  later(at: string, operation: string, input: object, key?: string): Promise<WorkRef>;
-  cancel(work: WorkRef): Promise<void>;
-  run(r: { image: string; input: object; mounts?: Mount[]; output: FileRef; deadline: string; key: string }): Promise<RunRef>;
-  stop(run: RunRef | WorkRef): Promise<void>;
-  status(ref: RunRef | WorkRef): Promise<{ state: "waiting" | "due" | "running" | "held" | "ended"; ended?: "ok" | "failed" | "stopped" }>;
+interface Work {                         // ctx.work (running-code section 1.2)
+  start(w: { request: string; op?: string; program?: string; input: object; at?: string; key?: string;
+             deadline?: string; place?: "space" | "hosted" | "mine" | "ask";
+             reads?: { records: RecordRef[]; consent: "ask" } }): Promise<{ id: WorkRef; state: string }>;
+  send(id: WorkRef, record: object, request: string): Promise<{ seq: number }>;
+  stop(id: WorkRef, request: string): Promise<void>;
+  list(q: { key?: string; state?: string }): Promise<WorkRow[]>;
+}
+type Watch = { target: Query | { file: FileRef }; op: string };
+type Program = { image: string; entry: string; network?: string[]; login?: { name: string; mount: string }; workdir?: "none" | "scratch" | "ask" };
+// Inside a box, the program's entry gets a second, smaller API (@calternal/sdk/box):
+interface Box {
+  input<T>(): T; records(): Promise<{ author: string; body: string; withheld?: true }[]>;   // the frozen, consented set
+  inbox(): AsyncIterable<InboxRecord>; log: { append(r: object): void; call(name: string, input: object): void; end(how: string): void };
 }
 
 // ── 5. Calls ─────────────────────────────────────────────────────────────
-declare function operation<I extends Schema, O extends Schema>(id: string, o: {
-  title: string; input: I; output?: O;
-  effect: "read" | "write" | "share" | "outside";   // drives the host's challenge, never a grant
-  public?: true;                                    // callable by other plugins that declare it in grant.call
-  handler: (input: SchemaType<I>, ctx: Ctx) => Promise<SchemaType<O>>;
+declare function operation<I extends Fields, O>(o: {
+  title: string; input: I; returns?: string[];       // kinds its result may contain (shown on callers' install screens)
+  public?: true; confirm?: string;                   // callable by other plugins; a host-drawn "are you sure"
+  handler: (input: Values<I>, ctx: Ctx) => Promise<O>;
 }): Operation;
-declare function create(id: string, kind: string, fields: string[]): Operation;   // declarative, no handler
-declare function set(id: string, kind: string, fields: object): Operation;        // declarative, no handler
-interface Calls { call<O>(operation: string | SlotRef, input: object): Promise<O> }
+declare function create(kind: string, o: { inputs: string[] }): Operation;     // declarative, no handler
+declare function set(kind: string, fields: object): Operation;                 // declarative, no handler
+interface Calls { call<O>(name: string, input: object): Promise<O> }           // ctx.call("calternal-chat/send", …)
 
 // ── 6. Drawing ───────────────────────────────────────────────────────────
-declare function slot(id: string, s: { pick: "person" | "space"; operation?: Schema; recommended: string }): Slot;
-declare function part(slot: string, p: Description | { operation: string; name: string; icon?: string }): Part;
-// Description = the closed component catalogue: list, transcript, form, field, button, menu, editor,
-// card, cell, history, choice, frame (sealed). Bindings: $file, $record, $form.<field>, $me.
+// Looks name fields, never values: row { title, detail, leading, trailing }, card { image, title, detail },
+// cell { title, leading }, page: form | editor | records(...) | collection | frame, record { body, quote, status }.
+// Per-person fields use me.: me.unread (= after_position), me.<state key>.
+declare function slot(s: { effect: "viewer" | "others"; recommended: string; gives?: string[]; may?: string[] }): Slot;
+type Part = { composer?: object; page?: Page; form?: string; actions?: Record<string, Action> };
+type Action = { op: string; inputs?: Record<string, string>; when?: string; confirm?: string; place?: "menu" | "swipe" | "primary" };
 
 // ── 7. The outside ───────────────────────────────────────────────────────
 interface Outside {
-  fetch(url: string, init?: { method?: string; headers?: Record<string, string | SecretRef>; body?: string }): Promise<Response>;
-  secret(name: string): SecretRef;                                   // usable in fetch headers, never readable
-  notify(to: PersonRef[], n: { title: string; body?: string; open?: FileRef }): Promise<void>;
+  net: { fetch(url: string, i?: { method?: string; headers?: Record<string, string>; body?: string; secret?: { name: string; header: string } }): Promise<Response> };
+  notify(to: PersonRef[], n: { item: FileRef; phrase: string }): Promise<{ sent: number }>;
 }
 
 // ── The context ──────────────────────────────────────────────────────────
-interface Ctx extends Questions, Running, Calls, Outside {
-  me: Person;                   // the acting person
-  files: Files; state: State; people: People; signal: AbortSignal;
-  request: string;              // stable per invocation; replays reuse it
-  key(purpose: string): string; // deterministic subeffect key under request
-  cause?: { file: FileRef; records: Rec[] } | { work: WorkRef };   // what fired a trigger
+interface Ctx extends Questions, Calls, Outside {
+  me: Person; request: string; key(purpose: string): string;
+  files: Files; records: Records; state: State; people: People; work: Work;
+  change?: { target: FileRef; from: string; to: string };   // set when a watch fired
+  scheduled?: string;                                         // set when a time fired
 }
-// A record as read back. The stamp lives in the host's ledger, never in the file, and cannot be forged.
-type Rec = { anchor: Anchor; fields: any; body: string; stamp: Stamp; revision: string; withheld?: true; redacted?: true };
-type Stamp = { person?: PersonRef; plugin: string; run?: RunRef; at: string };
+type Rec = { anchor: Anchor; body: string; fields: any; stamp: Stamp; revision: string; withheld?: true; redacted?: true };
+type Stamp = { person?: PersonRef; plugin: string; run?: WorkRef; carries?: PersonRef[]; at: string };
 ```
 
-**Counts.** 12 declarations (`plugin`, `kind`, `collection`, `operation`,
-`create`, `set`, `on.time`, `on.change`, `slot`, `part`, `grant`, `needs`)
-and 29 calls (files: `create`, `read`, `replace`, `set`, `append`, `edit`,
-`redact`, `records`, `history`; four host file operations; `state.get`,
-`state.set`; `query`; `me`, `find`, `share`, `consent`; `later`, `cancel`,
-`run`, `stop`, `status`; `call`; `fetch`, `secret`, `notify`; `key`), 41
-names in all. The file calls follow the files section
-(`lane/design-files`, `files-and-questions.md`). Revision 14 had 47 broker methods,
-about 60 concepts for a Chat-class plugin and 312 numeric limits.
+**Counts.** 14 declarations (`plugin`, `kind`, `collection`, `facet`,
+`operation`, `create`, `set`, `slot`, part (`fills`), `grant`, `depends`,
+`watches`, `programs`, `phrases`) and 27 calls: files `create`, `read`,
+`replace`, `set`, `history`; records `append`, `edit`, `redact`, `read`;
+`state.get`, `state.set`; the four host file operations; `query`;
+`people.find`, `people.share`; `work.start`, `work.send`, `work.stop`,
+`work.list`; `call`; `net.fetch`; `notify`; `key`. That is 41 names, plus six
+inside a box (`input`, `records`, `inbox`, `log.append`, `log.call`,
+`log.end`). Revision 14 had 47 broker methods, about 60 concepts for a
+Chat-class plugin and 312 numeric limits.
 
-**What a plain app author learns: 15 concepts.** space, person, file, field,
-kind (with row, card and cell), record, per-person state, collection, query,
-operation, call, grant, trigger, run, component, and slot and part (one idea:
-a named place in an app that a plugin fills). A ten-line app needs six of
-them: file, field, kind, collection, query, operation.
+**What a plain app author learns: 15 concepts.**
 
-## 2. Four plugins
+1. space, 2. person, 3. file, 4. field, 5. kind (and its looks: row, card,
+cell, page), 6. record, 7. per-person state, 8. collection (with facets),
+9. query, 10. operation (with its form), 11. call, 12. grant,
+13. work (a call, a time or a change starts it), 14. program (a run in a
+box, with its inbox and log), 15. slot and part.
 
-Line counts are the non-blank TypeScript lines in each block. "Today" is
-the same plugin on revision 14.
+A ten-line list app uses six of them: file, field, kind, collection, query,
+operation. Chat's three plugins use thirteen; a harness adds program.
 
-### 2.1 Reading List: 11 lines (today 226)
+## 2. Five plugins, written out
+
+Line counts are non-blank TypeScript lines in each block. "Today" is the same
+plugin on revision 14 (Chat at contract 14.43, on `lane/threads-ui`).
+
+### 2.1 Reading List: 10 lines, plus 8 for reminders (today 226)
 
 ```ts
-import { plugin, kind, collection, create, set, on, operation } from "@calternal/sdk";
-
+import { plugin, kind, text, url, bool, collection, create, set } from "@calternal/sdk";
 export default plugin({
-  id: "reading-list", name: "Reading List", version: "2.0.0", icon: "book", grant: {},
-  kinds: [kind("reading", { fields: { title: "text!", url: "url", read: "bool!", remind: "datetime!" },
-    folder: "Reading", row: ["title", "url.site"], card: ["url.image", "title", "url.site"] })],
-  operations: [create("reading.add", "reading", ["url", "title"]), set("reading.done", "reading", { read: true }),
-    set("reading.remind", "reading", { remind: "$input" })],
-  collections: [collection("unread", { title: "Unread", query: { kind: "reading", where: { read: false }, sort: "-created" } }),
-    collection("all", { title: "All", query: { kind: "reading", sort: "-created" } })],
-  triggers: [on.time("reading", "remind", "reading.nudge")],
-}); // plus reading.nudge: one operation that calls ctx.notify (4 lines)
-```
-
-Today's 226 lines declare two kinds (a separate reminder kind), three
-operations with JSON Schema, indexed-field audiences, a Bind per list with
-window defaults, and the chrome. Here the reminder is a time field, and the
-app is data: no worker.
-
-### 2.2 Notes: 36 lines (today: a 67-line package plus the host's native notes engine)
-
-```ts
-import { plugin, kind, collection, create, set, on, operation, slot } from "@calternal/sdk";
-
-const notes = kind("notes", {
-  fields: { title: "text!", tags: "text[]!", pinned: "bool!", snooze: "datetime!" },
-  folder: "Notes", title: "title",
-  row: ["title", "excerpt"], card: ["title", "excerpt", "tags"], cell: ["title"],
+  id: "reading-list", name: "Reading List", version: "2.0.0", icon: "book",
+  kinds: { reading: kind({ fields: { url: url(), title: text().index(), read: bool(false).index() },
+    row: { title: "title", detail: ["site(url)", "created"], trailing: [{ dot: { when: "!read" } }] },
+    card: { title: "title", detail: ["site(url)"] } }) },
+  operations: { add: create("reading", { inputs: ["url", "title"] }), done: set("reading", { read: true }) },
+  sidebar: [collection("Unread", { kind: "reading", where: "!read", sort: "-created" }),
+    collection("All", { kind: "reading", sort: "-created" })],
 });
+```
 
+The reminder needs code, because a time trigger is `work.start` with `at`
+(the running section has no "when this field comes due"):
+
+```ts
+remind: operation({ title: "Remind me", input: { item: link(), at: datetime() },
+  async handler({ item, at }, ctx) {
+    await ctx.work.start({ request: ctx.request, op: "reading-list/nudge", input: { item }, at, key: `remind:${item}` });
+    return {};
+  } }),
+nudge: operation({ title: "Nudge", input: { item: link() },
+  handler: async ({ item }, ctx) => ctx.notify([ctx.me.id], { item, phrase: "remind" }) }),
+// plus phrases: { remind: "Time to read this" }
+```
+
+Today's 226 lines declare a second kind for reminders, three operations in
+JSON Schema, indexed-field audiences, a Bind per list with window defaults and
+the chrome. Here the list app is data and never wakes; the drawing section's
+own count for its interface is 7 lines.
+
+### 2.2 Notes: 29 lines (today: a 67-line package plus the host's native notes engine)
+
+```ts
+import { plugin, kind, text, list, datetime, link, collection, facet, create, operation } from "@calternal/sdk";
 export default plugin({
-  id: "notes", name: "Notes", version: "2.0.0", icon: "notes", grant: { read: ["*"] },
-  kinds: [notes],
-  operations: [
-    create("notes.new", "notes", ["title"]),
-    set("notes.pin", "notes", { pinned: true }), set("notes.unpin", "notes", { pinned: false }),
-    set("notes.snooze", "notes", { snooze: "$input" }),
-    operation("notes.wake", { title: "Wake", input: { file: "file" }, effect: "write",
-      async handler({ file }, ctx) {
-        await ctx.files.set(file, { snooze: null });
-        await ctx.notify([ctx.me.id], { title: "A note is back", open: file });
+  id: "notes", name: "Notes", version: "2.0.0", icon: "notes", phrases: { back: "A note is back" },
+  kinds: { notes: kind({
+    fields: { title: text().index(), tags: list(text()).index(), snooze: datetime().index() },
+    folder: "Notes",
+    row: { title: "title", detail: ["updated", "excerpt"] }, card: { title: "title", detail: ["excerpt"] },
+    page: { stack: [{ editor: "body" }, { panel: collection("Linked here", { linksTo: "this", sort: "-updated" }) },
+      { panel: { history: "this", undo: "host.change.revert" } }] },
+  }) },
+  operations: {
+    create: create("notes", { inputs: ["title"] }),
+    snooze: operation({ title: "Snooze", input: { note: link(), until: datetime() },
+      async handler({ note, until }, ctx) {
+        await ctx.files.set(note, { snooze: until });
+        await ctx.work.start({ request: ctx.request, op: "notes/wake", input: { note }, at: until, key: `snooze:${note}` });
         return {};
       } }),
-    operation("notes.restore", { title: "Undo this change", input: { change: "text" }, effect: "write",
-      handler: async ({ change }, ctx) => ctx.call("host.revert", { change }) }),
-  ],
-  collections: [
-    collection("all", { title: "All notes", query: { kind: "notes", where: { snooze: null }, sort: "-pinned,-updated" } }),
-    collection("tags", { title: "Tags", query: { kind: "notes", group: "tags", sort: "title" }, small: "groups" }),
-    collection("snoozed", { title: "Snoozed", query: { kind: "notes", where: { snooze: { gt: "now" } }, sort: "snooze" } }),
-    collection("backlinks", { title: "Linked here", query: { linksTo: "$file", sort: "-updated" }, small: "list" }),
-    collection("pins", { title: "Pinned", query: { kind: "notes", where: { pinned: true } }, hand: true, small: "strip" }),
-  ],
-  triggers: [on.time("notes", "snooze", "notes.wake")],
-  slots: [slot("notes/editor", { pick: "person", recommended: "notes" })],
-  parts: [
-    { slot: "notes/editor", description: { type: "editor", file: "$file",
-      side: [{ type: "list", collection: "backlinks" }, { type: "history", file: "$file", restore: "notes.restore" }] } },
-  ],
+    wake: operation({ title: "Wake", input: { note: link() },
+      async handler({ note }, ctx) {
+        await ctx.files.set(note, { snooze: null });
+        await ctx.notify([ctx.me.id], { item: note, phrase: "back" });
+        return {};
+      } }),
+  },
+  sidebar: [collection("All notes", { kind: "notes", where: "snooze = null", sort: "-updated" }),
+    facet("Tags", { kind: "notes", by: "tags" }),
+    collection("Snoozed", { kind: "notes", where: "snooze > now", sort: "snooze" })],
 });
 ```
 
-Collections in folders, search and moves are the host's (`host.move`,
-`query.text`); links are found by the index. Today the same features are a
+Collections inside folders, search, rename with links that follow, Trash and
+Undo are the host's (files section 1.2 and 1.7). Today the same features are a
 manifest plus the host's content engine (`crates/content`, about 11,600 lines
 of Rust shared by every kind), which knows what a note is.
 
-### 2.3 Chat core: 104 lines (today 1,884 lines of source plus a 1,317-line test host)
+### 2.3 Chat in three plugins: 104 lines (today 1,884 lines of source plus a 1,317-line test host)
 
-A chat is a file of records. People are the file's sharing; agents are runs.
+The owner's split: the chat file (`calternal-chat`), calling agents in
+(`calternal-chat-ai`), and notifications (`calternal-chat-notify`, a separate
+plugin because a plugin's own writes never fire its own watches). The
+composer and the harness are 2.4.
 
 ```ts
-import { plugin, kind, collection, operation, on, slot } from "@calternal/sdk";
-
-const chats = kind("chats", {
-  fields: { title: "text!", people: "person[]!", archived: "bool!", running: "text" },
-  records: { fields: { mentions: "person[]!", agent: "text", call: "text" }, edit: "author", redact: "author-or-manager", segment: "monthly" },
-  position: "read", folder: "Chats", title: "title",
-  row: ["title", "updated", { count: "after_position" }], card: ["title", "people", "updated"],
-});
+// calternal-chat: a chat is a record file shared with its people.
+import { plugin, kind, text, list, person, bool, link, collection, operation, slot } from "@calternal/sdk";
 const EDIT_HOURS = 48;
-
 export default plugin({
-  id: "chat", name: "Chat", version: "2.0.0", icon: "chat", grant: {},
-  kinds: [chats],
-  slots: [
-    slot("chat/composer", { pick: "person", recommended: "chat" }),
-    slot("chat/harness", { pick: "person", recommended: "chat-claude",
-      operation: { input: { chat: "link", call: "text", prompt: "text", context: "text[]" }, output: { run: "text" } } }),
-  ],
-  operations: [
-    operation("chat.create", { title: "New chat", input: { title: "text", people: "person[]" }, effect: "share",
+  id: "calternal-chat", name: "Chat", version: "2.0.0", icon: "chat", grant: { people: true },
+  kinds: { chats: kind({
+    fields: { title: text().index(), people: list(person()).index(), archived: bool(false).index() },
+    records: { fields: { mentions: list(person()).index() }, edit: "author", redact: "author-or-manager", position: "read", segment: "monthly" },
+    folder: "Chats",
+    row: { title: "title", leading: { avatar: "people" }, detail: ["last.excerpt"], trailing: ["last.at", { count: "me.unread", quiet: "me.muted" }] },
+    page: { records: { composer: "composer", actions: {
+      reply: { op: "calternal-chat/send", inputs: { chat: "this", quote: "record" }, place: "menu" },
+      edit: { op: "calternal-chat/edit", inputs: { chat: "this", anchor: "record" }, when: "own" },
+      delete: { op: "calternal-chat/delete", inputs: { chat: "this", anchor: "record" }, when: "own", confirm: "Delete for everyone?" },
+      ask: { op: "calternal-chat-ai/call", inputs: { chat: "this", range: "records.selection" } },
+    } } },
+  }) },
+  slots: { composer: slot({ effect: "viewer", recommended: "calternal-chat-composer", gives: ["this", "draft"], may: ["calternal-chat/send"] }) },
+  operations: {
+    create: operation({ title: "New chat", input: { title: text(), people: list(person()) },
       async handler({ title, people }, ctx) {
-        const file = await ctx.files.create("chats", { fields: { title, people: [ctx.me.id, ...people] }, key: ctx.key("chat") });
-        if (people.length) await ctx.people.share(file, { people, role: "editor" });
-        return { created: file };
+        const chat = await ctx.files.create("chats", { fields: { title, people: [ctx.me.id, ...people] }, request: ctx.request });
+        if (people.length) await ctx.people.share(chat, { people, role: "editor" });
+        return { created: chat };
       } }),
-    operation("chat.send", { title: "Send", public: true, input: { chat: "link", text: "text", quote: "text?" }, effect: "write",
+    send: operation({ title: "Send", public: true, input: { chat: link(), text: text(), quote: text().optional() },
       async handler({ chat, text, quote }, ctx) {
         const { fields } = await ctx.files.read(chat);
-        const body = quote ? `[↩](<#^${quote}>)\n${text}` : text;   // a quote is a link; the client draws it with the reader's rights
-        const { anchor } = await ctx.files.append(chat, { body, fields: { mentions: mentioned(text, fields.people) }, key: ctx.request });
+        const body = quote ? `[↩](<#^${quote}>)\n${text}` : text;       // a quote is a link to the record (files 1.12)
+        const mentions = fields.people.filter((p: PersonRef) => text.includes(`@${p}`));
+        const { anchor } = await ctx.records.append(chat, { body, fields: { mentions }, request: ctx.request });
         await ctx.state.set(`read.${chat}`, anchor);
         return { anchor };
       } }),
-    operation("chat.edit", { title: "Edit", input: { chat: "link", anchor: "text", text: "text" }, effect: "write",
+    reply: operation({ title: "Agent reply", public: true, input: { chat: link(), call: text(), text: text() },
+      // Called by a run from its log (running section 2.7); the stamp names the run and the person it acts for.
+      handler: ({ chat, call, text }, ctx) =>
+        ctx.records.append(chat, { body: `[↩](<#^${call}>)\n${text}`, request: ctx.key(`reply:${call}`) }) }),
+    edit: operation({ title: "Edit", input: { chat: link(), anchor: text(), text: text() },
       async handler({ chat, anchor, text }, ctx) {
-        const [rec] = await ctx.files.records(chat, { anchors: [anchor] });
-        if (Date.now() - Date.parse(rec.stamp.at) > EDIT_HOURS * 3600_000) throw new Error("Messages can be edited for 48 hours.");
-        return ctx.files.edit(chat, anchor, { body: text, expected: rec.revision });   // the host checks the author
+        const [rec] = await ctx.records.read(chat, { anchors: [anchor] });
+        if (Date.now() - Date.parse(rec.stamp.at) > EDIT_HOURS * 3_600_000) throw new Error("Messages can be edited for 48 hours.");
+        return ctx.records.edit(chat, anchor, { body: text, expected: rec.revision });   // the host checks the author
       } }),
-    operation("chat.delete", { title: "Delete for everyone", input: { chat: "link", anchor: "text" }, effect: "write",
-      handler: async ({ chat, anchor }, ctx) => (await ctx.files.redact(chat, anchor), {}) }),
-    operation("chat.read", { title: "Mark read", input: { chat: "link", anchor: "text" }, effect: "write",
-      handler: async ({ chat, anchor }, ctx) => (await ctx.state.set(`read.${chat}`, anchor), {}) }),
-    operation("chat.mute", { title: "Mute", input: { chat: "link", on: "bool" }, effect: "write",
-      handler: async ({ chat, on }, ctx) => (await ctx.state.set(`mute.${chat}`, on), {}) }),
-
-    // Calling an agent in: ask the authors of the chosen messages, then start the harness the person picked.
-    operation("chat.call", { title: "Ask an agent", input: { chat: "link", anchors: "text[]", prompt: "text", harness: "text" }, effect: "outside",
-      async handler({ chat, anchors, prompt, harness }, ctx) {
-        const { anchor: call } = await ctx.files.append(chat, { body: prompt, fields: { call: "waiting" }, key: ctx.key("call") });
-        const { asked } = await ctx.people.consent({ file: chat, anchors, to: harness, why: prompt });
-        await ctx.later(asked.length ? inOneMinute() : "now", "chat.start", { chat, call, anchors, prompt, harness }, ctx.key("start"));
-        return { call };
-      } }),
-    operation("chat.start", { title: "Start agent", input: { chat: "link", call: "text", anchors: "text[]", prompt: "text", harness: "text" }, effect: "outside",
-      async handler({ chat, call, anchors, prompt, harness }, ctx) {
-        // The harness reads the context itself; the host withholds records whose authors did not consent.
-        const { run } = await ctx.call<{ run: RunRef }>({ slot: "chat/harness", plugin: harness }, { chat, call, prompt, context: anchors });
-        await ctx.files.set(chat, { running: run });
-        return {};
-      } }),
-    operation("chat.reply", { title: "Post an agent reply", public: true, input: { chat: "link", call: "text", text: "text", agent: "text" }, effect: "write",
-      async handler({ chat, call, text, agent }, ctx) {
-        // Called from the harness's trigger on its run's log; the stamp carries that run (section 3, item 3).
-        const { anchor } = await ctx.files.append(chat, { body: `[↩](<#^${call}>)\n${text}`, fields: { agent }, key: ctx.request });
-        await ctx.files.set(chat, { running: null });
-        return { anchor };
-      } }),
-    operation("chat.stop", { title: "Stop", input: { chat: "link" }, effect: "write",
-      async handler({ chat }, ctx) {
-        const { fields } = await ctx.files.read(chat);
-        if (fields.running) await ctx.stop(fields.running);
-        await ctx.files.set(chat, { running: null });
-        return {};
-      } }),
-    operation("chat.notify", { title: "Notify mentions", input: {}, effect: "outside",
-      async handler(_, ctx) {
-        const { file, records } = ctx.cause as { file: FileRef; records: Rec[] };
-        for (const rec of records) {
-          // AWKWARD (section 3, item 2): recipients' mutes are in their private state, which this run cannot read.
-          const to = (rec.fields.mentions ?? []).filter((p: PersonRef) => p !== rec.stamp.person);
-          if (to.length) await ctx.notify(to, { title: "You were mentioned", body: rec.body.slice(0, 120), open: file });
-        }
-        return {};
-      } }),
-  ],
-  triggers: [on.change({ kind: "chats", records: { mentions: { exists: true } } }, "chat.notify")],
-  collections: [
-    collection("all", { title: "All", query: { kind: "chats", where: { archived: false }, sort: "-updated" } }),
-    collection("pinned", { title: "Pinned", query: { kind: "chats" }, hand: true, small: "strip" }),
-    collection("archived", { title: "Archived", query: { kind: "chats", where: { archived: true }, sort: "-updated" } }),
-  ],
-  parts: [
-    { slot: "chat/composer", description: { type: "form", fields: [{ id: "text", input: "multiline", draft: "draft.$file", mentions: "$file.people" }],
-      submit: { call: "chat.send", input: { chat: "$file", text: "$form.text" } } } },
-    { slot: "app/main", description: { type: "transcript", file: "$file", read: "chat.read",
-      actions: [{ title: "Reply", fill: "chat/composer" }, { title: "Edit", call: "chat.edit", own: true },
-        { title: "Delete for everyone", call: "chat.delete", own: true }, { title: "Ask an agent", call: "chat.call", select: "anchors" }],
-      footer: { slot: "chat/composer" } } },
-  ],
+    delete: operation({ title: "Delete for everyone", input: { chat: link(), anchor: text() },
+      handler: async ({ chat, anchor }, ctx) => (await ctx.records.redact(chat, anchor), {}) }),
+    mute: operation({ title: "Mute", input: { chat: link(), on: bool() },
+      handler: async ({ chat, on }, ctx) => (await ctx.state.set(`muted.${chat}`, on), {}) }),
+  },
+  sidebar: [collection("Pinned", { hand: true, view: "strip" }),
+    collection("Chats", { kind: "chats", where: "!archived", sort: "-updated" }),
+    collection("Archived", { kind: "chats", where: "archived", sort: "-updated" })],
 });
-
-function mentioned(text: string, people: PersonRef[]): PersonRef[] {
-  return people.filter(person => text.includes(`@${person}`));
-}
-function inOneMinute() {
-  return new Date(Date.now() + 60_000).toISOString();
-}
 ```
 
-What this covers: people (sharing), agents (a run through the picked
-harness), calling an agent in with consent (the host filters what the
-harness can read; Chat waits a minute for answers), quotes as references
-(a link to the record's anchor, drawn with the reader's rights), delete for
-everyone (`redact`, scrubbed from history and search), an agent run that survives a restart (the run keeps appending to
-its own file on the machine; the harness's change trigger posts the reply
-whenever that file syncs, so nothing in Chat holds a connection), and
-mentions, and unread counts (`position: "read"` gives each row an
-`after_position` count for the asker). Typing indicators and honouring other
-people's mutes are not covered; see section 3.
+```ts
+// calternal-chat-ai: call an agent into a chat with the authors' consent.
+import { plugin, link, text, list, operation, slot } from "@calternal/sdk";
+export default plugin({
+  id: "calternal-chat-ai", name: "Chat agents", version: "2.0.0", icon: "spark",
+  depends: [{ plugin: "calternal-chat", version: "^2" }],
+  grant: { kinds: { chats: "read" }, calls: ["calternal-chat/send"] },
+  slots: { harness: slot({ effect: "viewer", recommended: "calternal-chat-claude-code" }) },
+  operations: {
+    call: operation({ title: "Ask an agent", input: { chat: link(), range: list(text()), prompt: text(), harness: text() },
+      async handler({ chat, range, prompt, harness }, ctx) {
+        const { anchor: call } = await ctx.call<{ anchor: string }>("calternal-chat/send", { chat, text: prompt });
+        // The host asks each other author, waits up to a minute, then freezes the input (permissions 1.6).
+        const run = await ctx.work.start({
+          request: ctx.request, program: `${harness}/agent`, place: "ask", key: `chat:${chat}`,
+          reads: { records: range.map(anchor => ({ file: chat, anchor })), consent: "ask" },
+          input: { chat, call, prompt },
+        });
+        return { run: run.id };
+      } }),
+    stop: operation({ title: "Stop the agent", input: { chat: link() },
+      async handler({ chat }, ctx) {
+        for (const row of await ctx.work.list({ key: `chat:${chat}`, state: "running" })) await ctx.work.stop(row.id, ctx.key(row.id));
+        return {};
+      } }),
+    steer: operation({ title: "Tell the agent", input: { chat: link(), text: text() },
+      async handler({ chat, text }, ctx) {
+        const [row] = await ctx.work.list({ key: `chat:${chat}`, state: "running" });
+        if (!row) throw new Error("No agent is working in this chat.");
+        return ctx.work.send(row.id, { type: "input", text }, ctx.request);
+      } }),
+  },
+});
+```
+
+```ts
+// calternal-chat-notify: push mentions to the people mentioned.
+import { plugin, operation } from "@calternal/sdk";
+export default plugin({
+  id: "calternal-chat-notify", name: "Chat notifications", version: "2.0.0", icon: "bell",
+  depends: [{ plugin: "calternal-chat", version: "^2" }],
+  grant: { kinds: { chats: "read" } },
+  phrases: { mention: "You were mentioned" },
+  watches: [{ target: { kind: "chats" }, op: "calternal-chat-notify/changed" }],   // delivered per subscribing person
+  operations: {
+    changed: operation({ title: "Notify", input: {},
+      async handler(_, ctx) {
+        const { target, from } = ctx.change!;
+        const fresh = await ctx.records.read(target, { after: { revision: from } });
+        const mentioned = fresh.some(r => !r.withheld && r.fields.mentions?.includes(ctx.me.id) && r.stamp.person !== ctx.me.id);
+        if (mentioned && !(await ctx.state.get(`muted.${target}`))) await ctx.notify([ctx.me.id], { item: target, phrase: "mention" });
+        return {};
+      } }),
+  },
+});
+```
+
+How the requirements are met:
+
+| Requirement | Where |
+| --- | --- |
+| A chat is a file of records | `records` on the kind; the host writes each record's header and stamp (files 1.3) |
+| People | the file's sharing (`people.share`); authors and "own" come from the stamp |
+| Agents | a run of the harness's program; its replies are `calternal-chat/reply` calls from its log, stamped with the run |
+| Calling an agent in with consent | `reads: { consent: "ask" }` on `work.start`; the host draws the asks, waits a minute, withholds the rest |
+| Quotes as references | a link to the record's anchor; the records component draws it with the reader's rights |
+| Delete for everyone | `records.redact`: scrubbed from history and search; quotes draw nothing |
+| A run that survives a restart | the run's inbox and log are synced files; its reply call waits in the log and runs once after reconnect (running section 2.1 and 6.3) |
+| Unread and mute | the kind's `position` key gives `me.unread`; mute is per-person state, honoured by the notify plugin running as the recipient |
 
 ### 2.4 A third-party composer and a harness
 
-**Composer: 19 lines (today: impossible without forking Chat; its composer
-is 12 lines inside Chat's 86-line description).**
+**Composer: 14 lines (today: impossible without forking Chat; its composer is 12 lines
+inside Chat's 86-line description).**
 
 ```ts
-import { plugin, operation } from "@calternal/sdk";
-
+import { plugin, link, text, operation } from "@calternal/sdk";
 const SNIPPETS: Record<string, string> = { "/shrug": "¯\\_(ツ)_/¯", "/lgtm": "Looks good to me." };
-
 export default plugin({
   id: "acme-composer", name: "Snippet composer", version: "1.0.0", icon: "edit",
-  needs: [{ plugin: "chat", version: "^2" }],
-  grant: { call: ["chat.send"] },
-  operations: [
-    operation("acme.send", { title: "Send", input: { chat: "file", text: "long" }, effect: "write",
+  depends: [{ plugin: "calternal-chat", version: "^2" }],
+  grant: { calls: ["calternal-chat/send"] },
+  operations: {
+    send: operation({ title: "Send", input: { chat: link(), text: text() },
       handler: ({ chat, text }, ctx) =>
-        ctx.call("chat.send", { chat, text: text.replace(/\/\w+/g, word => SNIPPETS[word] ?? word) }) }),
-  ],
-  parts: [{
-    slot: "chat/composer",
-    description: { type: "form",
-      fields: [{ id: "text", input: "multiline", draft: true, mentions: "$file.people" }],
-      menu: Object.keys(SNIPPETS).map(word => ({ title: word, insert: { field: "text", text: word } })),
-      submit: { call: "acme.send", input: { chat: "$file", text: "$form.text" } } },
-  }],
+        ctx.call("calternal-chat/send", { chat, text: text.replace(/\/\w+/g, word => SNIPPETS[word] ?? word) }) }),
+  },
+  fills: { "calternal-chat/composer": { composer: { send: "acme-composer/send", draft: true, mention: "this.people",
+    insert: Object.keys(SNIPPETS) } } },
 });
 ```
 
-**Harness: 33 lines (today: 70 lines for the fixture harness, which cannot
-run anything, plus 692 lines of the real v1 Claude Code runtime).**
+The composer never reads the chat: it gets a host handle for the open chat
+when mounted in the slot (permissions 1.5, designation rule), names it to
+`calternal-chat/send`, and Chat writes under its own grant and the person's
+rights.
+
+**Harness: 23 lines (today: 70 lines for the fixture harness, which cannot run
+anything, plus 692 lines of the real v1 Claude Code runtime).**
 
 ```ts
-import { plugin, kind, operation, on } from "@calternal/sdk";
-
+// The package: a program and nothing else.
+import { plugin } from "@calternal/sdk";
 export default plugin({
-  id: "chat-claude", name: "Claude Code", version: "1.0.0", icon: "spark",
-  needs: [{ plugin: "chat", version: "^2" }],
-  grant: { read: ["chats"], call: ["chat.reply"], agent: true },
-  kinds: [kind("claude-run", { fields: { chat: "link", call: "text" }, folder: "$me/Claude runs", row: ["created"],
-    records: { fields: { kind: "text!" }, edit: "writers", redact: "author-or-manager" } })],
-  parts: [{ slot: "chat/harness", operation: "claude.start", name: "Claude Code", icon: "spark" }],
-  operations: [
-    operation("claude.start", { title: "Run Claude Code", input: { chat: "link", call: "text", prompt: "text", context: "text[]" },
-      effect: "outside",
-      async handler({ chat, call, prompt, context }, ctx) {
-        // Consent-filtered: records whose authors did not consent come back withheld.
-        const records = await ctx.files.records(chat, { anchors: context });
-        const log = await ctx.files.create("claude-run", { fields: { chat, call }, key: ctx.key("log") });
-        const run = await ctx.run({
-          image: "ghcr.io/calternal/claude-code@sha256:4f…", key: ctx.key("run"), deadline: "2h", output: log,
-          input: { prompt, context: records.filter(r => !r.withheld).map(r => ({ by: r.stamp.person, text: r.body })) },
-          mounts: [{ picked: "login", as: "/home/agent/.claude" }],
-        });
-        return { run };
-      } }),
-    operation("claude.deliver", { title: "Post the reply", input: {}, effect: "write",
-      async handler(_, ctx) {
-        const { file, records } = ctx.cause as { file: FileRef; records: Rec[] };
-        const final = records.find(r => r.fields.kind === "final");
-        if (!final) return {};
-        const { fields } = await ctx.files.read(file);
-        return ctx.call("chat.reply", { chat: fields.chat, call: fields.call, text: final.body, agent: "Claude Code" });
-      } }),
-  ],
-  triggers: [on.change({ kind: "claude-run", records: { kind: "final" } }, "claude.deliver")],
+  id: "calternal-chat-claude-code", name: "Claude Code", version: "1.0.0", icon: "spark",
+  depends: [{ plugin: "calternal-chat-ai", version: "^2" }],
+  grant: { calls: ["calternal-chat/reply"] },
+  fills: { "calternal-chat-ai/harness": {} },
+  programs: { agent: { image: "registry.example/claude-code@sha256:4be1…", entry: "dist/entry.js",
+    network: ["api.anthropic.com"], login: { name: "claude", mount: "/home/agent/.claude" }, workdir: "ask" } },
 });
 ```
+
+```ts
+// src/entry.ts runs in the box next to `claude`, with the box API only.
+import { inbox, log, input, records } from "@calternal/sdk/box";
+import { spawnClaude } from "./claude.js";
+const { chat, call, prompt } = input<{ chat: string; call: string; prompt: string }>();
+const context = (await records()).filter(r => !r.withheld).map(r => `${r.author}: ${r.body}`).join("\n");
+const claude = spawnClaude({ prompt: `${context}\n\n${prompt}` });
+void (async () => { for await (const rec of inbox()) if (rec.type === "input") claude.stdin.write(rec.text); })();
+for await (const event of claude.events()) {
+  log.append({ type: "event", event });                                    // the working log, a synced record file
+  if (event.type === "assistant_message")
+    log.call("calternal-chat/reply", { chat, call, text: event.text });    // executed once, after any reconnect
+}
+log.end("completed");
+```
+
+`spawnClaude` (starting the program and reading its event stream) is not
+counted: it is the program adapter, the same in any design.
 
 ### Size summary
 
 | Plugin | Proposed | Today (revision 14) |
 | --- | ---: | --- |
-| Reading List | 11 (+4 for the reminder nudge) | 226 |
-| Notes | 36 | 67-line package plus a native host engine |
-| Chat core | 104 | 1,884 source lines across two packages (1,767 after the SDK), plus a 1,317-line test host |
-| Third-party composer | 19 | not possible without forking Chat |
-| Harness | 33 | 70 (fixture only) plus a 692-line v1 runtime |
+| Reading List | 10, plus 8 for reminders | 226 |
+| Notes | 29 | 67-line package plus a native host engine |
+| Chat: core | 53 | |
+| Chat: agents (consent, Stop, steer) | 32 | |
+| Chat: mention notifications | 19 | |
+| Chat, all three | 104 | 1,884 source lines across two packages (1,767 after the SDK), plus a 1,317-line test host |
+| Third-party composer | 14 | not possible without forking Chat |
+| Harness: package plus box entry | 10 + 13 | 70 (fixture only) plus a 692-line v1 runtime |
 
-The Chat number hides real costs: it uses a dozen field types, a transcript
-component, slots with operation signatures, consent, `redact`, the
-per-asker position count, and change triggers carrying a cause. Each of those is host work that today lives in
-Chat or in the revision 14 vocabulary. Section 3 lists where the line count
-is bought with something the primitives do not yet have.
+The Chat number is bought with host work: the records component, the
+per-asker unread count, `redact` with history scrubbing, consent inside
+`work.start`, run files that sync, the designation rule for the composer, and
+watches delivered per person. Each was Chat code, or revision 14 vocabulary,
+before. Section 3 lists where even this is not enough.
 
 ## 3. Where the code got awkward
 
-Each item: what I had to write or invent, and which section owns it. The
-files section (`lane/design-files`, first version, read at 18:00 UTC) already
-answers four items from my first draft; they are listed at the end.
+Each item: what I had to write or invent, and which section should own it.
 
-1. **A segmented chat is several files.** The files section caps a record
-   file (proposed 4 MiB) and has Chat roll over monthly
-   (`Chats/<chat>/2026-12.md`). Every Chat operation above takes one `chat`
-   link: `append`, `position`, `on.change`, sharing and the row all need "the
-   chat", not "this month's file". Either the host presents a segmented kind
-   as one logical file (append goes to the current segment, records and
-   positions span segments, sharing is on the folder), or every record app
-   re-implements rollover and cross-segment reads. I wrote the first; the
-   files section does not yet say which. *Files lane.*
-2. **A plugin cannot honour another person's mute.** `chat.notify` runs for
-   the sender (or for no person) and cannot read the recipients' private
-   state. Either the host applies a per-recipient filter (a notification is
-   dropped when the recipient's state for this plugin says `mute.<file>`),
-   or mutes go into a shared file, which tells everyone who muted whom.
-   *Permissions lane (notifications are primitive 7).*
-3. **Who acts in a trigger, and does the stamp carry the run?** `on.change`
-   fires when the harness's run log changes. I assumed the trigger acts for
-   the person whose action caused the change and that the stamp of anything
-   it writes carries the cause (the run), so `chat.reply` called from the
-   harness's trigger is stamped `run: <run>`. The files section instead has
-   the run append the reply itself (`record.append` by the run). That needs
-   the run, a program in a sandbox, to call the host API from inside the
-   sandbox with a grant on the chat. Either is possible; they are different
-   security shapes, and the running-code section has to pick one. *Running
-   code and permissions lanes.*
-4. **Trigger delivery must be durable, at least once, with a host cursor.**
-   The restart story depends on the host remembering which log records a
-   trigger has delivered and re-delivering after a crash. If the host does
-   not keep that cursor, every plugin keeps one in its state (a convention
-   every app would reinvent). Request keys make the redelivery harmless.
-   *Running code lane.*
-5. **Calling "the part the person picked".** `ctx.call({ slot, plugin })` is
-   invented: Chat calls the picked harness's operation with a signature the
-   slot declares. The draft has extension points but no call form for them.
-   *Permissions and calls lane.*
-6. **Consent waiting is a timer plus guesswork.** `people.consent` asks the
-   authors; Chat then waits a fixed minute with `ctx.later`. A trigger on
-   the answers (`on.change` over grants) would be exact, which needs grants
-   to be queryable or a trigger source of their own. *Permissions lane.*
-7. **Which reads are consent-filtered.** I invented `grant.agent: true`:
-   every read of a shared file by such a plugin is filtered by author
-   consent. The thesis says "a run acting for an agent", but the harness
-   plugin's handler reads the context and passes it into the run's input, so
-   the filter must apply to the plugin's handler too. *Permissions lane.*
-8. **A private run log has no folder.** The harness wants its log readable
-   only by the person who called it (host draft question 4b). Per-person
-   state is a hidden file per plugin, not a folder of record files, so I
-   invented `folder: "$me/Claude runs"`. Files need a per-person folder (or
-   a "private to creator" share at create). *Files and permissions lanes.*
-9. **The `running` field is a convention.** Chat stores the current run in a
-   field so `chat.stop` can find it, and must clear it on reply and on Stop.
-   A query over runs by target file would remove the field and two writes
-   per call. *Running code lane.*
-10. **Quotes are a link convention the drawing must recognise.** Chat writes
-    `[↩](<#^anchor>)` at the top of a reply. The transcript draws it as a
-    quote card with the reader's rights only if the catalogue knows that a
-    leading anchor link means "quote". *Drawing lane.*
-11. **Descriptions bind to state and stamps.** The composer binds its draft
-    to the state key `draft.$file`; the transcript shows Edit and Delete only
-    on records whose stamp names the viewer (`own: true`). Both need the
-    drawing catalogue to read per-person state and stamps on the host side.
-    *Drawing lane.*
-12. **Declarative operations are a second way to write an operation.**
-    `create` and `set` make Reading List and Notes code-free, but they are a
-    tiny language (`$input`, field lists) that the host interprets. The files
-    section's Reading List example uses the same idea in YAML. *Calls lane.*
-13. **Field types are a vocabulary.** `"text!"`, `"person[]"`, `"link"` cover
-    these plugins, with `!` for indexed fields (the files section allows 8 per
-    kind). Operation inputs reuse the same strings, so authors learn one
-    vocabulary, but JSON Schema users lose expressiveness (patterns, lengths).
-    *Files and calls lanes.*
-14. **Typing and "working" indicators have no primitive.** They must not be
-    stored, so they are not files, questions or runs. *Running code or
-    drawing lane.*
-15. **Mentions are parsed by the plugin.** `mentioned()` matches `@<id>` in
-    the text, but the composer shows names. The form's `mentions` binding
-    must write a parseable token (or record fields directly). *Drawing lane.*
+1. **The run's input could carry other people's words before consent is
+   known.** `chat-ai/call` passes the selected anchors as `reads`, the host
+   freezes the consented set, and the entry gets it with `records()`. The
+   permissions section has the input as refs (good); the running section's
+   example passes `prompt: selection.text` (copied words), and its box API has
+   no `records()`. The box needs exactly one call that returns the frozen,
+   consented set, or the consent rule can be bypassed by putting text in
+   `input`. *Running code and permissions.*
+2. **Who picks the harness: the person per call, or a slot?** The person
+   chooses an agent in the composer for each call ("Claude" or "Codex"), so
+   `harness` is an input; but the permissions section makes AI a slot with
+   effect `others`, picked per space. I declared a `viewer` slot and still
+   pass the harness as input, which means the host must check that the input
+   names a plugin filling that slot. Neither section has that check.
+   *Permissions and drawing.* (Question 2.)
+3. **Calling a program by name is a convention.** `program:
+   \`${harness}/agent\`` assumes every harness names its program `agent`. A
+   slot should be able to declare "a part here provides a program", so the
+   host resolves the program from the pick. *Running code.*
+4. **A plugin's own writes never fire its own watches**, so mention pushes
+   need a whole extra plugin (`calternal-chat-notify`, with its own install
+   grant) for what is one function. *Running code.* (Question 3.)
+5. **A watch hands over revisions, not records.** The notify plugin reads
+   `records.read(target, { after: { revision } })`, a read form the files
+   section does not define (it has anchor and sequence ranges). *Files.*
+6. **Segments.** The files section caps a record file (proposed 4 MiB) and
+   has Chat roll over monthly. Every Chat call above takes one `chat` link;
+   append, position, watches, sharing and the row all need "the chat", not
+   this month's file. I declared `segment: "monthly"` and assumed the host
+   presents the folder as one logical record file; the files section's table
+   says the plugin rolls over, its example says the kind declares it.
+   *Files.* (Question 1.)
+7. **Names differ between sections.** Edit and delete are `record.edit` and
+   `record.redact` (files), `host.records.replace` and
+   `host.records.tombstone` (permissions), and "appends a tombstone"
+   (drawing). Redact scrubbing history (files) and a tombstone record
+   (drawing) are not the same thing. One vocabulary is needed before the SDK.
+   *All four; the integrated design.*
+8. **Declarative operations cannot schedule.** `create` and `set` make the
+   list app code-free, but a reminder or a snooze is a field plus
+   `work.start` with `at`, so they need a handler and a worker. A time field
+   declared as a trigger (`datetime().wakes("notes/wake")`) would keep them
+   data. The running section rejects recurrence in the host but does not
+   discuss field-driven times. *Running code.* (Question 4.)
+9. **Cancelling a pending wake is a key convention.** Unsnoozing must stop
+   the pending wake: `work.list({ key: \`snooze:${note}\` })` then
+   `work.stop`. Every plugin that schedules invents a key scheme, and Notes
+   above does not even handle unsnooze. *Running code.*
+10. **Mentions are parsed from text.** `send` looks for `@<id>` in the text,
+    but the composer shows names; the composer's `mention` binding has to
+    write a token the core can parse, or send the mentioned people as an
+    input. The drawing section says `mention: "chat.people"` and no more.
+    *Drawing.*
+11. **The agent's reply has no author name of its own.** The stamp says
+    `run`, for Ana; the records component must show "Claude (for Ana)". That
+    needs the run's program name in the stamp or a lookup from the run to the
+    harness plugin's name. *Files and drawing.*
+12. **Field types are a vocabulary.** `text()`, `list(person())`, `link()`
+    with `.index()` cover these plugins, and the files section bounds a kind
+    to 8 indexed fields. Operation inputs reuse the same builders, so authors
+    learn one vocabulary; JSON Schema users lose patterns and lengths, and
+    `.optional()` is invented. *Files and calls.*
+13. **"Is typing" has no primitive.** The drawing section shows a working
+    line from the work row (good), but typing must not be stored, so it is
+    not a file, a question or work. *Running code or drawing.* (Question 6.)
+14. **The box API is a second environment.** `input`, `records`, `inbox`,
+    `log.append`, `log.call` and `log.end` run in the box, not in the space;
+    the harness author learns them as well. It is small, but the SDK ships two
+    entry points and the fake host has to fake both. *Running code.*
+15. **Request IDs on every write.** Writes take a `request` for idempotence;
+    the running section has the SDK derive request IDs from the work ID on a
+    retried time trigger. I wrote `request: ctx.request` or `ctx.key(…)` on
+    every write; the host should derive it unless given. *Calls.* (Question 5.)
+16. **The chat stays open to the run only through its calls.** The harness
+    holds `calls: ["calternal-chat/reply"]`, so any run of it may reply into
+    any chat its person can write. The designation rule needs the run to hold
+    a handle for this chat (issued at `work.start`), or a hostile harness
+    posts into the person's other chats. The permissions section issues
+    handles for slots, queries and returns, not for work inputs. *Permissions.*
 
-Answered by the files section since my first draft: unread counts (a
-kind's `position` key gives rows `after_position`, the engine's only join);
-per-person state (`state.get` and `state.set`, buffered, one file per person
-and plugin); delete for everyone (`record.redact` scrubs history and
-search); record structure (host-written headers, Markdown bodies, optional
-indexed record fields, edit and redact policies on the kind).
+Answered by the sections since my first draft: unread counts (the kind's
+`position` key and `after_position`, files 1.8); per-person state
+(`state.get` and `state.set`, files 1.10); delete for everyone with history
+scrubbing (files 1.11); which reads are consent-filtered ("marked" chains,
+permissions 1.6); consent waiting (inside `work.start`, permissions 1.6); who
+writes an agent's reply (the run calls an operation from its log, running
+2.7); finding the run for Stop (`work.list` by key, running 1.2); "own" and
+quotes in the transcript (the records component, drawing 1.8); recipients'
+mutes (watches delivered per subscribing person, permissions 1.9).
 
 ## 4. The developer loop
 
 | Step | Command | What the host must provide |
 | --- | --- | --- |
-| Create | `calternal new my-app` writes a 10-line plugin with one kind, one collection and one declarative operation | nothing |
-| Run with reload | `calternal dev` starts a local single-space host, installs the directory in development trust (no signature), opens the shell, and on every save rebuilds and reinstalls | a host binary that runs locally without a gallery, a development-trust install, a reinstall that keeps the space's files and work table across package versions, and a reload signal to the shell |
-| Test | `calternal test` runs tests against an in-process fake host | the same validator and grant check as the server, in-memory files, records, index and work table, scripted people, consent answers, runs and clock |
-| Validate | `calternal check` runs exactly the installer's validator | the installer's validator shipped as a command (the Rust validator as a native binary per platform, since Wasm is ruled out) |
-| Publish | `calternal publish` signs, packs and opens a gallery submission with screenshots taken from fixtures | a signing identity, a package format with one digest, and the gallery listing check |
+| Create | `calternal new my-app` writes the 10-line list app | nothing |
+| Run with reload | `calternal dev` starts a local single-space host, installs the directory in development trust, opens the shell, and reinstalls on every save | a host binary that runs without a gallery or signature; a reinstall that keeps the space's files, state and work rows across package versions; a reload signal to open clients; a local machine runner for programs |
+| Test | `calternal test` runs tests against an in-process fake host | the same call table and `authorize` function, in-memory files, records with stamps, index with `after_position`, state, work rows with a fake clock, scripted people, consent answers and box programs |
+| Validate | `calternal check` runs the installer's validator and prints the install screen the owner will see | the installer's validator as a command (the Rust validator as a native binary per platform, since Wasm is ruled out) and the host-written install sentences |
+| Publish | `calternal publish` signs, packs and opens a gallery submission with screenshots taken from fixtures | a publisher identity, one package digest, the gallery listing check |
 
 The fake host built in #106 shows the shape: about 1,400 lines covered every
-revision 14 exchange Chat used. Against the seven primitives it should be
-smaller, because records, consent and runs replace spans, attempts and
-contribution frames.
+revision 14 exchange Chat used, and running Chat's tests on it found five
+host-rule bugs. Against the seven primitives it should be smaller (records,
+consent and work replace spans, attempts and contribution frames), but it has
+to fake the box as well.
 
 ## 5. What a plugin can and cannot do
 
 **Can:**
 
-- Declare kinds of files with typed fields, and say how each looks as a row,
-  card and cell. Example: Reading List's `reading` kind.
-- Create, replace, set fields on and append records to files of kinds it may
-  write, edit or redact records under the kind's policy, and read history.
-  Example: Notes undoes a change.
-- Keep small private state per person. Example: Chat's read positions and
-  drafts.
-- Ask questions over any files it may read, and offer them as collections
-  with big and small views. Example: Notes' "Linked here".
-- Share a file with people in a shared group. Example: a new group chat.
-- Ask authors to let an agent plugin read their messages. Example: calling
-  Claude into a chat.
-- Run on a call, at a time, or when files change, and run long programs on a
-  machine whose output lands in a file. Example: the harness.
-- Publish operations for other plugins, and call theirs if the install grant
-  allows. Example: the composer calls `chat.send`.
-- Define slots others can fill, and fill other plugins' slots. Example: the
-  composer.
-- Reach declared hosts with secrets it cannot read, and notify people.
-  Example: a mail plugin fetching from a mail server.
+- Declare kinds of files with fields, and how each looks as a row, card,
+  cell, page and record. Example: Reading List's `reading` kind.
+- Create files, replace them, set fields, append records, and edit or redact
+  records under the kind's policy. Example: Chat's messages.
+- Keep small private state for each person. Example: read positions, drafts,
+  mutes.
+- Ask questions over any files it may read and ship collections and facets as
+  the app's default sidebar. Example: Notes' "Tags".
+- Share a file with people in a shared group; the host asks before widening.
+  Example: a new group chat.
+- Run on a call, at a time, or when files change, and run a program in a box
+  on a person's machine or a hosted sandbox. Example: the Claude harness.
+- Let an agent read other people's messages, once each author has agreed.
+  Example: calling Claude into a group chat.
+- Publish operations and call other plugins' operations its grant lists.
+  Example: the composer calls `calternal-chat/send`.
+- Offer slots and fill other plugins' slots. Example: a replacement composer.
+- Reach declared hosts with secrets it never sees, and push one of its
+  declared phrases to people who may read the item. Example: "You were
+  mentioned".
 
 **Cannot:**
 
-- Read or write any file outside its grant, even when another plugin asks it
-  to. Example: the composer cannot read chats.
-- Forge who wrote something: the host stamps every write. Example: a plugin
-  cannot post "as Alice".
+- Read or write outside its grant and the person's rights, whoever asks.
+  Example: the composer cannot read the chat it sends into.
+- Name a file it could not reach itself to another plugin. Example: a
+  composer cannot post into a chat it was never shown.
+- Forge who wrote something. Example: no plugin can post as Lee.
 - Read another person's private state, or learn about people outside a
   shared group. Example: Chat cannot see who muted a chat.
-- Give an agent plugin text whose author has not agreed. Example: the
-  harness gets withheld records for non-consenting authors.
-- Run code in a client, except in a sealed frame. Example: no custom
-  JavaScript in the composer.
-- Draw outside the catalogue or hide the host's challenge for risky
-  effects. Example: sharing a file always shows the host's confirmation.
-- Keep running after Stop, or exceed its storage, compute, call and wake-up
-  quotas. Example: a looping trigger is cut off.
-- Reach the network except declared hosts. Example: the harness image only
-  talks to the model provider.
+- Hand another person's writing to anything that can send it out without
+  that person's consent. Example: Lee's messages reach Claude only if Lee
+  said yes.
+- Run code in a client except in a sealed frame, draw outside the
+  catalogue, or draw or skip the host's challenge. Example: sharing always
+  shows the host's sheet.
+- Push arbitrary text. Example: a notification says "You were mentioned",
+  never the message.
+- Keep running after Stop or exceed its quotas for storage, calls, wakes and
+  runs. Example: a looping watch stops at depth four.
+- Reach the network except declared hosts. Example: the harness talks only
+  to the model provider.
 
 ## 6. Questions for the owner
 
-**1. Does the host hide segments of a long record file?**
-*What:* the files section caps a record file (proposed 4 MiB) and starts a
-new file each month, so a long chat is a folder of files. *Why now:* every
+**1. Does the host hide the monthly files of a long chat?**
+*What:* the files section caps one record file at a few megabytes and starts
+a new file each month, so a long chat is a folder of files. *Why now:* every
 record app (Chat, Mail, logs) is written against one answer. *Example:* Lee
-opens a two-year-old group chat, scrolls up, and quotes a message from last
-year; the unread count spans this month and last. *Options:* (a) the kind
-declares `segment: "monthly"` and the host presents the folder as one
-logical record file: append goes to the current segment, reads, positions,
-triggers and sharing span all of them; the host carries one more rule, and
-plugins never see segments. (b) Plugins see the segments: no host rule, but
-every record app writes rollover, cross-file reads, cross-file positions and
-folder sharing, and gets them subtly different. *Recommendation:* (a).
+scrolls up a two-year-old group chat and quotes last year's message; the
+unread count spans this month and last. *Options:* (a) the kind declares
+`segment: "monthly"` and the host presents the folder as one chat: appends go
+to the current month; reads, unread counts, watches and sharing span all
+months. One more host rule; plugins never see months. (b) Plugins see the
+months: no host rule, but every record app writes rollover, cross-file reads
+and folder sharing, slightly differently. *Recommendation:* (a).
 
-**2. When an agent's reply is written, whose write is it?**
-*What:* an agent run produces an answer; something must append it to the
-chat with a stamp that says "Claude, for Lee". *Why now:* consent, the
-author shown on the message, and what the run is allowed to touch all depend
-on it. *Example:* Lee calls Claude into a group chat; its reply appears
-under Lee's message. *Options:* (a) the run appends to the chat itself
-through the host, with a grant on that one chat for the run's lifetime: the
-stamp is exact, but a sandboxed program now holds a write grant on a shared
-file. (b) The run only writes its own log; the harness plugin's change
-trigger posts the reply, and the host carries the cause so the stamp still
-names the run: the program touches nothing shared, but triggers must carry
-causes across calls. *Recommendation:* (b); it keeps every sandbox writing
-only its own files, which is the simpler thing to contain.
+**2. When the person picks an agent for one message, who checks the pick?**
+*What:* in Chat you choose "Claude" or "Codex" in the composer for each call;
+the permissions section treats AI as a part picked once per space. *Why
+now:* it decides whether agents are a per-call input or a space setting.
+*Example:* in the family space, Ana asks Claude, then Codex, in the same
+chat. *Options:* (a) a slot lists the eligible harnesses (the space decides
+which are allowed) and the person picks among them per call; the host checks
+that the input names an allowed filler. Flexible; one more host check.
+(b) One harness per space; the person cannot choose. Simple; no per-call
+choice. *Recommendation:* (a).
 
-**3. Do operations without code exist?**
+**3. May a plugin's own writes wake its own watches?**
+*What:* the running section never wakes a plugin for its own writes, to stop
+loops. *Why now:* it decides how many plugins a feature needs. *Example:*
+Chat's mention push must live in a separate notify plugin with its own
+install screen. *Options:* (a) a watch may opt in to its own writes, bounded
+by the existing chain depth of four: Chat stays one plugin for that feature.
+(b) Keep the rule: no loops by construction, but small features become
+separate plugins, each with its own install screen. *Recommendation:* (a);
+the depth limit already stops loops.
+
+**4. Do operations without code exist, and may a time field wake one?**
 *What:* `create` and `set` let an app declare "add a file of this kind" or
-"set this field" with no worker. *Why now:* it decides whether the ten-line
-app needs a sandbox at all. *Example:* Reading List's Add and Mark read.
-*Options:* (a) yes, two declarative forms with `$input` substitution: small
-apps have no code to run or review; the host interprets a tiny language.
-(b) No, every operation is a handler: one way to do things; every app ships
-a worker. *Recommendation:* (a), limited to those two forms.
+"set this field" with no worker. *Why now:* it decides whether a small app
+needs code at all. *Example:* Reading List's Add and Mark read are data; its
+reminder is not, because waking at a time needs `work.start`. *Options:*
+(a) two declarative forms, plus a time field that may wake an operation
+(`datetime().wakes(...)`, cancelled when the field is cleared): small apps
+have no code to run or review; the host interprets two forms and one wake
+rule. (b) Every operation has a handler: one way to do things; every app ships
+a worker. *Recommendation:* (a), limited to those forms.
 
-**4. How does an app call the part a person picked?**
-*What:* a slot is a named place another plugin can fill, such as Chat's
-harness. *Why now:* agents, composers and notifications all depend on it.
-*Example:* Chat starts whichever harness Alice picked. *Options:* (a) a slot
-declares an operation signature and `call({ slot, plugin })` reaches the
-filling plugin's operation with the caller's and the person's rights: one
-mechanism for every pluggable behaviour. (b) Slots are drawing-only, and
-behaviour goes through public operations named by convention: fewer host
-rules, but every app invents its own naming. *Recommendation:* (a).
+**5. Does every write need an explicit request ID?**
+*What:* every host write takes a request ID so that a retry does not write
+twice. *Why now:* it appears on almost every line of every plugin.
+*Example:* `ctx.records.append(chat, { body, request: ctx.request })`.
+*Options:* (a) the host derives it from the invocation's request and a
+per-invocation counter unless the author passes one: shorter code; a handler
+that changes its call order on retry would write twice (the SDK's fake host
+can catch that in tests). (b) Always explicit: exact, but noisy and easy to
+get wrong. *Recommendation:* (a), with `ctx.key(purpose)` where the order can
+change.
 
-**5. Which plugins are "agents" for the consent rule?**
-*What:* the rule is that agents read other people's writing only with
-consent. *Why now:* the host must know where to apply the filter.
-*Example:* the Claude harness's handler reads chat messages and passes them
-to a run. *Options:* (a) a plugin declares `agent: true` in its grant, and
-every read it makes of a shared file is consent-filtered: simple and hard to
-bypass, but a plugin could avoid the flag (the installer must require it for
-anything that starts runs with model access). (b) Only runs are filtered:
-precise, but a plugin can read in its handler and pass the text into the run.
-*Recommendation:* (a), with the installer requiring the flag for any plugin
-that declares a run image.
-
-**6. Where do typing and "working" indicators live?**
+**6. Where does "is typing" live?**
 *What:* short-lived state that must not be stored. *Why now:* without a
-place, plugins will write it to files, which fills history. *Example:* "Lee
-is typing" in a chat. *Options:* (a) a per-file ephemeral channel the host
+place, plugins will write it to files and fill history. *Example:* "Lee is
+typing" in a chat. *Options:* (a) a per-file ephemeral channel the host
 forwards to current readers, with a small size and rate bound: one more
-concept. (b) Leave it out of the first version: simpler, Chat shows no
-typing. *Recommendation:* (b) for the first version, (a) when Chat needs it.
+concept. (b) Leave it out of the first version; Chat shows no typing.
+*Recommendation:* (b) now, (a) when Chat needs it.
 
 ## Simplification opportunities
 
-- Records could be the only write besides replace: Notes' history and
-  Chat's edits both read as records, which would make `history` a records
-  query.
-- `on.time` over a field and `later` overlap; if the host indexes time
-  fields, `later` may only be needed for computed times.
-- The `running` field and `status` overlap (item 10 above).
+- The declarative `create` and the drawing section's derived forms overlap: a
+  form derived from a create operation is the whole "New" flow.
+- `facet` could be a collection with `group`, as the files section's query
+  already has `group`.
+- If writes derive request IDs (question 5), `ctx.key` remains only for
+  out-of-order calls and `ctx.request` disappears from author code.
+- The box API's `records()` and the space API's `records.read` should be one
+  call with one filtering rule, so that harness authors learn one thing.
