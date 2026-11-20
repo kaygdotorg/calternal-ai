@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.41 draft
+# Plugin API v2 · revision 14.42 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -668,11 +668,14 @@ separately from the reply. The quote is pinned to what the source span
 said at its checked revision. An edit that supplies no new quote keeps the
 existing quoted bytes even if the source has been edited. An explicit
 re-quote supplies a new checked source. The ordinary record limit and the
-quote budget apply. Deleting the original removes its quotes in the same commit and
-leaves the other messages and reply anchors. The interim policy removes
-copies in other items too wherever that atomic path is qualified. The
-[cross-item question](morning-decisions.md#cross-item-quote-deletion--2026-11-20)
-remains with the owner.
+quote budget apply. Delete for everyone removes all checked quotes of the
+message, including quotes in other threads. The delete commit removes
+same-item copies and fences all remaining copies. The existing indexed
+rewrite job removes cross-item copies in bounded batches. Readers see
+unaffected content where it can be served safely and ordinary body
+unavailability where a revision still contains the deleted bytes. Once
+rewritten, the reply and its anchor remain without the quote. Follow the
+[catalogue's redaction rule][quote-redaction].
 
 A kind declares its [default app and format metadata][format-open].
 Its optional [title binding][title-binding] lets the host update the dated
@@ -1683,12 +1686,11 @@ intentional refusal/retry with an actionable response.
 
 ### Step 3 — Application cutover
 
-Build in order: Threads, Notes, Mail, Files, Photos. Before using
-the generic path, Threads supplies historical headings and
-attribution, attachments and queued follow-ups. Verify old and new
-rendering from retained files, restart recovery and rollback. Notes
-requires the history browser, linked-user comments and collection
-creation. Portable upload, history browsing, comments and collection
+Build in order: Threads, Notes, Mail, Files, Photos. Qualify on a fresh
+install. Threads must attach and reopen files through checked refs and
+support queued follow-ups. Test restart and replay with newly created
+items and jobs. Notes requires the history browser over revisions
+created on the fresh install, linked-user comments and collection creation. Portable upload, history browsing, comments and collection
 creation remain open where the generic contract lacks those shapes.
 Hold each affected cutover until its required behavior is pinned and
 qualified. Mention picker and snooze presets or custom date may follow
@@ -1721,18 +1723,21 @@ Send acknowledgement waits for the plugin wake. First output
 also waits for agent placement. Treat the two wake measurements as
 cutover gates.
 
-Before switching readers, durably record the widening-protection flag
-on every retained legacy thread under the catalogue’s
-[item-record rule](../contract/host-catalogue-v2.json#/attempt_authority_end/actions/item_audience_widening/item_record).
-Check the entire retained inventory, including restorable files. A legacy
-thread with no saved session still needs the whole-file disclosure when
-shared. Verify the flag on restart and preserve the check across rollback.
+At the Threads cutover, the owner permits wiping and redeploying this
+project's production deployment and its data. The old Calternal app and
+its userdata are outside that permission. The fresh-install gate has
+no legacy session drain, historical attribution proof, legacy inventory
+backfill or parity comparison against old files. Reading
+`calternal-thread/v1` files is an optional import. The normal widening
+protection applies to new writes under the catalogue's item-record rule.
+[Owner decision][fresh-cutover]
 
-Drain active attempts before switching writers. Remove native Turns
-and Notes dispatch and authority aliases, the `threads` namespace owner
-map and lookup, bundled-ID exceptions and native owner routing in startup,
-jobs and turn admission. Installed manifests provide ordinary ownership.
-Keep the generic collision checks, trusted install and additive migrations.
+Remove native Turns and Notes dispatch and authority aliases, the
+`threads` namespace owner map and lookup, bundled-ID exceptions and
+native owner routing in startup, jobs and turn admission. Installed
+manifests provide ordinary ownership. Keep the generic collision checks
+and trusted install. Changes merged before cutover still use additive
+migrations and the [running-release upgrade check](../scripts/verify-additive-upgrade.sh).
 Delete the transitional `open_cutover_requirements` and
 `application_cutover_requirements` catalogue tables after cutover.
 
@@ -1748,8 +1753,8 @@ live-authority discovery rule above remains interim.
 
 Application cutover gates are listed in §8 and the catalogue. Pin the
 generic upload and linked-user comment shapes, history browsing and
-collection creation before the affected cutover. Old-message attribution
-and queued follow-ups are owned by the app and harness contract.
+collection creation before the affected cutover. The Threads app owns
+queued follow-ups through the generic job contract.
 
 [generic-engines]: https://git.kayg.org/kayg/calternal-ai/src/commit/5abca642/docs/proposals/plugin-api-v2-generic-engines.md
 [window-replay-measurements]: https://git.kayg.org/kayg/calternal-ai/src/commit/a96553bc314a4c4c6f695047b1ed6171e3b3bdfb/docs/reviews/window-engine-2026-11-19.md#proposed-revision-14--journal-backed-window-generations
@@ -1774,6 +1779,8 @@ and queued follow-ups are owned by the app and harness contract.
 [departed-links]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0040-links-say-what-happened.md
 [relocate]: ../contract/host-catalogue-v2.json#/item_engine/relocate
 [quotes]: ../contract/host-catalogue-v2.json#/item_engine/quotes
+[fresh-cutover]: https://git.kayg.org/kayg/calternal-ai/src/commit/ee88c9f60c5256d3cc5b9adbce3c0e5036854c99/docs/morning-2026-11-20.md
+[quote-redaction]: ../contract/host-catalogue-v2.json#/item_engine/quotes/redaction
 [title-binding]: ../contract/host-catalogue-v2.json#/item_engine/title_binding
 [format-open]: ../contract/host-catalogue-v2.json#/item_engine/format_open
 [save-gate]: ../contract/host-catalogue-v2.json#/item_engine/save_qualification

@@ -171,12 +171,13 @@ First run a new space with the gated window lane, inline content methods, one re
 enrolled carrier, one registered harness and a text item view. Drive create, Send, first
 output, replay and Stop against the actual server and writer. Follow with the supported
 provider and test login. Keep alarm, staged edits, richer view assets, offline, children,
-Resume and people paths disabled until their gates pass. Rollout waits for §8 cutover
-parity and the measured 500 ms p95 product wake gates. Use additive migrations and the
-running-release upgrade check before merge.
+Resume and people paths disabled until their gates pass. Rollout waits for the fresh
+install requirements in §8 and the measured 500 ms p95 product wake gates. Use
+additive migrations and the running-release upgrade check for changes merged before
+cutover.
 
-At cutover drain native attempts, preserve thread and note files and verify old and new
-renderings and projections. Slice 3 removes the native Turns job interpreter, admission,
+The owner permits a fresh production redeploy at the Threads cutover. Qualify freshly
+created files and jobs under §8. Slice 3 removes the native Turns job interpreter, admission,
 phases, progress, control, instruction and retry paths after the generic fences take
 over. Slice 4 retires native provider-specific launch and raw output adapters after the
 contribution placements qualify. Keep enrollment, runtime isolation, request approvals
@@ -188,6 +189,5 @@ authority aliases in `api/dispatch.rs` once each app passes its own gate. With 1
 the transitional `threads_owner()` lookup and its entry in
 `crates/server/plugin-namespace-owners.json`, the bundled-ID exceptions and native
 owner routing in startup, jobs and turn admission. Retire server-owned thread presentation,
-titles and provider-session wrappers with 3 once retained files round trip through
-Threads. Keep generic registry collision and trust checks, the content engine, and shared
+titles and provider-session wrappers with 3 after the fresh-install gate passes. Keep generic registry collision and trust checks, the content engine, and shared
 search and worker plumbing. Remove the catalogue's per-app cutover tables after cutover.

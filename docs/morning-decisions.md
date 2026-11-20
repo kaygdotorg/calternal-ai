@@ -206,22 +206,3 @@ responsible for verifying the artifact. Neither choice affects foreground
 request cost. Prefer reserving bundled IDs once the distribution update
 path can replace them with verified artifacts. The installer currently
 keeps the operator approval flow.
-
-
-## Cross-item quote deletion · 2026-11-20
-
-Should deleting a message also remove quotes copied into other items?
-The answer determines which live files, history and cached views the
-server must fence before the deletion can succeed.
-
-For example, Mira deletes a message in a thread after Lee quoted it in a
-second shared item. Removing the copy protects Mira’s deletion across
-both live items, at the cost of maintaining copy references and
-rewriting or invalidating affected items in the same commit. Keeping the
-copy preserves Lee’s reply context and avoids the extra write work, but
-the deleted text stays readable in the other item under Mira’s original
-attribution.
-
-Recommend removing the copies. The draft uses that policy in the interim
-and enables cross-item quoting only where a bounded atomic redaction
-qualifies. Exported copies outside the server stay outside that fence.

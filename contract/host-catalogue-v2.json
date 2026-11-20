@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Revision 14.41 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
+  "description": "Revision 14.42 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -48,7 +48,7 @@
       "cutover": "Keep this path disabled until a later numbered revision pins the grant and file commit."
     },
     "message_deletion": {
-      "proposal": "The writer redaction and immediate withholding rule is item_engine.quotes.redaction. Safe historical projections after the withholding fence and qualification of search, display-cache and offline reconciliation remain OPEN.",
+      "proposal": "Delete-for-everyone and cross-item checked quote redaction are defined in item_engine.quotes.redaction. Safe historical projections after the withholding fence and qualification of search, display-cache and offline reconciliation remain OPEN.",
       "blocks": "Deleting a people message and promising its removal on those surfaces.",
       "cutover": "Keep deletion disabled until pinned."
     },
@@ -7651,7 +7651,6 @@
     "admission": "Only a declared replayable job with execution:true and a checked live item whose installed kind declares execution_target. Keep one eligible head job or active attempt per item. The successor rule governs queued jobs. Pin the audience generation, actor, job, package, exact harness binding, selected placement and profile, and effect ceiling. Use the top-level ExecutionJobStart.harness or the already-pinned alarm binding. Apply execution_placement to the StartJob placement operand. Never select a harness or placement from opaque job input. Under the lifecycle fence refuse deleted, archived or retired targets. Reserve quotas once. Exact replay returns the current receipt without another admission. Refuse changed operands under the same receipt. Recheck the same bindings at promotion and claim, without substitution. No caller-supplied host job context. Apply initiating_installation and target_operand. Apply extension_points.calls.preflight before issuing an admission receipt.",
     "initiating_installation": "For an interactive execution, pin the authenticated initiating device installation in host-owned admission state. Recheck its ownership, validity, generation and expiry at admission, promotion, claim, reattachment, renewal and effect or egress authorization. Loss of a view lease or transport alone does not retire work. An autonomous alarm uses its own pinned alarm principal. Apply session_or_job_retirement on loss of the installation, including for the exact queued successor and descendants; unrelated authorized work remains live.",
     "stop_and_archive": "Idle archive excludes unresolved execution jobs, live attempts and protected approvals. Protected archive pins the entire affected set, including head and successor. Stop pins its exact target and any affected descendants. Both apply attempt_authority_end.retirement_authority. Never retarget a replacement.",
-    "cutover": "Fence new admission, drain unresolved execution jobs and verify zero live attempts before switching writers. Retain durable refusals and receipts across rollback.",
     "successor": "The existing checked start_job may admit one durable FIFO successor per item while its head job or attempt is active. A queued successor has a receipt and no execution lease. Promote it only after the head is terminal and its attempt authority and teardown are settled. Recheck item, actor, grants, pinned harness, placement, profile and quota at promotion. Replay the receipt without adding a job. At capacity refuse with pending_limit. Stop pins the exact target. Archive, widening and revocation fence any affected queued jobs before publishing the authority change. One item never has two running attempts.",
     "target_operand": "ExecutionJobStart and targeted AlarmSet name the checked item once, in top-level item. Resolve the installed run operation and its single-item target.field. Reject an input that supplies that field, even if equal; require live authority on the top-level item and exact declared kind. The host injects the checked item into that field before validating and dispatching the run input. HostWorkerInvokeFrame.message.job_context.item for execution jobs corroborates the same target and conveys no independent authority. Replay, promotion and claim reconstruct only from the pinned target. For an untargeted ordinary alarm, omit item and require a target-free run operation."
   },
@@ -7733,7 +7732,7 @@
         "before_reply": "Before the wider grant is visible, durably fence every exact attempt in the affected item with personal-only authority (full-rights discovery or tools with a personal native login). Retire affected personal-context intents and descendant authority and durably discard uncommitted output, including anything staged or queued for delivery. Pin the committed file boundary and persist deduplicated cleanup. Fence other pending derived output if the wider audience cannot read its sources. Use the commit_rule for changes that span databases. In the same durable authority change retire all incompatible saved ExecutionSessionRefs, including completed sessions. Derive retirement from the checked item and audience generation without parsing files or contacting the placement.",
         "after_commit": "Dispatch idempotent exact-attempt Stop and verify teardown. Later attempts use the shared discovery and tools rules. Do not carry forward discarded personal attempt context or reattach a fenced attempt. Only a new admission using committed file bytes and context cleared for the new audience may run in the widened scope. The placement must keep retired personal sessions unreadable even by raw path or provider session ID.",
         "ends_authority": true,
-        "item_record": "Record widening protection on the item in the commit of its first file or snapshot write by or on behalf of a personal-authority run. The host owns this durable item fact. Preserve it across package updates, disable and uninstall, and across item revisions and restore. Before switching readers, set the same durable protection on every retained legacy thread, including archived or trashed files that can be restored. The legacy file inventory sets this protection without a source-history test."
+        "item_record": "Record widening protection on the item in the commit of its first file or snapshot write by or on behalf of a personal-authority run. The host owns this durable item fact. Preserve it across package updates, disable and uninstall, and across item revisions and restore."
       },
       "item_erasure": {
         "before_reply": "Persist item deletion or purge and fence affected jobs, attempts, descendants and saved bindings. Trashing an item with an active attempt requires an authorized Stop first.",
@@ -7748,11 +7747,6 @@
       "package_or_placement_retirement": {
         "before_reply": "Invalidated package generation, enrollment, placement or runtime lease and durable fences for its affected attempts and intents.",
         "after_commit": "Dispatch exact Stops where reachable and reconcile runtime teardown before releasing quota.",
-        "ends_authority": true
-      },
-      "cutover_retirement": {
-        "before_reply": "Old-writer generation and new-admission fence. Switch only after zero active attempts and zero unresolved execution intents. Keep earlier authorized retirement fences and refusals through switch or rollback.",
-        "after_commit": "Replay only outstanding cleanup for already retired attempts. Ordinary cutover issues no new Stop.",
         "ends_authority": true
       },
       "failed_reattachment": {
@@ -7809,9 +7803,6 @@
         "grant_change",
         "ancestor_authority_loss"
       ],
-      "A.5": [
-        "cutover_retirement"
-      ],
       "Host erasure": [
         "space_erasure",
         "account_erasure",
@@ -7858,16 +7849,16 @@
     }
   },
   "application_cutover_requirements": {
+    "deployment": "Qualify a fresh install. The owner permits a fresh redeploy of this project's production installation and data at the Threads cutover, with the old Calternal app and its userdata outside scope. Legacy session migration, historical attribution proof, old-file parity and calternal-thread/v1 import are not gates. Use additive migrations and the running-release upgrade check for every change merged before cutover.",
     "notes": [
-      "History browser over the item revision engine.",
+      "History browser over revisions created on the fresh install.",
       "Checked linked-user comments.",
       "Collection creation."
     ],
     "threads": [
-      "Attribute existing files and messages through the owning app and independently authorized harness log, including historical heading, author, time, machine and login where authorized.",
-      "Attach files through a generic upload and checked item refs.",
+      "Attach and reopen files through a generic upload and checked item refs.",
       "Provide queued follow-ups through plugin-owned state and jobs.",
-      "Apply item_audience_widening.item_record to the entire retained legacy thread inventory before switching readers."
+      "Qualify the §8 product wake gates and remove native first-party handling at cutover."
     ]
   },
   "extension_points": {
@@ -8035,7 +8026,7 @@
     "retention_days": 30,
     "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action. Start retention at trash commit. No item kind or package overrides the retention period."
   },
-  "exchanges_revision": "14.41",
+  "exchanges_revision": "14.42",
   "view_result_retention": {
     "rule": "Host windows, plugin search pages and stored or live item-view pages use the same result_versions and retained_results exchange. On a successful renewal with an unchanged grant revision, re-confirm the exact result ref and version, current audience and checked scope, including the active settle generation for a plugin search, the slot for an item view, and live access to each exact item, asset and source revision represented in the result. Retain each still-authorized unchanged result by acknowledging the exact pair, without rerendering or invoking a plugin. Treat a changed or refused result as an invalidation of that result only. A changed audience requires a new view. Apply subscription_catch_up to each retained subscription and its result check.",
     "scope": "Retain only on the same authenticated view, account and cache partition. Rebind the acknowledged result's eligible continuation, follow and item-view asset refs to the renewed lease. Asset reads still apply view_snapshots.assets at admission and delivery. Supply current scoped contexts in retained_results for retained plugin-search pages. A missing context is unavailable. Replace old tokens as a set. Invalidate selections or activities whose originating result or context no longer holds. Acknowledge each exact result at most once under the existing aggregate cap. Reuse the recorded window scope_ref for an unchanged checked scope, and use the exact omitted result's scope for persisted row erasure.",
@@ -8142,7 +8133,13 @@
       },
       "preserve": "The destination quote pins the source item, exact source revision and span, and its original attribution. Keep those bindings with the stored quote bytes, independent of later source edits. Host relocation can rebase a Markdown destination inside the quote while preserving its label, wording and pinned source. On a non-delete replace_span, omission of quote keeps that checked block byte for byte and moves only its recorded offsets as needed. Recheck the existing quote's delivery authority without acquiring a fresh source span. A supplied ItemQuoteSource is an explicit re-quote and must pass the full check for a new quote. Redaction, including deletion of the enclosing reply, is the only way to remove a quote without replacing it with another checked quote.",
       "compose": "An attested record may carry one ItemQuoteSource. Resolve the exact currently available recorded middle at the checked source revision. Check live source body read, destination write and source access for the entire destination audience before commit and at delivery. Use no caller-supplied quote bytes. The host emits Markdown blockquote lines using > plus a space and a blank line after the block. The original middle bytes are kept in order. Track the emitted quote range and its source origin separately from the replying middle and plugin framing. Translate any source host byte ranges to the emitted quote so copied host-written bytes stay host-written. Quote bytes count against the ordinary record budget and the quote cap, independently of the framing cap. Refuse ineligible, empty or retired sources. Do not quote the source's framing or its quoted copies.",
-      "redaction": "Index each copy under the durable identity of the original record across edits, including exact source revision and the dependent range. Refuse creation above the copy limit so deletion can finish. Replacing the original with an empty middle atomically removes its text and the associated quote bytes in that item. Deleting a reply also removes any quote it contained and retires that copy in the same transaction. Mark any bytes generated by host redaction under item_spans.origins. Removed bytes have no origin at the new revision. Preserve other records, reply anchors and attributable middle bytes, and shift the ranges with the same commit. Until the owner decides, remove copies in other items too. Admit cross-item copies only within the same per-space writer and after atomic removal and audience and revoke gates qualify. Refuse cross-space copies. Withhold affected historical reads and retained projections until they can be delivered with redaction, invalidate affected caches, and apply offline reconciliation at next contact. Treat quotes as source-dependent body content on every delivery path. Fence affected destination bodies and projections before publishing a source grant loss or broader destination audience until the quote is redacted or its access is re-established."
+      "redaction": {
+        "index": "Use the same reverse-reference index as relocation, keyed here by the source item's durable record identity across edits. Store the exact quoted revision and destination record and byte range. Refuse a new live copy above copies_per_source across all destinations. Keep reverse dependencies for retained readable revisions and projections even after live rewrites. Refuse any write that would discard tracking of a live checked quote while leaving its bytes in the item. Checked cross-item quotes stay within the same space.",
+        "commit": "Delete for everyone retires the original record under the expected-head and writer authority fences. Commit the tombstone, same-item quote removals, durable redaction fence, receipt and one resumable job for any remaining cross-item rewrites in the same FULL transaction before acknowledging. Serialize quote admission with the fence so no new copy can be admitted from a redacted record or its earlier revisions. Deleting a reply also removes any quote it contains and retires that copy in the same commit.",
+        "rewrite": "Use the relocation rewrite job and its file, staged-byte and edit caps per batch. Seek by the source record in the index. Recheck the current destination head and checked copy under the writer and room fences. Patch only tracked quote bytes and commit the new head, span offsets, index and progress together. Preserve the reply, its anchor and surviving attribution. Assign host origin to generated bytes under item_spans.origins. Removed bytes have no origin at the new revision. Resume by durable cursor across restart and deduplicate by the delete receipt. Finish only when every live checked copy has been removed and the rewrites are durably published.",
+        "delivery": "The redaction fence takes effect when deletion commits, independently of rewrite progress. Refuse body and range reads of any source or destination revision that still contains the redacted bytes. Clear its open body and view through the existing invalidations and suppress affected search matches, counts, excerpts, snapshots, caches and offline delivery. Unaffected records and independently authorized metadata may still be shown where they can be served safely. For an affected body with no safe projection, show the ordinary unavailable state until the cleaned head is ready. Then show the reply with no quoted block or deletion marker. Keep affected history unavailable until it can be projected safely. Reconcile offline copies at next authenticated contact. Retain the fence for as long as a source or dependent revision, projection or offline grant containing the redacted bytes can be served. The fence covers checked quotes, with arbitrary pasted text and exported copies outside its scope. Source grant loss or wider destination audience also fence dependent content before the change is visible, until redaction or authority is established.",
+        "qualification": "Before enabling, exercise zero, one and 64 checked copies across mixed audiences, including same-item and cross-item copies from older source revisions. Refuse copy 65. Force multiple rewrite batches, pause after the fence and crash before delete ACK and after a batch commit. Require zero deleted bytes or derived matches on any authorized delivery path after the fence, no loss of neighboring text or span attribution, one job on replay, exact-once rewrites, and eventual removal of every checked copy. Include a racing new quote, a changed destination head, a lost grant and offline reconciliation. No live qualification is recorded here."
+      }
     },
     "title_binding": {
       "rule": "For a claimed-text kind, file_format.title_binding declares the only optional host-written title destinations. Install checks that the kind's ordinary title_field is writable, and that utc_date_folder has a visible kind root. The binding is data, with no format program or worker call. On create and on every title change, the host checks and applies the same title value to metadata, declared frontmatter and placement in the item writer transaction. Use item_engine.relocate for the resulting path change.",

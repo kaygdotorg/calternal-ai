@@ -75,14 +75,8 @@ def check_attempt_fence_trace(trace, errors, catalogue):
         return
     ends_authority = rule["ends_authority"]
     fenced = rule.get("fences_effects", ends_authority)
-    cutover = action == "cutover_retirement"
     before = {"fence_durable": fenced, "cleanup_durable": rule.get("cleanup_durable", ends_authority),
               "reply_sent": False, "remote_stops": 0}
-    # Cutover recovers already-persisted cleanup for an earlier authorized
-    # retirement. It has no active attempt to stop as part of the switch.
-    if cutover:
-        before["cleanup_durable"] = False
-        before["prior_cleanup_durable"] = True
     if trace["after_commit"] != before:
         errors.append("$.after_commit: wrong durable fence, cleanup or reply state before the crash")
     expected_probes = {name: "refused" if fenced else "allowed"
@@ -105,9 +99,7 @@ def check_attempt_fence_trace(trace, errors, catalogue):
         errors.append("$.placement_lease: failed continuity must fence even a valid placement")
     if trace["unaffected_attempt"] != "allowed":
         errors.append("$.unaffected_attempt: retirement cannot fence unrelated authority")
-    expected_stops = int(rule.get("new_remote_stop", ends_authority and not cutover))
+    expected_stops = int(rule.get("new_remote_stop", ends_authority))
     expected_cleanup = {"new_exact_stops": expected_stops, "replacement_stops": 0}
-    if cutover:
-        expected_cleanup["prior_exact_stops"] = 1
     if trace["after_cleanup_replay"] != expected_cleanup:
         errors.append("$.after_cleanup_replay: remote dispatch must reconcile the exact attempt once")
