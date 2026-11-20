@@ -113,9 +113,11 @@ and digest against the provisioned image, verifies the separately hashed entry,
 and starts it with a read-only mount and network disabled. It supplies one
 bounded stdin frame and forwards ordered stdout under the exact ticket. The
 terminal follows process exit and verified container removal. This qualification
-path has no login mounts. Carrier loss pauses delivery while the machine keeps
-the entry and its bounded output log. A replacement carrier presents the
-original launch reservation and committed sequence to resume delivery.
+path has no login mounts. The machine drains the running entry into its private
+working log while a disconnected carrier pauses delivery. A replacement
+carrier presents the original launch reservation and committed sequence, then
+reads the retained log at the corresponding byte offset. The machine stops a
+live entry after 24 hours of continuous server unreachability and keeps its log.
 [Entry qualification](../../docs/reviews/plugin-api-v2-enrolled-entry-qualification-2026-11-20.md).
 
 

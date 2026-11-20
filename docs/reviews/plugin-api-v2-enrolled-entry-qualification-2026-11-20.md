@@ -146,29 +146,47 @@ The machine returns an explicit attachment proof and the highest buffered
 sequence before replay. This bounds catch-up even for a quiet entry.
 Carrier credit and commit acknowledgements have separate meanings.
 
-The private in-memory output log lasts for the machine role's lifetime. It
-retains up to 256 KiB of encoded frame material and 256 frames, including space
-for a failure terminal. When the log fills, the existing exec pipe applies
-backpressure. Writes to this log make zero database reads or flushes and count
-one bounded serialization per producer frame. The independent 60-second
-scripted run deadline remains in force. The proposed upper bound on a continuous
-outage and on completed output awaiting acknowledgement is 24 hours.
-[Recovery handoff and watchdog question](https://git.kayg.org/kayg/calternal-ai/issues/78)
+The machine records checked stdout in a private append-only working log and
+publishes each complete batch after a data flush. The recorder runs independently
+of carrier and commit credit. The relay holds one decoded record and eight
+submitted byte offsets. Reconnect translates the committed sequence into a byte
+position using those offsets and reads one bounded record at a time. There is no
+backlog-dependent in-memory allocation or rescan. Intake uses no database reads
+or flushes. It writes and synchronizes batches of approximately 128 KiB or 8 ms
+of output. Replay reads one four-byte record length and at most one 16 KiB payload.
+The recorder reuses the private-directory and directory-sync helpers from
+`fsio`, the shared entry frame validator, and the existing machine carrier's
+credits and per-ticket slot lock. The slot lock covers only admission and lookup.
+Log creation syncs the log directory once, with one extra parent-directory sync
+when first creating that directory.
+The machine's available filesystem space bounds the backlog. The scripted
+60-second deadline and an exact Stop can end the run earlier. After 24 hours of
+continuous server unreachability, the machine stops any live entry and keeps its
+log. The same running machine service can still relay retained output after exact
+reattachment. A machine service restart preserves the log for inspection.
+Local I/O and teardown errors also leave the file for inspection and removal by
+the machine operator.
+[Recovery handoff and owner decision](https://git.kayg.org/kayg/calternal-ai/issues/78)
 
 The enrolled recovery fixture drops the machine's HTTPS carrier after the first
-frame, keeps the connection down while the same sandbox completes, then proves
-a new signed session for the same boot. It checks refusal of a different launch
-reservation, the exact ordered suffix after a lost acknowledgement, and cleanup.
-On dev-01 the two output-log tests, the enrolled fixture and leak checks passed.
+frame, lets the same sandbox finish writing 320 frames with 3.84 MB of text, and
+checks the retained file before proving a fresh signed session for the same
+boot. It checks refusal of a different launch reservation, every frame of the
+ordered suffix after a lost acknowledgement, and cleanup.
+The fixture timed out waiting for the offline sandbox to finish with the
+previous in-memory queue.
+On dev-01, six machine tests and the enrolled HTTPS fixture passed with the
+digest-pinned Node image. Formatting and the Podman, Firecracker and provider
+sign-in leak checks passed.
 The fixture supplies the commit cursor directly. The product server-crash and
 pending-Stop gates require Slice 3's durable runtime binding and Stop delivery
 and Slice 1's committed producer cursor. Those dependencies also govern the
 product thread's state and an updater's idle check.
 
-Build and test only under the dev-01 lane directory with
-`export TMPDIR=$HOME/gate-tmp` before `nix develop`. Use the candidate
-release image and `localhost/calternal-ai:31fb41179460` with
-`scripts/verify-additive-upgrade.sh` before reporting a passing first gate.
+Build and test only under the dev-01 lane directory. Set
+`TMPDIR=$HOME/gate-tmp` before `nix develop` and take the shared
+`/tmp/calternal-dev01.lock` when running builds or tests. Deploys use fresh
+installs until the Threads cutover.
 
 Revision 14.34 settled the entry-side broker exchange raised on
 [contract issue #78](https://git.kayg.org/kayg/calternal-ai/issues/78).

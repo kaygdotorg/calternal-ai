@@ -8,14 +8,16 @@ const ENTRY_MOUNT: &str = "/calternal-entry";
 
 impl PodmanBackend {
     /// Verify the staged image and package asset before binding the entry. The
-    /// caller owns attempt admission, timeout enforcement and verified teardown.
-    /// Costs one image inspection, one bounded hash/write and two engine calls.
+    /// caller owns attempt admission, timeout enforcement, verified teardown,
+    /// and disposal of the private working log after output is committed.
+    /// Costs one image inspection, one bounded hash/write, one directory sync
+    /// for the log entry and two engine calls.
     pub(super) async fn launch_entry(
         &self,
         ticket: Uuid,
         program: &EntryProgram,
         live: Arc<dyn Fn() -> bool + Send + Sync>,
-    ) -> SandboxResult<(PodmanSandbox, Exec)> {
+    ) -> SandboxResult<(PodmanSandbox, Exec, super::super::EntryLog)> {
         if self.guest || self.kvm_fallback || ticket.is_nil() || !live() {
             return Err(SandboxError("entry placement is unavailable".into()));
         }
@@ -114,6 +116,13 @@ impl PodmanBackend {
             sandbox.stop().await?;
             return Err(SandboxError("entry placement was fenced".into()));
         }
+        let log = match super::super::EntryLog::create(root.join("entry-logs"), ticket).await {
+            Ok(log) => log,
+            Err(error) => {
+                sandbox.stop().await?;
+                return Err(error);
+            }
+        };
         let spawned = tokio::task::spawn_blocking(move || {
             if !live() {
                 return Err(SandboxError("entry placement was fenced".into()));
@@ -128,9 +137,10 @@ impl PodmanBackend {
                 if let Some(pid) = pid {
                     sandbox.clients.lock().expect("clients").insert(pid as i32);
                 }
-                Ok((sandbox, exec))
+                Ok((sandbox, exec, log))
             }
             Err(error) => {
+                let _ = tokio::fs::remove_file(log.path).await;
                 sandbox.stop().await?;
                 Err(error)
             }

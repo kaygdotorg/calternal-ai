@@ -1,7 +1,12 @@
 //! Keep one bounded output stream per exact running entry across carrier loss.
 use super::entry_tail::EntryTail;
 use super::*;
-use crate::sandbox::entry::{EntryOutput, RUNTIME_LIMIT};
+use crate::sandbox::{
+    EntryLog,
+    entry::RUNTIME_LIMIT,
+    entry_log::{read_entry, record_entry},
+};
+use calternal_plugin_host::Error as ProtocolError;
 use calternal_plugin_host::{
     entry::EntryProgram,
     space_channel::{PackagePin, SpaceChannel, SpaceDelivery, SpaceMessage},
@@ -9,8 +14,8 @@ use calternal_plugin_host::{
 use calternal_types::{ErrorCode, SpaceId};
 use tokio::sync::{mpsc, watch};
 
-// Proposed maximum absence, and upper bound for a completed tail awaiting
-// its commit ACK. The sandbox's own runtime limit applies independently.
+// The owner allows 24 hours of continuous absence. Keep recorded output
+// after stopping the process, until the host commits the tail.
 const OUTAGE_LIMIT: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// Reach the same entry actor on a replacement carrier while the machine lives.
@@ -26,6 +31,7 @@ struct Attachment {
     session: watch::Receiver<Option<Arc<str>>>,
     life: watch::Receiver<bool>,
     cursor: u64,
+    offset: u64,
     origin: Uuid,
 }
 
@@ -41,6 +47,7 @@ impl Attachment {
             session,
             life,
             cursor: 0,
+            offset: 0,
             origin,
         }
     }
@@ -154,14 +161,26 @@ impl Runner {
                 // Transport loss retains a started sandbox. Stop retires it.
                 let started = launch.await;
                 if stop {
-                    if let Ok((sandbox, _)) = started { let _ = sandbox.stop().await; }
+                    if let Ok((sandbox, _, log)) = started {
+                        let _ = sandbox.stop().await;
+                        let _ = tokio::fs::remove_file(log.path).await;
+                    }
                     return;
                 }
                 (started, false)
             }
             started = &mut launch => (started, true),
         };
-        let Ok((sandbox, exec)) = started else {
+        let Ok((
+            sandbox,
+            exec,
+            EntryLog {
+                path,
+                reader,
+                writer,
+            },
+        )) = started
+        else {
             let _ = fence
                 .send_wait(
                     package,
@@ -178,14 +197,17 @@ impl Runner {
             .await;
             return;
         };
-        let mut output = EntryOutput::new(exec);
+        let (publish, published) = watch::channel(0);
+        let mut producer = tokio::spawn(record_entry(exec, writer, publish));
         let mut sandbox = Some(sandbox);
         let deadline = tokio::time::sleep(RUNTIME_LIMIT);
         tokio::pin!(deadline);
-        drive_entry(
+        let preserve_log = drive_entry(
             package,
             ticket,
-            &mut output,
+            reader,
+            &mut producer,
+            published,
             &mut sandbox,
             attached.then_some(link),
             replacements,
@@ -194,6 +216,13 @@ impl Runner {
         .await;
         if let Some(sandbox) = sandbox {
             let _ = sandbox.stop().await;
+        }
+        if !producer.is_finished() {
+            producer.abort();
+            let _ = producer.await;
+        }
+        if !preserve_log {
+            let _ = tokio::fs::remove_file(path).await;
         }
     }
 }
@@ -207,31 +236,71 @@ async fn launch_interrupted(link: &mut Attachment, ticket: Uuid) -> bool {
     false
 }
 
+// Keep the log if local I/O or teardown fails, or if Stop arrives after
+// the watchdog has already ended the run.
 async fn drive_entry(
     package: &PackagePin,
     ticket: Uuid,
-    output: &mut EntryOutput,
+    reader: Arc<std::fs::File>,
+    producer: &mut tokio::task::JoinHandle<Result<(), ProtocolError>>,
+    mut published: watch::Receiver<u64>,
     sandbox: &mut Option<Arc<dyn Sandbox>>,
     mut link: Option<Attachment>,
     mut replacements: mpsc::Receiver<Attachment>,
     mut deadline: std::pin::Pin<&mut tokio::time::Sleep>,
-) {
+) -> bool {
     let mut tail = EntryTail::default();
     let mut was_live = link.is_some();
+    let mut producer_done = false;
+    let mut outage_expired = false;
+    let mut read = None;
     let expiry = tokio::time::sleep(OUTAGE_LIMIT);
     tokio::pin!(expiry);
-    while sandbox.is_some() || !tail.is_empty() {
-        if was_live && link.is_none() && sandbox.is_some() {
+    loop {
+        let through = *published.borrow_and_update();
+        if producer_done && tail.acked() == through {
+            return false;
+        }
+        if was_live && link.is_none() {
             expiry
                 .as_mut()
                 .reset(tokio::time::Instant::now() + OUTAGE_LIMIT);
         }
         was_live = link.is_some();
-        let watch_expiry = !was_live || sandbox.is_none();
-        let outbound = link.as_ref().and_then(|link| {
-            tail.after(link.cursor)
-                .map(|(seq, msg)| (seq, msg, link.channel.sender()))
-        });
+        let watch_expiry = !was_live && !outage_expired;
+        let outbound = if let Some(link) = link.as_ref()
+            && link.cursor < through
+            && tail.can_send(link.cursor)
+        {
+            if read
+                .as_ref()
+                .is_none_or(|(offset, _, _)| *offset != link.offset)
+            {
+                let Ok((end, message)) = read_entry(reader.clone(), link.offset).await else {
+                    return true;
+                };
+                read = Some((link.offset, end, message));
+            }
+            let (_, end, message) = read.as_ref().expect("read at relay cursor");
+            if matches!(message, SpaceMessage::Complete { .. }) && !producer_done {
+                None
+            } else {
+                Some((
+                    link.cursor + 1,
+                    *end,
+                    match message {
+                        SpaceMessage::Chunk { data } => SpaceMessage::Chunk { data: data.clone() },
+                        SpaceMessage::Complete { result } => SpaceMessage::Complete {
+                            result: result.clone(),
+                        },
+                        _ => unreachable!("entry record"),
+                    },
+                    link.channel.sender(),
+                ))
+            }
+        } else {
+            None
+        };
         let control = async {
             match link.as_mut() {
                 Some(link) => link.receive().await,
@@ -239,26 +308,37 @@ async fn drive_entry(
             }
         };
         let send = async {
-            let Some((seq, msg, sender)) = outbound else {
+            let Some((seq, end, msg, sender)) = outbound else {
                 return std::future::pending().await;
             };
-            sender.send_wait(package, ticket, msg).await.map(|()| seq)
+            sender
+                .send_wait(package, ticket, msg)
+                .await
+                .map(|()| (seq, end))
         };
         tokio::select! {
             biased;
-            _ = &mut expiry, if watch_expiry => return,
+            _ = &mut expiry, if watch_expiry => {
+                outage_expired = true;
+                if let Some(runtime) = sandbox.take()
+                    && runtime.stop().await.is_err() { return true; }
+            }
             _ = &mut deadline, if sandbox.is_some() => {
                 let runtime = sandbox.take().expect("active entry");
-                if runtime.stop().await.is_err() { return; }
-                if link.is_some() { expiry.as_mut().reset(tokio::time::Instant::now() + OUTAGE_LIMIT); }
-                tail.failed();
+                if runtime.stop().await.is_err() { return true; }
+            }
+            result = &mut *producer, if !producer_done => {
+                if !matches!(result, Ok(Ok(()))) { return true; }
+                if let Some(runtime) = sandbox.take()
+                    && runtime.stop().await.is_err() { return true; }
+                producer_done = true;
             }
             incoming = control => match incoming {
                 Some(delivery) if delivery.frame().ticket != Some(ticket) => {}
                 Some(delivery) => match &delivery.frame().message {
                     SpaceMessage::Cancel {} => {
                         if let Some(link) = link.take() { link.channel.fence(); }
-                        return;
+                        return outage_expired;
                     }
                     SpaceMessage::EntryAck { through } if link.as_ref().is_some_and(|link| *through <= link.cursor) => {
                         if tail.acknowledge(*through).is_err() { link = None; }
@@ -267,32 +347,29 @@ async fn drive_entry(
                 },
                 None => { link = None; }
             },
-            Some(replacement) = replacements.recv() => {
-                if tail.acknowledge(replacement.cursor).is_ok()
+            Some(mut replacement) = replacements.recv() => {
+                if let Ok(offset) = tail.acknowledge(replacement.cursor)
                     && replacement.channel.sender().send(package, ticket, SpaceMessage::EntryAttached {
                         origin: replacement.origin,
-                        buffered_through: tail.produced(),
+                        buffered_through: *published.borrow(),
                     }).is_ok()
                 {
+                    replacement.offset = offset;
                     link = Some(replacement);
                 }
             }
             sent = send => match sent {
-                Ok(seq) => {
-                    tail.sent(seq);
-                    link.as_mut().expect("sending carrier").cursor = seq;
+                Ok((seq, end)) => {
+                    tail.sent(seq, end);
+                    let link = link.as_mut().expect("sending carrier");
+                    link.cursor = seq;
+                    link.offset = end;
+                    read = None;
                 }
                 Err(_) => { link = None; }
             },
-            frame = output.next(), if sandbox.is_some() && tail.can_read() => {
-                let mut frame = frame.ok().flatten();
-                if frame.as_ref().is_some_and(|value| value["kind"] == "output") {
-                    if tail.push(frame.take().expect("output value")).is_ok() { continue; }
-                }
-                let runtime = sandbox.take().expect("active entry");
-                if runtime.stop().await.is_err() { return; }
-                if link.is_some() { expiry.as_mut().reset(tokio::time::Instant::now() + OUTAGE_LIMIT); }
-                if frame.is_none_or(|value| tail.push(value).is_err()) { tail.failed(); }
+            changed = published.changed(), if !producer_done => {
+                if changed.is_err() { tokio::task::yield_now().await; }
             }
         }
     }

@@ -22,8 +22,12 @@ use std::{sync::Arc, time::Duration};
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
+const OFFLINE_FRAMES: u64 = 320;
+const OFFLINE_BYTES: usize = 12_000;
+
 const SCRIPT: &[u8] = br#"#!/usr/local/bin/node
 const fs = require('node:fs');
+const {once} = require('node:events');
 const {call,input} = JSON.parse(fs.readFileSync(0, 'utf8'));
 if (call !== 'fixture-call' || fs.existsSync('/work')) process.exit(1);
 process.stdout.write('{"seq":1,"kind":"output","data":');
@@ -33,8 +37,12 @@ setTimeout(() => {
     setTimeout(() => process.stdout.write('{"seq":2,"kind":"output","data":{"text":"still live"}}\n'), 40);
     setInterval(() => {}, 1000);
   } else if (input.disconnect) {
-    setTimeout(() => {
-      process.stdout.write('{"seq":2,"kind":"output","data":{"text":"offline"}}\n{"seq":3,"kind":"terminal","state":"ok"}\n');
+    setTimeout(async () => {
+      for (let seq = 2; seq <= input.offline_frames + 1; ++seq) {
+        const frame = JSON.stringify({seq,kind:'output',data:{seq,text:'x'.repeat(input.offline_bytes)}}) + '\n';
+        if (!process.stdout.write(frame)) await once(process.stdout, 'drain');
+      }
+      process.stdout.write(JSON.stringify({seq:input.offline_frames + 2,kind:'terminal',state:'ok'}) + '\n');
     }, 6200);
   } else {
     process.stdout.write('{"seq":2,"kind":"terminal","state":"ok"}\n');
@@ -243,7 +251,7 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
             assert!(!tokio::fs::try_exists(staged).await.unwrap());
         }
     }
-    tokio::time::timeout(Duration::from_secs(30), async {
+    tokio::time::timeout(Duration::from_secs(45), async {
         let ticket = Uuid::new_v4();
         let (origin, mut channel) = service.open_entry_channel(
             ids.owner, ids.personal, machine, ticket, pin.clone(),
@@ -257,7 +265,7 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
                 image_digest: digest.into(),
                 entry_sha256: sha256_hex(SCRIPT),
                 entry_base64: STANDARD.encode(SCRIPT),
-                invocation: json!({"call":"fixture-call","input":{"text":"fixture","disconnect":true}}),
+                invocation: json!({"call":"fixture-call","input":{"text":"fixture","disconnect":true,"offline_frames":OFFLINE_FRAMES,"offline_bytes":OFFLINE_BYTES}}),
             }},
             || true,
         ).await.unwrap();
@@ -278,6 +286,11 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
         let token = tokio::task::block_in_place(|| product_http::session(&service, machine, &key, boot));
         link.set_token(Some(Arc::from(token.as_str())));
         session.send_replace(token);
+        let logs = root.path().join("placements/entry-logs");
+        let mut entries = tokio::fs::read_dir(&logs).await.unwrap();
+        let saved = entries.next_entry().await.unwrap().expect("offline working log");
+        assert!(saved.metadata().await.unwrap().len() >= OFFLINE_FRAMES * OFFLINE_BYTES as u64);
+        assert!(entries.next_entry().await.unwrap().is_none());
         for exact in [false, true] {
             let (_, mut recovered) = service.open_entry_channel(
                 ids.owner, ids.personal, machine, ticket, pin.clone(),
@@ -293,16 +306,28 @@ async fn enrolled_entry_delivers_only_the_exact_tickets_ordered_frames() {
                 assert!(recovered.receive().await.is_none());
                 continue;
             }
+            let terminal_seq = OFFLINE_FRAMES + 2;
             assert!(matches!(&recovered.receive().await.unwrap().frame().message,
-                SpaceMessage::EntryAttached { origin: proof, buffered_through: 3 } if *proof == origin));
-            let output = recovered.receive().await.unwrap();
-            assert!(matches!(&output.frame().message, SpaceMessage::Chunk { data }
-                if data == &json!({"seq":2,"kind":"output","data":{"text":"offline"}})));
+                SpaceMessage::EntryAttached { origin: proof, buffered_through } if *proof == origin && *buffered_through == terminal_seq));
+            let expected_text = "x".repeat(OFFLINE_BYTES);
+            for seq in 2..terminal_seq {
+                let output = recovered.receive().await.unwrap();
+                assert_eq!(output.frame().ticket, Some(ticket));
+                assert!(matches!(&output.frame().message, SpaceMessage::Chunk { data }
+                    if data["seq"] == seq && data["data"]["seq"] == seq && data["data"]["text"] == expected_text));
+                recovered.sender().send(&pin, ticket, SpaceMessage::EntryAck { through: seq }).unwrap();
+            }
             let terminal = recovered.receive().await.unwrap();
             assert!(matches!(&terminal.frame().message, SpaceMessage::Complete { result: Ok(data) }
-                if data == &json!({"seq":3,"kind":"terminal","state":"ok"})));
-            recovered.sender().send(&pin, ticket, SpaceMessage::EntryAck { through: 3 }).unwrap();
+                if data == &json!({"seq":terminal_seq,"kind":"terminal","state":"ok"})));
+            recovered.sender().send(&pin, ticket, SpaceMessage::EntryAck { through: terminal_seq }).unwrap();
             assert!(recovered.receive().await.is_none());
+        }
+        loop {
+            if tokio::fs::read_dir(&logs).await.unwrap().next_entry().await.unwrap().is_none() {
+                break;
+            }
+            tokio::task::yield_now().await;
         }
     }).await.unwrap();
     assert!(worker_revision.current().is_some());

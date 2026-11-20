@@ -22,6 +22,8 @@
 pub mod configured;
 pub mod direct;
 pub(crate) mod entry;
+pub(crate) mod entry_log;
+pub use entry_log::EntryLog;
 #[cfg(test)]
 mod entry_tests;
 #[cfg(target_os = "linux")]
@@ -213,13 +215,13 @@ pub trait Backend: Send + Sync + 'static {
 
     /// Launch the verified no-network entry for an exact checked carrier ticket.
     /// Unsupported placements fail before I/O. The caller owns authority
-    /// fencing, ordered stdout delivery, and verified sandbox teardown.
+    /// fencing, recording stdout into the working log, and verified teardown.
     fn start_entry<'a>(
         &'a self,
         _ticket: uuid::Uuid,
         _program: &'a calternal_plugin_host::entry::EntryProgram,
         _live: Arc<dyn Fn() -> bool + Send + Sync>,
-    ) -> BoxFuture<'a, SandboxResult<(Arc<dyn Sandbox>, Exec)>> {
+    ) -> BoxFuture<'a, SandboxResult<(Arc<dyn Sandbox>, Exec, EntryLog)>> {
         Box::pin(async {
             Err(SandboxError(
                 "execution entry placement is unavailable".into(),

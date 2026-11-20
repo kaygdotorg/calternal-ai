@@ -184,7 +184,7 @@ impl Backend for ConfiguredBackend {
         ticket: uuid::Uuid,
         program: &'a calternal_plugin_host::entry::EntryProgram,
         live: Arc<dyn Fn() -> bool + Send + Sync>,
-    ) -> BoxFuture<'a, SandboxResult<(Arc<dyn Sandbox>, super::Exec)>> {
+    ) -> BoxFuture<'a, SandboxResult<(Arc<dyn Sandbox>, super::Exec, super::EntryLog)>> {
         if self.name() == "podman" {
             self.podman.start_entry(ticket, program, live)
         } else {

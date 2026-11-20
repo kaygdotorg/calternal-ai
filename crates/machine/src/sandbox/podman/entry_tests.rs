@@ -71,7 +71,7 @@ async fn scripted_entry_runs_from_read_only_pin_with_no_network_or_workspace() {
         );
     }
     let valid = program(source, image_digest, &entry_digest);
-    let (sandbox, mut exec) = backend
+    let (sandbox, mut exec, log) = backend
         .launch_entry(attempt, &valid, Arc::new(|| true))
         .await
         .unwrap();
@@ -100,6 +100,7 @@ async fn scripted_entry_runs_from_read_only_pin_with_no_network_or_workspace() {
     })
     .await;
     sandbox.stop().await.unwrap();
+    tokio::fs::remove_file(log.path).await.unwrap();
     assert_eq!(network.unwrap(), "none");
     let (stdout, exit) = result.unwrap();
     assert_eq!(exit.code, Some(0), "{exit:?}");
