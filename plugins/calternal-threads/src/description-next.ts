@@ -13,7 +13,7 @@ const muteFor = { prompt: { title: "Mute for", kind: "choice", options: [
   { value: "1h", label: "1 hour" }, { value: "8h", label: "8 hours" }, { value: "2d", label: "2 days" }, { value: "forever", label: "Until I unmute" }, { value: "mentions", label: "Mute, but tell me about mentions" }] } };
 const pin = (id: string, on: boolean) => ({ id, title: on ? "Pin" : "Unpin", icon: "spark", operation: "threads.state", inputs: { item: row, pinned: { literal: on } } });
 /** A thread row: shape icon, title, last line (the draft when there is one), time, then the counts. A muted chat never rings and its count is quiet; a mention keeps its accent count. */
-const rowTemplate = {
+const rowTemplate = (n: string) => ({
   title: { field: "title", fallback: "Untitled thread" },
   secondary: [{ field: "preview", format: "text" }, { field: "updated", format: "relative_date" }],
   icon: { field: "shape", name: "threads", map: { person: "user", group: "user", agent: "spark", mixed: "threads" } },
@@ -23,17 +23,17 @@ const rowTemplate = {
     { kind: "count", field: "unread", when: eq("muted", false) },
   ],
   open: { route: { name: "item", value: "id" } },
-  leadingActions: [pin("pin", true), { id: "unread-mark", title: "Mark unread", icon: "check", operation: "threads.state", inputs: { item: row, unread_mark: { literal: true } } }],
-  trailingActions: [{ id: "archive", title: "Archive", icon: "archive", operation: "host.item.archive", inputs: { item: row } }, mute("mute", "Mute", { mute: muteFor })],
+  leadingActions: [pin(`pin-${n}`, true), { id: `unread-mark-${n}`, title: "Mark unread", icon: "check", operation: "threads.state", inputs: { item: row, unread_mark: { literal: true } } }],
+  trailingActions: [{ id: `archive-${n}`, title: "Archive", icon: "archive", operation: "host.item.archive", inputs: { item: row } }, mute(`mute-${n}`, "Mute", { mute: muteFor })],
   menu: [
-    pin("unpin", false), mute("unmute", "Unmute", { mute: { literal: "off" } }),
-    { id: "rename", title: "Rename", icon: "edit", operation: "host.item.rename", inputs: { item: row, title: { prompt: { title: "Rename thread", initial: { row: "field", field: "title" } } } } },
-    { id: "trash", title: "Move to Trash", icon: "trash", role: "destructive", operation: "host.item.trash", inputs: { item: row } },
+    pin(`unpin-${n}`, false), mute(`unmute-${n}`, "Unmute", { mute: { literal: "off" } }),
+    { id: `rename-${n}`, title: "Rename", icon: "edit", operation: "host.item.rename", inputs: { item: row, title: { prompt: { title: "Rename thread", initial: { row: "field", field: "title" } } } } },
+    { id: `trash-${n}`, title: "Move to Trash", icon: "trash", role: "destructive", operation: "host.item.trash", inputs: { item: row } },
   ],
-};
+});
 const list = (id: string, filter: unknown[], empty: unknown) => ({
   id, source: { type: "list", kind: "threads" }, fields, filter: { all: filter }, sort: [{ field: "pinned", direction: "desc" }, ...newest], window: { size: 60, count: "exact" },
-  row: rowTemplate, states: { empty },
+  row: rowTemplate(id), states: { empty, error: { title: "Threads could not load", action: { id: `retry-${id}`, title: "Try again", shell: { reload: true } } } },
 });
 const none = { title: "Nothing here", detail: "Threads that match come back by themselves." };
 const harness = (showWhen: unknown) => ({ prompt: { title: "Agent", kind: "choice", options: { extension: "harnesses" }, showWhen } });
@@ -52,7 +52,7 @@ export const descriptionNext = {
     list("people", [eq("archived", false), { field: "shape", op: "in", value: { literal: ["person", "group"] } }], none),
     list("agents", [eq("archived", false), eq("shape", "agent")], none),
     { ...list("archived", [eq("archived", true)], { title: "Nothing archived", detail: "A thread comes back here to the list when someone writes in it." }),
-      row: { ...rowTemplate, leadingActions: undefined, trailingActions: [{ id: "unarchive", title: "Unarchive", icon: "check", tone: "good", operation: "host.item.unarchive", inputs: { item: row } }] } },
+      row: { ...rowTemplate("archived"), leadingActions: undefined, trailingActions: [{ id: "unarchive", title: "Unarchive", icon: "check", tone: "good", operation: "host.item.unarchive", inputs: { item: row } }] } },
     { id: "archived-count", source: { type: "list", kind: "threads" }, fields: [], filter: { all: [eq("archived", true)] }, window: { size: 1, count: "exact" } },
     { id: "thread", source: { type: "item", kind: "threads", ref: item }, fields: ["title", "updated", "shape", "muted", "pinned"] },
     { id: "found", source: { type: "search", kind: "threads" }, fields: ["title", "updated", "preview"], window: { size: 30, count: "none" },
