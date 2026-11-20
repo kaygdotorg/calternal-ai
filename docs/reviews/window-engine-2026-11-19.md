@@ -856,6 +856,49 @@ events, and five control fsyncs per second can alter the shared workload.
 The next comparison tests that observer effect, with the commit-stage
 build paused.
 
+### Control-probe observer effect
+
+The observer comparison moved to perf-02 after preflight found a
+Firecracker guest on perf-01. On perf-01, Notes used ext4 `8:1` and the
+`vm88` logs used XFS `8:17`. On perf-02, the initial locked preflight and
+all 16 pre-arm checks found zero foreign guests, relays or builds, and
+the `vm88` log directory was absent. The run used the same two release
+binaries with four probe-off and four probe-on pairs interleaved. Both
+conditions used each binary order twice. The arm preflight followed the
+warm copy and its `sync`.
+
+| Pair | Arm | Probe | Save p95 (ms) | Save p99 (ms) | Save max (ms) | Control p95 / max (ms) | Free / available RAM (MiB) | Cache (MiB) |
+| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | Release | off | 33.109 | 53.356 | 84.011 | - / - | 315.6 / 3629.0 | 6338.7 |
+| 0 | Candidate | off | 32.895 | 52.280 | 84.919 | - / - | 311.9 / 3612.4 | 6338.8 |
+| 1 | Release | on | 40.865 | 53.525 | 97.236 | 21.841 / 23.547 | 287.9 / 3592.0 | 6338.8 |
+| 1 | Candidate | on | 37.297 | 48.157 | 93.450 | 28.021 / 35.612 | 295.7 / 3603.9 | 6338.9 |
+| 2 | Candidate | off | 29.820 | 43.200 | 89.763 | - / - | 305.4 / 3616.0 | 6338.9 |
+| 2 | Release | off | 37.002 | 59.150 | 89.960 | - / - | 300.4 / 3613.7 | 6339.0 |
+| 3 | Candidate | on | 38.494 | 68.925 | 90.626 | 18.695 / 20.208 | 295.8 / 3610.9 | 6339.0 |
+| 3 | Release | on | 35.031 | 53.877 | 92.525 | 18.299 / 19.813 | 274.9 / 3593.8 | 6339.1 |
+| 4 | Release | off | 34.981 | 38.257 | 86.190 | - / - | 287.6 / 3608.9 | 6339.1 |
+| 4 | Candidate | off | 33.390 | 41.735 | 103.400 | - / - | 265.8 / 3589.4 | 6339.1 |
+| 5 | Release | on | 35.941 | 47.098 | 90.882 | 21.451 / 24.447 | 280.8 / 3605.7 | 6339.2 |
+| 5 | Candidate | on | 42.239 | 70.372 | 90.203 | 23.015 / 24.302 | 285.4 / 3612.5 | 6339.2 |
+| 6 | Candidate | off | 57.727 | 93.382 | 177.325 | - / - | 275.1 / 3603.4 | 6339.3 |
+| 6 | Release | off | 33.754 | 138.615 | 253.917 | - / - | 273.1 / 3603.0 | 6339.3 |
+| 7 | Candidate | on | 37.865 | 51.024 | 86.429 | 20.928 / 28.872 | 276.8 / 3607.3 | 6339.3 |
+| 7 | Release | on | 61.852 | 114.467 | 124.458 | 26.663 / 54.060 | 272.5 / 3603.9 | 6339.4 |
+
+The active writer increased median arm p95 on both binaries. Release
+p95 moved from 34.368 to 38.403 ms and candidate p95 from 33.143 to
+38.180 ms. Within adjacent blocks with the same binary order, the
+median increases were 4.358 and 6.538 ms, respectively. The release
+missed zero of four off and two of four on, and the candidate missed
+one arm in each condition. Pair 6's candidate save p95 was 57.727 ms
+with the probe off and full I/O pressure reached 63.706%. This
+establishes an observer effect on perf-02, while the probe-off miss
+shows it explains only part of the tail. The clean perf-02 preflights
+exclude a concurrent lane workload inside that VM during this run.
+They do not identify the cause of every older perf-01 arm or establish
+isolation of the underlying hypervisor storage.
+
 ## Review gate
 
 The measured poll-only candidate `5370a9d0` was built on dev
