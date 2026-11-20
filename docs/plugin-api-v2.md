@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.34 draft
+# Plugin API v2 · revision 14.35 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -614,13 +614,19 @@ Keep the protected management directory separate from package lookup.
 The generic host holds membership, scoped lookup, group invitation, space
 bootstrap and item grants. Contacts will settle the package-facing people
 and group flows using the existing group and contact decisions
-([ADR 0064][adr-contacts]). These exchanges stay OPEN.
+([ADR 0064][adr-contacts]). These exchanges stay OPEN. ADR 0060 ends
+group-derived visibility with membership. If the participants no longer
+share any group, the conversation becomes read-only for all of them.
+They can still read and export its history. New messages and calling in
+an agent are disabled. See the [catalogue’s read-only item rule][scoped-people].
 
 Threads opts into the catalogue’s [per-item discovery rule][item-discovery].
 A person's own agent thread can be `creator_only` and stays discoverable
 to their own authorized attempts. A people conversation is `consent_only`
 and stays outside attempt list, search, direct reads and derived output.
-The host marks unknown or other-author material in the writer transaction.
+Apply the [catalogue’s checked authorship rule][item-authorship] when the
+owning package writes. It covers prompts, attempt output, another
+participant’s submission and imports in the same writer transaction.
 An authorized writer can request protection. Only the host can clear it
 on verified provenance. The harness receives selected material through
 the [disclosure boundary][attempt-disclosure] and has no direct read or
@@ -1697,3 +1703,4 @@ and queued follow-ups are owned by the app and harness contract.
 [adr-invites]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0059-invites-and-storage-quota.md
 [adr-groups]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0060-groups-and-person-visibility.md
 [adr-contacts]: https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0064-contacts-sync-over-carddav.md
+[item-authorship]: ../contract/host-catalogue-v2.json#/execution_attempt_authority/discovery/item_policy/authorship
