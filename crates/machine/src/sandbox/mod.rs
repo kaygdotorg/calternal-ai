@@ -21,6 +21,9 @@
 
 pub mod configured;
 pub mod direct;
+pub(crate) mod entry;
+#[cfg(test)]
+mod entry_tests;
 #[cfg(target_os = "linux")]
 pub mod microvm;
 pub mod podman;
@@ -204,6 +207,22 @@ pub trait Backend: Send + Sync + 'static {
         Box::pin(async {
             Err(SandboxError(
                 "backend does not support isolated harnesses".into(),
+            ))
+        })
+    }
+
+    /// Launch the verified no-network entry for an exact checked carrier ticket.
+    /// Unsupported placements fail before I/O. The caller owns authority
+    /// fencing, ordered stdout delivery, and verified sandbox teardown.
+    fn start_entry<'a>(
+        &'a self,
+        _ticket: uuid::Uuid,
+        _program: &'a calternal_plugin_host::entry::EntryProgram,
+        _live: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> BoxFuture<'a, SandboxResult<(Arc<dyn Sandbox>, Exec)>> {
+        Box::pin(async {
+            Err(SandboxError(
+                "execution entry placement is unavailable".into(),
             ))
         })
     }

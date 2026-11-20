@@ -73,10 +73,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use calternal_machine::protocol::{Capacity, Chunk, ChunkEvent, ExitInfo, Limits, Owner};
+use calternal_machine::protocol::{Capacity, Chunk, ExitInfo, Limits, Owner};
 use calternal_types::{AccountId, SpaceId};
 use serde::Serialize;
-use tokio::sync::Notify;
 use uuid::Uuid;
 
 use calternal_types::Error;
@@ -302,6 +301,7 @@ impl MachineService {
             machines,
             sessions: HashMap::new(),
             space_channels: HashMap::new(),
+            entry_channels: HashMap::new(),
             challenges: HashMap::new(),
             leases: HashMap::new(),
             threads: HashMap::new(),
@@ -442,72 +442,6 @@ impl MachineService {
         Ok(st.view(lease))
     }
 
-    /// Output of an exec after `after`, waiting up to `wait` (at most 30 s) for
-    /// something new.
-    ///
-    /// Reading with `after = n` releases chunks up to `n` from the buffer, which
-    /// is what lets a machine that was told to wait continue: one reader per exec.
-    pub async fn read_output(
-        self: &Arc<Self>,
-        account: AccountId,
-        exec_id: Uuid,
-        after: u64,
-        wait: Duration,
-    ) -> Result<OutputView, Error> {
-        let deadline = tokio::time::Instant::now() + wait.min(Duration::from_secs(30));
-        loop {
-            let svc = self.clone();
-            let step = blocking(move || svc.take_output(account, exec_id, after)).await?;
-            let notify = match step {
-                Ok(view) => return Ok(view),
-                Err(notify) => notify,
-            };
-            if tokio::time::timeout_at(deadline, notify.notified())
-                .await
-                .is_err()
-            {
-                return Ok(OutputView {
-                    chunks: Vec::new(),
-                    next: after,
-                    exit: None,
-                    lost_before: None,
-                });
-            }
-        }
-    }
-
-    /// Release chunks up to `after` and return the rest, or the exec's `Notify`
-    /// when there is nothing yet.
-    fn take_output(
-        &self,
-        account: AccountId,
-        exec_id: Uuid,
-        after: u64,
-    ) -> Result<Result<OutputView, Arc<Notify>>, Error> {
-        let mut st = self.lock()?;
-        let exec = match st.execs.get_mut(&exec_id) {
-            Some(e) if e.account == account => e,
-            _ => return Err(Error::not_found("exec not found")),
-        };
-        while exec.chunks.front().is_some_and(|(c, _)| c.seq <= after) {
-            exec.held -= exec.chunks.pop_front().expect("front").1;
-        }
-        if exec.chunks.is_empty() && exec.state != ExecState::Done {
-            return Ok(Err(exec.notify.clone()));
-        }
-        let chunks: Vec<Chunk> = exec.chunks.iter().map(|(c, _)| c.clone()).collect();
-        let exit = chunks.iter().find_map(|c| match &c.event {
-            ChunkEvent::Exit(e) => Some(e.clone()),
-            ChunkEvent::Data { .. } => None,
-        });
-        Ok(Ok(OutputView {
-            next: chunks.last().map_or(after.max(exec.last_seq), |c| c.seq),
-            exit,
-            lost_before: exec.lost_before,
-            chunks,
-        }))
-    }
-
     /// The space of a publicly addressable agent run; internal worker leases
     /// return None. Cost: registry lookup or one SQLite read after retention.
     pub fn run_space(&self, lease: Uuid) -> Result<Option<SpaceId>, Error> {
@@ -520,18 +454,6 @@ impl MachineService {
                 .filter(|r| !r.worker && !r.background_title)
                 .map(|r| r.space),
         })
-    }
-
-    /// The space of a public agent exec; internal worker streams stay hidden.
-    /// Cost: one registry lock and two memory lookups, no I/O.
-    pub fn exec_space(&self, exec: Uuid) -> Result<Option<SpaceId>, Error> {
-        let st = self.lock()?;
-        Ok(st
-            .execs
-            .get(&exec)
-            .and_then(|e| st.leases.get(&e.lease))
-            .filter(|l| !l.row.worker && !l.provider_login && !l.row.background_title)
-            .map(|l| l.row.space))
     }
 
     fn check_owner(st: &State, account: AccountId, machine: Uuid) -> Result<(), Error> {

@@ -179,6 +179,19 @@ impl Backend for ConfiguredBackend {
         }
     }
 
+    fn start_entry<'a>(
+        &'a self,
+        ticket: uuid::Uuid,
+        program: &'a calternal_plugin_host::entry::EntryProgram,
+        live: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> BoxFuture<'a, SandboxResult<(Arc<dyn Sandbox>, super::Exec)>> {
+        if self.name() == "podman" {
+            self.podman.start_entry(ticket, program, live)
+        } else {
+            self.direct.start_entry(ticket, program, live)
+        }
+    }
+
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,

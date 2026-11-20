@@ -208,6 +208,9 @@ impl MachineService {
             session: hash,
             direct: backend == "direct",
             harness_protocol: f.protocol >= HARNESS_PROTOCOL_VERSION,
+            entry_protocol: f.protocol >= calternal_machine::protocol::ENTRY_PROTOCOL_VERSION
+                && backend == "podman"
+                && !kvm_fallback,
             shared_tools: f.protocol >= calternal_machine::protocol::SHARED_TOOLS_PROTOCOL_VERSION
                 && backend == "podman",
             shared_provider: f.protocol

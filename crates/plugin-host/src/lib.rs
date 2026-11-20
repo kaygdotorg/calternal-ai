@@ -8,6 +8,10 @@
 //! Host brokers must recheck current authority at every effect and delivery boundary.
 mod bounded;
 mod claims;
+/// Bounded entry-process wire exchanges for contributed harnesses.
+pub mod entry;
+#[cfg(test)]
+mod entry_tests;
 mod input_diagnostics;
 mod registry;
 mod registry_v2;

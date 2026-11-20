@@ -23,6 +23,8 @@ pub(super) struct Live {
     pub session: [u8; 32],
     pub direct: bool,
     pub harness_protocol: bool,
+    /// Session negotiated the dedicated entry carrier on supported Podman.
+    pub entry_protocol: bool,
     pub shared_provider: bool,
     pub shared_tools: bool,
     pub kvm_fallback: bool,
@@ -159,6 +161,9 @@ impl Exec {
 /// finished execs by ten minutes, sessions by one per machine.
 pub(super) struct State {
     pub space_channels: HashMap<calternal_types::SpaceId, super::space_channel::Reservation>,
+    /// One-use attempt connections, bounded by the shared carrier limit.
+    pub entry_channels:
+        HashMap<(calternal_types::SpaceId, Uuid), super::space_channel::EntryReservation>,
     pub lifecycle: Arc<std::sync::OnceLock<calternal_types::OwnerLifecycle>>,
     pub db: rusqlite::Connection,
     /// Machines with at least one durable erasure. Idle syncs need no SQL read.

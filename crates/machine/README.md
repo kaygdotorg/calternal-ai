@@ -33,7 +33,7 @@ the structured outcome.
 
 ## Design
 
-- **Control plane** uses version 4 long-poll over HTTP(S) ([`protocol`](src/protocol.rs))
+- **Control plane** uses versioned long-poll over HTTP(S) ([`protocol`](src/protocol.rs))
   and the server's request guard. Both directions carry sequence numbers and
   acknowledgements, so a dropped request loses nothing. The cost is one held request
   per machine, plus one round trip of latency when output and work cross.
@@ -107,6 +107,13 @@ leased space and generation before starting the package in the existing
 worker sandbox. Revoking the session or losing the short space-channel
 lease tears down that placement. [Protocol and verification](../../docs/reviews/space-channel-2026-11-19.md).
 
+The contributed entry qualification uses a one-use carrier reservation on a
+personal enrolled Podman machine. The runtime checks the pinned OCI repository
+and digest against the provisioned image, verifies the separately hashed entry,
+and starts it with a read-only mount and network disabled. It supplies one
+bounded stdin frame and forwards ordered stdout under the exact ticket. The
+terminal follows process exit and verified container removal. This qualification
+path has no login mounts. [Entry qualification](../../docs/reviews/plugin-api-v2-enrolled-entry-qualification-2026-11-20.md).
 
 
 First-owner deployments start their machine service before setup. The server

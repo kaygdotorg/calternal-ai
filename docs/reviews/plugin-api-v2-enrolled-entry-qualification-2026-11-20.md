@@ -1,7 +1,7 @@
 # Plugin API v2 enrolled entry qualification
 
 This is the test design for [Slice 4](https://git.kayg.org/kayg/calternal-ai/issues/96).
-It follows the 14.33 build plan at `cc13ae21` and the Threads fake-host exchanges
+It follows the entry ABI pinned in revision 14.34 and the Threads fake-host exchanges
 at `6125ad96`. All tests use disposable data on dev-01. Report results against
 the exact code and candidate image tested.
 
@@ -98,13 +98,51 @@ the exact code and candidate image tested.
   Preserve Podman pull-by-verified-digest semantics. OCI digests and the
   storage engine's local image IDs are distinct identities.
 
+## First implementation boundary
+
+The scripted path uses a source-qualified, already provisioned OCI digest on
+an acting account's own enrolled Podman machine. Machine protocol 9 negotiates
+the dedicated carrier. The runner verifies its exact ticket, package and digest
+before launch. It mounts only the read-only entry, enforces network `none`,
+and forwards output to the carrier. Login custody and entry callbacks are
+pending. The transport's callers are
+Slice 1's contribution dispatch and durable spool and Slice 3's attempt fence
+and cleanup reconciliation. The fixed Podman runtime timeout limits this
+scripted path. The independent freeze, thaw and recovery deadlines still need
+qualification.
+
+The carrier reservation and claim use the existing machine scheduler and
+authenticated session. The reservation takes one brief scheduler lock, queues
+one control message and adds no database reads or flushes. Claim reuses existing
+session authentication. Frame handling has no database reads or flushes. Launch
+uses one local image inspection, one in-memory asset hash and one write of the
+verified bytes to an exclusive staged inode. Asset staging has no content
+flush. Creating the private staging parent on cold setup can sync its parent
+directory. These counts exclude the container engine's internal metadata I/O.
+Each launch stages one asset bounded by the carrier, with one bounded exec queue
+and one 16 KiB line buffer. Verified release removes the stage. Machine startup
+sweeps any prior owned containers and stages.
+
+On dev-01, the entry codec suite passed three tests and the machine suite passed
+33 tests with its performance-only measurement ignored. The enrolled HTTPS
+test exercised a real personal Podman placement, verified the wrong actor,
+hosted placement and wrong ticket refusals, and received the ordered output and
+terminal from the pinned entry. A Stop arm exercised mismatched and matching
+cancel tickets and checked stage removal. The Podman, Firecracker and provider
+sign-in leak checks passed. Six unrelated registry tests fail on the base's
+legacy reading-list fixture, tracked on [contract issue #78](https://git.kayg.org/kayg/calternal-ai/issues/78).
+
 Build and test only under the dev-01 lane directory with
 `export TMPDIR=$HOME/gate-tmp` before `nix develop`. Use the candidate
 release image and `localhost/calternal-ai:31fb41179460` with
 `scripts/verify-additive-upgrade.sh` before reporting a passing first gate.
 
-The entry-side own-file broker exchange is open on
+Revision 14.34 settled the entry-side broker exchange raised on
 [contract issue #78](https://git.kayg.org/kayg/calternal-ai/issues/78).
+Exercise the private Unix stream at `/run/calternal/broker.sock` for declared
+own-file calls, with correlation by callback ID. Refuse extra identity
+fields, undeclared methods, an additional connection, and effects or replies
+after the attempt is fenced.
 
 ## Simplification opportunities
 
