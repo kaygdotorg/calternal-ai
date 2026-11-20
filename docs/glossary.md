@@ -27,7 +27,8 @@ first time it is used with a new meaning.
 
 ## Plugins
 
-- **Plugin**: an app or extension, written in TypeScript. The orchestrator and Notes are plugins.
+- A **plugin** is an app or extension a person installs and uses. Threads and Notes are plugins. Use this word in interface text, documentation, issues and user files.
+- A **package** is the built archive that distributes a plugin, including its manifest and any bundled assets. This technical term is used in the contract and code when referring to the archive.
 - **Manifest**: the file listing everything a plugin offers and asks for. Read without running the plugin.
 - **Operation**: the only way to do anything. People, the CLI and agents call the same operations.
 - **Request ID**: a client-chosen ID on a write, so a retry does not do it twice.
