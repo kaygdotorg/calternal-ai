@@ -10,8 +10,8 @@ writes or scratch-disk flushes. The agent guest still uses its Podman backend.
 | Control | Small guest |
 | --- | --- |
 | Process identity | UID and GID 1100, separate from the guest agent at UID 1000. No supplementary groups or capabilities. |
-| Resource controls | Dedicated cgroup v2 with 256 MiB memory, zero swap, 64 PIDs and one CPU of quota. |
-| Isolation | Private mount, PID, network, IPC and UTS namespaces. A chroot contains the read-only runtime, private proc and a small device set. The package mount is read-only, noexec, nosuid and nodev. |
+| Resource controls | Dedicated cgroup v2 with 192 MiB memory, zero swap, 64 PIDs and one CPU of quota. The earlier Podman worker allowed 256 MiB. |
+| Isolation | Private mount, PID, network, IPC, UTS and cgroup namespaces. The launcher pivots to the read-only runtime with private proc and a small device set, then detaches the guest root. The package mount is read-only, noexec, nosuid and nodev. |
 | Process restrictions | `no_new_privs`, the existing worker seccomp allowlist compiled for capability-empty amd64, and the existing Node permission flags and 128 MiB heap setting. |
 | Package lifecycle | The launcher accepts the guest agent UID and a placement UUID. It closes inherited descriptors beyond the three exec pipes. Before exec it checks UID, GID, namespace PID, `no_new_privs`, denied socket creation and read-only code. Teardown kills the cgroup before removing the package. |
 
@@ -51,7 +51,7 @@ is under `/srv/homes/perf/vmw1/launcher`.
 
 ## Residency
 
-The idle interval defaults to 900 seconds. Operators can set `idle_seconds`
+The idle interval defaults to 900 seconds and is capped at 24 hours. Operators can set `idle_seconds`
 and `resident_memory_mib` in the small-VM configuration. The default memory
 ceiling is `memory_mib * max_guests`.
 
@@ -156,8 +156,9 @@ configured guest RAM for each reservation. Evidence is under
 
 ## Pre-started worker
 
-Before sleep, the guest tears down the package and parks a new trusted Node
-launcher in an empty package mount. The launcher loads the native reseed
+When `prestarted_worker` is enabled, the guest tears down the package before
+sleep and parks a new trusted Node launcher in an empty package mount. The
+launcher loads the native reseed
 module, drops the singular `addon` permission and verifies all six approved
 denials. The guest agent checks the process and task names through the cgroup
 and procfs before snapshot, including the absence of libuv pool threads. The
@@ -189,7 +190,7 @@ The final release image `5fe5337cf2a7` passed the additive upgrade script
 against `localhost/calternal-ai:31fb41179460`. The machine worker and CLI
 tests and `scripts/check-docs.sh` passed on dev-01.
 
-### Same-image worker comparison
+### Same-image worker comparison before review
 
 The locked perf-02 run used the verified guest image for both arms, with
 `prestarted_worker` as the only worker-mode setting changed. It ran the
@@ -228,6 +229,92 @@ the 500 ms gate. The two slowest standby resident calls took 308 and 420 ms.
 Their callback markers arrived about 14 and 3 ms after server gate exit.
 The trace places most of the delay after those markers and cannot attribute
 it to a specific component in the reply path.
+
+## Independent review follow-up
+
+1. The trusted launcher unlinks the addon module from `module.children` and
+   clears `require.cache` and `process.mainModule`. The image proof inspects
+   those references from an ES module and repeats the six permission denials.
+2. The launcher pivots into the private root, detaches the old mount tree,
+   restricts proc to `subset=pid,hidepid=invisible`, and unshares the cgroup
+   namespace. The native fixture checks the visible mounts and denies guest
+   paths, AF_VSOCK, outer signals, user-namespace creation, ptrace attachment,
+   UID escalation and out-of-package writes. A bounded fork test reaches
+   `pids.max` and reaps all its children.
+3. `memory.max` is 192 MiB. The agent and reseed helper have OOM score
+   adjustment −1000. The launcher resets the inherited adjustment for the
+   worker. Quiesce checks the live helper socket before parking. The memory
+   stress test confirms that the worker is killed, the guest checkpoints, and
+   its agent and helper can restore it.
+4. The launcher parses the two commands from raw bytes and pipes package stdin
+   as bytes thereafter. The image proof sends a split binary frame through
+   the real guest transport in both modes, with invalid UTF-8, CR, CRLF and
+   an unterminated final field.
+5. Standby checks the guest ready marker before refresh. A restored guest
+   still refuses startup before authenticated reseed. The image proof also
+   freezes a parked worker to force refresh timeout and checks that fresh
+   Node processes the binary frame in the same restored guest.
+6. The machine rejects idle windows outside one second through 24 hours. The
+   server clamps values reported by enrolled machines to that same range.
+7. Protocol capacity, VM capacity and checkpoint-order tests now have their
+   own modules. Each of the three files flagged in review is under 600 lines.
+8. Account erasure invalidates checkpoint authorization when either the
+   acknowledged holder or the current lease machine is erased. The fixture
+   covers different machines in the same row. The separate cutoff and retry
+   questions remain in [issue #90](https://git.kayg.org/kayg/calternal-ai/issues/90).
+
+The native fixture uses `workerProof = true` in the guest image derivation.
+It runs the probes after the product launcher has set its UID, namespaces,
+mounts, cgroup and seccomp. A regular image builds without that fixture. The
+native proof reads `/dev/urandom` directly and checks that two restores of a
+single snapshot yield different byte sequences.
+
+On dev-01, image manifest `c7e8b4aec3b1` passed the regular checkpoint,
+image and process-restart KVM cases. Native probe image `cffb35933192` passed
+the isolation and memory-pressure case. The broker suite passed all 10 tests,
+including five enrolled KVM cases and the in-flight pressure, revocation and
+erasure regressions. All 11 machine worker tests passed. The docs gate and
+format check passed. Release image `c90b0ef401be` passed the additive upgrade
+from `localhost/calternal-ai:31fb41179460`, including the scoped leak checks.
+
+### Resident tail after review
+
+The corrected perf-02 run used the earlier harness's TCP_NODELAY settings.
+Both uninstrumented arms used the reviewed `c7e8b4aec3b1` guest, a one-second
+idle override and normal filesystem caching. Each completed 30 disk wakes
+and 30 resident calls with zero errors or fallbacks. All 30 standby wakes
+used the parked worker. The cold primes were outside the timing samples.
+
+| Worker | Disk wake p50 / p95 (ms) | Resident p50 / p95 (ms) | Worst resident (ms) |
+| --- | ---: | ---: | ---: |
+| Fresh Node | 1,610.64 / 2,304.99 | 4.69 / 6.46 | 7.03 |
+| Standby with raw stdin | 1,118.64 / 1,791.61 | 6.59 / 18.33 | 24.58 |
+
+Three diagnostic guest images used `--trace-gc` and sampled the worker's
+guest minor and major fault counters at invocation and host reply. Each arm
+completed 15 wake and resident pairs with zero errors or fallbacks. With 15
+samples, nearest-rank p95 is the worst observation.
+
+| Standby diagnostic arm | Median disk wake (ms) | Resident p50 / p95 (ms) | Resident calls overlapping a scavenge |
+| --- | ---: | ---: | ---: |
+| Old readline stdin | 970.54 | 11.19 / 521.33 | 6 |
+| Raw byte stdin | 1,099.37 | 8.80 / 494.07 | 1 |
+| Raw byte stdin with forced GC after refresh | 2,082.70 | 8.04 / 10.65 | 0 |
+
+Task-triggered V8 scavenges overlapped the long resident calls. In the raw
+stdin arm, a 421.69 ms scavenge overlapped 415.59 ms of a 494.07 ms request.
+The worker added 122 minor faults and one major fault between invocation
+and host reply. The other 14 raw-stdin calls added zero major faults.
+Scavenges also overlapped six calls in the old-stdin arm, all with zero
+guest major faults. The guest process counters do not identify host-side
+snapshot page-in. The binary stdin fix reduced the observed frequency in
+this sample and still allowed a long scavenge to interrupt a resident call.
+Forced GC shifted collection into the disk wake and took a median 919 ms.
+Raw logs, checksums and the summary are under `/srv/homes/perf/vmw4`.
+
+Standby stays off by default. Operators can set `prestarted_worker: true`
+to enable it. The plain launcher, idle timeout and memory ceiling apply to
+both modes. Disk wake still exceeds the 500 ms target.
 
 ## Review gate
 
