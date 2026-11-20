@@ -71,7 +71,7 @@ ledger for other files.
 | `file.create` | folder, name, kind, fields, body, request ID | ID, revision | `conflict_name`, `invalid_fields`, `quota` | 2 indexed reads (receipt, name), 1 ledger commit, 1 file write (temp, fsync, rename, directory fsync) |
 | `file.replace` | ID, expected revision, fields, body, request ID | revision | `stale_revision`, `invalid_fields`, `quota` | 2 indexed reads (receipt, head), 1 ledger commit, 1 file write; the host parses the new bytes once |
 | `file.set_fields` | ID, optional expected revision, field values | revision | `invalid_fields`, `stale_revision` | as replace + 1 file read; unknown keys, comments and untouched values survive (ADR 0068) |
-| `file.move` | ID, new folder and/or name | revision | `conflict_name`, `forbidden` | 1 indexed read, 1 ledger commit, 1 rename + 2 directory fsyncs; links: see 1.6 |
+| `file.move` | ID, new folder and/or name | revision | `conflict_name`, `forbidden` | 1 indexed read, 1 ledger commit, 1 rename + 2 directory fsyncs; links: see 1.7 |
 | `file.trash` | ID | trash entry | `forbidden` | 1 commit, 1 rename into the space's Trash |
 | `file.restore` | trash entry | ID, path | `conflict_name` (restores beside, never overwrites) | 1 commit, 1 rename |
 | `file.purge` | trash entry | — | `forbidden` (managers and owners, or retention) | background |
