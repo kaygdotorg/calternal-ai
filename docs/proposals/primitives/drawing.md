@@ -179,8 +179,11 @@ default inside the package (no file at all). The first change writes the person'
 with `from: <plugin>@<version>`. When the plugin later adds a section to its default, the
 shell appends it to the person's copy once, marked new; a section the person hid stays
 hidden. No migration code: the rule is "append default entries the file has never listed".
+This is a third answer to the Files section's question 6 (a copy, or a list of changes
+over the default): a readable copy, which still receives new default sections, with no
+merge rules beyond that one append. The integrator should pick one wording for both.
 
-Who sees it: question 2 (the Files section asks the same as its question 6). Recommended:
+Who sees it: question 2. Recommended:
 the person's copy is private, under `.people/<person-uuid>/`; "Share sidebar" copies it
 into the space's collections. Within one collection, hand-added members come first and
 the query's rows follow without duplicates (Files section 1.9).
@@ -645,7 +648,9 @@ states) and what moved to the host (records, the sidebar file).
   partner's Chat sidebar change?
 - **Options:** (a) **yours alone**: the first change writes a private copy under
   `.people/<person-uuid>/`; "Share sidebar" puts a copy into the space's collections for
-  others to add. Costs one file per person per app that they changed. (b) **the space's**:
+  others to add. Costs one file per person per app that they changed. The owner asked for
+  a *visible* file; `.people/` is a hidden folder in the Files section's draft, so the
+  Files app would show it to you as "My sidebars" (only to you). (b) **the space's**:
   one file per app, editable by editors or managers; everyone sees the same sidebar. Costs
   surprise when someone else reorders yours.
 - **Recommendation:** (a): what only you see is picked by you (the rule the owner already
