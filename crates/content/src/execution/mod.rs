@@ -27,6 +27,8 @@ mod writer;
 pub struct PinnedExecution {
     /// Checked target in the selected space.
     pub item: ItemRef,
+    /// Installed kind whose execution target was checked.
+    pub kind: String,
     /// Acting person who supplied the execution authority.
     pub actor: AccountId,
     /// Authenticated installation that initiated this interactive execution.
@@ -47,10 +49,20 @@ pub struct PinnedExecution {
     pub harness: HarnessRef,
     /// Logical identity of the installed contribution in the job context.
     pub contribution: ContributionIdentity,
-    /// Checked placement accepted for this execution.
-    pub placement: PlacementRef,
+    /// Exact installed build of the contributing package.
+    pub contribution_digest: String,
+    /// Exact reviewed entry executable digest.
+    pub entry_digest: String,
+    /// Exact reviewed runtime image digest.
+    pub image_digest: String,
+    /// Checked activation choice, when the action supplies a placement slot.
+    pub placement: Option<PlacementRef>,
+    /// Actual machine selected at admission, independent of the choice lease.
+    pub machine: Uuid,
     /// Exact profile identity for the selected placement.
     pub profile: String,
+    /// Generation of the selected placement's approved profile.
+    pub profile_generation: u64,
     /// Audience generation under which the item was admitted.
     pub audience_generation: u64,
     /// Host-resolved upper bound on effects available to the attempt.
