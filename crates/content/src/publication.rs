@@ -128,9 +128,6 @@ impl Content {
                 .map_err(internal)?;
             #[cfg(feature = "perf-timings")]
             retirement.finish();
-            if item.is_some() {
-                self.wake_window(space.id, false);
-            }
         }
     }
 }

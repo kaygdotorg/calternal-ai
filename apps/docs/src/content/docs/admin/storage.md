@@ -209,9 +209,9 @@ projection worker follows the durable item journal and publishes keys,
 scope totals and an epoch/watermark in one NORMAL transaction. The reader
 checks live authority before storage access and before delivery. A missing
 or lagging publication returns loading without rows, a count or a cursor.
-The native Notes cursor remains a head query. A save adds a best-effort,
-nonblocking wake for existing projections and no synchronous index write
-or flush.
+The native Notes cursor remains a head query. The worker polls active spaces
+and an authorized loading window can wake it. A save adds no synchronous
+index I/O or worker request.
 
 Space plugin settings use a versioned file in userdata. A single durable,
 settings-only intent in the existing per-space database carries the file

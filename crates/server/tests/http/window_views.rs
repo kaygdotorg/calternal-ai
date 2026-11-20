@@ -221,8 +221,32 @@ fn space_revocation_releases_no_live_window_rows_or_count() {
     )
     .unwrap();
     sidecar.busy_timeout(Duration::from_secs(2)).unwrap();
+    create(
+        &srv,
+        "worker-polled-note",
+        &srv.shared,
+        "more shared content",
+    );
+    // Observe replay without an HTTP window request waking the worker.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let caught_up: bool = sidecar
+            .query_row(
+                "SELECT (SELECT ready FROM window_publication) AND EXISTS(
+                    SELECT 1 FROM window_scopes
+                    WHERE collection='notes' AND audience='space' AND total=2)",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        if caught_up {
+            break;
+        }
+        assert!(Instant::now() < deadline, "worker did not poll the journal");
+        std::thread::sleep(Duration::from_millis(20));
+    }
     sidecar.execute_batch("BEGIN IMMEDIATE").unwrap();
-    create(&srv, "second-shared-note", &srv.shared, "new body");
+    create(&srv, "unpublished-note", &srv.shared, "new body");
     let stale = call(
         &srv,
         &srv.guest,
