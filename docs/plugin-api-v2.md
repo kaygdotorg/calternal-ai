@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.28 draft
+# Plugin API v2 · revision 14.29 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -896,8 +896,10 @@ result and use its current scoped contexts. Recheck Stop against the
 exact pending job or admitted attempt. Clear affected content on actual
 invalidation, lease loss or disconnect. Refetch under fresh authority.
 
-Data-free templates and signed invariant-root member row records remain
-available for cold launch. Body-derived display fields may persist when
+Data-free templates remain available for cold launch. Signed invariant-root
+member row records follow the catalogue’s
+[device reconciliation rule](../contract/host-catalogue-v2.json#/device_reconciliation)
+before disk prepaint. Body-derived display fields may persist when
 covered by an exact authorized offline download grant. Validate the
 signed record against account, space, template, Bind, offset and current
 opt-ins. Treat it as display only, with no context or reference usable
@@ -907,8 +909,9 @@ An authenticated member may download the full readable content, including
 bodies, attachments and authorized derived fields. Use the catalogue’s
 [offline download](../contract/host-catalogue-v2.json#/offline_download)
 manifest and reauthorized bounded ranges. Encrypt bytes and derivatives
-per account, device and space. Wipe on sign-out and on next contact after
-revocation, including local search and keys. There is no expiry by default.
+per account, device and space. Apply the same device reconciliation rule
+for next-contact revocation and local sign-out, including search and keys.
+There is no expiry by default.
 A space may configure an offline expiry. A disconnected device with a
 previous copy cannot be wiped remotely. Export starts with authorized files
 and attachments. Live actions require fresh host authority.
@@ -1336,7 +1339,7 @@ and zero-effect assertions must hold on every repetition.
 | **Phone activation exchanges** | In the same Chromium phone link fixture measure eligible host swipe, ordinary plugin resolve/dispatch and protected challenge separately. Check stale contexts, lost replies and exact replay. A widening Undo returns a disclosure preview before confirm dispatch. |
 | **Keyboard windowing** | 5,000 rows with seeded authorized thumbnails and 30 keys/sec on the phone fixture. During repeat, assert zero new image GETs and cancellation of in-flight image fetches. After settling, fetch only current refs for the visible rows. Record image request counts and bytes. At most four window requests in any second and zero selection/navigation events during repeat on every run. Report p95 request rate. After the first real rows paint, capture each viewport frame during the repeat burst. Require zero skeleton-row frames during the steady 30 Hz segment on every run. Same-version prefetch applies while keys repeat; an activation waits for the context of its drawn target. Delay a context for A until B is drawn and verify the activation cannot use A. |
 | **Nested rows and user sections** | On the real item and layout engines, expand two parents and page their children independently. Check depth, ancestry, revocation and a forged parent ref. Create, rename and remove personal sections and Move to, Move up and Move down. Undo each committed edit, verify placement and order, refuse stale Undo, and prove a second member’s layout is unaffected. |
-| **Persisted member rows** | Use an authenticated eligible root Bind. Verify device ciphertext and account/space key separation, reject expired or forged records and erase on known revocation, sign-out and account switch. Paint eligible rows on an unlocked launch, then confirm or correct them against the host. For a cached Notes timestamp, advance the device clock across a relative-date boundary and verify that the label updates before a fresh window. Check that unconfirmed rows have no executable actions and that guest and public windows leave no record. |
+| **Persisted member rows** | Use an authenticated eligible root Bind. Verify device ciphertext and account/space key separation, reject expired or forged records and erase on known revocation, sign-out and account switch. On unlocked offline launch paint eligible rows from the reconciled inventory. On authenticated reconnect reconcile before prepaint, then confirm or correct live rows. For a cached Notes timestamp, advance the device clock across a relative-date boundary and verify that the label updates before a fresh window. Check that unconfirmed rows have no executable actions and that guest and public windows leave no record. |
 | **Phone cold launch** | Restart the client with an authorized account and a cold connection, with and without an eligible member row record. Start at launch intent and time first paint and first confirmed or corrected rows on the phone link. Require confirmed rows p95 ≤600 ms in both cases. Use TLS resumption and pipeline authentication, `view.open` and the first windows in one application flight. The host handles them in that order. The initial frame uses the local template and unconfirmed rows with a record, or the loading state without one. Confirm no action can run before fresh host context. |
 | **Snapshot randomness** | Independently restore the same snapshot twice and sample the guest kernel and each restored process’s crypto RNG, including Node. Require different bytes for both restores at both layers and require fresh kernel and process randomness before any plugin code. Refuse admission if reseed or fresh process reinitialization cannot establish that. Include reseed time in measured wake. |
 | **Interactive pending** | Force work past three plugin seconds, including a cold wake with the separate measured/fixture allowance. The host publishes `pending` within three seconds of dispatch on every run. On the phone link, the caller receives it within 250 ms of host publication on every run. Record both timestamps, one diagnostic and one status ref. Poll while it finishes and retry after a lost reply. Never launch again or allow effects after ticket expiry. |
@@ -1490,8 +1493,14 @@ intentional refusal/retry with an actionable response.
 - **Alarm, offline and contribution.** Kill the server before a due alarm
   and after consume-before-reply. Require one late job with scheduled and
   actual time, and zero admissions after disable. Download a body and its
-  attachments, revoke access while offline and check recontact and sign-out
-  erasure. Check configured expiry. Install two editors for one Markdown
+  attachments and cache a body-derived row part. Close all views, revoke
+  the offline grant and change row authority in one scope while disconnected.
+  Reconnect to a different app. Require omitted refs to be erased before
+  disk prepaint, including the dependent body-derived part if its enclosing
+  scope survives. Restart offline and check that unaffected scopes and downloads
+  survive while erased data stays absent. Cut the connection during reconciliation
+  and replay an old reply. Require no prepaint until the current reconciliation
+  completes. Check offline sign-out and configured expiry. Install two editors for one Markdown
   format and two independent harness contributions. Verify explicit editor
   choice and mixed authorized rows, bounded optional field wake work and no
   effect of an uninstalled or disabled contribution.

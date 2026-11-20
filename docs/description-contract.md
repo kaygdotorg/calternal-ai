@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.28 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.29 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -512,15 +512,21 @@ invalidated results. No reason or separate revocation notice is needed.
 Apply the [cache policy](../contract/host-catalogue-v2.json#/cache_policy/persistent_row_invalidation).
 
 A body-derived field in a persisted row needs a matching checked offline grant. Ordinary row-record
-lifetimes still bound prepaint hints. Draw eligible records unconfirmed
-then confirm or correct them on reconnect.
+lifetimes still bound prepaint hints. On every authenticated reconnect
+call [`device.reconcile`](../contract/host-catalogue-v2.json#/device_reconciliation)
+with the device’s held scope and offline grant refs across all spaces.
+Erase omissions before painting protected data from disk, even if no view
+was open when access changed. Offline launch uses only the surviving
+inventory under that rule. Row records remain unconfirmed until a fresh
+live window arrives.
 
 An authenticated member may download the full readable item, including
 body, granted attachments and their authorized derived views. The
 host-signed download manifest names the device, account, space, authorized
 revisions and expiry policy. Check the grant again for each file range.
 Encrypt the local download and derived display and search indexes.
-Wipe on sign-out, configured expiry or next contact after revocation.
+Follow the same device reconciliation rule on next contact and sign-out.
+Erase expired grants locally.
 By default there is no offline expiry. A space can configure one.
 A disconnected copy cannot be erased remotely.
 
@@ -563,7 +569,7 @@ What the renderer needs from the contract, and what it costs:
 6. **Swipe actions** need `title`, `icon`, `tone` and `fullSwipe` on the invoke; they draw with the system's swipe look, tinted by tone, never by the root tint.
 7. **Haptics and menus** are the shell's: selection feedback on `route` and `selection` events, a system menu for `menu`.
 8. **Touch targets** are 44 pt; the renderer, not the description, sizes controls.
-9. **The first paint** may come from the cache (section 6) before any host is reachable: the template, and a member's persisted rows marked as not yet confirmed (their actions disabled until a fresh context arrives).
+9. **The first paint** may use the data-free template. An offline launch may also show unexpired rows from the device’s reconciled inventory (§6), marked unconfirmed. Actions wait for a fresh host context.
 10. **Nested rows and user sections** map to a `List` with `children` (disclosure) and one `Section` per layout row; windows per parent are requested only for expanded rows.
 
 ## 9. Paper exercises

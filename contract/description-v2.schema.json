@@ -1640,11 +1640,11 @@
             "none"
           ],
           "default": "keep",
-          "description": "keep: the device may persist the host-authenticated `MemberRowCacheRecord` of a member's own-space rows for binds with `persist: true` (encrypted, keys bound to the account and the space), painted at once and then confirmed or corrected by the host. Records exist only for an own-space member; guest and public views have no record to persist, whatever this says. none: persist no rows."
+          "description": "keep: the device may persist the host-authenticated `MemberRowCacheRecord` of a member's own-space rows for binds with `persist: true` (encrypted, keys bound to the account and the space), painted under the catalogue's device_reconciliation rule. Records exist only for an own-space member; guest and public views have no record to persist, whatever this says. none: persist no rows."
         }
       },
       "additionalProperties": false,
-      "description": "What the device may keep: a data-free template, and (Q10) for a MEMBER only, the host-authenticated `MemberRowCacheRecord` of an opted-in ROOT window of their own space (no nested or per-parent windows, nothing route-dependent) painted at once and then confirmed or corrected by the host. Everything else the host filled (a guest's or a public view's rows, counts, contexts, resolution references, challenges, proofs, credentials) is session-only: memory, partitioned by session, space and audience, cleared on revocation, link closure, sign-out and account switch, never written to storage (docs/description-contract.md 6)."
+      "description": "What the device may keep: a data-free template, and (Q10) for a MEMBER only, the host-authenticated `MemberRowCacheRecord` of an opted-in ROOT window of their own space (no nested or per-parent windows, nothing route-dependent) painted under the catalogue's device_reconciliation rule. Everything else the host filled (a guest's or a public view's rows, counts, contexts, resolution references, challenges, proofs, credentials) is session-only: memory, partitioned by session, space and audience, cleared on revocation, link closure, sign-out and account switch, never written to storage (docs/description-contract.md 6)."
     },
     "Event": {
       "description": "Shell to host. In a page-hosted shell the page relays; in a native app without a page the shell sends the same typed request to the host directly. Each variant has its own required fields. The three activation events are the host catalogue's (ResolveActivation, ConfirmActivation, DispatchActivation: action_id, activation_id, activation_context, interaction; the shell sends no resolved row, route or bind value, and the host reconstructs every server-owned source). Also the catalogue's view_open, lease_renew, choice_options, undo and action_status requests (each cited, none redefined).",
@@ -1720,6 +1720,9 @@
         },
         {
           "$ref": "host-catalogue-v2.json#/$defs/ExecutionControlRequest"
+        },
+        {
+          "$ref": "host-catalogue-v2.json#/$defs/DeviceReconcileRequest"
         }
       ]
     },
