@@ -8,15 +8,16 @@ import type { ManifestV2 } from "../generated/author.js";
 import type { Context, RunInput } from "../src/interface.ts";
 import type { HarnessInput, HarnessOutput } from "../src/harnesses-v1.ts";
 import type { handlers as threadHandlers } from "../src/worker.ts";
+import type { InvitedInput, PeopleContext, Scope, peopleHandlers } from "../src/people.ts";
 import type { handlers as harnessHandlers } from "../../calternal-threads-claude-code/src/worker.ts";
 
-async function load<H>(directory: URL) {
+async function load<H, E = object>(directory: URL) {
   const manifest: ManifestV2 = JSON.parse(readFileSync(new URL("manifest.json", directory), "utf8"));
   assert.ok(manifest.worker);
-  const { handlers } = await import(new URL(manifest.worker.path, directory).href) as { handlers: H };
-  return { manifest, handlers };
+  const worker = await import(new URL(manifest.worker.path, directory).href) as { handlers: H } & E;
+  return { manifest, ...worker };
 }
-const application = await load<typeof threadHandlers>(new URL("../dist/", import.meta.url));
+const application = await load<typeof threadHandlers, { peopleHandlers: typeof peopleHandlers }>(new URL("../dist/", import.meta.url));
 const contribution = await load<typeof harnessHandlers>(new URL("../../calternal-threads-claude-code/dist/", import.meta.url));
 export const handlers = application.handlers;
 
@@ -49,6 +50,10 @@ type Job = {
 type Owner = File["owner"];
 const actor = "019a0000-0000-7000-8000-000000000001";
 const now = "2026-11-20T12:00:00Z";
+const checkedPeople = [
+  actor, "019a0000-0000-7000-8000-000000000002", "019a0000-0000-7000-8000-000000000003",
+];
+const peopleMethods = new Set(["item_head", "item_range", "item_save", "item_append", "item_view_context", "item_view_publish"]);
 
 /** One in-memory space. Validates package ownership, exact revisions and
  * attempt retirement around the calls used by the spike. */
@@ -62,6 +67,8 @@ export class FakeHost {
   private serial = 0;
   private selected = { harness: "checked-harness", placement: "checked-desk" };
   loseNextAppendAck = false;
+  invitedInputs: InvitedInput[] = [];
+  private personState = new Map<string, string>();
   claude = async (text: string) => `Reply to ${text}`;
 
   choose() {
@@ -82,6 +89,51 @@ export class FakeHost {
       ["ChoiceOptions", { host: "execution_placement", options: [{ ref: this.selected.placement, label: "Desk" }], default_ref: this.selected.placement }],
     );
     return { ...this.selected };
+  }
+
+  peopleContext(person: string, request: string): PeopleContext {
+    const call: Context["call"] = async (method, input) => {
+      assert.ok(peopleMethods.has(method));
+      const wire = exchanges[method as keyof typeof exchanges];
+      if (wire) trace.push([wire[0], input]);
+      const result = await this.call("threads", request, method, input, undefined, person);
+      if (wire) trace.push([wire[1], result]);
+      return result as never;
+    };
+    return {
+      request, actor: person, now, checkedPeople, call,
+      privateState: {
+        read: async item => this.personState.get(JSON.stringify([person, item])),
+        write: async (item, body, expected) => {
+          const key = JSON.stringify([person, item]);
+          assert.equal(this.personState.get(key), expected, "private state changed");
+          this.personState.set(key, body);
+        },
+      },
+    };
+  }
+
+  invitedContext(person: string, request: string, input: { item: string; scope: Scope; consent: string[] }): PeopleContext {
+    const ctx = this.peopleContext(person, request);
+    const { item, scope, consent } = input;
+    const invitation = {
+      item, scope, consent: [...consent], revision: this.files.get(item)!.revision,
+      inviter: person, harness: this.selected.harness,
+    };
+    return {
+      ...ctx, invitation,
+      runInvited: async (grant, payload) => {
+        assert.equal(grant, invitation, "unchecked invitation");
+        assert.equal(this.files.get(item)?.revision, invitation.revision, "invitation changed");
+        this.invitedInputs.push(structuredClone(payload));
+        const harness = this.context(request, "threads-claude-code.run", undefined, undefined, "claude-code-run");
+        const reply = await contribution.handlers["threads-claude-code.run"]({ text: JSON.stringify(payload) }, {
+          ...harness, claude: async () => "Reply to the permitted context",
+        });
+        assert.equal(this.files.get(item)?.revision, invitation.revision, "invitation changed");
+        return reply;
+      },
+    };
   }
 
   private id(prefix: string) { return `${prefix}-${++this.serial}`; }
@@ -142,7 +194,7 @@ export class FakeHost {
   }
 
   // This dispatch is the only place that unpacks fixture broker method operands.
-  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0], input: unknown, job?: Job): Promise<unknown> {
+  private async call(owner: Owner, request: string, method: Parameters<Context["call"]>[0], input: unknown, job?: Job, receiptActor = actor): Promise<unknown> {
     if (job) assert.equal(job.state, "running", "attempt retired");
     const args = input as Record<string, string>;
     const file = this.files.get(args.item);
@@ -151,7 +203,7 @@ export class FakeHost {
       return file;
     };
     const requestId = args.request_id ?? request;
-    const commit = (effect: () => unknown) => this.receipt(`${owner}:${method}:${requestId}`, input, effect);
+    const commit = (effect: () => unknown) => this.receipt(`${owner}:${receiptActor}:${method}:${requestId}`, input, effect);
     switch (method) {
       case "item_save": return commit(() => {
         const revision = this.id("rev");
@@ -313,4 +365,9 @@ export class FakeHost {
     const file = this.files.get(item)!;
     return file.history.get(file.revision)!.toString();
   }
+}
+
+/** Load the prototype worker from the pinned package, like the declared handlers. */
+export function peopleFromBundle() {
+  return application.peopleHandlers;
 }

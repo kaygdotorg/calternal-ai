@@ -67,6 +67,13 @@ documents the revision 13.5 renderer fixture and qualification probes.
 | SDK and guide, API §7 | The dev guide and offline builder target the sealed contract. The author and renderer generators can consume draft schemas, but the sealed SDK build rejects draft manifests and packages only the older verifier module list. The public guide does not show execution jobs, alarm evidence, view publication or a cross-package harness. | Ship a revision-aware validator, package builder and broker context, and a walkthrough that runs the same plain app plus separate harness example on the real and fake hosts. |
 | Conformance tool 1.0.0, `description_verification.py` | `check_manifest_install` unconditionally reads the catalogue's removed `conversation_capability` key. Both package runs crash after local manifest shape checks. The same module's worker-invocation check still keys on `execution_intent` while the draft job declares `execution`. | Update the tool to the revision 14 catalogue and add regressions for a plain `execution_target` app manifest, a separate contribution manifest and an alarm execution job invoke. |
 
+| People-thread custody and participant refs, owner first answers and API §§1, 3, 5 | The worker can record checked people as participants in the existing kind. A list in Markdown carries no authority. The fixture supplies a prechecked account set and models one thread file with no group or cross-space behavior. | Pin the custody and membership choice before exposing people-thread creation. Define a checked operation for establishing the participant audience and file rights atomically, including which participant identifiers may be written or displayed. |
+| People-message edits and tombstones, API §3 item save and §4.2 search, history and views | A participant can edit only their own message in the fixture. The same anchor resolves to an edited mark or tombstone. The previous revision can still have the removed text, and the whole-file rewrite must remain within inline limits until staged writes exist. | Specify what deletion promises for live views, retained pages, history, search excerpts and offline copies. Reuse revision-fenced staged save. Add targeted invalidation if ordinary replacement is insufficient for the deletion promise. |
+| Private per-person thread state, API §3 item methods and §4.2 offline state | Package-owned shared items and hidden placement do not establish actor-private storage. Draft, mute, and read position need item-scoped, account-private persistence, writes from multiple devices, and cleanup independent of the shared transcript. | Pin an actor-scoped read and compare-and-set write for private item state, or explicitly give ordinary items account-private ownership. Publish applicable quotas, offline, receipt, sign-out and erase behavior. |
+| Scope and consent for called-in agents, API §3 every call and delivery, §5 and catalogue execution admission | The fixture binds an invitation to the inviter, item, source revision, selected message/range/whole scope, and consenting message IDs. The inviter authorizes their own selected messages. An old grant cannot leak new edits. A normal Send and alarm must load the Markdown to reject admission before creating a job. | Add host-issued consent and invitation bindings with visible author, exact selected message revisions, expiry and revoke rules. Revalidate at admission, before data delivery to the exact attempt, and when committing its reply. Pin a body-independent admission rule for people-only threads and a replayable one-use invocation receipt. Specify whether unrelated edits should invalidate the whole grant or only the affected messages. |
+| Called-in agent data and output, API §3 attempt authority and catalogue item/query/view routes | Delivering a filtered prompt is insufficient if an agent could subsequently read the full item through item ranges, history, snapshots, search, list or tools. The fixture only delivers selected human message IDs and text, and hands the reply back to Threads. | Add an execution read ceiling for a people thread that all alternate read routes honor. Let the attempt consume a bounded approved projection. Recheck audience/consent independently of what the ordinary inviter may read, and link the harness log through a separately checked reference. |
+| Placement for a private people conversation, API §3 and catalogue `execution_placement` | The owner decision uses the inviter's login and machine in a private people conversation. The current generic placement examples distinguish personal spaces and shared-space login choices. File custody for people threads is still open. | Pin placement and profile derivation for a checked private people-thread invitation. Keep shared-space subscription behavior on the existing path. |
+
 ## Needs host
 
 - Generic installation and cross-package extension resolution, with
@@ -86,6 +93,31 @@ documents the revision 13.5 renderer fixture and qualification probes.
 - One-shot alarm set and delivery with one durable admission, replay,
   cancellation or disable fencing and late timing. Exercise default
   placement in shared spaces and rejection of stale harness refs.
+
+- For people threads, checked participant admission, account-private
+  item state, and revision-bound consent and invited-attempt delivery.
+  Apply the approved message ceiling to discovery as well as direct reads.
+  Define tombstone invalidation and message-anchor routing.
+
+## People-thread fixture
+
+Five additional tests passed on dev-01, for 14 total on revision 14.30.
+The emitted worker bundle exposes fixture entry points outside the manifest
+and template. They create a people-only conversation in the existing kind,
+keep message IDs through edits and tombstones, and store per-person state
+as Markdown in a separate fixture record. That record uses compare-and-set
+and keeps the furthest read anchor. The fake uses an in-memory broker and
+a provisioned set of checked people.
+
+Invitations select one anchor, an inclusive range, or the whole current
+revision. A revision change requires another checked grant. The invite
+carries message-level consent recorded by the fake, excludes tombstones
+and agent-authored messages, and refuses a selection with no readable
+messages. The provider fixture receives only the filtered IDs and text
+plus the inviter's prompt. The reply is written by Threads and its run
+log by the harness. These are deliberately narrow fixture choices pending
+file custody, consent, placement and tool rules. Test fixtures cover a
+single space and do not model discovery or delivery between spaces.
 
 ## Scope and limits
 
@@ -113,11 +145,12 @@ and 64 participants. Inline saves stop at 128 KiB. Moving from the fixture
 to durable storage needs scoped receipt retention and bounded history,
 and the per-space snapshot and alarm caps already in the catalogue. The
 spike has no format migration, attachment upload, historical attribution,
-continuation, provider tools, or conversations between people.
+continuation or provider tools. The people-thread operations are fixture-only.
 
-With a launched run, the worker reads one revision-pinned document and
-writes the prompt and reply once each. The first run or a new participant
-may use a full save for frontmatter; established participants use append.
+Send and alarm setup each read the current document to check whether
+an invitation is required. With a launched run, the worker reads one
+revision-pinned document and writes the prompt and reply once each. The
+first run or a new participant may use a full save for frontmatter; established participants use append.
 A head probe after the harness returns detects intervening edits and only
 then reloads. Each successful content head publication takes one context
 call and one publish call. A page read does one bounded document read

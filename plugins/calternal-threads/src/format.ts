@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import type { ItemViewPage, SnapshotNode } from "../generated/wire.js";
 
-type Participant = { kind: "person" | "agent"; id: string };
-type Message = { id: string; author: Participant; text: string; log?: string };
+export type Participant = { kind: "person" | "agent"; id: string };
+export type Message = { id: string; author: Participant; text: string; log?: string; edited?: true; deleted?: true };
 export type Thread = {
   id: string;
   title: string;
   created: string;
+  conversation?: "people";
   participants: Participant[];
   messages: Message[];
 };
@@ -33,19 +34,19 @@ export function folder(thread: Thread): string {
 }
 
 export function encodeMessage(message: Message): string {
-  const { id, author, text, log } = message;
-  const frame = JSON.stringify({ id, author, log, length: text.length }).replaceAll(">", "\\u003e");
-  return `\n<a id="message-${id}"></a>\n## ${author.kind === "person" ? "Person" : "Agent"}\n<!-- ${frame} -->\n\n${text}\n`;
+  const { id, author, text, log, edited, deleted } = message;
+  const frame = JSON.stringify({ id, author, log, edited, deleted, length: text.length }).replaceAll(">", "\\u003e");
+  return `\n<a id="message-${id}"></a>\n## ${author.kind === "person" ? "Person" : "Agent"}\n<!-- ${frame} -->\n\n${deleted ? "[Message deleted]" : text}\n`;
 }
 
 export function encode(thread: Thread): string {
-  const { title, created, id, participants, messages } = thread;
-  return `---\nformat: calternal-thread-1\nid: ${id}\ntitle: ${JSON.stringify(title)}\ncreated: ${created}\nparticipants: ${JSON.stringify(participants)}\n---\n`
+  const { title, created, id, participants, messages, conversation } = thread;
+  return `---\nformat: calternal-thread-1\nid: ${id}\ntitle: ${JSON.stringify(title)}\ncreated: ${created}\nparticipants: ${JSON.stringify(participants)}\n${conversation ? "conversation: people\n" : ""}---\n`
     + messages.map(encodeMessage).join("");
 }
 
 export function decode(body: string): Thread {
-  const header = /^---\nformat: calternal-thread-1\nid: ([a-f0-9]{32})\ntitle: (.+)\ncreated: (.+)\nparticipants: (.+)\n---\n/u.exec(body);
+  const header = /^---\nformat: calternal-thread-1\nid: ([a-f0-9]{32})\ntitle: (.+)\ncreated: (.+)\nparticipants: (.+)\n(conversation: people\n)?---\n/u.exec(body);
   if (!header) throw new Error("Unreadable thread document.");
   const messages: Message[] = [];
   const frame = /\n<a id="message-([a-f0-9]{32})"><\/a>\n## (?:Person|Agent)\n<!-- (.+?) -->\n\n/uy;
@@ -54,15 +55,23 @@ export function decode(body: string): Thread {
     frame.lastIndex = offset;
     const record = frame.exec(body);
     if (!record) throw new Error("Unreadable message record.");
-    const { id, author, log, length } = JSON.parse(record[2]);
-    const end = frame.lastIndex + length;
-    if (id !== record[1] || !Number.isSafeInteger(length) || length < 1 || body[end] !== "\n") {
+    const { id, author, log, edited, deleted, length } = JSON.parse(record[2]);
+    const tombstone = "[Message deleted]";
+    const end = frame.lastIndex + (deleted === true ? tombstone.length : length);
+    if (id !== record[1] || !Number.isSafeInteger(length) || body[end] !== "\n"
+      || (deleted === true ? length !== 0 || body.slice(frame.lastIndex, end) !== tombstone : length < 1)) {
       throw new Error("Unreadable message record.");
     }
-    messages.push({ id, author, ...(log ? { log } : {}), text: body.slice(frame.lastIndex, end) });
+    messages.push({ id, author, ...(log && { log }), ...(edited === true && { edited }), ...(deleted === true && { deleted }),
+      text: deleted === true ? "" : body.slice(frame.lastIndex, end) });
     offset = end + 1;
   }
-  return { id: header[1], title: JSON.parse(header[2]), created: header[3], participants: JSON.parse(header[4]), messages };
+  return { id: header[1], title: JSON.parse(header[2]), created: header[3], participants: JSON.parse(header[4]), ...(header[5] && { conversation: "people" }), messages };
+}
+
+/** Return a tombstone at the original anchor without carrying the deleted text. */
+export function messageView({ text, ...message }: Message): Omit<Message, "text"> & { text?: string } {
+  return message.deleted ? message : { ...message, text };
 }
 
 export function page(thread: Thread, older?: string): ItemViewPage {
@@ -75,11 +84,11 @@ export function page(thread: Thread, older?: string): ItemViewPage {
   while (start > 0 && end - start < 10) {
     const message = thread.messages[start - 1];
     const nodes: SnapshotNode[] = [
-      { type: "snapshot-heading", title: message.author.kind === "person" ? "Person" : "Agent" },
+      { type: "snapshot-heading", title: (message.author.kind === "person" ? "Person" : "Agent") + (message.edited && !message.deleted ? " (edited)" : "") },
     ];
     let text = "";
     let length = 0;
-    for (const character of message.text) {
+    for (const character of message.deleted ? "[Message deleted]" : message.text) {
       const width = Buffer.byteLength(character);
       if (length + width > 2000) {
         nodes.push({ type: "snapshot-text", text });

@@ -1,42 +1,15 @@
-import { MAX_V2_FRAME_BYTES } from "@calternal/plugin-sdk";
-import type { ItemViewRead, ItemRef, RevisionRef, Timestamp } from "../generated/wire.js";
+import type { ItemViewRead, ItemRef, Timestamp } from "../generated/wire.js";
 import { checkedText } from "./harnesses-v1.ts";
-import { checkedTitle, decode, encode, encodeMessage, folder, MAX_FILE_BYTES, page, step, type Thread } from "./format.ts";
+import { checkedTitle, encode, encodeMessage, folder, MAX_FILE_BYTES, page, step, messageView, type Thread } from "./format.ts";
 import type { Context, RunInput, Send } from "./interface.ts";
+import { inlineBody, kind, publish, read } from "./files.ts";
 
-const kind = "threads";
-const slot = "body";
+export { peopleHandlers } from "./people.ts";
 
-function inlineBody(body: Buffer): string {
-  if (body.length > MAX_V2_FRAME_BYTES / 2) throw new Error("This edit needs staged item save.");
-  return body.toString("base64");
-}
-
-async function read(ctx: Context, item: ItemRef, revision: RevisionRef) {
-  const chunks: Buffer[] = [];
-  let offset = 0;
-  while (true) {
-    const part = await ctx.call("item_range", { item, revision, offset, max_bytes: 65536 });
-    const chunk = Buffer.from(part.bytes, "base64");
-    const end = offset + chunk.length;
-    if (chunk.length > 65536 || end > MAX_FILE_BYTES || (part.next_offset !== undefined && (end <= offset || end !== part.next_offset))) {
-      throw new Error("Invalid or oversized thread range.");
-    }
-    chunks.push(chunk);
-    if (part.next_offset === undefined) {
-      return { thread: decode(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))), size: end };
-    }
-    offset = part.next_offset;
-  }
-}
-
-async function publish(ctx: Context, item: ItemRef, revision: RevisionRef, thread: Thread) {
-  const scope = await ctx.call("item_view_context", { item, slot });
-  if (scope.source_revision !== revision) return;
-  await ctx.call("item_view_publish", {
-    request_id: step(ctx.request, `snapshot-${revision}-${scope.audience_scope}`),
-    item, slot, ...scope, ...page(thread),
-  });
+async function requireAgentThread(ctx: Context, item: ItemRef) {
+  const head = await ctx.call("item_head", { item });
+  const { thread } = await read(ctx, item, head.revision);
+  if (thread.conversation === "people") throw new Error("This conversation requires an agent invitation.");
 }
 
 async function create({ title }: { title: string }, ctx: Context) {
@@ -57,6 +30,7 @@ async function create({ title }: { title: string }, ctx: Context) {
 }
 
 async function send({ item, text, harness, placement }: Send, ctx: Context) {
+  await requireAgentThread(ctx, item);
   return ctx.call("start_job", { job: "run", item, harness, placement, input: { item, text: checkedText(text) } });
 }
 
@@ -84,6 +58,7 @@ async function run(input: RunInput, ctx: Context) {
   const { item, harness } = ctx.job;
   const head = await ctx.call("item_head", { item });
   let { thread, size } = await read(ctx, item, head.revision);
+  if (thread.conversation === "people") throw new Error("This conversation requires an agent invitation.");
   const agent = { kind: "agent" as const, id: harness };
   const person = { kind: "person" as const, id: ctx.actor };
   const promptId = step(ctx.request, `prompt-${ctx.actor}`);
@@ -141,6 +116,7 @@ async function run(input: RunInput, ctx: Context) {
 
 async function arm(input: Omit<Send, "placement"> & { at: Timestamp; if_missed: "run" | "skip" }, ctx: Context) {
   const { item, harness, at, if_missed } = input;
+  await requireAgentThread(ctx, item);
   return ctx.call("alarm_set", {
     request_id: step(ctx.request, "alarm"), job: "run", at, harness,
     input: { item, text: checkedText(input.text), if_missed },
@@ -157,7 +133,7 @@ async function message(input: { item: ItemRef; message: string }, ctx: Context) 
   const { thread } = await read(ctx, input.item, head.revision);
   const found = thread.messages.find(entry => entry.id === input.message);
   if (!found) throw new Error("Message unavailable.");
-  return found;
+  return messageView(found);
 }
 
 /** Draft application handlers. Protected Stop and archive use host controls. */

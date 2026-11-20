@@ -15,6 +15,10 @@ const read = { required_capability: "space.read", risk: "read", idempotency: "re
 const execute = { required_capability: "plugins.use", risk: "external", idempotency: "request_id" } as const;
 const empty = object({});
 const ifMissed = { enum: ["run", "skip"] };
+const messageResult = {
+  id: { type: "string" },
+  author: object({ kind: { enum: ["person", "agent"] }, id: { type: "string" } }, "kind", "id"),
+};
 const itemRoute = { route: "item" };
 const harnessChoice = { prompt: { title: "Harness", kind: "choice", options: { extension: "harnesses" } } } as const;
 const description: AppDescription = {
@@ -51,22 +55,24 @@ const metadata = {
   operations: [
     { ...write, id: "threads.create", title: "New thread", creates: "threads", methods: ["item_save", ...writeView],
       input_schema: object({ title }, "title"), output_schema: object({ created: item }, "created") },
-    { ...execute, id: "threads.send", title: "Send", target, methods: ["start_job"], material_inputs: { placement: "Machine and login" },
+    { ...execute, id: "threads.send", title: "Send", target, methods: [...readBody, "start_job"], material_inputs: { placement: "Machine and login" },
       input_schema: object({ item, text: textSchema, harness, placement }, "item", "text", "harness", "placement"),
       output_schema: catalogueRef("ExecutionJobReceipt") },
     { ...write, id: "threads.rename", title: "Rename", target, methods: [...readBody, "item_save", ...writeView],
       input_schema: object({ item, title }, "item", "title"), output_schema: empty },
     { ...execute, id: "threads.run", title: "Run harness", target, methods: [...readBody, "item_save", "item_append", "execution_start", ...writeView],
       input_schema: object({ item, text: textSchema, if_missed: ifMissed }, "item", "text"), output_schema: empty },
-    { ...execute, id: "threads.arm", title: "Schedule a run", target, methods: ["alarm_set"],
+    { ...execute, id: "threads.arm", title: "Schedule a run", target, methods: [...readBody, "alarm_set"],
       input_schema: object({ item, text: textSchema, harness, at: catalogueRef("Timestamp"), if_missed: ifMissed },
         "item", "text", "harness", "at", "if_missed"), output_schema: catalogueRef("AlarmReceipt") },
     { ...read, id: "threads.refresh", title: "Read thread page", target, methods: ["item_range"],
       input_schema: catalogueRef("ItemViewRead"), output_schema: catalogueRef("ItemViewPage") },
     { ...read, id: "threads.message", title: "Read message", target, methods: [...readBody],
       input_schema: object({ item, message: { type: "string", pattern: "^[0-9a-f]{32}$" } }, "item", "message"),
-      output_schema: object({ id: { type: "string" }, author: object({ kind: { enum: ["person", "agent"] }, id: { type: "string" } }, "kind", "id"),
-        text: textSchema, log: item }, "id", "author", "text") },
+      output_schema: { oneOf: [
+        object({ ...messageResult, text: textSchema, log: item, edited: { const: true } }, "id", "author", "text"),
+        object({ ...messageResult, deleted: { const: true } }, "id", "author", "deleted"),
+      ] } },
   ],
 } satisfies Omit<ManifestV2, "apps" | "worker" | "network">;
 
