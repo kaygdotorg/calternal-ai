@@ -63,23 +63,23 @@ numeric limits.
 
 ## 2. What the server is
 
-The same areas, in the primitives-only design. The primitive names follow
-the thesis; the integrated design may merge or rename them.
+The same areas, in the primitives-only design. The primitive names are the integrated design's five: Files, Questions,
+Authority, Running code and Drawing.
 
 | Area | Becomes | Primitive |
 | --- | --- | --- |
-| Accounts, sessions, spaces, sharing | Kept as is: people, groups, spaces, roles, invitations, per-file grants | People and permissions |
+| Accounts, sessions, spaces, sharing | Kept as is: people, groups, spaces, roles, invitations, per-file grants | Authority |
 | File storage and durability | Kept: userdata files with revisions, safe paths, quotas, backups | Files |
 | Content engine | Rebuilt as the index over files, frontmatter, text, links and origin stamps; collections are files | Questions |
 | Native chat, automations, live rooms | Deleted from the host. Chat, automations and presence become plugins. | — |
 | Native Notes | Deleted from the host. Notes is a plugin. | — |
 | Providers and agents | Deleted from the host. A harness is a plugin that runs a program. Logins are folders the person picks. | Running code |
 | Machines and sandboxes | Kept as the place code runs: sandbox, deadline, Stop, mounted folders. The relay protocol goes. | Running code |
-| Plugins | One package store, one validator, one call table, one work table | Calls, Running code |
-| HTTP API | One call route plus file sync and the change feed. Appearance becomes a shell plugin or client setting. | Calls, Drawing |
+| Plugins | One package store, one validator, one call table, one work table | Authority, Running code |
+| HTTP API | One call route plus file sync and the change feed. Appearance becomes a shell plugin or client setting. | Authority, Drawing |
 | Upgrades and migrations | One initial schema per database while installs are fresh | — |
-| Push, network guard, secrets | Kept, behind calls: outbound requests to declared hosts, secrets usable but unreadable, notifications | The outside |
-| Models, CLI, client | v0 models deleted; the CLI calls the same call table | Calls |
+| Push, network guard, secrets | Kept, behind calls: outbound requests to declared hosts, secrets usable but unreadable, notifications | Authority (the outside as calls) |
+| Models, CLI, client | v0 models deleted; the CLI calls the same call table | Authority |
 | Interface | Closed component catalogue, sealed frame, shell parts filled by descriptions; collections supply every list | Drawing |
 
 ## 3. Fate table: every revision 14 concept
