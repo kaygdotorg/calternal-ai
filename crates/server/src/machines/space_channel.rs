@@ -8,7 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use calternal_auth::db::GrantRevision;
-use calternal_machine::protocol::{Down, SPACE_CHANNEL_UPGRADE, SpaceChannelAssignment};
+use calternal_machine::protocol::{Down, Owner, SPACE_CHANNEL_UPGRADE, SpaceChannelAssignment};
 use calternal_plugin_host::space_channel::{PackagePin, SpaceChannel};
 use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 use std::{sync::Arc, time::Duration};
@@ -33,30 +33,68 @@ pub(crate) struct Connected {
 
 pub(super) struct Reservation {
     binding: SpaceChannelAssignment,
+    restore_consumed: watch::Sender<bool>,
+    waiter: Waiter<Connected>,
+}
+
+pub(super) struct EntryReservation {
+    package: PackagePin,
+    ticket: Uuid,
+    waiter: Waiter<SpaceChannel>,
+}
+
+struct Waiter<T> {
     machine: Uuid,
     account: AccountId,
     session: [u8; 32],
     closing: watch::Sender<bool>,
-    restore_consumed: watch::Sender<bool>,
-    reply: Option<oneshot::Sender<Connected>>,
+    reply: Option<oneshot::Sender<T>>,
 }
 
-impl Drop for Reservation {
+impl<T> Waiter<T> {
+    fn new(machine: Uuid, account: AccountId, session: [u8; 32]) -> (Self, oneshot::Receiver<T>) {
+        let (reply, receive) = oneshot::channel();
+        (
+            Self {
+                machine,
+                account,
+                session,
+                closing: watch::channel(false).0,
+                reply: Some(reply),
+            },
+            receive,
+        )
+    }
+
+    fn live(&self) -> bool {
+        !*self.closing.borrow() && self.reply.as_ref().is_none_or(|reply| !reply.is_closed())
+    }
+
+    fn take(&mut self) -> Result<oneshot::Sender<T>, Error> {
+        let reply = self.reply.take().ok_or_else(no_assignment)?;
+        if reply.is_closed() {
+            self.closing.send_replace(true);
+            return Err(no_assignment());
+        }
+        Ok(reply)
+    }
+}
+
+impl<T> Drop for Waiter<T> {
     fn drop(&mut self) {
         self.closing.send_replace(true);
     }
 }
 
 impl State {
-    fn require_channel_capacity(&mut self, space: SpaceId) -> Result<(), Error> {
-        self.space_channels.retain(|_, reservation| {
-            !*reservation.closing.borrow()
-                && reservation
-                    .reply
-                    .as_ref()
-                    .is_none_or(|reply| !reply.is_closed())
-        });
-        if self.space_channels.contains_key(&space) || self.space_channels.len() >= MAX_CHANNELS {
+    fn require_channel_capacity(&mut self, worker_space: Option<SpaceId>) -> Result<(), Error> {
+        self.space_channels
+            .retain(|_, reservation| reservation.waiter.live());
+        self.entry_channels
+            .retain(|_, reservation| reservation.waiter.live());
+        if worker_space.is_some_and(|space| self.space_channels.contains_key(&space))
+            || self.space_channels.len() + self.entry_channels.len() >= MAX_CHANNELS
+        {
             return Err(Error::unavailable(
                 "space already has a carrier or carrier capacity is full",
             ));
@@ -75,7 +113,7 @@ impl State {
     ) -> Result<(), Error> {
         if let Some(reservation) = self.space_channels.get(&space)
             && reservation.binding.lease_id == lease
-            && reservation.machine == machine
+            && reservation.waiter.machine == machine
             && let Some(counter) = reservation.binding.checkpoint
         {
             if *reservation.restore_consumed.borrow() {
@@ -90,8 +128,8 @@ impl State {
     /// Recheck machine inventory promptly while its restored guest awaits admission.
     pub(super) fn awaiting_restore_report(&self, machine: Uuid) -> bool {
         self.space_channels.values().any(|reservation| {
-            reservation.machine == machine
-                && !*reservation.closing.borrow()
+            reservation.waiter.machine == machine
+                && !*reservation.waiter.closing.borrow()
                 && !*reservation.restore_consumed.borrow()
         })
     }
@@ -108,11 +146,17 @@ impl State {
     }
 
     pub(super) fn close_account_channels(&mut self, account: AccountId) {
-        self.space_channels.retain(|_, r| r.account != account);
+        self.space_channels
+            .retain(|_, r| r.waiter.account != account);
+        self.entry_channels
+            .retain(|_, r| r.waiter.account != account);
     }
 
     pub(super) fn close_machine_channels(&mut self, machine: Uuid) {
-        self.space_channels.retain(|_, r| r.machine != machine);
+        self.space_channels
+            .retain(|_, r| r.waiter.machine != machine);
+        self.entry_channels
+            .retain(|_, r| r.waiter.machine != machine);
     }
 }
 
@@ -148,7 +192,7 @@ impl MachineService {
     /// Cold wake preflight. One scheduler lock for memory-only reservation
     /// cleanup and capacity checking before placement can start a sandbox.
     pub(crate) fn check_space_channel_available(&self, space: SpaceId) -> Result<(), Error> {
-        self.lock()?.require_channel_capacity(space)
+        self.lock()?.require_channel_capacity(Some(space))
     }
 
     /// Reserve the v2 carrier under the scheduler lock on the blocking worker.
@@ -183,28 +227,83 @@ impl MachineService {
                 .and_then(|record| record.live.as_ref())
                 .map(|live| live.session)
                 .ok_or_else(no_assignment)?;
-            st.require_channel_capacity(binding.space)?;
-            let (reply, receive) = oneshot::channel();
+            st.require_channel_capacity(Some(binding.space))?;
+            let (waiter, receive) = Waiter::new(machine, account, session);
             st.space_channels.insert(
                 binding.space,
                 Reservation {
                     binding: binding.clone(),
-                    machine,
-                    account,
-                    session,
-                    closing: watch::channel(false).0,
+                    waiter,
                     restore_consumed: watch::channel(binding.checkpoint.is_none()).0,
-                    reply: Some(reply),
                 },
             );
             st.push(machine, Down::OpenSpaceChannel { channel: binding });
             Ok(receive)
         })
         .await?;
-        tokio::time::timeout(OPEN_LIMIT, receive)
-            .await
-            .map_err(|_| Error::unavailable("space carrier did not connect"))?
-            .map_err(|_| no_assignment())
+        wait_connected(receive).await
+    }
+
+    /// Open a one-shot carrier for the acting account's own enrolled Podman
+    /// machine. The execution engine must pin and recheck the exact attempt
+    /// and authorize the installed package, image, egress and login first.
+    /// One blocking scheduler reservation and one machine round trip. Holds
+    /// the scheduler lock only while verifying and queueing the reservation.
+    pub(crate) async fn open_entry_channel(
+        self: &Arc<Self>,
+        account: AccountId,
+        space: SpaceId,
+        machine: Uuid,
+        ticket: Uuid,
+        package: PackagePin,
+    ) -> Result<SpaceChannel, Error> {
+        let service = self.clone();
+        let receive = blocking(move || {
+            let mut st = service.lock()?;
+            let st = &mut *st;
+            st.require_channel_capacity(None)?;
+            let session =
+                entry_session(st, &service.settings, machine, account).ok_or_else(no_assignment)?;
+            if ticket.is_nil() || st.entry_channels.values().any(|r| r.ticket == ticket) {
+                return Err(no_assignment());
+            }
+            let reservations = &st.entry_channels;
+            let live = st
+                .machines
+                .get_mut(&machine)
+                .and_then(|record| record.live.as_mut())
+                .ok_or_else(no_assignment)?;
+            live.outbox.retain(|envelope| match &envelope.message {
+                Down::OpenEntryChannel {
+                    space, assignment, ..
+                } => reservations
+                    .get(&(*space, *assignment))
+                    .is_some_and(|reservation| reservation.waiter.reply.is_some()),
+                _ => true,
+            });
+            let assignment = Uuid::new_v4();
+            let (waiter, receive) = Waiter::new(machine, account, session);
+            st.entry_channels.insert(
+                (space, assignment),
+                EntryReservation {
+                    package: package.clone(),
+                    ticket,
+                    waiter,
+                },
+            );
+            st.push(
+                machine,
+                Down::OpenEntryChannel {
+                    space,
+                    assignment,
+                    package,
+                    ticket,
+                },
+            );
+            Ok(receive)
+        })
+        .await?;
+        wait_connected(receive).await
     }
 
     /// Consume the one-time reservation on cold connect. The scheduler lock
@@ -215,30 +314,41 @@ impl MachineService {
         token: &str,
         space: SpaceId,
         assignment: Uuid,
-    ) -> Result<
-        (
-            Uuid,
-            SpaceChannelAssignment,
-            watch::Sender<bool>,
-            watch::Receiver<bool>,
-            oneshot::Sender<Connected>,
-        ),
-        Error,
-    > {
+    ) -> Result<AcceptedChannel, Error> {
         let machine = self.authenticate(token).map_err(|error| match error.code {
             ErrorCode::Unauthorized | ErrorCode::Forbidden | ErrorCode::NotFound => no_assignment(),
             _ => error,
         })?;
         let session = calternal_auth::token::hash32(token);
         let mut st = self.lock()?;
+        if let Some(reservation) = st.entry_channels.get(&(space, assignment)) {
+            if reservation.waiter.machine != machine
+                || reservation.waiter.session != session
+                || !reservation.waiter.live()
+                || entry_session(&st, &self.settings, machine, reservation.waiter.account)
+                    != Some(session)
+            {
+                return Err(no_assignment());
+            }
+            let reservation = st
+                .entry_channels
+                .get_mut(&(space, assignment))
+                .expect("checked reservation");
+            return Ok(AcceptedChannel {
+                machine,
+                package: reservation.package.clone(),
+                closing: reservation.waiter.closing.clone(),
+                reply: ChannelReply::Entry(reservation.waiter.take()?),
+            });
+        }
         let reservation = st
             .space_channels
             .get(&space)
-            .filter(|slot| {
-                slot.machine == machine
-                    && slot.session == session
-                    && slot.binding.assignment == assignment
-                    && !*slot.closing.borrow()
+            .filter(|reservation| {
+                reservation.waiter.machine == machine
+                    && reservation.waiter.session == session
+                    && reservation.binding.assignment == assignment
+                    && reservation.waiter.live()
             })
             .ok_or_else(no_assignment)?;
         let lease = st
@@ -255,19 +365,53 @@ impl MachineService {
             .space_channels
             .get_mut(&space)
             .ok_or_else(no_assignment)?;
-        let reply = reservation
-            .reply
-            .take()
-            .filter(|reply| !reply.is_closed())
-            .ok_or_else(no_assignment)?;
-        Ok((
+        Ok(AcceptedChannel {
             machine,
-            reservation.binding.clone(),
-            reservation.closing.clone(),
-            reservation.restore_consumed.subscribe(),
-            reply,
-        ))
+            package: reservation.binding.package.clone(),
+            closing: reservation.waiter.closing.clone(),
+            reply: ChannelReply::Worker {
+                restore_consumed: reservation.restore_consumed.subscribe(),
+                waiter: reservation.waiter.take()?,
+            },
+        })
     }
+}
+
+pub(super) struct AcceptedChannel {
+    machine: Uuid,
+    package: PackagePin,
+    pub(super) closing: watch::Sender<bool>,
+    reply: ChannelReply,
+}
+
+enum ChannelReply {
+    Worker {
+        restore_consumed: watch::Receiver<bool>,
+        waiter: oneshot::Sender<Connected>,
+    },
+    Entry(oneshot::Sender<SpaceChannel>),
+}
+
+fn entry_session(
+    st: &State,
+    settings: &super::Settings,
+    machine: Uuid,
+    account: AccountId,
+) -> Option<[u8; 32]> {
+    let machine = st.machines.get(&machine)?;
+    let live = machine.live.as_ref()?;
+    (machine.row.owner == (Owner::Account { id: account })
+        && super::readiness::connected(machine, settings)
+        && live.entry_protocol
+        && !live.draining)
+        .then_some(live.session)
+}
+
+async fn wait_connected<T>(receive: oneshot::Receiver<T>) -> Result<T, Error> {
+    tokio::time::timeout(OPEN_LIMIT, receive)
+        .await
+        .map_err(|_| Error::unavailable("space carrier did not connect"))?
+        .map_err(|_| no_assignment())
 }
 
 fn no_assignment() -> Error {
@@ -309,19 +453,31 @@ pub(super) async fn upgrade<D: Directory>(
             .protected_spaces()
             .cloned()
             .ok_or_else(no_assignment)?;
-        let (binding, grants, closing, restore_consumed, reply) = blocking(move || {
-            let (machine, binding, closing, restore_consumed, reply) =
-                service.claim_channel(&token, space, assignment)?;
-            let grants = match authority.grant_revision(space, machine) {
-                Ok(grants) => grants,
-                Err(error) => {
-                    closing.send_replace(true);
-                    return Err(super::authority_error(error));
+        let (accepted, grants) = blocking(move || {
+            let accepted = service.claim_channel(&token, space, assignment)?;
+            let grants = if matches!(&accepted.reply, ChannelReply::Worker { .. }) {
+                match authority.grant_revision(space, accepted.machine) {
+                    Ok(grants) => Some(grants),
+                    Err(error) => {
+                        accepted.closing.send_replace(true);
+                        return Err(super::authority_error(error));
+                    }
                 }
+            } else {
+                // Entry authority is checked by the execution engine. Taking
+                // the legacy per-space handle here would retire the worker's
+                // carrier if these placements are on different machines.
+                None
             };
-            Ok((binding, grants, closing, restore_consumed, reply))
+            Ok((accepted, grants))
         })
         .await?;
+        let AcceptedChannel {
+            package,
+            closing,
+            reply,
+            ..
+        } = accepted;
         let upgraded = hyper::upgrade::on(&mut request);
         tokio::spawn(async move {
             let result = async {
@@ -334,7 +490,7 @@ pub(super) async fn upgrade<D: Directory>(
                     hyper_util::rt::TokioIo::new(upgraded),
                     space,
                     assignment,
-                    vec![binding.package],
+                    vec![package],
                 );
                 let channel = tokio::select! {
                     biased;
@@ -343,14 +499,22 @@ pub(super) async fn upgrade<D: Directory>(
                 };
                 let mut life = channel.lifetime();
                 let fence = channel.fence_handle();
-                reply
-                    .send(Connected {
-                        space,
-                        channel,
-                        grants,
+                match reply {
+                    ChannelReply::Worker {
+                        waiter,
                         restore_consumed,
-                    })
-                    .ok()?;
+                    } => {
+                        waiter
+                            .send(Connected {
+                                space,
+                                channel,
+                                grants: grants?,
+                                restore_consumed,
+                            })
+                            .ok()?;
+                    }
+                    ChannelReply::Entry(waiter) => waiter.send(channel).ok()?,
+                }
                 tokio::select! {
                     _ = stopped.wait_for(|closed| *closed) => fence.close(),
                     _ = life.wait_for(|live| !*live) => {}

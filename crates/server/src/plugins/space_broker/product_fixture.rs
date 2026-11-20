@@ -1,6 +1,9 @@
 #[path = "product_http.rs"]
 mod product_http;
 
+#[path = "entry_product.rs"]
+mod entry_product;
+
 use super::*;
 use calternal_machine::{
     link::Link,

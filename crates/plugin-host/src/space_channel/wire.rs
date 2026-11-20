@@ -26,6 +26,11 @@ pub enum SpaceMethod {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SpaceMessage {
+    /// Host launches one checked entry on an execution carrier.
+    StartEntry {
+        /// Pinned image, executable asset and checked input.
+        program: crate::entry::EntryProgram,
+    },
     /// Host dispatches an operation within its invocation deadline.
     Invoke {
         /// Pinned operation name.
@@ -95,6 +100,7 @@ impl SpaceMessage {
 
     pub(super) fn permits(&self, host: bool) -> bool {
         match self {
+            Self::StartEntry { .. } => host,
             Self::Credit { bytes, frames } => *bytes > 0 && *frames > 0,
             Self::Invoke {
                 operation,

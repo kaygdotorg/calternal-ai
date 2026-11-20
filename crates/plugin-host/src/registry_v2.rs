@@ -89,6 +89,16 @@ fn contract_json(bytes: &str) -> Value {
     serde_json::from_str(bytes).expect("pinned contract is JSON")
 }
 
+/// Compile a named wire shape against the embedded catalogue. Callers cache
+/// the result per shape. The registry resolves references offline.
+pub(crate) fn catalogue_validator(definition: &str) -> jsonschema::Validator {
+    validator(&serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$ref": format!("{CONTRACT}host-catalogue-v2.json#/$defs/{definition}"),
+    }))
+    .expect("pinned catalogue wire shape compiles")
+}
+
 fn validator(schema: &Value) -> Result<jsonschema::Validator, String> {
     static REGISTRY: OnceLock<jsonschema::Registry<'static>> = OnceLock::new();
     let registry = REGISTRY.get_or_init(|| {
@@ -103,6 +113,11 @@ fn validator(schema: &Value) -> Result<jsonschema::Validator, String> {
                 catalogue().clone(),
             )
             .expect("pinned catalogue URI")
+            .add(
+                format!("{CONTRACT}description-v2.schema.json"),
+                contract_json(DESCRIPTION),
+            )
+            .expect("pinned description schema URI")
             .prepare()
             .expect("pinned schemas resolve offline")
     });
