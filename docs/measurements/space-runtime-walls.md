@@ -569,3 +569,354 @@ Raw per-stage data, workload output and the fixture harness are retained under `
 The guest relay and stdio adapter share a newline-delimited frame format, so one driver can validate the operation and timing boundary for all three walls.
 
 Keep one current snapshot generation per space and VM role. Reuse one broker flow-control mechanism for large files. Combine agent reseeding and the cohort check into a readiness exchange. Use one build admission queue per host with separate plugin CPU headroom.
+
+## Product VM follow-up on perf-01
+
+The November 20, 2026 UTC follow-up used Calternal-AI `bb34fcde39404d0ba5263e34c114751cbd583a1e`, Firecracker 1.16.1 and the pinned Linux 6.1.188 guest kernel. The host was `calternal-perf-01-backup01`, with 4 AMD Ryzen vCPUs, 7.70 GiB of RAM and no swap. All measured jobs held `/usr/local/bin/perf-lock.sh`. The host binaries, guest agent and images were prepared on dev-01 and verified by SHA-256 after transfer. The test builds include measurement fixtures from [perf/vm-measure](../../perf/vm-measure). Raw logs and artifact manifests are under `/srv/homes/perf/vm88/` on perf-01. The agent seed build log is under `~/Developer/lanes/vm-measure/warm-dev/` on dev-01. [Forgejo #88](https://git.kayg.org/kayg/calternal-ai/issues/88)
+
+### Product snapshot publication and wake on native XFS
+
+The test placed the machine runtime and snapshots on the native `/srv/homes` XFS volume (`/dev/sdb1`, `reflink=1`). It used a private subdirectory on the existing filesystem. The partition counters include XFS metadata and journal traffic and any unrelated writes that completed during a sample. Each sector in the kernel counter represents 512 bytes. These counts describe writes seen by the perf VM's block device.
+
+The machine fixture used the production small-VM placement, checkpoint and restore functions with 256 MiB RAM, two vCPUs, 1 GiB of guest scratch and no virtual network adapter. Save time includes guest quiescing, durable manifest publication, old-generation cleanup and VMM teardown. Wake starts before the restore request and ends after a fresh Node process returns validated entropy output. The fixture requires the expected generation UUID and verifies the SHA-256 of a 64 KiB marker written by guest init, both in the saved scratch image and in the restored guest's scratch drive. Checks of the scratch image run outside the latency timers. Filesystem caches follow the preceding trial and were left intact. This wake includes machine and guest work. The enrolled server path is measured separately below.
+
+A separate live KVM interruption fixture created candidate Firecracker state and memory files, then stopped the VMM before manifest publication. It reopened the previous generation and ran Node. The raw test response is in `small_snapshot_reseeds_recovers_after_interruption_and_rejects_mixed_files.log`. The first smoke series is in `measure_xfs_small_vm.log` and the repeated series is in `measure_xfs_small_vm-repeat.log`.
+
+| Checkpoint format | Published | Sleep through publication and reap p50 / p95 (ms) | Block bytes written p50 / p95 | Successful restores | Successful restore p50 / p95 (ms) | First-attempt failures | Cold fallbacks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Full on XFS | 2 | 508.12 / 528.60 | 279,148,544 / 288,661,504 | 2 | 2,645.25 / 3,391.37 | 0 | 0 |
+| Dirty-merge reflink | 30 | 1,243.39 / 1,388.46 | 82,286,592 / 84,594,688 | 29 | 3,019.48 / 4,090.14 | 8 | 1 |
+
+The dirty-merge median wrote 71% fewer block bytes than the two full saves. Its successful wake p95 exceeded the 500 ms gate by a factor of 8.2. Seven first attempts timed out at restored plugin Start and recovered on retry. One timed out during reseed and fell back to a cold boot after the next failed restore. Across 30 dirty-merge cycles, the sum of timed attempts through the first validated answer was 3,213.83 ms p50 and 7,394.21 ms p95. Scratch matched on every successful restore. The cold fallback used a fresh scratch drive and is excluded from that restore check. The initial smoke run also hit a restored Start timeout and is excluded from the table.
+
+The earlier native-XFS fixture measured 469 ms p95 for a cached single wake with a long-lived Node host. The product starts a fresh rootless package during wake. The observed gap combines the different runtime path and test conditions. [Forgejo #77](https://git.kayg.org/kayg/calternal-ai/issues/77)
+
+### Product small-VM cold boot to first item head
+
+Each trial creates a new disposable space and local enrolled runner with no usable snapshot. Timing starts at server dispatch of one approved item-head call and ends when the result arrives. The fixture verifies the result and confirms that Firecracker launched with a fresh boot definition. Trials reuse the immutable root and kernel on the same host, with normal filesystem caching.
+
+The VMM interval includes dispatch, assignment, scratch setup and Firecracker startup through its startup-complete log immediately after vCPU resume. Kernel boot ends at guest PID 1's first serial marker. The agent interval ends when a guest-init observer sees the agent's control socket. The last interval includes the host readiness handshake, new package startup, the callback and the first reply. Serial observations are polled on the host every 2 ms and the guest observer checks its control socket every 5 ms. Raw samples and per-trial serial output are in `cold-qualified/`.
+
+| Stage | Samples | p50 (ms) | p95 (ms) |
+| --- | ---: | ---: | ---: |
+| Request arrival to VMM start | 30 | 95.99 | 102.45 |
+| Kernel boot | 30 | 1,313.27 | 1,642.92 |
+| Guest init to agent socket ready | 30 | 1,617.58 | 3,905.00 |
+| Agent socket ready to package start and first reply | 30 | 994.72 | 3,825.41 |
+| Request arrival to validated item-head reply | 30 | 4,107.33 | 7,094.26 |
+
+All 30 qualified calls succeeded. The longest took 7,798.55 ms. Percentiles use the sample median and nearest-rank p95. Stage percentiles are computed independently. The harness discarded the initial timing probes after identifying the Firecracker logger's local time offset and split serial writes. The qualified series timestamps complete serial lines with the same host clock used for request arrival.
+
+### Release builds in separate agent guests
+
+The workload is an offline `cargo build --release --locked -p calternal-server` under the repository's Nix toolchain in a networkless KVM guest. Cargo has two jobs and release incremental compilation enabled. Warm trials start on private XFS reflinks of the same data image, with a completed release target and the locked crates already cached. Each guest touches `crates/server/src/lib.rs` inside its own source tree. The cold full build starts with the same dependency cache and an empty target directory. Every agent guest has two vCPUs.
+
+The separate 256 MiB plugin VM answers through the enrolled runner and production item-head broker. Its role state and checkpoints use the ext4 full-copy fallback on the same host, so the load test can sample the build interference separately from XFS dirty-restore failures. The agent disks use XFS. The fixture uses the production listener's TCP_NODELAY setting on its local TLS relay and accepted sockets. The lib-test fixture shortens the idle timeout to 180 ms for the traffic run, so the probe can ask for repeated wakes. It drives the existing idle drain and checkpoint sequence. Each tick targets a restored item-head reply followed by a second item-head reply on the awake VM. When a cycle overruns the next scheduled tick, the fixture records the missed tick. The load-row probe distribution includes cycles starting while all the builds in that row overlap. Filesystem caches follow the preceding row. Host CPU steal comes from `/proc/stat` and minimum available memory comes from `/proc/meminfo`. Raw stage directories are `build-incremental-<MiB>-<count>/`, `build-cold-4096-1/` and `build-no-load.vhESwXkO/`. The last directory contains the qualified unloaded baseline. The guard stops a stage below 1 GiB available host RAM or 6 GiB free on the scratch volume.
+
+| Workload | Guest RAM (GiB) | Builds finished / attempted | Build wall p50 / max (s) | Wake p95 (ms) | Broker p95 (ms) | Probe pairs / errors / cold fallbacks | Host steal (%) | Minimum host available (MiB) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Unloaded baseline | — | 0 / 0 | — | 3,844.33 | 5.89 | 10 / 2 / 1 | — | — |
+| Cold full build | 4 | 1 / 1 | 726 / 726 | 3,718.43 | 15.97 | 146 / 3 / 1 | 4.47 | 2,667 |
+| Incremental | 2 | 1 / 1 | 91 / 91 | 3,756.10 | 6.96 | 23 / 0 / 0 | 5.38 | 4,681 |
+| Incremental | 2 | 2 / 2 | 103 / 103 | 3,044.55 | 14.38 | 23 / 0 / 0 | 5.73 | 2,856 |
+| Incremental, memory guard | 2 | 0 / 4 | — | 5,330.71 | 28.12 | 12 / 1 / 0 | 5.24 | 1,018 |
+| Incremental, memory guard | 2 | 0 / 6 | — | 3,105.74 | 24.91 | 9 / 2 / 1 | 4.92 | 1,019 |
+| Incremental, memory guard | 2 | 0 / 8 | — | 4,380.68 | 32.38 | 1 / 2 / 2 | 1.60 | 1,006 |
+| Incremental | 4 | 1 / 1 | 92 / 92 | 3,267.25 | 13.54 | 24 / 0 / 0 | 5.47 | 4,273 |
+| Incremental | 4 | 2 / 2 | 100 / 100 | 3,480.72 | 18.10 | 23 / 0 / 0 | 5.72 | 1,678 |
+| Incremental, memory guard | 4 | 0 / 4 | — | 5,290.78 | 19.84 | 12 / 1 / 0 | 5.28 | 1,009 |
+| Incremental, memory guard | 4 | 0 / 6 | — | 3,698.60 | 29.03 | 5 / 2 / 1 | 3.47 | 1,005 |
+| Incremental, memory guard | 4 | 0 / 8 | — | — | — | 0 / 2 / 2 | 0.79 | 1,011 |
+
+The unloaded probe missed 45 one-second ticks. The wake p95 already exceeded 500 ms with zero builds. Using the prior broker criterion of the larger of 5 ms and twice the unloaded p95 gives a broker gate of 11.79 ms. One 2 GiB build stayed within that gate. Two 2 GiB builds and one 4 GiB build crossed it. On this 4-vCPU, 7.70 GiB host, the 500 ms wake gate rules out every tested build count, including zero. For background work where the measured wake latency is acceptable, start with a single 2 GiB build slot in a per-host queue. Use a separate window for 4 GiB builds when broker latency matters.
+
+All four-, six-, and eight-build cohorts started compiling `calternal-server`. Each hit the 1 GiB memory guard before a build finished. The table reports the successful probe pairs observed during the truncated overlap windows. The 2 GiB eight-build row has one pair and the 4 GiB eight-build row has zero. The original guarded stops left idle test TLS relays. The table uses the clean rerun after targeted relay teardown and a harness fix. Its output is in `build-guard-recheck.log`. The initial high-concurrency trials are retained under `guard-shakedown/`. A final process check found zero lane Firecracker or TLS relay processes.
+
+## Simplification opportunities
+
+Use one queue per host for both guest sizes. Qualify the unloaded wake first and reserve plugin headroom before raising build concurrency. Feed the latency checks and the admission decision from the same per-cycle records so retry and fallback costs remain visible.
+
+## Where the product wake spends its time
+
+| Wake boundary | Product XFS restored (ms, p50 / p95) | Prototype cached full (ms, p50 / p95) | Prototype historical dirty replay (ms, p50 / p95) |
+| --- | ---: | ---: | ---: |
+| Request through placement decision | 21.64 / 39.44 | — | — |
+| Placement decision through machine gate entry | 4.11 / 7.88 | — | — |
+| Machine placement gate | 0.02 / 0.03 | — | — |
+| Manifest and local setup | 0.21 / 0.27 | — | — |
+| Prepare private scratch and control drives | 3.10 / 8.75 | — | — |
+| VMM startup through API availability | 23.29 / 30.23 | 1.36 / 4.85 | 3.37 / 3.38 |
+| Snapshot load and file-backed memory mapping | 1.94 / 6.34 | 1.86 / 9.85 | 2.15 / 2.91 |
+| Resume | 0.38 / 1.20 | 0.32 / 3.70 | 1.90 / 4.55 |
+| Reseed exchange | 589.82 / 1,503.87 | — | 218.44 / 285.40 |
+| Ready check or vsock attach | 19.85 / 30.09 | 27.42 / 36.49 | 34.72 / 66.75 |
+| Start rootless package container | 1,139.39 / 1,792.72 | — | — |
+| Admit first call before starting Node | 34.28 / 41.63 | — | — |
+| Launch package process through worker module readiness | 1,028.52 / 2,953.04 | — | — |
+| Send invocation through first callback | 47.76 / 105.00 | — | — |
+| Finish invocation after callback | 3.26 / 9.26 | — | — |
+| Check the restored worker cohort | — | — | 160.10 / 248.64 |
+| Invoke and validate reply on the resumed worker | — | 165.73 / 233.46 | 34.97 / 105.52 |
+| **Request through first validated reply** | **3,156.54 / 5,496.60** | **194.47 / 271.34** | **524.01 / 538.96** |
+
+The product added three long intervals to the earlier prototype. It exchanges fresh entropy with the restored guest, creates a new rootless container, then starts Node and loads the worker bundle. The product's separate guest serial samples put the Podman `run` command at 1,105 ms p50 and 1,731 ms p95 inside its 1,139 / 1,793 ms Start exchange. Stages measured inside each product wake account for the timed interval with a 0.05 ms p95 residual. Stage percentiles are computed independently.
+
+The product column uses 10 successful control wakes through the enrolled runner and a validated `item_head` reply. The prototype uses the original five-worker package sources and rebuilt guest image on the same perf VM. Its first validated reply is a setting callback. The cached full replay reproduced the earlier 269 ms p95 within 3 ms. The prototype has live package processes in memory and attaches vsock before its optional reseed exchange. The product reseeds the kernel first, checks guest readiness, and admits the fresh worker after restore. Both map the 256 MiB memory file and resume separately in this trace. Prototype files were explicitly primed. The product control used consecutive sleep and wake cycles with caches left intact. The replay uses the fixture's combined load and resume path for snapshot creation and splits it during timing.
+
+The historical dirty replay uses the five-process checkpoint fixture and per-image warmup. All five materialized memory files had 100% measured residency before wake. Its 539 ms p95 compares with the earlier 469 ms result. The first, simpler dirty replay used one setting invocation before creating the diff and one after reseed and reached 673 / 1,204 ms. That result stays in the raw prototype log as a separate workload.
+
+A follow-up with two package markers measured seven valid restores. From the Node launch request through the first JavaScript statement took 1,166 / 1,571 ms p50 / p95. The first statement through module readiness took 76 / 119 ms. The pre-entry interval includes Podman exec and guest scheduling, Node startup, loading and parsing the script, and delivery of the first marker to the host. The observable top-level initialization of this small package accounts for much less time. The follow-up stopped at seven samples when perf-01 was handed back for the notes gate.
+
+The 49 successful wakes across the XFS control and remedy arms all recorded a reseed acknowledgement before Node launch and the first reply.
+
+The product XFS control cloned a 1 GiB logical scratch drive with 3,633,152–20,004,864 bytes allocated and a 512-byte control drive with one 4 KiB block allocated. The measured preparations used `FICLONE`. They write metadata and share the allocated extents. The product and prototype mapped memory without a bulk copy during restore. In the ext4 control, preparation copied sparse scratch extents and the control file. The private scratch had 3,645,440–14,774,272 bytes allocated. Ext4 preparation was 68.62 ms p50 and 124.49 ms p95. The native XFS result shows that copy time does not explain the seconds in the product wake.
+
+In the earlier 30-cycle XFS series, seven first attempts expired in the two-second restored Start exchange, before Node exec. Those failed attempts took 3,455 ms p50 including earlier wake stages and cleanup. Retrying the same checkpoint took another 3,316 ms p50 and produced a validated reply after 6,879 ms p50 across those seven cycles. The eighth failed after 2,058 ms in the combined reseed and ready deadline. Its retry exhausted the restore budget and validated a cold reply in 11,916 ms, or 13,973 ms across both attempts. The new product trace reproduced the Start timeout on XFS and ext4. The original reseed error names the combined deadline, so its logs cannot distinguish the entropy RPC from the following ready check.
+
+### Cold kernel and guest init
+
+| Cold boundary | Samples | p50 (ms) | p95 (ms) |
+| --- | ---: | ---: | ---: |
+| Arrival through placement and scratch allocation entry | 8 | 64.76 | 66.11 |
+| Format new scratch ext4 | 8 | 20.43 | 21.16 |
+| Launch VMM through vCPU start | 8 | 9.62 | 15.92 |
+| Kernel entry through guest PID 1 | 8 | 1,229.32 | 1,528.43 |
+| Guest PID 1 through control socket | 8 | 1,189.54 | 1,628.20 |
+| Agent initialization inside the preceding interval | 8 | 911.89 | 980.35 |
+| Three Podman scans inside agent initialization | 8 | 808.83 | 967.39 |
+| Host ready poll after socket appears | 8 | 39.37 | 85.43 |
+| Start package container | 8 | 162.69 | 171.23 |
+| Start Node through first worker callback | 8 | 712.11 | 935.99 |
+| **Arrival through first validated reply** | **8** | **3,597.44** | **3,904.53** |
+
+The shipped Linux 6.1.188 kernel enables ext4, virtio-blk, virtio-vsock, virtio-mmio, KVM guest support and SELinux. Firecracker supplied no initrd and the kernel's built-in initramfs source is empty. The normal command line is `root=/dev/vda ro rootfstype=ext4 init=/init reboot=k panic=1 pci=off console=ttyS0 quiet calternal_small_guest=1`. Two diagnostic boots printed their kernel initcall timings with `initcall_debug loglevel=1`. Guest timestamps put the root mount at 978–1,018 ms and PID 1 at 1,023–1,065 ms. The largest logged individual calls included crypto registration (96–98 ms), loop initialization (64–102 ms) and conntrack setup (8–32 ms). The loop driver is a candidate for a smaller offline profile after checking all Podman filesystem paths. Cryptography, namespaces, cgroups, vsock, virtio-blk and ext4 are used by this path. The guest clock and host serial capture have separate origins, so the guest initcall times are explanatory substeps.
+
+The guest-init trace measured `/proc` and `/sys` setup at 4 ms p50, runtime mounts at 13 ms, cgroup mounting at 3 ms, scratch mounting at 10 ms, control-device ownership and loopback together at 4 ms, cold reseed at 6 ms, and cgroup delegation and directory setup at 13 ms. The guest has no network device, TAP, slirp setup, or remote entropy wait. From delegated directories to the agent entering backend initialization took 314 ms p50, including process launch and reading the control drive. Podman ownership sweeps then spent 771 ms p50 in the first `ps`, and 20 ms and 19 ms in the next two. Skipping those scans on a proven fresh scratch disk reduced the guest-init interval to 331 ms p50. It raised the first container Start from 163 to 883 ms p50 by deferring Podman's first initialization. The end-to-end cold trial improved from 3,597 to 3,284 ms p50.
+
+### Timing and evidence
+
+Host markers used `CLOCK_REALTIME` on perf-01 for product and prototype. A host reader also timestamped complete serial lines as they arrived, polling at 2 ms. The guest kernel's own timing output is used only within its diagnostic clock. The product package emitted an explicit measurement marker after loading its module and installing the callback handler. The test keeps the production route, authority checks, and reseed-before-serve rule. The measurement overlay lives in disposable dev-01 source and guest copies. The tools and binaries were built on dev-01 and checksummed before the perf lock was used on perf-01.
+
+Raw product traces and experimental controls are in `/srv/homes/perf/vm88/t/` and `/srv/homes/perf/vm88/te/`. The prototype replays are in `/srv/homes/perf/vm88/proto/` and `/srv/homes/perf/vm88/pd/`. The Node split is in `/srv/homes/perf/vm88/tn/node/`. The prior retry costs come from `/srv/homes/perf/vm88/measure_xfs_small_vm-repeat.log`. The checksummed drivers and summary tooling are in [perf/vm-trace](../../perf/vm-trace).
+
+### Measured remedies
+
+| Wake experiment | Successful restores / errors / cold fallbacks | Successful wake or resident call p50 / p95 (ms) | Effect on the changed stage |
+| --- | ---: | ---: | --- |
+| Traced product control | 10 / 0 / 0 | 3156.54 / 5496.60 | Current fork-per-reseed helper |
+| 1 ms VMM API poll | 7 / 1 / 0 | 3357.24 / 4360.19 | VMM startup 8.73 / 18.09 ms |
+| Use reseed acknowledgement and the existing Start guard | 7 / 1 / 0 | 3158.56 / 4185.00 | Ready handoff 0.03 / 0.05 ms |
+| Read all 256 MiB before VMM startup | 8 / 0 / 0 | 3740.77 / 4976.02 | New synchronous read 1877.44 / 2599.70 ms |
+| Keep the privileged reseed helper resident | 7 / 2 / 1 | 2920.72 / 4168.65 | Reseed 336.75 / 1079.42 ms |
+| Faster poll, resident helper and inline readiness | 10 / 1 / 0 | 3006.61 / 4184.27 | VMM startup 3.93 / 4.43 ms and reseed 344.90 / 918.89 ms |
+| Keep the same-space VM and its live worker resident | 10 / 0 / 0 | 5.13 / 17.00 | 140.52 / 161.03 MiB Firecracker PSS after the second validated call |
+
+The poll change cut the API-ready observation delay by about 15 ms at the median. Faster polling trades additional socket checks for that time. The inline readiness experiment used the successful entropy acknowledgement and the existing independent `Start` check of the guest readiness marker. It removed a separate authenticated exchange and retained the reseed-before-serve ordering. The resident helper kept the same restricted Unix socket, accepted a fresh seed on each restore, and called the same kernel reseed operation before acknowledging. Its root process stays resident and needs an independent lifecycle review before production use. The combined path still had an unavailable attempt at restored Start.
+
+Synchronous prefetch used up to 256 MiB of file cache per image and moved fault work earlier. Its reseed exchange was shorter in this arm, but the added read raised median total wake from 3.16 to 3.74 s. Both snapshot loaders already map memory. No tested product sleeping path reached 500 ms.
+
+| Cold boot experiment | Valid boots | Kernel p50 / p95 (ms) | Guest init p50 / p95 (ms) | First reply p50 / p95 (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Traced default | 8 | 1,229 / 1,528 | 1,190 / 1,628 | 3,597 / 3,905 |
+| Skip Podman ownership scans on proven fresh scratch | 8 | 1,204 / 1,391 | 331 / 492 | 3,284 / 3,512 |
+| Suppress ordinary kernel serial logging with `loglevel=1` | 8 | 1,286 / 1,581 | 1,249 / 1,462 | 3,667 / 3,993 |
+| Strip ELF debug sections from the same kernel | 8 | 1,371 / 1,454 | 1,163 / 1,547 | 3,587 / 3,995 |
+
+Stripping debug sections removed 77,728 bytes and left the compiled configuration intact. Neither the logging change nor the stripped binary materially shortened cold boot in these samples. The experiment left a rebuilt driver-pruned kernel unqualified. Raw stripped-kernel samples are in `/srv/homes/perf/vm88/ts/stripped/`.
+
+The resident arm used a second independently validated item-head call to a live worker in the same space. It reached 5.13 ms p50 and 17.00 ms p95. A prestart policy could acquire that placement before the request and carry the observed 141 MiB median PSS while it waits. This comparison measures one pinned warm placement, with 256 MiB configured guest RAM. It leaves cross-space pool admission and eviction unmeasured. The worker process stayed live between calls. Keeping a package process inside a restorable snapshot would also preserve its userspace RNG and private state. The historical prototype reseeded its long-lived broker, which does not establish a reseed contract for every package process. This experimental branch retains the product rule that package processes are absent from saved checkpoints.
+
+Among the XFS remedies, the lowest observed successful wake p95 was the resident reseed helper at 4.17 s, with two errors and one cold fallback among ten requests. The separate ext4 series reached 2.22 / 3.53 s among eight restored replies, with three unavailable calls and one cold fallback in twelve attempts. The combined case produced 3.01 s p50 and 4.18 s p95, with one failed request. These are small, serial samples under normal filesystem caching. To reach the gate from disk, the remaining work is principally fresh Podman container creation and Node startup, with guest reseed still on the critical path. The restore mapping itself took about 2 ms at the median.
+
+Perf-01 had 71% aggregate CPU idle and 1.08% CPU steal during the XFS traced control. The serial unloaded series had substantial aggregate CPU headroom. That leaves per-vCPU scheduling and nested KVM latency inside the measured stages and limits extrapolation to larger hosts. The concrete RAM limit appears under simultaneous compilation, where every four-, six-, and eight-build run hit the 1 GiB host headroom floor. A resident policy trades those milliseconds for pinned RAM and has to share that same budget.
+
+## Plain plugin processes and resident density
+
+The follow-up ran on perf-02 under the perf lock with Firecracker 1.16.1 and KVM. Perf-02 has four vCPUs and 7,879 MiB RAM with no swap. Its native `/srv/homes` XFS volume has reflink enabled. The small guests still had two vCPUs and 256 MiB configured RAM. The wake fixture checked the answer to `item_head` and a second call while the worker stayed live. Each sleeping trial saved an empty package process set. Each restored guest acknowledged a fresh authenticated reseed before package Start, and Start still checked the guest ready marker. A fresh guest reseeded at boot.
+
+### Wake stages
+
+| Stage, p50 / p95 (ms) | Podman (8) | Plain (30) | Fast, resident helper, selected prefill (30) | Fast, forked helper, natural cache (30) | Fast, resident helper, natural cache (30) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Arrival to placement | 23.33 / 34.44 | 22.83 / 25.59 | 22.08 / 29.46 | 22.54 / 30.18 | 22.46 / 30.39 |
+| Machine placement gate | 0.02 / 0.02 | 0.02 / 0.03 | 0.02 / 0.03 | 0.02 / 0.02 | 0.02 / 0.03 |
+| Prepare scratch and control drive | 1.73 / 6.83 | 0.89 / 1.46 | 0.87 / 1.15 | 0.87 / 1.28 | 0.94 / 1.21 |
+| Snapshot cache preparation | — | — | 425.7 / 736.81 | 4.56 / 8.28 | 4.69 / 5.97 |
+| Start VMM through API ready | 23.35 / 26.01 | 23.43 / 36.62 | 3.87 / 4.45 | 4.12 / 24.69 | 4.05 / 4.76 |
+| Load snapshot | 2.15 / 2.96 | 2.07 / 4.25 | 1.76 / 2.44 | 1.99 / 2.7 | 1.85 / 4.89 |
+| Resume vCPUs | 0.57 / 0.65 | 0.45 / 0.77 | 0.56 / 3.06 | 0.6 / 0.83 | 0.56 / 2 |
+| Reseed through acknowledgement | 526.43 / 1,029.63 | 418.94 / 670.88 | 224.66 / 375.62 | 366.59 / 782.12 | 347.94 / 572.9 |
+| Post-reseed readiness | 26.03 / 79.53 | 11.53 / 54.82 | 0.19 / 0.29 | 0.23 / 0.26 | 0.2 / 0.25 |
+| Package Start | 1,235.55 / 1,796.18 | 18.25 / 43.53 | 27.31 / 66.02 | 39.37 / 99.35 | 30.55 / 84.76 |
+| Start reply to Node launch request | 32.58 / 46.31 | 30.29 / 44.99 | 26.18 / 40.91 | 35.66 / 43.75 | 34.29 / 46.85 |
+| Node launch to first statement | 916.38 / 1,117.82 | 873.28 / 1,315.26 | 884.14 / 1,253.15 | 966.31 / 1,351.58 | 935.12 / 1,545.91 |
+| First statement through module ready | 68.37 / 101.28 | 65.45 / 100.6 | 66.47 / 116.29 | 85.96 / 362.69 | 85.77 / 134.39 |
+| Node launch through module ready | 986.48 / 1,172.31 | 940.13 / 1,398.38 | 945.07 / 1,313.41 | 1,084.63 / 1,419.38 | 1,025.63 / 1,614.56 |
+| Module ready to first callback | 58.17 / 98.97 | 71.42 / 198.27 | 93.46 / 166.24 | 60.07 / 148.04 | 90.54 / 233.45 |
+| Callback to first reply | 2.89 / 3.37 | 2.7 / 3.81 | 2.8 / 3.49 | 2.79 / 4.79 | 2.79 / 6.72 |
+| **Arrival to first validated reply** | 2,861.95 / 4,111.27 | 1,638.89 / 2,253.21 | 1,835.3 / 2,397 | 1,636.61 / 2,746.02 | 1,606.82 / 2,123.75 |
+
+Every request in these arms returned the expected item after a restore. The plain Start round trip reduced the median from 1,236 ms with Podman to 18 ms. An earlier 12-wake Podman control put Start at 1,085 / 1,748 ms and first reply at 2,750 / 4,366 ms p50 / p95. Plain Node launch still took 873 ms at the median before the first statement, including exec dispatch and startup of the fresh process. Module initialization itself took 65 ms. The combined arms used a 1 ms VMM API poll and omitted the redundant readiness exchange after successful reseed. The independent Start guard remained in force.
+
+The fastest 30-attempt arm used the plain launcher, resident helper, natural caching, faster poll and inline readiness. It reached 1,607 / 2,124 ms p50 / p95. It had zero unavailable requests and zero cold fallbacks. Its filesystem preparation cloned the sparse 1 GiB scratch image and prepared a 512-byte control drive. Firecracker mapped the existing snapshot memory file. The first statement still took 935 / 1,546 ms after the Node launch request. A second validated call to the live worker took 4.73 / 22.69 ms. The one-time wake still exceeds the 500 ms gate.
+
+### What the plain launcher preserves
+
+| Worker control | Plain-process experiment |
+| --- | --- |
+| Identity | Guest UID and GID 1100, separate from the trusted guest agent at UID 1000. Empty supplementary groups and capability set. |
+| Resources | Dedicated cgroup v2 with 256 MiB memory, 64 PIDs and one CPU of quota. The guest has no swap. |
+| Namespaces | Private mount, PID, network, IPC and UTS namespaces with a chroot into the prepared runtime. Private read-only proc with its own PID view and a small private device set. The worker root gives no access to guest data drives, agent sockets or provider credentials. |
+| Files and syscalls | Read-only runtime and a read-only, noexec, nosuid and nodev package bind mount. `no_new_privs` and the native amd64 capability-empty policy exported from the existing worker seccomp profile. The Node permissions and 128 MiB heap option were kept. |
+| Launch checks | Launcher calls require agent UID 1000 and a normalized placement UUID. Before executing Node the launcher checks UID, GID, namespace PID 1, `no_new_privs`, syscall denial for socket creation, and refusal to open package code for writing. |
+
+The space microVM is the trust boundary. The experiment removes nested user-namespace mapping, OCI masked paths and any engine-applied labeling. It also removes the container monitor, separate PID 1 reaper and ownership inventory. The same-space guest control plane loses those layers of defense. The launcher adds a guest-root setuid entry point callable by the agent, with a fixed command, cgroup path and read-only root. The benchmark covered startup and sleep teardown of one worker process shape. It leaves arbitrary child-process behavior and the build guest backend unqualified. The amd64 filter excludes x86 and x32 compatibility syscalls. The image retained the installed Podman files from the common runtime fixture. The plain path invoked no Podman process.
+
+### Reseed measurement
+
+The host timed vsock connect, authentication and fresh seed request through acknowledgement. The guest separately timed the local helper socket and kernel reseed operation. VMM process major/minor faults and both vCPU threads' scheduler counters were sampled at snapshot load, resume and seed acknowledgement. Scheduler wait here is the sum of runnable wait observed by the perf VM. It excludes time spent blocked and cannot isolate individual pauses by the outer hypervisor. CPU steal is measured across the perf VM over each series.
+
+Each cache condition used the current published memory generation. The cache probe sampled residency with `mincore`. It left the normal cache alone, advised dropping that image's cache pages, or requested `MAP_POPULATE` for all or selected pages after dropping cache. For the selected condition, the input was the present-page footprint of Firecracker's memory mapping at the end of a previous reseed. It includes agent and helper pages along with earlier guest kernel and vsock work. Readahead can make the observed warmed set larger than the selected list. The prefetch process pays the file cache work. Firecracker still maps its own memory and faults its own page tables. Timed preparation is included in first reply.
+
+| Helper and cache state | Cached MiB, p50 | Prep p50 / p95 (ms) | Vsock connect p50 / p95 (ms) | Seed request through ack p50 / p95 (ms) | Whole reseed p50 / p95 (ms) | VMM major faults, p50 | First reply p50 / p95 (ms) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Fork per reseed, natural | 10.2 | 5 / 10 | 114 / 223 | 274 / 333 | 396 / 557 | 74 | 1,635 / 1,984 |
+| Resident helper, natural | 12.3 | 5 / 7 | 125 / 412 | 222 / 344 | 348 / 756 | 71 | 1,771 / 2,374 |
+| Resident helper, evicted | 0 | 5 / 7 | 129 / 515 | 185 / 429 | 319 / 944 | 110 | 1,622 / 3,041 |
+| Resident helper, full prefill | 256 | 1,138 / 1,657 | 82 / 135 | 235 / 341 | 312 / 418 | 0 | 2,439 / 2,713 |
+| Resident helper, selected prefill | 49.9 | 445 / 656 | 65 / 108 | 179 / 266 | 261 / 331 | 5 | 1,863 / 2,315 |
+
+Each cache arm returned eight valid restored replies without errors or fallbacks. The selected list contained 5,634 pages, covering 22.0 MiB. Readahead warmed 12,783 pages. Both prefills removed much of the reseed tail. Full prefill eliminated observed major faults between resume and acknowledgement and still left a 312 ms median exchange. Selected prefill lowered reseed p95 to 331 ms, but its preparation cost 445 ms at the median and 656 ms at p95. Keeping ordinary caching did less total work on the arrival path.
+
+The cache conditions affected later work too. Node launch to its first statement was 1,017 ms p50 after eviction, 835 ms with the selected footprint, and 519 ms with all memory cached. The whole memory-file prefill cost more than it saved even with that improvement. The probe counts VMM faults over the stated intervals, including faults in files other than the saved guest RAM where they occur.
+
+| Reseed interval at natural cache, p50 / p95 | Fast forked helper (30) | Fast resident helper (30) |
+| --- | ---: | ---: |
+| Resume to vsock connected (ms) | 119 / 179 | 140 / 297 |
+| Host write of authentication proof (ms) | 0.064 / 0.105 | 0.065 / 0.087 |
+| Seed request through acknowledgement (ms) | 263 / 624 | 203 / 339 |
+| Guest agent's local helper exchange within that request (ms) | 68 / 254 | 9 / 22 |
+| Open, write and issue kernel reseed with the random device, within the helper exchange (ms) | 1.34 / 2.38 | 2.37 / 9.63 |
+| Seed request time outside the local helper exchange (ms) | 193 / 295 | 193 / 332 |
+| Two vCPUs' runnable wait, resume to acknowledgement (ms) | 2.98 / 9.50 | 2.29 / 6.37 |
+| Two vCPUs' summed runtime, resume to acknowledgement (ms) | 266 / 591 | 261 / 442 |
+| **Whole reseed (ms)** | **367 / 782** | **348 / 573** |
+
+The fork arm starts a new root helper through socat. The resident arm keeps that helper listening on the agent-only socket and performs the same kernel reseed before acknowledging. That saves about 59 ms p50 within the local exchange. Most remaining wall time is spent establishing the vsock connection and in the seed request outside the local helper exchange. Page faults contribute to the tail, as the eviction and prefill controls show. Runnable queue delay on perf-02 accounted for only a few milliseconds at the median. Blocked time and pauses at the outer hypervisor remain unresolved in these counters. The fastest arm saw 73% aggregate host CPU idle and 0.93% steal. The inner VM's inclusive vCPU runtime includes guest kernel work and time in KVM and can overlap across two vCPUs. The first cache-control guest's serial messages sometimes interleaved. The two natural-cache fast arms used single-write records and supplied all 60 local helper and kernel timings above.
+
+### Cold first reply
+
+| Fresh plain-process boot stage | p50 (ms) | p95 (ms) |
+| --- | ---: | ---: |
+| Arrival to scratch format entry | 67 | 74 |
+| Format scratch | 20 | 22 |
+| Start VMM through vCPU start | 29 | 32 |
+| Kernel boot through guest PID 1 | 1,204 | 1,463 |
+| Guest PID 1 through agent socket | 320 | 493 |
+| Observe agent readiness | 54 | 110 |
+| Start plain package | 8 | 13 |
+| Node launch to first statement | 507 | 583 |
+| Package module initialization | 72 | 83 |
+| **Arrival to first validated reply** | **2,361** | **2,740** |
+
+All ten fresh boots returned the expected item. This arm skipped the ownership scans on proven fresh scratch and took the plain path through Start. The kernel is the same as the previous cold experiment. The agent took 242 ms p50 to enter its backend from delegated directories. Cold reseed took 6 ms p50. The plain backend skipped the engine startup as well as the scan, so Start was 8 ms p50 instead of paying the deferred engine initialization.
+
+### Resident memory measurement
+
+The density probe increased the same population from one to four to sixteen independently booted VMs in each arm. Each guest held one plain Node worker idle on its input after reporting readiness. Both arms attached a virtio balloon at zero inflation. Only free-page reporting changed. The guest kernel has `CONFIG_VIRTIO_BALLOON=y` and `CONFIG_PAGE_REPORTING=y`. The probe waited seven seconds at each count then read each VMM's PSS and host MemAvailable three times, 500 ms apart. Reporting results are aggregate PSS differences at the same count. PSS prorates shared image pages and omits kernel allocations outside a VMM's address space. Spaces per GiB divides 1,024 MiB by mean PSS per guest at that count.
+
+| Resident guests | PSS off (MiB) | PSS on (MiB) | PSS returned (MiB) | PSS/guest off (MiB) | MemAvailable used off / on (MiB) | Spaces/GiB off |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 132.59 | 132.54 | 0.05 | 132.59 | 134 / 143 | 7.72 |
+| 4 | 517.02 | 516.83 | 0.19 | 129.26 | 536 / 530 | 7.92 |
+| 16 | 1,994.53 | 1,993.99 | 0.54 | 124.66 | 2,044 / 2,019 | 8.21 |
+
+All 16 guests started in both arms. The MemAvailable headroom at 16 was 1,635 MiB with reporting off and 1,659 MiB with reporting on. Reporting returned less than one aggregate MiB of PSS over the idle interval. The 25 MiB difference in host MemAvailable use also includes other host memory and page-cache changes between arms. This host began the density tests with about 3.6 GiB available, including the effect of about 3.2 GiB of unrelated shared memory. Reserve about 125–133 MiB of VMM PSS per live idle worker, or about eight of these spaces per GiB of available PSS budget. Reserve headroom for the host and package activity separately.
+
+### Evidence
+
+The probes are in [perf/vm-plain](../../perf/vm-plain). The disposable source copies used the same product revision, `bb34fcde`, and [perf/vm-trace](../../perf/vm-trace) instrumentation. The host fixture and small guest agent were built on dev-01. Image assembly replaced `/init` and the agent in a private ext4 copy and installed the launcher and binary filter under `/opt`. The launcher was installed root-owned with mode `04755`. Bundles were checksummed before transfer and verified under the perf lock. The wake and cold runs exercised the server, broker and small-VM placement path. The density test started idle package processes through the small-VM runtime and kept their streams open for the samples.
+
+Raw evidence on perf-02 is rooted at `/srv/homes/perf/vm89/`. The same-host Podman baseline is in `podman/`, the plain wake and fresh cold runs are in `p/`, the cache controls are in `r/`, the natural-cache combined arms are in `s/`, and resident density is in `d/`. Each series contains its host and guest serial logs. Stage figures use same-host realtime markers with percentiles calculated per interval. Guest durations use the guest monotonic clock. Individual stage percentiles cannot be added to recover request percentiles.
+
+## Simplification opportunities
+
+Keep package process setup separate from the build guest's Podman lifecycle. One authenticated reseed acknowledgement plus the Start readiness guard is sufficient for the measured path. Warming snapshot pages synchronously adds request work on this host. The fresh Node process remains the largest wake stage.
+
+## Exact snapshot prefill and the Node startup entropy check
+
+| Wake stage, p50 / p95 (ms) | Evicted, traced (10) | Natural cache, traced (10) | Exact prefill, traced (10) | Exact prefill, no kernel trace (30) |
+| --- | ---: | ---: | ---: | ---: |
+| Request arrival to placement | 23.51 / 27.25 | 22.5 / 49.52 | 22.21 / 27.95 | 26.37 / 34.26 |
+| Machine placement gate | 0.02 / 0.03 | 0.02 / 0.03 | 0.02 / 0.03 | 0.02 / 0.04 |
+| Prepare scratch and control drive | 1.02 / 1.4 | 1 / 1.3 | 0.93 / 1.49 | 1.03 / 1.35 |
+| Inspect or populate snapshot cache | 54.91 / 83.15 | 52.65 / 83 | 839.22 / 1,069.73 | 885.92 / 1,429.17 |
+| Start VMM to API ready | 4.27 / 97.4 | 4.11 / 17.1 | 4.23 / 19.97 | 4.17 / 4.96 |
+| Load snapshot | 4.32 / 75.42 | 1.91 / 11.1 | 3.56 / 38.6 | 3.62 / 17.28 |
+| Resume, including filter attachment when traced | 115.53 / 125.81 | 101.86 / 168.64 | 101.93 / 122.97 | 0.58 / 1.03 |
+| Reseed through acknowledgement | 355.75 / 1,014.03 | 348.71 / 1,467.82 | 302.69 / 453.15 | 272.38 / 448.21 |
+| Inline readiness | 0.24 / 0.27 | 0.21 / 0.26 | 0.22 / 0.25 | 0.21 / 0.26 |
+| Package Start | 39.19 / 75.62 | 28.99 / 55.98 | 35.31 / 68.87 | 31.3 / 110.46 |
+| Node launch to first statement | 845.47 / 1,430.02 | 924.8 / 1,371.94 | 795.94 / 1,163.52 | 862.12 / 1,191.88 |
+| First statement through module ready | 62.05 / 83.64 | 71.78 / 113.68 | 56.12 / 71.12 | 64.72 / 93.44 |
+| First callback to first reply | 2.9 / 3.8 | 3.14 / 3.85 | 3.42 / 3.95 | 3.1 / 4.25 |
+| **Arrival to first validated reply** | 1,582.27 / 3,064.87 | 1,665.82 / 3,285.57 | 2,371.99 / 2,891.77 | 2,351.87 / 3,138.37 |
+
+All arms used fresh workers and the fastest configuration from the previous round, including the resident reseed helper, short API poll and inline readiness. All 30 traced wakes, the training wake and all 30 extra exact-prefill wakes returned the expected item with zero unavailable replies or cold fallbacks. Trace filter attachment added about 100–116 ms at the median in the traced resume row. The cache row includes the Python inspection and optional prefill. These timings use a 256 MiB, two-vCPU guest on perf-02. Package admission still follows authenticated reseed acknowledgement.
+
+### Fault attribution and targeted prefill
+
+| Host fault measures, p50 / p95 | Evicted | Natural cache | Exact prefill |
+| --- | ---: | ---: | ---: |
+| Reseed major faults, count | 384 / 405 | 261 / 307 | 273.5 / 302 |
+| Reseed major fault time, ms | 15.57 / 26.03 | 12.63 / 15.41 | 14.64 / 15.86 |
+| Reseed all fault time, ms | 163.74 / 415.52 | 129.83 / 1,048.66 | 119.11 / 230.53 |
+| Node launch major faults, count | 501.5 / 514 | 421.5 / 440 | 485.5 / 521 |
+| Node launch major fault time, ms | 16.93 / 18.29 | 17.54 / 20.5 | 21.72 / 24.51 |
+| Node launch all fault time, ms | 42.4 / 56.8 | 42.98 / 54.49 | 46.96 / 71.88 |
+
+The trace pairs entry and return from Linux `handle_mm_fault` in both Firecracker vCPU threads. It includes only addresses within the saved RAM file mapping. Major counts use the kernel's `VM_FAULT_MAJOR` return bit. Fault wall time is the union of measured intervals across the two threads, clipped to the stage bounds. It includes time descheduled while in the handler, and it cannot attribute delay outside the handler or identify which guest files occupy those guest-physical pages. The trace buffers had zero overruns and dropped records. The stage table uses host realtime markers aligned with monotonic trace timestamps. Each 10-wake p95 is the maximum of that arm. [Linux fault return flags](https://github.com/torvalds/linux/blob/v6.12/include/linux/mm_types.h#L1163-L1203)
+
+The training wake started with zero memory-file cache pages. Its direct fault addresses yielded 6,636 unique 4 KiB offsets from snapshot load through first reply, including reseed and Node launch. The exact prefill used `MADV_RANDOM` and `MADV_POPULATE_READ` on only contiguous ranges in that list. `mincore` confirmed that all 6,636 offsets were cached before load in each exact-prefill trial, with zero extra pages. Direct fault addresses avoid treating speculative readahead as demand. The set was transferred from one wake to subsequent generations of the same guest. It covered a median 45% of the later reseed fault pages and 51% of the Node launch fault pages, so it cannot serve as a fixed list for all wakes.
+
+Node launch spent about 43–47 ms p50 in the host snapshot fault handler across these arms. Major faults contributed about 17–22 ms. This leaves most of the roughly 0.8–0.9 s launch latency outside that handler. Reseed spent 119–164 ms p50 in the handler, including 13–16 ms returning a major fault. The broad fault path is a material part of reseed wall time. Its time includes page-table work and waiting in the kernel alongside backing-file reads. Exact prefill brought reseed p95 down to 453 ms in this run and added 839 ms p50 of synchronous preparation. The ordinary active-cache path kept the shorter median first reply.
+
+Without the kernel trace attached, exact prefill took 2,352 / 3,138 ms to first reply, including 886 / 1,429 ms of cache preparation. All 30 trials again had exactly 6,636 cached pages before load and zero extra pages. The fastest single wake in this arm took 1,405 ms. The earlier 30-wake natural-cache arm remains the best measured on perf-02 at 1,607 / 2,124 ms p50 / p95. The 500 ms disk-wake gate remains unmet.
+
+### Why a prestarted worker fails the entropy requirement
+
+The exact guest Node binary and musl runtime were extracted from the checksummed guest root, then traced on perf-02 under the lock. Node was v24.22.3 with OpenSSL 3.5.9. The worker loaded `node:crypto` and `node:tls`, wrote a checkpoint marker, then blocked on input. No package cryptographic request ran until that input was released. In each of four startup traces, `getrandom(..., 48, 0)` succeeded before the worker's checkpoint marker. A separate forwarding `LD_PRELOAD` counter identified the caller as OpenSSL's `ossl_pool_acquire_entropy` calling musl `getentropy`. The counter records only lengths and symbol names. The unmodified strace runs independently confirm ordering.
+
+| Startup option | OpenSSL bytes requested from the kernel before checkpoint | Startup satisfies the prestart requirement |
+| --- | ---: | --- |
+| Ordinary worker flags | 48 | No |
+| `--predictable --random-seed=1` | 48 | No |
+| `--no-node-snapshot` | 48 | No |
+| `--openssl-config=/dev/null` | 48 | No |
+
+Stock Node initializes OpenSSL and calls `CSPRNG(nullptr, 0)` in `InitializeOncePerProcessInternal`, before initializing V8 and before loading any JavaScript module. That routine calls `RAND_status` and `RAND_bytes_ex`. A later flag-controlled V8 seed choice leaves this earlier startup step in place. The internal embedding option `kNoInitOpenSSL` changes initialization and is outside the worker CLI. A checkpoint before Node starts avoids copying its initialized userspace cryptographic state, and pays for fresh Node startup on every restore. [Node startup source](https://github.com/nodejs/node/blob/v24.22.3/src/node.cc#L1117-L1184) · [Node CSPRNG implementation](https://github.com/nodejs/node/blob/v24.22.3/deps/ncrypto/ncrypto.cc#L755-L789)
+
+The candidate failed before snapshot creation. There is therefore no qualifying prestarted-worker wake series and no paired restore evidence for `crypto.randomBytes`, `crypto.randomUUID` or a TLS ClientHello. The stock kernel reseed cannot be taken as proof that already-initialized userspace DRBG state has refreshed. OpenSSL's documented implementation checks its process fork marker, reseed counters and time bounds. A restored process retains the saved in-process state. [OpenSSL DRBG generation path](https://github.com/nodejs/node/blob/v24.22.3/deps/openssl/openssl/providers/implementations/rands/drbg.c#L578-L647)
+
+| State a process snapshot would duplicate | Effect for a worker that has served nothing |
+| --- | --- |
+| OpenSSL DRBG state and any prefilled entropy-derived buffer | The worker can carry cryptographic state into its first request. This disqualifies the tested checkpoint. |
+| V8 hash seed and existing hash tables | An identical internal layout is mostly invisible to a normal handler. It removes per-instance hash diversity and supplies no fresh identity. |
+| `Math.random` state and cached values, if used | Following the same execution can repeat values. Even a context which has never called it draws its first seed from V8's isolate RNG unless a fixed seed is supplied. It matters for application sampling or identifiers that expect independent instances. |
+| Guest process and thread IDs | These are namespace-local and hold no global identity. A snapshot does not introduce a process fork event. |
+| Timer objects, deadlines and runtime uptime state | A blocked reader can remain idle. Package-created timers can expire relative to the restored guest clock and trigger side effects after release. |
+| Loaded modules and package heap state | Immutable definitions are useful to preserve. Initialization may already have filled caches, allocated identifiers, or captured credentials or time before the first request. The fixture exercised only the narrow blocked-worker shape. |
+
+[V8's lazy Math.random initialization](https://github.com/nodejs/node/blob/v24.22.3/deps/v8/src/numbers/math-random.cc#L14-L62)
+
+### Resident-window cost
+
+Keep spaces with activity in the last N minutes resident. The tested live-worker call took 4.73 / 22.69 ms p50 / p95. Idle spaces use the qualified fresh-worker disk path, measured at 1,607 / 2,124 ms on perf-02. At about 130 MiB VMM PSS per idle resident space, if 10% of spaces saw an operation in the last N minutes, 100 spaces need 10 residents or about 1,300 MiB (1.27 GiB). A fleet of 1,000 needs 100 residents or about 13,000 MiB (12.70 GiB). The second case exceeds perf-02's entire 7.7 GiB of RAM before workload or OS headroom. For example, with a ten-minute window and a single simultaneous cohort of activity, those ten and one hundred residents consume 13,000 and 130,000 MiB-minutes respectively until they age out. The distinct space count inside N determines concurrent memory use.
+
+### Raw evidence
+
+Perf-02 retained `/srv/homes/perf/vm90/f/` with the fault events, paired JSON, memory footprint, clock alignment samples and host/serial logs. The independent `strace` logs are under `/srv/homes/perf/vm90/e/` and the caller counter logs are under `/srv/homes/perf/vm90/e/counts/`. The fixtures and counter were built on dev-01 and checksummed before the locked measurements. The source overlays and tools are in [perf/vm-replay](../../perf/vm-replay).
+
+## Simplification opportunities
+
+Keep fresh-worker disk wake as the qualified path and use residency for spaces with recent traffic. The targeted read has measurable synchronous cost and poor coverage of later faulting pages. Trace the fresh Node launch outside the host fault handler before attributing its remaining latency to the backing file.
