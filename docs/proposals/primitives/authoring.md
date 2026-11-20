@@ -36,23 +36,27 @@ declare function plugin(p: {
 
 // ── 1. Files ─────────────────────────────────────────────────────────────
 declare function kind<F extends Fields, R extends Fields = {}>(id: string, k: {
-  fields: F;                         // frontmatter, typed: "text" | "long" | "url" | "flag" | "number" | "time" | "person" | "file" | "people" | …
-  records?: R;                       // present: the body is a list of records with these fields
-  folder?: string;                   // where new files go, e.g. "Notes" or "Chats/{created:date} {title}"
-  private?: "person";                // one file per person, readable only by that person
+  fields: F;                         // frontmatter: "text" | "number" | "bool" | "date" | "datetime" | "url" | "link" | "person", "[]" for lists; "!" marks indexed
+  records?: { fields?: R; edit: Policy; redact: Policy; segment?: "monthly" };  // the body is a list of host-headed records
+  position?: string;                 // a state key holding the asker's last read anchor; rows gain after_position
+  folder?: string;                   // where new files go
   title?: keyof F;
   row: Show<F>; card?: Show<F>; cell?: Show<F>;  // how it looks small, medium, tiny
-  record?: Show<R>;                  // how one record looks (records kinds only)
 }): Kind;
+type Policy = "author" | "author-or-manager" | "writers";
 interface Files {
-  create(kind: string, f: { fields: object; body?: string; name?: string; key?: string }): Promise<FileRef>;
-  read(file: FileRef, at?: { revision?: string }): Promise<{ fields: any; body: string; revision: string; origin: Origin }>;
-  write(file: FileRef, w: { fields?: object; body?: string; expected: string }): Promise<{ revision: string }>;
-  append(file: FileRef, r: { fields?: object; body?: string; replaces?: Anchor; erase?: true; key?: string }): Promise<{ anchor: Anchor; revision: string }>;
-  records(file: FileRef, q?: { after?: Anchor; anchors?: Anchor[]; limit?: number }): Promise<{ records: Rec[]; next?: Anchor }>;
-  history(file: FileRef): Promise<{ revision: string; at: string; origin: Origin }[]>;
+  create(kind: string, f: { fields: object; body?: string; folder?: string; name?: string; key: string }): Promise<FileRef>;
+  read(file: FileRef, at?: { revision?: string }): Promise<{ fields: any; body: string; revision: string }>;
+  replace(file: FileRef, w: { fields?: object; body: string; expected: string; key: string }): Promise<{ revision: string }>;
+  set(file: FileRef, fields: object, expected?: string): Promise<{ revision: string }>;
+  append(file: FileRef, r: { body: string; fields?: object; key: string }): Promise<{ anchor: Anchor }>;
+  edit(file: FileRef, anchor: Anchor, r: { body: string; expected: string }): Promise<{ revision: string }>;
+  redact(file: FileRef, anchor: Anchor): Promise<void>;          // delete for everyone: scrubbed from history and search
+  records(file: FileRef, q?: { anchors?: Anchor[]; after?: Anchor; limit?: number }): Promise<Rec[]>;
+  history(file: FileRef): Promise<{ revision: string; change: string; stamp: Stamp }[]>;
 }
-// Host operations, called like any other: "host.move", "host.trash", "host.restore", "host.revert".
+interface State { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }  // per person and plugin
+// Host operations, called like any other: "host.move", "host.trash", "host.restore", "host.revert" (one change).
 
 // ── 2. Questions ─────────────────────────────────────────────────────────
 declare function collection(id: string, c: { title: string; query: Query; hand?: true; big?: View; small?: View }): Collection;
@@ -115,28 +119,31 @@ interface Outside {
 // ── The context ──────────────────────────────────────────────────────────
 interface Ctx extends Questions, Running, Calls, Outside {
   me: Person;                   // the acting person
-  files: Files; people: People; signal: AbortSignal;
+  files: Files; state: State; people: People; signal: AbortSignal;
   request: string;              // stable per invocation; replays reuse it
   key(purpose: string): string; // deterministic subeffect key under request
   cause?: { file: FileRef; records: Rec[] } | { work: WorkRef };   // what fired a trigger
 }
-// A record as read back: the host's origin stamp is part of it and cannot be forged.
-type Rec = { anchor: Anchor; fields: any; body: string; origin: Origin; replaces?: Anchor; erased?: true };
-type Origin = { person?: PersonRef; plugin?: string; run?: RunRef; at: string };
+// A record as read back. The stamp lives in the host's ledger, never in the file, and cannot be forged.
+type Rec = { anchor: Anchor; fields: any; body: string; stamp: Stamp; revision: string; withheld?: true; redacted?: true };
+type Stamp = { person?: PersonRef; plugin: string; run?: RunRef; at: string };
 ```
 
 **Counts.** 12 declarations (`plugin`, `kind`, `collection`, `operation`,
 `create`, `set`, `on.time`, `on.change`, `slot`, `part`, `grant`, `needs`)
-and 25 calls (`create`, `read`, `write`, `append`, `records`, `history`, the
-four host file operations, `query`, `me`, `find`, `share`, `consent`,
-`later`, `cancel`, `run`, `stop`, `status`, `call`, `fetch`, `secret`,
-`notify`, `key`), 37 names in all. Revision 14 had 47 broker methods,
+and 29 calls (files: `create`, `read`, `replace`, `set`, `append`, `edit`,
+`redact`, `records`, `history`; four host file operations; `state.get`,
+`state.set`; `query`; `me`, `find`, `share`, `consent`; `later`, `cancel`,
+`run`, `stop`, `status`; `call`; `fetch`, `secret`, `notify`; `key`), 41
+names in all. The file calls follow the files section
+(`lane/design-files`, `files-and-questions.md`). Revision 14 had 47 broker methods,
 about 60 concepts for a Chat-class plugin and 312 numeric limits.
 
 **What a plain app author learns: 15 concepts.** space, person, file, field,
-kind (with row, card and cell), record, collection, query, operation, call,
-grant, trigger, run, component, slot and part (one idea: a named place in an
-app that a plugin fills).
+kind (with row, card and cell), record, per-person state, collection, query,
+operation, call, grant, trigger, run, component, and slot and part (one idea:
+a named place in an app that a plugin fills). A ten-line app needs six of
+them: file, field, kind, collection, query, operation.
 
 ## 2. Four plugins
 
@@ -150,7 +157,7 @@ import { plugin, kind, collection, create, set, on, operation } from "@calternal
 
 export default plugin({
   id: "reading-list", name: "Reading List", version: "2.0.0", icon: "book", grant: {},
-  kinds: [kind("reading", { fields: { title: "text", url: "url", read: "flag", remind: "time" },
+  kinds: [kind("reading", { fields: { title: "text!", url: "url", read: "bool!", remind: "datetime!" },
     folder: "Reading", row: ["title", "url.site"], card: ["url.image", "title", "url.site"] })],
   operations: [create("reading.add", "reading", ["url", "title"]), set("reading.done", "reading", { read: true }),
     set("reading.remind", "reading", { remind: "$input" })],
@@ -165,13 +172,13 @@ operations with JSON Schema, indexed-field audiences, a Bind per list with
 window defaults, and the chrome. Here the reminder is a time field, and the
 app is data: no worker.
 
-### 2.2 Notes: 37 lines (today: a 67-line package plus the host's native notes engine)
+### 2.2 Notes: 36 lines (today: a 67-line package plus the host's native notes engine)
 
 ```ts
 import { plugin, kind, collection, create, set, on, operation, slot } from "@calternal/sdk";
 
 const notes = kind("notes", {
-  fields: { title: "text", tags: "text[]", pinned: "flag", snooze: "time" },
+  fields: { title: "text!", tags: "text[]!", pinned: "bool!", snooze: "datetime!" },
   folder: "Notes", title: "title",
   row: ["title", "excerpt"], card: ["title", "excerpt", "tags"], cell: ["title"],
 });
@@ -185,13 +192,12 @@ export default plugin({
     set("notes.snooze", "notes", { snooze: "$input" }),
     operation("notes.wake", { title: "Wake", input: { file: "file" }, effect: "write",
       async handler({ file }, ctx) {
-        const { revision } = await ctx.files.read(file);
-        await ctx.files.write(file, { fields: { snooze: null }, expected: revision });
+        await ctx.files.set(file, { snooze: null });
         await ctx.notify([ctx.me.id], { title: "A note is back", open: file });
         return {};
       } }),
-    operation("notes.restore", { title: "Restore this version", input: { file: "file", revision: "text" }, effect: "write",
-      handler: async ({ file, revision }, ctx) => ctx.call("host.revert", { file, revision }) }),
+    operation("notes.restore", { title: "Undo this change", input: { change: "text" }, effect: "write",
+      handler: async ({ change }, ctx) => ctx.call("host.revert", { change }) }),
   ],
   collections: [
     collection("all", { title: "All notes", query: { kind: "notes", where: { snooze: null }, sort: "-pinned,-updated" } }),
@@ -214,128 +220,105 @@ Collections in folders, search and moves are the host's (`host.move`,
 manifest plus the host's content engine (`crates/content`, about 11,600 lines
 of Rust shared by every kind), which knows what a note is.
 
-### 2.3 Chat core: 136 lines (today 1,884 lines of source plus a 1,317-line test host)
+### 2.3 Chat core: 104 lines (today 1,884 lines of source plus a 1,317-line test host)
 
 A chat is a file of records. People are the file's sharing; agents are runs.
 
 ```ts
 import { plugin, kind, collection, operation, on, slot } from "@calternal/sdk";
 
-const message = { text: "long", reply: "anchor", quote: "ref", mentions: "people", agent: "text", call: "text" };
 const chats = kind("chats", {
-  fields: { title: "text", people: "people", archived: "flag", running: "text" },
-  records: message, folder: "Chats/{created:date} {title}", title: "title",
-  row: ["title", "updated", { count: "unread" }], card: ["title", "people", "updated"],
-  record: { author: "origin", text: "text", reply: "reply", quote: "quote" },
+  fields: { title: "text!", people: "person[]!", archived: "bool!", running: "text" },
+  records: { fields: { mentions: "person[]!", agent: "text", call: "text" }, edit: "author", redact: "author-or-manager", segment: "monthly" },
+  position: "read", folder: "Chats", title: "title",
+  row: ["title", "updated", { count: "after_position" }], card: ["title", "people", "updated"],
 });
-// One private file per person: read positions, drafts, mutes (thesis question 2, option a).
-const mine = kind("chat-mine", { fields: { read: "map", draft: "map", muted: "file[]" }, private: "person", row: [] });
-
 const EDIT_HOURS = 48;
-async function mineFile(ctx: Ctx) {
-  const [row] = (await ctx.query({ kind: "chat-mine", limit: 1 })).rows;
-  return row?.file ?? ctx.files.create("chat-mine", { fields: { read: {}, draft: {}, muted: [] }, key: "mine" });
-}
-async function own(ctx: Ctx, chat: FileRef, anchor: Anchor) {
-  const [rec] = (await ctx.files.records(chat, { anchors: [anchor] })).records;
-  if (!rec || rec.erased || rec.origin.person !== ctx.me.id) throw new Error("Only the author can change this message.");
-  return rec;
-}
 
 export default plugin({
-  id: "chat", name: "Chat", version: "2.0.0", icon: "chat",
-  grant: { call: ["host.trash"] },
-  kinds: [chats, mine],
+  id: "chat", name: "Chat", version: "2.0.0", icon: "chat", grant: {},
+  kinds: [chats],
   slots: [
     slot("chat/composer", { pick: "person", recommended: "chat" }),
     slot("chat/harness", { pick: "person", recommended: "chat-claude",
-      operation: { input: { chat: "file", call: "anchor", prompt: "long", context: "anchor[]" }, output: { run: "run" } } }),
+      operation: { input: { chat: "link", call: "text", prompt: "text", context: "text[]" }, output: { run: "text" } } }),
   ],
   operations: [
-    operation("chat.create", { title: "New chat", input: { title: "text", people: "people" }, effect: "share",
+    operation("chat.create", { title: "New chat", input: { title: "text", people: "person[]" }, effect: "share",
       async handler({ title, people }, ctx) {
         const file = await ctx.files.create("chats", { fields: { title, people: [ctx.me.id, ...people] }, key: ctx.key("chat") });
         if (people.length) await ctx.people.share(file, { people, role: "editor" });
         return { created: file };
       } }),
-    operation("chat.send", { title: "Send", public: true, input: { chat: "file", text: "long", reply: "anchor?", quote: "ref?" }, effect: "write",
-      async handler({ chat, text, reply, quote }, ctx) {
-        const mentions = mentioned(text, (await ctx.files.read(chat)).fields.people);
-        const { anchor } = await ctx.files.append(chat, { fields: { text, reply, quote, mentions }, key: ctx.request });
-        await markRead(ctx, chat, anchor);
+    operation("chat.send", { title: "Send", public: true, input: { chat: "link", text: "text", quote: "text?" }, effect: "write",
+      async handler({ chat, text, quote }, ctx) {
+        const { fields } = await ctx.files.read(chat);
+        const body = quote ? `[↩](<#^${quote}>)\n${text}` : text;   // a quote is a link; the client draws it with the reader's rights
+        const { anchor } = await ctx.files.append(chat, { body, fields: { mentions: mentioned(text, fields.people) }, key: ctx.request });
+        await ctx.state.set(`read.${chat}`, anchor);
         return { anchor };
       } }),
-    operation("chat.edit", { title: "Edit", input: { chat: "file", anchor: "anchor", text: "long" }, effect: "write",
+    operation("chat.edit", { title: "Edit", input: { chat: "link", anchor: "text", text: "text" }, effect: "write",
       async handler({ chat, anchor, text }, ctx) {
-        const rec = await own(ctx, chat, anchor);
-        if (Date.now() - Date.parse(rec.origin.at) > EDIT_HOURS * 3600_000) throw new Error("Messages can be edited for 48 hours.");
-        return ctx.files.append(chat, { replaces: anchor, fields: { ...rec.fields, text }, key: ctx.request });
+        const [rec] = await ctx.files.records(chat, { anchors: [anchor] });
+        if (Date.now() - Date.parse(rec.stamp.at) > EDIT_HOURS * 3600_000) throw new Error("Messages can be edited for 48 hours.");
+        return ctx.files.edit(chat, anchor, { body: text, expected: rec.revision });   // the host checks the author
       } }),
-    operation("chat.delete", { title: "Delete for everyone", input: { chat: "file", anchor: "anchor" }, effect: "write",
-      async handler({ chat, anchor }, ctx) {
-        await own(ctx, chat, anchor);
-        return ctx.files.append(chat, { replaces: anchor, erase: true, key: ctx.request });  // quotes of it now draw "deleted"
-      } }),
-    operation("chat.read", { title: "Mark read", input: { chat: "file", anchor: "anchor" }, effect: "write",
-      handler: async ({ chat, anchor }, ctx) => (await markRead(ctx, chat, anchor), {}) }),
-    operation("chat.mute", { title: "Mute", input: { chat: "file", on: "flag" }, effect: "write",
-      async handler({ chat, on }, ctx) {
-        const file = await mineFile(ctx);
-        const { fields, revision } = await ctx.files.read(file);
-        const muted = on ? [...new Set([...fields.muted, chat])] : fields.muted.filter((f: FileRef) => f !== chat);
-        await ctx.files.write(file, { fields: { muted }, expected: revision });
-        return {};
-      } }),
+    operation("chat.delete", { title: "Delete for everyone", input: { chat: "link", anchor: "text" }, effect: "write",
+      handler: async ({ chat, anchor }, ctx) => (await ctx.files.redact(chat, anchor), {}) }),
+    operation("chat.read", { title: "Mark read", input: { chat: "link", anchor: "text" }, effect: "write",
+      handler: async ({ chat, anchor }, ctx) => (await ctx.state.set(`read.${chat}`, anchor), {}) }),
+    operation("chat.mute", { title: "Mute", input: { chat: "link", on: "bool" }, effect: "write",
+      handler: async ({ chat, on }, ctx) => (await ctx.state.set(`mute.${chat}`, on), {}) }),
 
-    // Calling an agent in: ask the authors of the chosen messages, then start the person's harness.
-    operation("chat.call", { title: "Ask an agent", input: { chat: "file", anchors: "anchor[]", prompt: "long", harness: "plugin" }, effect: "outside",
+    // Calling an agent in: ask the authors of the chosen messages, then start the harness the person picked.
+    operation("chat.call", { title: "Ask an agent", input: { chat: "link", anchors: "text[]", prompt: "text", harness: "text" }, effect: "outside",
       async handler({ chat, anchors, prompt, harness }, ctx) {
-        const { anchor: call } = await ctx.files.append(chat, { fields: { text: prompt, call: "waiting" }, key: ctx.key("call") });
+        const { anchor: call } = await ctx.files.append(chat, { body: prompt, fields: { call: "waiting" }, key: ctx.key("call") });
         const { asked } = await ctx.people.consent({ file: chat, anchors, to: harness, why: prompt });
-        await ctx.later(asked.length ? in1Minute() : "now", "chat.start", { chat, call, anchors, prompt, harness }, ctx.key("start"));
+        await ctx.later(asked.length ? inOneMinute() : "now", "chat.start", { chat, call, anchors, prompt, harness }, ctx.key("start"));
         return { call };
       } }),
-    operation("chat.start", { title: "Start agent", input: { chat: "file", call: "anchor", anchors: "anchor[]", prompt: "long", harness: "plugin" }, effect: "outside",
+    operation("chat.start", { title: "Start agent", input: { chat: "link", call: "text", anchors: "text[]", prompt: "text", harness: "text" }, effect: "outside",
       async handler({ chat, call, anchors, prompt, harness }, ctx) {
-        // The harness reads the context itself; the host filters it by each author's consent.
+        // The harness reads the context itself; the host withholds records whose authors did not consent.
         const { run } = await ctx.call<{ run: RunRef }>({ slot: "chat/harness", plugin: harness }, { chat, call, prompt, context: anchors });
-        const { revision } = await ctx.files.read(chat);
-        await ctx.files.write(chat, { fields: { running: run }, expected: revision });
+        await ctx.files.set(chat, { running: run });
         return {};
       } }),
-    operation("chat.reply", { title: "Post an agent reply", public: true, input: { chat: "file", call: "anchor", text: "long", agent: "text" }, effect: "write",
+    operation("chat.reply", { title: "Post an agent reply", public: true, input: { chat: "link", call: "text", text: "text", agent: "text" }, effect: "write",
       async handler({ chat, call, text, agent }, ctx) {
-        // Called by a harness from its own run's trigger; the host stamps origin.run from that cause.
-        if (!ctx.cause || !("file" in ctx.cause)) throw new Error("Replies come from an agent run.");
-        return ctx.files.append(chat, { fields: { text, agent, reply: call }, key: ctx.request });
+        // Called from the harness's trigger on its run's log; the stamp carries that run (section 3, item 3).
+        const { anchor } = await ctx.files.append(chat, { body: `[↩](<#^${call}>)\n${text}`, fields: { agent }, key: ctx.request });
+        await ctx.files.set(chat, { running: null });
+        return { anchor };
       } }),
-    operation("chat.stop", { title: "Stop", input: { chat: "file" }, effect: "write",
+    operation("chat.stop", { title: "Stop", input: { chat: "link" }, effect: "write",
       async handler({ chat }, ctx) {
-        const { fields, revision } = await ctx.files.read(chat);
+        const { fields } = await ctx.files.read(chat);
         if (fields.running) await ctx.stop(fields.running);
-        await ctx.files.write(chat, { fields: { running: null }, expected: revision });
+        await ctx.files.set(chat, { running: null });
         return {};
       } }),
     operation("chat.notify", { title: "Notify mentions", input: {}, effect: "outside",
       async handler(_, ctx) {
         const { file, records } = ctx.cause as { file: FileRef; records: Rec[] };
-        const muted = await mutedBy(ctx, file);
         for (const rec of records) {
-          const to = (rec.fields.mentions ?? []).filter((p: PersonRef) => p !== rec.origin.person && !muted.includes(p));
-          if (to.length) await ctx.notify(to, { title: "You were mentioned", body: rec.fields.text.slice(0, 120), open: file });
+          // AWKWARD (section 3, item 2): recipients' mutes are in their private state, which this run cannot read.
+          const to = (rec.fields.mentions ?? []).filter((p: PersonRef) => p !== rec.stamp.person);
+          if (to.length) await ctx.notify(to, { title: "You were mentioned", body: rec.body.slice(0, 120), open: file });
         }
         return {};
       } }),
   ],
-  triggers: [on.change({ kind: "chats", records: { mentions: { not: [] } } }, "chat.notify")],
+  triggers: [on.change({ kind: "chats", records: { mentions: { exists: true } } }, "chat.notify")],
   collections: [
     collection("all", { title: "All", query: { kind: "chats", where: { archived: false }, sort: "-updated" } }),
     collection("pinned", { title: "Pinned", query: { kind: "chats" }, hand: true, small: "strip" }),
-    collection("people", { title: "People", query: { kind: "chats", where: { archived: false, "people.count": { gt: 1 } }, sort: "-updated" } }),
     collection("archived", { title: "Archived", query: { kind: "chats", where: { archived: true }, sort: "-updated" } }),
   ],
   parts: [
-    { slot: "chat/composer", description: { type: "form", fields: [{ id: "text", input: "multiline", draft: true, mentions: "$file.people" }],
+    { slot: "chat/composer", description: { type: "form", fields: [{ id: "text", input: "multiline", draft: "draft.$file", mentions: "$file.people" }],
       submit: { call: "chat.send", input: { chat: "$file", text: "$form.text" } } } },
     { slot: "app/main", description: { type: "transcript", file: "$file", read: "chat.read",
       actions: [{ title: "Reply", fill: "chat/composer" }, { title: "Edit", call: "chat.edit", own: true },
@@ -344,20 +327,10 @@ export default plugin({
   ],
 });
 
-// Helpers.
-async function markRead(ctx: Ctx, chat: FileRef, anchor: Anchor) {
-  const file = await mineFile(ctx);
-  const { fields, revision } = await ctx.files.read(file);
-  if (fields.read[chat] === anchor) return;
-  await ctx.files.write(file, { fields: { read: { ...fields.read, [chat]: anchor } }, expected: revision });
-}
-async function mutedBy(ctx: Ctx, chat: FileRef): Promise<PersonRef[]> {
-  return [];   // AWKWARD (section 3, item 2): another person's private file cannot be read, so mutes cannot be honoured here.
-}
 function mentioned(text: string, people: PersonRef[]): PersonRef[] {
   return people.filter(person => text.includes(`@${person}`));
 }
-function in1Minute() {
+function inOneMinute() {
   return new Date(Date.now() + 60_000).toISOString();
 }
 ```
@@ -365,12 +338,13 @@ function in1Minute() {
 What this covers: people (sharing), agents (a run through the picked
 harness), calling an agent in with consent (the host filters what the
 harness can read; Chat waits a minute for answers), quotes as references
-(`quote: "ref"`, drawn with the reader's grants), delete for everyone
-(`erase`), an agent run that survives a restart (the run keeps appending to
+(a link to the record's anchor, drawn with the reader's rights), delete for
+everyone (`redact`, scrubbed from history and search), an agent run that survives a restart (the run keeps appending to
 its own file on the machine; the harness's change trigger posts the reply
 whenever that file syncs, so nothing in Chat holds a connection), and
-mentions. Typing indicators, unread counts in rows and per-person mutes are
-not covered properly; see section 3.
+mentions, and unread counts (`position: "read"` gives each row an
+`after_position` count for the asker). Typing indicators and honouring other
+people's mutes are not covered; see section 3.
 
 ### 2.4 A third-party composer and a harness
 
@@ -411,19 +385,19 @@ export default plugin({
   id: "chat-claude", name: "Claude Code", version: "1.0.0", icon: "spark",
   needs: [{ plugin: "chat", version: "^2" }],
   grant: { read: ["chats"], call: ["chat.reply"], agent: true },
-  kinds: [kind("claude-run", { fields: { chat: "file", call: "anchor" }, records: { kind: "text", text: "long" },
-    private: "person", row: ["created"] })],
+  kinds: [kind("claude-run", { fields: { chat: "link", call: "text" }, folder: "$me/Claude runs", row: ["created"],
+    records: { fields: { kind: "text!" }, edit: "writers", redact: "author-or-manager" } })],
   parts: [{ slot: "chat/harness", operation: "claude.start", name: "Claude Code", icon: "spark" }],
   operations: [
-    operation("claude.start", { title: "Run Claude Code", input: { chat: "file", call: "anchor", prompt: "long", context: "anchor[]" },
+    operation("claude.start", { title: "Run Claude Code", input: { chat: "link", call: "text", prompt: "text", context: "text[]" },
       effect: "outside",
       async handler({ chat, call, prompt, context }, ctx) {
-        // Consent-filtered: records whose authors did not consent come back erased.
-        const { records } = await ctx.files.records(chat, { anchors: context });
+        // Consent-filtered: records whose authors did not consent come back withheld.
+        const records = await ctx.files.records(chat, { anchors: context });
         const log = await ctx.files.create("claude-run", { fields: { chat, call }, key: ctx.key("log") });
         const run = await ctx.run({
           image: "ghcr.io/calternal/claude-code@sha256:4f…", key: ctx.key("run"), deadline: "2h", output: log,
-          input: { prompt, context: records.filter(r => !r.erased).map(r => ({ by: r.origin.person, text: r.fields.text })) },
+          input: { prompt, context: records.filter(r => !r.withheld).map(r => ({ by: r.stamp.person, text: r.body })) },
           mounts: [{ picked: "login", as: "/home/agent/.claude" }],
         });
         return { run };
@@ -434,7 +408,7 @@ export default plugin({
         const final = records.find(r => r.fields.kind === "final");
         if (!final) return {};
         const { fields } = await ctx.files.read(file);
-        return ctx.call("chat.reply", { chat: fields.chat, call: fields.call, text: final.fields.text, agent: "Claude Code" });
+        return ctx.call("chat.reply", { chat: fields.chat, call: fields.call, text: final.body, agent: "Claude Code" });
       } }),
   ],
   triggers: [on.change({ kind: "claude-run", records: { kind: "final" } }, "claude.deliver")],
@@ -446,110 +420,107 @@ export default plugin({
 | Plugin | Proposed | Today (revision 14) |
 | --- | ---: | --- |
 | Reading List | 11 (+4 for the reminder nudge) | 226 |
-| Notes | 37 | 67-line package plus a native host engine |
-| Chat core | 136 | 1,884 source lines across two packages (1,767 after the SDK), plus a 1,317-line test host |
+| Notes | 36 | 67-line package plus a native host engine |
+| Chat core | 104 | 1,884 source lines across two packages (1,767 after the SDK), plus a 1,317-line test host |
 | Third-party composer | 19 | not possible without forking Chat |
 | Harness | 33 | 70 (fixture only) plus a 692-line v1 runtime |
 
 The Chat number hides real costs: it uses a dozen field types, a transcript
-component, slots with operation signatures, consent, `erase`, and change
-triggers carrying a cause. Each of those is host work that today lives in
+component, slots with operation signatures, consent, `redact`, the
+per-asker position count, and change triggers carrying a cause. Each of those is host work that today lives in
 Chat or in the revision 14 vocabulary. Section 3 lists where the line count
 is bought with something the primitives do not yet have.
 
 ## 3. Where the code got awkward
 
-Each item: what I had to write or invent, and which section owns it.
+Each item: what I had to write or invent, and which section owns it. The
+files section (`lane/design-files`, first version, read at 18:00 UTC) already
+answers four items from my first draft; they are listed at the end.
 
-1. **Unread counts in a row need a per-person join.** The row shows
-   `{ count: "unread" }`, meaning records in this chat after my read anchor,
-   not written by me. The read anchor lives in my private file; the records
-   live in the chat. A query cannot join one person's private file into a
-   count over another file without a new primitive. Options: the host keeps a
-   per-person cursor per record file (a "read position" primitive by another
-   name), or Chat writes counts into my private file on every message (a
-   write per reader per message). *Files and questions lane.*
-2. **A plugin cannot honour another person's mute.** `chat.notify` runs as
-   the sender (or as a trigger with no person) and cannot read the
-   recipients' private files. Either notifications need a per-recipient
-   filter the host applies (the recipient's plugin state consulted by the
-   host), or mutes must live in a shared file, which leaks who muted whom.
-   *Permissions lane.*
-3. **Who is the actor of a trigger?** `on.change` fires when a file changes.
-   I assumed the trigger runs as the person who caused the change, with
-   `ctx.cause` describing it, and that origin stamps carry the cause (so
-   `chat.reply` called from the harness's trigger is stamped
-   `run: <run>`). Without that, an agent's reply would be stamped as the
-   harness plugin and readers could not tell agent text from plugin text.
-   *Running code and permissions lanes.*
-4. **Trigger delivery must be durable and at-least-once with a cursor.**
-   The restart story depends on the host remembering, per trigger, which
-   records it has delivered, and re-delivering after a crash. If the host
-   does not keep that cursor, every plugin writes one into a file
-   (a convention every app would reinvent). *Running code lane.*
-5. **Calling "the part the person picked".** `ctx.call({ slot, plugin })`
-   is invented: the composer and the harness are parts of slots, and Chat
-   needs to call the picked harness's operation with a signature the slot
-   declares. The draft has extension points but no call form for them.
+1. **A segmented chat is several files.** The files section caps a record
+   file (proposed 4 MiB) and has Chat roll over monthly
+   (`Chats/<chat>/2026-12.md`). Every Chat operation above takes one `chat`
+   link: `append`, `position`, `on.change`, sharing and the row all need "the
+   chat", not "this month's file". Either the host presents a segmented kind
+   as one logical file (append goes to the current segment, records and
+   positions span segments, sharing is on the folder), or every record app
+   re-implements rollover and cross-segment reads. I wrote the first; the
+   files section does not yet say which. *Files lane.*
+2. **A plugin cannot honour another person's mute.** `chat.notify` runs for
+   the sender (or for no person) and cannot read the recipients' private
+   state. Either the host applies a per-recipient filter (a notification is
+   dropped when the recipient's state for this plugin says `mute.<file>`),
+   or mutes go into a shared file, which tells everyone who muted whom.
+   *Permissions lane (notifications are primitive 7).*
+3. **Who acts in a trigger, and does the stamp carry the run?** `on.change`
+   fires when the harness's run log changes. I assumed the trigger acts for
+   the person whose action caused the change and that the stamp of anything
+   it writes carries the cause (the run), so `chat.reply` called from the
+   harness's trigger is stamped `run: <run>`. The files section instead has
+   the run append the reply itself (`record.append` by the run). That needs
+   the run, a program in a sandbox, to call the host API from inside the
+   sandbox with a grant on the chat. Either is possible; they are different
+   security shapes, and the running-code section has to pick one. *Running
+   code and permissions lanes.*
+4. **Trigger delivery must be durable, at least once, with a host cursor.**
+   The restart story depends on the host remembering which log records a
+   trigger has delivered and re-delivering after a crash. If the host does
+   not keep that cursor, every plugin keeps one in its state (a convention
+   every app would reinvent). Request keys make the redelivery harmless.
+   *Running code lane.*
+5. **Calling "the part the person picked".** `ctx.call({ slot, plugin })` is
+   invented: Chat calls the picked harness's operation with a signature the
+   slot declares. The draft has extension points but no call form for them.
    *Permissions and calls lane.*
-6. **Consent waiting is a timer plus guesswork.** `people.consent` asks
-   authors, but Chat then waits a fixed minute with `ctx.later`. It would be
-   cleaner to trigger on the consent answers (`on.change` over grants), which
-   needs grants to be queryable files or a trigger source of their own.
-   *Permissions lane.*
+6. **Consent waiting is a timer plus guesswork.** `people.consent` asks the
+   authors; Chat then waits a fixed minute with `ctx.later`. A trigger on
+   the answers (`on.change` over grants) would be exact, which needs grants
+   to be queryable or a trigger source of their own. *Permissions lane.*
 7. **Which reads are consent-filtered.** I invented `grant.agent: true`:
    every read of a shared file by such a plugin is filtered by author
-   consent. The thesis says "a run acting for an agent"; but the harness
-   plugin's handler reads the context and passes it into the run's input,
-   so the filter must apply to the plugin, not only the run. *Permissions
-   lane.*
-8. **Erasing a record from history.** `append({ replaces, erase: true })`
-   must remove the bytes from the file, from every earlier revision and from
-   the index, or "delete for everyone" is false. Files promises history
-   (`files.history`, `host.revert`), so erase needs an explicit host rule:
-   which revisions are rewritten, and what `host.revert` does across an
-   erase. *Files lane.*
-9. **Record fields versus record body.** I put message text in a record
-   field because records need structure (reply, quote, mentions). Whether a
-   record is "frontmatter-like fields plus a Markdown body" or free bytes
-   decides how a chat file reads in a text editor. *Files lane.*
-10. **The `running` field is a convention.** Chat stores the current run in
-    a frontmatter field so `chat.stop` can find it. A query over runs by
-    file (`status` for "the run serving this chat") would remove the field
-    and a write per call. *Running code lane.*
-11. **Declarative operations are a second way to write an operation.**
+   consent. The thesis says "a run acting for an agent", but the harness
+   plugin's handler reads the context and passes it into the run's input, so
+   the filter must apply to the plugin's handler too. *Permissions lane.*
+8. **A private run log has no folder.** The harness wants its log readable
+   only by the person who called it (host draft question 4b). Per-person
+   state is a hidden file per plugin, not a folder of record files, so I
+   invented `folder: "$me/Claude runs"`. Files need a per-person folder (or
+   a "private to creator" share at create). *Files and permissions lanes.*
+9. **The `running` field is a convention.** Chat stores the current run in a
+   field so `chat.stop` can find it, and must clear it on reply and on Stop.
+   A query over runs by target file would remove the field and two writes
+   per call. *Running code lane.*
+10. **Quotes are a link convention the drawing must recognise.** Chat writes
+    `[↩](<#^anchor>)` at the top of a reply. The transcript draws it as a
+    quote card with the reader's rights only if the catalogue knows that a
+    leading anchor link means "quote". *Drawing lane.*
+11. **Descriptions bind to state and stamps.** The composer binds its draft
+    to the state key `draft.$file`; the transcript shows Edit and Delete only
+    on records whose stamp names the viewer (`own: true`). Both need the
+    drawing catalogue to read per-person state and stamps on the host side.
+    *Drawing lane.*
+12. **Declarative operations are a second way to write an operation.**
     `create` and `set` make Reading List and Notes code-free, but they are a
-    small language (`$input`, field defaults) that the host must interpret.
-    The alternative is a three-line handler per operation and a worker for
-    every app. *Calls lane.*
-12. **Field types are a vocabulary.** `"text"`, `"long"`, `"url"`,
-    `"people"`, `"anchor"`, `"ref"`, `"map"` cover these four plugins; JSON
-    Schema would be more general and much longer. The index and the
-    components need to know types like `url.site` and `people.count`.
-    *Files and drawing lanes.*
-13. **Folder templates.** `"Chats/{created:date} {title}"` replaces
-    revision 14's title binding. It is one more mini-language, and rename
-    must re-run it. *Files lane.*
-14. **Typing and "working" indicators** have no primitive. They are not
-    files (they must not be stored), not questions, not runs. The draft
-    mentions an "ephemeral appdata channel"; it needs a name and a bound.
-    *Running code or drawing lane.*
-15. **A private file per person per app needs a find-or-create.**
-    `mineFile` queries, then creates with a key. A kind with
-    `private: "person"` could be addressed as `"$mine"` directly. *Files
-    lane.*
-16. **Drawing needs to know about `own`.** The transcript shows Edit and
-    Delete only on my own records. That requires the component to compare
-    the origin stamp with the viewer, which is a host-side rule the
-    catalogue has to include. *Drawing lane.*
-17. **No unit of change for Undo.** Chat's "Delete for everyone" and Notes'
-    move into a collection touch one file each here, but a future operation
-    that writes several files has no way to group them for the generic
-    revert (thesis question 5). *Files lane.*
+    tiny language (`$input`, field lists) that the host interprets. The files
+    section's Reading List example uses the same idea in YAML. *Calls lane.*
+13. **Field types are a vocabulary.** `"text!"`, `"person[]"`, `"link"` cover
+    these plugins, with `!` for indexed fields (the files section allows 8 per
+    kind). Operation inputs reuse the same strings, so authors learn one
+    vocabulary, but JSON Schema users lose expressiveness (patterns, lengths).
+    *Files and calls lanes.*
+14. **Typing and "working" indicators have no primitive.** They must not be
+    stored, so they are not files, questions or runs. *Running code or
+    drawing lane.*
+15. **Mentions are parsed by the plugin.** `mentioned()` matches `@<id>` in
+    the text, but the composer shows names. The form's `mentions` binding
+    must write a parseable token (or record fields directly). *Drawing lane.*
 
-None of the four design sections had been pushed when this was written
-(`lane/design-*` branches absent at 17:50 UTC); the owner column above is a
-guess at which lane each item belongs to.
+Answered by the files section since my first draft: unread counts (a
+kind's `position` key gives rows `after_position`, the engine's only join);
+per-person state (`state.get` and `state.set`, buffered, one file per person
+and plugin); delete for everyone (`record.redact` scrubs history and
+search); record structure (host-written headers, Markdown bodies, optional
+indexed record fields, edit and redact policies on the kind).
 
 ## 4. The developer loop
 
@@ -572,9 +543,11 @@ contribution frames.
 
 - Declare kinds of files with typed fields, and say how each looks as a row,
   card and cell. Example: Reading List's `reading` kind.
-- Create, read, replace and append to files of kinds it may write, and read
-  their history. Example: Notes restores an old version.
-- Keep one private file per person. Example: Chat's read positions.
+- Create, replace, set fields on and append records to files of kinds it may
+  write, edit or redact records under the kind's policy, and read history.
+  Example: Notes undoes a change.
+- Keep small private state per person. Example: Chat's read positions and
+  drafts.
 - Ask questions over any files it may read, and offer them as collections
   with big and small views. Example: Notes' "Linked here".
 - Share a file with people in a shared group. Example: a new group chat.
@@ -595,10 +568,10 @@ contribution frames.
   to. Example: the composer cannot read chats.
 - Forge who wrote something: the host stamps every write. Example: a plugin
   cannot post "as Alice".
-- Read another person's private file, or learn about people outside a shared
-  group. Example: Chat cannot see who muted a chat.
+- Read another person's private state, or learn about people outside a
+  shared group. Example: Chat cannot see who muted a chat.
 - Give an agent plugin text whose author has not agreed. Example: the
-  harness gets erased records for non-consenting authors.
+  harness gets withheld records for non-consenting authors.
 - Run code in a client, except in a sealed frame. Example: no custom
   JavaScript in the composer.
 - Draw outside the catalogue or hide the host's challenge for risky
@@ -610,27 +583,32 @@ contribution frames.
 
 ## 6. Questions for the owner
 
-**1. Should the host keep a read position per person per record file?**
-*What:* a read position is "the last record I have seen in this file".
-*Why now:* it decides whether unread counts, the most visible number in
-Chat and Mail, can be a query. *Example:* the sidebar shows "3" next to a
-chat; computing it needs my position and the chat's records together.
-*Options:* (a) the host keeps one position per person per record file, as
-small appdata rebuilt from a per-person file: counts become a query field;
-costs one more host concept. (b) Plugins write counts into each reader's
-private file: no new concept, but one write per reader per message, and the
-plugin cannot write other people's private files at all. *Recommendation:*
-(a); without it unread counts cannot be built from the seven primitives.
+**1. Does the host hide segments of a long record file?**
+*What:* the files section caps a record file (proposed 4 MiB) and starts a
+new file each month, so a long chat is a folder of files. *Why now:* every
+record app (Chat, Mail, logs) is written against one answer. *Example:* Lee
+opens a two-year-old group chat, scrolls up, and quotes a message from last
+year; the unread count spans this month and last. *Options:* (a) the kind
+declares `segment: "monthly"` and the host presents the folder as one
+logical record file: append goes to the current segment, reads, positions,
+triggers and sharing span all of them; the host carries one more rule, and
+plugins never see segments. (b) Plugins see the segments: no host rule, but
+every record app writes rollover, cross-file reads, cross-file positions and
+folder sharing, and gets them subtly different. *Recommendation:* (a).
 
-**2. When a trigger fires, who is acting?**
-*What:* a change trigger runs plugin code because a file changed.
-*Why now:* origin stamps and permissions both depend on it. *Example:* an
-agent's run appends its final answer to its log; the harness's trigger posts
-it into the chat. *Options:* (a) the trigger acts as the person whose action
-caused the change, and the stamp records the cause (the run): agent replies
-are correctly attributed; the host must carry causes across hops. (b) The
-trigger acts as the plugin alone: simpler, but every agent reply looks like
-plugin text and consent cannot be enforced on it. *Recommendation:* (a).
+**2. When an agent's reply is written, whose write is it?**
+*What:* an agent run produces an answer; something must append it to the
+chat with a stamp that says "Claude, for Lee". *Why now:* consent, the
+author shown on the message, and what the run is allowed to touch all depend
+on it. *Example:* Lee calls Claude into a group chat; its reply appears
+under Lee's message. *Options:* (a) the run appends to the chat itself
+through the host, with a grant on that one chat for the run's lifetime: the
+stamp is exact, but a sandboxed program now holds a write grant on a shared
+file. (b) The run only writes its own log; the harness plugin's change
+trigger posts the reply, and the host carries the cause so the stamp still
+names the run: the program touches nothing shared, but triggers must carry
+causes across calls. *Recommendation:* (b); it keeps every sandbox writing
+only its own files, which is the simpler thing to contain.
 
 **3. Do operations without code exist?**
 *What:* `create` and `set` let an app declare "add a file of this kind" or
