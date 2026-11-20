@@ -23,6 +23,49 @@ fn validation(manifest: Value, assets: BTreeMap<String, String>) -> Result<Manif
 }
 
 #[test]
+fn v2_installer_checks_harness_entry_bytes() {
+    let (mut manifest, mut assets) = package();
+    manifest["worker"] = pin(&mut assets, "worker.mjs", b"worker");
+    manifest["operations"] = json!([{
+        "id":"fixture.run", "title":"Run", "required_capability":"plugins.use",
+        "risk":"external", "idempotency":"request_id", "methods":[],
+        "input_schema":{}, "output_schema":{}
+    }]);
+    manifest["contributions"] = json!([{
+        "app":{"package":"owner","app":"home"}, "point":"runner", "version":1,
+        "id":"fixture", "kind":"harness", "operation":"fixture.run",
+        "harness":{"image":format!("sha256:{}", "1".repeat(64)),
+            "entry":pin(&mut assets, "entry.mjs", b"entry"), "name":"Fixture"}
+    }]);
+    assert!(validation(manifest.clone(), assets.clone()).is_ok());
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    std::fs::write(root.join("manifest.json"), manifest.to_string()).unwrap();
+    std::fs::write(root.join("worker.mjs"), b"worker").unwrap();
+    std::fs::write(root.join("entry.mjs"), b"entry").unwrap();
+    assert!(InstallPackage::read(root).is_ok());
+    std::fs::write(root.join("entry.mjs"), b"changed").unwrap();
+    assert!(
+        InstallPackage::read(root)
+            .err()
+            .unwrap()
+            .contains("digest mismatch")
+    );
+    assets.insert("entry.mjs".into(), STANDARD.encode(b"changed"));
+    assert!(
+        validation(manifest.clone(), assets.clone())
+            .unwrap_err()
+            .contains("digest mismatch")
+    );
+    assets.remove("entry.mjs");
+    assert!(
+        validation(manifest, assets)
+            .unwrap_err()
+            .contains("entry.mjs is missing")
+    );
+}
+
+#[test]
 fn v2_installer_rejects_extra_invalid_oversized_and_non_image_assets() {
     let (manifest, mut assets) = package();
     assets.insert("extra".into(), STANDARD.encode(b"hello"));

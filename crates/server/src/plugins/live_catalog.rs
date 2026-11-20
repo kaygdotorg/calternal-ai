@@ -306,10 +306,15 @@ fn install_v2(
     approval: &str,
 ) -> Result<Catalog, String> {
     let manifest = package_store::validate_v2_archive(archive)?;
+    if base.v2_manifest(manifest.id()).is_some() {
+        return Err(format!("Package {} is already registered", manifest.id()));
+    }
     let mut next = base.clone();
-    next.register_v2(manifest.clone())?;
-    package_store::commit_v2(appdata, manifest.id(), archive, approval)?;
-    Ok(next)
+    let id = manifest.id().to_owned();
+    package_store::commit_v2(appdata, &id, archive, approval, |revision| {
+        next.register_v2(manifest, revision)?;
+        Ok(next)
+    })
 }
 
 async fn activate_install(

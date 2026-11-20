@@ -8,12 +8,16 @@ use calternal_plugin_host::{DeclarationIndex, ManifestV2, PackageClaims};
 use serde_json::Value;
 
 use super::{Catalog, check_operation, check_operation_namespace};
+mod extensions;
+pub(super) use extensions::{ContributionIndex, InstalledV2};
 
 impl Catalog {
     /// Installed v2 declaration by package ID. Cost: O(log packages), no I/O.
     /// Callers still check space activation and current viewer authority.
     pub fn v2_manifest(&self, package: &str) -> Option<&ManifestV2> {
-        self.v2.get(package).map(Arc::as_ref)
+        self.v2
+            .get(package)
+            .map(|installed| installed.manifest.as_ref())
     }
 
     /// Owning v2 package and checked kind declaration. Cost: indexed owner
@@ -68,7 +72,7 @@ impl Catalog {
         let mut refused = BTreeMap::new();
         let mut queue = VecDeque::new();
         for (id, manifest) in &self.v2 {
-            for result in self.read_owners(manifest) {
+            for result in self.read_owners(&manifest.manifest) {
                 match result {
                     Ok(Some(owner)) if self.v2.contains_key(owner) => {
                         dependents.entry(owner).or_default().push(id);
@@ -99,19 +103,30 @@ impl Catalog {
                 .remove(&id)
                 .expect("only registered owners can be withdrawn");
             self.declarations.withdraw_live(&id);
-            unavailable.reserve_unavailable(id, Some(PackageClaims::v2(&manifest)));
+            unavailable.reserve_unavailable(id, Some(PackageClaims::v2(&manifest.manifest)));
         }
     }
 
-    pub(super) fn register_v2(&mut self, manifest: Arc<ManifestV2>) -> Result<(), String> {
+    pub(super) fn register_v2(
+        &mut self,
+        manifest: Arc<ManifestV2>,
+        revision: u32,
+    ) -> Result<(), String> {
         self.check_v2_reads(&manifest)?;
         self.declarations
             .check_reserved(manifest.id(), &PackageClaims::v2(&manifest))?;
-        self.register_stored_v2(manifest)
+        let installed = InstalledV2 { manifest, revision };
+        let checked = self.check_installed_contributions(&installed)?;
+        let id = installed.manifest.id().to_owned();
+        self.register_stored_v2(installed)?;
+        self.contributions.extend(checked);
+        self.reindex_owner(&id);
+        Ok(())
     }
 
-    pub(super) fn register_stored_v2(&mut self, manifest: Arc<ManifestV2>) -> Result<(), String> {
-        for operation in declared(&manifest, "operations") {
+    pub(super) fn register_stored_v2(&mut self, installed: InstalledV2) -> Result<(), String> {
+        let manifest = &installed.manifest;
+        for operation in declared(manifest, "operations") {
             let id = operation["id"].as_str().expect("checked operation ID");
             let capability = operation["required_capability"]
                 .as_str()
@@ -119,9 +134,6 @@ impl Catalog {
             check_operation(manifest.id(), id, capability)?;
         }
         check_operation_namespace(manifest.id(), manifest.id())?;
-        for app in declared(&manifest, "apps") {
-            check_operation_namespace(manifest.id(), app["id"].as_str().expect("checked app ID"))?;
-        }
         for site in manifest.declaration()["network"]["fixed_sites"]
             .as_array()
             .into_iter()
@@ -134,27 +146,33 @@ impl Catalog {
                 ));
             }
         }
-        self.declarations.register_v2(&manifest)?;
-        self.v2.insert(manifest.id().into(), manifest);
+        self.declarations.register_v2(manifest)?;
+        self.v2.insert(manifest.id().into(), installed);
         Ok(())
     }
 
     pub(super) fn carry_v2(&mut self, base: &Self, removed: Option<&str>) -> Result<(), String> {
-        for manifest in base.v2.values() {
-            if Some(manifest.id()) != removed {
-                self.declarations.register_v2(manifest)?;
-                self.v2.insert(manifest.id().into(), manifest.clone());
+        for installed in base.v2.values() {
+            if Some(installed.manifest.id()) != removed {
+                self.declarations.register_v2(&installed.manifest)?;
+                self.v2
+                    .insert(installed.manifest.id().into(), installed.clone());
             }
         }
         self.declarations
             .carry_unavailable(&base.declarations, removed);
-        for manifest in self.v2.values() {
+        for installed in self.v2.values() {
+            let manifest = &installed.manifest;
             self.check_v2_reads(manifest).map_err(|why| {
                 format!(
                     "Package {} depends on the removed kind. {why}",
                     manifest.id()
                 )
             })?;
+        }
+        self.contributions = base.contributions.clone();
+        if let Some(removed) = removed {
+            self.contributions.withdraw(removed);
         }
         Ok(())
     }

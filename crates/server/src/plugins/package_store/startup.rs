@@ -1,11 +1,12 @@
 //! Load the installed catalogue, isolating unavailable archive rows.
+use super::super::registry_v2::InstalledV2;
 use super::super::{Catalog, Registry, TrustedFile};
 use super::*;
 use std::sync::Arc;
 
 #[derive(Default)]
 struct InstalledDeclarations {
-    v2: Vec<(usize, Arc<host::ManifestV2>)>,
+    v2: Vec<(usize, InstalledV2)>,
     reserved: host::DeclarationIndex,
 }
 
@@ -52,12 +53,13 @@ pub fn load(
     let registry = Registry::default();
     let mut catalog = Catalog::default();
     let mut v1 = plugins.into_iter().peekable();
-    for (position, manifest) in installed.v2 {
+    for (position, package) in installed.v2 {
         while v1.peek().is_some_and(|(earlier, _)| *earlier < position) {
             let (_, plugin) = v1.next().expect("peeked v1 row");
             catalog.load_v1(Arc::new(plugin), &mut installed.reserved);
         }
-        if let Err(error) = catalog.register_stored_v2(manifest.clone()) {
+        let manifest = package.manifest.clone();
+        if let Err(error) = catalog.register_stored_v2(package) {
             let id = manifest.id().to_owned();
             tracing::warn!(plugin = %id, reason = %error, "installed v2 package unavailable");
             installed
@@ -69,6 +71,7 @@ pub fn load(
         catalog.load_v1(Arc::new(plugin), &mut installed.reserved);
     }
     catalog.reserve_invalid_v2_reads(&mut installed.reserved);
+    catalog.index_stored_contributions();
     // Reservations affect subsequent admission, never the choice of live owners on load.
     catalog
         .declarations
@@ -128,9 +131,10 @@ fn load_rows(
         }
         let bytes: Vec<u8> = row.get(0).map_err(reason)?;
         let checksum: String = row.get(1).map_err(reason)?;
+        let revision: u32 = row.get(3).map_err(reason)?;
         let id: String = row.get(5).map_err(reason)?;
         let package = match verify_archive(&bytes, &checksum) {
-            Ok(()) => read_stored_package(&bytes, &id, count, installed.as_deref_mut()),
+            Ok(()) => read_stored_package(&bytes, &id, count, revision, installed.as_deref_mut()),
             Err(error) => {
                 if let Some(installed) = installed.as_deref_mut() {
                     installed.reserved.reserve_unavailable(id.clone(), None);
@@ -147,7 +151,6 @@ fn load_rows(
             }
         };
         let entry = package.entry(row.get(2).map_err(reason)?);
-        let revision: u32 = row.get(3).map_err(reason)?;
         let worker = if let Some(code) = package.worker {
             let path = cache.join(format!("{}.{revision}.js", entry.id));
             if !worker_cache::matches_private_file(&path, code.as_bytes()) {
@@ -169,6 +172,7 @@ fn read_stored_package(
     bytes: &[u8],
     id: &str,
     position: usize,
+    revision: u32,
     installed: Option<&mut InstalledDeclarations>,
 ) -> Result<Option<Package>, String> {
     let legacy_error = match Package::read_archive(bytes) {
@@ -182,7 +186,9 @@ fn read_stored_package(
     let error = if v2::archive_version(bytes) == Ok(2) {
         match validate_v2_archive(bytes) {
             Ok(manifest) if manifest.id() == id => {
-                installed.v2.push((position, manifest));
+                installed
+                    .v2
+                    .push((position, InstalledV2 { manifest, revision }));
                 return Ok(None);
             }
             Ok(_) => "installed v2 package ID does not match its archive".into(),
@@ -327,7 +333,7 @@ mod tests {
         let bytes =
             serde_json::to_vec(&serde_json::json!({"manifest": manifest, "worker": null})).unwrap();
         let mut installed = InstalledDeclarations::default();
-        let error = read_stored_package(&bytes, "calternal-notes", 1, Some(&mut installed))
+        let error = read_stored_package(&bytes, "calternal-notes", 1, 1, Some(&mut installed))
             .err()
             .expect("the legacy manifest is invalid");
         assert!(error.contains("unknown_v1_field"), "{error}");
