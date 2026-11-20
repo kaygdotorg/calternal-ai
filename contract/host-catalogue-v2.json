@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Revision 14.29 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
+  "description": "Revision 14.30 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -4528,12 +4528,32 @@
         },
         "cursor": {
           "$ref": "#/$defs/Ref",
-          "description": "Optional continuation bound to the same exact authenticated selection and scope."
+          "description": "Continue the exact original selection and grant. Supply no selector on continuation."
+        },
+        "all_readable": {
+          "const": true,
+          "description": "Freeze a host-resolved selection of all readable items in the checked space, even when it exceeds one manifest page. Use the authenticated device's active space scope."
         }
       },
       "required": [
-        "type",
-        "items"
+        "type"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "items"
+          ]
+        },
+        {
+          "required": [
+            "all_readable"
+          ]
+        },
+        {
+          "required": [
+            "cursor"
+          ]
+        }
       ]
     },
     "OfflineDownloadManifest": {
@@ -4600,10 +4620,11 @@
         },
         "next": {
           "$ref": "#/$defs/Ref",
-          "description": "Host-issued continuation when the requested authorized download spans pages."
+          "description": "Continue the same checked selection, authority checkpoint and grant_ref. Omit on the final page."
         },
         "grant_ref": {
-          "$ref": "#/$defs/OfflineGrantRef"
+          "$ref": "#/$defs/OfflineGrantRef",
+          "description": "The same signed grant_ref on every page of the checked selection."
         }
       },
       "required": [
@@ -5235,7 +5256,7 @@
     },
     "OfflineGrantRef": {
       "$ref": "#/$defs/Ref",
-      "description": "Opaque host identity of one signed offline download manifest page for the exact account, device, space, authorized parts and revisions. It conveys no access."
+      "description": "Opaque host identity of one checked offline download selection for the exact account, device, space and authority checkpoint. Every signed manifest page of that selection carries the same ref. It conveys no access."
     },
     "DeviceReconcileRequest": {
       "type": "object",
@@ -5244,14 +5265,17 @@
         "type",
         "reconciliation_id",
         "scope_refs",
-        "offline_grants"
+        "offline_grants",
+        "page",
+        "last"
       ],
       "properties": {
         "type": {
           "const": "device_reconcile"
         },
         "reconciliation_id": {
-          "$ref": "#/$defs/Ref"
+          "$ref": "#/$defs/Ref",
+          "description": "Unique to the active attempt. A retry uses a fresh ID."
         },
         "scope_refs": {
           "type": "array",
@@ -5268,6 +5292,16 @@
           "items": {
             "$ref": "#/$defs/OfflineGrantRef"
           }
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Zero-based inventory page within the attempt. The result echoes this page."
+        },
+        "last": {
+          "type": "boolean",
+          "description": "True on the final inventory page. The result echoes this flag."
         }
       }
     },
@@ -5277,11 +5311,14 @@
       "required": [
         "reconciliation_id",
         "valid_scope_refs",
-        "valid_offline_grants"
+        "valid_offline_grants",
+        "page",
+        "last"
       ],
       "properties": {
         "reconciliation_id": {
-          "$ref": "#/$defs/Ref"
+          "$ref": "#/$defs/Ref",
+          "description": "Unique to the active attempt. A retry uses a fresh ID."
         },
         "valid_scope_refs": {
           "type": "array",
@@ -5298,6 +5335,16 @@
           "items": {
             "$ref": "#/$defs/OfflineGrantRef"
           }
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Zero-based inventory page within the attempt. The result echoes this page."
+        },
+        "last": {
+          "type": "boolean",
+          "description": "True on the final inventory page. The result echoes this flag."
         }
       }
     }
@@ -5557,7 +5604,7 @@
       "output_schema": {
         "$ref": "#/$defs/OfflineDownloadManifest"
       },
-      "scope": "Authenticated own device and member scope. Resolve requested item refs and their independently authorized attachments. The manifest covers the requested authorized batch only. Page longer authorized downloads without truncating attachments. Recheck every page and bind a continuation to the exact selection, account, device, scope and revisions."
+      "scope": "Authenticated own device and member scope. Resolve the checked explicit item selection or all readable items in the active space. Freeze the resolved selection without a page-size limit on its total, bind one OfflineGrantRef and serve its bounded signed manifest pages. Continue from a checked cursor without re-sending the selection. Recheck exact authority on each page and part. Apply offline_download.selection."
     },
     "offline.range": {
       "input_schema": {
@@ -6301,14 +6348,15 @@
     "row_projections": "Body-derived display parts may persist for a live member whose signed offline grant covers the exact source and field. Ordinary template and row cache entries remain display only; never restore authority tokens.",
     "policy_schema": {
       "$ref": "#/$defs/OfflinePolicy"
-    }
+    },
+    "selection": "Pin one grant_ref to the checked selection, snapshot of eligible source revisions and authority checkpoint. Bound the explicit selector, manifest page and range read independently. There is no total offline inventory or selection cap from this exchange. All_readable advances through the authorized space inventory in bounded manifest pages with the same grant_ref, including attachments in further pages as needed. Continue by checked cursor; verify each page and use its signed grant_ref for every dependent local part. Stop an invalidated selection rather than substituting different revisions or a new grant mid-download. Keep restart-safe authority evidence for a grant across all its pages so reconciliation can check its continuity within the per-page work bound, without replaying or reading the selection. A relevant authority change in any page invalidates the entire grant if continuity cannot be proven. A device can request a fresh selection under current authority."
   },
   "trash": {
     "scope": "One Trash per space for all item kinds.",
     "retention_days": 30,
     "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action. Start retention at trash commit. No item kind or package overrides the retention period."
   },
-  "exchanges_revision": "14.29",
+  "exchanges_revision": "14.30",
   "view_result_retention": {
     "rule": "Host windows, plugin search pages and stored or live item-view pages use the same result_versions and retained_results exchange. On a successful renewal with an unchanged grant revision, re-confirm the exact result ref and version, current audience and checked scope, including the active settle generation for a plugin search, the slot for an item view, and live access to each exact item, asset and source revision represented in the result. Retain each still-authorized unchanged result by acknowledging the exact pair, without rerendering or invoking a plugin. Treat a changed or refused result as an invalidation of that result only. A changed audience requires a new view. Apply subscription_catch_up to each retained subscription and its result check.",
     "scope": "Retain only on the same authenticated view, account and cache partition. Rebind the acknowledged result's eligible continuation, follow and item-view asset refs to the renewed lease. Asset reads still apply view_snapshots.assets at admission and delivery. Supply current scoped contexts in retained_results for retained plugin-search pages. A missing context is unavailable. Replace old tokens as a set. Invalidate selections or activities whose originating result or context no longer holds. Acknowledge each exact result at most once under the existing aggregate cap. Reuse the recorded window scope_ref for an unchanged checked scope, and use the exact omitted result's scope for persisted row erasure.",
@@ -6382,14 +6430,15 @@
   },
   "device_reconciliation": {
     "limits": {
-      "scope_refs_per_device_account": 256,
-      "offline_grants_per_device_account": 256,
-      "encoded_bytes_per_exchange": 131072
+      "scope_refs_per_page": 256,
+      "offline_grants_per_page": 256,
+      "encoded_bytes_per_page": 131072
     },
-    "contact": "On every authenticated device reconnect or new authenticated session, before any protected data can paint from disk, reconcile the entire stored inventory for this host and account across all spaces. This is one host exchange independent of open views and their leases. Close the protected disk-display gate at authenticated contact, hide any prior disk-backed display and suspend protected inventory writes during reconciliation. Send all held opaque scope refs and signed offline grant refs in one bounded request, including those of closed apps and spaces. Deduplicate refs and send no rows, item IDs, bodies, proofs or filenames. Bound local admission to the inventory limits. Erase any protected data without a verifiable inventory ref. If an existing inventory exceeds a cap, discard excess locally before submitting the complete remainder. Data-free templates may still paint.",
-    "validity": "Return only subsets of the submitted refs. Resolve each ref under the live authenticated account and device across its eligible spaces. A scope ref is valid only for an eligible persisted-row scope with proven continuity of the persisted row authority generation, including row and field authority. A query still being readable is insufficient if any held rows could have lost authority. Retain enough bounded authority evidence to check this after closed views and restart, or omit an unverifiable ref. An offline grant is valid only for its exact signed device binding when every covered revision, part and field remains readable and the grant is eligible under live space policy. Omit an unknown, foreign, revoked, expired or unverifiable ref without a reason. Recheck validity before reply; never treat this exchange as authority for a live effect.",
-    "apply": "Accept the response only from the same authenticated reconnect for the exact pending reconciliation_id and submitted inventory. Refuse an out-of-lockstep reply or a ref not submitted. Before opening the disk-display gate, durably erase each omitted scope's row records and each omitted grant's bytes, keys and dependent views, indexes and row display parts, even if their enclosing row scope remains valid. Complete or recover erasure before disk prepaint after restart. Fence buffered writes using the discarded refs. Record the surviving device inventory as the basis for later offline launch. A retry of an interrupted exchange repeats the same inventory check against current authority, not a saved validity reply.",
-    "offline_launch": "An offline launch may paint only from the last completed reconciled inventory, within local expiry and after signature and scope checks. Fresh verified downloads and signed row records accepted through live authority after the barrier join that authenticated session's reconciled inventory. Record an unfinished authenticated reconnect before permitting any disk paint. If reconciliation fails or is interrupted, keep disk content hidden even across offline restart until reconciliation succeeds or the protected inventory is erased.",
-    "sign_out": "Signing out is local terminal reconciliation with an empty surviving inventory. Close the display gate and durably erase all row records, offline grants and their dependent data and keys for the signed-out account on this device before sign-out completes. Do it even if the host is unreachable. Resume any interrupted local erasure before later disk prepaint."
+    "contact": "On every authenticated device reconnect or new authenticated session, start device.reconcile immediately in parallel with cold display and live view opening. Use one logical reconciliation for this host, account and device across all spaces, independent of open views and leases. Take a stable local inventory of held scope refs and offline grant refs, including closed apps and spaces. Erase protected data without a verifiable inventory ref. Send unique opaque refs in bounded pages, with no rows, item IDs, bodies, proofs or filenames. There is no total inventory cap. Send one page at a time in order, starting at zero and marking the final page with last:true. An empty inventory uses one empty final page. Every non-final page carries at least one ref. Fresh live reads and writes can proceed. Stage new protected disk acquisitions outside the prepaint inventory until the current reconciliation completes.",
+    "validity": "Return only subsets of the current page's submitted refs. Resolve each ref under the live authenticated account and device across its eligible spaces. A scope ref is valid only for an eligible persisted-row scope with proven continuity of the persisted row authority generation, including row and field authority. A query still being readable is insufficient if any held rows could have lost authority. Retain enough bounded authority evidence to check this after closed views and restart, or omit an unverifiable ref. An offline grant is valid only for its exact signed device binding with proven authority continuity for the whole covered selection and live space policy, using offline_download.selection. No unbounded selection walk on the reconciliation path. Omit an unknown, foreign, revoked, expired or unverifiable ref without a reason. Recheck validity before reply; never treat this exchange as authority for a live effect.",
+    "apply": "On each accepted page, durably erase each omitted scope's row records and each omitted grant's bytes, keys and dependent views, indexes and row display parts, even if the enclosing row scope remains valid. Repaint the affected display as the answer is applied. Leave refs waiting for later pages alone. Reject a returned ref not on the submitted page. A known local invalidation or erasure always wins over a positive reply. Fence buffered writes for erased refs and complete or recover erasure before any later disk prepaint. Mark the new inventory complete only after the final matching page and durable erasures for every accepted page. Interrupted attempts leave the last completed inventory minus committed erasures. Never restore erased refs on retry.",
+    "sign_out": "Signing out is local terminal reconciliation with an empty surviving inventory. Retire the active reconciliation ID before accepting any further reply. Close the display gate and durably erase all row records, offline grants and their dependent data and keys for the signed-out account on this device before sign-out completes. Do it even if the host is unreachable. Resume any interrupted local erasure before later disk prepaint.",
+    "attempt": "Use a fresh reconciliation_id for every attempt, including retries, on the current authenticated device connection. Retire the previous ID before sending a replacement and restart paging from zero against the remaining held inventory. Accept only the reply from the current authenticated connection that echoes the active ID and pending page and last flag. Ignore delayed, duplicate and retired replies. A retry checks live authority again and never reuses a saved validity reply.",
+    "launch": "On any launch paint immediately from the inventory left by the last completed reconciliation, within local expiry and after local signature and scope checks. Pending reconnect work has no first-paint dependency. Do not treat cached display as live authority. Remove anything already erased or pending durable erasure before prepaint. Fresh verified downloads and signed records accepted after reconciliation join that session's reconciled inventory. Before publishing staged acquisitions to this inventory, recheck their live authority under the current authenticated session."
   }
 }
