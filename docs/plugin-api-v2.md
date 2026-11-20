@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.13 draft
+# Plugin API v2 · revision 14.14 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic conversation and execution engines. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -301,7 +301,8 @@ derive from that request and its step or checkpoint position.
    Approve for me both allow those reads without a second prompt. The host
    binds the request to the authenticated sender and checks that person’s
    current space, scope, item, corpus and field rights before querying and
-   at delivery. Apply the existing operation bounds and access records.
+   at delivery under the transcript audience rule below. Apply the
+   existing operation bounds and access records.
    Counts, ranking and excerpts use the same authorized projection.
    Other broker effects require their checked refs and existing ceilings.
    Raw enumeration, bulk exports and delegated tickets cannot widen the
@@ -591,15 +592,21 @@ durably retires the exact attempt under the catalogue’s attempt-authority
 table, even if the placement lease is valid. Unproven placements stay
 disabled. Reconcile uncertain effects before explicit Resume.
 
-**Native provider logins.** The verified provider program may read and
-maintain its own login and provider directory in the person’s sandbox. Claude Code uses
-its own `.claude` and Codex its own `.codex`. The native login has no
-broker requirement. Bind it to the person's selected profile, provider
-contribution and eligible placement. Keep those directories out of other
-accounts and packages, host-readable transcript data, shared mounts and
-portable snapshots and backups. Preserve the gateway and tool-effect fences. Ordinary
-package workers keep the brokered secret routes above. Automatic account
-switching is deferred. Automatically qualify an installed digest and
+**Native provider logins.** In the person’s own sandbox, the verified
+provider program may read and maintain its own login and directory.
+Its tools run as that person and can read the same files. Claude Code
+uses `.claude` and Codex uses `.codex`. These logins have no broker
+requirement. Bind the login to the selected profile, provider contribution
+and eligible placement. Keep it out of other accounts, packages, shared
+mounts, host-readable output, portable snapshots and backups. For a
+shared space, the configured shared login runs with tools off until
+qualification proves a boundary that protects the login from tools
+and other runs ([owner decision 74](open-questions.md)). A run with a
+shared transcript cannot enable tools by selecting a personal native login
+or changing permission mode. The host’s scoped discovery path still
+follows the transcript audience rule. Preserve the gateway and tool-effect
+fences. Ordinary package workers keep the brokered secret routes above. Automatic
+account switching is deferred. Automatically qualify an installed digest and
 placement with the same host-operated conformance suite for every
 publisher. An unqualified personal-machine harness may report coarse
 host-verified lifecycle state. It gets no trusted committed transcript
@@ -625,8 +632,25 @@ backups retain checked bindings and content under normal item custody.
 A rollback reader must understand the binding map or refuse downgrade
 before switching writers. Only commit bindings eligible for the entire
 transcript audience at publication, and recheck current corpus and
-attachment authority independently at delivery. Use one audience for persisted content. Token events are
-transient. Apply the sealed proposal’s spool and foreground budgets.
+attachment authority independently at delivery. Use one audience for
+persisted content.
+
+**Agent discovery and transcript audience (interim, owner asked
+2026-11-20).** If only the sender can read the transcript, search and
+listing use the sender’s full scoped live read rights. If anyone else
+can read it, every row, field and content input to discovery must be
+readable by both the sender and the whole transcript audience. Apply
+that intersection before matching, ranking, counting or returning
+material to the attempt, including snippets. The bound applies in both
+permission modes. Recheck at discovery delivery and fence pending
+derived output if the transcript audience widens or its source grants
+cease to cover that audience during the attempt. Suppress the affected
+output before any delivery or commit. Resume that work only in a fresh
+attempt whose context excludes the ineligible material.
+See the [catalogue’s transcript audience rule](../contract/host-catalogue-v2.json#/execution_attempt_authority/discovery).
+
+Token events are transient. Apply the sealed proposal’s spool and
+foreground budgets.
 
 A protected Inbox answer is bound to the live process, exact request and
 checked effect. For every provider, including Codex, a native approval is
@@ -808,15 +832,16 @@ Ordering and `prefix` require the field’s declared type and index collation.
 Apply the [catalogue’s sort rules](../contract/host-catalogue-v2.json#/query). Use half-open
 `[from,to)`. The host may prefetch within the row and byte cap and returns
 one catalogue `WindowReply`. Its `WindowResult` arm gives the Bind, state,
-`window_ref`, result version, actual offset and stable rows. Both schemas
+`window_ref`, result version, stable rows and the offset where applicable. Both schemas
 cite the catalogue’s only request envelope,
 `{type:"window", request: WindowRequestPayload}`. An absent `anchor` means
 `start`. With `anchor:"end"`, `[from,to)` counts backward from the last
 authorized row, with zero at the last row. Use this form for End and
 near-end jumps only on non-search Binds with effective `exact` count
-authority. Its reply
-carries `count.mode: exact` and gives the end-relative offset of the
-returned row nearest the end. Follow the [catalogue’s result ordering](../contract/host-catalogue-v2.json#/$defs/WindowResult).
+authority. A ready or empty End result carries `count.mode: exact`.
+The offset identifies the returned row nearest the end when there are
+rows. During catch-up, the active request receives `loading` with
+`anchor:"end"`, without `offset` or `count`. Follow the [catalogue’s result ordering and correlation rules](../contract/host-catalogue-v2.json#/$defs/WindowResult).
 Refuse an end anchor with `WindowPlanError.reason: end_unavailable` for
 search Binds or when effective count mode is `estimate` or `none`.
 Search End pages forward. The catalogue’s `query.window` sets the
@@ -844,9 +869,10 @@ after deduplicating direct and inherited ACL paths. Check all affected
 items before committing a grant or another scope-expanding change.
 Refuse the entire grant, membership or other expanding change with
 `422 effective_scope_limit_exceeded` and name the 32-scope limit if any
-item would exceed it. Replay touches at most two covering-index keys
-per affected scope for one item save. Keep the bounded key preflight
-at the authoritative mutation fence.
+item would exceed it. For the scalar-order path, replay touches at most
+two covering-index keys per affected scope for one item save. Budget
+TextSet replay against `query.text_set.max_total_index_keys`. Keep the
+bounded key preflight at the authoritative mutation fence.
 
 The first contract qualifies these plan families.
 
@@ -1433,7 +1459,7 @@ and zero-effect assertions must hold on every repetition.
 | Spike | Injections and pass condition |
 | --- | --- |
 | **One enrolled channel** | Two real package processes on one enrolled channel in Space A, plus Space B. Block A’s carrier receiver until its actual writer stalls mid-frame. Hold a slow callback for two seconds. With a writable carrier, control and the other callback complete p95 ≤500 ms. While stalled, local fencing p95 ≤500 ms, close p95 ≤2 s and Space B progress p95 ≤2 s. No old-lease effect after local fencing. Remote stops within 5 s of its last authenticated renewal on every run. Reconnect rejects the old epoch and authorized replay commits once. |
-| **Cold indexed page** | 100,000 mixed-visibility rows. During grant/content churn test manual collection + ACL + sort from offset 0 through its last full authorized range and last visible row (at most 10,000 members, so the last full 200-row range starts at most at offset 9,800). Use a dense dynamic collection for offsets 10,000 and 90,000. Exercise search under the scoped search gate. In the cold Notes page arm, seed authorized thumbnails and record first row paint, visible thumbnail completion, image GET count and transferred bytes separately from indexed page latency. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms. Seed enough authorized rows for every requested range and assert the exact authorized rows in order. Empty or refused replies fail. Meter materialized rows and skipped covering-index entries separately against their bounds. In a larger authorized scope, also request a range whose nearer-end jump exceeds the skip cap. Assert `skip_limit` followed by paging that returns the same authorized rows. Test End on a scope beyond the absolute offset ceiling using `anchor:"end"` and assert the last authorized rows. For stable-ID lookup assert one bounded indexed lookup and scoped authority check for a present, missing and unauthorized ID. For standalone exact counts assert one maintained-count lookup and the exact authorized total after grant churn. Exercise saves at the 32-effective-scope cap and assert at most two covering-index keys touched per scope. Refuse a grant or membership that would create scope 33 with the typed limit error. Require save ACK p95 ≤40 ms with replay under load. Report save-to-ready lag separately and apply the Step 2 power-cut and backlog gate. Reject table scans and full candidate sorts, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
+| **Cold indexed page** | 100,000 mixed-visibility rows. During grant/content churn test manual collection + ACL + sort from offset 0 through its last full authorized range and last visible row (at most 10,000 members, so the last full 200-row range starts at most at offset 9,800). Use a dense dynamic collection for offsets 10,000 and 90,000. Exercise search under the scoped search gate. In the cold Notes page arm, seed authorized thumbnails and record first row paint, visible thumbnail completion, image GET count and transferred bytes separately from indexed page latency. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms. Seed enough authorized rows for every requested range and assert the exact authorized rows in order. Empty or refused replies fail. Meter materialized rows and skipped covering-index entries separately against their bounds. In a larger authorized scope, also request a range whose nearer-end jump exceeds the skip cap. Assert `skip_limit` followed by paging that returns the same authorized rows. Test End on a scope beyond the absolute offset ceiling using `anchor:"end"` and assert the last authorized rows. For stable-ID lookup assert one bounded indexed lookup and scoped authority check for a present, missing and unauthorized ID. For standalone exact counts assert one maintained-count lookup and the exact authorized total after grant churn. Exercise scalar-order saves at the 32-effective-scope cap and assert at most two covering-index keys touched per scope. Separately replace multiple indexed tags in one scope so replay touches more than two keys. Meter TextSet replay against `query.text_set.max_total_index_keys`, compare rows and counts with the live-authority oracle, and refuse an over-budget ordinary save before commit. Refuse a grant or membership that would create scope 33 with the typed limit error. Require save ACK p95 ≤40 ms with replay under load. Report save-to-ready lag separately and apply the Step 2 power-cut and backlog gate. Reject table scans and full candidate sorts, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
 | **Scoped search** | On locked perf-01 exercise the claimed-text and conversation shapes in their qualified scopes through the depth in `query.search`. Include a searchable community kind alongside Notes. For conversation search compare both tiers against the catalogue order. Seed title-only, message-only and dual matches, including tied message timestamps. Run two queries that reverse the order of a message-only pair and verify exact order, one row per conversation and the same order across page boundaries. Beyond that depth, assert ready windows with the exact authorized rows and order while both budgets hold. Exhaust each budget separately and assert a `refine_query` window with bounded provisional rows and no count. For Notes check the qualified Unicode cases, refusal before the mark-aware Devanagari rebuild, and CJK segmentation and substring refusal. Meter postings, materialized-row work and count work separately against `query.live_limits`. A broad prefix must start no expansion. Settle two parents of one Bind, then change the collection within one parent. Replay a window and both selection forms from the superseded scope with the old and current generations. No old rows, counts or context tokens. Repeat for a forged, foreign and revoked parent and both child-edge types. For a valid unqualified scope the first window returns `unsupported_plan` with zero scanned candidates. For an enabled scope compare rows and counts with a live-authority oracle. During publication lag and stale authority, assert `loading` with no rows, counts or activation contexts. Race revoke against delivery and assert zero stale results. For a reader with a ready search, edit a hidden row and a hidden field. Check before, during and after publication that the visible state, rows, ranks, count and result version stay unchanged. Measure foreground save and save-to-search lag separately. Keep maintenance out of the save transaction and meet the append gate. |
 | **Atomic large save** | Stage an escape-heavy 2 MiB body and reconstruct it by revision-pinned ranges after the head moves, p95 ≤5 s. The 60 s range pin is invalidated by purge or revoke. Race duplicate begin, lost chunk ACK, conflicting bytes, cancel and orphan cleanup. Race revoke, epoch loss, enrollment removal and run replacement on both sides of commit and inject crashes before publication and before reply. No partial edit or success receipt before commit. After commit recover one revision and receipt. |
 | **Durable transcript** | Stall the reader, cut after commit before ACK and restart. First screenful drawn p95 ≤150 ms on a warm authorized reconnect, with stable record IDs/order, cursor and durable receipts on replay. Reopen the boundary record and refresh sign-in notices in the same authorized reply. Revoked reconnect reveals neither rows nor bookmarks. An independent control request completes p95 ≤500 ms with the transcript reader stalled. |
@@ -1513,8 +1539,8 @@ authorizes, commits and delivers.
 
 | Fixture | Required result |
 | --- | --- |
-| Attempt discovery and renewal | In Full access and Approve for me, ask the agent to list and search. The exact sender may discover their authorized rows, excerpts and counts without a second prompt. Compare results and access records with the same person’s checked query. Try another sender’s rights, a foreign space, private fields, a forged ticket, raw bulk export and delegated discovery. Require zero expansion. Revoke during evaluation and before delivery and replace the attempt before renewal. Require zero revoked results or old-attempt effects. Repeat the existing child reservation, ancestor ceiling and replay checks. |
-| Native provider login | Run verified Claude Code and Codex in the sender’s eligible sandbox using their own provider login and directories. Verify another account and a neighboring package cannot access them. Recover the same permitted profile on explicit Resume. Check that no login data enters transcript output, snapshots, backups or diagnostics. |
+| Attempt discovery and renewal | In Full access and Approve for me, ask the agent to list and search. Use the same sender and candidates in a sender-only transcript and a shared transcript. The sender-only run receives a sender-readable private match. The shared run never sees it in a row, count, rank, snippet or output, and both runs see the common match. Hidden-only edits leave the shared results unchanged. Check access records and no second prompt. Widen the transcript audience and revoke source authority during discovery and after a result reaches the attempt but before output delivery or commit. Require zero output from the affected context. Try foreign scope, forged tickets, raw bulk export and delegated discovery. Replace the attempt before renewal and require zero old-attempt effects. Repeat the existing child reservation, ancestor ceiling and replay checks. |
+| Native provider login | Run verified Claude Code and Codex in the sender’s eligible personal sandbox. Verify the provider and its tools can access its own login, and another account and neighboring package cannot. In a shared space, request tool use under both permission modes and assert zero tool processes in the shared login sandbox. A personal profile must not re-enable tools for a shared transcript. Recover the same permitted profile on explicit Resume. Check that no login data enters transcript output, snapshots, backups or diagnostics. |
 | Cold composer job and Stop | For each intent origin, pause after the durable intent and before claim. Stop using the pending-intent context, restart and admit the job. Require the refusal receipt, zero starts and no effect on a later intent. In the control arm, replay the claimed job with the same and then a new request ID. Require the same admitted result and one start in total. Echoing an intent in the request or calling with missing, foreign or retired host context starts zero runs. |
 | Conversation body | A canonical append can be paged and, with corpus rights, its exact bytes can be read through a pinned range. A same-kind package save, staged replacement, history-body restore or room write cannot publish a forged role, provenance or bytes. A title-only viewer gets zero corpus bytes, lengths or bookmarks via transcript, editor, range or export. Revoke after opening a pin and before delivery to cover both readers. |
 | Native approval and lifetime | For each provider offer Approve only on the approvable, contained arm. With native approvability false or containment unproved, forge an approval and require zero dispatches. Use a valid context with an unoffered lifetime and require zero dispatches. An exact offered one-use decision dispatches once, including on replay. |
@@ -1573,10 +1599,13 @@ Pass these end-to-end flows on the selected wall before app migration.
   Under a sustained peak and a paused-worker backlog, require bounded
   replay work and storage, drain to the live-authority oracle without
   duplicate keys or counts, and meet the 40 ms p95 save gate. Measure
-  lag and backlog drain separately. Interrupt an End or exact-count request
-  during catch-up. Race revocation before replay, publication and delivery
-  and verify unchanged results for unaffected viewers, no stale results
-  for affected viewers, and normal ready counts after replay. Require
+  lag and backlog drain separately. For an eligible End request during
+  catch-up, correlate the loading reply with the exact active request.
+  Check its end anchor and absence of offset and count, then retry and
+  verify a current exact-count result. Race revocation before replay,
+  publication and delivery. Require unchanged results for unaffected
+  viewers, zero stale results for affected viewers and normal ready counts
+  after replay. Require
   zero plugin wakes.
 
 - **Two-collection move writer.** Commit removal from the source,
@@ -1786,13 +1815,14 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   container on a machine with given rights, and an approval request.
   The sender-scoped discovery and native provider login decisions
   supersede the interim rules in the sealed proposal’s §§A.2 and C,
-  removing those two cutover blockers. Runtime qualification and the
+  subject to the interim whole-transcript discovery rule and the existing
+  tools-off rule for shared space logins. Runtime qualification and the
   Step 3 parity gates still apply. The [credential probe][provider-probe]
   records the constraint that led to the native login decision.
   Scratch activation and Photos-scale I/O and metadata stay outside
   this revision.
 
-### Revision 14.13 draft questions and implementation seams
+### Revision 14.14 draft questions and implementation seams
 
 - The canonical writer and who owns a cross-runner list remain owner
   questions in [the sealed proposal’s §C][generic-engines]. The interim

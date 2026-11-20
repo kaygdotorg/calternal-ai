@@ -382,7 +382,7 @@
       ]
     },
     "provider": {
-      "description": "An installed provider contribution. Verified Claude Code and Codex programs use their own native login and directory in the person’s eligible sandbox as specified in the host catalogue.",
+      "description": "An installed provider contribution. Verified Claude Code and Codex programs use their own native login and directory under the personal sandbox and shared-space tools rules in the host catalogue.",
       "type": "object",
       "additionalProperties": false,
       "required": [

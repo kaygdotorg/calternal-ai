@@ -1,0 +1,33 @@
+{
+  "sender": "sender",
+  "transcript_readers": [
+    "sender"
+  ],
+  "input_readers": {
+    "common_title": [
+      "sender",
+      "other_reader"
+    ],
+    "sender_only_body": [
+      "sender"
+    ],
+    "sender_private_note": [
+      "sender"
+    ],
+    "other_readers_note": [
+      "other_reader"
+    ]
+  },
+  "observed": {
+    "search": [
+      "common_title",
+      "sender_only_body",
+      "sender_private_note"
+    ],
+    "list": [
+      "common_title",
+      "sender_only_body",
+      "sender_private_note"
+    ]
+  }
+}

@@ -1297,7 +1297,7 @@
       "authority": "Check live scope, row and field authority at planning and delivery. Fence revocation and affected old results immediately. Deny scopes that lost authority. Hidden-only changes leave the visible state, rows, ordering, counts and result version unchanged.",
       "catch_up": {
         "state": "loading",
-        "rule": "When the visible projection is behind or cannot be verified, withhold rows, count, activation contexts, cache records, result version, window reference and end distance. Do not reuse superseded results or selections. Use loading for an otherwise eligible End request."
+        "rule": "When the visible projection is behind or cannot be verified, withhold rows, count, activation contexts, cache records, result version, window reference and end distance. Do not reuse superseded results or selections. For an otherwise eligible End request, correlate loading on the active request with anchor:end and omit offset and count."
       },
       "qualification": "Before enabling the path, pass the Step 2 power-cut and backlog gate, including revocation races, bounded drain, exact recovery, no worker wakes and the foreground save gate."
     },
@@ -1335,7 +1335,7 @@
       "max_utf8_bytes_per_element": 256,
       "max_total_index_keys": 1152,
       "refusal": "index_work_limit",
-      "rules": "Budget all changed covering, membership and count keys across fields, items and scopes before committing the save, share, membership or Undo. Mandatory revoke fences first and defers excess cleanup. Publish covering and count keys under query.list_publication. Counts include each authorized item once. TextSet is not sortable.",
+      "rules": "Budget all changed covering, membership and count keys across fields, items and scopes before committing the save, share, membership or Undo. Mandatory revoke fences first and defers excess cleanup. Publish covering and count keys under query.list_publication. Counts include each authorized item once. TextSet is not sortable. Measure TextSet replay against max_total_index_keys, including covering and count work.",
       "contains": "One nonempty Text element of at most 256 UTF-8 bytes. A text literal or a checked route resolved as Text is eligible. AccountRef and parent refs are ineligible."
     },
     "body_excerpt": {
@@ -1380,7 +1380,7 @@
     "scope_limit_refusal": {
       "status": 422,
       "code": "effective_scope_limit_exceeded",
-      "description": "Check projected scope fan-out before committing a grant or other scope-expanding change. Count distinct effective (collection, audience) scopes per item after resolving direct and inherited ACL paths. Refuse the whole change if any item would exceed the cap. The scalar-order path touches at most two covering keys per effective scope. A TextSet also obeys query.text_set’s total key budget.",
+      "description": "Check projected scope fan-out before committing a grant or other scope-expanding change. Count distinct effective (collection, audience) scopes per item after resolving direct and inherited ACL paths. Refuse the whole change if any item would exceed the cap. The scalar-order path touches at most two covering keys per effective scope. Measure TextSet replay against query.text_set.max_total_index_keys.",
       "message": "An item can belong to at most 32 effective scopes."
     },
     "search": {
@@ -2017,7 +2017,6 @@
         "bind",
         "state",
         "result_version",
-        "offset",
         "rows",
         "window_ref",
         "audience"
@@ -2037,7 +2036,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991,
-          "description": "Actual offset of the delivered range from the reply anchor. Start is measured at its first returned row; end is the distance of the nearest returned row to the end. The rows are always in normal Bind order. If no rows are returned, use the requested from. The host checks this equality against the originating request before issuing the reply."
+          "description": "Actual offset of the delivered range from the reply anchor. Start is measured at its first returned row; end is the distance of the nearest returned row to the end. The rows are always in normal Bind order. Omit offset for an End loading reply. Otherwise, if no rows are returned, use the requested from. The host checks this equality against the originating request before issuing the reply."
         },
         "rows": {
           "type": "array",
@@ -2247,6 +2246,9 @@
             }
           },
           "else": {
+            "required": [
+              "offset"
+            ],
             "if": {
               "properties": {
                 "offset": {
@@ -2268,15 +2270,36 @@
             }
           },
           "then": {
-            "required": [
-              "count"
-            ],
-            "properties": {
-              "count": {
-                "properties": {
-                  "mode": {
-                    "const": "exact"
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "loading"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "offset": false
+              }
+            },
+            "else": {
+              "required": [
+                "offset",
+                "count"
+              ],
+              "properties": {
+                "count": {
+                  "properties": {
+                    "mode": {
+                      "const": "exact"
+                    }
                   }
+                },
+                "state": {
+                  "enum": [
+                    "ready",
+                    "empty"
+                  ]
                 }
               }
             }
@@ -2309,7 +2332,7 @@
           }
         }
       ],
-      "description": "An authenticated reply for the active view and its audience. At from zero, the host sends empty for a wholly empty result. A ready reply at offset zero contains rows. Check the session, lease partition and audience before consuming rows or a cache record. Any cache record must match this view and window. Only a non-search Bind in a view with exact count authority receives an end anchor and end-relative offset. Every end-anchored reply carries count.mode exact. Check count policy for the active Bind and scope on each delivery. An absolute offset above max_offset is only returned to a contiguous forward continuation without exact count authority, with anchor:start and no count or persistent cache record. Bind states have no route-dependent action context."
+      "description": "An authenticated reply for the active view and its audience. At from zero, the host sends empty for a wholly empty result. A ready reply at offset zero contains rows. Check the session, lease partition and audience before consuming rows or a cache record. Any cache record must match this view and window. Only a non-search Bind in a view with exact count authority receives an end anchor. A ready or empty End result carries count.mode exact and offset. During catch-up return loading on the exact active End request with anchor:end and the same Bind and parent scope. Omit both offset and count. Check count policy for the active Bind and scope on each delivery. An absolute offset above max_offset is only returned to a contiguous forward continuation without exact count authority, with anchor:start and no count or persistent cache record. Bind states have no route-dependent action context."
     },
     "ProviderId": {
       "type": "string",
@@ -5016,7 +5039,7 @@
       "input": {
         "$ref": "#/$defs/ExecutionDisplayFrame"
       },
-      "scope": "Authenticated attempt transport. Host validates, scrubs and maintains canonical records. This format is not a renderer route."
+      "scope": "Authenticated attempt transport. Host validates, scrubs and maintains canonical records under execution_attempt_authority.discovery.transcript_audience. This format is not a renderer route."
     },
     "child_request": {
       "transport": "authenticated_attempt",
@@ -5598,15 +5621,26 @@
         "search"
       ],
       "grant": "The sender's request to find items grants discovery within that space. No separate confirmation in either Full access or Approve for me. Existing controls still apply to any later effect.",
-      "authority": "Limit discovery to the sender's current read authority and the admitted request. Apply existing query bounds and access records and recheck live authority at planning and delivery. Counts, rank and returned fields share that scope. A child stays under every ancestor's ceiling."
+      "authority": "Apply the transcript audience rule before matching, ranking, counting or returning rows, fields and excerpts. Keep the existing query bounds and access records. Recheck live authority at planning and delivery. A child stays under every ancestor's ceiling.",
+      "transcript_audience": {
+        "status": "interim, owner asked 2026-11-20",
+        "sender_only": "Use the sender's full scoped live read rights.",
+        "shared": "Require the sender and every transcript reader to be authorized for each discovery input.",
+        "required_reader_sets": [
+        "sender",
+        "transcript_readers"
+      ],
+        "in_flight": "Fence pending derived output if the transcript audience widens or source grants cease to cover it. Suppress delivery and commit. Resume the work only in a fresh attempt that excludes the ineligible context."
+      }
     },
     "provider_login": {
       "native_profiles": {
         "Claude Code": ".claude",
         "Codex": ".codex"
       },
-      "custody": "The verified provider program can read and refresh its own selected login and directories in the person's eligible sandbox. These native logins require no broker. Keep the directories out of other accounts, other packages, shared mounts, host-readable output and portable snapshots and backups.",
-      "account_switching": "Automatic account switching is deferred."
+      "custody": "The verified provider program can read and refresh its own selected login and directories in the person's eligible sandbox. Provider tools there run as that person and can read those files. These native logins require no broker. Keep the directories out of other accounts, other packages, shared mounts, host-readable output and portable snapshots and backups.",
+      "account_switching": "Automatic account switching is deferred.",
+      "shared_space": "Apply owner decision 74 in docs/open-questions.md. Keep tools off for the configured shared login until qualification proves a boundary that protects it from tools and other runs. For a shared transcript, choosing a personal native login or changing permission mode cannot enable tools."
     }
   },
   "carrier": {

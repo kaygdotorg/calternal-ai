@@ -1,0 +1,14 @@
+{
+  "audience": "member",
+  "bind": "notes",
+  "state": "empty",
+  "anchor": "end",
+  "result_version": "version:empty",
+  "window_ref": "window:empty-end",
+  "rows": [],
+  "offset": 0,
+  "count": {
+    "mode": "exact",
+    "value": 0
+  }
+}

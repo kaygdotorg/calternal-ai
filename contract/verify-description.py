@@ -20,7 +20,7 @@ import sys
 
 from description_confirmation import (check_confirmation_exchange, check_confirmation_material,
                                       check_confirmation_table, check_request_card_material)
-from description_intent_trace import check_attempt_fence_trace, check_intent_trace
+from description_intent_trace import check_attempt_fence_trace, check_discovery_audience, check_intent_trace
 from description_input import PackageInput, Validation, check_unique_ids, lexical_path, read_bytes, read_json, resolved_path
 
 from description_events import COMPONENT_TYPES, EventBindings, check_composer_actions, check_composer_invoke, check_event_binding, check_invoke, check_route_capacity, route_operands, validate_component_request, walk
@@ -794,6 +794,17 @@ def run_fixtures():
         case = read_json(file, errors)
         if not errors:
             check_intent_trace(case, errors, verification.CATALOGUE)
+        want = case.get("error") if case else None
+        passed = any(want in error for error in errors) if want else not errors
+        print(("ok   " if passed else "FAIL ") + file.name + ("" if passed else f"  {list(errors)!r}"))
+        failed |= not passed
+    for file in sorted((fixtures_dir / "attempt-discovery").glob("*.json")):
+        if verification.CATALOGUE is None:
+            continue
+        errors = Validation()
+        case = read_json(file, errors)
+        if not errors:
+            check_discovery_audience(case, errors, verification.CATALOGUE)
         want = case.get("error") if case else None
         passed = any(want in error for error in errors) if want else not errors
         print(("ok   " if passed else "FAIL ") + file.name + ("" if passed else f"  {list(errors)!r}"))

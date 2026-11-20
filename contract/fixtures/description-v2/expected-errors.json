@@ -84,6 +84,8 @@
   "invalid-reply-catalogue-window-empty-estimate.json": "$.count.mode: must be 'exact'",
   "invalid-reply-catalogue-window-empty-exact-nonzero.json": "$.count.value: must be 0",
   "invalid-reply-catalogue-window-end-estimate.json": "$.count.mode: must be 'exact'",
+  "invalid-reply-catalogue-window-end-loading-count.json": "$.count: not allowed here",
+  "invalid-reply-catalogue-window-end-loading-distance.json": "$.offset: not allowed here",
   "invalid-reply-catalogue-window-end-no-count.json": "$: missing count",
   "invalid-reply-catalogue-window-end-with-record.json": "$.anchor: must be 'start'",
   "invalid-reply-catalogue-window-extra-field.json": "$: unknown field colour",

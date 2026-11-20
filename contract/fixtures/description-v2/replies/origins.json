@@ -21,6 +21,10 @@
   },
   "notes-app.json": {
     "notes": [
+      "invalid-reply-catalogue-window-end-loading-count.json",
+      "invalid-reply-catalogue-window-end-loading-distance.json",
+      "reply-catalogue-window-end-empty.json",
+      "reply-catalogue-window-end-loading.json",
       "invalid-reply-catalogue-window-empty-estimate.json",
       "invalid-reply-catalogue-window-empty-exact-nonzero.json",
       "invalid-reply-catalogue-window-extra-field.json",

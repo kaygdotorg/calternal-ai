@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.13 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.14 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.
@@ -83,7 +83,7 @@ The catalogue defines one `WindowRequest` envelope and one `WindowReply` union o
 
 **List freshness.** After a save, the window engine replays the durable publication intent in the background. An affected Bind returns `loading` without rows, counts, contexts or an end distance until its current authorized generation is verified. Suspend use of affected old results, cached rows and action contexts when invalidated. Resume the viewport request when the new generation is ready.
 
-**End-relative windows.** End and near-end jumps use `anchor:"end"` only on non-search Binds with exact count authority. Follow the [catalogue’s end-anchor and result ordering rules](../contract/host-catalogue-v2.json#/$defs/WindowResult).
+**End-relative windows.** End and near-end jumps use `anchor:"end"` only on non-search Binds with exact count authority. During replay, accept `loading` on that active request with `anchor:"end"` and no offset or count. Apply exact count and distance only to ready or empty End results. Follow the [catalogue’s end-anchor and result ordering rules](../contract/host-catalogue-v2.json#/$defs/WindowResult).
 
 **Forward paging.** The host checks search windows against `EventSearchWindow`, the same window envelope restricted to the start anchor.
 For search Binds or with effective count mode `estimate` or `none`, the host refuses an end anchor with `end_unavailable` and sends no end distance. Search End pages forward. An explicit `anchor:"start"` can cross the 500,000 absolute jump ceiling only at the checked next row of a ready window for the same active view, Bind, parent and result version. Deep start replies omit count and the member cache record. In mode `none` show no scroll extent that implies a total.
