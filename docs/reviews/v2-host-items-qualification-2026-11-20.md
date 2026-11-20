@@ -125,6 +125,10 @@ tests passed in the same run.
   content engine's revision retention. Protection occupies at most one
   row per item and the outbox receipt uses the configured seven-day
   default retention.
+- The migration uses the existing compatible-creation marker so the
+  previous schema-8 writer can open a space first created by the
+  schema-9 candidate. The bidirectional release proof covers that
+  creation path alongside existing-space migration.
 
 The checked writer and page reader are storage entry points for this
 lane's v2 item broker. Slices 3 and 4 supply execution authority. Slices 5

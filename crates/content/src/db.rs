@@ -92,7 +92,8 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
             (8, crate::rename_job::SCHEMA),
             (9, crate::item_write::SCHEMA),
         ],
-    );
+    )
+    .with_compatible_creation(8);
 
 pub(crate) fn database(
     path: &Path,
