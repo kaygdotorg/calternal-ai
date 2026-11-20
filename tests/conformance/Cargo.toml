@@ -9,8 +9,8 @@ publish = false
 
 [features]
 release-upgrade = []
-# First real Threads run on the v2 host; fails at the first missing seam (#101).
-threads-v2 = []
+# First real Chat run on the v2 host; fails at the first missing seam (#101).
+chat-v2 = []
 
 [dependencies]
 base64 = "0.23.1"
