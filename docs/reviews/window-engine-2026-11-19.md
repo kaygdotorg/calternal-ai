@@ -666,12 +666,13 @@ windows stay loading until the authoritative lists are repaired. Authorized
 native callers can still read the content and list records. The index and
 count rows live in a separate private SQLite WAL database with
 `synchronous=NORMAL`. The first authorized v2 window requests a build.
-Subsequent durable item publications send a best-effort wake. The legacy
-`notes.list` timestamp and UUID cursor queries the live heads as on dev.
+The shared worker polls active spaces for further durable journal entries.
+Authorized loading windows may wake the worker. The legacy `notes.list`
+timestamp and UUID cursor queries the live heads as on dev.
 
 | Path | Reads and index work | Synchronous flushes |
 | --- | --- | --- |
-| Existing-item ACK | Existing content and journal statements plus one nonblocking queue wake. The projection adds zero reads or SQLite statements. | Same three FULL transaction boundaries as dev. |
+| Existing-item ACK | Existing content and journal statements. The projection adds zero reads, SQLite statements or queue requests. | Same three FULL transaction boundaries as dev. |
 | Warm ready v2 window | One journal binding lookup, two journal head statements, two source outbox/config checks, one content binding lookup, one scope lookup, one scoped range, and one source point lookup per materialized row. Declared orders and parents add point checks. The host checks live authority on admission and before delivery. | 0 |
 | Background step | One page of at most 128 source IDs or journal entries. Repeated item changes in one journal page are coalesced. A collection edit uses the authoritative membership delta, bounded by the existing 10,000-member limit. | At most one NORMAL sidecar transaction per step. Checkpoint and first file creation occur on the worker. |
 
@@ -698,8 +699,8 @@ generated-site check and refused two stale installer pages inherited
 from dev. The command inputs for `calternal plugin install` and
 `calternal plugin review` are identical on dev and on this branch.
 Regenerating those pages in the disposable checkout let the complete
-docs gate pass, including all 436 pages. The two installer pages remain
-for the upstream lane to update.
+docs gate pass, including all 436 pages. Dev then regenerated the two
+installer pages in `95ea43c0`.
 
 `scripts/verify-additive-upgrade.sh` passed in both directions on dev-01
 with the running release `localhost/calternal-ai:31fb41179460` and the
@@ -744,11 +745,87 @@ on both sides of the acknowledgment. This comparison has no per-stage
 timing and does not isolate any extra worker scheduling from storage or
 host variation. The evenly alternating repeat uses four warm pairs.
 
+| Save-wake repeat pair | Release save p50 / p95 (ms) | Candidate save p50 / p95 (ms) | Release / candidate native first-page p95 (ms) |
+| ---: | ---: | ---: | ---: |
+| 0 | 27.744 / 35.842 | 28.197 / 38.270 | 1.650 / 1.520 |
+| 1 | 24.088 / 35.734 | 23.227 / 35.120 | 1.748 / 1.547 |
+| 2 | 23.138 / 33.441 | 24.240 / 35.519 | 1.743 / 1.639 |
+| 3 | 27.748 / 35.965 | 35.534 / 63.082 | 1.696 / 1.498 |
+
+All baseline arms passed in the repeat. The candidate breached one arm,
+with 36 saves above 40 ms. No arm failed or missed the file placement
+budget. Native first-page p95 again improved in every pair.
+
+The first candidate woke the shared worker after each saved item. That
+wake also cleared Search's cached readiness, and the fixture's
+`calternal-notes` package enables Search. This can change Search scheduling
+with a cold window sidecar. `5370a9d0` removes the wake from the save path.
+The search worker already polls active spaces after its existing 50 ms
+idle wait. A qualifying HTTP test observes a new ready count in the sidecar
+after a save, without issuing a window request, before holding a later
+publication stale and exercising revocation.
+
+On dev-01, `5370a9d0` passed 57 content tests, 31 HTTP tests, formatting,
+contract export, and the sealed fixture verifier. The full docs check
+passed with the same two inherited installer pages regenerated in
+scratch. The exact additive image-pair check passed again against the
+running release. The candidate image ID is
+`2d929dfbb0a81f24482ad1af0ca9532d906dc9c8efad9242aa8db1886c2586d0`.
+Its static server SHA-256 is
+`f605adaebce9114190dd489709cfad0582b463ce003deb8bccd22d3c1779399b`.
+
+| Poll-only pair | Release save p50 / p95 (ms) | Candidate save p50 / p95 (ms) | Release / candidate native first-page p95 (ms) |
+| ---: | ---: | ---: | ---: |
+| 0 | 23.642 / 36.710 | 22.718 / 33.075 | 1.898 / 1.730 |
+| 1 | 23.645 / 35.520 | 26.053 / 34.174 | 1.477 / 1.467 |
+| 2 | 23.383 / 35.683 | 23.138 / 34.579 | 1.460 / 1.693 |
+| 3 | 27.913 / 44.229 | 32.688 / 55.696 | 2.111 / 1.780 |
+
+Both releases passed three of the four poll-only pairs. The candidate
+was faster at save p95 in the three passing pairs and slower in the
+fourth, when both breached 40 ms. That pair had six above-limit saves
+on the baseline and 15 on the candidate. The median save-to-subscriber
+and acknowledgment-to-placement both increased for both releases in
+the fourth pair. With neither sidecar work nor a replay wake in the
+candidate save path, the remaining tail warrants a hold. The run
+does not isolate those slower saves to a particular FULL commit.
+The native first page was faster in three pairs and 0.233 ms slower
+in one. Its SQL is identical to the baseline. All arms completed and
+passed the file-placement budget. Across the 400 samples per arm, pooled
+nearest-rank save p95 was 36.710 ms on the release and 41.898 ms on the
+candidate. Pooled native first-page p95 was 1.725 ms and 1.693 ms,
+respectively.
+
+### Monitored save comparison
+
+The follow-up uses the same two packaged binaries and fixture with ten
+alternating warm pairs. It adds monotonic request boundaries to the
+disposable harness and leaves the measured server code and HTTP timer
+unchanged. The external host monitor follows the web timing lane's
+one-second CPU counter and pressure deltas. A separate process writes
+4 KiB and calls `fsync` every 200 ms on the same filesystem, with 30
+seconds of idle reference before and after the comparison. Monitor logs
+go to tmpfs. The per-arm window runs from the first save request's start
+to its final save acknowledgment and covers the intervening saves.
+
+For attribution, a control spike is a write plus fsync at or above
+the larger of 10 ms and twice the idle control p99. Count overlaps
+within 200 ms of a save. Compare that rate for slow and ordinary saves,
+as well as the distributions across whole arms. A proposed quiet-arm
+rule, contingent on the evidence, would reject a pair if either arm
+has two such control spikes or one control operation above 40 ms.
+This rule uses the independent control before judging save latency.
+
 ## Review gate
 
-The background publication candidate is based on `origin/dev` at
+The measured poll-only candidate `5370a9d0` was built on dev
 `37cadea0`, which includes the #89 Notes delivery fix. The running release
-`31fb4117` has the same server, plugin and Cargo build inputs as this base.
+`31fb4117` has the same server, plugin and Cargo build inputs as that base.
+The final series was rebased onto `origin/dev` at `a4154906`.
+`eb4516db` has the same Rust, plugin, web and deployment build inputs
+as the measured candidate. The exact rebase passed 57 content tests,
+31 HTTP tests, formatting, contract export, the sealed verifier and the
+full 436-page docs gate using the installer pages inherited from dev.
 
 1. **Shared types.** Reuses `SpaceId`, `AccountId`, `Page`, the shared
    `ErrorCode` and the directory's capability set. The window envelopes
@@ -777,7 +854,8 @@ The background publication candidate is based on `origin/dev` at
    returned rows, with the authority and freshness reads counted in the
    product table. Both routes issue zero write flushes. A save retains
    the existing head, placement, receipt and journal reads and three FULL
-   boundaries. The wake has no additional reads, statements or flushes.
+   boundaries. Replay adds no reads, statements, queue requests or flushes
+   to the save.
 6. **Constant work.** The sealed catalogue is decoded once per owning
    layer with `OnceLock`. SQLite statements use the connection's prepared
    cache. The fixture checks the pinned package and compiles its Bind at
