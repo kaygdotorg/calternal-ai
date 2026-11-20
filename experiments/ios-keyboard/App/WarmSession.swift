@@ -56,7 +56,7 @@ final class WarmSession: ObservableObject {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        Spike.defaults.set(0, forKey: Spike.Key.warmUntil)
+        Spike.defaults.set(0.0, forKey: Spike.Key.warmUntil)
         observers = []
         until = nil
         recording = false

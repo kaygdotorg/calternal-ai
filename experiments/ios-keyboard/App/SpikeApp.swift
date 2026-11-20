@@ -25,8 +25,8 @@ struct SpikeApp: App {
 struct ContentView: View {
     @StateObject private var warm = WarmSession.shared
     @StateObject private var watcher = ClipboardWatcher.shared
-    @AppStorage(Spike.Key.mode, store: Spike.defaults) private var mode = Transcriber.Mode.live.rawValue
-    @AppStorage(Spike.Key.vocabulary, store: Spike.defaults) private var vocabulary = ""
+    @State private var mode = Spike.defaults.string(forKey: Spike.Key.mode) ?? Transcriber.Mode.live.rawValue
+    @State private var vocabulary = Spike.defaults.string(forKey: Spike.Key.vocabulary) ?? ""
     @State private var mic = AVAudioApplication.shared.recordPermission
     @State private var model = "Not checked"
     @State private var tryText = ""
@@ -145,6 +145,8 @@ struct ContentView: View {
             }
         }
         .onChange(of: phase) { _, p in if p == .active { refresh() } }
+        .onChange(of: mode) { _, v in Spike.defaults.set(v, forKey: Spike.Key.mode) }
+        .onChange(of: vocabulary) { _, v in Spike.defaults.set(v, forKey: Spike.Key.vocabulary) }
     }
 
     private var micText: String {

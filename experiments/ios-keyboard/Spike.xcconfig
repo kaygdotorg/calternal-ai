@@ -1,7 +1,9 @@
-// Build settings for the keyboard spike. Placeholders only: the real team, bundle identifier
-// and App Group live in Local.xcconfig (untracked; copy Local.xcconfig.example). Without it the
-// project still builds for the Simulator.
+// Build settings for the keyboard spike. Placeholders only: the real team and bundle identifier
+// live in Local.xcconfig (untracked; copy Local.xcconfig.example). Without it the project still
+// builds for the Simulator.
 SPIKE_BUNDLE_ID = com.example.kbspike
-SPIKE_APP_GROUP = group.$(SPIKE_BUNDLE_ID)
 DEVELOPMENT_TEAM =
 #include? "Local.xcconfig"
+// Keychain group shared by the app and the keyboard (replaces an App Group, which the App Store
+// Connect key cannot register). Ordinary profiles allow any group under the team prefix.
+SPIKE_KEYCHAIN_GROUP = $(DEVELOPMENT_TEAM).$(SPIKE_BUNDLE_ID).shared

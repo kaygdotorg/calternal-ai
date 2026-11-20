@@ -1,6 +1,6 @@
 #!/bin/sh
 # On the Mac Studio, in experiments/ios-keyboard: builds a Release archive for iPhone without
-# signing (build/KBSpike.xcarchive). Bundle identifiers, App Group and team come from
+# signing (build/KBSpike.xcarchive). Bundle identifiers and team come from
 # Local.xcconfig (untracked). Usage: ./archive.sh [build-number]
 set -eu
 cd "$(dirname "$0")"

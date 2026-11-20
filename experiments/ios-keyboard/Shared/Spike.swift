@@ -1,14 +1,11 @@
 import Foundation
 import os
 
-/// Facts shared by the container app and the keyboard: the App Group, the URL scheme and the
-/// Darwin notification names. The group identifier comes from Info.plist (`SpikeAppGroup`,
-/// filled from `SPIKE_APP_GROUP` in the xcconfig) so no identifier is written in source.
+/// Facts shared by the container app and the keyboard: the shared store, the URL scheme and
+/// the Darwin notification names.
 enum Spike {
-    static let appGroup = Bundle.main.object(forInfoDictionaryKey: "SpikeAppGroup") as? String ?? "group.com.example.kbspike"
     static let urlScheme = "kbspike"
-    static var container: URL? { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) }
-    static var defaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
+    static let defaults = SharedDefaults()
 
     /// Keyboard to app: start or stop the warm session's capture. App to keyboard: a result is ready.
     enum Note: String {
@@ -55,39 +52,30 @@ final class DarwinObserver {
     }
 }
 
-/// The spike's evidence log: one line per event in `spike-log.txt` in the App Group (both
-/// processes append; the app shows and shares it). Bounded: cut to the newest half past 256 KB.
+/// The spike's evidence log: one line per event in the shared store (both processes append;
+/// the app shows and shares it). Bounded: cut to the newest 48 KB past 64 KB.
 enum SpikeLog {
     private static let logger = Logger(subsystem: "kbspike", category: "spike")
     private static let lock = NSLock()
-    static var url: URL? { Spike.container?.appendingPathComponent("spike-log.txt") }
 
     static func write(_ message: String) {
         logger.notice("\(message, privacy: .public)")
-        guard let url else { return }
         let who = Bundle.main.bundleURL.pathExtension == "appex" ? "kbd" : "app"
         let line = "\(ISO8601DateFormatter().string(from: Date())) [\(who)] \(message)\n"
         lock.withLock {
-            if let handle = try? FileHandle(forWritingTo: url) {
-                handle.seekToEndOfFile()
-                handle.write(Data(line.utf8))
-                if handle.offsetInFile > 256 * 1024, let data = try? Data(contentsOf: url) {
-                    try? data.suffix(128 * 1024).write(to: url)
-                }
-                try? handle.close()
-            } else {
-                try? Data(line.utf8).write(to: url)
-            }
+            var data = SharedStore.data("log") ?? Data()
+            data.append(Data(line.utf8))
+            if data.count > 64 * 1024 { data = Data(data.suffix(48 * 1024)) }
+            SharedStore.set(data, for: "log")
         }
     }
 
     static func read() -> String {
-        guard let url, let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
-        return text
+        SharedStore.data("log").flatMap { String(data: $0, encoding: .utf8) } ?? ""
     }
 
     static func clear() {
-        if let url { try? FileManager.default.removeItem(at: url) }
+        SharedStore.set(nil, for: "log")
     }
 
     /// Footprint, peak and headroom of this process, for what iOS's memory limit sees.
@@ -108,3 +96,58 @@ enum SpikeLog {
 
 /// Milliseconds from `a` to `b`.
 func ms(_ a: Date, _ b: Date) -> Int { Int((b.timeIntervalSince(a) * 1000).rounded()) }
+
+/// Storage both processes can reach without an App Group: generic-password items in a shared
+/// keychain access group (`SpikeKeychainGroup` in Info.plist: team, bundle identifier, `.shared`;
+/// none in a Simulator build without a team). Ordinary signing profiles already allow it, while an
+/// App Group must be registered and the App Store Connect key may not do that (401 on
+/// `appGroups`, 2026-11-20). The keyboard reaches it with Full Access. Each value is one item.
+enum SharedStore {
+    private static let group = Bundle.main.object(forInfoDictionaryKey: "SpikeKeychainGroup") as? String
+
+    private static func query(_ key: String) -> [String: Any] {
+        var q: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "kbspike",
+            kSecAttrAccount as String: key,
+        ]
+        if let group, !group.hasPrefix("$("), !group.hasPrefix(".") { q[kSecAttrAccessGroup as String] = group }
+        return q
+    }
+
+    static func data(_ key: String) -> Data? {
+        var q = query(key)
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: CFTypeRef?
+        return SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess ? out as? Data : nil
+    }
+
+    static func set(_ data: Data?, for key: String) {
+        let q = query(key)
+        guard let data else {
+            SecItemDelete(q as CFDictionary)
+            return
+        }
+        let update: [String: Any] = [kSecValueData as String: data]
+        if SecItemUpdate(q as CFDictionary, update as CFDictionary) == errSecItemNotFound {
+            var add = q
+            add[kSecValueData as String] = data
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            SecItemAdd(add as CFDictionary, nil)
+        }
+    }
+}
+
+/// The few settings and flags the app and keyboard share, with `UserDefaults`-like calls,
+/// stored as text in `SharedStore`.
+struct SharedDefaults {
+    func string(forKey key: String) -> String? {
+        SharedStore.data("d." + key).flatMap { String(data: $0, encoding: .utf8) }
+    }
+    func double(forKey key: String) -> Double { string(forKey: key).flatMap(Double.init) ?? 0 }
+    func integer(forKey key: String) -> Int { string(forKey: key).flatMap(Int.init) ?? 0 }
+    func set(_ value: String?, forKey key: String) { SharedStore.set(value.map { Data($0.utf8) }, for: "d." + key) }
+    func set(_ value: Double, forKey key: String) { set(String(value), forKey: key) }
+    func set(_ value: Int, forKey key: String) { set(String(value), forKey: key) }
+}

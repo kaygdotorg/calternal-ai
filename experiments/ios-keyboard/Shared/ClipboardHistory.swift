@@ -1,7 +1,7 @@
 import Foundation
 
-/// Clipboard history in the App Group: `clipboard.json`, newest first, at most 50 items.
-/// JSON rather than Markdown because this is throwaway spike state, not userdata.
+/// Clipboard history in the shared store, newest first, at most 50 items. JSON rather than
+/// Markdown because this is throwaway spike state, not userdata.
 struct ClipItem: Codable, Identifiable, Equatable {
     var id = UUID()
     var text: String
@@ -12,10 +12,8 @@ struct ClipItem: Codable, Identifiable, Equatable {
 
 enum ClipboardHistory {
     static let limit = 50
-    private static var url: URL? { Spike.container?.appendingPathComponent("clipboard.json") }
-
     static func load() -> [ClipItem] {
-        guard let url, let data = try? Data(contentsOf: url) else { return [] }
+        guard let data = SharedStore.data("clipboard") else { return [] }
         return (try? JSONDecoder().decode([ClipItem].self, from: data)) ?? []
     }
 
@@ -33,7 +31,6 @@ enum ClipboardHistory {
     }
 
     static func save(_ items: [ClipItem]) {
-        guard let url, let data = try? JSONEncoder().encode(items) else { return }
-        try? data.write(to: url, options: .atomic)
+        SharedStore.set(try? JSONEncoder().encode(items), for: "clipboard")
     }
 }
