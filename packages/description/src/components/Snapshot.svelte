@@ -109,8 +109,6 @@
   .ic { font-family: var(--font-mono); }
   /* An entry: a bubble whose time ends its last line (as Telegram's does), names above the first of a group, own messages to the end in the accent's soft tint, others to the start in the ink tint. A group's inner corners are tighter, so a run reads as one. */
   .e { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-1); margin-top: var(--s-1); max-width: min(82%, 38rem); scroll-margin: var(--s-6); position: relative; }
-  /* Messages off screen are skipped by the browser (not laid out or painted) until they near the viewport: a long thread costs what is in view. */
-  :global(html:not([data-no-cv])) .e { content-visibility: auto; contain-intrinsic-size: auto 4.5rem; }
   .e.first { margin-top: var(--s-4); } .e.own { align-self: flex-end; align-items: flex-end; }
   .e.selecting { cursor: pointer; } .e.picked .bub { outline: 2px solid var(--accent); outline-offset: 1px; }
   :global(.hl) { animation: hl var(--dur-slow) var(--ease-out); } @keyframes hl { from { background: var(--accent-soft); } to { background: transparent; } }

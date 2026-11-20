@@ -123,14 +123,18 @@ export function threadsHost(o: ThreadsHostOptions) {
   function scalePage(id: string, cursor?: string) {
     const end = cursor ? Number(cursor.slice(1)) : TOTAL, start = Math.max(0, end - PAGE);
     const es = Array.from({ length: end - start }, (_, k) => { const i = start + k, who = i % 7 === 3 ? ["a-codex", "Codex"] : i % 2 ? ["p-ben", "Ben"] : ["p-ada", "Ada"];
-      const text = `Message ${i + 1}: ${"words in a sentence ".repeat(1 + (i % 6))}`.trim();
-      return { type: "snapshot-entry", anchor: `m${i}`, timestamp: iso(60 * (TOTAL - i)), author: { key: who[0], name: who[1] }, children: [{ type: "snapshot-text", text, markup: "inline" }, ...(i % 41 === 0 ? [{ type: "snapshot-code", text: "npm test\nok" }] : [])] }; });
+      // `uneven`: one-line replies beside long code blocks and long paragraphs, so message heights differ by more than ten times
+      const uneven = o.scenario === "uneven";
+      const text = uneven ? (i % 3 === 0 ? "ok" : i % 7 === 0 ? `Long message ${i + 1}: ${"a longer sentence that wraps over several lines ".repeat(14)}` : `Message ${i + 1}`) : `Message ${i + 1}: ${"words in a sentence ".repeat(1 + (i % 6))}`.trim();
+      const code = uneven ? (i % 5 === 0 ? Array.from({ length: 40 }, (_, l) => `line ${l + 1} of block ${i}`).join("\n") : "") : i % 41 === 0 ? "npm test\nok" : "";
+      return { type: "snapshot-entry", anchor: `m${i}`, timestamp: iso(60 * (TOTAL - i)), author: { key: who[0], name: who[1] }, children: [{ type: "snapshot-text", text, markup: "inline" }, ...(code ? [{ type: "snapshot-code", text: code }] : [])] }; });
     const ctrls = es.map((e) => ({ anchor: e.anchor, entry: `h-${e.anchor}`, ...(e.author.key === "p-ada" ? { own: true as const } : {}), actions: [{ action: "reply", activation_context: `ctx-reply-${e.anchor}` }] }));
     return { state: "live", source_revision: "rev-1", window_ref: `win-${id}`, result_version: "v-1", ...(cursor ? {} : { follow: `f-${id}-0` }), ...(start > 0 ? { older: `c${start}` } : {}), view: { content: { type: "stack", children: es } }, entry_controls: ctrls, access: { state: "read_write" }, reading: { unread: 0, mentions: 0, version: "rd-0" } };
   }
   async function nextRoute(route: Route, body: any): Promise<unknown | undefined> {
-    if (o.scenario === "scale" && route === "item_view.open") return scalePage(String(body.item ?? "t"), body.cursor);
-    if (o.scenario === "scale" && route === "item_view.follow") return new Promise(() => {});
+    if (o.scenario === "uneven" && route === "item_view.open" && body.cursor) await new Promise((r) => setTimeout(r, 300)); // (an older page takes a moment, so a test can look at the place before and after)
+    if ((o.scenario === "scale" || o.scenario === "uneven") && route === "item_view.open") return scalePage(String(body.item ?? "t"), body.cursor);
+    if ((o.scenario === "scale" || o.scenario === "uneven") && route === "item_view.follow") return new Promise(() => {});
     const id = String(body.item ?? body.window_ref?.replace(/^win-/, "") ?? "t-lunch");
     switch (route) {
       case "item_view.open": if (o.scenario === "reconnect" && ++opens >= 2 && opens <= 4) throw new Error("connection lost"); if (o.scenario === "loading") await new Promise((r) => setTimeout(r, 60_000)); if (o.scenario === "unavailable") return { state: "unavailable" }; return page(id);

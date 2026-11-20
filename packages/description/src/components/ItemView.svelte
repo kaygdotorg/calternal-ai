@@ -90,7 +90,7 @@
     if (!el) return;
     for (let n = 0; n < 8; n++) {
       const box = el, max = Math.max(0, offs[items.length]! - box.clientHeight), h = offs[i + 1]! - offs[i]!;
-      let target = mode === "end" ? max : mode === "start" ? offs[i]! : mode === "center" ? offs[i]! - (box.clientHeight - h) / 2 : offs[i]! < box.scrollTop ? offs[i]! : offs[i + 1]! > box.scrollTop + box.clientHeight ? offs[i + 1]! - box.clientHeight : box.scrollTop;
+      let target = mode === "end" ? max : mode === "start" ? offs[i]! : mode === "center" ? offs[i]! - (box.clientHeight - h) / 2 : offs[i]! < box.scrollTop ? offs[i]! : offs[i + 1]! > box.scrollTop + box.clientHeight ? (h > box.clientHeight ? offs[i]! : offs[i + 1]! - box.clientHeight) : box.scrollTop; // (a message taller than the view is shown from its start)
       target = Math.max(0, Math.min(target, max));
       if (n > 0 && Math.abs(target - box.scrollTop) < 1) break;
       box.scrollTop = target; update(); await tick(); await frame(); measure();
@@ -177,6 +177,7 @@
       const r = await open(item, new AbortController(), { cursor });
       if (r?.view && st.reply) { st.reply = { ...st.reply, older: r.older, view: { content: { type: "stack", children: [...children(r.view.content), ...children(st.reply.view?.content)] } }, entry_controls: [...(r.entry_controls ?? []), ...(st.reply.entry_controls ?? [])], quotes: [...(r.quotes ?? []), ...(st.reply.quotes ?? [])] }; await tick(); if (aKey !== undefined) { relayout(); const ni = itemIndex.get(aKey); if (ni !== undefined) box.scrollTop = offs[ni]! + aOff; await settle(); } else box.scrollTop = box.scrollHeight - below; watch(); }
     } finally { loadingOlder = false; }
+    if (el && el.scrollTop < 600 && st.reply?.older) void loadOlder(); // still near the top (a short page, a tall window): the next older page is read too, without waiting for another scroll
   }
   $effect(() => { olderIo?.disconnect(); if (!olderEl || !el) return; olderIo = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) void loadOlder(); }, { root: el, rootMargin: "600px 0px 0px 0px" }); olderIo.observe(olderEl); return () => olderIo?.disconnect(); });
 
@@ -258,6 +259,7 @@
     const to = e.key === "ArrowDown" ? Math.min(last, i < 0 ? last : i + 1) : e.key === "ArrowUp" ? Math.max(0, i < 0 ? last : i - 1) : e.key === "Home" ? 0 : e.key === "End" ? last : e.key === "PageUp" ? Math.max(0, (i < 0 ? last : i) - 8) : e.key === "PageDown" ? Math.min(last, (i < 0 ? last : i) + 8) : -1;
     if (to >= 0) {
       e.preventDefault(); const from = i < 0 ? to : i;
+      st.active = order[to]!; // (taken at once, so a key pressed while the view is still moving continues from here)
       if (e.shiftKey && rangeActions.length && !st.readOnly) { if (!st.selecting) st.selecting = true; select([st.origin ?? order[from]!, order[to]!]); }
       await focusEntry(order[to]!);
     } else if ((e.key === "Enter" || e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) && i >= 0 && !st.selecting) {
