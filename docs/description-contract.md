@@ -1,11 +1,10 @@
 # Description contract (v2)
 
-Status: **revision 14.15 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.16 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
-The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
-`invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.
-
-To verify emitted artifacts, run `python3 contract/verify-description.py --package DIR` or supply `--manifest FILE` with explicit `--app FILE` paths. Replies require an origins file only when present.
+Use the conformance tool release that supports this contract revision to
+check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
+[conformance](plugin-api-v2.md#7-author-sdk-and-conformance).
 
 This text, the Plugin API specification, the host catalogue and their schemas define conformance. The separately versioned Python tool reports conformance evidence. Validators assert formats, including calendar validity for date-time, and apply the specified semantic rules. [Rule classes and enforcement](plugin-api-v2.md#7-author-sdk-and-conformance)
 
@@ -23,14 +22,14 @@ Everything below is one contract for chrome (sidebar, header, footer, panel) and
 
 | Term | Meaning |
 | --- | --- |
-| **kind** | A type of item a plugin or the host declares (the host's `requests` and `collections`; a package's `notes` or conversation kind) with its **indexed fields**; every item kind has the host's generic fields (`id`, `title`, `updated`, `trashed`, `trashed_at`). |
+| **kind** | A type of item a plugin or the host declares (the host's `requests` and `collections`; a package's `notes` or `threads` kind) with its **indexed fields**; every item kind has the host's generic fields (`id`, `title`, `updated`, `trashed`, `trashed_at`). |
 | **app description** | One app's `binds` (declared once), its `chrome` (sidebar, header, footer, panel) and its `view` (the card's content). |
 | **bind** | A data-free request: a list window, one item, or a search, with filter, sort and the fields wanted. |
 | **row template** | How an item becomes a row: fields to title, icon, marks and actions. |
 | **row scope** | Inside a row template, `{row: ...}` value sources name the row an action was activated on. |
 | **invoke** | An action: an operation plus named inputs from value sources. |
 | **value source** | Where a value comes from: a literal, the viewer, the route, the selection set, a row, a form, a draft, a prompt, or (in a component's config) a field of another bind's pinned row. |
-| **component** | A rich surface the host draws (item editor, transcript, composer, request card, sealed frame), configured by the description. |
+| **component** | A rich surface the host draws (item editor, request card, sealed frame), configured by the description. |
 
 ## 2. Bind
 
@@ -52,10 +51,11 @@ One definition (`$defs/Bind`):
 * `list`: an index window over a kind's items, optionally one **collection** (a collection id from a literal, the route or the selection, so a collection
   UUID works; it is not a static pattern).
 * `item`: exactly one item by reference from the route or the selection. A literal row is never accepted.
-* `search`: match text from a claimed-text kind whose manifest declares `searchable: true`, or use the conversation search plan in the catalogue. A foreign-kind search takes eligibility from its owning package and requires the requesting package’s `reads`. Search covers all authorized searchable fields by default. An author may narrow it with the catalogue’s optional `source.field_filter`. The footer sends settled text through `EventSearch`. Its optional `match` chooses literal AND terms or a single literal token prefix independently of the field filter. For claimed-text search, `source.collection` selects the authorized manual-collection projection.
+* `search`: match text from a claimed-text kind whose manifest declares `searchable: true`, or name an explicit `source.search_profile` for a plugin-owned ranking or index. A foreign-kind search takes eligibility from its owning package and requires the requesting package’s `reads`. Search covers all authorized searchable fields by default. An author may narrow it with the catalogue’s optional `source.field_filter`. The footer sends settled text through `EventSearch`. Its optional `match` chooses literal AND terms or a single literal token prefix independently of the field filter. For claimed-text search, `source.collection` selects the authorized manual-collection projection.
 
-The owner declares its conversation kind. Item lifecycle and protected Inbox supply projected fields: `trashed`, `trashed_at`, `waiting_on`, `pending_for` are host-indexed
-fields, so the Notes Trash and the Threads Inbox are ordinary binds.
+Each app declares its kind and fields. Item lifecycle supplies `trashed` and
+`trashed_at`. An app composes its own Inbox from authorized fields and
+checked request refs.
 
 ### 2.2 Filter and sort
 
@@ -63,7 +63,7 @@ fields, so the Notes Trash and the Threads Inbox are ordinary binds.
 `eq ne in lt lte gt gte exists prefix`; `in` takes a homogeneous literal list of at most 32. Values are `FilterValue`s: a literal, `{viewer: person}` (so "waiting on me" is
 `waiting_on eq viewer.person`; `waiting_on` and `pending_for` accept only `self` as an operand), `{route: ...}` or `{selection: ...}`. **Never a field of another bind, a row, a
 form or a prompt**: a hidden field of one bind must not steer another bind's query (the cross-bind operand leak). A search takes a `TextSource` (a literal, a form
-field or a composer draft). `{bind, field}` stays legal only in an invoke's inputs and a component's config, where the host reconstructs it. A `contains` predicate takes one nonempty Text element from a literal
+field). `{bind, field}` stays legal only in an invoke's inputs and a component's config, where the host reconstructs it. A `contains` predicate takes one nonempty Text element from a literal
 or a checked route resolved as Text. The viewer and parent operands are
 references. A Bind can return a bounded `TextSet` array only for a
 declared and projected field of that type. `sort` follows the [catalogue’s sort rules](../contract/host-catalogue-v2.json#/query).
@@ -150,7 +150,7 @@ The description only asks. Before any indexed work the host must:
 5. bound the work: windows of at most 200 rows, 16 predicates, **16 binds per app** (chrome and view together: there is one list), and absolute jumps up to 500,000, with the contiguous paging exception for views without exact count authority in §2.3. Apply per actor and
    per space caps on open subscriptions, window bytes and invalidations a second, coalesced before querying; pushes are **host-only** and **never wake the space runtime**;
 6. **deliver activation contexts**: with each window (`WindowResult.activation_contexts`, one entry per row and action), with the view when it opens (`ViewOpenResult`, for the header,
-   form and composer actions) and when the subscription lease renews (`LeaseRenewRequest`/`LeaseRenewResult`, one 15-second lease for the subscription and its contexts). The
+   form actions) and when the subscription lease renews (`LeaseRenewRequest`/`LeaseRenewResult`, one 15-second lease for the subscription and its contexts). The
    host reconstructs row, route and selection from a context and never accepts the renderer's value for them. The renderer keeps filled rows in memory after a lease lapses but
    does not paint them as current until a renewal returns the same grant revision and result version (section 6).
 
@@ -194,15 +194,11 @@ what is retried and what is shown come from the host catalogue and the manifest.
 `operation` is a plugin operation id from the manifest, or a **host built-in from the host catalogue** (`contract/host-catalogue-v2.json`, written by the plugins lane:
 exact ids, typed inputs, effect class, `confirm: none | challenge`, authority, whether it may be a generic invoke, whether it may be a full swipe, worker-wake behaviour).
 Built-ins that need no worker run in the host without waking the space runtime; a swipe on a row must not start a runtime. The catalogue, not this document, says which
-operations a description may name; exclude operations reserved to a component, an outcome, a sheet or the shell: `host.approval.resolve` (the request
-card), `host.undo` and `host.action.status` (an outcome), `host.panel.ask` (the transcript's quote control), prepared Send, `host.execution.resume` and `host.execution.stop` (the composer),
-`host.trash.purge` and `host.item.share` (protected sheets), `host.route.set` and `host.session.end` (shell controls). A description reaches the Trash and share sheets and the
-shell controls through a `ShellAction` (`shell: {sheet: trash | share}`, `{route}`, `{reload}`, `{signOut}`).
 
-`inputs` maps a name to a value source. There is no literal row and no destination the interface picks at activation. The **host** reconstructs row, route, selection and bind
-sources from the activation context; the **device** sends only what it holds: **form** values (`{form, field}` in that form's own submit), the **draft** of a composer, **prompt**
-answers and a host-issued `selection_ref` for a ticked set. Bind fields are legal only in a component's config (and a header title) and name a row by the stable id the
-context pinned, never by an index.
+operations a description may name. Host approval, Undo, lifecycle status,
+exact-execution control and sheet operations belong to their checked host
+surfaces. A package uses ordinary Invoke for its own controls and forms.
+The catalogue defines the eligible operations and checked inputs.
 
 ### 3.2 Activation: context, resolve, confirm (when required), dispatch
 
@@ -212,7 +208,7 @@ cites them and defines none of its own (`$defs/Event` references them).
 ```
 shell -> host  { type: "invoke", action_id, activation_id, activation_context, interaction?, dispatch?: true }                   // resolve (and dispatch when no confirmation)
 host  -> shell { activation_id, resolution_ref, confirmation_challenge?, material?: [ {name, label, value} ] }                       // or the ActionOutcome when dispatched
-shell -> host  { type: "invoke_confirm", activation_id, resolution_ref, confirmation_challenge }  (composer: final_text)             // only when the host challenged
+shell -> host  { type: "invoke_confirm", activation_id, resolution_ref, confirmation_challenge }             // only when the host challenged
 shell -> host  { type: "invoke_dispatch", activation_id, resolution_ref, confirmation_proof? }                                       // dispatch
 host  -> shell { activation_id, state: ok | pending | error | stale | refused | unknown, status_ref?, undo?, created?, code?, message? }
 ```
@@ -235,12 +231,8 @@ host  -> shell { activation_id, state: ok | pending | error | stale | refused | 
   accepted resolve. Check a row action against its current authorized
   window, including a first window before any renewal. The window,
   Bind, row context, lease, grant and audience must agree.
-  Only prepared Send carries `final_text`. Manifest entries use the `input:<key>` preview name and its declared label. A description cannot add, remove or relabel anything here. **Typing is never consent**: no value counts as
+  Manifest entries use the `input:<key>` preview name and its declared label. A description cannot add, remove or relabel anything here. **Typing is never consent**: no value counts as
   confirmed because it was typed; where a challenge is required, the person's confirmation through the protected step is the consent.
-* **Chat send is one exchange, and the final text is message content only.** The composer pre-resolves only when the prepared material changes (provider, model, machine and other options,
-  attachments, mentions, a quote); the proof binds to that material and not to the text, so one `invoke_confirm` carrying `final_text` (the composer-only arm) confirms and dispatches, and the
-  receipt is bound to the final text (a retry cannot send different words). The host treats `final_text` as inert at admission: **any parser-derived change to recipients, routing, permissions or other
-  prepared material** (an @-mention, a slash command, a destination typed in the text) **invalidates the proof and requires a fresh resolve and preview**. A description names no send operation.
 * **Retry and idempotency are the host's.** A description cannot declare an action retry-safe or waive a check: effect class and idempotency come from the catalogue and the manifest, and
   the host de-duplicates by `activation_id` (a retry after a dropped connection repeats no effect).
 * **Full swipe.** A swipe action may set `fullSwipe` only on the first action of its set **and** only if the catalogue marks its operation `full_swipe: true` (a catalogue entry that commits its effect and Undo together and needs no confirmation: only the entries the catalogue marks); the verifier rejects it on any plugin operation. A full swipe never opens a confirmation.
@@ -284,7 +276,7 @@ list only when the host's next window no longer contains it.
 * **`chrome.header`**: a literal title or a field of an **item** bind (the open item, never a list's first row), and up to two leading and three trailing actions. The sidebar toggle is the shell's.
 * **`chrome.footer`**: `account` (an id, a title and a menu; the shell draws the person's initial from the session, so a persisted template holds no person data), `apps`, `search` (the footer
   search feeds its own search bind and sends the settled text).
-* **`chrome.panel`**: the right panel, built only of host components (the side chat is a transcript above a composer).
+* **`chrome.panel`**: the right panel, built from host components and checked panel contributions.
 * No `appearance`, `scheme`, `accent` or `titleImage` in this first contract: the person's wallpaper and scheme are the shell's own preferences, and the wordmark is the app's name.
 
 How the native renderer draws it (the SwiftUI primitive for each part is in `docs/ios-shell.md`): sections are `Section`s of a `List(selection:)` in the sidebar style
@@ -333,47 +325,27 @@ the web, SwiftUI natively); no plugin is written twice, and anything the vocabul
 * **Selection is not state in the description.** A renderer reads "selected" from the list; a description never carries `selected`.
 * **Budgets** are the host's and the verifier's: at most 16 binds per view, 24 children per stack, depth 6, 200 nodes, 12 form fields, 4 KB per field value.
 
-### 5.1 Host components (`$defs/Component`, five types)
 
-Each is `{type, id, config}` with a typed `config` (a closed object: an unknown key is refused); the host draws it and receives its events directly (no page, no
-plugin code). A description can run a named **invoke** on a component's event only where a config says so (today only `onTitleChange`); every other event, **including a composer's send, stop and resume and a transcript's quote, is the host's alone**.
+### 5.1 Host components and item view snapshots
 
-| Component | Config | Events (typed; handled by the host unless an invoke is named) | Native review |
-| --- | --- | --- | --- |
-| `item-editor` | `item` (route or selection, never a literal id), `mode` edit/read, `showTitle`, `onTitleChange` | `title-change` (the host saves through `host.item.rename`), `link-open`, `presence` (live rooms: an attribute of the item's KIND) | A text view over the item's document (a note's Markdown file directly: no second representation between the editor and the file, an owner rule). A metadata-only save must not rewrite the body. |
-| `conversation-transcript` | `conversation` (checked ItemRef from route or selection), `follow` end/none, `window`, `quote` (boolean: the host's Quote control) | `transcript.page` (the host route: `TranscriptPageRequest` -> `TranscriptPage`, catalogue), `quote` (a host-issued quote reference into a draft), `scrolled-away`, `rendered` | A host-owned windowed list: the screenful at the end is read first and drawn, the rest follows in steps; rows are appended and updated by the host; heavy parts are the host's. |
-| `composer` | `conversation` (checked ItemRef), `controls` (which host controls appear: `attachments`, `mentions`, `provider`, `model`, `reasoning`, `permission`, `machine`, `stop`), `placeholder` | `draft` (device only), `send`, `stop` and `resume` (the host's), `attach`, `mention`, `composer.options` (`ComposerOptionRequest` -> `ComposerOptionPage`, catalogue) | The draft is held on the device. The host owns the send: it dispatches the kind’s configured Send with a checked item, draft and options in one prepared exchange; a native composer is a text field with the system keyboard and system pickers. |
-| `request-card` | `request` (typed request ref), `compact` | `resolve` (host.approval.resolve, from the host's own buttons) | One protected record and resolver for a job, a Turn and a host action; the card shows the material arguments (the trusted preview) and cannot be reordered, relabelled or covered by a plugin layout. |
-| `sealed-html-frame` | `frame` (a frame id), `minHeight`, `maxHeight` | `sealed_frame.open`, `sealed_frame.resize` (inside the caps), `sealed_frame.open_link` (a host link id; the host re-authorises), all catalogue routes | A web view with no network and no top navigation; its message channel and sandbox are fixed by the host. |
+The host draws the editor, request card and sealed HTML frame natively
+using the pinned component definitions. Apps compose forms, lists and
+content with checked Invoke actions. An app can declare a panel, row-field
+or action extension point whose installed contributions are validated and
+bound like its other descriptions.
 
-**Shared shapes cited, not copied.** Ticked rows of a multiple-selection list travel as the catalogue's `SelectionSetRequest` and are answered with its `SelectionSetResult` (the
-`selection_ref` actions use); the options of a composer control (provider, model, reasoning, permission, machine) are asked for with `ComposerOptionRequest` and returned as a
-`ComposerOptionPage`: the renderer never lists an option the host did not return.
+For a bound `item-view` component and declared slot, `item_view.open` supplies a bounded
+`ItemSnapshotView` for its checked item and current view lease. The
+snapshot uses a read-only native-description subset. The renderer shows
+it immediately while the plugin sleeps. A stale reply shows that the
+item's revision moved. A missing reply shows the basic shell and loading
+until the plugin publishes an authorized projection. For an open thread,
+the snapshot is its stored transcript view. Use the same pinned source
+revision, scope and retention rules as the catalogue requires for the
+snapshot. A fresh plugin projection replaces it. Never attach live
+actions to stored snapshot nodes.
 
-**Rules that hold for all five**
-
-* A component is **configured, not wrapped**: a description cannot place it inside anything that clips, scales or virtualises it, and cannot draw over a
-  `request-card`. Its size is the card's (the transcript and editor fill it; the composer is at the bottom; the frame reports its height inside the caps).
-* **Refs are typed.** `thread`, `item` and `request` take a value source that resolves to a reference of that type or the host refuses the description; the host
-  authorises the viewer for the ref (a guest's grant included) before anything is read. The description holds no viewer data.
-* **Drafts and options.** The composer's text stays on the device. Portable attachment upload and mention lookup stay disabled under the specification's Step 3 open list. Attachments are held as host-owned `AttachmentRef`s, mentions are account references, a quoted passage is a host-issued quote reference (the catalogue's `Draft`), and the chosen provider, model, reasoning level, permission and machine are opaque option references the host returned (`Interaction.options`). The description names none of them: it says which controls appear. The host checks everything (lengths, counts, that every attachment is the viewer's own, that every option is one it offered for this thread) and composes the send; it never trusts the client. The one-exchange Send treats the final text **solely as message content**: anything the host parses out of it that changes recipients, routing, permissions or other prepared material (a mention, a slash command) needs a fresh preview before it takes effect (3.2). The draft clears only after `ok`; `error` keeps it.
-* **Transcript reads** use the paging, record order, limits and reconnect rules in the [`transcript.page` catalogue entry](../contract/host-catalogue-v2.json#/component_routes/transcript.page). Follow the existing view subscription, replacing records by stable UUID and applying the returned committed cursor. Cancel on selection or authority change. The renderer never invents a cursor. Replace a committed record's entire
-  attachment list when the host upserts it. Draw only the checked
-  `attachments` descriptors received on page or follow. Omission clears the
-  list. Use the same lease and `transcript.attachment` to download. On lease
-  or attachment invalidation, remove stale descriptors and cancel any
-  fetch before drawing again. The record text supplies no attachment refs.
-* **Prepared composer Send** uses the action ID and context issued for the active composer in `view.open` as described below. The manifest’s reserved Send operation cannot appear in an authored Invoke. Resolve that action with checked draft/option material, then confirm with `final_text`. The reply is the committed `ActionOutcome`, with a status ref while Starting. Retry the exact activation and text. The host supplies a Stop action ID only with current execution-control authority.
-* **Composer choices** follow the control dependencies in the [`composer.options` catalogue entry](../contract/host-catalogue-v2.json#/component_routes/composer.options). Send the selected refs under the same keys in `interaction.options`.
-* **Streaming** is the host's: the transcript's rows grow and change without a description revision; the host caps the update rate, commits a final message at the
-  end, and drops an in-flight load when the viewer moves to another thread (the old transcript load is cancelled, not finished).
-* **First screenful stamp.** When the transcript has drawn its first screenful the host sets `data-thread-rendered=<thread id>` (web), dispatches
-  `calternal:thread-rendered` and records the measure `calternal:thread:open`; the native app has its own equivalent. The budget is 150 ms from the viewer
-  settling on the thread (4x CPU slowdown as the stand-in for a slow device; today's numbers are in `docs/native-feel.md` section 20 and the open defect).
-* **Reduced motion and keyboard** follow `docs/native-feel.md` for everything a component draws.
-* **Events never carry worker payload.** A component event reaches a named invoke only as typed inputs (an id, a selected passage the person chose).
-
-### 5.1 Host surfaces and navigation on the wire
+### 5.2 Host surfaces and navigation on the wire
 
 A route-dependent Bind uses the same `route` operands on its window, settled
 selection, explicit selection set and search settle. Supply every distinct
@@ -403,42 +375,9 @@ It never carries the raw route values again. After an `ok` outcome,
 `then.route.name` takes the host-issued `created` value if present. A missing
 `created` leaves the route unchanged.
 
-**Composer.** In `view.open`, `composer_actions[component_id]` names the
-eligible host-issued `send`, `stop` and `resume` action IDs. Their tokens come from
-`activation_contexts` in the same reply. An accepted `view.renew` supplies
-the complete replacement map and contexts, with omission meaning empty.
-On every renewal send the lease and grant revision from the latest
-accepted reply. Apply its map and contexts atomically and discard retired
-IDs and replaced contexts, including after a grant change or a second
-or later renewal. Ignore a reply for a superseded request. A new lease
-or grant revision requires fresh composer contexts. A token remains bound to
-its original component, purpose and action ID. Compare against every
-action context in the reply, including renewed windows.
-This lets an open composer receive Stop when any execution intent enters Starting.
-The component ID is the lookup
-key. A composer action ID is not author-defined. Send the exact context
-under that action ID, scoped to the opening view and current lease. Use
-an issued ID only for its own composer and purpose. Omit an action
-when authority or a current target is missing. Resolve
-Send with the checked draft refs and opaque options when prepared material
-changes. The host returns a prepared resolution and challenge bound to that
-material. Submit `invoke_confirm` with `final_text` and the prepared IDs.
-The host commits and returns the `ActionOutcome` directly, without a
-separate dispatch. Retry precisely the same activation and final text until
-the receipt is known. Change either material or text after a committed
-intent only with a new activation. Stop uses the host's action context and
-the exact pending intent or admitted attempt it resolves. Resume has a separate context on the same composer.
-Resolve it with no interaction values. Show the checked challenge and confirm
-without `final_text`. The Starting reply has a status ref and no Undo. Keep
-the local draft unchanged. Show the host's refusal message for an unavailable
-historical session and leave Send available for a separately approved fresh
-session.
-
-Follow the [`composer.options` catalogue entry](../contract/host-catalogue-v2.json#/component_routes/composer.options) for the checked option requests.
-`selected` is the host's current choice, `default` its suggested choice.
-Either may be null. A changed upstream option discards dependent choices and
-their pages. A cursor stays bound to this actor, conversation, control and
-options. No control guesses a choice the host did not offer.
+**Package controls.** Use the checked action and form exchange for a
+package’s controls, including composing input and choosing a harness.
+Protected Stop uses a host-issued exact execution or pending-job context.
 
 An authorised renderer calls `request-card.read` for the bound request and
 component within the current view lease. Draw the host record and only its
@@ -453,26 +392,14 @@ lifetime. A dismissal-only card offers Deny alone. Keep a closed card
 read-only. Limit each
 delivery to 16 KiB including material. A refusal discloses no card contents.
 
-**Transcript.** The canonical record has a stable `record_id`, a `role`
-(person, agent, automation), bounded text and an optional authorised pinned
-body continuation. Send that ref to `transcript.body` for the next piece of
-the same record. Append `text` to that record and follow `next` only while
-the record and view lease still match. Cancel on revocation or route change.
-An empty transcript has a null `committed_cursor`. Page and follow without
-a cursor until the first record supplies one. Notice and request-card records use their own typed shapes. A provider
-delta or tool frame is a producer input. The host scrubs and folds it into
-the common record. `TranscriptUpdate` on the same subscription upserts
-committed records and replaces the one optional provisional text preview.
-A later commit with that ID replaces the preview. The preview has no durable
-cursor. Apply updates only for the matching conversation and lease, skip
-superseded previews, and catch up with the last committed cursor. Coalesce
-to at most 10 updates a second per open transcript under the byte cap.
-Quote from a committed record via `transcript.quote`, using a UTF-8 byte
-range. Use the resulting typed quote and show its host-produced preview.
-Attachments and mention lookup controls require a host implementation of
-their existing upload or lookup authority. The base renderer omits those
-controls until their portable request/reply shapes qualify. Checked refs
-already present in a draft retain the catalogue shape.
+
+**Item content and actions.** For append-only files, the host serves
+revision-pinned bounded ranges without waking the owner. The owning
+plugin supplies the live presentation and its own read cursors and
+record boundaries. It may request an ordinary job or use a protected
+approval via the existing activation protocol. Attachments use generic
+authorized file refs and checked reads. A plugin payload or cached view
+confers no authority on an attachment.
 
 **Editor and frame.** `editor.open` returns an authorised head, revision and
 byte length. The shell reads pinned byte pages and saves with the existing
@@ -480,8 +407,7 @@ range and staged-save engine contracts in the Plugin API. The portable first
 path is a revision-checked whole-document save. A conflict returns the
 current head and keeps the local draft. Live rooms remain a separate
 negotiated transport with edit authorization for eligible kinds.
-Conversation body reads require message-corpus authority. Conversation
-body edits use the host composer and transcript engine.
+Full file reads require body access. Use the format’s allowed writer path for edits.
 An editable item can prepare a device preview after the save ACK through
 `row_images.prepare` on the same item-editor component, echoing its ID in
 the request. The host checks the component, item and exact saved revision
@@ -530,45 +456,31 @@ such as Empty Trash.
 
 ## 6. What may be cached on the device
 
-`cache.templates` is `keep` (default) or `none`; `cache.memberRows` is `keep` (default) or `none`; `maxAgeDays` bounds what is kept (1 to 90, default 30; persisted member rows are capped at 14).
+Data-free templates may persist by account. Invariant, start-anchored
+root windows that opted in can also supply signed display-only member
+row records. Check the authenticated lease, account, space, Bind,
+partition, template and exact window before saving. Verify the host
+signature and scope when loading. A body-derived field in a persisted
+row needs a matching checked offline grant. Ordinary row-record
+lifetimes still bound prepaint hints. Draw eligible records unconfirmed
+then confirm or correct them on reconnect.
 
-* **Data-free templates persist.** A template is a description with its binds as requests: sections, selectors, titles the author wrote, icons, actions. It holds no row, no title of a
-  person's item, no count, no account initial and no activation context, so it may be stored (one file of at most 4 MB, keyed by the signed-in account, deleted on sign-out and on account
-  switch). `templates: none` keeps nothing.
-* **Q10 (owner decision, 2026-11-19): own-space member rows can persist.** Only opted-in root windows without route-dependent or parent scope are eligible, and only for binds whose query inputs are **invariant**: a `list` source with at most a literal collection and no reference, search text, route, form, selection or parent operand anywhere in the source, filter or sort (account-bound `{viewer: person}` stays invariant); refuse `persist` otherwise. Records carry no query identity. Persist only start-anchored windows.
-  Accept only `MemberRowCacheRecord`, the display-only exception to session-only projections. The host builds it from the paired window using the catalogue’s offline display allowlist. Every title and secondary part must keep its checked source. Exclude body text and sources ineligible for offline display. A plain provider label may use a declared eligible Text field in the paired Threads row. It is separate from the verified provider icon and its mark authority. For Notes the cached secondary line keeps the authorised date as `subtitle_timestamp`. Format it from the local clock at draw time using the pinned template. Reserve the same line height until a fresh authorised reply adds the snippet. The authenticated `ViewOpenResult` and `WindowResult` name the audience.
-  The schema permits the record only on ready or empty start-anchored own-space member replies without a parent. Before writing, match it to the authenticated active view and window.
-  On write and load check the schema, host proof, scope, opt-ins and expiry (§4.2 of the Plugin API). Load only into the matching own-space root display.
-  Encrypt with account- and space-bound keys. On an unlocked device paint at launch as unconfirmed, then confirm or correct the rows with the first host answer.
-  Keep for at most 14 days or `maxAgeDays` if shorter. Erase on sign-out, account switch or known revocation. Every action needs a fresh host context.
-  Validate the Ed25519 proof against the host's public key received on an
-  authenticated connection, pinned with the expected host and account before
-  offline use. The catalogue fixes the domain-separated canonical input and
-  wire format. The proof is invalid if its key is unknown or withdrawn. On
-  rotation replace proofs or drop cached rows. Discard superseded renewal
-  replies. A changed grant invalidates old rows, selections, contexts, image
-  refs and page results. If the lease lapses, hide live rows and show loading
-  for still-authorised Binds after reopening. Only the opted-in own-space
-  display record can paint unconfirmed.
-  *Sol's recorded objection:* protected rows should be revalidated by the host before they are painted, because a revocation the device has not yet learned of leaves titles visible for the
-  moment before the first answer; the owner accepted that cost knowingly in exchange for an instant first paint. The mitigations are the conditions above (short retention, device lock, key
-  binding, erase on a known revocation).
-* **Everything else filled is session-only.** A guest's or a public view's rows, counts and anything the host filled for them stay in memory, **partitioned by session, space and audience** (a member
-  and a guest of the same account never share a partition), are never written to storage, and are cleared on revocation, on closing a guest link, on sign-out, on account switch and when the
-  session ends. Activation contexts, resolution references, confirmation challenges and proofs are never stored anywhere.
-* **What the person sees at first paint.** The template at once (the sidebar's structure, selectors, section titles the author wrote, the footer, the header), with the member's persisted rows
-  where an eligible root bind opted in (marked as not yet confirmed) and otherwise skeleton rows and the bind's `loading` state; the host's first window answer confirms or corrects them (one round trip). Offline
-  or unauthorised, the person sees the template and the state the host or the shell can say truthfully (`offline`, `sign in again`); a guest or public viewer never sees a title from a past session.
-  A shell that cannot meet these rules (an older client) gets a host fallback that obeys the same authority rules, or the page's own chrome.
-* **"Do not paint" is not "discard".** When a lease lapses or the app is in the background, filled rows stay in memory (same session, space and audience partition) but are not drawn as current. The
-  **lease renewal** is correlated and authenticated: the request carries a `renewal_id`, the `lease_ref`, the `cache_partition` and the held `result_versions` keyed by `window_ref`; the reply
-  (`LeaseRenewResult`) echoes `renewal_id`, `request_lease_ref` and `cache_partition` and names the exact `retained_results` (`window_ref`, `result_version`), and is accepted only from the current
-  session. The renderer repaints **only** the windows named as retained, **ignores a superseded reply** (an older `renewal_id`, another lease or partition) and **keeps rows hidden on timeout or
-  refusal**; a changed grant or version refetches. A longer absence therefore costs a renewal, not a skeleton screen. (First window at offset 0 is a performance gate on the perf VM; see the plugin
-  API build order.)
-* The cache is the shell's, not the page's.
-* **Implementation status:** the apps keep only the frame (`ChromeCache.frame(of:)`: no rows, cards, counts, account initial or item title) of a v1 description until the v2 renderer exists; persisting
-  member rows with encryption and erase-on-revocation is part of the v2 renderer.
+An authenticated member may download the full readable item, including
+body, granted attachments and their authorized derived views. The
+host-signed download manifest names the device, account, space, authorized
+revisions and expiry policy. Check the grant again for each file range.
+Encrypt the local download and derived display and search indexes.
+Wipe on sign-out, configured expiry or next contact after revocation.
+By default there is no offline expiry. A space can configure one.
+A disconnected copy cannot be erased remotely.
+
+Keep live windows bounded in memory by session, space and audience.
+Hide live rows on lease loss. Repaint only retained exact
+`window_ref` and `result_version` pairs in the reply to the current
+authenticated renewal. A changed grant refetches. Guest and public
+sessions receive no member download or persisted row grant. Persist
+no live context, action proof or bearer. Every action rechecks live
+authority.
 
 ## 7. Version negotiation
 
@@ -605,42 +517,40 @@ What the renderer needs from the contract, and what it costs:
 
 ## 9. Paper exercises
 
-Run `python3 contract/verify-description.py` with the host catalogue. The fixtures in `contract/fixtures/description-v2/` pair each app with its manifest in `manifests/`. The SDK supplies each package’s own reads and the fixtures include the emitted entries. Section 6 governs the optional member rows used by `threads-nested-catalogue-app.json`. The Notes and Threads walks follow §2.4. Threads shows the installed provider contribution’s icon or its fallback symbol. Note rows use the current thumbnail or miniature. Notes collection rows use the kind icon.
+Run the conformance-tool version that supports the contract revision. The fixtures in `contract/fixtures/description-v2/` pair each app with its manifest in `manifests/`. The SDK supplies each package’s own reads and the fixtures include the emitted entries. Section 6 governs the optional member rows used by `threads-nested-catalogue-app.json`. The Notes and Threads walks follow §2.4. An installed harness shows a verified provider mark or its fallback symbol. Note rows use the current thumbnail or miniature. Notes collection rows use the kind icon.
 
 ### 9.1 Community Reading List and author trial
 
 The list binds `reading-item` and shows a title, read mark and empty state. Mark read uses a first full swipe through the host metadata toggle, with one exchange, Undo and no runtime wake. The two-field Add form calls `reading.add` and opens the host-minted `created` ref through `then`. The footer searches all authorized searchable fields of the same opted-in kind. New blank item uses the manifest’s `host_create` defaults through `host.item.create`, commits Undo with the item, and opens it through `then` without waking the plugin.
 
-The reminder form calls `reading.remind`, saves the reminder with `item_save` and enrolls the declared `reading.reminder-due` operation using `schedule_create` with a one-date calendar and `notify_creator`. The example keeps the reminder in the person’s own space. A reminder about a shared item lives there and points to the shared item under §5 of the API. The person filter only controls which reminder rows the list shows. The SDK defaults for a first list and the required author trial are in the API’s §§7–8.
+The reminder form calls `reading.remind`, saves the reminder with `item_save` and enrolls the declared `reading.reminder-due` operation with one `alarm_set` for its declared replayable job. The example keeps the reminder in the person’s own space. A reminder about a shared item lives there and points to the shared item under §5 of the API. The person filter only controls which reminder rows the list shows. The SDK defaults for a first list and the required author trial are in the API’s §§7–8.
 
 ### 9.2 Notes
 
 The windowed sidebar binds a manual collection with an exact count and shows a Collections section and a Trash Bind. Note rows show the updated date and then the host-indexed snippet, bounded by the [catalogue’s `query.body_excerpt`](../contract/host-catalogue-v2.json). Restore uses a full swipe on an eligible single item. Empty Trash uses the host sheet with a Manager visibility rule, and Share uses its host-owned audience sheet. Rename through Notes’ link-rewriting path resolves and dispatches separately, with Undo fetched through the typed outcome/status route. The separate bulk content list supplies ticks for Bulk Trash, which resolves the checked `selection_ref`, then confirms and dispatches. Move to collection fetches the scoped choice and applies the catalogue’s challenge rule for the destination audience.
 
-The `item-editor` edits the routed `yjs-v1` item. New note invokes `host.item.create` with the Notes manifest defaults and the current route’s collection when present. This sidebar shortcut takes that checked operand from `view.open`. It commits the new item, membership and Undo together without waking the plugin or showing a challenge, then opens `created` via `then`. Without a collection route the same invoke creates the note without placement. The footer searches the authorized manual collection through `source.collection`. Window, bulk, snooze and search cases are covered by `notes-app.json`, `notes-bulk-and-snooze-app.json` and the search event fixtures.
+The `item-editor` edits the routed `yjs-v1` item. New note invokes `host.item.create` with the Notes manifest defaults and the current route’s collection when present. This sidebar shortcut takes that checked operand from `view.open`. It commits the new item, membership and Undo together without waking the plugin or showing a challenge, then opens `created` via `then`. Without a collection route the same invoke creates the note without placement. The footer searches the authorized manual collection through `source.collection`. Window, bulk and search cases are covered by `notes-app.json`, `notes-bulk-and-snooze-app.json` and the search event fixtures.
+
 
 ### 9.3 Threads
 
-Inbox filters `waiting_on eq viewer.person` with an exact count on that viewer’s projection. All Threads supports per-parent child windows and personal sections repeated over `layout_sections`. Section rows distinguish the placement address from the underlying thread (§2.7). The host supplies Move to, Move up/down and section create, rename and remove. Drag remains the recorded Q11 parity exception.
+The app binds its list entries to checked harness-owned item refs. Indexed
+rows and counts use source authority. Contributed row fields arrive later
+from the matching extension point. Personal sections use the same layout
+and per-parent window APIs as any app. The harness owns the file and
+live transcript view. A sleeping item opens its checked stored native
+snapshot and refreshes when the package wakes. The app owns Send,
+options, queued follow-ups and continuation. The host owns admission,
+file writes, approval dispatch and widening fences.
 
-New thread uses manifest `host_create`, `host.item.create` and `then`. The composer uses host provider, model, reasoning, permission and machine controls, checked attachments and mentions, and prepared one-exchange Send. The host streams `transcript.page` and live updates and owns the approval card and follow-up. The footer searches authorized titles and messages in one Bind. The catalogue’s optional field filter can restrict that Bind to titles or messages. The API’s Step 2 writer gates control idle archive full swipe with Undo and per-actor snooze. An active archive uses a challenge.
-
-The `threads-app.json` and `threads-nested-catalogue-app.json` fixtures exercise the composer, Bind and layout shapes. The paired `search-page-boundary` fixtures show a full first page followed by a zero-row `ready` window, which preserves the rows on screen. Their later-page `empty` variant is refused. The window reply fixtures also cover exact-count End, a guest refusal, refinement and the member cache record.
-
-### 9.4 What this schema needs from the host (authorisation is the plugins lane's)
-
-1. Authorise every bind (kind, collection, filters, sorts, search, output fields) and every ref (`item`, `thread`, `request`, `frame`) against the viewer, the space and a guest's
-   grant **before** any indexed work or read, and reject a field the audience cannot read instead of filtering it (counts and order leak otherwise).
-2. Classify each operation as reading, mutating or disclosing from the manifest, and name the material inputs the trusted preview shows; the description may only add.
-3. Reconstruct `{row}`, `{selection}` and route sources from the activation context (never from the event) and read `{form}` and `{prompt}` only as device-held values in `interaction`; answer `stale` when the context no longer holds.
-4. Provide the host built-ins named here (`host.item.rename`, `host.item.trash`, `host.undo`, `host.approval.resolve`, `host.panel.ask`, `host.execution.stop`; `host.route.set` is a shell control, not an operation) so a
-   swipe or a card never wakes a space runtime, and a **checked draft payload** for the composer.
-5. Own the transcript's streaming, appends, rate cap and final commit; and the frame's sandbox.
+The earlier Threads paper fixtures exercise legacy component shapes.
+The separately versioned conformance tool and fixtures follow the
+contract revision. Section 8 of the Plugin API governs runtime parity.
 
 ## 10. Open questions and what this contract does not decide
 
 1. [Metadata patch](../contract/host-catalogue-v2.json#/operations/host.item.patch-metadata) uses the metadata arm of `item_save`. [Trash purge](../contract/host-catalogue-v2.json#/operations/host.trash.purge) is a confirmed Manager or Owner job.
-2. Reminders use the scheduler’s [`notify_creator`](../contract/host-catalogue-v2.json#/$defs/ScheduleCreateInput/properties/notify_creator).
+2. Reminders use one-shot [alarms](../contract/host-catalogue-v2.json#/alarms).
 3. **Generic TCP** is outside this contract; the owner's decision is recorded elsewhere and is not a description concern.
 4. **Section repeaters** (one section per row of a bind) and **nested child rows** are in the first contract (owner decision Q11, `Section.repeat`, `RowTemplate.children`); **drag** is a recorded parity exception, with Move to, Move up and Move down standing in.
 5. The **retirement date of v1** is the owner's.

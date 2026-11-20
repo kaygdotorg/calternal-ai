@@ -3,10 +3,10 @@
 The server owns access, isolation, durability and work that must happen while a
 space sleeps. Packages own file formats, behavior and presentation. Bundled and
 community packages use the same manifest, broker and installation rules.
-This note proposes how to apply the [owner’s second set of answers][answers] to
-[revision 14.15](../plugin-api-v2.md). It is for review before changing that contract.
+This pre-decision note proposed how to apply the [owner’s second set of answers][answers] to
+[revision 14.15](../plugin-api-v2.md). The [third set of answers][third-answers] supersedes its open recommendations, including the sleeping view, editor choice, alarm delivery, offline expiry and search index.
 
-## A. Runner-owned files and transcripts
+## A. Harness-owned files and transcripts
 
 **Leaves the server.** Delete the conversation-kind capability and built-in
 Threads corpus, the canonical transcript writer and record format, the common
@@ -14,7 +14,7 @@ provider display envelope, the transcript page/follow and attachment projections
 the dedicated composer Send and Resume semantics, and the conversation-specific
 parts of the fence table. Retire the native Turns dispatch and bundled namespace
 exception at cutover. The orchestrator owns the Threads list, composer,
-queueing, status presentation and the Resume choice. Each runner writes its own
+queueing, status presentation and the Resume choice. Each harness writes its own
 thread files, implements provider controls and continuation, and supplies the
 app’s agreed transcript presentation. The bundled packages can put their existing
 provider decoders and legacy thread-reader logic there. Files stay readable during
@@ -48,8 +48,8 @@ the old reader before switching writers with zero live attempts.
 immediately from checked host data. Cold reads can open or download the file, and
 a registered plain-text or Markdown file can use the generic file preview. For
 the rich transcript, the shell shows its header and a loading state until the
-runner supplies a validated native description. The app can request older pages
-or follow changes from the runner under that view’s lease. The runner can batch
+harness supplies a validated native description. The app can request older pages
+or follow changes from the harness under that view’s lease. The harness can batch
 file appends and update delivery during a live session. A stalled viewer cannot
 back up writes. This moves rich first paint onto the wake and decode path.
 The 256 MiB snapshot fixture on perf-01 measured **269 ms p95 cached and 489 ms
@@ -75,7 +75,7 @@ execution authority paths, for any package using these primitives:
   output and retire incompatible saved continuation bindings, including for
   completed runs. Bind an opaque continuation ref to the admitted item,
   audience, actor, provider contribution and profile. Invalidate its generation
-  on widening and refuse retired refs even if the runner offers Resume.
+  on widening and refuse retired refs even if the harness offers Resume.
   Later shared runs can start from the committed file and context cleared for
   that audience. Shared runs must be unable to reopen personal provider history
   by path or by a native session ID. Admit shared runs only on placements that
@@ -89,24 +89,24 @@ view snapshot would make the rich view faster to open, at the cost of duplicate
 state, invalidation and a new protected projection. Start with the file preview.
 Pin the Threads attribution, attachment and queued follow-up behavior before
 cutover, as agreed. Qualify append/replay and stale-session fencing on a real
-runner before removing the old engine.
+harness before removing the old engine.
 
 ## B. One Threads list and app contributions
 
-**Leaves the server.** The orchestrator defines the Threads app and the runner
+**Leaves the server.** The orchestrator defines the Threads app and the harness
 contract. Its list can include both `calternal-orchestrator-claude-code` and a
-community runner. Another orchestrator can use the same runner interface or
-publish its own. The server carries no built-in list of runners or Notes editors.
+community harness. Another orchestrator can use the same harness interface or
+publish its own. The server carries no built-in list of harnesss or Notes editors.
 
 **Remains in the server.** An app manifest declares versioned extension points.
-Matching installed packages contribute a provider or runner, a panel, a row
+Matching installed packages contribute a provider or harness, a panel, a row
 field, or an action through the same mechanism. The host resolves compatible
 versions, pins package digests, checks requested access and installation consent,
 and dispatches a contribution with the caller’s current rights. Ownership of an
 app grants no access to the contributor’s files, and registration grants no
 right to modify another app. Use normal host validation and native rendering for
 contributed descriptions. Propose one app-owned list entry kind with a checked
-source ref per entry. Each runner contributes entries for its own files through
+source ref per entry. Each harness contributes entries for its own files through
 the declared interface. The index scopes rows and counts to source authority
 before windowing. The app draws base rows immediately and fetches optional
 fields only for visible rows, bound to the source revision and audience.
@@ -123,7 +123,7 @@ fewer blocks. Recommend explicit preferred-editor selection and format-level
 read/write claims. Choosing automatically saves a tap but can change how a file
 opens after install. An editor must preserve blocks it cannot edit or open
 read-only. Confirm the first shared Markdown profile and which plugin
-maintains the initial runner interface.
+maintains the initial harness interface.
 
 ## C. Durable alarms
 
@@ -191,10 +191,10 @@ cost of background indexing, freshness work and a separate authority proof.
 Start with reranking and measure it. Decide whether a later custom index is
 needed when an actual package can show missed results.
 
-## F. Community runner freedom
+## F. Community harness freedom
 
-**Leaves the server.** Drop bundled runner IDs, namespace overrides, provider
-selection and first-party execution exceptions. Community and bundled runners
+**Leaves the server.** Drop bundled harness IDs, namespace overrides, provider
+selection and first-party execution exceptions. Community and bundled harnesss
 can declare images, network destinations and a native login in the person’s
 own sandbox under identical rules.
 
@@ -243,3 +243,5 @@ are required before switching Files. The 30-day rule and build order are settled
 [wake]: ../measurements/space-runtime-walls.md
 [description]: ../description-contract.md
 [credentials]: https://git.kayg.org/kayg/calternal-ai/src/commit/b3964ef3/docs/measurements/provider-credential-brokering-2026-11-20.md
+
+[third-answers]: https://git.kayg.org/kayg/calternal-ai/src/commit/18e467b6/docs/morning-2026-11-20.md#third-set-of-answers-owner-2026-11-20

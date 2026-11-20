@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 14 draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 14.16 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -21,9 +21,7 @@
       "type": "array", "maxItems": 64, "uniqueItems": true,
       "items": { "$ref": "host-catalogue-v2.json#/$defs/KindId" }
     },
-    "providers": { "type": "array", "maxItems": 16, "items": { "$ref": "#/definitions/provider" } },
     "jobs": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/job" } },
-    "schedule_eligibility": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/schedule" } },
     "wait_webhooks": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/webhook" } },
     "settings": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/setting" } },
     "secrets": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/secret" } },
@@ -45,15 +43,29 @@
           }
         }
       ]
+    },
+    "contributions": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/definitions/contribution"
+      }
     }
   },
   "if": {
     "anyOf": [
       { "properties": { "operations": { "minItems": 1 } } },
       { "required": ["jobs"], "properties": { "jobs": { "minItems": 1 } } },
-      { "required": ["schedule_eligibility"], "properties": { "schedule_eligibility": { "minItems": 1 } } },
       { "required": ["wait_webhooks"], "properties": { "wait_webhooks": { "minItems": 1 } } },
-      { "required": ["credential_routes"], "properties": { "credential_routes": { "minItems": 1 } } }
+      { "required": ["credential_routes"], "properties": { "credential_routes": { "minItems": 1 } } },
+      {
+        "required": ["contributions"],
+        "properties": {
+          "contributions": {
+            "minItems": 1
+          }
+        }
+      }
     ]
   },
   "then": { "required": ["worker"] },
@@ -110,16 +122,27 @@
       }
     },
     "app": {
-      "type": "object", "additionalProperties": false, "required": ["id", "name", "icon", "description"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "icon", "description"],
       "properties": {
         "id": { "$ref": "#/definitions/localId" },
         "name": { "$ref": "#/definitions/label" },
         "icon": { "$ref": "#/definitions/icon" },
-        "description": { "$ref": "#/definitions/description" }
+        "description": { "$ref": "#/definitions/description" },
+        "extension_points": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/definitions/extensionPoint"
+          }
+        }
       }
     },
     "kind": {
-      "type": "object", "additionalProperties": false, "required": ["id", "icon", "title_field", "storage", "claimed_text", "schema"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "icon", "title_field", "storage", "claimed_text", "schema"],
       "properties": {
         "id": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
         "icon": { "$ref": "#/definitions/icon" },
@@ -254,76 +277,6 @@
             ]
           }
         },
-        "conversation": {
-          "const": true,
-          "description": "Opt this package-owned kind into the checked conversation capability. Grants no authority."
-        },
-        "composer": {
-          "description": "Reserve Send for the host composer. The named replayable job targets this kind, accepts only the target item as operation input, and declares execution_intent to receive host-owned invocation context.",
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "send",
-            "job"
-          ],
-          "properties": {
-            "send": {
-              "$ref": "#/definitions/operationId"
-            },
-            "steer_live": {
-              "const": true
-            },
-            "commands": {
-              "type": "array",
-              "maxItems": 16,
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "name",
-                  "option"
-                ],
-                "properties": {
-                  "name": {
-                    "$ref": "#/definitions/localId"
-                  },
-                  "option": {
-                    "enum": [
-                      "provider",
-                      "model",
-                      "reasoning",
-                      "machine"
-                    ]
-                  }
-                }
-              }
-            },
-            "mentions": {
-              "type": "array",
-              "maxItems": 16,
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "name",
-                  "kind"
-                ],
-                "properties": {
-                  "name": {
-                    "$ref": "#/definitions/localId"
-                  },
-                  "kind": {
-                    "$ref": "host-catalogue-v2.json#/$defs/KindId"
-                  }
-                }
-              }
-            },
-            "job": {
-              "$ref": "#/definitions/localId",
-              "description": "Replayable job to enqueue with an admitted execution intent receipt. Its entry targets this conversation kind."
-            }
-          }
-        },
         "device_row_images": {
           "type": "array",
           "minItems": 1,
@@ -354,12 +307,38 @@
               "oneOf": [{ "required": ["operation"] }, { "required": ["job"] }]
             }
           }
+        },
+        "view_snapshots": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/definitions/viewSnapshot"
+          }
+        },
+        "file_format": {
+          "$ref": "#/definitions/fileFormat"
+        },
+        "search_profiles": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/definitions/searchProfile"
+          }
+        },
+        "append_slots": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/definitions/localId"
+          },
+          "uniqueItems": true
+        },
+        "execution_target": {
+          "const": true,
+          "description": "An ordinary item kind that may hold an execution job. Apply the generic file audience fence to every item of this kind, even after attempts and bindings expire."
         }
       },
       "allOf": [
-        { "if": { "required": ["composer"] }, "then": { "required": ["conversation"] } },
-        { "if": { "required": ["conversation"] }, "then": { "properties": { "live_room": false } } },
-        { "if": { "required": ["conversation"] }, "then": { "properties": { "claimed_text": { "const": true } } } },
         { "if": { "properties": { "claimed_text": { "const": false } } },
           "then": { "required": ["extension"], "properties": {
             "indexed_fields": { "additionalProperties": { "not": { "required": ["source"] } } }
@@ -373,83 +352,45 @@
     },
     "hostMethod": {
       "enum": [
-        "item_head", "item_range", "item_history", "item_save", "item_trash", "item_restore", "item_rename",
-        "item_rename_status", "item_rename_undo", "item_purge", "empty_trash",
-        "collection_create", "collection_membership", "items_list", "items_search", "sharing_check",
-        "start_job", "checkpoint_job", "job_status", "cancel_job", "read_setting", "set_setting",
-        "request_secret_handle", "proxy_request", "credential_call", "execution_start", "execution_status", "execution_stop",
-        "execution_input", "execution_spawn_child", "execution_wait", "schedule_create", "schedule_remove"
+        "item_head",
+        "item_range",
+        "item_history",
+        "item_save",
+        "item_trash",
+        "item_restore",
+        "item_rename",
+        "item_rename_status",
+        "item_rename_undo",
+        "item_purge",
+        "empty_trash",
+        "collection_create",
+        "collection_membership",
+        "items_list",
+        "items_search",
+        "sharing_check",
+        "start_job",
+        "checkpoint_job",
+        "job_status",
+        "cancel_job",
+        "read_setting",
+        "set_setting",
+        "request_secret_handle",
+        "proxy_request",
+        "credential_call",
+        "execution_start",
+        "execution_status",
+        "execution_stop",
+        "execution_input",
+        "execution_spawn_child",
+        "execution_wait",
+        "alarm_set",
+        "alarm_cancel",
+        "item_append",
+        "item_view_publish",
+        "execution_session_bind",
+        "item_view_context",
+        "extension_choices"
       ]
-    },
-    "provider": {
-      "description": "An installed provider contribution. Verified Claude Code and Codex programs use their own native login and directory under the personal sandbox and shared-space tools rules in the host catalogue.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "name",
-        "adapter",
-        "image",
-        "models"
-      ],
-      "properties": {
-        "id": {
-          "$ref": "#/definitions/localId",
-          "description": "Globally unique installed ProviderId. Reject a collision with any bundled or installed contribution before activation."
-        },
-        "name": {
-          "$ref": "#/definitions/label"
-        },
-        "icon": {
-          "$ref": "#/definitions/localId",
-          "description": "Optional catalogue symbol. The host exposes a distinctive mark in provider_icon only when its provider_marks rule verifies publisher identity and ownership."
-        },
-        "adapter": {
-          "$ref": "#/definitions/asset",
-          "description": "Pinned contribution entry point with digest and common display envelope qualification."
-        },
-        "image": {
-          "type": "string",
-          "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
-        },
-        "models": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 32,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "id",
-              "label"
-            ],
-            "properties": {
-              "id": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 128
-              },
-              "label": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 128
-              },
-              "reasoning": {
-                "type": "array",
-                "maxItems": 8,
-                "items": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 32
-                }
-              }
-            }
-          }
-        },
-        "credential_route": {
-          "$ref": "#/definitions/localId"
-        }
-      }
     },
     "operation": {
       "type": "object", "additionalProperties": false,
@@ -521,25 +462,49 @@
       ]
     },
     "job": {
-      "type": "object", "additionalProperties": false, "required": ["id", "run_operation", "replayable"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "run_operation", "replayable"],
       "properties": {
         "id": { "$ref": "#/definitions/localId" },
         "run_operation": { "$ref": "#/definitions/operationId" },
-        "execution_intent": { "const": true, "description": "Only the owning host composer may admit this job through prepared Send or protected Resume. The host injects ExecutionJobContext at claim and replay; caller input cannot set it." },
         "placement": { "const": "heavy", "description": "Run this job in the on-demand larger plugin VM under the same isolation rules. Omission uses the small plugin VM." },
         "replayable": { "type": "boolean" },
-        "waits": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/wait" } }
+        "waits": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/wait" } },
+        "execution": {
+          "const": true
+        },
+        "alarm": {
+          "const": true
+        }
       },
       "if": { "properties": { "replayable": { "const": false } } },
-      "then": { "properties": { "waits": { "maxItems": 0 } } }
-    },
-    "schedule": {
-      "type": "object", "additionalProperties": false, "required": ["id", "operation"],
-      "properties": {
-        "id": { "$ref": "#/definitions/localId" },
-        "operation": { "$ref": "#/definitions/operationId" },
-        "description": { "$ref": "#/definitions/label" }
-      }
+      "then": { "properties": { "waits": { "maxItems": 0 } } },
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "execution"
+                ]
+              },
+              {
+                "required": [
+                  "alarm"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "replayable": {
+                "const": true
+              }
+            }
+          }
+        }
+      ]
     },
     "webhook": {
       "type": "object", "additionalProperties": false, "required": ["id", "schema_operation", "signing_secret"],
@@ -594,6 +559,255 @@
     "hostname": {
       "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?![\\s\\S])",
       "description": "Exact DNS name, checked and normalized by netguard."
+    },
+    "fileFormat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/localId"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ]
+    },
+    "extensionPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/localId"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "kind": {
+          "enum": [
+            "harness",
+            "panel",
+            "row_field",
+            "action",
+            "editor"
+          ]
+        },
+        "input_schema": {
+          "$ref": "#/definitions/embeddedSchema"
+        },
+        "output_schema": {
+          "$ref": "#/definitions/embeddedSchema"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "kind",
+        "input_schema",
+        "output_schema"
+      ]
+    },
+    "contribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "app": {
+          "$ref": "#/definitions/localId"
+        },
+        "point": {
+          "$ref": "#/definitions/localId"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "id": {
+          "$ref": "#/definitions/localId"
+        },
+        "kind": {
+          "enum": [
+            "harness",
+            "panel",
+            "row_field",
+            "action",
+            "editor"
+          ]
+        },
+        "operation": {
+          "$ref": "#/definitions/operationId"
+        },
+        "harness": {
+          "$ref": "#/definitions/harness"
+        },
+        "editor": {
+          "$ref": "#/definitions/editor"
+        }
+      },
+      "required": [
+        "app",
+        "point",
+        "version",
+        "id",
+        "kind",
+        "operation"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "harness"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "harness"
+            ]
+          },
+          "else": {
+            "properties": {
+              "harness": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "editor"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "editor"
+            ]
+          },
+          "else": {
+            "properties": {
+              "editor": false
+            }
+          }
+        }
+      ]
+    },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "entry": {
+          "$ref": "#/definitions/asset"
+        },
+        "name": {
+          "$ref": "#/definitions/label"
+        },
+        "icon": {
+          "$ref": "#/definitions/localId"
+        },
+        "native_profile": {
+          "const": true
+        }
+      },
+      "required": [
+        "image",
+        "entry",
+        "name"
+      ],
+      "description": "Pinned harness image, entry asset and disclosed native profile access. The host never interprets provider command options."
+    },
+    "editor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "formats": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/definitions/fileFormat"
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "writes": {
+          "const": true
+        }
+      },
+      "required": [
+        "formats"
+      ]
+    },
+    "searchProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/localId"
+        },
+        "operation": {
+          "$ref": "#/definitions/operationId"
+        },
+        "index_job": {
+          "$ref": "#/definitions/localId"
+        },
+        "mode": {
+          "enum": [
+            "rerank",
+            "index"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "operation",
+        "mode"
+      ],
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "index"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "index_job"
+        ]
+      },
+      "else": {
+        "properties": {
+          "index_job": false
+        }
+      }
+    },
+    "viewSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/localId"
+        },
+        "refresh": {
+          "$ref": "#/definitions/operationId"
+        }
+      },
+      "required": [
+        "id",
+        "refresh"
+      ],
+      "description": "The owning read operation builds the authorized current native view. Its snapshot publication may only write this regenerable slot."
     }
   }
 }

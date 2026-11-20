@@ -46,6 +46,7 @@ first time it is used with a new meaning.
 
 ## Agents
 
+- **Harness** — A plugin that runs an agent program such as Claude Code or Codex.
 - **Job**: one piece of long-running work the server tracks, such as an agent's turn. Survives restarts.
 - **Stream**: a job's live output. Not stored; checkpoints and results are.
 - **Checkpoint**: a job's saved progress, used to resume after a restart.

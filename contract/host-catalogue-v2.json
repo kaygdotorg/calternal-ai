@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Normative host kinds, operations, query limits and activation exchange, read with the pinned specification, description contract and schemas. A reference shape conveys no authority. The host checks scope, profiles, contracts and dependencies. Validators assert formats, including calendar validity for date-time. The versioned conformance tool provides evidence separately.",
+  "description": "Revision 14.16 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -17,49 +17,13 @@
       "blocks": "Linked-user Comment, including durable creation, delivery and revocation.",
       "cutover": "Disabled until a later numbered revision pins this requirement."
     },
-    "historical_transcript_attribution": {
-      "status": "OPEN",
-      "feature": "Threads",
-      "missing": "Committed-record fields for historical headings and author, time, machine and login attribution.",
-      "blocks": "Equal rendering and attribution after history restore, projection rebuild and rollback.",
-      "cutover": "Disabled until a later numbered revision pins this requirement."
-    },
     "attachment_upload": {
       "status": "OPEN",
       "feature": "Threads",
-      "missing": "A portable, checked composer upload contract that produces a Draft AttachmentRef.",
-      "blocks": "Submit a draft with a new attachment on an eligible machine.",
+      "missing": "A portable upload and pinned file ref for item attachments.",
+      "blocks": "Attaching and reopening files for the harness app before cutover.",
       "cutover": "Disabled until a later numbered revision pins this requirement.",
-      "proposal": "Sealed generic-engines §§A.1, C.3 use checked composer material and leave acquisition outside this revision. §B.4 defers the new general file-upload routes."
-    },
-    "mention_lookup": {
-      "status": "OPEN",
-      "feature": "Threads",
-      "missing": "A portable, scoped lookup and selection contract for composer mentions.",
-      "blocks": "Choose an authorized recipient and submit that mention under prepared Send.",
-      "cutover": "Disabled until a later numbered revision pins this requirement.",
-      "proposal": "Sealed generic-engines §§A.1, C.3 define checked mentions in prepared material and leave lookup transport outside this revision."
-    },
-    "queued_follow_up": {
-      "status": "OPEN",
-      "feature": "Threads",
-      "missing": "Portable requests and record state for queuing, viewing, editing, cancelling and submitting follow-ups.",
-      "blocks": "Queue and manage a follow-up independently of direct Send or steer.",
-      "cutover": "Disabled until a later numbered revision pins this requirement."
-    },
-    "snooze_presets": {
-      "status": "OPEN",
-      "feature": "Threads",
-      "missing": "The host policy and portable presentation for the offered snooze presets.",
-      "blocks": "Pass the shipped preset snooze workflow using the actor-scoped writer.",
-      "cutover": "Disabled until a later numbered revision pins this requirement."
-    },
-    "snooze_custom_picker": {
-      "status": "OPEN",
-      "feature": "Threads",
-      "missing": "The custom snooze picker policy, including supported date/time choices, time zone and defaults.",
-      "blocks": "Pass the shipped custom date/time snooze workflow using the actor-scoped writer.",
-      "cutover": "Disabled until a later numbered revision pins this requirement."
+      "proposal": "A generic upload shape is still required for the orchestrator cutover."
     },
     "collection_creation": {
       "status": "OPEN",
@@ -152,16 +116,16 @@
           "audience": "designated_request_actor",
           "nullable": false
         },
-        "conversation_ref": {
-          "type": "ItemRef",
-          "index_owner": "requests",
-          "audience": "designated_request_actor",
-          "nullable": true
-        },
         "pending_for": {
           "type": "AccountRef",
           "index_owner": "requests",
           "audience": "viewer_self",
+          "nullable": true
+        },
+        "item_ref": {
+          "type": "ItemRef",
+          "index_owner": "requests",
+          "audience": "designated_request_actor",
           "nullable": true
         }
       },
@@ -389,7 +353,7 @@
       "engine": "item_rename_undo / protected eligible inverse",
       "effect": "reversible",
       "idempotency": "request_id",
-      "authority": "Original authorized actor or permitted current editor with a live eligible reference",
+      "authority": "Original authorized actor or permitted current editor with a live eligible reference Recompute the inverse under the commit fence. On audience widening, resolve a protected challenge and apply confirmed dispatch through the widening fence.",
       "surfaces": [
         "host_outcome"
       ],
@@ -513,54 +477,12 @@
       },
       "atomic_undo": false
     },
-    "host.panel.ask": {
-      "engine": "authorized host panel turn admission",
-      "effect": "external",
-      "idempotency": "request_id",
-      "authority": "Person authorized to use the panel and its item/draft; guest Prompt disabled",
-      "surfaces": [
-        "host_panel"
-      ],
-      "generic_invoke": false,
-      "full_swipe": false,
-      "worker_wake": "never",
-      "target_inputs": [
-        "item",
-        "quote"
-      ],
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "text"
-        ],
-        "properties": {
-          "text": {
-            "$ref": "#/$defs/Text"
-          },
-          "item": {
-            "$ref": "#/$defs/ItemRef"
-          },
-          "draft": {
-            "$ref": "#/$defs/Draft"
-          },
-          "quote": {
-            "$ref": "#/$defs/Quote"
-          }
-        }
-      },
-      "outcome_schema": {
-        "$ref": "#/$defs/ActionOutcome"
-      },
-      "atomic_undo": false
-    },
     "host.execution.stop": {
       "engine": "execution_stop",
       "effect": "irreversible",
       "idempotency": "request_id",
       "authority": "Reconstruct the exact target and apply execution_intents.stop_and_archive and attempt_authority_end.actions.stop.",
       "surfaces": [
-        "host_composer",
         "host_execution_control"
       ],
       "generic_invoke": false,
@@ -765,7 +687,7 @@
       "authority": "Actor with live item lifecycle authority",
       "surfaces": [
         "authorized_template_action",
-        "host_thread_control"
+        "host_item_control"
       ],
       "generic_invoke": true,
       "full_swipe": false,
@@ -793,7 +715,6 @@
       "confirmation_when": "Before the writer gate passes, require a challenge. After it passes, an eligible idle archive resolves and dispatches in one exchange without a sheet. Challenge archive outside atomic_undo_when. Retiring grants with head-only Undo requires a challenge. For an active execution the host-written material says: The running execution will be stopped. Any unresolved execution intent or active attempt requires confirmation bound to that exact target and the current starter or live PluginsManage authority.",
       "atomic_undo_when": "Use the execution_intents idle predicate under the lifecycle fence. Saved authority requires a challenge unless it consists only of item grants that the Step 2 writer retires in the same FULL item content transaction as archive and that Undo restores together with the item head. Retiring grants with head-only Undo requires a challenge. Check idle eligibility under the commit fence. Execution admission rejects a fresh admission to an archived head under the same fence. Commit the archived head and its unarchive Undo in one FULL item content transaction, with no separate cleanup.",
       "full_swipe_when": "After the Step 2 idle-archive atomic writer with Undo passes, enable atomic_undo and full_swipe for the first swipe action with effective confirm:none and the idle condition.",
-      "kind_capability": "conversation",
       "execution_fence": "Apply attempt_authority_end.actions.archive in the FULL archive transaction and preserve that fence across Undo."
     },
     "host.item.unarchive": {
@@ -803,7 +724,7 @@
       "authority": "Actor with live item lifecycle authority",
       "surfaces": [
         "authorized_template_action",
-        "host_thread_control"
+        "host_item_control"
       ],
       "generic_invoke": true,
       "full_swipe": true,
@@ -829,54 +750,7 @@
       "atomic_undo": true,
       "atomic_undo_when": "Single-item unarchive in the FULL content transaction with its Undo. Undo refuses if the item revision or lifecycle dependencies changed. The shortcut requires no widening under attempt_authority_end.actions.conversation_audience_widening.",
       "full_swipe_when": "First swipe action, effective confirm:none and this operation’s atomic_undo_when condition.",
-      "kind_capability": "conversation",
       "audience_widening": "Apply attempt_authority_end.actions.conversation_audience_widening whenever corpus access expands."
-    },
-    "host.item.snooze": {
-      "engine": "item lifecycle snooze",
-      "available": false,
-      "effect": "reversible",
-      "idempotency": "request_id",
-      "authority": "Member changing their own item snooze",
-      "surfaces": [
-        "authorized_template_action",
-        "host_thread_control"
-      ],
-      "generic_invoke": true,
-      "full_swipe": false,
-      "worker_wake": "never",
-      "target_inputs": [
-        "item"
-      ],
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "item",
-          "until"
-        ],
-        "properties": {
-          "item": {
-            "$ref": "#/$defs/ItemRef"
-          },
-          "until": {
-            "oneOf": [
-              {
-                "$ref": "#/$defs/Timestamp"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      },
-      "outcome_schema": {
-        "$ref": "#/$defs/ActionOutcome"
-      },
-      "atomic_undo": false,
-      "atomic_undo_unavailable": "The current item writer stores one shared manual deadline and cannot implement this actor-scoped operation. Set available to true only after the Step 2 actor-keyed snooze writer gate proves that the actor’s deadline, its durable publication intent and Undo commit together and the index catches up under query.list_publication. The host refuses snooze on every route while available is false. Subscription retry state is unaffected. Apply execution_intents.snooze to all execution intents. See attempt_authority_end.actions.snooze.",
-      "kind_capability": "conversation"
     },
     "host.collection.move": {
       "engine": "collection_membership",
@@ -959,7 +833,7 @@
       "full_swipe": false,
       "worker_wake": "never",
       "target_inputs": [
-        "conversation",
+        "item",
         "entry",
         "section"
       ],
@@ -969,16 +843,16 @@
             "type": "object",
             "additionalProperties": false,
             "required": [
-              "conversation",
+              "item",
               "section"
             ],
             "properties": {
               "section": {
                 "$ref": "#/$defs/LayoutSectionRef"
               },
-              "conversation": {
+              "item": {
                 "$ref": "#/$defs/ItemRef",
-                "description": "Adds the underlying thread if it has no placement in this layout. Refuse if a placement already exists."
+                "description": "Adds the underlying item if no placement exists in the layout."
               }
             }
           },
@@ -1005,7 +879,8 @@
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
       },
-      "atomic_undo": true
+      "atomic_undo": true,
+      "description": "Resolve the underlying item or placement and the checked ChoiceRef under the layout fence."
     },
     "host.layout.move_up": {
       "engine": "personal layout order with complete effect and Undo committed together",
@@ -1175,73 +1050,6 @@
       },
       "atomic_undo": true,
       "atomic_undo_when": "One per-person layout revision transaction retires the section and its placement generation and commits Undo for that generation. Until Undo expires, retain the generation and exclude it from reads. Undo rechecks live membership and the post-effect layout revision and reactivates the exact generation atomically. Reactivation grants no item access. Reclaim expired retired generations in bounded background batches. Removal and Undo perform no per-placement work."
-    },
-    "host.execution.resume": {
-      "engine": "admit a fresh continuation intent under the conversation lifecycle fence",
-      "effect": "irreversible",
-      "idempotency": "request_id",
-      "kind_capability": "conversation",
-      "authority": "Host composer only. Issue an action only to a live member with edit, corpus and execution-start authority who owns the protected binding or its retirement marker. A marker yields only the unavailable refusal. Admission checks authenticated historical account, exact provider contribution, conversation, enrolled machine and original profile, with a qualified provider sandbox and proven original login profile and current placement and effects. Withhold the action from guests and non-owners. Refuse forged or revoked invocations opaquely.",
-      "surfaces": [
-        "host_composer"
-      ],
-      "generic_invoke": false,
-      "full_swipe": false,
-      "worker_wake": "after_commit",
-      "target_inputs": [
-        "conversation"
-      ],
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "conversation"
-        ],
-        "properties": {
-          "conversation": {
-            "$ref": "#/$defs/ItemRef"
-          }
-        }
-      },
-      "confirmation_when": "Always challenge. Show the checked conversation, provider, machine, profile and permissions. Pin the binding generation and lifecycle state. Resolve receives no interaction values, and ConfirmActivation carries no final_text. Confirm rechecks the proof and dispatches in that exchange.",
-      "confirmation_schema": {
-        "$ref": "#/$defs/ResumeConfirmation"
-      },
-      "outcome_schema": {
-        "$ref": "#/$defs/ResumeOutcome"
-      },
-      "atomic_undo": false,
-      "rules": "Use execution_intents.admission. Reconcile uncertain effects before committing a fresh continuation intent through the owning composer job. Append no message. Do not replay old messages, approvals or the previous execution. Exact authorized replay returns the same receipt. Do not disclose or let the client select session IDs.",
-      "refusals": {
-        "previous_session_unavailable": {
-          "state": "refused",
-          "message": "Previous session unavailable. Start a new session.",
-          "rule": "Return only to an authorized owner of the historical record, including the retired-binding marker, when the original binding is unavailable or unproved. Do not start a fresh session automatically."
-        },
-        "execution_busy": {
-          "state": "refused",
-          "message": "An execution is already starting or running.",
-          "rule": "Require an idle conversation under the lifecycle fence."
-        },
-        "reconciliation_required": {
-          "state": "refused",
-          "message": "The previous execution still needs reconciliation.",
-          "rule": "An uncertain effect must be reconciled before admitting a continuation."
-        },
-        "stale_context": {
-          "state": "stale",
-          "message": "Resume changed. Review it again.",
-          "rule": "Changed checked material or a stale proof requires a new resolve and challenge. A loss of authority returns opaque not-found."
-        },
-        "admission_limit": {
-          "state": "refused",
-          "message": "An execution limit was reached.",
-          "rule": "Apply execution_intents.admission."
-        }
-      },
-      "resolution_schema": {
-        "$ref": "#/$defs/ResumeResolution"
-      }
     }
   },
   "planned_operation_replacements": {},
@@ -1411,17 +1219,6 @@
         },
         "additional_scopes": "Per-parent and parent plus collection Binds require an independently qualified scope-local index. Space and manual-collection measurements do not qualify those scopes."
       },
-      "conversation": {
-        "scopes": [
-          "space"
-        ],
-        "tokenizer": "Titles use the existing claimed-text FTS5 tokenizer. Messages use the existing message_terms tokenizer, which splits at non-alphanumeric characters and lowercases Unicode.",
-        "qualification": "For all, match the full query against an authorized title or within one authorized message. Emit distinct conversations with title matches first, in stable conversation ID order, followed by message-only matches ordered by the newest matching authorized message timestamp and message UUID. A conversation matching both appears once in the title tier. Reuse the authority-versioned title and message indexes under one scope snapshot. Deduplicate token expansions across both sources and sum their posting bounds and row work under the existing shared budgets. Field filters restrict this same matching and delivery path.",
-        "field_filter_schema": {
-          "$ref": "#/$defs/ConversationSearchFilter"
-        },
-        "additional_scopes": "Per-parent Binds require a separately qualified title and message-corpus plan in that scope. Collection and parent plus collection require independent qualification where the kind supports membership."
-      },
       "qualified_depth": 200,
       "max_authorized_items_per_scope": 100000,
       "max_literal_and_terms": 3,
@@ -1429,15 +1226,28 @@
       "qualification": "For each ready authority-versioned Bind, qualify its supported literal-term and prefix modes for windows up to query.window.max_request_span starting at offsets through qualified_depth. Serve later windows while both query.live_limits budgets for scoped postings and materialized rows hold. Use only the kind’s authorized scopes, order and scope-local statistics. Refuse unqualified shapes, scopes and sorts with unsupported_query_plan. End anchors are unavailable for search. The host returns WindowPlanError with reason end_unavailable and the renderer pages forward for End.",
       "publication": "The host owns the qualified list and search projections of item text and declared indexed fields. Apply query.list_publication to list projections. The existing background search worker publishes the search projections and same-generation term statistics independently of save acknowledgement. Check live access to the scope, searchable fields and output fields before evaluation. Readiness and invalidation compare revisions of the viewer’s authorized row-and-field projection, never a space-wide watermark. While that projection is behind or stale after revocation, return loading with no rows, count or activation contexts. A hidden-only edit leaves the visible search state, result version, rows, ranks and counts unchanged during and after publication. Fence cached results on revocation and recheck authority on delivery. Deny access if the scope is no longer authorized.",
       "refinement": "Bound scoped posting work using same-generation term frequencies. When an otherwise qualified query exhausts the scoped-posting or materialized-row budget, return refine_query with only bounded provisional rows from the same authorized query and published generation. A prefix exceeding either the expansion cap or the posting budget returns refine_query without starting expansion and can include only already-issued rows for that query, audience and generation. Omit count, activation contexts and member cache record. Provisional replies have null result_version and window_ref.",
-      "count": "Non-search lists use maintained per-scope counts. Claimed-text exact search counts measure qualified matches in a ready authorized projection under the separate count-work and rate budgets and require exact-count authority. Search defaults to count mode none. Search estimates and exact distinct-thread search counts are unqualified. Refuse an unqualified count request with unsupported_query_plan. Apply current source authority before matching, ranking or counting. A title-only grant contributes only the authorized title corpus. Any body excerpt in a search row is independently checked.",
+      "count": "Non-search lists use maintained per-scope counts. Claimed-text exact search counts measure qualified matches in a ready authorized projection under the separate count-work and rate budgets and require exact-count authority. Search defaults to count mode none. Search estimates and plugin search counts are unqualified. Refuse an unqualified count request with unsupported_query_plan. Apply current source authority before matching, ranking or counting. A title-only grant contributes only the authorized title corpus. Any body excerpt in a search row is independently checked.",
       "request_schema": {
         "$ref": "#/$defs/SearchWindowRequest"
       },
-      "field_filter": "Optional on the Bind. Default all. Claimed-text kinds allow all, title or body. Conversation kinds allow all, title or messages. The request match shape is independent of the field filter and defaults to literal AND terms. A prefix is explicitly requested as one token prefix.",
+      "field_filter": "Optional on the Bind. Host claimed-text kinds allow all, title or body, default all. Match shape is independent of field filter. Plugin search operations declare their own typed inputs.",
       "match_schema": {
         "$ref": "#/$defs/SearchMatchShape"
       },
-      "settle_generation": "Required on search requests and all window deliveries (including refusals), absent on other Binds. Compare the lease, Bind and current renderer generation before applying any acknowledgement or window."
+      "settle_generation": "Required on search requests and all window deliveries (including refusals), absent on other Binds. Compare the lease, Bind and current renderer generation before applying any acknowledgement or window.",
+      "plugin": {
+        "request": {
+          "$ref": "#/$defs/PluginSearchInput"
+        },
+        "result": {
+          "$ref": "#/$defs/PluginSearchResult"
+        },
+        "max_candidates": 200,
+        "deadline_ms": 3000,
+        "selection": "An explicitly selected search profile resolves to an installed operation with a declared read contract. Ordinary host search never calls or waits for it. The profile can rerank checked candidates or query a package-owned index built by its declared background job. Rerank mode receives candidates from the checked host query. Index mode declares an owning index job and receives no host candidate list.",
+        "authority": "The job builds only from granted items and fields. Partition private inputs by checked audience and fence index reuse on grant loss. Treat the package index and result as untrusted hints. Every output element is an ItemRef. Reauthorize live kind, scope, item and field access before projection. The host mints any displayed fields and contexts. Return no package text, raw candidate count, scores or rejected refs. Preserve authorized order and use count none. Bind index generation to the exact admitted read scope. A stale or mismatched index offers no results. Do not share ranking state between incompatible audiences.",
+        "limits": "Apply worker and query budgets. Bind continuation to query generation, profile, audience and checked lease, and discard on change. Do not refill by unbounded overfetch. Report timeout or partial results on the explicit search surface only. Use the checked interactive deadline independently of the default query. Charge any admitted wake to the existing placement allowance."
+      }
     },
     "extractors": {
       "output_types": {
@@ -1551,57 +1361,9 @@
       "$ref": "#/$defs/Ref",
       "description": "Opaque host-authorized RevisionRef reference. A compatible string shape does not grant authority."
     },
-    "QuoteRef": {
-      "$ref": "#/$defs/Ref",
-      "description": "Opaque host-authorized QuoteRef reference. A compatible string shape does not grant authority."
-    },
     "ItemRef": {
       "$ref": "#/$defs/Ref",
       "description": "Typed host reference for the declared kind and target. A scoped row may carry it; client markup cannot create it."
-    },
-    "Quote": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "conversation",
-        "quote_ref"
-      ],
-      "properties": {
-        "conversation": {
-          "$ref": "#/$defs/ItemRef"
-        },
-        "quote_ref": {
-          "$ref": "#/$defs/QuoteRef"
-        }
-      }
-    },
-    "Draft": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [],
-      "properties": {
-        "text": {
-          "type": "string",
-          "maxLength": 65536
-        },
-        "attachments": {
-          "type": "array",
-          "maxItems": 16,
-          "items": {
-            "$ref": "#/$defs/AttachmentRef"
-          }
-        },
-        "mentions": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "$ref": "#/$defs/AccountRef"
-          }
-        },
-        "quote": {
-          "$ref": "#/$defs/Quote"
-        }
-      }
     },
     "Interaction": {
       "type": "object",
@@ -1616,14 +1378,8 @@
           "type": "object",
           "maxProperties": 8
         },
-        "draft": {
-          "$ref": "#/$defs/Draft"
-        },
         "selection_ref": {
           "$ref": "#/$defs/SelectionRef"
-        },
-        "options": {
-          "$ref": "#/$defs/ComposerOptions"
         },
         "rows": {
           "type": "array",
@@ -1695,11 +1451,6 @@
         },
         "confirmation_challenge": {
           "$ref": "#/$defs/ProofRef"
-        },
-        "final_text": {
-          "type": "string",
-          "maxLength": 65536,
-          "description": "Message content for a host-issued prepared Send only. The host returns ActionOutcome after committing the message/intent or forwarding checked steer. Retry with the same activation ID and final text. Any parser-derived change to recipients, routing, permissions or other prepared material requires a fresh resolve and preview."
         }
       }
     },
@@ -2347,7 +2098,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 96,
-      "description": "Installed provider contribution ID, unique across the installation. Refuse duplicate IDs at install, across packages and with bundled contributions. Before profile lookup pin the resolved package, manifest and adapter digests. Use only a profile bound to that contribution. Provider IDs remain open."
+      "description": "Verified provider identity used for marks, unique across installed contributions that claim it. A display identity grants no execution or login authority."
     },
     "RowImageUploadGrant": {
       "type": "object",
@@ -2422,34 +2173,6 @@
         },
         "component": {
           "$ref": "#/$defs/ActionId"
-        }
-      }
-    },
-    "ExecutionDisplayFrame": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "text"
-      ],
-      "properties": {
-        "type": {
-          "enum": [
-            "text_delta",
-            "tool_summary"
-          ]
-        },
-        "text": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 65536
-        },
-        "attachments": {
-          "type": "array",
-          "maxItems": 16,
-          "items": {
-            "$ref": "#/$defs/ItemRef"
-          }
         }
       }
     },
@@ -2614,174 +2337,24 @@
       }
     },
     "ExecutionStart": {
-      "description": "Only the request ID. The host derives the intent from the authenticated job invocation.",
+      "description": "Admit an execution on the target pinned in the authenticated owning job context.",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "request_id"
+        "request_id",
+        "harness"
       ],
       "properties": {
         "request_id": {
           "$ref": "#/$defs/Ref"
+        },
+        "harness": {
+          "$ref": "#/$defs/HarnessRef"
+        },
+        "continuation": {
+          "$ref": "#/$defs/ExecutionSessionRef"
         }
       }
-    },
-    "ExecutionTarget": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "execution"
-      ],
-      "properties": {
-        "execution": {
-          "$ref": "#/$defs/ExecutionRef"
-        }
-      }
-    },
-    "TranscriptCursor": {
-      "$ref": "#/$defs/Ref",
-      "description": "Opaque record-level cursor bound to the conversation and viewer."
-    },
-    "TranscriptPageRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "conversation"
-      ],
-      "properties": {
-        "conversation": {
-          "$ref": "#/$defs/ItemRef"
-        },
-        "after": {
-          "$ref": "#/$defs/TranscriptCursor"
-        },
-        "limit": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 128,
-          "default": 60
-        },
-        "before": {
-          "$ref": "#/$defs/TranscriptCursor"
-        }
-      },
-      "not": {
-        "required": [
-          "before",
-          "after"
-        ]
-      }
-    },
-    "CommittedTranscriptRecord": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "record_id",
-        "role",
-        "text"
-      ],
-      "properties": {
-        "record_id": {
-          "$ref": "#/$defs/Ref"
-        },
-        "role": {
-          "enum": [
-            "person",
-            "agent",
-            "automation"
-          ]
-        },
-        "text": {
-          "type": "string",
-          "maxLength": 65536,
-          "description": "Canonical transcript record text. Use the host’s restricted Markdown renderer or show it as plain text. Embedded HTML is text."
-        },
-        "body": {
-          "$ref": "#/$defs/TranscriptBodyRef"
-        },
-        "attachments": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 16,
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/$defs/TranscriptAttachment"
-          },
-          "description": "Authorized attachments of this record in committed order. Omit inaccessible entries, and omit the field when none remain. Count toward the page or update byte cap."
-        }
-      }
-    },
-    "TranscriptPage": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "records",
-        "notices",
-        "committed_cursor"
-      ],
-      "properties": {
-        "records": {
-          "type": "array",
-          "maxItems": 128,
-          "items": {
-            "$ref": "#/$defs/CommittedTranscriptRecord"
-          }
-        },
-        "notices": {
-          "type": "array",
-          "maxItems": 16,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "label",
-              "at",
-              "state"
-            ],
-            "properties": {
-              "label": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 128
-              },
-              "at": {
-                "$ref": "#/$defs/Timestamp"
-              },
-              "state": {
-                "enum": [
-                  "attempted",
-                  "done"
-                ]
-              }
-            }
-          }
-        },
-        "committed_cursor": {
-          "$ref": "#/$defs/CommittedTranscriptCursor"
-        },
-        "older_cursor": {
-          "$ref": "#/$defs/TranscriptCursor"
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "committed_cursor": {
-                "type": "null"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "records": {
-                "maxItems": 0
-              },
-              "older_cursor": false
-            }
-          }
-        }
-      ]
     },
     "SealedFrameOpen": {
       "type": "object",
@@ -2902,99 +2475,6 @@
         }
       }
     },
-    "ComposerControl": {
-      "enum": [
-        "provider",
-        "model",
-        "reasoning",
-        "permission",
-        "machine"
-      ]
-    },
-    "ComposerOptionRef": {
-      "$ref": "#/$defs/Ref",
-      "description": "Host-issued choice bound to viewer, thread and the needed option-source versions."
-    },
-    "ComposerOptionRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "conversation",
-        "control"
-      ],
-      "properties": {
-        "conversation": {
-          "$ref": "#/$defs/ItemRef"
-        },
-        "control": {
-          "$ref": "#/$defs/ComposerControl"
-        },
-        "after": {
-          "$ref": "#/$defs/Ref"
-        },
-        "options": {
-          "$ref": "#/$defs/ComposerOptions"
-        }
-      }
-    },
-    "ComposerOptionPage": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "control",
-        "options",
-        "selected",
-        "default"
-      ],
-      "properties": {
-        "control": {
-          "$ref": "#/$defs/ComposerControl"
-        },
-        "options": {
-          "type": "array",
-          "maxItems": 50,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "ref",
-              "label"
-            ],
-            "properties": {
-              "ref": {
-                "$ref": "#/$defs/ComposerOptionRef"
-              },
-              "label": {
-                "$ref": "#/$defs/Text"
-              }
-            }
-          }
-        },
-        "next": {
-          "$ref": "#/$defs/Ref"
-        },
-        "selected": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/ComposerOptionRef"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "default": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/ComposerOptionRef"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    },
     "FieldAudience": {
       "enum": [
         "member_item",
@@ -3055,35 +2535,13 @@
         "challenge"
       ]
     },
-    "ComposerOptions": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [],
-      "properties": {
-        "provider": {
-          "$ref": "#/$defs/ComposerOptionRef"
-        },
-        "model": {
-          "$ref": "#/$defs/ComposerOptionRef"
-        },
-        "reasoning": {
-          "$ref": "#/$defs/ComposerOptionRef"
-        },
-        "permission": {
-          "$ref": "#/$defs/ComposerOptionRef"
-        },
-        "machine": {
-          "$ref": "#/$defs/ComposerOptionRef"
-        }
-      }
-    },
     "ActionContexts": {
       "type": "object",
       "maxProperties": 32,
       "additionalProperties": {
         "$ref": "#/$defs/ContextRef"
       },
-      "description": "Each composer context belongs only to its one action ID and component, including across view actions and embedded window row actions. The same token cannot also appear as an authored, shell or row action context."
+      "description": "A token belongs to its checked action, target, audience and lease. Do not reuse it across action scopes."
     },
     "RowActivationContexts": {
       "type": "object",
@@ -3140,18 +2598,10 @@
         },
         "activation_contexts": {
           "$ref": "#/$defs/ActionContexts",
-          "description": "A host-issued action ID is the key. Resolve composer IDs through composer_actions[component_id] and use only that action ID’s exact issued context."
+          "description": "The exact host-issued action ID is the key."
         },
         "audience": {
           "$ref": "#/$defs/WindowAudience"
-        },
-        "composer_actions": {
-          "type": "object",
-          "maxProperties": 8,
-          "additionalProperties": {
-            "$ref": "#/$defs/ComposerActionIds"
-          },
-          "description": "Complete per-component Send, Stop and Resume ID map. Omission means empty. Every listed ID has its exact context in activation_contexts in the same reply."
         },
         "kind_icons": {
           "type": "object",
@@ -3328,24 +2778,17 @@
         },
         "cache_partition": {
           "$ref": "#/$defs/CachePartitionRef"
-        },
-        "composer_actions": {
-          "type": "object",
-          "maxProperties": 8,
-          "additionalProperties": {
-            "$ref": "#/$defs/ComposerActionIds"
-          },
-          "description": "Complete per-component Send, Stop and Resume ID map. Omission means empty. Every listed ID has its exact context in activation_contexts in the same reply."
         }
       },
-      "description": "Accept only an authenticated host reply matching the outstanding renewal_id, current request_lease_ref and cache_partition. Retain only exact window_ref and result_version pairs authorized and previously issued to that lease. Ignore superseded replies and keep live rows hidden on timeout or refusal. At each renewal use the lease and grant from the latest accepted reply. Replace the composer ID map and contexts together, including on subsequent renewals and when a map is omitted. A changed lease or grant needs fresh composer contexts. A composer context is immutable for its exact component, purpose and action ID within the issued lease and grant. Reuse is allowed only for the same binding."
+      "description": "Accept only an authenticated host reply matching the outstanding renewal ID, lease and cache partition. Retain exact result versions authorized under the current grant and replace contexts with the reply's current set."
     },
     "UndoRequest": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "type",
-        "undo_ref"
+        "undo_ref",
+        "activation_id"
       ],
       "properties": {
         "type": {
@@ -3353,6 +2796,9 @@
         },
         "undo_ref": {
           "$ref": "#/$defs/UndoRef"
+        },
+        "activation_id": {
+          "$ref": "#/$defs/ActivationId"
         }
       }
     },
@@ -3459,72 +2905,6 @@
         },
         "kind": {
           "$ref": "#/$defs/KindId"
-        }
-      }
-    },
-    "ScheduleCalendar": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "type",
-            "at"
-          ],
-          "properties": {
-            "type": {
-              "const": "once"
-            },
-            "at": {
-              "$ref": "#/$defs/Timestamp"
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "type",
-            "expression"
-          ],
-          "properties": {
-            "type": {
-              "const": "recurring"
-            },
-            "expression": {
-              "type": "string",
-              "maxLength": 256
-            }
-          }
-        }
-      ]
-    },
-    "ScheduleCreateInput": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "operation",
-        "input",
-        "calendar",
-        "time_zone"
-      ],
-      "properties": {
-        "operation": {
-          "$ref": "#/$defs/Ref"
-        },
-        "input": {
-          "type": "object"
-        },
-        "calendar": {
-          "$ref": "#/$defs/ScheduleCalendar"
-        },
-        "time_zone": {
-          "$ref": "#/$defs/Ref"
-        },
-        "notify_creator": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enables host-generated notifications only. Use the checked enrollment label, outcome status and an authorized link. No fields, result text or snippets are accepted as notification sources. Recheck recipient and link authority at delivery."
         }
       }
     },
@@ -3906,11 +3286,15 @@
               },
               "subtitle": {
                 "$ref": "#/$defs/Text",
-                "description": "Host-allowlisted offline text only. Dates use subtitle_timestamp. The host checks source provenance and excludes every body-derived part before signing."
+                "description": "Host-allowlisted offline text. A body-derived part requires an authorized offline grant for the exact source and field. Dates use subtitle_timestamp."
               },
               "subtitle_timestamp": {
                 "$ref": "#/$defs/Timestamp",
                 "description": "Authorized timestamp of the first declared date part, if approved for offline display. Use the format of that part from the pinned row template on the device. For Notes this is the date from its secondary line."
+              },
+              "offline_grant": {
+                "$ref": "#/$defs/Ref",
+                "description": "Opaque reference to a signed device download grant for the exact cached source revision and field. Required for body-derived parts. Without its valid local grant, omit that part. It is not a delivery or activation ref."
               }
             },
             "not": {
@@ -3926,7 +3310,7 @@
           "description": "Proof wire form ed25519.<key_id>.<base64url signature>, over the domain string calternal-member-row-cache-v2 followed by LF and RFC 8785 canonical JSON of this record without proof."
         }
       },
-      "description": "The only persistable viewer projection. Issue only on an opted-in, ready or empty start-anchored root window for a live own-space member whose Bind has invariant query inputs. A list may name a literal collection. No reference, search text, route, form, selection or parent operand in its source, filter or sort. Authenticate the account, space, template, Bind, window and offset. The host builds the display record from the authoritative title and host-allowlisted non-body display fields approved for offline use. Exclude body excerpts and any field marked body_derived from every display part, regardless of its template position. Omit the record if any required title is ineligible. Body-derived parts appear only from a fresh authorized window. Never include row IDs, contexts, action material or credentials."
+      "description": "A persistable member row projection under cache_policy and offline_download. Issue only on an opted-in, ready or empty start-anchored root window for a live own-space member whose Bind has invariant query inputs. A list may name a literal collection. No reference, search text, route, form, selection or parent operand in its source, filter or sort. Authenticate the account, space, template, Bind, window and offset. The host builds the display record from the authoritative title and host-allowlisted display fields approved for offline use. Body-derived fields require an exact authorized offline grant under offline_download. Omit the record if any required title is ineligible.  Never include row IDs, contexts, action material or credentials."
     },
     "WindowPlanError": {
       "type": "object",
@@ -4006,20 +3390,10 @@
         "body"
       ]
     },
-    "ConversationSearchFilter": {
-      "enum": [
-        "all",
-        "title",
-        "messages"
-      ]
-    },
     "SearchFieldFilter": {
-      "anyOf": [
+      "allOf": [
         {
           "$ref": "#/$defs/ClaimedTextSearchFilter"
-        },
-        {
-          "$ref": "#/$defs/ConversationSearchFilter"
         }
       ],
       "default": "all"
@@ -4095,156 +3469,6 @@
         "$ref": "#/$defs/Ref"
       },
       "description": "Each request can carry at most eight distinct declared inputs. At install check each Bind source plus both filter groups, and that same union plus each row action’s route inputs, including an optional input when its offered behavior depends on it. For view open combine the required root component operands with each chrome or content action or component’s inputs. Count duplicated names once. Unrelated consumers may use separate requests."
-    },
-    "ComposerActionIds": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "send": {
-          "$ref": "#/$defs/ActionId"
-        },
-        "stop": {
-          "$ref": "#/$defs/ActionId"
-        },
-        "resume": {
-          "$ref": "#/$defs/ActionId"
-        }
-      },
-      "minProperties": 1
-    },
-    "TranscriptUpdate": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "conversation",
-        "committed_cursor",
-        "upserts"
-      ],
-      "properties": {
-        "conversation": {
-          "$ref": "#/$defs/ItemRef"
-        },
-        "committed_cursor": {
-          "$ref": "#/$defs/CommittedTranscriptCursor"
-        },
-        "notices": {
-          "type": "array",
-          "maxItems": 16,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "label",
-              "at",
-              "state"
-            ],
-            "properties": {
-              "label": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 128
-              },
-              "at": {
-                "$ref": "#/$defs/Timestamp"
-              },
-              "state": {
-                "enum": [
-                  "attempted",
-                  "done"
-                ]
-              }
-            }
-          }
-        },
-        "upserts": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/CommittedTranscriptRecord"
-          },
-          "maxItems": 128
-        },
-        "preview": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "record_id",
-            "text"
-          ],
-          "properties": {
-            "record_id": {
-              "$ref": "#/$defs/Ref"
-            },
-            "text": {
-              "type": "string",
-              "maxLength": 65536
-            }
-          }
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "committed_cursor": {
-                "type": "null"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "upserts": {
-                "maxItems": 0
-              }
-            }
-          }
-        }
-      ]
-    },
-    "QuoteRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "conversation",
-        "record_id",
-        "from_utf8",
-        "to_utf8"
-      ],
-      "properties": {
-        "conversation": {
-          "$ref": "#/$defs/ItemRef"
-        },
-        "record_id": {
-          "$ref": "#/$defs/Ref"
-        },
-        "from_utf8": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 65535
-        },
-        "to_utf8": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65536
-        }
-      }
-    },
-    "QuotePreview": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "quote",
-        "preview"
-      ],
-      "properties": {
-        "quote": {
-          "$ref": "#/$defs/Quote"
-        },
-        "preview": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1024
-        }
-      }
     },
     "RequestCardRead": {
       "type": "object",
@@ -4534,17 +3758,25 @@
     },
     "ExecutionIntentRef": {
       "$ref": "#/$defs/Ref",
-      "description": "Opaque exact durable execution intent under execution_intents. Valid only in its owning job context or host-issued execution control."
+      "description": "Opaque exact admitted execution job, pinned to its target item and audience generation."
     },
     "ExecutionJobContext": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "intent"
+        "intent",
+        "item",
+        "harness"
       ],
       "properties": {
         "intent": {
           "$ref": "#/$defs/ExecutionIntentRef"
+        },
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "harness": {
+          "$ref": "#/$defs/HarnessRef"
         }
       }
     },
@@ -4625,53 +3857,6 @@
         }
       ]
     },
-    "TranscriptBodyRef": {
-      "$ref": "#/$defs/Ref",
-      "description": "Opaque continuation token bound to viewer, view lease, conversation, exact record revision and next UTF-8 offset."
-    },
-    "TranscriptBodyRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "body"
-      ],
-      "properties": {
-        "body": {
-          "$ref": "#/$defs/TranscriptBodyRef"
-        }
-      }
-    },
-    "TranscriptBodyPage": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "record_id",
-        "text"
-      ],
-      "properties": {
-        "record_id": {
-          "$ref": "#/$defs/Ref"
-        },
-        "text": {
-          "type": "string",
-          "maxLength": 16384
-        },
-        "next": {
-          "$ref": "#/$defs/TranscriptBodyRef"
-        }
-      }
-    },
-    "CommittedTranscriptCursor": {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/TranscriptCursor"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Null until the first canonical record exists. Omit after/before when reading or following an empty transcript."
-    },
     "SearchSettleGeneration": {
       "type": "integer",
       "minimum": 1,
@@ -4736,11 +3921,14 @@
             },
             "job_context": {
               "$ref": "#/$defs/ExecutionJobContext"
+            },
+            "alarm": {
+              "$ref": "#/$defs/AlarmDelivery"
             }
           }
         }
       },
-      "description": "Host-to-worker only. The trusted host stamps job_context on claims and replays of a manifest job with execution_intent:true. For every other invocation omit it. It is separate from operation input and conveys no new authority."
+      "description": "Host-to-worker only. Stamp job_context for an admitted job declaring execution:true. Stamp alarm for a job admitted by an alarm. Either is host metadata outside operation input. An execution job's exact target is host checked at admission and replay."
     },
     "RowImageAttribution": {
       "type": "object",
@@ -4788,7 +3976,7 @@
           }
         }
       },
-      "description": "Authenticated attempt channel only. Resolve the parent attempt and actor from the channel. Accept a bounded target conversation kind and only host-issued refs within current parent and ancestor ceilings."
+      "description": "Authenticated attempt channel only. Resolve the parent attempt and actor from the channel. Accept a bounded target declared kind and only host-issued refs within current parent and ancestor ceilings."
     },
     "ExecutionAttemptChildAck": {
       "type": "object",
@@ -4829,155 +4017,617 @@
         }
       ]
     },
-    "ResumeConfirmation": {
-      "$ref": "#/$defs/NoFinalTextConfirmation"
-    },
-    "ResumeOutcome": {
-      "allOf": [
+    "UndoReply": {
+      "oneOf": [
         {
           "$ref": "#/$defs/ActionOutcome"
         },
         {
-          "properties": {
-            "state": {
-              "enum": [
-                "pending",
-                "refused",
-                "stale"
-              ]
-            },
-            "undo": false,
-            "created": false
-          },
           "allOf": [
             {
-              "if": {
-                "properties": {
-                  "state": {
-                    "const": "refused"
-                  }
-                }
-              },
-              "then": {
-                "properties": {
-                  "code": {
-                    "enum": [
-                      "previous_session_unavailable",
-                      "execution_busy",
-                      "reconciliation_required",
-                      "admission_limit"
-                    ]
-                  }
-                }
-              }
+              "$ref": "#/$defs/ActivationResolution"
             },
             {
-              "if": {
-                "properties": {
-                  "state": {
-                    "const": "stale"
-                  }
+              "properties": {
+                "confirm": {
+                  "const": "challenge"
                 }
               },
-              "then": {
-                "properties": {
-                  "code": {
-                    "enum": [
-                      "stale_context"
-                    ]
-                  }
-                }
-              }
+              "required": [
+                "confirm"
+              ]
             }
           ]
         }
       ]
     },
-    "TranscriptAttachmentRef": {
-      "$ref": "#/$defs/Ref",
-      "description": "Opaque view-bound reference to the checked attachment of an exact committed transcript record."
-    },
-    "TranscriptAttachment": {
+    "AlarmDelivery": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "ref",
-        "media_type",
-        "bytes"
-      ],
       "properties": {
-        "ref": {
-          "$ref": "#/$defs/TranscriptAttachmentRef"
+        "alarm": {
+          "$ref": "#/$defs/Ref"
         },
-        "media_type": {
-          "type": "string",
-          "maxLength": 127,
-          "pattern": "^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*(?![\\s\\S])"
+        "scheduled_at": {
+          "$ref": "#/$defs/Timestamp"
         },
-        "bytes": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 16777216
+        "actual_at": {
+          "$ref": "#/$defs/Timestamp"
         }
-      }
+      },
+      "required": [
+        "alarm",
+        "scheduled_at",
+        "actual_at"
+      ]
     },
-    "TranscriptAttachmentRequest": {
+    "AlarmSet": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "conversation",
-        "attachment"
-      ],
       "properties": {
-        "conversation": {
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "job": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "input": {
+          "type": "object",
+          "maxProperties": 32
+        },
+        "replace": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "request_id",
+        "job",
+        "at",
+        "input"
+      ]
+    },
+    "AlarmCancel": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "alarm": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "request_id",
+        "alarm"
+      ]
+    },
+    "AlarmReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "alarm": {
+          "$ref": "#/$defs/Ref"
+        },
+        "receipt": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "alarm",
+        "receipt"
+      ]
+    },
+    "ItemAppend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "item": {
           "$ref": "#/$defs/ItemRef"
         },
-        "attachment": {
-          "$ref": "#/$defs/TranscriptAttachmentRef"
-        }
-      }
-    },
-    "ResumeResolution": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/ActivationResolution"
+        "slot": {
+          "$ref": "#/$defs/ActionId"
         },
-        {
-          "required": [
-            "confirm"
-          ],
-          "properties": {
-            "confirm": {
-              "const": "challenge"
-            },
-            "selection_ref": false
-          }
+        "expected_revision": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "bytes": {
+          "type": "string",
+          "maxLength": 87384,
+          "description": "Base64 for at most 64 KiB decoded opaque file data."
         }
+      },
+      "required": [
+        "request_id",
+        "item",
+        "slot",
+        "expected_revision",
+        "bytes"
+      ]
+    },
+    "ItemAppendReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "end_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "receipt": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "revision",
+        "end_offset",
+        "receipt"
+      ]
+    },
+    "HarnessRef": {
+      "$ref": "#/$defs/Ref"
+    },
+    "ExecutionSessionRef": {
+      "$ref": "#/$defs/Ref"
+    },
+    "ExecutionSessionBind": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        },
+        "binding": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "request_id",
+        "execution",
+        "binding"
       ],
-      "description": "A protected challenge. Apply confirmation.material_by_kind for host.execution.resume."
+      "description": "The binding is an opaque placement-owned reference. Provider session content stays in the isolated placement."
     },
-    "PreparedSendConfirmation": {
-      "allOf": [
+    "PluginSearchInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "cursor": {
+          "$ref": "#/$defs/Ref"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "candidates": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/ItemRef"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "text",
+        "limit"
+      ],
+      "description": "Scope and audience come from the authenticated invocation. Host supplies candidates only for a rerank."
+    },
+    "PluginSearchResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/ItemRef"
+          },
+          "uniqueItems": true
+        },
+        "next": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "items"
+      ]
+    },
+    "ItemViewPublish": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "slot": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "source_revision": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "audience_scope": {
+          "$ref": "#/$defs/Ref",
+          "description": "Opaque exact capability returned by the checked item_view_context call."
+        },
+        "view": {
+          "$ref": "description-v2.schema.json#/$defs/ItemSnapshotView"
+        }
+      },
+      "required": [
+        "request_id",
+        "item",
+        "slot",
+        "source_revision",
+        "audience_scope",
+        "view"
+      ]
+    },
+    "ItemViewPublishReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "receipt": {
+          "$ref": "#/$defs/Ref"
+        },
+        "source_revision": {
+          "$ref": "#/$defs/RevisionRef"
+        }
+      },
+      "required": [
+        "receipt",
+        "source_revision"
+      ]
+    },
+    "ItemViewRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "item_view"
+        },
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "slot": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "component": {
+          "$ref": "#/$defs/ActionId"
+        }
+      },
+      "required": [
+        "type",
+        "item",
+        "slot",
+        "component"
+      ]
+    },
+    "ItemViewResult": {
+      "oneOf": [
         {
-          "$ref": "#/$defs/ConfirmActivation"
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "const": "loading"
+            }
+          },
+          "required": [
+            "state"
+          ]
         },
         {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "enum": [
+                "ready",
+                "stale"
+              ]
+            },
+            "source_revision": {
+              "$ref": "#/$defs/RevisionRef"
+            },
+            "view": {
+              "$ref": "description-v2.schema.json#/$defs/ItemSnapshotView"
+            }
+          },
           "required": [
-            "final_text"
+            "state",
+            "source_revision",
+            "view"
           ]
         }
       ]
     },
-    "NoFinalTextConfirmation": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/ConfirmActivation"
+    "OfflineDownloadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "offline_download"
         },
-        {
-          "properties": {
-            "final_text": false
-          }
+        "items": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/ItemRef"
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "cursor": {
+          "$ref": "#/$defs/Ref",
+          "description": "Optional continuation bound to the same exact authenticated selection and scope."
         }
+      },
+      "required": [
+        "type",
+        "items"
+      ]
+    },
+    "OfflineDownloadManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/AccountRef"
+        },
+        "device": {
+          "$ref": "#/$defs/Ref"
+        },
+        "space": {
+          "$ref": "#/$defs/Ref"
+        },
+        "scope": {
+          "$ref": "#/$defs/Ref"
+        },
+        "expires_at": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parts": {
+          "type": "array",
+          "maxItems": 850,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "item": {
+                "$ref": "#/$defs/ItemRef"
+              },
+              "revision": {
+                "$ref": "#/$defs/RevisionRef"
+              },
+              "attachment": {
+                "$ref": "#/$defs/AttachmentRef"
+              },
+              "ref": {
+                "$ref": "#/$defs/Ref"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "item",
+              "revision",
+              "ref",
+              "bytes"
+            ]
+          }
+        },
+        "proof": {
+          "$ref": "#/$defs/ProofRef"
+        },
+        "next": {
+          "$ref": "#/$defs/Ref",
+          "description": "Host-issued continuation when the requested authorized download spans pages."
+        }
+      },
+      "required": [
+        "account",
+        "device",
+        "space",
+        "scope",
+        "expires_at",
+        "parts",
+        "proof"
+      ]
+    },
+    "ExecutionTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        }
+      },
+      "required": [
+        "execution"
+      ]
+    },
+    "ItemViewContextRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ItemRef"
+        },
+        "slot": {
+          "$ref": "#/$defs/ActionId"
+        }
+      },
+      "required": [
+        "item",
+        "slot"
+      ]
+    },
+    "ItemViewContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "audience_scope": {
+          "$ref": "#/$defs/Ref"
+        },
+        "source_revision": {
+          "$ref": "#/$defs/RevisionRef"
+        }
+      },
+      "required": [
+        "audience_scope",
+        "source_revision"
+      ]
+    },
+    "OfflinePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "expiry_seconds": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          ]
+        }
+      },
+      "required": [
+        "expiry_seconds"
+      ],
+      "description": "Space owner setting. Null means no offline expiry. Apply the currently configured lifetime to new grants and invalidate longer-lived grants on next contact after a policy shortening. Reject an expiry that cannot be represented as a checked timestamp."
+    },
+    "OfflineRangeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "offline_range"
+        },
+        "part": {
+          "$ref": "#/$defs/Ref"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        }
+      },
+      "required": [
+        "type",
+        "part",
+        "offset",
+        "length"
+      ]
+    },
+    "OfflineRangeResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "type": "string",
+          "maxLength": 87384,
+          "description": "Base64 for at most 64 KiB decoded bytes from the pinned source."
+        },
+        "next_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "bytes"
+      ]
+    },
+    "ExtensionChoiceRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "app": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "point": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "cursor": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "app",
+        "point"
+      ]
+    },
+    "ExtensionChoicePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "options": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ref": {
+                "$ref": "#/$defs/Ref"
+              },
+              "label": {
+                "$ref": "#/$defs/Text"
+              }
+            },
+            "required": [
+              "ref",
+              "label"
+            ]
+          }
+        },
+        "next": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "options"
       ]
     }
   },
@@ -4994,7 +4644,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStatus"
       },
-      "scope": "Apply execution_intents.admission. Derive the intent and owning job receipt from authenticated job context at claim and replay. Under the lifecycle fence recheck that binding, live item state, pinned contribution and placement. An authorized replay returns the existing result even with a new request ID. Refuse missing, foreign or retired context.",
+      "scope": "Apply execution_intents.admission. Resolve checked harness, image and placement. Derive the target and owning job receipt from the authenticated job. If continuation is supplied, require a live binding with the exact protected profile and current audience and reconcile uncertain effects. Refuse stale or foreign continuation without starting another attempt. Replay returns the existing admitted result. The named harness must match the already admitted job.",
       "invocation_context_schema": {
         "$ref": "#/$defs/ExecutionJobContext"
       }
@@ -5015,7 +4665,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStatus"
       },
-      "scope": "Exact attempt and live steer authority. Prepared active Send may forward directly."
+      "scope": "Check the exact attempt, input scope and live steer authority. Reject inputs to a retired or replaced attempt."
     },
     "execution_spawn_child": {
       "input": {
@@ -5024,7 +4674,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStatus"
       },
-      "scope": "Only the owning job consumes a live checked request. Resolve pinned kind and refs, and recheck exact parent, live caller, eligible target, all ancestor ceilings and reserved tree capacity. Convert the reserved slot to admitted execution with child item and parent edge under one fence. A retryable refusal keeps the unexpired reservation. A terminal refusal releases it exactly once. Durable receipt replay adds no child or slot."
+      "scope": "Only the owning job consumes a live checked request. Resolve pinned kind and refs, and recheck exact parent, live caller, eligible target, all ancestor ceilings and reserved tree capacity. Convert the reserved slot to an admitted execution and any declared child item and checked generic parent edge under one fence. A retryable refusal keeps the unexpired reservation. A terminal refusal releases it exactly once. Durable receipt replay adds no child or slot."
     },
     "execution_stop": {
       "input": {
@@ -5033,7 +4683,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStopResult"
       },
-      "scope": "Apply attempt_authority_end.actions.stop under execution_intents.stop_and_archive."
+      "scope": "Check the exact pending job or admitted attempt and apply attempt_authority_end.actions.stop."
     },
     "execution_wait": {
       "input": {
@@ -5043,12 +4693,6 @@
         "$ref": "#/$defs/ExecutionStatus"
       },
       "scope": "Owning job. Compare durable cursor and deliver or park atomically. No token wakes."
-    },
-    "display_frame": {
-      "input": {
-        "$ref": "#/$defs/ExecutionDisplayFrame"
-      },
-      "scope": "Authenticated attempt transport. Host validates, scrubs and maintains canonical records under execution_attempt_authority.discovery.transcript_audience. This format is not a renderer route."
     },
     "child_request": {
       "transport": "authenticated_attempt",
@@ -5065,6 +4709,15 @@
         "max_depth": 3,
         "pending_seconds": 300
       }
+    },
+    "execution_session_bind": {
+      "input": {
+        "$ref": "#/$defs/ExecutionSessionBind"
+      },
+      "output": {
+        "$ref": "#/$defs/ExecutionSessionRef"
+      },
+      "scope": "Exact admitted attempt and owning job. Bind this placement-local capability to the item, audience generation, actor, package and harness digest, machine and profile. No raw session data. Retirement fences redemption and profile access on every start or reattachment."
     }
   },
   "component_routes": {
@@ -5076,26 +4729,6 @@
         "$ref": "#/$defs/RowImageUploadGrant"
       },
       "scope": "Editor-scoped EventComponent after the save ACK. The request component matches the envelope and the current item-editor in edit mode. Check live editor lease, item, slot and exact source revision and digest before issuing the upload grant."
-    },
-    "transcript.follow": {
-      "input_schema": {
-        "$ref": "#/$defs/TranscriptPageRequest"
-      },
-      "output_schema": {
-        "$ref": "#/$defs/TranscriptUpdate"
-      },
-      "scope": "Same authenticated view subscription. Upsert committed records by record_id. Replace the single optional provisional preview on every update. Only the committed_cursor is resumable. Cancel on route, lease or audience change. Recheck live corpus and each attachment grant at read and egress. An inaccessible attachment has no returned ref, media type, size or placeholder. Replace the entire attachment projection on an upsert. If an attachment grant changes, fence affected cached deliveries and refresh the affected record for a still-authorized viewer before drawing it again.",
-      "encoded_update_bytes": 131072
-    },
-    "transcript.page": {
-      "input_schema": {
-        "$ref": "#/$defs/TranscriptPageRequest"
-      },
-      "output_schema": {
-        "$ref": "#/$defs/TranscriptPage"
-      },
-      "encoded_page_bytes": 131072,
-      "scope": "An authorized conversation and viewer. No cursor selects the newest page. before pages older and after resumes, refreshing the boundary record and notices. Records are ordered oldest to newest. Recheck live corpus and each attachment grant at read and egress. An inaccessible attachment has no returned ref, media type, size or placeholder."
     },
     "sealed_frame.open": {
       "input_schema": {
@@ -5128,22 +4761,13 @@
       },
       "scope": "Current authorized Bind and lease, for a checked set of selected rows or a clear. Validate the exact parent for a per-parent Bind and the exact current generation and scope for a search Bind. Bind issued contexts and set refs to that scope."
     },
-    "composer.options": {
-      "input_schema": {
-        "$ref": "#/$defs/ComposerOptionRequest"
-      },
-      "output_schema": {
-        "$ref": "#/$defs/ComposerOptionPage"
-      },
-      "scope": "Checked conversation ItemRef, viewer and installed provider/runtime option source Resolve provider, model for that provider, then reasoning using both. Permission and machine are independent requests with preceding choices supplied for eligibility checks. Changing an upstream option invalidates dependent refs and pages."
-    },
     "undo": {
       "input_schema": {
         "$ref": "#/$defs/UndoRequest"
       },
-      "scope": "Host surface and current actor/target authority",
+      "scope": "Use the checked Undo ref, current lease and supplied activation ID. A non-widening eligible inverse returns ActionOutcome. An inverse that adds file readers returns ActivationResolution with confirm:challenge and the required disclosure. Use ordinary ConfirmActivation with the same activation and resolution. Recheck the inverse under the widening fence; the first request alone commits no widening.",
       "output_schema": {
-        "$ref": "#/$defs/ActionOutcome"
+        "$ref": "#/$defs/UndoReply"
       }
     },
     "status": {
@@ -5186,7 +4810,7 @@
       "output_schema": {
         "$ref": "#/$defs/ViewOpenResult"
       },
-      "scope": "Authenticated view session, including data-free render and its sources. Composer Send, Stop and Resume resolve through composer_actions[component_id] and activation_contexts[action_id] from this view. Guest and public receive no viewer or account identity. Resolve declared route consumers from all chrome and content, including sidebar shortcuts and section actions and footer actions. Missing optional host.item.create collection operands mean no placement.",
+      "scope": "Authenticate the current view, route operands and checked sources. Bind issued action contexts to the current lease, audience, action and scope.",
       "input_schema": {
         "$ref": "#/$defs/ViewOpenRequest"
       }
@@ -5198,7 +4822,7 @@
       "output_schema": {
         "$ref": "#/$defs/LeaseRenewResult"
       },
-      "scope": "Original authenticated view session and cache partition, with fresh authority for the requested lease and its issued window versions Replace the composer action map and its contexts together after accepting the correlated renewal. Recompute eligibility and retire omitted IDs or replaced contexts. A newly eligible Stop may target any unresolved execution intent. Recompute Resume eligibility and require a fresh context if the binding or material changes."
+      "scope": "Authenticate the original session, lease and partition. Retain requested exact result versions only when still authorized and replace current contexts."
     },
     "choice.options": {
       "output_schema": {
@@ -5219,15 +4843,6 @@
       "scope": "Current authorized Bind and lease. Reconstruct the exact stable row named by the settled selection before issuing contexts. Validate the exact parent for a per-parent Bind and the exact current generation and scope for a search Bind. Bind issued contexts and set refs to that scope.",
       "surface": "direct_shell"
     },
-    "transcript.quote": {
-      "input_schema": {
-        "$ref": "#/$defs/QuoteRequest"
-      },
-      "output_schema": {
-        "$ref": "#/$defs/QuotePreview"
-      },
-      "scope": "For one authorized committed record, verify ordered range on UTF-8 character boundaries and bound excerpt bytes. Bind the token to actor, conversation and the pinned record."
-    },
     "request-card.read": {
       "input_schema": {
         "$ref": "#/$defs/RequestCardRead"
@@ -5244,7 +4859,7 @@
       "output_schema": {
         "$ref": "#/$defs/EditorHead"
       },
-      "scope": "Current view lease and exact checked item bound to the declared editor component. Returns only the authorized committed head pinned for the range route. A conversation body additionally requires corpus authority. Conversation editing uses the canonical conversation engine only."
+      "scope": "Use the active lease and exact bound item. Return the authorized committed head. Full body and range reads require separate body access."
     },
     "search.settled": {
       "input_schema": {
@@ -5255,76 +4870,33 @@
       },
       "scope": "Check the lease, Bind, required route operands and WindowParentRef before acknowledging. Require parent iff the Bind declares source.parent. Pin the generation to the exact resolved collection, parent and ancestry where declared, along with the full predicate, authorized audience, text and match. Echo the checked parent and generation. An exact current replay is idempotent. Fence older generations and reject changed input or scope on same-generation replay. Every window, settled selection and explicit selection set must resolve to the pinned scope. A changed collection, parent or route requires a new generation starting at zero. An invalid parent gets the same opaque refusal as an absent scope. For a valid scope lacking the qualified index, the first window returns unsupported_plan without scanning candidates."
     },
-    "transcript.body": {
+    "item_view.open": {
       "input_schema": {
-        "$ref": "#/$defs/TranscriptBodyRequest"
+        "$ref": "#/$defs/ItemViewRequest"
       },
       "output_schema": {
-        "$ref": "#/$defs/TranscriptBodyPage"
+        "$ref": "#/$defs/ItemViewResult"
       },
-      "max_utf8_bytes": 16384,
-      "scope": "Return the next whole UTF-8 segment of that pinned record only. Check live viewer, lease, corpus, exact record and offset at read and egress. Absent, expired, purged or unauthorized refs return opaque 404 without bytes or a continuation. A final page omits next."
+      "scope": "Active view lease for this item and declared slot. Check live item, source revision and exact audience before delivery, including when stale. The exact lease and item are held by the request exchange. Reconstruct item and slot from the checked item-view component; refuse a different operand."
     },
-    "transcript.attachment": {
+    "offline.download": {
       "input_schema": {
-        "$ref": "#/$defs/TranscriptAttachmentRequest"
+        "$ref": "#/$defs/OfflineDownloadRequest"
       },
-      "response": "Authenticated binary download of exactly the projected bytes with the checked Content-Type, Content-Length and Content-Disposition: attachment. Enforce nosniff and no-store. No inline HTML, redirects, public URLs, conditional or range responses.",
-      "scope": "Same conversation-transcript component and active view lease. Resolve the opaque ref to the exact conversation, record and immutable attachment revision. Check live corpus, attachment grant and retained bytes at read and egress, and fence a revoked stream. An absent, mismatched, expired, purged or unauthorized ref returns opaque 404 before any metadata or bytes are sent."
-    }
-  },
-  "conversation_capability": {
-    "declaration": "An installed package kind opts in with conversation: true. Only eligible package and viewer access qualify. The kind owner declares corpus and Send policy.",
-    "row_ref": "ItemRef",
-    "field_projections": {
-      "provider_icon": {
-        "type": "Text",
-        "index_owner": null,
-        "audience": "member_item",
-        "nullable": true,
-        "description": "Host-projected catalogue symbol for the installed provider contribution identified by the thread's provider. Emit it only after the provider_marks binding check. On a missing or conflicting binding, omit the field so the row template uses its generic fallback symbol."
+      "output_schema": {
+        "$ref": "#/$defs/OfflineDownloadManifest"
       },
-      "waiting_on": {
-        "type": "AccountRef",
-        "index_owner": "content",
-        "audience": "viewer_self",
-        "nullable": true,
-        "description": "From live checked Inbox requests addressed to the viewer. Another viewer’s requests change neither rows, count nor version."
-      },
-      "snoozed_until": {
-        "type": "Timestamp",
-        "index_owner": "content",
-        "audience": "viewer_self",
-        "nullable": true,
-        "description": "Actor-scoped active snooze deadline. Null once the deadline passes; host invalidates affected Bind results at expiry."
-      },
-      "archived": {
-        "type": "Boolean",
-        "index_owner": "content",
-        "audience": "member_item",
-        "nullable": false
-      },
-      "parent": {
-        "type": "ItemRef",
-        "nullable": true,
-        "index_owner": "content",
-        "audience": "member_item",
-        "description": "Host-owned conversation parent relation. Check both items and the declared scoped parent seek."
-      },
-      "active_execution": {
-        "type": "ExecutionRef",
-        "index_owner": null,
-        "audience": "eligible_execution_actor",
-        "nullable": true,
-        "description": "Nullable ref for an exact admitted attempt, only in a ready member reply to an eligible execution actor. The parent edge resolves to an ItemRef. Starting may have only an intent-based Stop context."
-      }
+      "scope": "Authenticated own device and member scope. Resolve requested item refs and their independently authorized attachments. The manifest covers the requested authorized batch only. Page longer authorized downloads without truncating attachments. Recheck every page and bind a continuation to the exact selection, account, device, scope and revisions."
     },
-    "search_corpora": [
-      "member_title",
-      "member_body",
-      "shared_titles"
-    ],
-    "body_authority": "Only the canonical transcript engine writes the body. Refuse generic save and editor-room, staged and range mutations. Require message-corpus authority on raw body delivery including editor, range and history material for any pinned revision. Title-only grants confer no corpus access."
+    "offline.range": {
+      "input_schema": {
+        "$ref": "#/$defs/OfflineRangeRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/OfflineRangeResult"
+      },
+      "scope": "Authenticated original account, device and space. Refuse revoked, expired or purged parts and stale grant scopes before bytes. Use bounded revision-pinned byte delivery."
+    }
   },
   "generic_item_fields": {
     "id": {
@@ -5364,45 +4936,13 @@
       "$ref": "#/$defs/ConfirmMode"
     },
     "none": "A host catalogue read, or a host catalogue mutation marked atomic_undo whose engine commits the complete effect and Undo in one recovery-visible transaction and satisfies any atomic_undo_when condition. For mutations the only material may be the drawn target or fields of the submitting form. host.item.create may also use its checked route or literal CollectionRef. For host.collection.move, the checked ChoiceRef and its actor-only destination may use the shortcut under confirmation_when.",
-    "challenge": "Irreversible, external, widens_access, bulk sets, declared material_inputs, any destination, recipient, audience or permission, or unproven material. Never bypassed by atomic_undo. Use the confirmation_when rules for host.item.create and host.collection.move. On a widening, use the host material in attempt_authority_end.actions.conversation_audience_widening, including on any inverse that adds readers.",
+    "challenge": "Irreversible, external, widens_access, bulk sets, declared material_inputs, any destination, recipient, audience or permission, or unproven material. Never bypassed by atomic_undo. Use the confirmation_when rules for host.item.create and host.collection.move. An inverse that widens access uses protected confirmation through component_routes.undo. On a widening, use the host material in attempt_authority_end.actions.conversation_audience_widening, including on any inverse that adds readers.",
     "ordinary": "Worker operations always use separate resolution and dispatch. A reversible manifest declaration never permits the shortcut. Return a challenge only for required material or effects; otherwise omit confirm.",
     "material_by_kind": {
-      "composer.send": {
-        "required": [
-          "conversation",
-          "provider",
-          "model",
-          "reasoning",
-          "permission",
-          "machine"
-        ],
-        "when": {
-          "has_attachments": [
-            "attachments"
-          ],
-          "has_mentions": [
-            "mentions"
-          ],
-          "has_quote": [
-            "quote"
-          ]
-        },
-        "confirmation_schema": {
-          "$ref": "#/$defs/PreparedSendConfirmation"
-        }
-      },
-      "host.execution.resume": {
-        "required": [
-          "conversation",
-          "provider",
-          "machine",
-          "profile",
-          "permission"
-        ]
-      },
       "host.execution.stop": {
         "required": [
-          "conversation",
+          "item",
+          "execution",
           "effect"
         ]
       },
@@ -5449,12 +4989,6 @@
           "effect"
         ]
       },
-      "host.item.snooze": {
-        "required": [
-          "item",
-          "until"
-        ]
-      },
       "host.item.patch-metadata": {
         "required": [
           "item",
@@ -5496,23 +5030,6 @@
             "effect"
           ],
           "rule": "Show exactly the host's checked effect and its checked named inputs. Reject missing, duplicate, unchecked or altered display material. Derive decision and lifetime entries exclusively from offered actions. Reject their presence as material fields or duplicate offered decisions. A closed card supplies no decisions or lifetimes."
-        }
-      },
-      "host.panel.ask": {
-        "required": [
-          "destination",
-          "text"
-        ],
-        "when": {
-          "has_item": [
-            "item"
-          ],
-          "has_draft": [
-            "draft"
-          ],
-          "has_quote": [
-            "quote"
-          ]
         }
       },
       "host.session.end": {
@@ -5582,13 +5099,20 @@
             "permission"
           ]
         }
+      },
+      "host.undo": {
+        "required": [
+          "items",
+          "audience",
+          "permission"
+        ],
+        "rule": "Only for a widening inverse. Include the host-written material in attempt_authority_end.actions.conversation_audience_widening. For other eligible inverses require no extra challenge."
       }
     },
     "no_challenge_kinds": [
       "host.item.create",
       "host.route.set",
-      "host.action.status",
-      "host.undo"
+      "host.action.status"
     ],
     "material_rule": "Select the row by the checked operation and host surface. Check all material for the exact normalized request under the pinned context. Reject empty lists, duplicate names or missing required entries. For every current checked fact listed in when, require its entries too. Include untouched prefills and all applicable material. Plugin challenges also include present manifest material_inputs as checked by the host. Host keys are host-owned. Every manifest input key is projected with manifest_input_prefix and its original local ID, using its declared label and checked value. The prefix is reserved and is unavailable to host entries. Render labels and checked values. Explicit default, none or clearing choices are shown with a readable label. The device cannot supply the challenge kind or facts.",
     "manifest_input_prefix": "input:",
@@ -5605,17 +5129,14 @@
         "$ref": "#/$defs/ActivationResolution"
       },
       "default_confirmation_schema": {
-        "$ref": "#/$defs/NoFinalTextConfirmation"
+        "$ref": "#/$defs/ConfirmActivation"
       }
     }
-  },
-  "schedule_create_input": {
-    "$ref": "#/$defs/ScheduleCreateInput"
   },
   "cache_policy": {
     "member_rows_max_age_seconds": 1209600,
     "persistent_row_scope": "Start-anchored root list windows with invariant inputs only. Permit a literal collection and account-bound viewer:person. Deny search, references and route, form, selection or parent operands in source, filter or sort. Verify shape, host proof, account, space, template, Bind, offset, lifetime and opt-ins on write and load. On write the record must match the authenticated active view and reply, including own_space_member audience and window_ref. On load use only the matching local own-space root display. Never serialize a WindowResult.",
-    "persistent_row_authority": "Display on unlocked devices as unconfirmed until the host confirms or corrects the rows. Encrypt with account- and space-bound keys. Never persist guest or public rows, action credentials or contexts. Erase on sign-out, account switch or known revocation. Every action requires a fresh host context.",
+    "persistent_row_authority": "Display on unlocked devices as unconfirmed until the host confirms or corrects the rows. Encrypt with account- and space-bound keys. Never persist guest or public rows, action credentials or contexts. Erase on sign-out, account switch or known revocation. Every action requires a fresh host context. Body-derived parts require the matching offline grant. Apply offline_download retention.",
     "record_schema": {
       "$ref": "#/$defs/MemberRowCacheRecord"
     }
@@ -5634,7 +5155,7 @@
       "transcript_audience": {
         "status": "interim, owner asked 2026-11-20",
         "sender_only": "Use the sender's full scoped live read rights.",
-        "shared": "Require the sender and every transcript reader to be authorized for each discovery input.",
+        "shared": "Require the sender and every authorized file reader to have access to each discovery input.",
         "required_reader_sets": [
           "sender",
           "transcript_readers"
@@ -5647,35 +5168,23 @@
         "Claude Code": ".claude",
         "Codex": ".codex"
       },
-      "custody": "The verified provider program can read and refresh its own selected login and directories in the person's eligible sandbox. Provider tools there run as that person and can read those files. These native logins require no broker. Keep the directories out of other accounts, other packages, shared mounts, host-readable output and portable snapshots and backups.",
+      "custody": "The verified harness's provider program can read and refresh its own selected login and directories in the person's eligible sandbox. Provider tools there run as that person and can read those files. These native logins require no broker. Keep the directories out of other accounts, other packages, shared mounts, host-readable output and portable snapshots and backups.",
       "account_switching": "Automatic account switching is deferred.",
-      "shared_space": "Apply owner decision 74 in docs/open-questions.md. Keep tools off for the configured shared login until qualification proves a boundary that protects it from tools and other runs. For a shared transcript, choosing a personal native login or changing permission mode cannot enable tools. Apply attempt_authority_end.actions.conversation_audience_widening before a personal run's transcript gains another reader."
+      "shared_space": "Apply owner decision 74 in docs/open-questions.md. Keep tools off for the configured shared login until qualification proves a boundary that protects it from tools and other runs. For a shared transcript, choosing a personal native login or changing permission mode cannot enable tools. Apply attempt_authority_end.actions.conversation_audience_widening before a personal run's item gains another file reader. Admit a shared execution only when the placement also keeps incompatible saved sessions out of reach.",
+      "placement": "Personal enrolled machines only, interim, owner asked 2026-11-20. Apply equally to bundled and community harnesses.",
+      "disclosure": "At install disclose publisher, image digest, placement, mounted item-data scope, native profile access and approved network egress. Code and tools in a personal profile can read and transmit accessible data through approved routes."
     }
   },
   "carrier": {
     "invoke_schema": {
       "$ref": "#/$defs/HostWorkerInvokeFrame"
     },
-    "invoke_scope": "The host dispatches to the exact admitted package, digest, epoch and ticket. For composer jobs admitted by Send or Resume, include on claim and replay the pinned ExecutionJobContext. For all other invocations omit it. Refuse a worker-origin invoke or any worker-supplied job context."
-  },
-  "offline_member_display": {
-    "field_audiences": [
-      "shared_projection"
-    ],
-    "excluded_fields": [
-      "provider_icon"
-    ],
-    "scope": "Check live own-space membership, the paired window and the host offline allowlist. Cache only a prefix of those rows in the same order. Take the title from the row title field. For the secondary line take only eligible plain text parts or the first eligible declared date part. Drop body-backed parts and restricted fields regardless of the display slot. Omit the record if any required title is ineligible. A provider label is ordinary eligible Text metadata from the paired row. The provider icon and provider authority are separate."
+    "invoke_scope": "Dispatch to the exact admitted package, digest, epoch and ticket. Stamp protected job and alarm metadata as in HostWorkerInvokeFrame. Refuse worker-origin invoke or worker-supplied host metadata."
   },
   "execution_intents": {
-    "origins": [
-      "prepared_send",
-      "protected_resume"
-    ],
-    "admission": "Under the conversation lifecycle fence refuse admission for an archived or deleted head or a cutover-fenced writer. Reserve the same quotas for either origin. Allow at most one unresolved execution intent or active attempt per conversation. Commit Starting, the exact intent, its receipt and owning job together. Exact-intent start admits at most one attempt and an authorized replay returns its existing result.",
-    "stop_and_archive": "Idle archive requires no unresolved intent, active attempt or approval to retire. Protected archive and Stop use attempt_authority_end, pin the exact attempt or intent and recheck live execution-control and item authority. Never retarget replacements.",
-    "snooze": "Actor-keyed snooze and Undo only change the actor's deadline and its publication intent. Neither mutates, retires, reopens or admits any execution intent, nor changes retries.",
-    "cutover": "Halt new intents and attempts. Drain every unresolved execution intent or verify its existing protected durable refusal and verify zero active attempts and zero unresolved execution intents before switching writers. Preserve intents, refusals and receipts under protected custody. Do not admit or reopen retired intents on the new writer or rollback."
+    "admission": "Only a declared replayable job with execution:true and a checked live item whose installed kind declares execution_target. Admit one unresolved execution job or active attempt per item. Pin the audience generation, actor, job, package, harness and effect ceiling. Under the lifecycle fence refuse deleted, archived or retired targets. Reserve quotas once. Replay returns the current receipt without another admission. Resolve the same checked harness choice for the job at admission and every later claim. No caller-supplied host job context.",
+    "stop_and_archive": "Idle archive excludes unresolved execution jobs, live attempts and protected approvals. Protected archive and Stop pin the exact job or attempt, recheck authority under the lifecycle fence and never retarget a replacement.",
+    "cutover": "Fence new admission, drain unresolved execution jobs and verify zero live attempts before switching writers. Retain durable refusals and receipts across rollback."
   },
   "attempt_authority_end": {
     "commit_rule": "Make the local fence and the specific recovery work durable before reporting success or allowing any later admission, renewal, effect or egress. Invalidate queued dispatch and scoped references and fence descendants. Where authority spans databases, durably fence affected spaces before publishing the authority change and block work until reconciled. Keep the exact attempt identity, generation and cleanup key. Dispatch no remote work under the fence. Recover committed cleanup after crash before reply or dispatch. Deduplicate remote teardown by exact attempt, and release quota only after verifying it. Earlier committed effects stay committed.",
@@ -5689,11 +5198,6 @@
         "before_reply": "Exact admitted attempt fence or durable pending-intent refusal, Stop receipt and deduplicated cleanup record under the same lifecycle commit.",
         "after_commit": "Exact-attempt Stop and verified subtree cleanup.",
         "ends_authority": true
-      },
-      "snooze": {
-        "before_reply": "No execution fence. Actor-keyed snooze and Undo change only the personal deadline and its durable publication intent.",
-        "after_commit": "None. Snooze does not dispatch Stop.",
-        "ends_authority": false
       },
       "space_erasure": {
         "before_reply": "Space admission tombstone and recovery-visible authority fence for every affected attempt, descendant and unresolved intent. Record cleanup before acknowledging erasure.",
@@ -5716,7 +5220,7 @@
         "ends_authority": true
       },
       "conversation_audience_widening": {
-        "applies_when": "An authorized change makes one or more principals newly eligible to read a conversation transcript. Resolve effective direct and inherited corpus authority under the existing authority fence. Title-only access alone does not trigger this rule.",
+        "applies_when": "Apply to any item of a kind declaring execution_target if an authorized change adds a reader of its file body. Resolve effective direct and inherited authority under the existing fence. A title-only grant adds no file reader.",
         "instances": {
           "catalogue_operations": [
             "host.item.share",
@@ -5750,23 +5254,23 @@
           "fact": "widens_conversation_audience",
           "material": {
             "name": "transcript_disclosure",
-            "label": "Transcript sharing",
-            "value": "The new readers can read the whole transcript, including anything the agent found or wrote using your own access."
+            "label": "File sharing",
+            "value": "The new readers can read the whole committed file, including anything the agent found or wrote using your own access."
           },
           "rules": "Require host confirmation by an authorized sharer. Show the checked target or scope, new audience and permission with the host-written transcript disclosure. Bind the confirmation to the effective change. Recheck it under the authority fence and require fresh confirmation if the checked change differs. This overrides ordinary Undo and full-swipe shortcuts. For invitations, require sharer confirmation of the covered grant at issue and matching confirmed scope at either redemption path. A redeemer cannot supply the sharer's confirmation.",
-          "committed_text": "Publish access to the entire committed transcript text. The sharer decides whether to disclose it. Do not scan the records for source eligibility or refuse because the text includes personal discoveries. Attachment bytes retain independent delivery checks."
+          "committed_text": "Publish access to the entire committed file, including transcripts. The sharer decides whether to disclose it. Do not scan records for source eligibility or refuse because the file contains personal discoveries. Attachment bytes retain independent delivery checks."
         },
-        "before_reply": "Before the wider grant is visible, durably fence every exact attempt in the affected conversation with personal-only authority (full-rights discovery or tools with a personal native login). Retire affected personal-context intents and descendant authority and durably discard uncommitted output, including anything staged or queued for delivery. Pin the committed transcript boundary and persist deduplicated cleanup. Fence other pending derived output if the wider audience cannot read its sources. Use the commit_rule for changes that span databases.",
-        "after_commit": "Dispatch idempotent exact-attempt Stop and verify teardown. Later attempts use the shared discovery and tools rules. Do not carry forward discarded personal attempt context or reattach a fenced attempt.",
+        "before_reply": "Before the wider grant is visible, durably fence every exact attempt in the affected item with personal-only authority (full-rights discovery or tools with a personal native login). Retire affected personal-context intents and descendant authority and durably discard uncommitted output, including anything staged or queued for delivery. Pin the committed file boundary and persist deduplicated cleanup. Fence other pending derived output if the wider audience cannot read its sources. Use the commit_rule for changes that span databases. In the same durable authority change retire all incompatible saved ExecutionSessionRefs, including completed sessions. Derive retirement from the checked item and audience generation without parsing files or contacting the placement.",
+        "after_commit": "Dispatch idempotent exact-attempt Stop and verify teardown. Later attempts use the shared discovery and tools rules. Do not carry forward discarded personal attempt context or reattach a fenced attempt. Only a new admission using committed file bytes and context cleared for the new audience may run in the widened scope. The placement must keep retired personal sessions unreadable even by raw path or provider session ID.",
         "ends_authority": true
       },
       "conversation_erasure": {
-        "before_reply": "Item deletion or purge fence, including affected admitted attempts, descendants and pending intents. Ordinary Trash of an active conversation requires the separately authorized Stop first.",
-        "after_commit": "Stop any affected live attempt on the authorized erase path, then finish bounded purge.",
+        "before_reply": "Persist item deletion or purge and fence affected jobs, attempts, descendants and saved bindings. Trashing an item with an active attempt requires an authorized Stop first.",
+        "after_commit": "Stop affected live attempts on the authorized erase path, verify teardown and finish bounded purge.",
         "ends_authority": true
       },
       "session_or_job_retirement": {
-        "before_reply": "Invalidated session or scheduled principal, cancelled or replaced current job, and the corresponding attempt, descendant and intent fences.",
+        "before_reply": "Invalidated session or alarm principal, cancelled or replaced current job, and the corresponding attempt, descendant and intent fences.",
         "after_commit": "Stop the affected attempts and retire their queued work.",
         "ends_authority": true
       },
@@ -5781,8 +5285,8 @@
         "ends_authority": true
       },
       "failed_reattachment": {
-        "before_reply": "Under the lifecycle fence durably retire the exact old attempt and its descendant authorities with the interrupted status, committed transcript boundary and deduplicated cleanup. Apply when same-execution proof, continuity, safe provider continuation or fresh renewal fails while the attempt may still exist. Refuse later renewals even when its placement lease is valid.",
-        "after_commit": "Dispatch exact old-attempt Stop or reconcile verified death. Preserve published records and reconcile any uncertain provider effect before an authorized person can Resume with a fresh intent.",
+        "before_reply": "Under the lifecycle fence durably retire the exact old attempt and its descendant authorities with the interrupted status, committed file boundary and deduplicated cleanup. Apply when same-execution proof, continuity, safe provider continuation or fresh renewal fails while the attempt may still exist. Refuse later renewals even when its placement lease is valid.",
+        "after_commit": "Dispatch exact old-attempt Stop or reconcile verified death. Preserve published records and reconcile any uncertain provider effect before an authorized person can request a fresh job.",
         "ends_authority": true
       },
       "ancestor_authority_loss": {
@@ -5805,8 +5309,8 @@
         "cleanup_durable": true
       },
       "attempt_terminal": {
-        "before_reply": "Persist the exact attempt's terminal or interrupted state, fence its scoped work and descendants, and record cleanup and spool retirement. This includes provider terminal output and the sealed live-link drain-stall interruption.",
-        "after_commit": "Verify teardown of remaining workers, tools and gateway, stopping the exact attempt if needed. Preserve the committed transcript boundary and uncertain-effect reconciliation.",
+        "before_reply": "Persist the exact attempt's terminal or interrupted state, fence its scoped work and descendants, and record cleanup and spool retirement. This includes verified process termination and the sealed live-link drain-stall interruption.",
+        "after_commit": "Verify teardown of remaining workers, tools and gateway, stopping the exact attempt if needed. Preserve the committed file boundary and uncertain-effect reconciliation.",
         "ends_authority": true
       }
     },
@@ -5814,7 +5318,6 @@
       "A.1": [
         "archive",
         "stop",
-        "snooze",
         "session_or_job_retirement"
       ],
       "A.2": [
@@ -5849,11 +5352,6 @@
     }
   },
   "activation_capture": {
-    "composer_operations": {
-      "send": "composer.send",
-      "resume": "host.execution.resume",
-      "stop": "host.execution.stop"
-    },
     "context_authority_fields": [
       "lease_ref",
       "grant_revision"
@@ -5887,5 +5385,124 @@
     "window_scope_defaults": {
       "anchor": "start"
     }
-  }
+  },
+  "application_cutover_requirements": {
+    "orchestrator": [
+      "Attribute existing files and messages through the owning harness, including historical heading, author, time, machine and login where authorized.",
+      "Attach files through a generic upload and checked item refs.",
+      "Provide queued follow-ups through plugin-owned state and jobs."
+    ],
+    "notes": [
+      "History browser over the item revision engine.",
+      "Checked linked-user comments.",
+      "Collection creation."
+    ]
+  },
+  "extension_points": {
+    "resolve": "An app declares versioned extension points and interface schemas in its installed manifest. Resolve the exact app, point, version and contribution kind; pin both package generations and validated signatures. A contribution references an operation owned by the contributing package. Require an exact version in the first slice. Reject conflicts without replacing the live owner. App descriptions attach contributions through ExtensionUse. At each use require the matching contribution kind and declared operation.",
+    "authority": "Show the relationship, requested data and effects at install. Both packages must be enabled and the contribution selected by the app or viewer as applicable. Invoke through the broker with the caller's checked rights intersected with the approved declarations and live item and field grants. No direct package-to-package sockets, automatic rights, undeclared UI injection or access to the other package's files.",
+    "limits": {
+      "payload_bytes": 16384,
+      "optional_row_fields_per_visible_row": 8,
+      "contribution_calls_per_view": 2
+    },
+    "rows": "Publish the basic indexed row without a wake. Resolve optional fields only for visible rows, coalesce work, and deliver only for the same checked source ref, lease, audience and revision. Failures omit that field. If an app uses a list entry with a checked source ref, maintain visibility by source authority before pagination or counts. A personal entry grants no rights on its source.",
+    "files": "A kind declares a file format ID and version. Multiple editor contributions may opt into the same format. The person chooses a preferred eligible editor for that format; store the choice per account. Recheck live item write authority and format compatibility at each save. Fall back to an eligible read-only view if the preferred editor is absent or cannot preserve its input.",
+    "harnesses": "Images and entry assets are pinned. Only an admitted execution job may invoke a selected harness contribution. Use identical placement, signature, native-profile, authority and disclosure checks for bundled and community code. An app may publish another harness interface. There is no bundled namespace owner.",
+    "choices": {
+      "input": {
+        "$ref": "#/$defs/ExtensionChoiceRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/ExtensionChoicePage"
+      },
+      "rule": "Only the owning app or its checked device interface can request choices. Bind opaque refs to the exact installed contribution, point, version, account and space. Recheck live grants, digest and compatibility at use. A harness choice ref supplies the HarnessRef for a declared execution job."
+    }
+  },
+  "alarms": {
+    "set": {
+      "input": {
+        "$ref": "#/$defs/AlarmSet"
+      },
+      "output": {
+        "$ref": "#/$defs/AlarmReceipt"
+      }
+    },
+    "cancel": {
+      "input": {
+        "$ref": "#/$defs/AlarmCancel"
+      },
+      "output": {
+        "$ref": "#/$defs/AlarmReceipt"
+      }
+    },
+    "limits": {
+      "pending_per_package_per_space": 32,
+      "pending_per_space": 128,
+      "input_bytes": 16384
+    },
+    "admission": "Only a declared replayable alarm job. Bind the pending alarm to a package generation, creator, checked target and due time. Protect replacement and cancellation by live authority and request receipt. Consume and admit exactly one durable job in the same recovery-visible transaction; delivery or restart replay can only replay that job.",
+    "late": "An eligible missed alarm is delivered once, late, with the original scheduled_at and the actual admission time actual_at. The plugin decides to run or skip from its own per-schedule setting and computes the next time.",
+    "disable": "Persist retirement of pending alarms and fence admitted work when the package is disabled, uninstalled or loses authority. A later enablement does not recreate retired alarms."
+  },
+  "file_append": {
+    "input": {
+      "$ref": "#/$defs/ItemAppend"
+    },
+    "output": {
+      "$ref": "#/$defs/ItemAppendReceipt"
+    },
+    "max_decoded_bytes": 65536,
+    "rule": "Slot is pinned in the installed kind. Check write authority and exact expected revision, plus live execution and audience fence when the writer is attempt-scoped. Commit opaque bytes, revision, byte boundary and receipt recoverably before ACK. Use checked staging and outbox recovery. Preserve the previous readable range pin until revoke, purge or expiry. Reject conflicting receipt fingerprints."
+  },
+  "view_snapshots": {
+    "publish": {
+      "input": {
+        "$ref": "#/$defs/ItemViewPublish"
+      },
+      "output": {
+        "$ref": "#/$defs/ItemViewPublishReceipt"
+      }
+    },
+    "bounds": {
+      "max_encoded_bytes": 65536,
+      "max_nodes": 200,
+      "max_depth": 6,
+      "versions_per_slot_and_audience": 1,
+      "bytes_per_space": 16777216,
+      "pending_refreshes_per_space": 32,
+      "max_bytes_per_package_per_space": 4194304
+    },
+    "authority": "A package can publish only for its own declared item and slot. audience_scope is a host-issued exact projection audience for the checked invocation, never an author string. Bind the snapshot to package generation, item, slot, immutable source revision and audience. Check the source and its display rights at admission, commit and delivery. Require each source to be readable by the whole audience. Never widen a retained audience by relabelling bytes. Mint item_view_context only for the installed owner on the checked item, revision, member audience and slot after checking readable source authority. Reject caller-provided audience labels. Use a scope-limited refresh invocation for checked item sources. Member snapshot text is package-authored under the installed-package trust rule. Do not serve arbitrary snapshot text on guest or public links.",
+    "state": "Reuse row-image revision and stale rules. While the package sleeps serve the bounded native description at once without invoking it. On a newer head the host marks the retained snapshot stale if the source and audience are still authorized. A valid current publish replaces it. When absent show loading with the host item title and basic controls. An admitted live request may wake the package for a fresh view. Schedule at most one eligible declared refresh per item, source revision and audience while pending. Recheck the current view at delivery. Serve the saved view without waiting for refresh and issue no renderer actions from saved bytes. The pinned refresh operation returns ItemSnapshotView, which the host admits as the fresh snapshot under the same scope. Publication changes disposable display state only. Retire superseded generations and evict retained views within the owner and space byte caps. A publish invalidates the matching item view so the renderer can reopen the slot on the same authorized view.",
+    "retention": "Regenerable appdata. Withhold immediately on revoke, purge or generation retirement and reclaim in bounded work. No backup dependency. A snapshot is never authoritative or the only copy. It contains no live actions, external frames, arbitrary URLs, leases or tokens.",
+    "context": {
+      "input": {
+        "$ref": "#/$defs/ItemViewContextRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/ItemViewContext"
+      }
+    }
+  },
+  "offline_download": {
+    "request": {
+      "$ref": "#/$defs/OfflineDownloadRequest"
+    },
+    "manifest": {
+      "$ref": "#/$defs/OfflineDownloadManifest"
+    },
+    "authority": "Authenticate a member's device and mint a host-signed account, device, space, authority-scope manifest of currently readable item revisions and attachments. Read each ref in bounded chunks with the same live grants, revision and device binding. Do not bundle provider profiles, secrets, scratch or protected activation material. The signature uses Ed25519 and a distinct calternal-offline-download-v2 domain over canonical JSON without proof, pinned to the authenticated host. For row display, compare the opaque grant with the locally verified manifest and purge its dependent displays on expiry or revoke.",
+    "retention": "No offline expiry by default. The authorized space owner may configure an expiry under OfflinePolicy. Encrypt device-local bytes and derivatives at rest. Wipe on sign-out, local expiry or next contact after revocation, including cached derivatives, views, indexes and keys. Future bytes are fenced immediately. A disconnected device or an exported copy cannot be erased remotely.",
+    "row_projections": "Body-derived display parts may persist for a live member whose signed offline grant covers the exact source and field. Ordinary template and row cache entries remain display only; never restore authority tokens.",
+    "policy_schema": {
+      "$ref": "#/$defs/OfflinePolicy"
+    }
+  },
+  "trash": {
+    "scope": "One Trash per space for all item kinds.",
+    "retention_days": 30,
+    "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action."
+  },
+  "exchanges_revision": "14.16"
 }
