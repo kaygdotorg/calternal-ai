@@ -1,6 +1,7 @@
 import { definePlugin } from "@calternal/plugin-sdk";
 import type { AppDescription } from "../generated/wire.js";
 import type { ManifestV2 } from "../generated/author.js";
+import { viewerFields, viewerPatchSchema } from "./viewer.ts";
 import { catalogueRef, harnessInput, harnessOutput, object, textSchema } from "./harnesses-v1.ts";
 
 const item = catalogueRef("ItemRef");
@@ -35,7 +36,7 @@ const description: AppDescription = {
       submit: { id: "create-thread", title: "New thread", operation: "threads.create",
         inputs: { title: { form: "create", field: "title" } }, then: { route: { name: "item" } } } },
     { type: "component", component: { type: "item-view", id: "transcript", config: { item: itemRoute, slot: "body" } } },
-    { type: "form", id: "composer", fields: [{ id: "message", label: "Message", input: "multiline", required: true, maxLength: 4000 }],
+    { type: "form", id: "composer", entry_context: { component: "transcript" }, fields: [{ id: "message", label: "Message", input: "multiline", required: true, maxLength: 4000, draft: { slot: "draft" } }],
       submit: { id: "send", title: "Send", operation: "threads.send", inputs: {
         item: itemRoute, text: { form: "composer", field: "message" }, harness: harnessChoice,
         placement: { prompt: { title: "Run on", kind: "choice", options: { host: "execution_placement" } } },
@@ -74,7 +75,9 @@ const metadata = {
       ],
     },
     append_file: true, attempt_discovery: "item_policy", execution_target: true, view_snapshots: [{ id: "body", refresh: "threads.refresh" }],
-    schema: object({ title }, "title"),
+    schema: object({ title, shape: { enum: ["person", "group", "agent", "mixed"] } }, "title"),
+    indexed_fields: { shape: { type: "Text", audience: "shared_projection" } },
+    viewer_fields: viewerFields,
   }],
   jobs: [{ id: "run", run_operation: "threads.run", replayable: true, execution: true, alarm: true }],
   operations: [
@@ -92,6 +95,9 @@ const metadata = {
     { ...execute, id: "threads.arm", title: "Schedule a run", target, methods: [...readBody, "alarm_set"],
       input_schema: object({ item, text: textSchema, harness, at: catalogueRef("Timestamp"), if_missed: ifMissed, grace_seconds: { type: "integer", minimum: 0, maximum: 86400 } },
         "item", "text", "harness", "at", "if_missed"), output_schema: catalogueRef("AlarmReceipt") },
+    { ...write, required_capability: "space.read", id: "threads.state", title: "Update my thread preferences", target,
+      methods: ["viewer_state_read", "viewer_state_write"],
+      input_schema: object({ item, ...viewerPatchSchema }, "item"), output_schema: catalogueRef("ViewerItemState") },
     { ...read, id: "threads.refresh", title: "Read thread page", target, methods: [...readBody],
       input_schema: catalogueRef("ItemViewRead"), output_schema: catalogueRef("ItemViewPage") },
     { ...read, id: "threads.message", title: "Read message", target, methods: [...readBody],

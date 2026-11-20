@@ -1,7 +1,8 @@
 import type { ItemViewRead, ItemRef, Timestamp } from "../generated/wire.js";
 import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { checkedText, type HarnessInput, type HarnessOutput } from "./harnesses-v1.ts";
-import { agentParticipant, attest, checkedTitle, encode, MAX_FILE_BYTES, messageId, messageRecord, personParticipant, step, threadHeader, messageView, type Thread } from "./format.ts";
+import { agentParticipant, attest, checkedTitle, encode, MAX_FILE_BYTES, messageId, messageRecord, personParticipant, step, threadHeader, threadShape, messageView, type Thread } from "./format.ts";
+import { viewerState } from "./viewer.ts";
 import type { Context, RunInput, Send } from "./interface.ts";
 import { appendRecord, conversationPage, inlineBody, kind, prepareFiles, publish, read, readConversation } from "./files.ts";
 import { legacyMessage, legacyPage } from "./legacy.ts";
@@ -34,7 +35,7 @@ async function create({ title }: { title: string }, ctx: Context) {
   const head = await ctx.call("item_create", {
     request_id: step(ctx.author.request_id, "create"),
     kind, name: "Conversation.md",
-    metadata: { title: thread.title },
+    metadata: { title: thread.title, shape: threadShape(thread) },
     ...(attested ? { attested, attempt_discovery: "creator_only" } : { body: inlineBody(Buffer.from(encode(thread))) }),
   });
   await publish(ctx, head.item, head.revision, thread);
@@ -172,5 +173,5 @@ async function message(input: { item: ItemRef; message: string; offset?: number 
 /** Draft application handlers. Protected Stop and archive use host controls. */
 export const handlers = {
   "threads.create": create, "threads.send": send,
-  "threads.run": run, "threads.arm": arm, "threads.refresh": refresh, "threads.message": message,
+  "threads.state": viewerState, "threads.run": run, "threads.arm": arm, "threads.refresh": refresh, "threads.message": message,
 };

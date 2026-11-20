@@ -50,6 +50,13 @@ export type Thread = {
   messages: Message[];
 };
 
+/** Classify the current participants for the shared row field. */
+export function threadShape(thread: Thread): "person" | "group" | "agent" | "mixed" {
+  if (thread.conversation !== "people") return "agent";
+  if (thread.participants.some(participant => participant.kind === "agent")) return "mixed";
+  return thread.participants.length > 2 ? "group" : "person";
+}
+
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
 // Request and step together give the same key on delivery replay.
@@ -102,7 +109,7 @@ function timestamp(value: string): Timestamp {
   return date.toISOString().replace(/\.000Z$/u, "Z");
 }
 
-type FramedText = { prefix: string; text: string; suffix: string; quote?: string };
+type FramedText = { prefix: string; text: string; suffix: string; quote?: string; anchor?: string };
 /** Maximum bytes in each plugin-owned attested framing operand. */
 export const MAX_FRAMING_BYTES = 512;
 
@@ -148,7 +155,7 @@ export function messageRecord(message: Message, participants: Participant[], inl
   if (message.files?.length) attrs.push(`files=${message.files.length}`);
   const tail = [...(message.files?.length ? [fileLinks(message.files)] : []),
     ...(links.length ? [`<!-- ${links.join(" ")} -->`] : [])];
-  return { prefix: `### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n`, quote: message.replyQuote, text: message.text,
+  return { anchor: message.id, prefix: `### ${heading.join(" · ")} {${attrs.join(" ")}}\n\n`, quote: message.replyQuote, text: message.text,
     suffix: tail.length ? `\n\n${tail.join("\n\n")}\n\n` : "\n\n" };
 }
 

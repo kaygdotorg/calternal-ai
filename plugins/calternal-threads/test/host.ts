@@ -7,7 +7,7 @@ import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AlarmDelivery, AlarmSet, AttestedBody, ExecutionJobContext, ExecutionJobStart, ExecutionStatus,
   ExecutionStopRequest, ExecutionStopResult, HostWorkerInvokeFrame, ItemAppend, ItemContentReceipt, ItemCreate, ItemSave,
-  ItemSpansPage, ItemSpansRequest, ItemStageBegin, ItemStageChunk, ItemStageSeal, ItemViewPublish } from "../generated/wire.js";
+  ViewerItemState, ViewerItemStateWrite, ItemSpansPage, ItemSpansRequest, ItemStageBegin, ItemStageChunk, ItemStageSeal, ItemViewPublish } from "../generated/wire.js";
 import { encodeContributionFrame } from "../generated/contribution-frame.mjs";
 import { authorContext } from "../generated/author-context.mjs";
 import type { ManifestV2 } from "../generated/author.js";
@@ -47,10 +47,12 @@ const exchanges = {
   item_view_context: ["ItemViewContextRequest", "ItemViewContext"],
   item_view_publish: ["ItemViewPublish", "ItemViewPublishReceipt"],
   alarm_set: ["AlarmSet", "AlarmReceipt"],
+  viewer_state_read: ["ViewerItemStateRead", "ViewerItemState"],
+  viewer_state_write: ["ViewerItemStateWrite", "ViewerItemState"],
 } as const;
 const trace: [name: string, value: unknown][] = [];
 
-/** Check the fake's revision 14.41 exchanges against the pinned schemas. */
+/** Check the fake's revision 14.43 exchanges against the pinned schemas. */
 export function checkTrace() {
   const check = fileURLToPath(new URL("../check-shapes.py", import.meta.url));
   const contract = fileURLToPath(new URL("../.build/contract/", import.meta.url));
@@ -60,13 +62,14 @@ export function checkTrace() {
 type SpanIndex = Pick<ItemSpansPage, "body_provenance" | "spans">;
 type Span = ItemSpansPage["spans"][number];
 type QuoteSource = NonNullable<AttestedBody["quote"]>;
-type SpanBinding = { record: string; quotedRecord?: string; quoteSource?: QuoteSource };
+type SpanBinding = { record: string; entry?: { anchor: string; ordinal: number }; quotedRecord?: string; quoteSource?: QuoteSource };
 type IndexedLink = { source: string; anchor: string; path: string; item: string };
 type RelocationUndo = { item: string; title: string; folder: string[]; head: string; viewer: string };
 type File = { space: string; people?: readonly string[]; creator: string; discovery: "creator_only" | "consent_only"; owner: "threads" | "claude-code-run"; history: Map<string, Buffer>; authors: Map<string, string>;
   spanHistory: Map<string, SpanIndex>; spans: Map<string, Span>; bindings: Map<string, SpanBinding>;
   withheldRevisions: Set<string>; provenance: SpanIndex["body_provenance"];
-  revision: string; path?: string; archived: boolean; title: string; createdAt: string };
+  revision: string; path?: string; archived: boolean; title: string; shape?: string; entryOrder: number; createdAt: string };
+type ViewerRecord = ViewerItemState & { draft?: string; readOrder?: number };
 type Job = {
   context: ExecutionJobContext;
   starter: string;
@@ -115,7 +118,7 @@ const personLabels: Record<string, string> = Object.fromEntries(directoryAccount
 const defaultGroup = "threads-group";
 type DirectoryGroup = { id: string; source: "local" | "oidc"; members: readonly string[] };
 const peopleMethods = new Set(["item_create", "item_head", "item_range", "item_spans", "item_save", "item_save_begin",
-  "item_save_chunk", "item_save_seal", "item_append", "item_view_context", "item_view_publish"]);
+  "item_save_chunk", "item_save_seal", "item_append", "item_view_context", "item_view_publish", "viewer_state_read", "viewer_state_write"]);
 
 /** One in-memory space. Validates plugin ownership, exact revisions and
  * attempt retirement around the calls used by the spike. */
@@ -125,6 +128,7 @@ export class FakeHost {
   snapshots = new Map<string, ItemViewPublish>();
   private uploaded = new Map<string, UploadedFile>();
   private attachmentViews = new Map<string, AttachmentView>();
+  private quoteJobs = new Map<string, string[]>();
   private quoteDestinations = new Map<string, Set<string>>();
   alarms = new Map<string, AlarmSet>();
   receipts = new Map<string, { fingerprint: string; result: unknown }>();
@@ -150,7 +154,7 @@ export class FakeHost {
   onConsultationTurn = async (_turn: ConsultationTurn) => {};
   private consent = new Map<string, { generation: number; always: boolean }>();
   invitationClock = (authoredAt: string) => Date.parse(authoredAt);
-  private personState = new Map<string, string>();
+  private personState = new Map<string, ViewerRecord>();
   private personPreferences = new Map<string, string>();
   private directoryGroups: readonly DirectoryGroup[] = [{ id: defaultGroup, source: "local", members: directoryAccounts }];
   beforeTerminal = async () => {};
@@ -254,6 +258,53 @@ export class FakeHost {
         return [{ ref, label: upload.name }];
       }),
     };
+  }
+
+  private reader(item: string, person: string) {
+    const file = this.files.get(item);
+    assert.ok(file?.owner === "threads" && (file.people ?? [file.creator]).includes(person), "Private state unavailable.");
+    const key = JSON.stringify([file.space, item, file.owner, person]);
+    return { key, file, record: this.personState.get(key) ?? { version: "initial", fields: {} } };
+  }
+
+  private readViewer(item: string, person: string): ViewerItemState {
+    const { file, record } = this.reader(item, person);
+    if (file.withheldRevisions.has(file.revision)) return structuredClone({ version: record.version, fields: record.fields });
+    const entries = new Map([...file.spans.values()].flatMap(span => {
+      const checked = file.bindings.get(span.span)?.entry;
+      return checked && span.middle_length && checked.ordinal > (record.readOrder ?? 0) &&
+        (span.attribution?.kind !== "person" || span.attribution.actor !== person) ? [[checked.anchor, checked.ordinal]] : [];
+    }));
+    const unread = entries.size;
+    const mentions = unread ? this.thread(item).messages.filter(message =>
+      entries.has(message.id) && message.mentions?.includes(person)).length : 0;
+    return structuredClone({ version: record.version, fields: { ...record.fields, unread, mentions,
+      ...(record.draft !== undefined && { draft: record.draft }) } });
+  }
+
+  /** Simulate the renderer acknowledging an entry delivered under the viewer's live scope. */
+  markRead(item: string, person: string, anchor: string) {
+    const { key, file, record } = this.reader(item, person);
+    const checked = [...file.spans.values()].find(span => span.middle_length && file.bindings.get(span.span)?.entry?.anchor === anchor);
+    assert.ok(checked, "Entry unavailable.");
+    const ordinal = file.bindings.get(checked.span)!.entry!.ordinal;
+    trace.push(["ItemViewReadMarkRequest", { type: "item_view_read_mark", window_ref: this.id("live-view"), upto: anchor, request_id: this.id("read-mark") }]);
+    if (ordinal > (record.readOrder ?? 0)) this.personState.set(key, { ...record, version: this.id("viewer"), readOrder: ordinal });
+    const { version, fields } = this.readViewer(item, person);
+    trace.push(["ItemViewReading", { version, unread: fields.unread, mentions: fields.mentions }]);
+  }
+
+  /** Simulate a renderer draft write using the version shared with its row preferences. */
+  writeDraft(item: string, person: string, text: string, expected: string) {
+    const { key, file, record } = this.reader(item, person);
+    assert.ok(!file.archived && (!file.people || this.conversationAccess(item, person) === "full"), "Draft is read-only.");
+    assert.equal(record.version, expected, "Private state changed.");
+    assert.ok([...text].length <= 4000 && Buffer.byteLength(text) <= 4096, "Draft is too long.");
+    trace.push(["DraftUpdate", { type: "draft_update", window_ref: this.id("live-view"), form: "composer", field: "message", expected,
+      request_id: this.id("draft-save"), text }]);
+    const version = this.id("viewer");
+    this.personState.set(key, { ...record, version, draft: text });
+    trace.push(["DraftValue", { version, text }]);
   }
 
   /** Read the host's attribution for the current or a specific committed revision. */
@@ -401,14 +452,6 @@ export class FakeHost {
         const result = await this.call("threads", request, "item_create", input, undefined, person, true, people);
         trace.push(["ItemContentReceipt", result]);
         return result as ItemContentReceipt;
-      },
-      privateState: {
-        read: async item => this.personState.get(JSON.stringify([person, item])),
-        write: async (item, body, expected) => {
-          const key = JSON.stringify([person, item]);
-          assert.equal(this.personState.get(key), expected, "private state changed");
-          this.personState.set(key, body);
-        },
       },
       privatePreferences: {
         read: async () => this.personPreferences.get(person),
@@ -569,6 +612,7 @@ export class FakeHost {
     if (file?.people) assert.ok(file.people.includes(receiptActor), "Conversation unavailable.");
     const writable = () => {
       assert.ok(file?.owner === owner && !file.archived, "target unavailable");
+      assert.ok(!file.withheldRevisions.has(file.revision), "revision withheld after redaction");
       if (owner === "threads" && job) assert.equal(job.context.item, args.item, "wrong attempt target");
       if (file.people && this.conversationAccess(args.item, receiptActor) !== "full") {
         throw new Error("Conversation is read-only.");
@@ -644,32 +688,15 @@ export class FakeHost {
         middle_offset: offset + composed.prefixBytes + quoteLength, middle_length: composed.middleBytes, ...(attribution && { attribution }),
         ...(composed.quoted && { quote: { offset: offset + composed.prefixBytes, length: quoteLength, attribution: composed.quoted.attribution } }),
       });
-      target.bindings.set(span, { record: record ?? span, quotedRecord: composed.quoted?.record, quoteSource: composed.quoted?.source });
+      const priorEntry = record && target.bindings.get(record)?.entry;
+      const entry = priorEntry || (attested.entry_anchor ? { anchor: attested.entry_anchor, ordinal: ++target.entryOrder } : undefined);
+      target.bindings.set(span, { record: record ?? span, entry, quotedRecord: composed.quoted?.record, quoteSource: composed.quoted?.source });
       if (composed.quoted) {
         const destinations = this.quoteDestinations.get(composed.quoted.record) ?? new Set<string>();
         destinations.add(args.item);
         this.quoteDestinations.set(composed.quoted.record, destinations);
       }
       return { span };
-    };
-    const shiftAfter = (target: File, start: number, delta: number) => {
-      for (const span of target.spans.values()) {
-        if (span.offset <= start) continue;
-        span.offset += delta;
-        span.middle_offset += delta;
-        if (span.quote) span.quote.offset += delta;
-        for (const range of span.host_ranges ?? []) range.offset += delta;
-      }
-    };
-    const publishIndex = (target: File, revision: string, opaque = false) => {
-      if (opaque) {
-        target.provenance = "unproven";
-        target.spans.clear();
-      }
-      target.spanHistory.set(revision, {
-        body_provenance: target.provenance,
-        spans: [...target.spans.values()].sort((a, b) => a.offset - b.offset).map(entry => structuredClone(entry)),
-      });
     };
     switch (method) {
       case "item_create": return commit(() => {
@@ -699,10 +726,11 @@ export class FakeHost {
         }
         const target: File = { owner, space: this.personalSpace(receiptActor), people: shared && [...shared], creator: receiptActor, discovery, revision, history: new Map([[revision, body]]),
           authors: new Map(), spans: new Map(), spanHistory: new Map(), bindings: new Map(), withheldRevisions: new Set(),
-          provenance: "attested", path, archived: false, title, createdAt: now };
+          provenance: "attested", path, archived: false, title, entryOrder: 0,
+          shape: typeof create.metadata.shape === "string" ? create.metadata.shape : undefined, createdAt: now };
         const span = create.attested && composed ? recordSpan(target, 0, composed, create.attested) : {};
         if (create.attested) attributeWrite(target, revision, create.attested);
-        publishIndex(target, revision, !create.attested && body.length !== 0);
+        this.publishIndex(target, revision, !create.attested && body.length !== 0);
         this.files.set(item, target);
         return { item, revision, locator: { space: target.space, id: item }, receipt: requestId, ...span };
       });
@@ -777,54 +805,25 @@ export class FakeHost {
               const { record } = target.bindings.get(prior.span)!;
               body = Buffer.concat([original.subarray(0, prior.offset), replacement.bytes, original.subarray(prior.offset + prior.length)]);
               target.spans.delete(save.replace_span);
-              shiftAfter(target, prior.offset, replacement.bytes.length - prior.length);
+              this.shiftAfter(target, prior.offset, replacement.bytes.length - prior.length);
               span = recordSpan(target, prior.offset, replacement, save.attested, record);
               if (save.attested.source.kind === "empty") {
-                const affected = new Set([save.item, ...this.quoteDestinations.get(record) ?? []]);
-                for (const item of affected) {
-                  const dependentFile = this.files.get(item)!;
-                  let current = item === save.item ? body : dependentFile.history.get(dependentFile.revision)!;
-                  let changed = false;
-                  for (const dependent of dependentFile.spans.values()) {
-                    const quote = dependent.quote;
-                    if (!quote || dependentFile.bindings.get(dependent.span)?.quotedRecord !== record) continue;
-                    current = Buffer.concat([current.subarray(0, quote.offset), current.subarray(quote.offset + quote.length)]);
-                    const quoteEnd = quote.offset + quote.length;
-                    const remaining: NonNullable<Span["host_ranges"]>[number][] = [];
-                    for (const range of dependent.host_ranges ?? []) {
-                      const end = range.offset + range.length;
-                      const length = range.length - Math.max(0, Math.min(end, quoteEnd) - Math.max(range.offset, quote.offset));
-                      if (!length) continue;
-                      const offset = range.offset - Math.min(quote.length, Math.max(0, range.offset - quote.offset));
-                      const last = remaining.at(-1);
-                      if (last && last.offset + last.length === offset) last.length += length;
-                      else remaining.push({ length, offset });
-                    }
-                    if (remaining.length) dependent.host_ranges = [remaining[0], ...remaining.slice(1)];
-                    else delete dependent.host_ranges;
-                    dependent.length -= quote.length;
-                    dependent.middle_offset -= quote.length;
-                    delete dependent.quote;
-                    shiftAfter(dependentFile, dependent.offset, -quote.length);
-                    changed = true;
+                body = this.stripQuoteCopies(target, record, body);
+                const pending = [];
+                for (const item of new Set([save.item, ...(this.quoteDestinations.get(record) ?? [])])) {
+                  const dependent = this.files.get(item)!;
+                  for (const [older, index] of dependent.spanHistory) {
+                    if (index.spans.some(entry => entry.middle_length && (
+                      dependent.bindings.get(entry.span)?.record === record ||
+                      (entry.quote && dependent.bindings.get(entry.span)?.quotedRecord === record)
+                    ))) dependent.withheldRevisions.add(older);
                   }
-                  for (const [older, index] of dependentFile.spanHistory) {
-                    if (index.spans.some(entry => {
-                      const binding = dependentFile.bindings.get(entry.span)!;
-                      return entry.attribution !== undefined &&
-                        (binding.record === record || (entry.quote && binding.quotedRecord === record));
-                    })) dependentFile.withheldRevisions.add(older);
-                  }
-                  const snapshot = this.snapshots.get(item);
-                  if (snapshot && dependentFile.withheldRevisions.has(snapshot.source_revision)) this.snapshots.delete(item);
-                  if (item === save.item) body = current;
-                  else if (changed) {
-                    const next = this.id("rev");
-                    dependentFile.history.set(next, current);
-                    dependentFile.revision = next;
-                    publishIndex(dependentFile, next);
-                  }
+                  const retained = this.snapshots.get(item);
+                  if (retained && dependent.withheldRevisions.has(retained.source_revision)) this.snapshots.delete(item);
+                  if (item !== save.item && [...dependent.spans.values()].some(span =>
+                    span.quote && dependent.bindings.get(span.span)?.quotedRecord === record)) pending.push(item);
                 }
+                if (pending.length) this.quoteJobs.set(record, pending);
               }
             } else {
               body = replacement.bytes;
@@ -836,9 +835,10 @@ export class FakeHost {
           target.history.set(revision, body);
           target.revision = revision;
           if (typeof save.patch?.title === "string") target.title = save.patch.title;
+          if (typeof save.patch?.shape === "string") target.shape = save.patch.shape;
           if (stage || save.body !== undefined || save.attested) attributeWrite(target, revision, save.attested);
           if (save.attempt_discovery === "consent_only") target.discovery = "consent_only";
-          publishIndex(target, revision, Boolean(stage) || save.body !== undefined);
+          this.publishIndex(target, revision, Boolean(stage) || save.body !== undefined);
           const result = { item: save.item, revision, locator: { space: target.space, id: save.item }, receipt: requestId, ...span };
           if (stage) this.receipts.get(receiptKey("item_save_begin"))!.result = result;
           return result;
@@ -940,6 +940,8 @@ export class FakeHost {
           const selected = this.selectedFiles(append.item, receiptActor, stagedFiles);
           assert.ok(!selected.length || (composed?.middleBytes && selected.every(upload => !upload.record && upload.job === job?.context.intent)),
             "Attachment unavailable.");
+          if (append.attested?.entry_anchor) assert.ok(![...target.bindings.values()].some(binding =>
+            binding.entry?.anchor === append.attested!.entry_anchor), "Entry anchor already exists.");
           const addition = composed ? composed.bytes : Buffer.from(append.bytes ?? "", "base64");
           assert.ok(addition.length <= 65536);
           const body = Buffer.concat([prior, addition]);
@@ -949,7 +951,7 @@ export class FakeHost {
           const span = append.attested && composed ? recordSpan(target, prior.length, composed, append.attested) : {};
           if (span.span) for (const upload of selected) upload.record = target.bindings.get(span.span)!.record;
           if (!append.attested) target.provenance = "unproven";
-          publishIndex(target, revision);
+          this.publishIndex(target, revision);
           return { revision, end_offset: body.length, receipt: requestId,
             ...span };
         });
@@ -958,6 +960,27 @@ export class FakeHost {
           throw new Error("Append acknowledgement lost");
         }
         return receipt;
+      }
+      case "viewer_state_read": {
+        assert.ok(owner === "threads" && checkedInvocation && !job, "Private state unavailable.");
+        return this.readViewer(args.item, receiptActor);
+      }
+      case "viewer_state_write": {
+        assert.ok(owner === "threads" && checkedInvocation && !job, "Private state unavailable.");
+        const { item, expected, patch } = input as ViewerItemStateWrite;
+        return commit(() => {
+          const { key, record } = this.reader(item, receiptActor);
+          assert.equal(record.version, expected, "Private state changed.");
+          const fields = { ...record.fields };
+          for (const [field, value] of Object.entries(patch)) {
+            assert.ok(["pinned", "muted", "unread_mark"].includes(field) && (value === null || typeof value === "boolean"),
+              "Private field is invalid or maintained by the host.");
+            if (value === null) delete fields[field];
+            else fields[field] = value;
+          }
+          this.personState.set(key, { ...record, version: this.id("viewer"), fields });
+          return this.readViewer(item, receiptActor);
+        });
       }
       case "item_view_context": {
         const target = writable();
@@ -985,9 +1008,80 @@ export class FakeHost {
     }
   }
 
+  private shiftAfter(target: File, start: number, delta: number) {
+    for (const span of target.spans.values()) {
+      if (span.offset <= start) continue;
+      span.offset += delta;
+      span.middle_offset += delta;
+      if (span.quote) span.quote.offset += delta;
+      for (const range of span.host_ranges ?? []) range.offset += delta;
+    }
+  }
+  private publishIndex(target: File, revision: string, opaque = false) {
+    if (opaque) {
+      target.provenance = "unproven";
+      target.spans.clear();
+    }
+    target.spanHistory.set(revision, {
+      body_provenance: target.provenance,
+      spans: [...target.spans.values()].sort((a, b) => a.offset - b.offset).map(entry => structuredClone(entry)),
+    });
+  }
+
+  private stripQuoteCopies(dependentFile: File, record: string, current: Buffer) {
+    for (const dependent of dependentFile.spans.values()) {
+      const quote = dependent.quote;
+      if (!quote || dependentFile.bindings.get(dependent.span)?.quotedRecord !== record) continue;
+      current = Buffer.concat([current.subarray(0, quote.offset), current.subarray(quote.offset + quote.length)]);
+      const quoteEnd = quote.offset + quote.length;
+      const remaining: NonNullable<Span["host_ranges"]>[number][] = [];
+      for (const range of dependent.host_ranges ?? []) {
+        const end = range.offset + range.length;
+        const length = range.length - Math.max(0, Math.min(end, quoteEnd) - Math.max(range.offset, quote.offset));
+        if (!length) continue;
+        const offset = range.offset - Math.min(quote.length, Math.max(0, range.offset - quote.offset));
+        const last = remaining.at(-1);
+        if (last && last.offset + last.length === offset) last.length += length;
+        else remaining.push({ length, offset });
+      }
+      if (remaining.length) dependent.host_ranges = [remaining[0], ...remaining.slice(1)];
+      else delete dependent.host_ranges;
+      dependent.length -= quote.length;
+      dependent.middle_offset -= quote.length;
+      delete dependent.quote;
+      this.shiftAfter(dependentFile, dependent.offset, -quote.length);
+
+    }
+    return current;
+  }
+
+  /** Count the resumable jobs created by committed delete receipts. */
+  get pendingQuoteRedactions() { return this.quoteJobs.size; }
+
+  /** Advance one persisted job a bounded number of destinations, using their current head. */
+  resumeQuoteRedaction(limit = 1) {
+    const job = this.quoteJobs.entries().next().value;
+    if (!job) return;
+    const [record, pending] = job;
+    for (let count = 0; count < limit && pending.length; count++) {
+      const item = pending[0];
+      const file = this.files.get(item)!;
+      const before = file.history.get(file.revision)!;
+      const body = this.stripQuoteCopies(file, record, before);
+      if (body !== before) {
+        const revision = this.id("rev");
+        file.history.set(revision, body);
+        file.revision = revision;
+        this.publishIndex(file, revision);
+      }
+      pending.shift();
+    }
+    if (!pending.length) this.quoteJobs.delete(record);
+  }
+
   private head(item: string, file: File) {
     return { item, revision: file.revision, locator: { space: file.space, id: item }, bytes: file.history.get(file.revision)!.length,
-      metadata: { title: file.title } };
+      metadata: { title: file.title, ...(file.shape && { shape: file.shape }) } };
   }
 
   async run(id: string, alarm?: AlarmDelivery) {
@@ -1188,17 +1282,12 @@ export class FakeHost {
   }
 
   /** Materialize exact broker bytes for the report, without serializing them again. */
-  async materialize(directory: string, item: string, person: string) {
+  async materialize(directory: string, item: string) {
     const file = this.files.get(item)!;
     assert.ok(file.path);
     const transcript = join(directory, file.path);
-    const privateFile = join(directory, ".calternal-private", person, "threads", `${item}.md`);
-    const state = this.personState.get(JSON.stringify([person, item]));
-    assert.ok(state);
     await mkdir(dirname(transcript), { recursive: true });
-    await mkdir(dirname(privateFile), { recursive: true });
     await writeFile(transcript, file.history.get(file.revision)!);
-    await writeFile(privateFile, state);
     for (const message of this.thread(item).messages) {
       if (!message.consultation) continue;
       const consultation = this.files.get(message.consultation.id)!;

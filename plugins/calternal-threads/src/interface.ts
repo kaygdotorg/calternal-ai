@@ -4,7 +4,7 @@ import type { AlarmDelivery, AlarmReceipt, AlarmSet, AuthorInvocationContext, Co
   ExecutionStatus, ItemAppend, ItemAppendReceipt, ItemViewContext, ItemViewContextRequest, ItemViewPublish,
   ItemViewPublishReceipt, ItemContentReceipt, ItemCreate, ItemHeadRequest, OwnedItemHead, ItemRange, ItemRangeResult,
   ItemSave, ItemSaveReply, ItemRef, HarnessRef, ChoiceRef, ItemSpansRequest, ItemSpansPage,
-  ItemStageBegin, ItemStageBeginReply, ItemStageChunk, ItemStageChunkAck, ItemStageSeal, ItemStageSealed } from "../generated/wire.js";
+  ItemStageBegin, ItemStageBeginReply, ItemStageChunk, ItemStageChunkAck, ItemStageSeal, ItemStageSealed, ViewerItemState, ViewerItemStateRead, ViewerItemStateWrite } from "../generated/wire.js";
 
 export type Send = { item: ItemRef; text: string; harness: HarnessRef; placement: ChoiceRef; attachments?: readonly string[] };
 export type RunInput = { item: ItemRef; if_missed?: "run" | "skip" };
@@ -26,6 +26,8 @@ type Methods = {
   item_view_context: [ItemViewContextRequest, ItemViewContext];
   item_view_publish: [ItemViewPublish, ItemViewPublishReceipt];
   alarm_set: [AlarmSet, AlarmReceipt];
+  viewer_state_read: [ViewerItemStateRead, ViewerItemState];
+  viewer_state_write: [ViewerItemStateWrite, ViewerItemState];
 };
 
 export interface Context {

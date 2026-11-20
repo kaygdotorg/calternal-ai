@@ -4,8 +4,9 @@ The lane starts from dev `80864d0d`. The spike has rerun against
 14.30 (`b89586dd`), 14.31 (`00828198`), 14.32 (`3ca11613`) and
 14.33 (`47024c0f`), 14.34 (`b4d0f20d`), 14.35 (`36d49713`) and
 14.36 (`1c38c21d`), 14.37 (`0d684545`), 14.38 (`430cb649`) and
-14.39 (`d07c380b`) and 14.40 (`35a50959`). The current pin for both plugins is draft 14.41 at
-`4a1e099b616ad7f97a2e8f7994fb782ef5ce4061`
+14.39 (`d07c380b`), 14.40 (`35a50959`), 14.41 (`4a1e099b`) and
+14.42 (`bfe557a9`). The current pin for both plugins is draft 14.43 at
+`8429948bf37999241e89d0725fc83ff601fb2dc4`
 on `origin/lane/v2-host-base`. It follows the November 20
 decision that the Threads app (`calternal-threads`) owns the conversation file and the selected harness
 owns its working log. The lane issue is [#92](https://git.kayg.org/kayg/calternal-ai/issues/92).
@@ -39,11 +40,11 @@ flock -s /tmp/calternal-dev02.lock nix develop -c bash -c '
 '
 ```
 
-The build uses the 14.41 revision-aware SDK builder. It pins both
+The build uses the 14.43 revision-aware SDK builder. It pins both
 plugin manifests and workers, the Threads template and the harness entry.
 Tests load the emitted artifacts and validate the fake's typed exchanges.
 All 55 tests and both Conformance tool 1.1.0 plugin checks passed
-on dev-02 at the 14.41 pin under the shared lock. This includes four
+on dev-02 at the 14.43 pin under the shared lock. This includes four
 v1 reader tests. The repository
 documentation gate passed in the earlier afternoon run. The verified entry asset still uses scripted
 output in the fake. Live installed placement remains unqualified.
@@ -491,13 +492,13 @@ still requires the host.
 | API §§3 and 4.2 viewer-scoped fields | Bind private read position, unread/mention/reply counts and the mute decision to the viewer. Pin the row surface and invalidation. The Claude UI lane owns visual placement and styling. |
 | API §3 notifications and owner messaging decisions | Pin delivery-time mute checks, the combined receipt/typing preference, and checked device routing for iOS lock state. The fixture makes decisions with supplied device state and sends no notifications. |
 
-### Conversation and private state on disk
+### Conversation on disk
 
 The files below are the exact bytes the plugin worker wrote through
 the fake host on dev-02. Alice and Bob are synthetic accounts. The
 called-in Claude Code harness uses scripted output and owns a separate
 log. The consultation item shows the private exchange whose summary was
-posted back once. The private path is the fixture's account namespace.
+posted back once. Since 14.43, the host keeps the viewer’s draft, read position and mute in its private record. Threads writes only the shared conversation and the linked consultation.
 
 The format uses plain frontmatter and one participant per line. Aliases
 such as `p1` resolve to stable IDs in the list. Names on its entries are
@@ -573,16 +574,6 @@ Agreed recommendation
 
 <!-- consultation=019a0000-0000-7000-8000-000000000010/item-24 -->
 
-````
-
-`.calternal-private/019a0000-0000-7000-8000-000000000001/threads/item-1.md`
-
-````markdown
----
-last-read-message: "b31395e111a687c4"
-draft: "I’ll bring the gloves."
-muted: true
----
 ````
 
 `.calternal/thread-consultations/Consultation.md`
@@ -786,7 +777,7 @@ require a cross-owner write grant that the design does not provide.
 The plugin worker code uses no native Threads dispatch, special plugin ID,
 direct plugin connection, inherited provider credential, or server-owned
 thread format. The fixture provider port stands in for live execution placement. The
-14.41 fake carries replies through the catalogue's checked contribution
+14.43 fake carries replies through the catalogue's checked contribution
 methods. People-thread invitations still use fixture ports. The harness manifest includes
 an image-shaped fixture digest and a pinned entry that fails closed.
 It cannot launch Claude Code. The real image, login mapping and reviewed
@@ -909,6 +900,19 @@ shapes.
 | File delivery and revocation · catalogue `view_snapshots.assets` and `ItemViewAssetRef` | **PARTLY** | The output schema already has `snapshot-attachment`. A worker still needs a normed way to resolve a portable identity into an authorized input ref for an exact conversation revision and view scope. Verify item and file grants independently at delivery, fence historical and retained reads on deletion and revoke, and keep the ordinary relative link valid on rename, move, export, and an offline copy. |
 | Bounded framing · catalogue `item_engine` attested composition | **OPEN** for the general format | The fixture supports up to four files with nonempty captured text while the generated links fit the 512-byte suffix. It refuses an oversized link footer before Send admission. Pin a bounded host-checked attachment footer if several long filenames must fit, and an attachment-only composition that records the checked action and distinguishes it from a tombstone. |
 | Claims, reopening and edits | **CLOSED** in the fixture | A lost append acknowledgement replays one message and one claim. Another actor or conversation cannot reuse its upload choice. Edits preserve existing files. An independent revoke removes the corresponding view leaf and denies its existing range ref. Deleting the message removes the other attachment link and fences its previously issued read. Opaque whole-file replacement is refused while a live checked attachment depends on a recorded span. |
+
+## Revisions 14.42 and 14.43 dispositions
+
+| Finding and reference | Status | Evidence or remaining work |
+| --- | --- | --- |
+| Cross-item checked redaction · catalogue `item_engine.quotes.redaction` | **CLOSED** for the draft and fake host | Delete removes same-item quotes and fences affected revisions before acknowledgement. One job rewrites two destinations in separate batches. Between batches, reads on the remaining affected destination fail and on retry Delete creates no second job. The fixture caps live copies at 64, preserves the reply and attribution, and still withholds the old heads after completion. Real durable commits, restart, search, retained and offline delivery remain qualification work. |
+| Fresh install and optional v1 import · API §8 | **CLOSED** in the draft | Fresh install is the cutover target. The v1 reader remains optional, with no required inventory backfill, previous-output parity, old session drain or historical attribution proof. The new-install attachment and queue gates still apply. |
+| Private read position, draft, mute and pinning · catalogue `viewer_item_state` | **CLOSED** for the draft and fake host | The worker uses generated `viewer_state_read` and `viewer_state_write`. The renderer owns `item_view.read` and the composer draft exchange. Tests use one version for all three surfaces, refuse a stale draft write and keep a second person's state unchanged. Threads no longer creates an account-private Markdown file for this state. Live storage and scoped list indexing still need qualification. |
+| Row fields requested on #92 · manifest `indexed_fields` and `viewer_fields` | **PARTLY** | `shape` is shared (`person`, `group`, `agent`, `mixed`). The manifest declares `preview`, `unread`, `mentions`, `muted`, `pinned` and `draft` as viewer-private. `unread` and `mentions` have host entry count sources. `threads.state` writes `muted`, `pinned` and `unread_mark`. A private latest-message preview, expiring mute, and the unread reply-or-mention count still lack projection rules. Count sources must stay host-maintained. |
+| Entry views, range selection and consent cards · catalogue `item_views_entries` | **PARTLY** | New checked message appends register an anchor. The draft pins scoped entry actions, a bounded range and recipient-only request cards. The current worker view uses its basic snapshot nodes. To publish checked entry pages after reopening, expose entry-anchor association in the recorded-span read or specify how the owner gets it. Pin worker resolution of the checked entry or selection to exact readable spans and the per-author consent and revoke exchanges. A whole conversation can exceed the 128-entry selection limit. |
+| Composer drafts and mentions · catalogue `entry_composer` and `item_views_entries.composer` | **PARTLY** | The existing composer binds the private `draft` slot. `DraftUpdate` and `DraftValue` carry text and version. They cannot restore a reply target across devices. Mention selection has a typed renderer channel. Host participant grants and checked recipient attribution still need qualification. |
+| Upload, claim and agent file reads · catalogue `attachment.begin`, `attachment.chunk`, `attachment.finish` | **PARTLY** | The renderer’s scoped upload, chunk and finish and atomic publication rule are pinned. `AttachmentUploadResult` returns a checked ref. The worker still needs a checked ref-to-portable-link resolution, a typed binding to an appended span or admitted job, and an exact-attempt file-read path. The existing fixture remains the only end-to-end test. |
+| Other findings | **UNCHANGED** | Earlier live placement, host author-disclosure, notification, SDK and renderer qualification stays open. Both plugin builds and the conformance verifier pass with the current pin. |
 
 ## Simplification opportunities
 

@@ -8,7 +8,7 @@ export const maxMessageFiles = 4;
 /** Portable file identity and label written with a normal conversation-relative Markdown link. */
 export type MessageFile = { id: string; name: string };
 
-/** Proposed checked host exchanges for the attachment spike. The 14.41 catalogue has no upload or claim API. */
+/** Proposed checked host exchanges for the attachment spike. The 14.43 catalogue pins renderer upload. The worker claim and projection use the fixture. */
 export type AttachmentPort = {
   prepare(item: ItemRef, staged: readonly string[]): Promise<readonly MessageFile[]>;
   append(input: ItemAppend, staged: readonly string[]): Promise<ItemAppendReceipt>;

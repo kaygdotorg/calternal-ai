@@ -147,7 +147,7 @@ export async function appendRecord(ctx: Context, item: ItemRef, revision: Revisi
   }
   if (size + bytes.length > MAX_FILE_BYTES) throw new Error("Thread is full.");
   const input = {
-    request_id, item, expected_revision: revision, ...(attested ? { attested } : { bytes: bytes.toString("base64"), attempt_discovery: "consent_only" as const }),
+    request_id, item, expected_revision: revision, ...(attested ? { attested: { ...attested, ...(record.anchor && { entry_anchor: record.anchor }) } } : { bytes: bytes.toString("base64"), attempt_discovery: "consent_only" as const }),
   };
   return staged?.length ? ctx.attachments!.append(input, staged) : ctx.call("item_append", input);
 }

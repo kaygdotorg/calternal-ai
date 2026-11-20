@@ -1,6 +1,6 @@
 import type { AccountRef, ContributionIdentity, ItemContentReceipt, ItemCreate, ItemLocator, ItemRef, RevisionRef } from "../generated/wire.js";
 import { appendRecord, inlineBody, kind, prepareFiles, publish, read, saveOpaque } from "./files.ts";
-import { agentParticipant, attest, checkedTitle, encode, MAX_FILE_BYTES, messageId, messageRecord, messageView, personParticipant, step, type Message, type Thread } from "./format.ts";
+import { agentParticipant, attest, checkedTitle, encode, MAX_FILE_BYTES, messageId, messageRecord, messageView, personParticipant, step, threadShape, type Message, type Thread } from "./format.ts";
 import { checkedText, type HarnessOutput } from "./harnesses-v1.ts";
 import type { Context } from "./interface.ts";
 
@@ -26,10 +26,6 @@ export type PeopleContext = Context & {
   canWriteConversation?: (item: ItemRef) => Promise<boolean>;
   // Fixture binding to the captured composer or editor text.
   messageWrite?: { item: ItemRef; text: string };
-  privateState?: {
-    read(item: ItemRef): Promise<string | undefined>;
-    write(item: ItemRef, body: string, expected: string | undefined): Promise<void>;
-  };
   privatePreferences?: {
     read(): Promise<string | undefined>;
     write(body: string, expected: string | undefined): Promise<void>;
@@ -41,7 +37,6 @@ export type PeopleContext = Context & {
   runInvited?: (grant: Invitation, input: InvitedInput) => Promise<HarnessOutput>;
 };
 
-type State = { readThrough?: string; draft: string; muted: boolean };
 type Preferences = {
   receiptsAndTyping: boolean;
   push: { enabled: boolean; iosLocked: boolean; iosUnlocked: boolean };
@@ -77,7 +72,7 @@ function find(thread: Thread, id: string) {
 
 async function save(ctx: Context, item: ItemRef, revision: RevisionRef, thread: Thread, purpose: string) {
   const saved = await saveOpaque(ctx, {
-    request_id: step(ctx.author.request_id, purpose), item, expected: revision, patch: { title: thread.title },
+    request_id: step(ctx.author.request_id, purpose), item, expected: revision, patch: { title: thread.title, shape: threadShape(thread) },
   }, Buffer.from(encode(thread)));
   await publish(ctx, item, saved.revision, thread);
 }
@@ -95,7 +90,7 @@ async function create(input: { title: string; participants: AccountRef[] }, ctx:
   };
   const head = await ctx.createShared({
     request_id: step(ctx.author.request_id, "people-create"), kind, name: "Conversation.md", attempt_discovery: "consent_only",
-    metadata: { title: thread.title }, body: inlineBody(Buffer.from(encode(thread))),
+    metadata: { title: thread.title, shape: threadShape(thread) }, body: inlineBody(Buffer.from(encode(thread))),
   }, ids);
   await publish(ctx, head.item, head.revision, thread);
   return { created: head.item };
@@ -211,37 +206,6 @@ async function change({ item, message }: MessageTarget, ctx: PeopleContext, text
   await save(ctx, item, revision, thread, purpose);
 }
 
-function stateOf(body: string | undefined): State {
-  if (body === undefined) return { draft: "", muted: false };
-  const fields = /^---\nlast-read-message: (.*)\ndraft: (.*)\nmuted: (true|false)\n---\n$/u.exec(body);
-  if (!fields) throw new Error("Unreadable private thread state.");
-  const readThrough = JSON.parse(fields[1]);
-  return { ...(readThrough && { readThrough }), draft: JSON.parse(fields[2]), muted: fields[3] === "true" };
-}
-
-async function readState(item: ItemRef, ctx: PeopleContext) {
-  if (!ctx.privateState) throw new Error("Private state unavailable.");
-  return stateOf(await ctx.privateState.read(item));
-}
-
-async function getState({ item }: Target, ctx: PeopleContext) {
-  await member(ctx, item);
-  return readState(item, ctx);
-}
-
-async function setState({ item, draft, muted, readThrough }: Target & State, ctx: PeopleContext) {
-  const { thread } = await member(ctx, item);
-  if (!ctx.privateState) throw new Error("Private state unavailable.");
-  if (Buffer.byteLength(draft) > 16 * 1024) throw new Error("Draft exceeds 16 KiB.");
-  const body = await ctx.privateState.read(item);
-  const prior = stateOf(body);
-  const next = readThrough !== undefined ? thread.messages.findIndex(message => message.id === readThrough) : -1;
-  if (readThrough !== undefined && next < 0) throw new Error("Message unavailable.");
-  const last = thread.messages.findIndex(message => message.id === prior.readThrough);
-  const anchor = JSON.stringify(thread.messages[Math.max(last, next)]?.id ?? null);
-  await ctx.privateState.write(item, `---\nlast-read-message: ${anchor}\ndraft: ${JSON.stringify(draft)}\nmuted: ${muted}\n---\n`, body);
-}
-
 async function getPreferences(ctx: PeopleContext): Promise<Preferences> {
   if (!ctx.privatePreferences) throw new Error("Private preferences unavailable.");
   const body = await ctx.privatePreferences.read();
@@ -264,29 +228,10 @@ async function setPreferences(preferences: Preferences, ctx: PeopleContext) {
   );
 }
 
-async function row({ item }: Target, ctx: PeopleContext) {
-  const { thread } = await member(ctx, item);
-  const state = await readState(item, ctx);
-  const actor = ctx.author.actor;
-  const after = thread.messages.findIndex(entry => entry.id === state.readThrough);
-  const own = new Set(thread.messages.filter(entry => !entry.deleted && entry.author.id === actor).map(entry => entry.id));
-  const counts = { unread: 0, mentions: 0, replies: 0, muted: state.muted, attention: 0 };
-  for (const message of thread.messages.slice(after + 1)) {
-    if (message.deleted || message.author.id === actor) continue;
-    const mentioned = message.mentions?.includes(actor) ?? false;
-    const replied = !message.replyIn && message.replyTo !== undefined && own.has(message.replyTo);
-    counts.unread++;
-    counts.mentions += Number(mentioned);
-    counts.replies += Number(replied);
-    counts.attention += Number(mentioned || replied);
-  }
-  return counts;
-}
-
 async function delivery(input: MessageTarget & ({ device: "ios"; locked: boolean } | { device: "other" }), ctx: PeopleContext) {
   const { thread } = await member(ctx, input.item);
   const message = find(thread, input.message);
-  if (message.deleted || message.author.id === ctx.author.actor || (await readState(input.item, ctx)).muted) {
+  if (message.deleted || message.author.id === ctx.author.actor || (await ctx.call("viewer_state_read", { item: input.item })).fields.muted === true) {
     return { ring: false, push: false };
   }
   const { push } = await getPreferences(ctx);
@@ -419,7 +364,7 @@ async function consult({ item, prompt }: Target & { prompt: string }, ctx: Peopl
 
 /** Fixture-only entry points for people threads pending shared custody and consent APIs. */
 export const peopleHandlers = {
-  create, post, message, getState, setState, getPreferences, setPreferences, row, delivery, callAgent, consult,
+  create, post, message, getPreferences, setPreferences, delivery, callAgent, consult,
   edit: (input: MessageTarget & { text: string; requote?: boolean }, ctx: PeopleContext) => change(input, ctx, input.text, input.requote),
   remove: (input: MessageTarget, ctx: PeopleContext) => change(input, ctx),
 };
