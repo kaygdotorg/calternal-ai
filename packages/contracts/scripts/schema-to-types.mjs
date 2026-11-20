@@ -36,6 +36,11 @@ function bundle(documents) {
 
   function structural(schema, document) {
     if (typeof schema === "boolean") return schema;
+    // A schema with no constraining keyword accepts any JSON value; the
+    // compiler would otherwise emit an object-only type.
+    if (Object.keys(schema).every(key => ["description", "title", "$comment", "examples"].includes(key))) {
+      return { ...schema, tsType: "unknown" };
+    }
     if (schema.$ref) {
       const [file, fragment = ""] = schema.$ref.split("#");
       const target = file ? file.split("/").at(-1) : document;
@@ -109,6 +114,28 @@ const options = {
 };
 
 /**
+ * Map each worker broker method to its catalogue input and output definition
+ * pointers. The catalogue spreads methods over several engine tables; this is
+ * the one place that joins them. Methods without a pinned exchange are omitted.
+ */
+export function brokerMethods(host) {
+  const methods = {
+    ...host.item_engine,
+    ...host.execution_engines,
+    ...host.extension_points.calls,
+    start_job: host.execution_intents.start_job,
+    alarm_set: host.alarms.set,
+    alarm_cancel: host.alarms.cancel,
+    item_append: host.file_append,
+    item_view_context: host.view_snapshots.context,
+    item_view_publish: host.view_snapshots.publish,
+  };
+  return Object.fromEntries(Object.entries(methods)
+    .filter(([, method]) => method?.input?.$ref && method?.output?.$ref)
+    .map(([name, method]) => [name, { input: method.input.$ref, output: method.output.$ref }]));
+}
+
+/**
  * Compile the manifest and authored app description against the contract
  * registry. The SDK checks the remaining value constraints during its build.
  */
@@ -122,23 +149,11 @@ export async function generateAuthorTypes(directory) {
   const host = documents.get(catalogue);
   let context = "";
   if (host.$defs.AuthorInvocationContext) {
-    const methods = {
-      ...host.item_engine,
-      ...host.execution_engines,
-      ...host.extension_points.calls,
-      start_job: host.execution_intents.start_job,
-      alarm_set: host.alarms.set,
-      alarm_cancel: host.alarms.cancel,
-      item_append: host.file_append,
-      item_view_context: host.view_snapshots.context,
-      item_view_publish: host.view_snapshots.publish,
-    };
-    const methodSchemas = Object.fromEntries(Object.entries(methods)
-      .filter(([, method]) => method?.input?.$ref && method?.output?.$ref)
+    const methodSchemas = Object.fromEntries(Object.entries(brokerMethods(host))
       .map(([name, method]) => [name, {
         type: "object", required: ["input", "output"], properties: {
-          input: reference(catalogue, method.input.$ref),
-          output: reference(catalogue, method.output.$ref),
+          input: reference(catalogue, method.input),
+          output: reference(catalogue, method.output),
         },
       }]));
     properties.broker = { type: "object", properties: methodSchemas, required: Object.keys(methodSchemas) };
@@ -162,12 +177,27 @@ export interface RevisionedAuthorContext {
 }
 `;
   }
-  const text = await compile({ type: "object", properties, definitions }, "AuthorContracts", options) + context;
+  // Name every catalogue and description definition so authors import wire
+  // types from the SDK instead of generating their own copy.
+  for (const file of [catalogue, description]) {
+    for (const name of Object.keys(documents.get(file).$defs)) reference(file, `#/$defs/${name}`);
+  }
+  let text = await compile({ type: "object", properties, definitions }, "AuthorContracts", {
+    ...options, unreachableDefinitions: true,
+  }) + context;
+  const exported = new Set([...text.matchAll(/^export (?:type|interface) ([A-Za-z0-9_]+)/gm)].map(match => match[1]));
+  const names = Object.keys(host.$defs).filter(name => exported.has(name));
+  text += `
+/** Each host catalogue definition by its catalogue name, for resolving schema references in author types. */
+export interface CatalogueDefinitions {
+${names.map(name => `  ${name}: ${name};`).join("\n")}
+}
+`;
   const windowSize = documents.get(description).$defs.Bind.properties.window.properties.size.default;
   if (windowSize !== documents.get(catalogue).query.window.default_rows) {
     throw new Error("The description and host catalogue must agree on the default Bind window.");
   }
-  return { text, windowSize, contributionFrameBytes: host.extension_points?.calls?.limits?.encoded_frame_bytes };
+  return { text, windowSize };
 }
 
 /**

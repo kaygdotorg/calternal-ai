@@ -66,11 +66,6 @@ export function defineKind({ title_field = "title", ...kind }: Omit<Kind, "title
   return { ...kind, title_field };
 }
 
-/** Declare an operation using the sealed manifest type. The build checks its value constraints. */
-export function defineOperation(operation: Operation): Operation {
-  return operation;
-}
-
 function defaultBind(bind: BindInput): Bind {
   const search = bind.source.type === "search";
   const { icon = { kindIcon: true as const }, ...row } = bind.row ?? {};

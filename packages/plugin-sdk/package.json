@@ -13,20 +13,16 @@
       "import": "./dist/testing.js"
     },
     "./verify-package": "./scripts/verify-package.mjs",
-    "./author-context": {
-      "types": "./scripts/author-context.d.mts",
-      "import": "./scripts/author-context.mjs"
-    },
-    "./contribution-frame": {
-      "types": "./scripts/contribution-frame.d.mts",
-      "import": "./scripts/contribution-frame.mjs"
+    "./types": {
+      "types": "./generated/author-types.d.ts"
     }
   },
   "scripts": {
     "build": "node scripts/generate-author-types.mjs && tsc -p tsconfig.json",
-    "test": "npm run build && node --test test/*.test.mjs && npm run test:author",
+    "test": "npm run build && node --test test/*.test.mjs && npm run test:types && npm run test:author",
     "test:author": "vitest run test/author-v2.test.ts test/build-author-package.test.ts",
-    "test:broker-types": "tsc --noEmit --strict --module nodenext test/revisioned-broker-types.mts"
+    "test:broker-types": "tsc --noEmit --strict --module nodenext test/revisioned-broker-types.mts",
+    "test:types": "tsc --noEmit --strict --target es2022 --module esnext --moduleResolution bundler --skipLibCheck test/types/operation-types.ts test/fixtures/sample-plugins.ts"
   },
   "dependencies": {
     "@calternal/contracts": "*",

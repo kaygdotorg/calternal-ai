@@ -318,8 +318,31 @@ export { definePlugin } from "./author-v2.js";
 export { defineApp } from "./author-v2.js";
 /** Declare a kind and derive its title field from the metadata schema. */
 export { defineKind } from "./author-v2.js";
-/** Declare a worker operation and its allowed effects. */
-export { defineOperation } from "./author-v2.js";
+/** Declare an operation once: manifest entry, typed handler and declared broker methods. */
+export { authorContext, defineOperation, formField, handlersOf, subeffectKey } from "./operation.js";
+/** Types for operations, their handlers and the catalogue-typed broker. */
+export type {
+  Broker, BrokerInput, BrokerMethod, BrokerOutput, DefinedOperation, HostMethod, InputOf, ManifestOperation,
+  OperationContext, OperationHandler, OutputOf,
+} from "./operation.js";
+/** JSON Schema builders whose static types follow the schema. */
+export { array, boolean, integer, literal, object, oneOf, oneOfValues, ref, string } from "./schema.js";
+/** The value type a JSON Schema literal describes. */
+export type {
+  AnyOfSchema, ArrayKeywords, ArraySchema, CatalogueName, CatalogueRefSchema, ConstSchema, EnumSchema, IntegerKeywords, ItemsKeyword,
+  ObjectSchema, OneOfSchema, PropertiesKeyword, RequiredKeyword, Schema, SchemaType, StringKeywords, TypedSchema, TypeKeyword,
+} from "./schema.js";
+/** Contract limits as constants and the preflight checks that name them. */
+export { checkItemView, checkLimit, encodeContributionFrame, LimitError, LIMITS, LIMIT_SOURCES, utf8Length } from "./limits.js";
+/** Types of the generated limits table. */
+export type { LimitName, Limits, LimitSource } from "./limits.js";
+/** Helpers over existing broker methods: reads, saves, appends, contributions and published views. */
+export {
+  appendMessage, BrokerReplyError, ContributionEndedError, publishView, readBody, readSpans, saveBody, streamContribution,
+} from "./broker-helpers.js";
+/** Inputs and results of the broker helpers. */
+export type { BodySave, ContributionOutput, MessageAppend, MessageReceipt, SpanIndex } from "./broker-helpers.js";
+
 /** Describe content and supply defaults for its Binds. */
 export { defineView } from "./author-v2.js";
 /** Describe app chrome and supply the same defaults for any Binds it introduces. */
