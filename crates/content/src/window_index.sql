@@ -19,6 +19,36 @@ WHEN NOT EXISTS(SELECT 1 FROM note_collection_members WHERE (note_id,collection_
     AND EXISTS(SELECT 1 FROM note_collection_members WHERE note_id=NEW.note_id LIMIT 1 OFFSET 30)
 BEGIN SELECT RAISE(ABORT, 'effective_scope_limit_exceeded'); END;
 
+-- Preserve existing edges, including inherited over-limit edges. Retitling
+-- with identical membership does no reverse-index work.
+DROP TRIGGER collection_members_update;
+CREATE TRIGGER collection_members_update AFTER UPDATE OF metadata,path,mat_state ON items
+WHEN (OLD.kind='collections' OR NEW.kind='collections') AND (
+    (OLD.kind, json_extract(OLD.metadata,'$.item_kind'),
+     json_extract(OLD.metadata,'$.standard_key'), json_extract(OLD.metadata,'$.members'),
+     substr(OLD.path,1,7)='.trash/', OLD.mat_state IN ('purged','purging'))
+    IS NOT
+    (NEW.kind, json_extract(NEW.metadata,'$.item_kind'),
+     json_extract(NEW.metadata,'$.standard_key'), json_extract(NEW.metadata,'$.members'),
+     substr(NEW.path,1,7)='.trash/', NEW.mat_state IN ('purged','purging'))
+)
+BEGIN
+ DELETE FROM note_collection_members
+ WHERE collection_id=OLD.id AND (
+   NOT (NEW.kind='collections' AND json_extract(NEW.metadata,'$.item_kind') IS 'notes'
+     AND json_extract(NEW.metadata,'$.standard_key') IS NULL
+     AND NEW.mat_state NOT IN ('purged','purging') AND substr(NEW.path,1,7)<>'.trash/')
+   OR note_id NOT IN (SELECT lower(value) FROM json_each(NEW.metadata,'$.members') WHERE type='text')
+ );
+ INSERT OR IGNORE INTO note_collection_members(note_id,collection_id)
+ SELECT lower(value), NEW.id FROM json_each(NEW.metadata,'$.members') AS member
+ WHERE member.type='text' AND NEW.kind='collections' AND json_extract(NEW.metadata,'$.item_kind')='notes'
+   AND json_extract(NEW.metadata,'$.standard_key') IS NULL
+   AND NEW.mat_state NOT IN ('purged','purging') AND substr(NEW.path,1,7)<>'.trash/'
+   AND NOT EXISTS (SELECT 1 FROM note_collection_members
+     WHERE (note_id,collection_id)=(lower(member.value),NEW.id));
+END;
+
 -- One registered physical ordering per kind. Both directions use the same
 -- B-tree. The kind writer already owns this space and its canonical metadata.
 CREATE TABLE window_kind_orders (

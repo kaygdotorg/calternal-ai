@@ -233,6 +233,7 @@ impl Content {
                     let slot = Arc::new(Slot {
                         space: Mutex::new(None),
                         visibility: Default::default(),
+                        windows: Default::default(),
                         last_used: Mutex::new(Instant::now()),
                     });
                     map.insert(id, slot.clone());

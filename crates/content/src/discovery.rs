@@ -224,8 +224,8 @@ fn read_head(row: &Row<'_>) -> rusqlite::Result<(String, String, String, String,
 
 impl Content {
     /// Read one indexed page of item summaries in an authorized space, up to
-    /// 1,000 rows. Takes the space lock. An unfiltered newest Notes page seeks the
-    /// covering window index and reads up to one metadata head per returned key.
+    /// 1,000 rows. Takes the space lock. An unfiltered newest Notes page seeks
+    /// the live head index using the cursor timestamp and item ID.
     /// Label filters probe the exact term key per candidate. No body reads.
     pub fn item_page(
         &self,

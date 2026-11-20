@@ -1,6 +1,9 @@
 //! Authenticated read-only v2 Notes windows. The route owns a declared Bind and
 //! its leases. It never takes a renderer-supplied kind, filter, sort or audience.
 
+mod rate;
+
+use self::rate::{ActorShard, Rate, SpaceShard};
 use super::*;
 use axum::{
     Extension, Json,
@@ -18,7 +21,7 @@ use serde_json::json;
 use std::{
     collections::{HashMap, VecDeque},
     sync::{
-        Mutex, OnceLock,
+        Mutex, OnceLock, Weak,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -56,40 +59,6 @@ fn limits() -> &'static Limits {
     })
 }
 
-#[derive(Default)]
-struct Rate(Mutex<VecDeque<Instant>>);
-
-impl Rate {
-    fn admit(&self, limit: usize) -> bool {
-        let now = Instant::now();
-        let mut starts = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        while starts
-            .front()
-            .is_some_and(|at| now.saturating_duration_since(*at) >= Duration::from_secs(1))
-        {
-            starts.pop_front();
-        }
-        if starts.len() >= limit {
-            return false;
-        }
-        starts.push_back(now);
-        true
-    }
-}
-
-struct ActorShard {
-    leases: Mutex<HashMap<(AccountId, SpaceId, Uuid), Arc<Lease>>>,
-    rate: Rate,
-    work: Arc<Semaphore>,
-}
-
-struct SpaceShard {
-    subscriptions: Arc<Semaphore>,
-    work: Arc<Semaphore>,
-    rate: Rate,
-    count_rate: Rate,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 enum View {
@@ -108,7 +77,7 @@ struct Views {
     notes: Binding,
     reading_list: Option<Binding>,
     actors: [ActorShard; SHARDS],
-    spaces: [SpaceShard; SHARDS],
+    spaces: [Mutex<HashMap<SpaceId, Weak<SpaceShard>>>; SHARDS],
     revision: Arc<AtomicU64>,
 }
 
@@ -128,12 +97,7 @@ impl Views {
                 rate: Rate::default(),
                 work: Arc::new(Semaphore::new(limits.pending_windows_per_actor)),
             }),
-            spaces: std::array::from_fn(|_| SpaceShard {
-                subscriptions: Arc::new(Semaphore::new(limits.subscriptions_per_space)),
-                work: Arc::new(Semaphore::new(limits.query_concurrency_per_space)),
-                rate: Rate::default(),
-                count_rate: Rate::default(),
-            }),
+            spaces: std::array::from_fn(|_| Mutex::new(HashMap::new())),
             revision: item_access_revision_handle(),
         }
     }
@@ -149,8 +113,22 @@ impl Views {
         &self.actors[usize::from(account.as_uuid().as_bytes()[15]) % SHARDS]
     }
 
-    fn space(&self, space: SpaceId) -> &SpaceShard {
-        &self.spaces[usize::from(space.as_uuid().as_bytes()[15]) % SHARDS]
+    fn space(&self, space: SpaceId) -> Arc<SpaceShard> {
+        let mut spaces = self.spaces[usize::from(space.as_uuid().as_bytes()[15]) % SHARDS]
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(quota) = spaces.get(&space).and_then(Weak::upgrade) {
+            return quota;
+        }
+        spaces.retain(|_, quota| quota.strong_count() != 0);
+        let quota = Arc::new(SpaceShard {
+            subscriptions: Arc::new(Semaphore::new(limits().subscriptions_per_space)),
+            work: Arc::new(Semaphore::new(limits().query_concurrency_per_space)),
+            rate: Rate::default(),
+            count_rate: Rate::default(),
+        });
+        spaces.insert(space, Arc::downgrade(&quota));
+        quota
     }
 }
 
@@ -168,6 +146,7 @@ struct Lease {
     rate: Arc<Rate>,
     previous: Mutex<Option<Arc<WindowResult>>>,
     _space_quota: Arc<OwnedSemaphorePermit>,
+    space: Arc<SpaceShard>,
 }
 
 impl Lease {
@@ -351,7 +330,8 @@ async fn open<D: Directory>(
             return Err(hidden());
         }
         // A quiet actor's expired lease must not strand a space permit.
-        if views.space(space).subscriptions.available_permits() == 0 {
+        let space_quota = views.space(space);
+        if space_quota.subscriptions.available_permits() == 0 {
             for shard in &views.actors {
                 if let Ok(mut leases) = shard.leases.try_lock() {
                     leases.retain(|_, lease| lease.valid(&views.revision));
@@ -370,8 +350,7 @@ async fn open<D: Directory>(
         {
             return Err(rate_limited());
         }
-        let quota = views
-            .space(space)
+        let quota = space_quota
             .subscriptions
             .clone()
             .try_acquire_owned()
@@ -391,6 +370,7 @@ async fn open<D: Directory>(
             rate: Arc::new(Rate::default()),
             previous: Mutex::new(None),
             _space_quota: Arc::new(quota),
+            space: space_quota,
         });
         leases.insert((actor, space, lease.reference), lease.clone());
         Ok(json!({"lease":lease.wire(),"audience":audience,"activation_contexts":{}}))
@@ -421,7 +401,6 @@ async fn window<D: Directory>(
 ) -> Response {
     let answer = async {
         let actor = views.actor(who.id);
-        let space_shard = views.space(space);
         let reference = header_id(&headers, LEASE_HEADER)?;
         let lease = actor
             .leases
@@ -437,6 +416,7 @@ async fn window<D: Directory>(
         {
             return Err(hidden());
         }
+        let space_shard = &lease.space;
         let work = (
             actor
                 .work
@@ -587,6 +567,7 @@ async fn renew<D: Directory>(
             session, audience: lease.audience, count: lease.count, replaced: AtomicBool::new(false),
             work: lease.work.clone(), rate: lease.rate.clone(), previous: Mutex::new(previous),
             _space_quota: lease._space_quota.clone(),
+            space: lease.space.clone(),
         });
         lease.replaced.store(true, Ordering::Release);
         leases.remove(&(who.id, space, lease_ref));

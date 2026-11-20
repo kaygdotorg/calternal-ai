@@ -9,11 +9,16 @@ pub(super) fn verify_inherited_memberships(
     item: Uuid,
     source: &std::path::Path,
 ) {
-    // Model memberships created by a release before scope admission. Opening
-    // such a space preserves the lists, but replay cannot publish a partial set.
-    Connection::open(&source)
-        .unwrap()
-        .execute_batch("DROP TRIGGER window_member_limit")
+    // Model a release that committed its memberships before scope admission.
+    let conn = Connection::open(source).unwrap();
+    let trigger: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_schema WHERE name='window_member_limit'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    conn.execute_batch("DROP TRIGGER window_member_limit")
         .unwrap();
     let inherited = content
         .create_notes_collection(
@@ -23,15 +28,43 @@ pub(super) fn verify_inherited_memberships(
             request(actor, "inherited"),
         )
         .unwrap();
-    let error = content.advance_window(space, true).unwrap_err();
-    assert_eq!(error.code, ErrorCode::EffectiveScopeLimitExceeded);
-    assert_loading(member_window(content, space));
+    conn.execute_batch(&trigger).unwrap();
+    project(content, space);
+    assert_eq!(
+        result(member_window(content, space)).count.unwrap().value,
+        0
+    );
+    let skipped: String = replay::reader(source)
+        .unwrap()
+        .query_row(
+            "SELECT reason FROM window_skipped WHERE item=?1",
+            [item.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(skipped, "effective_scope_limit_exceeded");
     let id = inherited["id"].as_str().unwrap().parse().unwrap();
+    let original = content.get(space, id).unwrap();
+    let mut metadata = original.metadata;
+    metadata["title"] = json!("Retitled");
+    let bytes = serde_json::to_vec(&metadata).unwrap();
+    let edited = content
+        .write(
+            space,
+            Some(id),
+            "collections",
+            Some(&original.revision),
+            metadata,
+            &bytes,
+            request(actor, "retitle-inherited"),
+            |_| json!({}),
+        )
+        .unwrap();
     content
         .set_collection_members(
             space,
             id,
-            inherited["revision"].as_str().unwrap(),
+            &edited.revision,
             vec![],
             request(actor, "repair"),
         )
@@ -95,6 +128,170 @@ fn seed_note(content: &Content, space: SpaceId, actor: AccountId) -> crate::Item
             |_| json!({}),
         )
         .unwrap()
+}
+
+#[test]
+fn large_collection_replay_persists_a_bounded_membership_cursor() {
+    let dir = tempfile::tempdir().unwrap();
+    let content = content(&dir);
+    let space = SpaceId::new();
+    let actor = AccountId::new();
+    let first = seed_note(&content, space, actor);
+    let mut members = vec![first.id];
+    for n in 1..=128 {
+        let key = format!("member-{n}");
+        members.push(
+            content
+                .write(
+                    space,
+                    None,
+                    "notes",
+                    None,
+                    json!({"title": key}),
+                    b"body",
+                    request(actor, &key),
+                    |_| json!({}),
+                )
+                .unwrap()
+                .id,
+        );
+    }
+    project(&content, space);
+    let collection = content
+        .create_notes_collection(space, "Large".into(), members, request(actor, "large"))
+        .unwrap();
+    let id = collection["id"].as_str().unwrap();
+    assert!(content.advance_window(space, true).unwrap());
+    let source = crate::db::space_path(&content.roots.appdata, space);
+    let reader = replay::reader(&source).unwrap();
+    let progress: (bool, Option<String>, u64) = reader
+        .query_row(
+            "SELECT ready,member_after,(SELECT total FROM window_scopes WHERE collection=?1)
+         FROM window_publication",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert!(!progress.0);
+    assert!(progress.1.is_some());
+    assert_eq!(progress.2, 128);
+    assert_loading(member_window(&content, space));
+    project(&content, space);
+    let count: u64 = reader
+        .query_row(
+            "SELECT total FROM window_scopes WHERE collection=?1",
+            [id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 129);
+
+    // Simulate restarting with a sidecar from an earlier journal epoch.
+    let sidecar = Connection::open(replay::path(&source)).unwrap();
+    sidecar
+        .execute("UPDATE window_publication SET epoch='previous-epoch'", [])
+        .unwrap();
+    let count_rows = || {
+        reader
+            .query_row("SELECT count(*) FROM window_rows", [], |row| {
+                row.get::<_, usize>(0)
+            })
+            .unwrap()
+    };
+    let old_rows = count_rows();
+    assert!(old_rows > 128);
+    assert!(content.advance_window(space, true).unwrap());
+    assert_eq!(count_rows(), old_rows - 128);
+    assert_loading(member_window(&content, space));
+    project(&content, space);
+    assert_eq!(count_rows(), old_rows);
+    assert_eq!(
+        result(member_window(&content, space)).count.unwrap().value,
+        129
+    );
+}
+
+#[test]
+fn consecutive_windows_return_the_attached_reader_to_its_slot() {
+    let dir = tempfile::tempdir().unwrap();
+    let content = content(&dir);
+    let space = SpaceId::new();
+    seed_note(&content, space, AccountId::new());
+    project(&content, space);
+
+    assert_eq!(
+        result(member_window(&content, space)).count.unwrap().value,
+        1
+    );
+    let slot = content.pin_slot(space).unwrap();
+    let reader = slot
+        .windows
+        .take_reader()
+        .expect("first request returned its reader");
+    reader
+        .conn
+        .execute_batch("CREATE TEMP TABLE reused_reader (test INTEGER)")
+        .unwrap();
+    slot.windows.put_reader(reader);
+    assert_eq!(
+        result(member_window(&content, space)).count.unwrap().value,
+        1
+    );
+    let reader = slot
+        .windows
+        .take_reader()
+        .expect("second request returned its reader");
+    reader
+        .conn
+        .query_row("SELECT count(*) FROM temp.reused_reader", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap();
+}
+
+#[test]
+fn relevant_save_between_materialization_and_delivery_releases_no_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let content = content(&dir);
+    let space = SpaceId::new();
+    let actor = AccountId::new();
+    seed_note(&content, space, actor);
+    project(&content, space);
+    let calls = Cell::new(0);
+    let reply = content
+        .window(
+            space,
+            &WindowRequest::Window {
+                request: range(0, 10, WindowAnchor::Start),
+            },
+            None,
+            || {
+                calls.set(calls.get() + 1);
+                if calls.get() == 2 {
+                    content
+                        .write(
+                            space,
+                            None,
+                            "notes",
+                            None,
+                            json!({"title":"Concurrent"}),
+                            b"body",
+                            request(actor, "concurrent"),
+                            |_| json!({}),
+                        )
+                        .unwrap();
+                }
+                Ok(WindowAccess {
+                    scope: WindowScope::SpaceNotes,
+                    audience: WindowAudience::Member,
+                    count: WindowCountMode::Exact,
+                    view: Uuid::nil(),
+                })
+            },
+        )
+        .unwrap();
+    assert_loading(reply);
+    assert_eq!(calls.get(), 3);
 }
 
 #[test]

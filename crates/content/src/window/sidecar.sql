@@ -7,6 +7,9 @@ CREATE TABLE window_rows(
     PRIMARY KEY(item,collection,audience)
 ) STRICT;
 CREATE INDEX window_cover ON window_rows(collection,audience,sort_key,item);
+CREATE INDEX window_members ON window_rows(collection,item)
+WHERE audience IN ('explicit','explicit_newest');
+CREATE TABLE window_skipped(item TEXT PRIMARY KEY, reason TEXT NOT NULL) STRICT, WITHOUT ROWID;
 
 CREATE TABLE window_scopes(
     collection TEXT NOT NULL,
@@ -37,5 +40,5 @@ END;
 CREATE TABLE window_publication (
     id INTEGER PRIMARY KEY CHECK(id=1),
     epoch TEXT NOT NULL, sequence INTEGER NOT NULL, config INTEGER NOT NULL,
-    scan_after TEXT, ready INTEGER NOT NULL CHECK(ready IN (0,1))
+    scan_after TEXT, ready INTEGER NOT NULL CHECK(ready IN (0,1)), member_after TEXT
 ) STRICT;

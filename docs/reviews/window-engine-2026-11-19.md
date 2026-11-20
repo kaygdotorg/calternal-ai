@@ -7,54 +7,34 @@ summary shape. The API also qualifies live explicit Notes collections ordered
 by their exposed title, using SQLite’s ASCII lowercasing and UUID as the tie break. Other sources, sort/filter
 shapes and parent windows require their own qualified plan.
 
-The storage, work accounting, and timing sections below record the original
-same-transaction candidate. The owner approved journal-backed publication
-on 2026-11-20. [Product background publication](#product-background-publication)
-describes the implementation and its qualification.
+The product publishes window indexes from the durable journal. The owner
+approved that design on 2026-11-20. The same-transaction implementations
+appear only in the historical measurements below.
 
 ## Storage and authority
 
-- Reuses the live reverse membership index in `collection_members.sql`, the
-  per-space SQLite writer and `Staged::write`. Schema 9 backfills current
-  heads and live memberships atomically. The membership trigger applies
-  additions and removals. Triggers on item heads also cover lifecycle moves and
-  the linked rename path.
-- Each live Notes item has one space projection and up to 31 distinct
-  collection projections. Private direct item shares authorize item reads.
-  Current people, group and public grants to the same explicit collection
-  authorize the same live member set. A grant change in the protected
-  directory makes that set newly accessible or inaccessible, with zero
-  content writes or index-key fan-out. Membership changes maintain the set in
-  the content transaction. The 33rd scope aborts the whole transaction with
-  HTTP 422 `effective_scope_limit_exceeded`, including its staged receipt.
-- Guest rows expose titles and view-scoped selectors. The title determines
-  ordering. Hidden metadata or body edits leave the guest version unchanged.
-  The host must resolve the live explicit collection, admission, field policy,
-  lease and grant revision. The reader checks authority before opening the
-  index and again before release, and discards the entire reply if the scope
-  version changed. The existing sharing routes retain their own grant checks.
-- Existing public-link records have no count-disclosure field. The host should
-  select mode `none` for those grants. The API accepts `exact` for an
-  explicitly count-authorized projection and a member estimate certified for
-  the current result version. Guests receive no estimate or end-relative
-  result without exact count authority. Deep starts require the prior
-  ready-window boundary from the same live view and omit count.
-
-## Work accounting
-
-| Path | Reads / index work | Flushes |
-| --- | --- | --- |
-| Warm sealed result | Two maintained scope probes, one covering range, at most 200 title lookups, and two host authority evaluations. A seek visits one page. An arbitrary jump visits at most width plus 250,000 eligible keys from the nearer permitted end. An exact out-of-range reply uses zero covering keys. | 0 |
-| Warm native unfiltered Notes page | One covering seek and up to 101 head reads for the 100-row page. Existing dispatch checks authority on admission and delivery. | 0 |
-| Warm existing-note save | One head point read and one root-key update. A title change adds one head point read and a reverse range over at most 31 explicit memberships, with at most two covering keys per changed scope. A sort or title change leaves the count alone. | 0 additional. The existing FULL content/history, journal/receipt and outbox retirement barriers still apply. |
-| Membership update | Delta over the bounded collection membership, with indexed note admission and scope-count maintenance for changed edges. | 0 additional. Uses the collection's existing item commit. |
-| Equivalent grant or revoke | Existing protected directory admission and mutation. No content reads or added keys for the window projection. | 0 additional. Existing protected authority commit. |
-
-Index rows are bounded per item. Scope counts and versions are deleted when
-their last row leaves. Readers reuse the existing read pool where available
-and open a read-only connection for an idle space. They require an initialized
-schema on existing databases. A read runs no journal or placement operation.
-Retain seek boundaries only within the host's current view lease.
+- The native `notes.list` route queries live heads. The v2 window engine
+  reuses the source item's primary key, the reverse Notes membership index,
+  the outbox, the durable journal and the existing projection worker.
+  Source schema 9 adds definition data and enforces admission of new
+  memberships. Background replay writes row keys and counts together in a
+  separate private WAL database.
+- A live note can have its space projection and up to 31 explicit
+  collection projections. A new edge that would exceed the cap aborts the
+  authoritative transaction with HTTP 422 `effective_scope_limit_exceeded`.
+  Inherited over-limit notes remain editable. Replay records an omission
+  for each affected note and publishes the other rows. Removing the excess
+  edges makes the note appear in the next published generation.
+- Guest rows expose titles and view-scoped selectors. Hidden metadata and
+  body edits leave the guest scope version unchanged. Grant, revoke and
+  membership authority are checked before storage access and before
+  response delivery. Public and guest windows are reachable from no HTTP
+  route in this merge.
+- Public-link records have no count-disclosure field. The future public
+  host should select mode `none` for those grants. The engine accepts
+  estimates certified by a trusted host for the current result version.
+  End-relative windows require exact count permission. Deep count-free
+  starts require the preceding ready boundary from the same view.
 
 ## Integration and proposed revisions
 
@@ -72,15 +52,6 @@ Retain seek boundaries only within the host's current view lease.
   would add fan-out and require coordination between the directory and
   per-space content databases. Keep identical grants on one projection and
   qualify a separate design before exposing any audience-specific row set.
-- **Proposal for existing oversized membership.** A retained space can have
-  more than 31 explicit collection memberships per note from an earlier
-  writer. A live item above the cap refuses schema backfill atomically. A
-  previously trashed item above the cap cannot restore until membership is
-  reduced. For example, a note in 32 lists would require 33 physical scopes.
-  Refusal preserves every list but leaves the affected space or restore
-  unavailable. Automatically dropping memberships would change saved data.
-  Keep atomic refusal and add an operator preflight before any rollout that
-  may encounter these spaces.
 - **Proposal for the encoded byte limit.** The engine uses
   `materialization_limit` for a window whose encoded reply exceeds the
   catalogue limit. For example, 200 long multibyte titles can exceed 128 KiB
@@ -90,26 +61,20 @@ Retain seek boundaries only within the host's current view lease.
 
 ## Registered kinds and parent windows
 
-Schema 10 uses existing kind registrations and the same covering table and
-maintained counts. Claimed-text kinds default to newest. The host can provision
-one scalar sort and title field from a checked kind declaration, such as
-`reading-reminder.due`. Both directions use the same B-tree and reverse the
-complete stable order, including its ID tie-break. A replacement definition
-rebuilds only that kind's window rows in one space commit. Notes Trash has a
-separate exclusive projection in move-time order. An explicit Notes collection
-can be provisioned in newest order for members, or title order for guests.
-A non-matching sort is a typed plan refusal.
+Source schema 9 uses existing kind registrations. Claimed-text kinds
+default to newest. The host can provision one scalar sort and title field
+from a checked kind declaration, such as `reading-reminder.due`. Both
+directions use the same covering index with UUID as the stable tie break.
+A changed definition invalidates publication and starts a bounded scan
+of the space. Notes Trash orders by move time. An explicit collection
+can publish newest order for members or title order for guests. Requests
+for an unprovisioned order return a typed plan refusal.
 
-A registered parent field adds a covering key under the parent UUID and child
-kind. The host supplies the checked UUID and the issued edge token after
-validating the current view, Bind and entire ancestry. Child moves maintain
-both parent counts in the same item commit. A nested window uses the same
-bounded range and title materialization as a root window, plus one indexed
-definition lookup and two indexed checks that the parent still exists. A
-new read connection also verifies its stored space binding. The normal Notes native read count is unchanged.
-A generic warm save bounds maintenance to the item, its root scope and at most
-one parent scope. It adds no flush. A manual collection window adds one
-configuration probe.
+A registered parent field adds a covering key under the parent UUID and
+child kind. The host supplies a checked UUID and edge token after
+validating the view and ancestry. The worker changes the two scopes'
+rows and counts in the same sidecar step for a child move. A nested
+window also checks the parent against its live source head.
 
 - **Proposal for simultaneous sort orders.** One physical ordering per scope
   preserves the save bound of two covering keys per changed scope. For example,
@@ -130,11 +95,9 @@ configuration probe.
   need portable edges. Per-person section placements also need the
   host-owned layout store.
 
-Standalone count scheduling, field projections beyond title, layout placement
-windows, generic manual collection membership and search are outside this
-slice. Product qualification requires the locked perf run and the current
-view/lease adapter. The original Notes release binaries and their same-host
-baseline are queued under the perf-01 lock.
+Standalone count scheduling, layout placement windows, generic manual
+membership and search are outside this slice. The development-only Reading
+List adapter binds its pinned title and read mark fields.
 
 ## Product v2 route
 
@@ -156,10 +119,10 @@ before returning any reply. It fences changes just before response release.
 A current exact count is disclosed only inside this authorized space view.
 Count-free views omit the count and refuse End. The content engine also
 accepts an audience-certified estimate when a future trusted Bind supplies
-one. Route admission uses sharded actor and space limits, one in-flight
-window per view and the catalogue's rate and lease limits. There is no
-SQLite write or fsync for open, window or renew. Window storage reads match
-the root path above. The route adds two protected membership reads and two
+one. Route admission uses actor shards, independent per-space quotas, one
+in-flight window per view and the catalogue's rate and lease limits. There is no
+SQLite write or fsync for open, window or renew. The product publication
+table below accounts for window storage reads. The route adds two protected membership reads and two
 session-current checks for installation sessions, plus the existing HTTP
 guard's credential checks. Lease open classifies a personal space with a
 directory point read. The existing directory list runs through its write
@@ -650,7 +613,10 @@ references, and omits the count. The host clears its retained seek boundary.
 Publication advances keys, scope totals and the watermark in one sidecar
 transaction. The reader loads row fields from the live source snapshot.
 Once the checks match, exact counts describe the same current set as its
-covering index. A stale generation grants no row, count, or cursor access.
+covering index. A root Notes window may serve the published exact result across at most
+128 contiguous, classified journal entries when neither those entries nor
+any pending intent affects Notes or collections. Other cases withhold the
+entire response until the publication reaches the current journal head.
 
 The content schema adds version 9 to the previous release's version 8. The
 existing release migration runner marks already opened databases after
@@ -661,9 +627,9 @@ for version 8. The migration
 reuses the existing Notes head and reverse membership indexes, the content
 outbox, the durable journal, and the shared search projection worker. The
 32-scope bound is checked in the authoritative transaction. Earlier
-releases could already have saved an oversized membership. Such a space's
-windows stay loading until the authoritative lists are repaired. Authorized
-native callers can still read the content and list records. The index and
+releases could already have saved an oversized membership. The sidecar
+records each skipped item and publishes the rest. Authorized native callers
+can still read and edit the original content and list records. The index and
 count rows live in a separate private SQLite WAL database with
 `synchronous=NORMAL`. The first authorized v2 window requests a build.
 The shared worker polls active spaces for further durable journal entries.
@@ -673,8 +639,11 @@ timestamp and UUID cursor queries the live heads as on dev.
 | Path | Reads and index work | Synchronous flushes |
 | --- | --- | --- |
 | Existing-item ACK | Existing content and journal statements. The projection adds zero reads, SQLite statements or queue requests. | Same three FULL transaction boundaries as dev. |
-| Warm ready v2 window | One journal binding lookup, two journal head statements, two source outbox/config checks, one content binding lookup, one scope lookup, one scoped range, and one source point lookup per materialized row. Declared orders and parents add point checks. The host checks live authority on admission and before delivery. | 0 |
-| Background step | One page of at most 128 source IDs or journal entries. Repeated item changes in one journal page are coalesced. A collection edit uses the authoritative membership delta, bounded by the existing 10,000-member limit. | At most one NORMAL sidecar transaction per step. Checkpoint and first file creation occur on the worker. |
+| Warm ready v2 window, current head | No opens or attachments when reusing a reader. One publication read, two journal head statements (two seeks each), two source config/outbox checks, one source binding lookup, one scope lookup, one covering range, and one source point lookup per returned row. Declared orders and parents add point checks. The host checks live authority before storage and before delivery. | 0 |
+| Warm root Notes with unrelated lag | Each freshness check may add one journal range, at most 128 indexed kind probes and one epoch recheck. The outbox check examines at most 129 pending intents and probes kinds for at most that many. Unknown entries fail closed. | 0 |
+| Cold v2 window | May stat/open the sidecar, attach the source and open the journal reader with one journal binding lookup. Each active slot retains up to two attached-reader/journal pairs and one writer/journal pair. | 0 |
+| Replay or rebuild step | One page of up to 128 journal entries, source items or rows removed. A collection event advances a separate member UUID cursor in batches of up to 128, drawing from bounded seeks into source edges, prior edges and the recorded omissions. | At most one NORMAL sidecar commit per step. The worker also performs creation, checkpointing and recovery. |
+| Collection save | Unchanged member arrays still require old/new JSON comparison. A retitle does zero reverse-edge mutations and no scope-cap probes. Adding an edge checks whether it already exists and probes the capped reverse-note range. Membership changes compare bounded arrays of up to 10,000 entries. | Existing authoritative flushes. |
 
 The sustained-save fixture starts with one published note, commits 260
 updates and one additional note, then commits another 64 updates between
@@ -986,8 +955,8 @@ full 436-page docs gate using the installer pages inherited from dev.
    databases under its owner lifecycle guard. Server lease mutexes are
    sharded and only protect bounded
    in-memory bookkeeping. No mutex introduced by this lane spans I/O or
-   an async yield. Rate and permit shards are conservative shared quotas
-   for IDs that hash to the same shard. The existing process-wide authority
+   an async yield. Each space owns its rate and permit counters. Shards
+   partition the map only. The existing process-wide authority
    revision is atomic and can retire unrelated leases. This costs an
    unnecessary reopen in those cases. No thread or global SQLite connection
    is introduced.
@@ -1011,8 +980,9 @@ full 436-page docs gate using the installer pages inherited from dev.
 7. **Bounds and retention.** Per item, the engine admits at most 32 window
    scopes. Scope counts disappear when empty, and projection rows follow
    live membership and the content lifecycle. The 128-slot wake queue
-   holds space IDs. Each sidecar holds one publication watermark and
-   bootstrap cursor. Each query is capped by the
+   holds space IDs. Each sidecar holds one publication watermark, a
+   bootstrap cursor, a membership cursor and at most one omission per
+   inherited over-limit note. The private retry marker is one bounded record. Each query is capped by the
    sealed 4,096 materialized-row and 250,000 skip budgets, with the request
    size further bounded by the catalogue. Leases expire after 15 seconds,
    with at most 128 retained entries per shard and one preceding result
@@ -1041,7 +1011,8 @@ full 436-page docs gate using the installer pages inherited from dev.
     resolving checked row selectors. Estimated counts require an issuer in
     the **v2 host count policy lane**. These engine surfaces have tests.
     Until the coordinator assigns those callers, their integration remains
-    open. Issue #85 names the follow-up lanes. The registry lane (#87)
+    open. Issue #85 names the follow-up lanes. Guest and public windows
+    are reachable from no product route in this merge. The registry lane (#87)
     owns checked manifest admission. The host follow-up can use its
     `Registry::snapshot` and `Catalog::v2_kind` plus `ManifestV2::reads`
     to qualify package declarations. Those lookups confer no activation
@@ -1058,8 +1029,8 @@ full 436-page docs gate using the installer pages inherited from dev.
     unchanged by this lane.
 15. **Formatting and file size.** The implementation passed
     `cargo fmt --all -- --check`. Content SQL, registration, query, replay
-    and recovery tests live in separate files. The server route module is
-    605 lines and its package fixture has its own module.
+    and recovery tests live in separate files. Per-space leases, query
+    admission and the package fixture have separate modules.
 
 ## Simplification opportunities
 

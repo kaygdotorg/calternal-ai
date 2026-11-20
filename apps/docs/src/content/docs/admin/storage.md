@@ -208,10 +208,15 @@ V2 windows use a separate rebuildable per-space WAL database. The shared
 projection worker follows the durable item journal and publishes keys,
 scope totals and an epoch/watermark in one NORMAL transaction. The reader
 checks live authority before storage access and before delivery. A missing
-or lagging publication returns loading without rows, a count or a cursor.
-The native Notes cursor remains a head query. The worker polls active spaces
-and an authorized loading window can wake it. A save adds no synchronous
-index I/O or worker request.
+or relevant lagging publication returns loading without rows, a count or a
+cursor. A root Notes window can keep serving exact results across up to 128
+proved unrelated journal entries. The native Notes cursor remains a head
+query. The worker reuses its per-space handles and skips idle published
+heads in memory. Bootstrap, epoch reset and collection replay use bounded
+resumable pages. A broken sidecar produces typed unavailability while the
+worker retries with backoff and rebuilds derived files. Replay records and
+omits inherited over-limit notes until their memberships are repaired.
+A Notes save adds no synchronous index I/O or worker request.
 
 Space plugin settings use a versioned file in userdata. A single durable,
 settings-only intent in the existing per-space database carries the file

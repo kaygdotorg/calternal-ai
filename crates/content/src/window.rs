@@ -3,6 +3,8 @@
 mod kinds;
 mod read;
 mod replay;
+mod request;
+pub(crate) mod runtime;
 pub use kinds::{WindowField, WindowKindOrder, WindowOrder, WindowScope};
 
 use crate::{
@@ -277,117 +279,6 @@ struct WindowRow {
 struct WindowCount {
     mode: &'static str,
     value: u64,
-}
-
-impl Content {
-    /// Read one authorized window from the published journal generation.
-    /// The callback runs before storage access and before delivery. An
-    /// unpublished generation returns loading without rows or a count. A
-    /// ready read uses one sidecar/source snapshot, the journal and source
-    /// freshness fences, and one head probe per returned row. No flushes.
-    pub fn window(
-        &self,
-        space: SpaceId,
-        request: &WindowRequest,
-        previous: Option<&WindowResult>,
-        authorize: impl Fn() -> Result<WindowAccess>,
-    ) -> Result<WindowReply> {
-        let access = authorize()?;
-        let WindowRequest::Window { request } = request;
-        let reauthorize = || {
-            if authorize()? == access {
-                Ok(())
-            } else {
-                Err(missing())
-            }
-        };
-        if let Some(reason) = bad_plan(request, &access, previous) {
-            reauthorize()?;
-            return Ok(reason.into());
-        }
-        let _step = self.lifecycle.step(space.as_uuid())?;
-        let loading = || {
-            reauthorize()?;
-            self.wake_window(space, true);
-            Ok(WindowReply::Loading(LoadingWindow {
-                bind: request.bind.clone(),
-                state: "loading",
-                result_version: None,
-                window_ref: None,
-                offset: request.from,
-                parent: request.parent.clone(),
-                rows: [],
-                audience: access.audience,
-                anchor: request.anchor.unwrap_or_default(),
-            }))
-        };
-        let source = crate::db::space_path(&self.roots.appdata, space);
-        if !source.try_exists().map_err(internal)? {
-            let reply = evaluate(
-                None,
-                &access.scope.key(),
-                &read::Scope::default(),
-                request,
-                &access,
-                previous,
-            )?;
-            reauthorize()?;
-            return Ok(reply);
-        }
-        if !replay::path(&source).try_exists().map_err(internal)? {
-            return loading();
-        }
-        let conn = replay::reader(&source)?;
-        let Some(journal) = calternal_store::ProjectionJournal::open(&self.roots.appdata, space)
-            .map_err(internal)?
-        else {
-            return loading();
-        };
-        let tx = conn.unchecked_transaction().map_err(internal)?;
-        let version: i64 = tx
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .map_err(internal)?;
-        if version == 0 {
-            return loading();
-        }
-        let Some(publication) = replay::Publication::read(&tx)? else {
-            return loading();
-        };
-        if journal.head().map_err(internal)? != publication.head
-            || !publication.matches_source(&tx)?
-        {
-            return loading();
-        }
-        let bound: String = tx
-            .query_row(
-                "SELECT value FROM source.binding WHERE id='space'",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(internal)?;
-        if bound != space.to_string() {
-            return Err(missing());
-        }
-        if let WindowScope::Children { parent, .. } = access.scope
-            && !kinds::parent_live(&tx, parent)?
-        {
-            return Err(missing());
-        }
-        let scope = access.scope.key();
-        let snapshot = read::scope(&tx, &scope)?;
-        let reply = evaluate(Some(&tx), &scope, &snapshot, request, &access, previous)?;
-        tx.commit().map_err(internal)?;
-        reauthorize()?;
-        // Read the journal after the source fence. A write committed before
-        // that fence is either still pinned by its outbox or already journalled.
-        if !publication.matches_source(&conn)?
-            || journal.head().map_err(internal)? != publication.head
-        {
-            return loading();
-        }
-        self.lifecycle.check(space.as_uuid())?;
-        Ok(reply)
-    }
 }
 
 fn bad_plan(

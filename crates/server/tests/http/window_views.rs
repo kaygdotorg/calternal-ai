@@ -70,8 +70,236 @@ fn open(srv: &Server, path: &str, count: &str) -> Value {
         &Value::Null,
     );
     assert_eq!(response.status, 200, "{}", response.body);
-    assert_eq!(response.body["audience"], "own_space_member");
+    assert!(matches!(
+        response.body["audience"].as_str(),
+        Some("own_space_member" | "member")
+    ));
     response.body["lease"].clone()
+}
+
+#[test]
+fn unrelated_thread_commits_keep_ready_notes_available_while_replay_is_blocked() {
+    let dir = TempDir::new("v2-disjoint");
+    let plugins = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+    let srv = start_full(&dir.0, None, None, Some(&plugins));
+    create(&srv, "first-note", &srv.personal, "durable body");
+    let view = format!("/api/v2/spaces/{}/notes-view", srv.personal);
+    let window = format!("{view}/window");
+    let lease = open(&srv, &view, "exact");
+    let initial = ready(
+        &srv,
+        &srv.owner,
+        &window,
+        requested("notes", "start"),
+        &lease,
+    );
+    assert_eq!(initial.status, 200);
+    let sidecar = rusqlite::Connection::open(
+        dir.0
+            .join("appdata/spaces")
+            .join(&srv.personal)
+            .join("windows-v1.db"),
+    )
+    .unwrap();
+    sidecar.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let thread = op(
+        &srv,
+        &srv.owner,
+        "unrelated-thread",
+        "threads.create",
+        json!({"space_id":srv.personal,"title":"Unrelated"}),
+    );
+    assert_eq!(thread.status, 200, "{}", thread.body);
+    let after_thread = open(&srv, &view, "exact");
+    let current = call(
+        &srv,
+        &srv.owner,
+        &window,
+        Some(requested("notes", "start")),
+        &after_thread,
+    );
+    assert_eq!(current.status, 200, "{}", current.body);
+    assert_eq!(current.body["state"], "ready", "{}", current.body);
+    assert_eq!(current.body["count"]["value"], 1);
+
+    create(&srv, "relevant-note", &srv.personal, "another note");
+    let after_note = open(&srv, &view, "exact");
+    let withheld = call(
+        &srv,
+        &srv.owner,
+        &window,
+        Some(requested("notes", "start")),
+        &after_note,
+    );
+    assert_eq!(withheld.body["state"], "loading", "{}", withheld.body);
+    assert_eq!(withheld.body["rows"], json!([]));
+    assert!(withheld.body.get("count").is_none());
+}
+
+#[test]
+fn collection_writers_refuse_scope_overflow_with_http_422() {
+    let dir = TempDir::new("v2-member-cap");
+    let srv = start(&dir.0, None);
+    let note = create(&srv, "limit-note", &srv.personal, "body");
+    let member = note["id"].as_str().expect("note identifier");
+    let write = |n, members: Value| {
+        op(
+            &srv,
+            &srv.owner,
+            &format!("collection-{n}"),
+            "collections.create",
+            json!({"space_id":srv.personal,"title":format!("Collection {n}"),"members":members}),
+        )
+    };
+    for n in 0..31 {
+        let reply = write(n, json!([member]));
+        assert_eq!(reply.status, 200, "{}", reply.body);
+    }
+    let overflow = write(31, json!([member]));
+    let empty = write(32, json!([]));
+    assert_eq!(empty.status, 200, "{}", empty.body);
+    let collection = &empty.body["data"];
+    let update = op(
+        &srv,
+        &srv.owner,
+        "add-overflow",
+        "collections.set_members",
+        json!({"id":collection["id"],"base_revision":collection["revision"],"members":[member]}),
+    );
+    for reply in [overflow, update] {
+        assert_eq!(reply.status, 422, "{}", reply.body);
+        assert_eq!(
+            reply.body["error"]["code"],
+            "effective_scope_limit_exceeded"
+        );
+    }
+}
+
+#[test]
+fn space_count_quota_is_independent_for_colliding_space_ids() {
+    let dir = TempDir::new("v2-quotas");
+    let srv = start(&dir.0, None);
+    let mut seen = std::collections::HashMap::new();
+    let pair = (0..33)
+        .find_map(|n| {
+            let data = op(
+                &srv,
+                &srv.owner,
+                &format!("space-{n}"),
+                "spaces.create",
+                json!({"name":format!("Quota fixture {n}")}),
+            );
+            assert_eq!(data.status, 200, "{}", data.body);
+            let id = data.body["data"]["space"]["id"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            let bucket = uuid::Uuid::parse_str(&id).unwrap().as_bytes()[15] % 32;
+            seen.insert(bucket, id.clone()).map(|first| (first, id))
+        })
+        .unwrap();
+    let a = format!("/api/v2/spaces/{}/notes-view", pair.0);
+    let b = format!("/api/v2/spaces/{}/notes-view", pair.1);
+    let first = open(&srv, &a, "exact");
+    let second = open(&srv, &b, "exact");
+    for n in 0..5 {
+        let answer = call(
+            &srv,
+            &srv.owner,
+            &format!("{a}/window"),
+            Some(requested("notes", "start")),
+            &first,
+        );
+        assert_eq!(answer.status, if n == 4 { 429 } else { 200 });
+    }
+    let answer = call(
+        &srv,
+        &srv.owner,
+        &format!("{b}/window"),
+        Some(requested("notes", "start")),
+        &second,
+    );
+    assert_eq!(answer.status, 200, "{}", answer.body);
+}
+
+#[test]
+fn corrupt_projection_reports_unavailable_and_rebuilds_on_the_worker() {
+    let dir = TempDir::new("v2-corrupt");
+    let srv = start(&dir.0, None);
+    create(&srv, "first-note", &srv.personal, "durable body");
+    let path = dir
+        .0
+        .join("appdata/spaces")
+        .join(&srv.personal)
+        .join("windows-v1.db");
+    std::fs::write(path, b"invalid SQLite database").unwrap();
+    let view = format!("/api/v2/spaces/{}/notes-view", srv.personal);
+    let window = format!("{view}/window");
+    let lease = open(&srv, &view, "exact");
+    let request = requested("notes", "start");
+    let first = call(&srv, &srv.owner, &window, Some(request.clone()), &lease);
+    assert_eq!(first.status, 503, "{}", first.body);
+    assert_eq!(first.body["error"]["code"], "unavailable");
+    assert!(first.body.get("rows").is_none());
+    assert!(first.body.get("count").is_none());
+
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        std::thread::sleep(Duration::from_millis(1050));
+        let reply = call(&srv, &srv.owner, &window, Some(request.clone()), &lease);
+        if reply.body["state"] == "ready" {
+            assert_eq!(reply.body["count"]["value"], 1);
+            break;
+        }
+        assert!(matches!(reply.status, 200 | 429 | 503), "{}", reply.body);
+        assert!(Instant::now() < deadline, "projection did not rebuild");
+    }
+}
+
+#[test]
+fn unopenable_projection_persists_unavailability_until_it_can_rebuild() {
+    let dir = TempDir::new("v2-unopenable");
+    let srv = start(&dir.0, None);
+    create(&srv, "first-note", &srv.personal, "durable body");
+    let path = dir
+        .0
+        .join("appdata/spaces")
+        .join(&srv.personal)
+        .join("windows-v1.db");
+    // An unexpected directory cannot be opened as SQLite or removed as a file.
+    std::fs::create_dir(&path).unwrap();
+    let view = format!("/api/v2/spaces/{}/notes-view", srv.personal);
+    let lease = open(&srv, &view, "exact");
+    let endpoint = format!("{view}/window");
+    let request = requested("notes", "start");
+    let first = call(&srv, &srv.owner, &endpoint, Some(request.clone()), &lease);
+    assert_eq!(first.status, 503, "{}", first.body);
+    let failure = path.with_file_name("windows-v1.failure");
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        if std::fs::read_to_string(&failure).is_ok_and(|body| body.starts_with("replay_failed ")) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "failure was not persisted");
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(path.is_dir());
+    std::fs::remove_dir(path).unwrap();
+    loop {
+        let reply = call(&srv, &srv.owner, &endpoint, Some(request.clone()), &lease);
+        if reply.body["state"] == "ready" {
+            assert_eq!(reply.body["count"]["value"], 1);
+            break;
+        }
+        assert!(matches!(reply.status, 200 | 429 | 503), "{}", reply.body);
+        assert!(
+            Instant::now() < deadline,
+            "window could not recover: {}",
+            reply.body
+        );
+        std::thread::sleep(Duration::from_millis(1050));
+    }
+    assert!(!failure.exists());
 }
 
 #[test]
