@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.16 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.17 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -70,8 +70,7 @@ declared and projected field of that type. `sort` follows the [catalogue’s sor
 
 ### 2.3 Windows
 
-The native list and the web list both ask for **index windows**, not cursors, because a long list must size its scroll bar from a count and the person walks it with
-the keyboard at 30 rows a second:
+For host-indexed lists, both renderers ask for **index windows**. An exact count sizes the scroll bar, and bounded prefetch supports keyboard navigation at 30 rows a second:
 
 ```
 shell -> host   { type: "window", request: { bind: "notes", from: 120, to: 180, parent?: "<row ref>" } }                 // the catalogue's WindowRequest: the ONE envelope
@@ -83,9 +82,15 @@ The catalogue defines one `WindowRequest` envelope and one `WindowReply` union o
 
 **List freshness.** After a save, the window engine replays the durable publication intent in the background. An affected Bind returns `loading` without rows, counts, contexts or an end distance until its current authorized generation is verified. Suspend use of affected old results, cached rows and action contexts when invalidated. Resume the viewport request when the new generation is ready.
 
+**Explicit plugin search.** A settled Bind with `source.search_profile`
+uses [`search.plugin`](../contract/host-catalogue-v2.json#/component_routes/search.plugin).
+Apply replies only to the current Bind, generation and lease. A batch
+contains authorized rows and an optional next cursor. Page until that
+cursor is absent. Draw no total, fixed page indicator or End affordance.
+
 **End-relative windows.** End and near-end jumps use `anchor:"end"` only on non-search Binds with exact count authority. A `loading`, `throttled` or `error` reply on that active request keeps `anchor:"end"` and carries no offset or count. Apply exact count and distance only to ready or empty End results. Search refinement is start-anchored. Follow the [catalogue’s end-anchor and result ordering rules](../contract/host-catalogue-v2.json#/$defs/WindowResult).
 
-**Forward paging.** The host checks search windows against `EventSearchWindow`, the same window envelope restricted to the start anchor.
+**Forward paging.** The host checks default search windows against `EventSearchWindow`, the same window envelope restricted to the start anchor.
 For search Binds or with effective count mode `estimate` or `none`, the host refuses an end anchor with `end_unavailable` and sends no end distance. Search End pages forward. An explicit `anchor:"start"` can cross the 500,000 absolute jump ceiling only at the checked next row of a ready window for the same active view, Bind, parent and result version. Deep start replies omit count and the member cache record. In mode `none` show no scroll extent that implies a total.
 
 **Recovery rule.** After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: "empty"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state.
@@ -93,7 +98,7 @@ Row ids are opaque and stable. No position is an authority reference.
 
 * A window is the half-open range `[from, to)` of at most 200 returned rows. The absolute jump ceiling is 500,000. The host may materialize up to 4,096 rows and,
   separately, skip up to 250,000 entries in an index-only jump from the nearer end of the scoped covering index. Non-search lists use the maintained count for the authorized scope.
-  Claimed-text kinds can count qualified matches with exact-count authority within the separate count-work budget. Threads search uses count mode `none`.
+  Host search counts follow the catalogue.
   See the catalogue’s `query.window` for window sizes and `query.search` for the shared search depth. Beyond that depth, the host serves search windows while both work budgets hold.
 * The renderer prefetches ahead of the visible rows and, when a key or a drag walks past the edge of what it holds, asks for the next window at once (no
   settling), coalesced to at most 4 window **requests** a second; the host may answer with a larger range than asked (`offset` and `rows` say what came back).
@@ -118,7 +123,7 @@ pushes. Rows without `secondary` stay single-line. The header and row title,
 secondary line and search excerpt retain their source’s live field and body
 authority. Use no substitute text from an inaccessible field.
 
-Any plugin may declare a leading icon on a Bind-produced item row. The optional `icon` may name a symbol, derive from a row field or kind, or use the catalogue’s `RowImageIcon` to select a small host-authorized image from a projected `RowImageRef` field. Follow the catalogue’s `query.row_images` read and cache rules. The renderer draws exactly the icons declared by the description. Thread rows use the host-projected `provider_icon` only when the provider mark binding matches the installed contribution. Missing publisher verification, missing mark ownership or a conflicting binding uses the declared generic fallback symbol. A note preview fits a portrait area of about 30 × 36 pt. Note rows declare the existing `RowImageIcon` portrait aspect and its `image.fallback` snippet field. Keep the last authorized retained image while fresh capture is pending. The host labels it with `stale_images` on the row and rechecks item, source, field and body authority at every fetch. While the thumbnail loads or when none is available, draw a simple document miniature from the freshly authorised snippet. If no authorised snippet is available, draw the document miniature without text. Shortcut rows retain their declared icons.
+Any plugin may declare a leading icon on a Bind-produced item row. The optional `icon` may name a symbol, derive from a row field or kind, or use the catalogue’s `RowImageIcon` to select a small host-authorized image from a projected `RowImageRef` field. Follow the catalogue’s `query.row_images` read and cache rules. The renderer draws exactly the icons declared by the description. Eligible harness-associated rows use the host-projected `provider_icon` only when the provider mark binding matches the installed contribution. Missing publisher verification, missing mark ownership or a conflicting binding uses the declared generic fallback symbol. A note preview fits a portrait area of about 30 × 36 pt. Note rows declare the existing `RowImageIcon` portrait aspect and its `image.fallback` snippet field. Keep the last authorized retained image while fresh capture is pending. The host labels it with `stale_images` on the row and rechecks item, source, field and body authority at every fetch. While the thumbnail loads or when none is available, draw a simple document miniature from the freshly authorised snippet. If no authorised snippet is available, draw the document miniature without text. Shortcut rows retain their declared icons.
 `marks` (up to three) are trailing dots, counts, texts or icons, each with an optional `when` predicate and a tone. `leadingActions`, `trailingActions` and `menu` are
 `invoke` definitions; only the first leading or trailing action may set `fullSwipe`. `open` navigates (sets a route parameter to the row id) or invokes.
 Use the host-issued row reference for row identity in selection, events and scope. Item rows use the kind’s row reference. Rows of a repeated section use a `LayoutEntryRef`.
@@ -168,8 +173,8 @@ Plugin API (Part A); this section lists only what the description relies on.
   operations** (`host.layout.move_to`, `host.layout.move_up` and `host.layout.move_down`, and `host.layout.section.create`, `rename`, `remove` for personal sections)
   that a row or section menu names. For a `LayoutEntryRef` input use `{context: "placement"}` in a repeated section row, the bare row id (`{row: "id"}`) in section rows,
   or a matching single-selection operand (`{selection: bind}`) over the section’s rows. The verifier checks the operand against the catalogue input type.
-  In a repeated section a conversation ItemRef input uses `{context: "item"}`. An ordinary conversation row ID is its ItemRef.
-  `host.layout.move_to` takes either `thread` to add an unplaced thread or `entry` to move a placement, plus a `section` choice (`ChoiceRef`). Move up and Move down
+  In a repeated section an ItemRef input uses `{context: "item"}`. An ordinary item row ID is its ItemRef.
+  `host.layout.move_to` takes either `item` to add an unplaced item or `entry` to move a placement, plus a `section` choice (`ChoiceRef`). Move up and Move down
   take `entry`. The host reconstructs the references from the activation context. Drag is a recorded parity exception, with Move to and Move up/down standing in.
 
 ## 3. Invoke
@@ -259,7 +264,7 @@ An activation names the host-issued **activation context** (an opaque snapshot o
 The host answers a resolve that needs no challenge, and every dispatch, with an `ActionOutcome` (the catalogue's): `ok`, `pending` (with a host-owned `status_ref`, polled through the
 host's own status control, not by the description), `error`, `refused`, `stale` and `unknown` (the interface shows an unknown outcome instead of retrying a non-idempotent action); on `ok`
 an optional host-owned **undo** `{ref, label, expires_at}` and, when the operation created an item, **`created`** (a host-minted reference an invoke's `then: {route}` opens: a new note,
-a new thread). Error text is written by the host. **Worker payload is never carried to an interface.** A row with an action in flight keeps its place with a quiet progress mark; it leaves the
+a new thread). Error text is written by the host. Draw only validated host replies and checked native descriptions. A row with an action in flight keeps its place with a quiet progress mark; it leaves the
 list only when the host's next window no longer contains it.
 
 ## 4. Chrome and the app description
@@ -340,9 +345,7 @@ snapshot uses a read-only native-description subset. The renderer shows
 it immediately while the plugin sleeps. A stale reply shows that the
 item's revision moved. A missing reply shows the basic shell and loading
 until the plugin publishes an authorized projection. For an open thread,
-the snapshot is its stored transcript view. Use the same pinned source
-revision, scope and retention rules as the catalogue requires for the
-snapshot. A fresh plugin projection replaces it. Never attach live
+the snapshot is its stored transcript view. Apply the catalogue’s own-item, revision, scope and retention rules. A fresh plugin projection replaces it. Never attach live
 actions to stored snapshot nodes.
 
 ### 5.2 Host surfaces and navigation on the wire

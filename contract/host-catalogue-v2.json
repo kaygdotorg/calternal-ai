@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Revision 14.16 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
+  "description": "Revision 14.17 draft. Normative host kinds, operations, query limits and checked exchanges, read with the specification, description and schemas. References convey no authority. The independently versioned conformance tool reports evidence.",
   "open_cutover_requirements": {
     "renderer_history": {
       "status": "OPEN",
@@ -166,7 +166,7 @@
   "provider_marks": {
     "trust": "A provider-specific mark name belongs to the verified publisher identified by a trusted signed gallery entry or an explicit operator checksum pin. The signed entry or operator pin binds the approved package artifact and publisher identity to the canonical mark names it owns. A checksum without an explicit publisher and mark binding does not establish mark ownership.",
     "install": "Verify the installed artifact and its publisher using the existing gallery signature or operator checksum pin. Record the canonical mark name, verified publisher, installed package identity, provider contribution ID, pinned manifest digest and trusted ownership source. Record a usable distinctive mark only if the verified publisher owns that name. Do not grant an unowned mark based on installation order. Calternal providers use the same rules.",
-    "projection": "Emit provider_icon only when the active installed contribution matches the recorded binding and its verified publisher still owns the mark. Omit it on missing trust, missing ownership or any conflict, including on a fresh or offline host without verified ownership data. Recheck on installation updates, uninstalls and trust changes. The row draws its generic fallback symbol when the field is omitted. The field name is host-owned across all kinds. Distinctive names resolve only through this trust rule, including when a template claims a symbol by name. A field-backed symbol cannot take a body-derived source.",
+    "projection": "An eligible item row associated with a checked active harness contribution may project provider_icon if the viewer may access that association and the contribution matches the verified publisher's pinned mark binding. Omit it on missing trust, missing ownership or any conflict, including on a fresh or offline host. Recheck updates, uninstalls and trust changes. The renderer uses the declared fallback if absent. Distinctive symbols cannot bypass this rule through a literal or a body-derived field. Do not persist the field or use it to filter, sort or count.",
     "field": "provider_icon"
   },
   "operations": {
@@ -345,9 +345,9 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": true,
-      "atomic_undo_when": "Single-item Trash restore or history restore in the FULL content transaction with its Undo. The shortcut requires no widening under attempt_authority_end.actions.conversation_audience_widening.",
+      "atomic_undo_when": "Single-item Trash restore or history restore in the FULL content transaction with its Undo. The shortcut requires no widening under attempt_authority_end.actions.item_audience_widening.",
       "full_swipe_when": "First swipe action restoring one item from Trash, effective confirm:none and this operation’s atomic_undo_when condition.",
-      "audience_widening": "Apply attempt_authority_end.actions.conversation_audience_widening whenever corpus access expands."
+      "audience_widening": "Apply attempt_authority_end.actions.item_audience_widening whenever file access expands."
     },
     "host.undo": {
       "engine": "item_rename_undo / protected eligible inverse",
@@ -379,7 +379,7 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": false,
-      "audience_widening": "Apply attempt_authority_end.actions.conversation_audience_widening whenever corpus access expands."
+      "audience_widening": "Apply attempt_authority_end.actions.item_audience_widening whenever file access expands."
     },
     "host.trash.purge": {
       "engine": "item_purge / empty_trash",
@@ -446,7 +446,7 @@
           "lifetime": {
             "enum": [
               "once",
-              "this_thread"
+              "this_item"
             ]
           }
         },
@@ -605,7 +605,7 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": false,
-      "audience_widening": "Apply attempt_authority_end.actions.conversation_audience_widening whenever corpus access expands."
+      "audience_widening": "Apply attempt_authority_end.actions.item_audience_widening whenever file access expands."
     },
     "host.item.patch-metadata": {
       "engine": "item_save metadata arm",
@@ -711,11 +711,11 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": false,
-      "atomic_undo_unavailable": "The current writer commits the archived head without Undo, then enters a separate protected authority transaction. Keep both flags false and the challenge in place until the Step 2 idle-archive writer gate passes.",
-      "confirmation_when": "Before the writer gate passes, require a challenge. After it passes, an eligible idle archive resolves and dispatches in one exchange without a sheet. Challenge archive outside atomic_undo_when. Retiring grants with head-only Undo requires a challenge. For an active execution the host-written material says: The running execution will be stopped. Any unresolved execution intent or active attempt requires confirmation bound to that exact target and the current starter or live PluginsManage authority.",
+      "confirmation_when": "After the qualification_gate passes, the eligible atomic_undo_when path uses no challenge. All other admitted paths require confirmation, including retiring grants with head-only Undo. For a live attempt show The running execution will be stopped. Any live attempt or unresolved job challenge pins the exact target and checks the starter or current PluginsManage authority.",
       "atomic_undo_when": "Use the execution_intents idle predicate under the lifecycle fence. Saved authority requires a challenge unless it consists only of item grants that the Step 2 writer retires in the same FULL item content transaction as archive and that Undo restores together with the item head. Retiring grants with head-only Undo requires a challenge. Check idle eligibility under the commit fence. Execution admission rejects a fresh admission to an archived head under the same fence. Commit the archived head and its unarchive Undo in one FULL item content transaction, with no separate cleanup.",
-      "full_swipe_when": "After the Step 2 idle-archive atomic writer with Undo passes, enable atomic_undo and full_swipe for the first swipe action with effective confirm:none and the idle condition.",
-      "execution_fence": "Apply attempt_authority_end.actions.archive in the FULL archive transaction and preserve that fence across Undo."
+      "full_swipe_when": "First swipe action, passed qualification_gate and effective confirm:none.",
+      "execution_fence": "Apply attempt_authority_end.actions.archive in the FULL archive transaction and preserve that fence across Undo.",
+      "qualification_gate": "Generic idle archive in Plugin API §8 Step 2. Until it passes keep atomic_undo and full_swipe false."
     },
     "host.item.unarchive": {
       "engine": "item lifecycle unarchive",
@@ -748,9 +748,9 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": true,
-      "atomic_undo_when": "Single-item unarchive in the FULL content transaction with its Undo. Undo refuses if the item revision or lifecycle dependencies changed. The shortcut requires no widening under attempt_authority_end.actions.conversation_audience_widening.",
+      "atomic_undo_when": "Single-item unarchive in the FULL content transaction with its Undo. Undo refuses if the item revision or lifecycle dependencies changed. The shortcut requires no widening under attempt_authority_end.actions.item_audience_widening.",
       "full_swipe_when": "First swipe action, effective confirm:none and this operation’s atomic_undo_when condition.",
-      "audience_widening": "Apply attempt_authority_end.actions.conversation_audience_widening whenever corpus access expands."
+      "audience_widening": "Apply attempt_authority_end.actions.item_audience_widening whenever file access expands."
     },
     "host.collection.move": {
       "engine": "collection_membership",
@@ -816,9 +816,9 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": true,
-      "atomic_undo_when": "The destination’s effective audience contains only the actor and the FULL content transaction commits the complete move and its Undo. A move across two collections is ineligible until both membership changes commit together. The shortcut requires no widening under attempt_authority_end.actions.conversation_audience_widening.",
-      "confirmation_when": "Require a challenge if the destination collection’s effective audience contains anyone other than the actor. Recheck under the commit fence. If the destination becomes shared, require a fresh challenge before dispatch. Apply attempt_authority_end.actions.conversation_audience_widening when the move adds transcript readers.",
-      "audience_widening": "Apply attempt_authority_end.actions.conversation_audience_widening whenever corpus access expands."
+      "atomic_undo_when": "The destination’s effective audience contains only the actor and the FULL content transaction commits the complete move and its Undo. A move across two collections is ineligible until both membership changes commit together. The shortcut requires no widening under attempt_authority_end.actions.item_audience_widening.",
+      "confirmation_when": "Require a challenge if the destination collection’s effective audience contains anyone other than the actor. Recheck under the commit fence. If the destination becomes shared, require a fresh challenge before dispatch. Apply attempt_authority_end.actions.item_audience_widening when the move adds transcript readers.",
+      "audience_widening": "Apply attempt_authority_end.actions.item_audience_widening whenever file access expands."
     },
     "host.layout.move_to": {
       "engine": "personal layout placement with complete effect and Undo committed together",
@@ -874,7 +874,7 @@
             }
           }
         ],
-        "description": "The destination comes from the scoped ChoiceRef and requires a protected preview. Host reconstructs the thread or entry from the checked action context."
+        "description": "The destination comes from the scoped ChoiceRef and requires a protected preview. Host reconstructs the item or entry from the checked action context."
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
@@ -1092,7 +1092,7 @@
       "row_reference_schema": {
         "$ref": "#/$defs/Ref"
       },
-      "description": "The declared parent edge constrains the nested lookup and any count before filtering or pagination. Authorize the entire parent ancestry and each returned row. A parent operand is an optional extra predicate. A Bind may be a section rows Bind or a children target, never both. Section rows present LayoutEntryRef; child rows present their kind’s row ref. The window_ref identifies the Bind, stable parent, anchor and issued range within the current lease and partition. Separately cap materialized rows and entries skipped in an index-only jump over the scoped covering index from the nearer end. Absolute jumps are capped by max_offset. An explicit start anchor can cross that cap only for forward continuation without exact count authority, exactly at the next row of a host-issued ready start window for the current view, Bind, parent and result version. Seek from the checked boundary key. Before planning an end-relative request, check the effective authorized count mode for its Bind and scope. Require a non-search Bind and exact count authority. For search or with mode estimate or none return WindowPlanError with reason end_unavailable and no end distance. A view with count mode none shows no scroll extent implying a total. An index-only jump beyond the skip cap returns WindowPlanError with reason skip_limit. Non-search list plans use maintained scope counts under query.list_publication, including for an end anchor. Search counts use query.search.count. Check the live field and its source before using any sort or filter. A grant on the item or a generic display name cannot authorize an unreadable predicate or ordering key.",
+      "description": "The declared parent edge constrains the nested lookup and any count before filtering or pagination. Authorize the entire parent ancestry and each returned row. A parent operand is an optional extra predicate. A Bind may be a section rows Bind or a children target, never both. Section rows present LayoutEntryRef; child rows present their kind’s row ref. The window_ref identifies the Bind, stable parent, anchor and issued range within the current lease and partition. Separately cap materialized rows and entries skipped in an index-only jump over the scoped covering index from the nearer end. Absolute jumps are capped by max_offset. An explicit start anchor can cross that cap only for forward continuation without exact count authority, exactly at the next row of a host-issued ready start window for the current view, Bind, parent and result version. Seek from the checked boundary key. Before planning an end-relative request, check the effective authorized count mode for its Bind and scope. Require a non-search Bind and exact count authority. For search or with mode estimate or none return WindowPlanError with reason end_unavailable and no end distance. A view with count mode none shows no scroll extent implying a total. An index-only jump beyond the skip cap returns WindowPlanError with reason skip_limit. Non-search list plans use maintained scope counts under query.list_publication, including for an end anchor. Search counts use query.search.count. Check the live field and its source before using any sort or filter. A grant on the item or a generic display name cannot authorize an unreadable predicate or ordering key. Explicit plugin search is outside this indexed window exchange.",
       "max_nested_row_depth": 3,
       "keyboard": {
         "web_tab_stops_per_list": 1,
@@ -1226,9 +1226,10 @@
       "qualification": "For each ready authority-versioned Bind, qualify its supported literal-term and prefix modes for windows up to query.window.max_request_span starting at offsets through qualified_depth. Serve later windows while both query.live_limits budgets for scoped postings and materialized rows hold. Use only the kind’s authorized scopes, order and scope-local statistics. Refuse unqualified shapes, scopes and sorts with unsupported_query_plan. End anchors are unavailable for search. The host returns WindowPlanError with reason end_unavailable and the renderer pages forward for End.",
       "publication": "The host owns the qualified list and search projections of item text and declared indexed fields. Apply query.list_publication to list projections. The existing background search worker publishes the search projections and same-generation term statistics independently of save acknowledgement. Check live access to the scope, searchable fields and output fields before evaluation. Readiness and invalidation compare revisions of the viewer’s authorized row-and-field projection, never a space-wide watermark. While that projection is behind or stale after revocation, return loading with no rows, count or activation contexts. A hidden-only edit leaves the visible search state, result version, rows, ranks and counts unchanged during and after publication. Fence cached results on revocation and recheck authority on delivery. Deny access if the scope is no longer authorized.",
       "refinement": "Bound scoped posting work using same-generation term frequencies. When an otherwise qualified query exhausts the scoped-posting or materialized-row budget, return refine_query with only bounded provisional rows from the same authorized query and published generation. A prefix exceeding either the expansion cap or the posting budget returns refine_query without starting expansion and can include only already-issued rows for that query, audience and generation. Omit count, activation contexts and member cache record. Provisional replies have null result_version and window_ref.",
-      "count": "Non-search lists use maintained per-scope counts. Claimed-text exact search counts measure qualified matches in a ready authorized projection under the separate count-work and rate budgets and require exact-count authority. Search defaults to count mode none. Search estimates and plugin search counts are unqualified. Refuse an unqualified count request with unsupported_query_plan. Apply current source authority before matching, ranking or counting. A title-only grant contributes only the authorized title corpus. Any body excerpt in a search row is independently checked.",
+      "count": "Non-search lists use maintained per-scope counts. Claimed-text exact search counts measure qualified matches in a ready authorized projection under the separate count-work and rate budgets and require exact-count authority. Search defaults to count mode none. See query.search.plugin for explicit profiles. Refuse an unqualified count request with unsupported_query_plan. Apply current source authority before matching, ranking or counting. A title-only grant contributes only the authorized title corpus. Any body excerpt in a search row is independently checked.",
       "request_schema": {
-        "$ref": "#/$defs/SearchWindowRequest"
+        "$ref": "#/$defs/SearchWindowRequest",
+        "description": "Default host search. An explicit plugin profile uses component_routes.search.plugin."
       },
       "field_filter": "Optional on the Bind. Host claimed-text kinds allow all, title or body, default all. Match shape is independent of field filter. Plugin search operations declare their own typed inputs.",
       "match_schema": {
@@ -1245,8 +1246,8 @@
         "max_candidates": 200,
         "deadline_ms": 3000,
         "selection": "An explicitly selected search profile resolves to an installed operation with a declared read contract. Ordinary host search never calls or waits for it. The profile can rerank checked candidates or query a package-owned index built by its declared background job. Rerank mode receives candidates from the checked host query. Index mode declares an owning index job and receives no host candidate list.",
-        "authority": "The job builds only from granted items and fields. Partition private inputs by checked audience and fence index reuse on grant loss. Treat the package index and result as untrusted hints. Every output element is an ItemRef. Reauthorize live kind, scope, item and field access before projection. The host mints any displayed fields and contexts. Return no package text, raw candidate count, scores or rejected refs. Preserve authorized order and use count none. Bind index generation to the exact admitted read scope. A stale or mismatched index offers no results. Do not share ranking state between incompatible audiences.",
-        "limits": "Apply worker and query budgets. Bind continuation to query generation, profile, audience and checked lease, and discard on change. Do not refill by unbounded overfetch. Report timeout or partial results on the explicit search surface only. Use the checked interactive deadline independently of the default query. Charge any admitted wake to the existing placement allowance."
+        "authority": "Use only fields the querying person can currently read as input to the index or reranker, and for matching, ranking, and continuation. Apply the same rule to the background index data made available to that query. Keep a profile off unless it can demonstrate this rule. Reauthorize every returned ItemRef before projecting host-owned fields and contexts. Return no counts, fixed page lengths, scores, rejected refs or package-chosen display text.",
+        "limits": "Use a checked cursor instead of the host window's offsets and span. Response batches are variable and limited by max_candidates. Bind continuation to the exact query generation, profile, authorized input scope and active lease. Apply worker and query budgets and the checked interactive deadline independently of ordinary host search. Absence of next ends the result. A short batch does not end it."
       }
     },
     "extractors": {
@@ -2846,7 +2847,7 @@
         "lifetime": {
           "enum": [
             "once",
-            "this_thread"
+            "this_item"
           ]
         }
       },
@@ -2893,8 +2894,7 @@
       "additionalProperties": false,
       "required": [
         "type",
-        "activation_context",
-        "kind"
+        "activation_context"
       ],
       "properties": {
         "type": {
@@ -2902,9 +2902,6 @@
         },
         "activation_context": {
           "$ref": "#/$defs/ContextRef"
-        },
-        "kind": {
-          "$ref": "#/$defs/KindId"
         }
       }
     },
@@ -3023,16 +3020,12 @@
       "additionalProperties": false,
       "required": [
         "sheet_ref",
-        "kind",
         "selection_ref",
         "count"
       ],
       "properties": {
         "sheet_ref": {
           "$ref": "#/$defs/Ref"
-        },
-        "kind": {
-          "$ref": "#/$defs/KindId"
         },
         "selection_ref": {
           "$ref": "#/$defs/TrashSelectionRef"
@@ -3551,7 +3544,7 @@
                 "items": {
                   "enum": [
                     "once",
-                    "this_thread"
+                    "this_item"
                   ]
                 },
                 "minItems": 1
@@ -3928,7 +3921,7 @@
           }
         }
       },
-      "description": "Host-to-worker only. Stamp job_context for an admitted job declaring execution:true. Stamp alarm for a job admitted by an alarm. Either is host metadata outside operation input. An execution job's exact target is host checked at admission and replay."
+      "description": "Host-to-worker only. Stamp job_context on claim and replay only for an admitted job declaring execution:true. Stamp alarm only for a job admitted by an alarm. Both are host metadata outside operation input. An execution job's exact target is host checked at admission and replay."
     },
     "RowImageAttribution": {
       "type": "object",
@@ -4131,9 +4124,6 @@
         "item": {
           "$ref": "#/$defs/ItemRef"
         },
-        "slot": {
-          "$ref": "#/$defs/ActionId"
-        },
         "expected_revision": {
           "$ref": "#/$defs/RevisionRef"
         },
@@ -4146,7 +4136,6 @@
       "required": [
         "request_id",
         "item",
-        "slot",
         "expected_revision",
         "bytes"
       ]
@@ -4211,11 +4200,6 @@
         "cursor": {
           "$ref": "#/$defs/Ref"
         },
-        "limit": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 200
-        },
         "candidates": {
           "type": "array",
           "maxItems": 200,
@@ -4226,10 +4210,9 @@
         }
       },
       "required": [
-        "text",
-        "limit"
+        "text"
       ],
-      "description": "Scope and audience come from the authenticated invocation. Host supplies candidates only for a rerank."
+      "description": "Scope and field authority come from the checked invocation. Host supplies only authorized candidates for reranking. No requested page length."
     },
     "PluginSearchResult": {
       "type": "object",
@@ -4249,7 +4232,8 @@
       },
       "required": [
         "items"
-      ]
+      ],
+      "description": "Authorized ordered item refs, with optional continuation. Variable-length batches and no count or total."
     },
     "ItemViewPublish": {
       "type": "object",
@@ -4272,7 +4256,8 @@
           "description": "Opaque exact capability returned by the checked item_view_context call."
         },
         "view": {
-          "$ref": "description-v2.schema.json#/$defs/ItemSnapshotView"
+          "$ref": "description-v2.schema.json#/$defs/ItemSnapshotView",
+          "description": "Must meet the own-item and exact revision rule in view_snapshots.authority."
         }
       },
       "required": [
@@ -4629,6 +4614,104 @@
       "required": [
         "options"
       ]
+    },
+    "PluginSearchRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "plugin_search"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "settle_generation": {
+          "$ref": "#/$defs/SearchSettleGeneration"
+        },
+        "cursor": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "required": [
+        "type",
+        "bind",
+        "settle_generation"
+      ]
+    },
+    "PluginSearchPage": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bind": {
+              "$ref": "#/$defs/ActionId"
+            },
+            "settle_generation": {
+              "$ref": "#/$defs/SearchSettleGeneration"
+            },
+            "state": {
+              "const": "ready"
+            },
+            "rows": {
+              "type": "array",
+              "maxItems": 200,
+              "items": {
+                "$ref": "#/$defs/WindowRow"
+              }
+            },
+            "next": {
+              "$ref": "#/$defs/Ref"
+            },
+            "window_ref": {
+              "$ref": "#/$defs/Ref"
+            },
+            "result_version": {
+              "$ref": "#/$defs/Ref"
+            },
+            "activation_contexts": {
+              "type": "array",
+              "maxItems": 200,
+              "items": {
+                "$ref": "#/$defs/RowActivationContexts"
+              }
+            }
+          },
+          "required": [
+            "bind",
+            "settle_generation",
+            "state",
+            "rows",
+            "window_ref",
+            "result_version"
+          ],
+          "description": "A checked variable-length batch. Apply the same scoped row context and selection rules as host windows."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bind": {
+              "$ref": "#/$defs/ActionId"
+            },
+            "settle_generation": {
+              "$ref": "#/$defs/SearchSettleGeneration"
+            },
+            "state": {
+              "enum": [
+                "loading",
+                "throttled",
+                "error"
+              ]
+            }
+          },
+          "required": [
+            "bind",
+            "settle_generation",
+            "state"
+          ]
+        }
+      ]
     }
   },
   "activation_limits": {
@@ -4644,7 +4727,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStatus"
       },
-      "scope": "Apply execution_intents.admission. Resolve checked harness, image and placement. Derive the target and owning job receipt from the authenticated job. If continuation is supplied, require a live binding with the exact protected profile and current audience and reconcile uncertain effects. Refuse stale or foreign continuation without starting another attempt. Replay returns the existing admitted result. The named harness must match the already admitted job.",
+      "scope": "Apply execution_intents.admission. Resolve checked harness, image and placement. Derive the target and owning job receipt from the authenticated job. If continuation is supplied, require a live binding with the exact protected profile and current audience and reconcile uncertain effects. Refuse stale or foreign continuation without starting another attempt. Replay returns the existing admitted result. The named harness must match the already admitted job. Apply execution_attempt_authority.harness_placement to the exact build and acting person.",
       "invocation_context_schema": {
         "$ref": "#/$defs/ExecutionJobContext"
       }
@@ -4801,7 +4884,7 @@
       "input_schema": {
         "$ref": "#/$defs/TrashSheetRequest"
       },
-      "scope": "Host surface and current actor/target authority",
+      "scope": "Host space Trash and current Manager or Owner authority. Pin the checked selection across kinds in this space. The host counts only authorized items.",
       "output_schema": {
         "$ref": "#/$defs/TrashSheetResult"
       }
@@ -4868,7 +4951,7 @@
       "output_schema": {
         "$ref": "#/$defs/SettledSearchResult"
       },
-      "scope": "Check the lease, Bind, required route operands and WindowParentRef before acknowledging. Require parent iff the Bind declares source.parent. Pin the generation to the exact resolved collection, parent and ancestry where declared, along with the full predicate, authorized audience, text and match. Echo the checked parent and generation. An exact current replay is idempotent. Fence older generations and reject changed input or scope on same-generation replay. Every window, settled selection and explicit selection set must resolve to the pinned scope. A changed collection, parent or route requires a new generation starting at zero. An invalid parent gets the same opaque refusal as an absent scope. For a valid scope lacking the qualified index, the first window returns unsupported_plan without scanning candidates."
+      "scope": "Check the lease, Bind, required route operands and WindowParentRef before acknowledging. Require parent iff the Bind declares source.parent. Pin the generation to the exact resolved collection, parent and ancestry where declared, along with the full predicate, authorized audience, text and match. Echo the checked parent and generation. An exact current replay is idempotent. Fence older generations and reject changed input or scope on same-generation replay. Every window, settled selection and explicit selection set must resolve to the pinned scope. A changed collection, parent or route requires a new generation starting at zero. An invalid parent gets the same opaque refusal as an absent scope. For a valid scope lacking the qualified index, the first window returns unsupported_plan without scanning candidates. Both search paths use the checked settled generation. For an explicit plugin profile, the first request is search.plugin."
     },
     "item_view.open": {
       "input_schema": {
@@ -4896,6 +4979,15 @@
         "$ref": "#/$defs/OfflineRangeResult"
       },
       "scope": "Authenticated original account, device and space. Refuse revoked, expired or purged parts and stale grant scopes before bytes. Use bounded revision-pinned byte delivery."
+    },
+    "search.plugin": {
+      "input_schema": {
+        "$ref": "#/$defs/PluginSearchRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/PluginSearchPage"
+      },
+      "scope": "Authenticated active view and explicit declared plugin profile. Check the settled Bind and generation. Use query.search.plugin for input, continuation and delivery. The ordinary indexed window route cannot invoke a plugin profile."
     }
   },
   "generic_item_fields": {
@@ -4929,6 +5021,13 @@
       "index_owner": "content",
       "audience": "member_item",
       "nullable": true
+    },
+    "provider_icon": {
+      "type": "Text",
+      "index_owner": null,
+      "audience": "shared_projection",
+      "nullable": true,
+      "description": "Host-reserved verified mark for an eligible harness-associated row. See provider_marks. Omit when ineligible."
     }
   },
   "confirmation": {
@@ -4936,7 +5035,7 @@
       "$ref": "#/$defs/ConfirmMode"
     },
     "none": "A host catalogue read, or a host catalogue mutation marked atomic_undo whose engine commits the complete effect and Undo in one recovery-visible transaction and satisfies any atomic_undo_when condition. For mutations the only material may be the drawn target or fields of the submitting form. host.item.create may also use its checked route or literal CollectionRef. For host.collection.move, the checked ChoiceRef and its actor-only destination may use the shortcut under confirmation_when.",
-    "challenge": "Irreversible, external, widens_access, bulk sets, declared material_inputs, any destination, recipient, audience or permission, or unproven material. Never bypassed by atomic_undo. Use the confirmation_when rules for host.item.create and host.collection.move. An inverse that widens access uses protected confirmation through component_routes.undo. On a widening, use the host material in attempt_authority_end.actions.conversation_audience_widening, including on any inverse that adds readers.",
+    "challenge": "Irreversible, external, widens_access, bulk sets, declared material_inputs, any destination, recipient, audience or permission, or unproven material. Never bypassed by atomic_undo. Use the confirmation_when rules for host.item.create and host.collection.move. An inverse that widens access uses protected confirmation through component_routes.undo. On a widening, use the host material in attempt_authority_end.actions.item_audience_widening, including on any inverse that adds readers.",
     "ordinary": "Worker operations always use separate resolution and dispatch. A reversible manifest declaration never permits the shortcut. Return a challenge only for required material or effects; otherwise omit confirm.",
     "material_by_kind": {
       "host.execution.stop": {
@@ -5029,7 +5128,7 @@
           "effect_fields": [
             "effect"
           ],
-          "rule": "Show exactly the host's checked effect and its checked named inputs. Reject missing, duplicate, unchecked or altered display material. Derive decision and lifetime entries exclusively from offered actions. Reject their presence as material fields or duplicate offered decisions. A closed card supplies no decisions or lifetimes."
+          "rule": "Show exactly the host's checked effect and its checked named inputs. Reject missing, duplicate, unchecked or altered display material. Derive decision and lifetime entries exclusively from offered actions. Reject their presence as material fields or duplicate offered decisions. A closed card supplies no decisions or lifetimes. The lifetime this_item is scoped to the exact checked item."
         }
       },
       "host.session.end": {
@@ -5106,7 +5205,7 @@
           "audience",
           "permission"
         ],
-        "rule": "Only for a widening inverse. Include the host-written material in attempt_authority_end.actions.conversation_audience_widening. For other eligible inverses require no extra challenge."
+        "rule": "Only for a widening inverse. Include the host-written material in attempt_authority_end.actions.item_audience_widening. For other eligible inverses require no extra challenge."
       }
     },
     "no_challenge_kinds": [
@@ -5151,16 +5250,16 @@
         "search"
       ],
       "grant": "The sender's request to find items grants discovery within that space. No separate confirmation in either Full access or Approve for me. Existing controls still apply to any later effect.",
-      "authority": "Apply the transcript audience rule before matching, ranking, counting or returning rows, fields and excerpts. Keep the existing query bounds and access records. Recheck live authority at planning and delivery. A child stays under every ancestor's ceiling.",
-      "transcript_audience": {
+      "authority": "Apply the file audience rule before matching, ranking, counting or returning rows, fields and excerpts. Keep the existing query bounds and access records. Recheck live authority at planning and delivery. A child stays under every ancestor's ceiling.",
+      "file_audience": {
         "status": "interim, owner asked 2026-11-20",
         "sender_only": "Use the sender's full scoped live read rights.",
         "shared": "Require the sender and every authorized file reader to have access to each discovery input.",
         "required_reader_sets": [
           "sender",
-          "transcript_readers"
+          "file_readers"
         ],
-        "in_flight": "Apply attempt_authority_end.actions.conversation_audience_widening on audience expansion. On loss of discovery source rights suppress affected pending output before delivery or commit. Resume the work only in a fresh attempt that excludes ineligible context."
+        "in_flight": "Apply attempt_authority_end.actions.item_audience_widening on audience expansion. On loss of discovery source rights suppress affected pending output before delivery or commit. Resume the work only in a fresh attempt that excludes ineligible context."
       }
     },
     "provider_login": {
@@ -5170,9 +5269,14 @@
       },
       "custody": "The verified harness's provider program can read and refresh its own selected login and directories in the person's eligible sandbox. Provider tools there run as that person and can read those files. These native logins require no broker. Keep the directories out of other accounts, other packages, shared mounts, host-readable output and portable snapshots and backups.",
       "account_switching": "Automatic account switching is deferred.",
-      "shared_space": "Apply owner decision 74 in docs/open-questions.md. Keep tools off for the configured shared login until qualification proves a boundary that protects it from tools and other runs. For a shared transcript, choosing a personal native login or changing permission mode cannot enable tools. Apply attempt_authority_end.actions.conversation_audience_widening before a personal run's item gains another file reader. Admit a shared execution only when the placement also keeps incompatible saved sessions out of reach.",
-      "placement": "Personal enrolled machines only, interim, owner asked 2026-11-20. Apply equally to bundled and community harnesses.",
+      "shared_space": "Apply owner decision 74 in docs/open-questions.md. Keep tools off for the configured shared login until qualification proves a boundary that protects it from tools and other runs. For a shared file, choosing a personal native login or changing permission mode cannot enable tools. Apply attempt_authority_end.actions.item_audience_widening before a personal run's item gains another file reader. Admit a shared execution only when the placement also keeps incompatible saved sessions out of reach.",
       "disclosure": "At install disclose publisher, image digest, placement, mounted item-data scope, native profile access and approved network egress. Code and tools in a personal profile can read and transmit accessible data through approved routes."
+    },
+    "harness_placement": {
+      "approval": "Use the host's recorded approval for the exact reviewed build, pinned to the installed package, harness entry and image digests. Review the build once. A different build needs its own approval for hosted placement. Apply the same approval checks to bundled and community harnesses.",
+      "approved": "Allow any eligible placement, including hosted sandboxes. Check current placement, profile, actor and effect authority at admission, reattachment and renewal.",
+      "unapproved": "Installation is allowed. Admit execution only on a machine enrolled by the authenticated acting person. Recheck that enrollment at admission, reattachment and renewal.",
+      "disclosure": "The install screen says which placement rule applies and discloses network access and access to the person's provider logins when granted. A publisher mark or a package declaration cannot establish reviewed-build approval."
     }
   },
   "carrier": {
@@ -5219,8 +5323,8 @@
         "after_commit": "Stop affected exact attempts and reconcile the grant or credential references.",
         "ends_authority": true
       },
-      "conversation_audience_widening": {
-        "applies_when": "Apply to any item of a kind declaring execution_target if an authorized change adds a reader of its file body. Resolve effective direct and inherited authority under the existing fence. A title-only grant adds no file reader.",
+      "item_audience_widening": {
+        "applies_when": "Apply when an authorized change adds a file reader to an item with recorded widening protection or a bound personal-authority job, attempt or saved session. Resolve direct and inherited file access under the existing fence. A title-only grant adds no file reader.",
         "instances": {
           "catalogue_operations": [
             "host.item.share",
@@ -5248,23 +5352,24 @@
             "collections.create",
             "collections.set_members"
           ],
-          "lifecycle_and_other_grants": "Any restore, unarchive, Undo, grant, membership or policy change that newly activates corpus access, including by inheritance. Scope the rule by the authority change, regardless of which surface makes it."
+          "lifecycle_and_other_grants": "Any restore, unarchive, Undo, grant, membership or policy change that newly activates file-body access, including by inheritance. Scope the rule by the authority change, regardless of which surface makes it."
         },
         "confirmation": {
-          "fact": "widens_conversation_audience",
+          "fact": "widens_item_audience",
           "material": {
-            "name": "transcript_disclosure",
+            "name": "file_disclosure",
             "label": "File sharing",
             "value": "The new readers can read the whole committed file, including anything the agent found or wrote using your own access."
           },
-          "rules": "Require host confirmation by an authorized sharer. Show the checked target or scope, new audience and permission with the host-written transcript disclosure. Bind the confirmation to the effective change. Recheck it under the authority fence and require fresh confirmation if the checked change differs. This overrides ordinary Undo and full-swipe shortcuts. For invitations, require sharer confirmation of the covered grant at issue and matching confirmed scope at either redemption path. A redeemer cannot supply the sharer's confirmation.",
+          "rules": "Require host confirmation by an authorized sharer. Show the checked target or scope, new audience and permission with the host-written file disclosure. Bind the confirmation to the effective change. Recheck it under the authority fence and require fresh confirmation if the checked change differs. This overrides ordinary Undo and full-swipe shortcuts. For invitations, require sharer confirmation of the covered grant at issue and matching confirmed scope at either redemption path. A redeemer cannot supply the sharer's confirmation.",
           "committed_text": "Publish access to the entire committed file, including transcripts. The sharer decides whether to disclose it. Do not scan records for source eligibility or refuse because the file contains personal discoveries. Attachment bytes retain independent delivery checks."
         },
         "before_reply": "Before the wider grant is visible, durably fence every exact attempt in the affected item with personal-only authority (full-rights discovery or tools with a personal native login). Retire affected personal-context intents and descendant authority and durably discard uncommitted output, including anything staged or queued for delivery. Pin the committed file boundary and persist deduplicated cleanup. Fence other pending derived output if the wider audience cannot read its sources. Use the commit_rule for changes that span databases. In the same durable authority change retire all incompatible saved ExecutionSessionRefs, including completed sessions. Derive retirement from the checked item and audience generation without parsing files or contacting the placement.",
         "after_commit": "Dispatch idempotent exact-attempt Stop and verify teardown. Later attempts use the shared discovery and tools rules. Do not carry forward discarded personal attempt context or reattach a fenced attempt. Only a new admission using committed file bytes and context cleared for the new audience may run in the widened scope. The placement must keep retired personal sessions unreadable even by raw path or provider session ID.",
-        "ends_authority": true
+        "ends_authority": true,
+        "item_record": "Record widening protection on the item in the commit of its first write by or on behalf of a personal-authority run. The host owns this durable item fact. Preserve it across package updates, disable and uninstall, and across item revisions and restore."
       },
-      "conversation_erasure": {
+      "item_erasure": {
         "before_reply": "Persist item deletion or purge and fence affected jobs, attempts, descendants and saved bindings. Trashing an item with an active attempt requires an authorized Stop first.",
         "after_commit": "Stop affected live attempts on the authorized erase path, verify teardown and finish bounded purge.",
         "ends_authority": true
@@ -5344,10 +5449,10 @@
       "Host erasure": [
         "space_erasure",
         "account_erasure",
-        "conversation_erasure"
+        "item_erasure"
       ],
-      "Conversation audience widening": [
-        "conversation_audience_widening"
+      "File audience widening": [
+        "item_audience_widening"
       ]
     }
   },
@@ -5453,7 +5558,7 @@
       "$ref": "#/$defs/ItemAppendReceipt"
     },
     "max_decoded_bytes": 65536,
-    "rule": "Slot is pinned in the installed kind. Check write authority and exact expected revision, plus live execution and audience fence when the writer is attempt-scoped. Commit opaque bytes, revision, byte boundary and receipt recoverably before ACK. Use checked staging and outbox recovery. Preserve the previous readable range pin until revoke, purge or expiry. Reject conflicting receipt fingerprints."
+    "rule": "A kind declaring append_file: true has one append stream per item, addressed by the ordinary item and revision for both append and range reads. Check write authority and exact expected revision, plus live execution and audience fence when the writer is attempt-scoped. Commit opaque bytes, revision, byte boundary and receipt recoverably before ACK. Use checked staging and outbox recovery. Preserve the previous readable range pin until revoke, purge or expiry. Reject conflicting receipt fingerprints."
   },
   "view_snapshots": {
     "publish": {
@@ -5473,7 +5578,7 @@
       "pending_refreshes_per_space": 32,
       "max_bytes_per_package_per_space": 4194304
     },
-    "authority": "A package can publish only for its own declared item and slot. audience_scope is a host-issued exact projection audience for the checked invocation, never an author string. Bind the snapshot to package generation, item, slot, immutable source revision and audience. Check the source and its display rights at admission, commit and delivery. Require each source to be readable by the whole audience. Never widen a retained audience by relabelling bytes. Mint item_view_context only for the installed owner on the checked item, revision, member audience and slot after checking readable source authority. Reject caller-provided audience labels. Use a scope-limited refresh invocation for checked item sources. Member snapshot text is package-authored under the installed-package trust rule. Do not serve arbitrary snapshot text on guest or public links.",
+    "authority": "A package can publish only for its own declared item and slot. audience_scope is a host-issued exact projection audience for the checked invocation, never an author string. Bind the snapshot to package generation, item, slot, immutable source revision and audience. Snapshot content comes exclusively from the bound item at that exact revision. Never include a quote, excerpt, or other material sourced from a different item, even if the current audience may read it. Refuse publication or refresh if own-item scope cannot be established. Check the bound source and its display rights at admission, commit and delivery. Never relabel a retained snapshot for another audience. Mint item_view_context only for the installed owner on the checked item, revision, member audience and slot after checking readable source authority. Reject caller-provided audience labels. Apply the same own-item rule to refresh and publish. Member snapshot text is package-authored under the installed-package trust rule. Do not serve arbitrary snapshot text on guest or public links.",
     "state": "Reuse row-image revision and stale rules. While the package sleeps serve the bounded native description at once without invoking it. On a newer head the host marks the retained snapshot stale if the source and audience are still authorized. A valid current publish replaces it. When absent show loading with the host item title and basic controls. An admitted live request may wake the package for a fresh view. Schedule at most one eligible declared refresh per item, source revision and audience while pending. Recheck the current view at delivery. Serve the saved view without waiting for refresh and issue no renderer actions from saved bytes. The pinned refresh operation returns ItemSnapshotView, which the host admits as the fresh snapshot under the same scope. Publication changes disposable display state only. Retire superseded generations and evict retained views within the owner and space byte caps. A publish invalidates the matching item view so the renderer can reopen the slot on the same authorized view.",
     "retention": "Regenerable appdata. Withhold immediately on revoke, purge or generation retirement and reclaim in bounded work. No backup dependency. A snapshot is never authoritative or the only copy. It contains no live actions, external frames, arbitrary URLs, leases or tokens.",
     "context": {
@@ -5502,7 +5607,7 @@
   "trash": {
     "scope": "One Trash per space for all item kinds.",
     "retention_days": 30,
-    "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action."
+    "rule": "Authorize each read, restore and purge against the item and space. Purge in bounded background work while packages sleep. An inverse that adds file readers applies the common audience widening action. Start retention at trash commit. No item kind or package overrides the retention period."
   },
-  "exchanges_revision": "14.16"
+  "exchanges_revision": "14.17"
 }

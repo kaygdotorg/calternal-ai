@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 14.16 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 14.17 draft. Runtime enablement follows qualification. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -167,7 +167,7 @@
               },
               "body_derived": {
                 "const": true,
-                "description": "Mark a field whose value is derived from the body. The host checks body authority before projecting it and excludes it from all persisted member row display parts."
+                "description": "Mark a field whose value is derived from the body. The host checks body authority before projecting it. Persist a body-derived part only under the catalogue offline_download.row_projections rule."
               }
             },
             "if": { "required": ["source"] },
@@ -287,11 +287,6 @@
           },
           "description": "Declared RowImageRef slots eligible for a checked editing-device snapshot."
         },
-        "trash_retention_days": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 3650
-        },
         "live_room": { "enum": ["yjs-v1"] },
         "host_create": {
           "description": "Opt in to generic host.item.create. Supply schema-valid initial metadata for an empty item. Install rejects defaults for each host extractor output, the body_excerpt shorthand and every declared device_row_images slot. The host extracts from the empty source before committing the item. Optional after runs a same-package operation or job after the host commit. At install, resolve a job to run_operation and require the entry operation to target this kind with target.field and accept exactly that one required property in a closed input object. Resolve the property reference to ItemRef through the host registry and ignore schema annotations. The host binds the created ref to target.field as the only input.",
@@ -325,17 +320,10 @@
             "$ref": "#/definitions/searchProfile"
           }
         },
-        "append_slots": {
-          "type": "array",
-          "maxItems": 8,
-          "items": {
-            "$ref": "#/definitions/localId"
-          },
-          "uniqueItems": true
-        },
+        "append_file": { "const": true, "description": "Opt into the catalogue file_append rule for the item body." },
         "execution_target": {
           "const": true,
-          "description": "An ordinary item kind that may hold an execution job. Apply the generic file audience fence to every item of this kind, even after attempts and bindings expire."
+          "description": "An ordinary item kind that may hold an execution job. Allows admission of an execution job. Durable audience-widening protection is an item fact under the catalogue, independent of this declaration."
         }
       },
       "allOf": [
@@ -726,7 +714,7 @@
         "entry",
         "name"
       ],
-      "description": "Pinned harness image, entry asset and disclosed native profile access. The host never interprets provider command options."
+      "description": "Pinned harness image, entry asset and disclosed native profile access. The host checks reviewed-build approval outside the manifest. The host never interprets provider command options."
     },
     "editor": {
       "type": "object",
