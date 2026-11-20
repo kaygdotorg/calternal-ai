@@ -218,9 +218,9 @@ process.exitCode = 1;
 | --- | --- |
 | `risk` | `read`, `reversible`, `irreversible`, `external`, `widens_access` |
 | `idempotency` | `read_only`, `request_id`, `never` |
-| `methods` | `item_create`, `item_save_begin`, `item_save_chunk`, `item_save_seal`, `contribution_call`, `contribution_read`, `item_head`, `item_range`, `item_spans`, `item_history`, `item_save`, `item_trash`, `item_restore`, `item_rename`, `item_rename_status`, `item_rename_undo`, `item_purge`, `empty_trash`, `collection_create`, `collection_membership`, `items_list`, `items_search`, `sharing_check`, `start_job`, `checkpoint_job`, `job_status`, `cancel_job`, `read_setting`, `set_setting`, `request_secret_handle`, `proxy_request`, `credential_call`, `execution_start`, `execution_status`, `execution_stop`, `execution_input`, `execution_spawn_child`, `execution_wait`, `alarm_set`, `alarm_cancel`, `item_append`, `item_view_publish`, `execution_session_bind`, `item_view_context`, `extension_choices` |
+| `methods` | `item_create`, `item_save_begin`, `item_save_chunk`, `item_save_seal`, `contribution_call`, `contribution_read`, `item_head`, `item_range`, `item_spans`, `viewer_state_read`, `viewer_state_write`, `item_history`, `item_save`, `item_trash`, `item_restore`, `item_rename`, `item_rename_status`, `item_rename_undo`, `item_purge`, `empty_trash`, `collection_create`, `collection_membership`, `items_list`, `items_search`, `sharing_check`, `start_job`, `checkpoint_job`, `job_status`, `cancel_job`, `read_setting`, `set_setting`, `request_secret_handle`, `proxy_request`, `credential_call`, `execution_start`, `execution_status`, `execution_stop`, `execution_input`, `execution_spawn_child`, `execution_wait`, `alarm_set`, `alarm_cancel`, `item_append`, `item_view_publish`, `execution_session_bind`, `item_view_context`, `extension_choices` |
 | `required_capability` | `space.read`, `content.write`, `plugins.use`, `plugins.manage`, `members.invite`, `members.manage`, `managers.manage`, `space.settings`, `space.transfer`, `space.delete`, `spaces.list`, `spaces.create` |
-| `FormField.input` | `text`, `multiline`, `url`, `email`, `number`, `date`, `choice`, `toggle` |
+| `FormField.input` | `text`, `multiline`, `url`, `email`, `number`, `date`, `choice`, `toggle`, `file` |
 
 <!-- END GENERATED field-reference -->
 

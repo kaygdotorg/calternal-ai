@@ -165,6 +165,37 @@ grant while no view is open. Keep cold first paint independent of reconciliation
 and 5/8 for source and cache identities. Leave protected persistent rows and offline
 download disabled in the early live app.
 
+## Entry views and composer
+
+Numbers are the findings on [issue 99](https://git.kayg.org/kayg/calternal-ai/issues/99).
+A renderer can work from the pinned descriptions and simulated replies while the
+host slices qualify authority. The first live Send can still use a text-only page.
+
+| Finding | Contract surface | Owner |
+| --- | --- | --- |
+| 0 | Adopt pinned item-view and description shapes in browser and native. | Renderer lanes. |
+| 1 | Declared viewer-private fields, indexed in that viewer’s scope. Shared shape stays an ordinary kind field. | 2 private state, 8 windows. |
+| 2 | Quiet mark tone and accent default for counts. | Renderer only. |
+| 3 | Literal option lists use the existing choice exchange. | 6 scopes ChoiceRefs. |
+| 4 | Entry nodes, grouping and authored labels. Host projects own and verified contribution marks. | Renderer draws, 5 checks spans, 1 resolves marks. |
+| 5 | Entry menu and declared actions with stable refs and own/age guards. | Renderer draws, 5 issues contexts, 6 rechecks activation, 2 fences writes. |
+| 6 | Date and system markers, viewer-private unread separator. | Renderer draws, 5 projects reading position. |
+| 7 | Quote block and jump target from a checked source span. | 2 resolves and redacts, 5 projects, renderer draws. |
+| 8 | Closed inline Markdown subset. | Renderer only, 5 applies schema and size bounds. |
+| 9 | Checked item locator. | 5 reuses item.locate, renderer opens. |
+| 10 | Visible read marks, first unread, latest and next mention. | 2 stores markers, 5 binds anchors, 8 publishes private counts. |
+| 11 | Read-only or lapsed whole-view state. | 5 projects, 6 checks actions, 2 fences mutations. |
+| 12 | Personal drafts and entry-bound reply/edit with checked prefill. | 2 stores drafts, 5 holds entry scope, 6 checks composer. |
+| 13 | Item-participant mention choices. | 6 scopes choices, 2 supplies checked item membership, 1 resolves contributions. |
+| 14 | Checked file field and staged attachment upload. | 2 owns stage and publication, 6 checks submit, 5 checks delivery. |
+| 15 | Single entry or a contiguous range as an operand. | 5 checks scope and order, 6 checks activation, 3 checks disclosure. |
+| 16 | Protected request card at a checked entry for its designated reader. | 3 owns consent and timeout, 5 projects, 6 resolves. |
+| 17 | Right-panel content in one scroll region. | Renderer lays out, 5 scopes content to the view, 8 serves child windows. |
+| 18 | Ephemeral activity and existing Stop. Typing source follows qualification. | 3 owns job status, 5 scopes activity, renderer draws. |
+| 19 | People-only Send omits harness and placement. | Plugin, issue 92, under existing people gates. |
+| 20 | Form field and prompt visibility from typed form values. | Renderer previews, 6 validates capture. |
+| 21 | Saved filters as user folders. | Deferred. |
+
 ## Integration and deletion
 
 First run a new space with the gated window lane, inline content methods, one real

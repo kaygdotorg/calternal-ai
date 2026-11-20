@@ -257,7 +257,7 @@ def field_names(kind_entry, errors, generic=()):
     names = set(errors.each(fields)) if isinstance(fields, dict) else {
         f.get("name") if isinstance(f, dict) else f for f in errors.each(fields)
     }
-    return names | set(generic)
+    return names | set(kind_entry.get("viewer_fields", {})) | set(generic)
 
 def normalize_manifest(manifest, errors):
     """Index the declarations of a schema-validated v2 manifest by ID."""
@@ -513,9 +513,12 @@ def check_manifest_install(manifest, kind_schema_links, errors):
     send_operations = composer_send_operations(manifest, errors)
     for kind_id, kind in errors.each(manifest.get("kinds", {}).items()):
         path = f"$.kinds.{kind_id}"
-        for field in errors.each(sorted(field_names(kind, errors) & generic.keys())):
-            errors.append(f"{path}.indexed_fields.{field}: reserved host generic field")
         fields = kind.get("fields", {})
+        private = kind.get("viewer_fields", {})
+        for field in errors.each(sorted(fields.keys() & generic.keys())):
+            errors.append(f"{path}.indexed_fields.{field}: reserved host generic field")
+        for field in errors.each(sorted(private.keys() & (fields.keys() | generic.keys()))):
+            errors.append(f"{path}.viewer_fields.{field}: collides with a shared or generic field")
         outputs = {field for field, meta in errors.each(fields.items()) if meta.get("source") == "body_excerpt"}
         separators = {}
         for extractor in errors.each(kind.get("extractors", [])):
@@ -543,7 +546,7 @@ def check_manifest_install(manifest, kind_schema_links, errors):
         title_meta = fields.get(title, {})
         if title in outputs or body_derived_field(kind, title, title_meta):
             errors.append(f"{path}.title_field: generic title cannot use a body-derived source")
-        elif (title == provider_projection
+        elif (title in private or title == provider_projection
               or (title in generic and title != "title") or (title_meta and (
                   title_meta.get("type") != "Text" or title_meta.get("audience") != generic["title"]["audience"]
               ))):
@@ -605,7 +608,10 @@ def field_meta(kind, field, generic=None):
         return generic[field]
     fields = kind.get("fields")
     meta = fields.get(field) if isinstance(fields, dict) else None
-    return meta if isinstance(meta, dict) else {}
+    if isinstance(meta, dict):
+        return meta
+    private = kind.get("viewer_fields", {}).get(field)
+    return {**private, "audience": "viewer_self"} if private else {}
 
 
 def load_fixture_manifest(file, manifests_dir, errors):

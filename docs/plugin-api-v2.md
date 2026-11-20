@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.42 draft
+# Plugin API v2 · revision 14.43 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic file, view and execution engines. Section 8 gates runtime enablement. Fixture bounds are test settings. See the
@@ -710,9 +710,8 @@ another address and a new checked call. Use the catalogue’s
 [disclosed-attempt placement and tools rule][attempt-disclosure].
 Threads owns the selection UI, how a person addresses an agent, and
 applying its result to the item. The host owns the grant and attempt
-fences. A generic actor-private per-item record can hold a person’s
-view state and consent preference, with disclosure authority coming
-from the checked grant.
+fences. A [viewer-private item record][viewer-state] holds a person’s view state
+and preferences. Disclosure authority still comes from the checked grant.
 
 A person may ask one agent to consult another. Threads puts that exchange
 in a separate linked item and posts only its result to the people
@@ -724,8 +723,8 @@ consultation and decides how to apply its result.
 
 The catalogue’s [OPEN list](../contract/host-catalogue-v2.json#/open_cutover_requirements)
 tracks the remaining wires and qualification for participant grants,
-group invitation and bootstrap, disclosure and placement, private
-per-item state, message deletion and any additional cross-space delivery.
+group invitation and bootstrap, disclosure and placement, message
+deletion and any additional cross-space delivery.
 Keep those paths disabled until pinned. This revision leaves the
 agents-only implementation path available.
 
@@ -1105,6 +1104,14 @@ file. Check that authority at scope admission and commit.
 A member reader may request a live view through the pinned read operation.
 Apply the same item-view rule to the transient reply. Opening or refreshing
 an item never replaces the retained view, even when the reader can edit.
+An opted-in item view can use [entry views][entry-views] for ordered
+item content. The host binds actions, quotes, range selection and
+request cards to checked entries, and stores the viewer’s own read
+position and drafts in [viewer item state][viewer-state]. The
+description contract defines native grouping, markers and composer
+controls. The app supplies its content under the existing body-read
+fence. A shared snapshot carries no private state or entry actions.
+
 An eligible member can request older pages through `item_view.open`
 using the checked cursor. Follow the active live head for commit signals.
 On change request the newest live page. On invalidation clear the
@@ -1690,7 +1697,8 @@ Build in order: Threads, Notes, Mail, Files, Photos. Qualify on a fresh
 install. Threads must attach and reopen files through checked refs and
 support queued follow-ups. Test restart and replay with newly created
 items and jobs. Notes requires the history browser over revisions
-created on the fresh install, linked-user comments and collection creation. Portable upload, history browsing, comments and collection
+created on the fresh install, linked-user comments and collection creation. Attachment upload uses the [generic checked file field][entry-views]
+and must qualify before cutover. History browsing, comments and collection
 creation remain open where the generic contract lacks those shapes.
 Hold each affected cutover until its required behavior is pinned and
 qualified. Mention picker and snooze presets or custom date may follow
@@ -1752,8 +1760,8 @@ reviewed builds and user-enrolled placement for other builds. The
 live-authority discovery rule above remains interim.
 
 Application cutover gates are listed in §8 and the catalogue. Pin the
-generic upload and linked-user comment shapes, history browsing and
-collection creation before the affected cutover. The Threads app owns
+linked-user comment shapes, history browsing and collection creation and
+qualify generic uploads before the affected cutover. The Threads app owns
 queued follow-ups through the generic job contract.
 
 [generic-engines]: https://git.kayg.org/kayg/calternal-ai/src/commit/5abca642/docs/proposals/plugin-api-v2-generic-engines.md
@@ -1780,6 +1788,8 @@ queued follow-ups through the generic job contract.
 [relocate]: ../contract/host-catalogue-v2.json#/item_engine/relocate
 [quotes]: ../contract/host-catalogue-v2.json#/item_engine/quotes
 [fresh-cutover]: https://git.kayg.org/kayg/calternal-ai/src/commit/ee88c9f60c5256d3cc5b9adbce3c0e5036854c99/docs/morning-2026-11-20.md
+[entry-views]: ../contract/host-catalogue-v2.json#/item_views_entries
+[viewer-state]: ../contract/host-catalogue-v2.json#/viewer_item_state
 [quote-redaction]: ../contract/host-catalogue-v2.json#/item_engine/quotes/redaction
 [title-binding]: ../contract/host-catalogue-v2.json#/item_engine/title_binding
 [format-open]: ../contract/host-catalogue-v2.json#/item_engine/format_open

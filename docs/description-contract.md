@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.42 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.43 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 Use the conformance tool release that supports this contract revision to
 check templates, manifests and captured replies. The tool and fixture corpus for 14.15 follow on their own release path. See
@@ -141,6 +141,12 @@ Any plugin may declare a leading icon on a Bind-produced item row. The optional 
 `marks` (up to three) are trailing dots, counts, texts or icons, each with an optional `when` predicate and a tone. `leadingActions`, `trailingActions` and `menu` are
 `invoke` definitions; only the first leading or trailing action may set `fullSwipe`. `open` navigates (sets a route parameter to the row id) or invokes.
 Use the host-issued row reference for row identity in selection, events and scope. Item rows use the kind’s row reference. Rows of a repeated section use a `LayoutEntryRef`.
+
+A kind may declare `viewer_fields` for the acting person’s private count,
+preference or preview on a shared item. The Bind can use them in fields,
+marks, conditions, filter and sort only through the actor’s own authorized
+index. Leave a missing value blank. A count with no explicit tone uses
+the accent. `tone: quiet` uses the secondary fill.
 
 ### 2.5 States
 
@@ -297,7 +303,7 @@ list only when the host's next window no longer contains it.
 * **`chrome.header`**: a literal title or a field of an **item** bind (the open item, never a list's first row), and up to two leading and three trailing actions. The sidebar toggle is the shell's.
 * **`chrome.footer`**: `account` (an id, a title and a menu; the shell draws the person's initial from the session, so a persisted template holds no person data), `apps`, `search` (the footer
   search feeds its own search bind and sends the settled text).
-* **`chrome.panel`**: the right panel, built from host components and checked panel contributions.
+* **`chrome.panel`**: the right panel, built from checked content nodes, host components or panel contributions.
 * No `appearance`, `scheme`, `accent` or `titleImage` in this first contract: the person's wallpaper and scheme are the shell's own preferences, and the wordmark is the app's name.
 
 How the native renderer draws it (the SwiftUI primitive for each part is in `docs/ios-shell.md`): sections are `Section`s of a `List(selection:)` in the sidebar style
@@ -374,11 +380,11 @@ signal clears affected content. The catalogue’s
 also applies to window pushes, search and renewal. Apply the paging and
 follow rules before drawing the next reply.
 
-The native nodes are stack, `snapshot-text`, `snapshot-code`,
-`snapshot-heading`, `snapshot-image` and `snapshot-attachment`. Text,
-code and attribution are literal. The renderer fetches image and
+Native pages use stacks and the checked snapshot nodes. Text, code
+and attribution are literal unless an entry opts into inline markup. The renderer fetches image and
 attachment bytes only through the checked `item_view.asset` route.
-No markup, chrome, confirmation UI or live actions are drawn from a page.
+Use literal text except for the closed inline subset in entry views.
+Host controls and entry activations come from separately checked overlays.
 
 ### 5.2 Host surfaces and navigation on the wire
 
@@ -629,6 +635,62 @@ The host composes and records each contiguous message under the
 plugin uses `item_spans` and `item_range` for the same revision. Byte
 ranges mark the message and its exact middle, including any line that
 looks like a heading. A quote adds a separate attributed range. Use the [catalogue’s byte origins](../contract/host-catalogue-v2.json#/item_engine/item_spans/origins) when identifying authored content.
+### Entry views
+
+An item view can describe an ordered conversation, correspondence or
+comment history with `snapshot-entry` leaves. The entry carries a stable
+anchor, author name and grouping key, UTC timestamp, optional edited
+timestamp, asked-by label and queued or failed state. Consecutive
+entries with the same author key and no intervening marker group within
+five minutes, including across older pages. Draw a first author mark
+and name for the group. A host-projected own flag and verified
+contribution mark use the checked entry overlays. Draw no provider
+mark from a plain authored value. Paint outgoing layout only from the
+host's own flag.
+
+An entry may contain text, inline Markdown, code, checked images or
+attachments, a checked quote, and an item link. Render inline Markdown
+as a closed subset of emphasis, strong text, code spans and explicit
+HTTP(S) links. Use no automatic network requests. A checked quote
+displays only host-supplied text and checked jump target. A link opens
+through the existing scoped item locator. Render dates locally and draw a
+system line as plain app content. The unread marker comes from the
+checked first-unread anchor, with a count only when the host supplies it.
+
+Use `item_view.open` with a checked anchor or `position: unread | latest |
+mention` on a live member view. Preserve the anchor while paging
+older results. Offer jump to latest and next unread mention from the
+live reading state. Call `item_view.read` only after the entry has
+scrolled into view. Update the acting reader’s count and scroll affordances
+when the scoped reading state changes. Apply the host’s read-only notice
+and reason to the whole view. Read controls, including copying a link,
+remain available while authorized.
+
+Entry menus use only the view’s declared actions and the host’s
+entry-scoped activation contexts. A renderer opens the native context
+menu or long-press menu. A selection can span one entry or a bounded
+contiguous range. Submit its host-issued selection reference, with no
+inline message bytes or unverified author IDs. The host inserts protected
+request cards only for the intended reader. Use the existing request
+controls and the host expiry for any countdown.
+
+A composer can persist one of its declared draft slots for the acting
+person. A checked entry action can open it in reply or edit mode. Read
+the mode and edit prefill through the scoped composer exchange. Choice
+prompts can declare up to 12 literal labelled values and still submit
+host-issued ChoiceRefs. Re-evaluate form and prompt conditions as the
+input changes and omit hidden values entirely. Mention choices are
+limited to checked participants of the open item. File fields send
+checked attachment refs after upload. Right panels may use ordinary
+content nodes in one scroll region. Live activity expires locally at
+the host timestamp, and Stop remains the existing execution control.
+
+For authority, bounds and the exchanges, see the
+[catalogue’s entry-view rules](../contract/host-catalogue-v2.json#/item_views_entries)
+and [viewer item state](../contract/host-catalogue-v2.json#/viewer_item_state).
+
+### Item-view timestamps
+
 Provide a heading's `timestamp` as a typed instant. The renderer formats
 it in the viewer's time zone and locale. The plugin reads UTC from its
 own file format. A renderer uses the typed value to draw the time.

@@ -206,13 +206,28 @@
                     {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": ["extension"],
+                      "required": [
+                        "extension"
+                      ],
                       "properties": {
-                        "extension": {"$ref": "#/$defs/Id"}
+                        "extension": {
+                          "$ref": "#/$defs/Id"
+                        }
                       },
                       "description": "Installed contribution options for this app's declared extension point. Use extension.choices."
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/LiteralChoice"
+                      },
+                      "maxItems": 12,
+                      "minItems": 1
                     }
                   ]
+                },
+                "showWhen": {
+                  "$ref": "#/$defs/FormCondition"
                 }
               },
               "additionalProperties": false,
@@ -222,19 +237,67 @@
               "allOf": [
                 {
                   "if": {
-                    "required": ["options"],
+                    "required": [
+                      "options"
+                    ],
                     "properties": {
                       "options": {
-                        "anyOf": [{"required": ["host"]}, {"required": ["extension"]}]
+                        "anyOf": [
+                          {
+                            "required": [
+                              "host"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "extension"
+                            ]
+                          }
+                        ]
                       }
                     }
                   },
                   "then": {
-                    "required": ["kind"],
+                    "required": [
+                      "kind"
+                    ],
                     "properties": {
-                      "kind": {"const": "choice"}
+                      "kind": {
+                        "const": "choice"
+                      }
                     },
-                    "not": {"required": ["initial"]}
+                    "not": {
+                      "required": [
+                        "initial"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "options": {
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "options"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "kind"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "const": "choice"
+                      }
+                    },
+                    "not": {
+                      "required": [
+                        "initial"
+                      ]
+                    }
                   }
                 }
               ]
@@ -249,6 +312,23 @@
         {
           "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/RowActionTarget",
           "description": "Context-derived operand of a row action: {context: \"item\"} is the underlying item ref of the row (a thread's ItemRef), {context: \"placement\"} is the row's LayoutEntryRef (only inside a Section.repeat row). The host reconstructs both from the activation context; the renderer sends neither."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "entry": {
+              "enum": [
+                "anchor",
+                "selection",
+                "composer"
+              ]
+            }
+          },
+          "required": [
+            "entry"
+          ],
+          "description": "Use anchor inside a checked entry action, selection in actions bound to this item view, or composer on the matching reply/edit form submit. The host reconstructs and types the operand."
         }
       ]
     },
@@ -451,7 +531,8 @@
             "enum": [
               "good",
               "warn",
-              "bad"
+              "bad",
+              "quiet"
             ]
           },
           "icon": {
@@ -1132,13 +1213,41 @@
               "required": [
                 "name"
               ]
+            },
+            "composer": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "form": {
+                  "$ref": "#/$defs/Id"
+                },
+                "mode": {
+                  "enum": [
+                    "reply",
+                    "edit"
+                  ]
+                }
+              },
+              "required": [
+                "form",
+                "mode"
+              ]
             }
           },
           "additionalProperties": false,
-          "required": [
-            "route"
-          ],
-          "description": "After an `ok` outcome that carries `created`, set this route parameter to the created item's reference (open the new note or thread). The reference is host-minted; a description never supplies one."
+          "description": "After ok, set the declared created route or enter the checked composer reply or edit mode. Composer continuation is limited to an entry action and uses the host-issued context.",
+          "oneOf": [
+            {
+              "required": [
+                "route"
+              ]
+            },
+            {
+              "required": [
+                "composer"
+              ]
+            }
+          ]
         },
         "extension": {
           "$ref": "#/$defs/ExtensionUse",
@@ -1608,13 +1717,27 @@
         "extension": {
           "$ref": "#/$defs/ExtensionUse",
           "description": "An app-declared panel point. Apply only its checked installed contribution."
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContentNode"
+          },
+          "maxItems": 8,
+          "minItems": 1
         }
       },
       "additionalProperties": false,
       "required": [
         "id"
       ],
-      "description": "The right panel. Content is host components only."
+      "description": "The right panel. Draw checked content nodes or existing host components in one scroll region.",
+      "not": {
+        "required": [
+          "content",
+          "components"
+        ]
+      }
     },
     "Cache": {
       "type": "object",
@@ -1884,7 +2007,8 @@
             "number",
             "date",
             "choice",
-            "toggle"
+            "toggle",
+            "file"
           ]
         },
         "required": {
@@ -1902,7 +2026,23 @@
           "maxLength": 120
         },
         "initial": {
-          "$ref": "#/$defs/Literal"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Literal"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "entry": {
+                  "const": "text"
+                }
+              },
+              "required": [
+                "entry"
+              ]
+            }
+          ]
         },
         "options": {
           "type": "array",
@@ -1926,6 +2066,24 @@
           },
           "maxItems": 32,
           "description": "For `choice`."
+        },
+        "showWhen": {
+          "$ref": "#/$defs/FormCondition"
+        },
+        "draft": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "slot": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "required": [
+            "slot"
+          ]
+        },
+        "mentions": {
+          "const": "item_participants"
         }
       },
       "additionalProperties": false,
@@ -1934,7 +2092,67 @@
         "label",
         "input"
       ],
-      "description": "One field of a form: a typed control whose value is held on the device and checked there (required, length, url/email shape) before anything is sent."
+      "description": "One field of a form: a typed control whose value is held on the device and checked there (required, length, url/email shape) before anything is sent.",
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "mentions"
+                ]
+              },
+              {
+                "required": [
+                  "draft"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "input": {
+                "const": "multiline"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "initial": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "initial"
+            ]
+          },
+          "then": {
+            "properties": {
+              "input": {
+                "const": "multiline"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "input": {
+                "const": "file"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "initial": false,
+              "options": false,
+              "maxLength": false
+            }
+          }
+        }
+      ]
     },
     "TextNode": {
       "type": "object",
@@ -2059,6 +2277,18 @@
           ],
           "default": "onOk",
           "description": "Clear the fields after an `ok` outcome; an error or unknown outcome keeps what was typed."
+        },
+        "entry_context": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "component": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "required": [
+            "component"
+          ]
         }
       },
       "additionalProperties": false,
@@ -2852,6 +3082,247 @@
         "children"
       ]
     },
+    "LiteralChoice": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/Literal"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 80
+        }
+      },
+      "required": [
+        "value",
+        "label"
+      ]
+    },
+    "FormCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "form": {
+          "$ref": "#/$defs/Id"
+        },
+        "field": {
+          "$ref": "#/$defs/Id"
+        },
+        "op": {
+          "enum": [
+            "exists",
+            "eq"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/Literal"
+        }
+      },
+      "required": [
+        "form",
+        "field",
+        "op"
+      ],
+      "if": {
+        "properties": {
+          "op": {
+            "const": "eq"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "value"
+        ]
+      },
+      "else": {
+        "properties": {
+          "value": false
+        }
+      }
+    },
+    "EntryAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "invoke": {
+          "$ref": "#/$defs/NonSwipeInvoke"
+        },
+        "own_only": {
+          "const": true
+        },
+        "max_age_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800
+        }
+      },
+      "required": [
+        "invoke"
+      ]
+    },
+    "SnapshotEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "snapshot-entry"
+        },
+        "anchor": {
+          "$ref": "host-catalogue-v2.json#/$defs/ItemAnchor"
+        },
+        "timestamp": {
+          "$ref": "host-catalogue-v2.json#/$defs/Timestamp"
+        },
+        "author": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "$ref": "host-catalogue-v2.json#/$defs/Ref"
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          "required": [
+            "key",
+            "name"
+          ]
+        },
+        "edited_at": {
+          "$ref": "host-catalogue-v2.json#/$defs/Timestamp"
+        },
+        "asked_by": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "failed"
+          ]
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/SnapshotText"
+              },
+              {
+                "$ref": "#/$defs/SnapshotCode"
+              },
+              {
+                "$ref": "#/$defs/SnapshotImage"
+              },
+              {
+                "$ref": "#/$defs/SnapshotAttachment"
+              },
+              {
+                "$ref": "#/$defs/SnapshotQuote"
+              },
+              {
+                "$ref": "#/$defs/SnapshotLink"
+              }
+            ]
+          },
+          "maxItems": 24,
+          "minItems": 1
+        }
+      },
+      "required": [
+        "type",
+        "anchor",
+        "timestamp",
+        "author",
+        "children"
+      ]
+    },
+    "SnapshotQuote": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "snapshot-quote"
+        },
+        "source": {
+          "$ref": "host-catalogue-v2.json#/$defs/ItemQuoteSource"
+        }
+      },
+      "required": [
+        "type",
+        "source"
+      ]
+    },
+    "SnapshotLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "snapshot-link"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "target": {
+          "$ref": "host-catalogue-v2.json#/$defs/ItemLocator"
+        }
+      },
+      "required": [
+        "type",
+        "label",
+        "target"
+      ]
+    },
+    "SnapshotMarker": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "snapshot-marker"
+            },
+            "kind": {
+              "const": "date"
+            },
+            "timestamp": {
+              "$ref": "host-catalogue-v2.json#/$defs/Timestamp"
+            }
+          },
+          "required": [
+            "type",
+            "kind",
+            "timestamp"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "snapshot-marker"
+            },
+            "kind": {
+              "const": "system"
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type",
+            "kind",
+            "text"
+          ]
+        }
+      ]
+    },
     "SnapshotNode": {
       "oneOf": [
         {
@@ -2871,6 +3342,15 @@
         },
         {
           "$ref": "#/$defs/SnapshotAttachment"
+        },
+        {
+          "$ref": "#/$defs/SnapshotEntry"
+        },
+        {
+          "$ref": "#/$defs/SnapshotMarker"
+        },
+        {
+          "$ref": "#/$defs/SnapshotLink"
         }
       ]
     },
@@ -2885,7 +3365,7 @@
       "required": [
         "content"
       ],
-      "description": "One read-only native item-view page. Draw only SnapshotNode types. Apply aggregate byte, depth and node bounds. Plain text and code are never interpreted as markup. Asset refs use the checked catalogue route. No host chrome or confirmation UI."
+      "description": "One bounded native item-view page. Apply aggregate byte, depth and node bounds. Only declared inline text uses the closed Markdown subset. The host supplies any entry controls and protected request cards separately."
     },
     "ExtensionUse": {
       "type": "object",
@@ -2921,6 +3401,35 @@
             },
             "slot": {
               "$ref": "#/$defs/Id"
+            },
+            "selectionMode": {
+              "enum": [
+                "single",
+                "range"
+              ]
+            },
+            "entry_actions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/EntryAction"
+              },
+              "maxItems": 8,
+              "minItems": 1
+            },
+            "reading": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "unread": {
+                  "$ref": "#/$defs/Id"
+                },
+                "mentions": {
+                  "$ref": "#/$defs/Id"
+                }
+              },
+              "required": [
+                "unread"
+              ]
             }
           },
           "required": [
@@ -2938,7 +3447,9 @@
     "SnapshotText": {
       "type": "object",
       "properties": {
-        "anchor": {"$ref": "host-catalogue-v2.json#/$defs/ItemAnchor"},
+        "anchor": {
+          "$ref": "host-catalogue-v2.json#/$defs/ItemAnchor"
+        },
         "type": {
           "const": "snapshot-text"
         },
@@ -2961,6 +3472,9 @@
             "warn",
             "bad"
           ]
+        },
+        "markup": {
+          "const": "inline"
         }
       },
       "additionalProperties": false,

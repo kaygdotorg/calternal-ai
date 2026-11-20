@@ -37,7 +37,7 @@
       "version": "0.1.0",
       "manifest": "calternal-plugin-guide/manifest.json",
       "worker": "calternal-plugin-guide/dist/worker.js",
-      "worker_sha256": "ec9eeed3b3de9dc656ff4b64dbab40b6e4a09c65cd94e8848c87e100b16a8062",
+      "worker_sha256": "c004748cc5eaddc4cee46c35614fe34807903cd8c959e7caf49b30dd80e68801",
       "default_enabled": false
     },
     {

@@ -178,7 +178,8 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                                 prompt = source.get("prompt") if isinstance(source, dict) else None
                                 choice_ok = False
                                 if isinstance(prompt, dict) and prompt.get("kind") == "choice":
-                                    option_bind = binds.get(((prompt.get("options") or {}).get("bind")))
+                                    options = prompt.get("options")
+                                    option_bind = binds.get(options.get("bind")) if isinstance(options, dict) else None
                                     choice_ok = (cat_kinds.get(((option_bind or {}).get("source") or {}).get("kind")) or {}).get("row_ref") == declared_type
                                 selection_ok = False
                                 if isinstance(source, dict) and "selection" in source and not source.get("set"):
@@ -196,7 +197,8 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                                 if not (isinstance(prompt, dict) and prompt.get("kind") == "choice"):
                                     errors.append(f"{path}: input {name!r} of {op} is a destination choice: it must come from a `choice` prompt over the authorized options, not a literal or a row value")
                                 else:
-                                    option_bind = binds.get(((prompt.get("options") or {}).get("bind")))
+                                    options = prompt.get("options")
+                                    option_bind = binds.get(options.get("bind")) if isinstance(options, dict) else None
                                     option_kind = cat_kinds.get(((option_bind or {}).get("source") or {}).get("kind"))
                                     want = "LayoutSectionRef" if (declared_type == "LayoutSectionRef" or name == "section") else None
                                     if want and (option_kind is None or option_kind.get("row_ref") != want):
