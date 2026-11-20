@@ -79,6 +79,8 @@ const SPACE_INITIAL: &[&str] = &[
     crate::trash::SCHEMA,
 ];
 
+// Schema 9 only adds window definitions and membership admission. The prior
+// writer also understands spaces first opened after cutover.
 pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new(
         "space content.db",
@@ -92,7 +94,8 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
             (8, crate::rename_job::SCHEMA),
             (9, include_str!("window_index.sql")),
         ],
-    );
+    )
+    .with_compatible_creation(8);
 
 pub(crate) fn database(
     path: &Path,
@@ -293,6 +296,28 @@ mod tests {
             (7, crate::trash_job::SCHEMA),
         ],
     );
+    const PRE_WINDOW_RELEASE: Schema<'_> = Schema::new(
+        "space content.db",
+        3,
+        SPACE_INITIAL,
+        &[
+            (4, THREAD_SNOOZE),
+            (5, COLLECTION_MEMBERS),
+            (6, crate::rooms::SCHEMA),
+            (7, crate::trash_job::SCHEMA),
+            (8, crate::rename_job::SCHEMA),
+        ],
+    );
+
+    #[test]
+    fn a_space_first_opened_after_cutover_is_visible_to_the_previous_release() {
+        let conn = Connection::open_in_memory().unwrap();
+        calternal_store::migrations::migrate(&conn, SPACE_SCHEMA).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, PRE_WINDOW_RELEASE).unwrap(),
+            9
+        );
+    }
 
     #[test]
     fn baseline_threads_survive_the_snooze_migration_and_rollback_writer() {
