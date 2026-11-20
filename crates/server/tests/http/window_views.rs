@@ -223,7 +223,7 @@ fn space_count_quota_is_independent_for_colliding_space_ids() {
 }
 
 #[test]
-fn corrupt_projection_reports_unavailable_and_rebuilds_on_the_worker() {
+fn corrupt_projection_is_rebuilt_before_releasing_rows() {
     let dir = TempDir::new("v2-corrupt");
     let srv = start(&dir.0, None);
     create(&srv, "first-note", &srv.personal, "durable body");
@@ -237,22 +237,29 @@ fn corrupt_projection_reports_unavailable_and_rebuilds_on_the_worker() {
     let window = format!("{view}/window");
     let lease = open(&srv, &view, "exact");
     let request = requested("notes", "start");
-    let first = call(&srv, &srv.owner, &window, Some(request.clone()), &lease);
-    assert_eq!(first.status, 503, "{}", first.body);
-    assert_eq!(first.body["error"]["code"], "unavailable");
-    assert!(first.body.get("rows").is_none());
-    assert!(first.body.get("count").is_none());
-
     let deadline = Instant::now() + Duration::from_secs(8);
     loop {
-        std::thread::sleep(Duration::from_millis(1050));
         let reply = call(&srv, &srv.owner, &window, Some(request.clone()), &lease);
-        if reply.body["state"] == "ready" {
-            assert_eq!(reply.body["count"]["value"], 1);
-            break;
+        match reply.status {
+            200 if reply.body["state"] == "ready" => {
+                assert_eq!(reply.body["count"]["value"], 1);
+                break;
+            }
+            200 => {
+                assert_eq!(reply.body["state"], "loading");
+                assert_eq!(reply.body["rows"], json!([]));
+                assert!(reply.body.get("count").is_none());
+            }
+            503 => {
+                assert_eq!(reply.body["error"]["code"], "unavailable");
+                assert!(reply.body.get("rows").is_none());
+                assert!(reply.body.get("count").is_none());
+            }
+            429 => {}
+            _ => panic!("unexpected {}: {}", reply.status, reply.body),
         }
-        assert!(matches!(reply.status, 200 | 429 | 503), "{}", reply.body);
         assert!(Instant::now() < deadline, "projection did not rebuild");
+        std::thread::sleep(Duration::from_millis(1050));
     }
 }
 
@@ -272,8 +279,9 @@ fn unopenable_projection_persists_unavailability_until_it_can_rebuild() {
     let lease = open(&srv, &view, "exact");
     let endpoint = format!("{view}/window");
     let request = requested("notes", "start");
+    // The first authorized request wakes the worker if the slot is dormant.
     let first = call(&srv, &srv.owner, &endpoint, Some(request.clone()), &lease);
-    assert_eq!(first.status, 503, "{}", first.body);
+    assert!(matches!(first.status, 200 | 503), "{}", first.body);
     let failure = path.with_file_name("windows-v1.failure");
     let deadline = Instant::now() + Duration::from_secs(8);
     loop {
@@ -283,6 +291,9 @@ fn unopenable_projection_persists_unavailability_until_it_can_rebuild() {
         assert!(Instant::now() < deadline, "failure was not persisted");
         std::thread::sleep(Duration::from_millis(25));
     }
+    let failed = call(&srv, &srv.owner, &endpoint, Some(request.clone()), &lease);
+    assert_eq!(failed.status, 503, "{}", failed.body);
+    assert_eq!(failed.body["error"]["code"], "unavailable");
     assert!(path.is_dir());
     std::fs::remove_dir(path).unwrap();
     loop {
