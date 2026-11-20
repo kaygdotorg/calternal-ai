@@ -42,7 +42,7 @@ the structured outcome.
 
 ## Design
 
-- **Control plane** uses version 4 long-poll over HTTP(S) (`protocol`)
+- **Control plane** uses versioned long-poll over HTTP(S) (`protocol`)
   and the server's request guard. Both directions carry sequence numbers and
   acknowledgements, so a dropped request loses nothing. The cost is one held request
   per machine, plus one round trip of latency when output and work cross.
@@ -116,6 +116,30 @@ leased space and generation before starting the package in the existing
 worker sandbox. Revoking the session or losing the short space-channel
 lease tears down that placement. Protocol and verification.
 
+A contributed harness entry runs from a one-use carrier reservation on a
+personal enrolled Podman machine. The runtime checks the pinned OCI repository
+and digest against the provisioned image, verifies the separately hashed entry,
+and starts it with a read-only mount and no network interface. It supplies one
+bounded stdin frame and forwards ordered stdout under the exact ticket. The
+terminal follows process exit and verified container removal.
+
+The home is a private tmpfs. Each approved login directory is mounted under it
+from backing storage private to that person, package and contribution, so two
+harnesses declaring `.claude` never share a login. When the operation declares
+host methods, the entry gets one broker stream at `/run/calternal/broker.sock`:
+the machine checks each call, refuses undeclared methods itself, and relays the
+rest over the carrier with its own ticket. Calls wait while the server is
+unreachable and are resent after exact reattachment. Approved execution egress
+is an HTTPS CONNECT proxy at `/run/calternal/egress.sock`; it admits only the
+approved hostnames on port 443 and refuses non-public addresses. The program's
+own run deadline applies locally.
+
+The machine drains the running entry into its private working log while a
+disconnected carrier pauses delivery. A replacement carrier presents the
+original launch reservation and committed sequence, then reads the retained log
+at the corresponding byte offset. The machine stops a live entry after 24 hours
+of continuous server unreachability and keeps its log.
+Entry qualification.
 
 
 First-owner deployments start their machine service before setup. The server

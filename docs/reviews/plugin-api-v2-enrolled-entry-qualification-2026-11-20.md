@@ -195,6 +195,65 @@ own-file calls, with correlation by callback ID. Refuse extra identity
 fields, undeclared methods, an additional connection, and effects or replies
 after the attempt is fenced.
 
+## Provider path
+
+`EntryProgram` now carries the operation's declared host methods, the approved
+login directories, the resolved execution network and the run's own deadline
+(at most seven days). `EntryProgram::check` refuses overlapping, escaping or
+malformed login paths and hostnames before anything is staged.
+`entry::harness_declaration` reads one harness contribution's pins from a
+checked manifest for the host that builds the program.
+
+- Broker. A declared method list gives the sandbox one stream at
+  `/run/calternal/broker.sock` (a read-only mount of a private run directory).
+  The machine accepts one connection and decodes each line as
+  `WorkerCallMessage`. It refuses extra fields, duplicate open IDs and malformed
+  lines by closing the stream. It answers an undeclared method with 403
+  `forbidden` and a 129th open call with 429 `retry_after`, both locally. Each
+  accepted call gets a fresh carrier UUID, so the host never sees entry
+  identifiers. Calls go before output on the carrier. While the server is
+  unreachable they wait. After exact reattachment every unanswered call is
+  resent in order, relying on the host's request receipts for replay. Stop and
+  the end of the run drop the relay first, so no reply follows the fence.
+- Logins. The home is a private tmpfs. Each declared directory is mounted
+  read-write from
+  `accounts/<account>/harness-logins/<package>/<contribution>/<sha256(path)>`.
+  Backing directories never nest and are never shared between contributions.
+  The machine reads no login bytes. Space-scoped bindings are not accepted.
+- Egress. The sandbox always has `--network=none`. For an approved network, the
+  only way out is an HTTPS CONNECT proxy at `/run/calternal/egress.sock`,
+  advertised as `CALTERNAL_EGRESS_SOCKET`. It admits only approved hostnames,
+  or any public hostname for `any_website`, on port 443. It resolves once on the
+  machine and refuses the whole answer if any address is non-public, using the
+  server's netguard ranges, which moved to `calternal_types::public_address`. It
+  allows 16 connections per run and closes with the run.
+- Clocks. The run deadline and the 24-hour unreachable-server cutoff are both
+  tested on tokio's paused clock, so the tests do not wait in real time.
+
+Each broker call holds at most one 256 KiB frame, with at most 128 open, which
+bounds the relay's memory to about 32 MiB. The broker path makes no database
+reads or flushes. Login preparation costs one stat chain plus one directory sync
+for each new directory.
+
+On dev-01, the enrolled HTTPS test ran three provider arms with
+`docker.io/library/node@sha256:e9f565d3…`. It checked one host-answered
+callback, a local refusal, a forged field closing the stream, login backing that
+persists for one contribution and is fresh for another, and that no egress
+socket is offered under `none`. A real Podman egress test saw only `lo`. It
+received 403 for an unlisted host and for an approved but unresolvable one, and
+a refused direct TCP connection.
+
+Still open:
+
+- The Threads Claude Code package still declares a fixture digest, and its entry
+  throws. Its entry must speak this ABI. It must bridge a local TCP proxy to the
+  egress socket for `HTTPS_PROXY`, set `CLAUDE_CONFIG_DIR` under a declared
+  login directory, and declare its execution network.
+- Nothing yet signs a person in or installs the provider CLI into the new
+  per-harness backing.
+- The server-kill and persisted-Stop tests wait on the durable launch binding
+  (#94) and the host-durable cursor (#93).
+
 ## Simplification opportunities
 
 Keep image and entry pinning at the common package and placement boundaries.
