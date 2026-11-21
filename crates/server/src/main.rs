@@ -153,6 +153,11 @@ fn main() {
             &installation_id,
             &space,
         )),
+        Cmd::WindowStatus {
+            appdata,
+            installation_id,
+            space,
+        } => out.finish(admin_cli::window_status(&appdata, &installation_id, &space)),
         Cmd::Serve {
             appdata,
             userdata_ssd,
@@ -621,7 +626,33 @@ async fn serve(
             .map_err(|error| boot(1, "io", error.to_string(), DATA_HINT));
     }
     let shutdown = calternal_server::shutdown::Shutdown::default();
-    let app = api::router(state.clone(), web_dir.clone())
+    let reading_fixture = std::env::var_os("CALTERNAL_TEST_READING_LIST");
+    let app = if let Some(enabled) = reading_fixture {
+        if !development || enabled != "1" || !cfg!(feature = "test-plugins") {
+            return Err(boot(
+                1,
+                "invalid_input",
+                "Reading List fixture requires explicit development mode and a test-plugins build",
+                DATA_HINT,
+            ));
+        }
+        #[cfg(feature = "test-plugins")]
+        {
+            let fixture_state = state.clone();
+            let fixture_web = web_dir.clone();
+            tokio::task::spawn_blocking(move || {
+                api::router_with_reading_list_fixture(fixture_state, fixture_web)
+            })
+            .await
+            .map_err(|error| boot(1, "failed", error.to_string(), DATA_HINT))?
+            .map_err(|error| boot(1, "plugin_store", error, DATA_HINT))?
+        }
+        #[cfg(not(feature = "test-plugins"))]
+        unreachable!("fixture feature was checked above")
+    } else {
+        api::router(state.clone(), web_dir.clone())
+    };
+    let app = app
         .layer(axum::Extension(machines.clone()))
         .layer(axum::Extension(wallpapers))
         .layer(axum::Extension(apple_app_site));

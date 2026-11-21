@@ -78,16 +78,7 @@ impl Runner {
             } else {
                 None
             };
-            let argv = [
-                "node",
-                "--permission",
-                "--allow-fs-read=.",
-                "--disallow-code-generation-from-strings",
-                "--max-old-space-size=128",
-                "worker.js",
-            ]
-            .map(str::to_owned)
-            .to_vec();
+            let argv = crate::sandbox::worker::ARGV.map(str::to_owned).to_vec();
             let exec = sandbox
                 .exec(ExecRequest {
                     argv,

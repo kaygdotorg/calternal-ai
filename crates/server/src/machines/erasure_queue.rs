@@ -113,8 +113,10 @@ pub(super) fn queue(
     } else {
         db.execute(
             "UPDATE space_runtime_checkpoints AS checkpoint SET acknowledged=NULL,lease=''
-             WHERE EXISTS(SELECT 1 FROM space_runtime_erasures erase JOIN leases old ON old.id=checkpoint.lease
-                          WHERE erase.space=checkpoint.space AND erase.machine=old.machine AND erase.through IS NULL)", [],
+             WHERE EXISTS(SELECT 1 FROM space_runtime_erasures erase
+                          WHERE erase.space=checkpoint.space AND erase.through IS NULL
+                            AND (erase.machine=checkpoint.acknowledged OR
+                                 erase.machine=(SELECT old.machine FROM leases old WHERE old.id=checkpoint.lease)))", [],
         ).map_err(sql)?;
     }
     db.execute(

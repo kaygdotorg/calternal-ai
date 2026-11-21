@@ -11,8 +11,8 @@ use base64::engine::general_purpose::STANDARD as B64;
 use calternal_auth::token::{hash32, normalize_setup_token, random32};
 use calternal_machine::protocol::{
     Capacity, ChunkEvent, Down, EnrolRequest, EnrolResponse, Envelope, HARNESS_PROTOCOL_VERSION,
-    OutputAck, OutputPost, Owner, PROTOCOL_VERSION, SessionFinish, SessionGranted, SyncRequest,
-    session_message,
+    OutputAck, OutputPost, Owner, PROTOCOL_VERSION, SMALL_VM_MAX_IDLE_SECONDS, SessionFinish,
+    SessionGranted, SyncRequest, session_message,
 };
 use tokio::sync::Notify;
 use uuid::Uuid;
@@ -112,7 +112,7 @@ impl MachineService {
         Ok(challenge)
     }
 
-    /// Read this machine's outstanding erasures without replacing its session.
+    /// Read this machine's outstanding erasures and live VM use without replacing its session.
     /// A single-use challenge binds the proof to the enrolled key.
     pub fn erasure_status(
         &self,
@@ -141,6 +141,11 @@ impl MachineService {
             .map_err(|_| denied())?;
         Ok(calternal_machine::protocol::ErasureStatus {
             pending_erasures: super::erasure_queue::count(&st.db, request.machine_id)?,
+            small_vm: machine
+                .live
+                .as_ref()
+                .filter(|_| super::readiness::connected(machine, &self.settings))
+                .and_then(|live| live.capacity.small_vm),
         })
     }
 
@@ -311,12 +316,8 @@ impl MachineService {
         let session = hash32(token);
         let ready = req.draining || !req.discards.is_empty();
         let svc = self.clone();
-        let (notify, awaiting_restore) =
+        let (notify, awaiting_restore, _guard) =
             blocking(move || svc.sync_begin(machine_id, &session, &req)).await?;
-        let _guard = PollGuard {
-            svc: self.clone(),
-            machine_id,
-        };
         let hold = if awaiting_restore {
             self.settings.poll_hold.min(Duration::from_millis(100))
         } else {
@@ -341,11 +342,11 @@ impl MachineService {
     }
 
     fn sync_begin(
-        &self,
+        self: &Arc<Self>,
         machine_id: Uuid,
         session: &[u8; 32],
         req: &SyncRequest,
-    ) -> Result<(Arc<Notify>, bool), Error> {
+    ) -> Result<(Arc<Notify>, bool, PollGuard), Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
         let _step = st
@@ -358,11 +359,16 @@ impl MachineService {
         let assigned = st.machines[&machine_id].assigned;
         let live = live_mut(st.machines.get_mut(&machine_id), session)?;
         live.outbox.retain(|e| e.seq > req.ack);
-        let readiness_changed = live.capacity.max_sandboxes != req.capacity.max_sandboxes
-            || live.capacity.running_sandboxes != req.capacity.running_sandboxes
-            || live.capacity.available_memory_bytes != req.capacity.available_memory_bytes
+        let mut capacity = req.capacity;
+        if let Some(small_vm) = &mut capacity.small_vm {
+            small_vm.idle_seconds = small_vm.idle_seconds.clamp(1, SMALL_VM_MAX_IDLE_SECONDS);
+        }
+        let readiness_changed = live.capacity.max_sandboxes != capacity.max_sandboxes
+            || live.capacity.running_sandboxes != capacity.running_sandboxes
+            || live.capacity.available_memory_bytes != capacity.available_memory_bytes
+            || live.capacity.small_vm != capacity.small_vm
             || live.draining != req.draining;
-        live.capacity = req.capacity;
+        live.capacity = capacity;
         // Closing or not-yet-reported leases still count against this sample.
         // The next report can prove the machine has reclaimed their memory.
         let observed = assigned.max(req.capacity.running_sandboxes as usize);
@@ -389,7 +395,14 @@ impl MachineService {
         st.reconcile(machine_id, &req.leases, &self.settings)?;
         st.place_waiting(&self.settings);
         live_mut(st.machines.get_mut(&machine_id), session)?.polls += 1;
-        Ok((notify, st.awaiting_restore_report(machine_id)))
+        // The blocking task's result owns this count even if the HTTP task
+        // disconnects before receiving the result.
+        let guard = PollGuard {
+            svc: self.clone(),
+            machine_id,
+            session: *session,
+        };
+        Ok((notify, st.awaiting_restore_report(machine_id), guard))
     }
 
     fn outbox(&self, machine_id: Uuid, session: &[u8; 32]) -> Result<Vec<Envelope>, Error> {
@@ -529,26 +542,31 @@ fn live_mut<'a>(m: Option<&'a mut Machine>, session: &[u8; 32]) -> Result<&'a mu
     }
 }
 
-/// Counts a held poll so the sweeper keeps the machine online; releases the
-/// count on a blocking task when the request ends or is cancelled.
+/// Owns one held poll from registration through request completion or cancellation.
+/// Releases the count on a blocking task for the same session.
 struct PollGuard {
     svc: Arc<MachineService>,
     machine_id: Uuid,
+    session: [u8; 32],
 }
 
 impl Drop for PollGuard {
     fn drop(&mut self) {
         let (svc, id) = (self.svc.clone(), self.machine_id);
+        let session = self.session;
         tokio::task::spawn_blocking(move || {
             if let Ok(mut st) = svc.state.lock()
                 && let Some(m) = st.machines.get_mut(&id)
+                && let Some(live) = m.live.as_mut().filter(|live| live.session == session)
             {
                 m.last_seen = Instant::now();
                 m.last_seen_ms = Some(super::db::now_ms());
-                if let Some(live) = m.live.as_mut() {
-                    live.polls = live.polls.saturating_sub(1);
-                }
+                live.polls = live.polls.saturating_sub(1);
             }
         });
     }
 }
+
+#[cfg(test)]
+#[path = "sessions_tests.rs"]
+mod tests;

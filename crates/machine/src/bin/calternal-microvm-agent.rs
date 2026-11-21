@@ -18,9 +18,9 @@ fn main() -> std::process::ExitCode {
     }
     if std::env::args_os()
         .nth(1)
-        .is_some_and(|arg| arg == "--reseed-small-restore")
+        .is_some_and(|arg| arg == "--reseed-small-serve")
     {
-        return match reseed_small_restore() {
+        return match serve_small_reseed() {
             Ok(()) => ExitCode::SUCCESS,
             Err(_) => ExitCode::FAILURE,
         };
@@ -63,14 +63,35 @@ fn reseed_small_boot() -> std::io::Result<()> {
 }
 
 #[cfg(target_os = "linux")]
-fn reseed_small_restore() -> std::io::Result<()> {
-    use std::io::{Read, Write};
-    let mut seed = [0; 32];
-    std::io::stdin().read_exact(&mut seed)?;
-    reseed_kernel(&seed)?;
-    let mut reply = std::io::stdout().lock();
-    reply.write_all(b"1")?;
-    reply.flush()
+fn serve_small_reseed() -> std::io::Result<()> {
+    use std::io::{ErrorKind, Read, Write};
+    use std::os::unix::{
+        fs::{PermissionsExt, chown},
+        net::UnixListener,
+    };
+    use std::time::Duration;
+
+    let path = "/run/calternal-reseed.sock";
+    let listener = UnixListener::bind(path)?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    chown(path, Some(1000), Some(1000))?;
+    // PID 1 waits for this marker before starting the control agent.
+    std::fs::write("/run/agent/small-ready", [])?;
+    loop {
+        let mut connection = match listener.accept() {
+            Ok((connection, _)) => connection,
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        };
+        let deadline = Some(Duration::from_secs(1));
+        connection.set_read_timeout(deadline)?;
+        connection.set_write_timeout(deadline)?;
+        let mut seed = [0; 32];
+        if connection.read_exact(&mut seed).is_ok() && reseed_kernel(&seed).is_ok() {
+            seed.fill(0);
+            let _ = connection.write_all(b"1");
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]

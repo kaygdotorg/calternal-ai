@@ -9,6 +9,8 @@ use tokio::sync::{OwnedMutexGuard, OwnedSemaphorePermit};
 /// Exclusive ownership of one space while checkpoint I/O is in flight.
 pub(super) type PlacementGate = Arc<OwnedMutexGuard<()>>;
 
+mod capacity;
+
 const GATE_WAIT: Duration = Duration::from_secs(3);
 
 /// Machine-local capacity and per-space exclusion for small offline guests.
@@ -16,19 +18,10 @@ pub(in crate::sandbox) struct SmallRuntime {
     state: Arc<State>,
     slots: Mutex<HashMap<calternal_types::SpaceId, Weak<AsyncMutex<()>>>>,
     version: OnceCell<String>,
+    memory_limit_mib: u32,
 }
 
 impl SmallRuntime {
-    /// Read the small VM configuration without starting a VMM.
-    pub(in crate::sandbox) async fn load(root: PathBuf, path: &Path) -> SandboxResult<Self> {
-        let config = Config::load_profile(path, true).await?;
-        Ok(Self {
-            state: MicrovmBackend::new(root.join("space-runtime"), config).0,
-            slots: Mutex::default(),
-            version: OnceCell::new(),
-        })
-    }
-
     /// Verify the executable and image, then sweep abandoned scratch and expired snapshots.
     pub(in crate::sandbox) async fn initialize(self: &Arc<Self>) -> SandboxResult<()> {
         let mut command = Command::new(&self.state.config.firecracker);
@@ -124,7 +117,8 @@ impl SmallRuntime {
             .cloned()
             .ok_or_else(|| SandboxError("small plugin VM is not initialized".into()))?;
         let run = self.state.root.join("run");
-        let request = Request::Start(space, spec.clone());
+        let prestart = self.state.config.prestarted_worker.unwrap_or(false);
+        let request = Request::StartSmall(space, spec.clone(), prestart);
         let mut discard_after_start = false;
         let restored = if let Some(counter) = checkpoint {
             let generation = async {
@@ -250,6 +244,7 @@ impl SmallRuntime {
             gate: Mutex::new(Some(gate)),
             saved,
             binding,
+            prestart,
         }))
     }
 
@@ -403,6 +398,7 @@ pub(in crate::sandbox) struct Placement {
     gate: Mutex<Option<PlacementGate>>,
     saved: PathBuf,
     binding: Binding,
+    prestart: bool,
 }
 
 impl Sandbox for Placement {
@@ -459,7 +455,15 @@ impl Sandbox for Placement {
                             .as_ref()
                             .expect("live placement holds the gate")
                             .clone();
-                        save(&vm, &self.saved, &self.binding, gate, counter).await
+                        save(
+                            &vm,
+                            &self.saved,
+                            &self.binding,
+                            gate,
+                            counter,
+                            self.prestart,
+                        )
+                        .await
                     }
                     Err(error) => Err(error),
                 };
@@ -484,6 +488,7 @@ async fn save(
     binding: &Binding,
     gate: PlacementGate,
     counter: u64,
+    prestart: bool,
 ) -> SandboxResult<()> {
     use super::{
         snapshot::{Generation, clone_or_copy},
@@ -514,7 +519,7 @@ async fn save(
         .map_err(SandboxError::new)?
         .map_err(SandboxError::new)?
     };
-    vm.control(&Request::QuiesceSmall).await?;
+    vm.control(&Request::QuiesceSmall(prestart)).await?;
     snapshot_api::pause(api).await?;
     if let Some(restored) = vm.restored {
         let previous = {

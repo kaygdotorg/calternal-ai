@@ -24,7 +24,13 @@
 //! 409 means a lease is fenced (stop that sandbox), 404 an unknown code or lease.
 
 mod output;
+mod small_vm;
 pub use output::{Chunk, ChunkEvent, ExitInfo, GUEST_LOST, OutputAck, OutputPost, Stream};
+
+pub use small_vm::{
+    Capacity, SMALL_VM_IDLE_SECONDS, SMALL_VM_MAX_IDLE_SECONDS, SMALL_VM_MEMORY_MIB,
+    SmallVmCapacity,
+};
 
 use calternal_types::{AccountId, SpaceId};
 use serde::{Deserialize, Serialize};
@@ -197,27 +203,6 @@ pub struct SessionGranted {
     pub poll_hold_ms: u64,
 }
 
-/// Machine capacity. Placement accounts for both held machine slots and the
-/// server's active leases. Available memory is sampled by the machine.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Capacity {
-    /// Logical CPUs.
-    pub cpus: u32,
-    /// Physical memory in bytes; 0 when unknown.
-    pub memory_bytes: u64,
-    /// Available physical memory in bytes at this heartbeat. Absent when the
-    /// machine cannot provide a measurement. Admission waits for a sample.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub available_memory_bytes: Option<u64>,
-    /// Whether this machine has initialized the offline small plugin wall.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub small_plugin_vm: bool,
-    /// Most provider and worker slots the machine can hold at once.
-    pub max_sandboxes: u32,
-    /// Slots currently held, including idle leases and pending removals.
-    pub running_sandboxes: u32,
-}
-
 /// State of one lease's sandbox as the machine sees it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
@@ -290,11 +275,14 @@ pub struct ErasureStatusRequest {
     pub signature: String,
 }
 
-/// Number of durable owner erasures still awaiting this machine.
+/// Signed machine status response with pending erasures and live small-VM use.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ErasureStatus {
     /// Pending erasure instructions, which survive disconnection.
     pub pending_erasures: u64,
+    /// Latest reported small VM inventory while the role is online.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub small_vm: Option<SmallVmCapacity>,
 }
 
 /// Sign a status challenge in a domain distinct from session establishment.

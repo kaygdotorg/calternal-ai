@@ -501,6 +501,17 @@ impl Spaces {
     pub fn list(&self, actor: AccountId) -> Result<Vec<Space>> {
         self.run(move |c| list(c, actor))
     }
+    /// Identify the account's own provisioned personal space for view
+    /// classification. This conveys no authority. Costs one indexed read on
+    /// the directory worker and does not advance the authority revision.
+    pub fn is_personal_space(&self, actor: AccountId, id: SpaceId) -> Result<bool> {
+        self.db.read_blocking(move |c| {
+            c.prepare_cached("SELECT EXISTS(SELECT 1 FROM spaces WHERE id=?1 AND personal_for=?2)")
+                .map_err(sql)?
+                .query_row(params![id.to_string(), actor.to_string()], |row| row.get(0))
+                .map_err(sql)
+        })
+    }
     /// The actor's current capabilities, derived from all live grants. A missing
     /// or disabled account and a missing membership all return `None`.
     /// Cost: one worker round trip and one indexed query on a cached statement.

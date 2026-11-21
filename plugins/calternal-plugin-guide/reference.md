@@ -45,6 +45,11 @@ and rebuild the manifest. Foreign targets return an opaque response. A stale
 write needs a fresh head and a new decision before attempting a new effect.
 The offline author build verifies declarations and does not run these flows.
 
+Inside a plugin microVM, `os.cpus()` returns an empty array. Use
+`os.availableParallelism()` to size any work you can run in parallel. Use
+`process.stdin` for worker input, including when passing an input stream to
+the SDK. It is the only supported input interface.
+
 ## Durable jobs and progress
 
 Declare durable jobs in the manifest with a `run_operation`, an explicit

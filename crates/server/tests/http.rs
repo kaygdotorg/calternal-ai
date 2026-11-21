@@ -13,6 +13,8 @@ use serde_json::{Value, json};
 mod live_rooms;
 #[path = "http/thread_archive.rs"]
 mod thread_archive;
+#[path = "http/window_views.rs"]
+mod window_views;
 
 struct TempDir(PathBuf);
 impl TempDir {

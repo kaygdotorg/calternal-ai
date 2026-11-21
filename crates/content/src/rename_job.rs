@@ -348,7 +348,6 @@ impl Content {
                 .conn
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(internal)?;
-            root.write(&tx, Some(&job.to), &request.account.to_string())?;
             let count: i64 = tx
                 .query_row(
                     "SELECT count(*) FROM notes_rename_steps WHERE job=?1 AND state='applied'",
@@ -370,7 +369,7 @@ impl Content {
             )
             .map_err(internal)?;
             let response = status(&tx, &job.id)?;
-            root.outbox(&tx, request, &response)?;
+            root.write(&tx, Some(&job.to), request, &response)?;
             root.require_placement(&tx, request)?;
             tx.commit().map_err(internal)?;
             (self.fault)(crate::FaultPoint::AfterCommit);
@@ -474,8 +473,7 @@ fn apply_step(
             },
             fingerprint: &id,
         };
-        staged.write(&tx, None, &job.actor.to_string())?;
-        staged.outbox(&tx, request, &json!({"job_id":job.id,"id":item}))?;
+        staged.write(&tx, None, request, &json!({"job_id":job.id,"id":item}))?;
         staged.require_placement(&tx, request)?;
         if undo { "undone" } else { "applied" }
     } else {

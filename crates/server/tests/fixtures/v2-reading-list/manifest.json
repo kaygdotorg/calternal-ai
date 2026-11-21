@@ -1,0 +1,244 @@
+{
+  "api_version": 2,
+  "id": "calternal-reading-list",
+  "name": "Reading List",
+  "version": "1.0.0",
+  "icon": "book",
+  "kinds": [
+    {
+      "id": "reading-item",
+      "icon": "book",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "searchable": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "added": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      },
+      "indexed_fields": {
+        "added": {
+          "type": "Timestamp",
+          "audience": "member_item"
+        },
+        "read": {
+          "type": "Boolean",
+          "audience": "member_item"
+        }
+      },
+      "title_field": "title"
+    },
+    {
+      "id": "reading-reminder",
+      "icon": "clock",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "due": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "person": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "indexed_fields": {
+        "due": {
+          "type": "Timestamp",
+          "audience": "member_item"
+        },
+        "person": {
+          "type": "AccountRef",
+          "audience": "viewer_self"
+        }
+      },
+      "title_field": "title"
+    }
+  ],
+  "schedule_eligibility": [
+    {
+      "id": "reminder-due",
+      "operation": "reading.reminder-due"
+    }
+  ],
+  "network": "none",
+  "operations": [
+    {
+      "id": "reading.add",
+      "title": "Add to Reading List",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "url"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 4096
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "required_capability": "content.write",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "methods": [
+        "item_save"
+      ],
+      "creates": "reading-item"
+    },
+    {
+      "id": "reading.remind",
+      "title": "Remind me",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item",
+          "when"
+        ],
+        "properties": {
+          "item": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "when": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "required_capability": "content.write",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "methods": [
+        "schedule_create",
+        "item_save"
+      ],
+      "target": {
+        "kind": "reading-item",
+        "field": "item"
+      },
+      "creates": "reading-reminder"
+    },
+    {
+      "id": "reading.reminder-due",
+      "title": "Deliver reading reminder",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reminder"
+        ],
+        "properties": {
+          "reminder": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "required_capability": "space.read",
+      "risk": "read",
+      "idempotency": "read_only",
+      "methods": [
+        "item_head"
+      ],
+      "target": {
+        "kind": "reading-reminder",
+        "field": "reminder"
+      }
+    }
+  ],
+  "reads": [
+    "reading-item",
+    "reading-reminder"
+  ],
+  "apps": [
+    {
+      "id": "reading",
+      "name": "Reading List",
+      "icon": "book",
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "app-reading-2304bcde509a0e500cd804eca2bd1a4aa02b81c64069c55cf3c623e0c0c81722.json",
+          "sha256": "2304bcde509a0e500cd804eca2bd1a4aa02b81c64069c55cf3c623e0c0c81722"
+        }
+      }
+    }
+  ],
+  "worker": {
+    "path": "worker-243678db901c46bd1d64f253a9dd42eea1df5745db41192e2d9af2b754ee4d71.mjs",
+    "sha256": "243678db901c46bd1d64f253a9dd42eea1df5745db41192e2d9af2b754ee4d71"
+  }
+}

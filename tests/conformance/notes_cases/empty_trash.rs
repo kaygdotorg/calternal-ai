@@ -7,14 +7,7 @@ async fn empty_trash_requires_confirmation_and_manager_authority() {
     let old = f.note(1, &space).await;
     f.stop();
     let content = f.appdata().join("spaces").join(&space).join("content.db");
-    let db = rusqlite::Connection::open(content).unwrap();
-    db.execute_batch(
-        "DROP TABLE notes_trash_targets; DROP TABLE notes_trash_jobs;
-         DROP TABLE notes_rename_steps; DROP TABLE notes_rename_jobs;
-         PRAGMA user_version=6;",
-    )
-    .unwrap();
-    drop(db);
+    restore_content_v6_fixture(&content);
     f.start().await;
     let auth = rusqlite::Connection::open_with_flags(
         f.appdata().join("system/auth.db"),
@@ -103,4 +96,39 @@ async fn empty_trash_requires_confirmation_and_manager_authority() {
     .unwrap();
     assert_eq!(data(f.op(1, "trash.list", scope).await)["notes"], json!([]));
     assert_eq!(address(&f, 2, id).await["state"], "deleted");
+}
+
+fn restore_content_v6_fixture(path: &std::path::Path) {
+    let mut db = rusqlite::Connection::open(path).unwrap();
+    let tx = db.transaction().unwrap();
+    // Undo migrations 9, 8 and 7 without changing the saved note. Reinstall
+    // the v5 collection index and its triggers because v9 replaces one of them.
+    tx.execute_batch(
+        "DROP TRIGGER window_collection_order_forget;
+         DROP TRIGGER window_kind_register;
+         DROP VIEW window_note_candidates;
+         DROP VIEW window_trash_notes;
+         DROP VIEW window_generic_candidates;
+         DROP VIEW window_generic_heads;
+         DROP VIEW window_live_notes;
+         DROP TABLE window_collection_newest;
+         DROP TABLE window_kind_orders;
+         DROP TABLE window_configuration;
+         DROP TRIGGER collection_members_insert;
+         DROP TRIGGER collection_members_update;
+         DROP TRIGGER collection_members_delete;
+         DROP TABLE note_collection_members;
+         DROP TABLE notes_trash_targets;
+         DROP TABLE notes_trash_jobs;
+         DROP TABLE notes_rename_steps;
+         DROP TABLE notes_rename_jobs;
+         DROP TABLE IF EXISTS _calternal_schema_compatibility;",
+    )
+    .unwrap();
+    tx.execute_batch(include_str!(
+        "../../../crates/content/src/collection_members.sql"
+    ))
+    .unwrap();
+    tx.pragma_update(None, "user_version", 6).unwrap();
+    tx.commit().unwrap();
 }

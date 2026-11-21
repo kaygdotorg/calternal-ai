@@ -1635,6 +1635,13 @@
           ]
         },
         {
+          "description": "The change would put an item in too many effective query scopes (HTTP 422).",
+          "type": "string",
+          "enum": [
+            "effective_scope_limit_exceeded"
+          ]
+        },
+        {
           "description": "The serialized body or document exceeds its byte budget (HTTP 413).",
           "type": "string",
           "enum": [

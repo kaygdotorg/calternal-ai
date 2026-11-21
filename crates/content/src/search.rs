@@ -342,7 +342,7 @@ impl Content {
             }
             if source::pending(&source)? {
                 if let Some(worker) = self.search_worker.get() {
-                    let _ = worker.try_send(space);
+                    let _ = worker.try_send((space, false));
                 }
                 return Ok(IndexedPage {
                     partial: true,
@@ -379,7 +379,7 @@ impl Content {
                     if message_page.partial
                         && let Some(worker) = self.search_worker.get()
                     {
-                        let _ = worker.try_send(space);
+                        let _ = worker.try_send((space, false));
                     }
                 }
                 if messages_only {
@@ -403,7 +403,7 @@ impl Content {
                 .filter(|(head, ready)| ready.ready && ready.matches(config, space, head));
             if matches.is_none_or(|(head, ready)| head.seq != ready.watermark) {
                 if let Some(worker) = self.search_worker.get() {
-                    let _ = worker.try_send(space);
+                    let _ = worker.try_send((space, false));
                 }
             }
             let Some((head, ready)) = matches else {

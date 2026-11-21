@@ -192,6 +192,7 @@
     "calternal account-recover": { "enrollment_grant": "string", "url": "string", "valid_for_seconds": "integer" },
     "calternal mail-test": { "accepted": "bool" },
     "calternal receipt-status": { "space_id": "string", "issue": "any" },
+    "calternal window-status": { "space_id": "string", "skipped_items": "any", "failure": "string?", "retries_exhausted": "bool" },
     "calternal machines code": { "code": "string", "owner": "string", "expires_at": "string" },
     "calternal machines list": { "machines": [{ "id": "string", "owner": "string", "name": "string", "os": "string", "arch": "string", "state": "string" }], "pending_erasures": [{"machine_id":"string", "pending":"integer", "operator_wipe":"bool"}] },
     "calternal machines revoke": { "machine": "string", "revoked": "bool" },
@@ -211,7 +212,7 @@
     "calternal plugin disable": { "plugin": "any" },
     "calternal plugin-digest": { "workers": [{ "id": "string", "worker": "string", "sha256": "string?", "pinned": "bool", "state": "string" }] },
     "calternal machine enroll": { "machine_id": "string", "owner": "string", "server": "string", "credentials_file": "string" },
-    "calternal machine status": { "machine_id": "string", "owner": "string", "server": "string", "credentials_file": "string", "erasure_status":"string", "pending_erasures?":"integer" },
+    "calternal machine status": { "machine_id": "string", "owner": "string", "server": "string", "credentials_file": "string", "erasure_status":"string", "pending_erasures?":"integer", "small_vm?":{"idle_seconds":"integer", "memory_limit_bytes":"integer", "max_residents":"integer", "resident_count":"integer", "resident_memory_bytes":"integer"} },
     "calternal machine onboarding": {
       "required": ["attached", "ready", "machine_id"],
       "optional": []

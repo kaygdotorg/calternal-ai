@@ -18,17 +18,19 @@ use crate::sandbox::{
 };
 
 const SMALL_READY: &str = "/run/agent/small-ready";
+const RESEED_SOCKET: &str = "/run/calternal-reseed.sock";
 
 struct Agent {
-    backend: PodmanBackend,
+    backend: Option<PodmanBackend>,
     key: ring::hmac::Key,
-    small: bool,
     threads: Mutex<HashMap<Uuid, Arc<dyn Sandbox>>>,
+    parked: Mutex<Option<Arc<super::plain::PlainWorker>>>,
 }
 
 /// Run the guest-only agent on a Unix socket behind the boot image's vsock listener.
 /// The image names the packaged root filesystem and its writable-overlay flag.
-/// Startup sweeps old Podman containers before accepting commands. The caller must
+/// Agent guests sweep old Podman containers. The small guest stages package code
+/// in private tmpfs and uses a dedicated launcher. The caller must
 /// run as the dedicated unprivileged guest user, with a delegated cgroup.
 /// The kernel-local token authenticates the host before any request is decoded.
 pub async fn run_agent(
@@ -37,13 +39,21 @@ pub async fn run_agent(
     image: String,
     token: [u8; 32],
 ) -> SandboxResult<()> {
-    let backend = PodmanBackend::in_microvm(root, image);
-    backend.initialize().await?;
+    let backend = if std::env::var_os("CALTERNAL_SMALL_GUEST").is_some() {
+        // The package path stages only into new boot tmpfs. Restores use an
+        // empty package directory after checkpoint drain, so there is no
+        // Podman scratch inventory to scan in either case.
+        None
+    } else {
+        let backend = PodmanBackend::in_microvm(root, image);
+        backend.initialize().await?;
+        Some(backend)
+    };
     let agent = Arc::new(Agent {
         backend,
         key: ring::hmac::Key::new(ring::hmac::HMAC_SHA256, &token),
         threads: Mutex::new(HashMap::new()),
-        small: std::env::var_os("CALTERNAL_SMALL_GUEST").is_some(),
+        parked: Mutex::new(None),
     });
     let listener = UnixListener::bind(socket).map_err(SandboxError::new)?;
     let connections = Arc::new(Semaphore::new(512));
@@ -106,8 +116,8 @@ impl Agent {
 
     async fn reseed_small(&self, seed: [u8; 32]) -> Result<(), AttemptError> {
         use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-        // The small guest snapshots only after the package and its
-        // exec pipes have been stopped. An active guest cannot reseed.
+        // The snapshot contains only trusted agent and standby pipes. An
+        // active package cannot share the guest with a reseed exchange.
         // Only this guest's startup can wait on the privileged
         // helper. Keep the lock until acknowledgement so Start cannot
         // observe an incomplete seed exchange.
@@ -117,7 +127,7 @@ impl Agent {
                 "small plugin guest was not drained".into(),
             )));
         }
-        let mut control = UnixStream::connect("/run/calternal-reseed.sock")
+        let mut control = UnixStream::connect(RESEED_SOCKET)
             .await
             .map_err(SandboxError::new)?;
         control.write_all(&seed).await.map_err(SandboxError::new)?;
@@ -138,39 +148,62 @@ impl Agent {
                 let _threads = self.threads.lock().await;
                 small_ready().await
             }
-            Request::QuiesceSmall => {
+            Request::QuiesceSmall(prestart) => {
                 let threads = self.threads.lock().await;
                 if !threads.is_empty() {
                     return Err(SandboxError("small plugin guest was not drained".into()));
                 }
+                // A dead helper leaves the pathname behind. A live listener
+                // accepts this probe without changing kernel randomness.
+                UnixStream::connect(RESEED_SOCKET)
+                    .await
+                    .map_err(SandboxError::new)?;
                 tokio::fs::remove_file(SMALL_READY)
                     .await
-                    .map_err(SandboxError::new)
+                    .map_err(SandboxError::new)?;
+                let mut parked = self.parked.lock().await;
+                if let Some(previous) = parked.take() {
+                    previous.stop().await?;
+                }
+                if prestart {
+                    *parked = super::plain::park().await?;
+                }
+                Ok(())
             }
             Request::ReseedSmall(_) => unreachable!(),
             Request::Start(space, mut spec) => {
+                let backend = self.backend.as_ref().ok_or_else(|| {
+                    SandboxError("small plugin guest requires its offline profile".into())
+                })?;
                 spec.space_id = Some(space);
-                if self.small {
-                    // Serialize this guest's package startup with Quiesce and
-                    // Reseed until the sandbox occupies the placement.
-                    let mut threads = self.threads.lock().await;
-                    small_ready().await?;
-                    let sandbox = self.backend.start(&spec).await?;
-                    threads.insert(spec.thread_id, sandbox);
-                    return Ok(());
-                }
-                let sandbox = self.backend.start(&spec).await?;
+                let sandbox = backend.start(&spec).await?;
                 self.threads.lock().await.insert(spec.thread_id, sandbox);
                 Ok(())
             }
-            Request::StartHarness(space, mut spec, harness) => {
-                if self.small {
+            Request::StartSmall(space, mut spec, prestart) => {
+                if self.backend.is_some() {
                     return Err(SandboxError(
-                        "small plugin guest cannot start a harness".into(),
+                        "agent guest cannot start the small profile".into(),
                     ));
                 }
                 spec.space_id = Some(space);
-                let sandbox = self.backend.start_harness(&spec, &harness).await?;
+                // Serialize admission with Quiesce and the reseed exchange.
+                let mut threads = self.threads.lock().await;
+                small_ready().await?;
+                if !threads.is_empty() {
+                    return Err(SandboxError("small guest already has a package".into()));
+                }
+                let mut parked = self.parked.lock().await;
+                let sandbox = super::plain::start(&spec, &mut parked, prestart).await?;
+                threads.insert(spec.thread_id, sandbox);
+                Ok(())
+            }
+            Request::StartHarness(space, mut spec, harness) => {
+                let backend = self.backend.as_ref().ok_or_else(|| {
+                    SandboxError("small plugin guest cannot start a harness".into())
+                })?;
+                spec.space_id = Some(space);
+                let sandbox = backend.start_harness(&spec, &harness).await?;
                 self.threads.lock().await.insert(spec.thread_id, sandbox);
                 Ok(())
             }
@@ -183,20 +216,26 @@ impl Agent {
                 } else {
                     sandbox.stop().await?;
                 }
-                sync_disk().await?;
+                if self.backend.is_some() {
+                    sync_disk().await?;
+                }
                 self.threads.lock().await.remove(&thread);
                 Ok(())
             }
             Request::Discard(account, thread) => {
-                self.backend.erase(account, Some(thread)).await?;
-                sync_disk().await
+                if let Some(backend) = &self.backend {
+                    backend.erase(account, Some(thread)).await?;
+                    sync_disk().await?;
+                }
+                Ok(())
             }
             Request::Exec(..) => unreachable!(),
         }
     }
 }
 
-async fn small_ready() -> SandboxResult<()> {
+/// Verify that the authenticated kernel reseed opened guest admission.
+pub(super) async fn small_ready() -> SandboxResult<()> {
     if tokio::fs::try_exists(SMALL_READY)
         .await
         .map_err(SandboxError::new)?
