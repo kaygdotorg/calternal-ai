@@ -5,20 +5,150 @@ Status: **proposal** for the owner (round 27 of `docs/morning-2026-11-21.md`:
 system, taking inspiration from other open source agents"). Nothing here is
 decided; the choices are questions in §4.
 
-All pages were read with Firecrawl on 2026-11-24.
+All pages were read with Firecrawl on 2026-11-24. Claude Code, Codex and
+Antigravity, the harnesses we ship ourselves (round 28), are covered in
+depth.
 
 ## 1. How other agents decide what an agent may do without asking
 
-| Agent | Unit of a rule | Scopes | Default | How a rule is written and stored | Asking and "always" | Known weakness |
-| --- | --- | --- | --- | --- | --- | --- |
-| **Claude Code** ([permissions](https://code.claude.com/docs/en/permissions), [sandboxing](https://code.claude.com/docs/en/sandboxing), [hooks](https://code.claude.com/docs/en/hooks-guide)) | A tool, optionally narrowed: `Bash(npm run *)`, `Read(./.env)`, `WebFetch(domain:example.com)`, `mcp__server__tool`; deny and ask rules may match one top-level input parameter | Managed (organisation), user `~/.claude/settings.json`, project `.claude/settings.json`, local `.claude/settings.local.json`; session | Mode `default` (Manual): reads in the working directory free; shell commands, edits and fetches ask. Other modes: `acceptEdits`, `plan`, `auto` (a classifier reviews actions instead of the person), `dontAsk`, `bypassPermissions` | JSON lists `allow`, `ask`, `deny`; evaluated deny, then ask, then allow; first match in that order wins, specificity does not matter | The prompt offers Yes, "Yes, and don't ask again for: npm test *", No; permanent answers are written to `.claude/settings.local.json`; edits are remembered only for the session. PreToolUse hooks may deny, force a prompt or skip it, but never override a deny rule | The docs say a Bash rule "isn't a security boundary": `Bash(curl *)` does not stop `/usr/bin/curl …` or `sh -c 'curl …'`. File and web tools run outside the OS sandbox; an allow rule also approves an unsandboxed retry |
-| **Codex CLI** ([approvals and security](https://learn.chatgpt.com/docs/agent-approvals-security), [sandboxing](https://learn.chatgpt.com/docs/sandboxing), [rules](https://learn.chatgpt.com/docs/agent-configuration/rules)) | Two controls: a sandbox mode (`read-only`, `workspace-write`, `danger-full-access`) and an approval policy (`on-request`, `never`); rules are command prefixes (`prefix_rule(pattern = ["gh","pr","view"])`) | Config layers: team or managed, user `~/.codex/`, project `<repo>/.codex/` (only for trusted projects) | `workspace-write` with network off and `on-request`; untrusted folders start `read-only`. Presets "Ask for approval", **"Approve for me"** (same sandbox; eligible requests go to an automatic reviewer agent), "Full access" | `.rules` files in a `rules/` folder; `decision` is `allow`, `prompt` or `forbidden`; the most restrictive match wins; each rule may carry `match` and `not_match` examples checked at load | Adding a command to the allow list in the interface writes `~/.codex/rules/default.rules`; "smart approvals" propose a prefix rule during escalation, which the docs ask people to review carefully | Rules are experimental and prefix-only; `.git`, `.codex` and `.agents` inside the workspace stay read-only so the agent cannot rewrite its own settings |
-| **OpenCode** ([permissions](https://opencode.ai/docs/permissions/)) | An action (`read`, `edit`, `shell`, `glob`, `grep`, `subagent`, `external_directory`, MCP tools) on a resource (path, command, URL, agent ID); plugins may add actions | Configuration layers, then global, then per-agent rules | No matching rule means `ask`; the default policy allows paths outside the project | Ordered `{action, resource, effect}` entries in `opencode.jsonc`; **the last match wins**; an operation touching several resources is denied if any is denied | `ask` waits for the client; a reject can reject every pending request in the session | Last-match-wins makes order matter, so a broad rule appended later silently widens access; the shell scanner cannot analyse `eval` or malformed syntax |
-| **Gemini CLI** ([policy engine](https://geminicli.com/docs/reference/policy-engine/), [trusted folders](https://geminicli.com/docs/cli/trusted-folders/), [sandbox](https://geminicli.com/docs/cli/sandbox/)) | A tool name (wildcards for MCP servers), optionally a command prefix or a regular expression over the arguments as JSON; rules may apply only in some approval modes | Tiers Default, Workspace (currently disabled), User, Admin; a tier's base plus a priority 0–999 orders rules | Modes `default`, `autoEdit`, `plan`, `yolo` | TOML files in `~/.gemini/policies/`; `decision` is `allow`, `deny` or `ask_user`; the highest priority wins; a global deny hides the tool from the model | "Allow for all future sessions" is scoped by mode: an approval in a stricter mode applies to it and the more permissive ones, never the other way. Trusted folders are asked once per folder and saved in `~/.gemini/trustedFolders.json` | Workspace policies are disabled because a project could grant itself rights; folder trust is off by default; regular expressions over JSON arguments are easy to get wrong |
-| **Goose** ([permission modes](https://goose-docs.ai/docs/guides/managing-tools/goose-permissions/), [tool permissions](https://goose-docs.ai/docs/guides/managing-tools/tool-permissions/)) | A tool of an extension | Per session; a default for new sessions in settings | **Autonomous by default**; Manual Approval; Smart Approval (risk-based: low-risk actions approved, others flagged) | Per tool: Always Allow, Ask Before, Never Allow, set in the app or `goose configure` | Asked per tool call in Manual or Smart mode | The default is no approval at all; "low risk" is the model's judgment, not a rule a person can read |
-| **Cline** ([auto approve](https://docs.cline.bot/features/auto-approve)) | A category: read project files, read all files, edit project files, edit all files, run safe commands, run all commands, browser, MCP | Per installation | Everything off; the docs recommend turning on only "Read project files" | Toggles in settings; "YOLO mode" approves everything | Asked per call when the category is off; notifications when approval is needed | **The model marks each command `requires_approval`**: "Cline does not use a fixed allowlist", so "safe command" is the model's opinion |
-| **Roo Code** ([auto-approving actions](https://roocodeinc.github.io/Roo-Code/features/auto-approving-actions/)) | A category (read, edit, run approved commands, browser, MCP, switch modes, subtasks, follow-up answers), plus allowed and denied command prefixes | Global, with a master Enabled switch | Off until enabled | Tiles in a dropdown; `roo-cline.allowedCommands` and `roo-cline.deniedCommands` prefix lists | The master switch pauses every auto-approval while keeping the selections | Prefix lists share the shell-string weakness; the docs warn auto-approve can mean "data loss, file corruption, or worse" |
-| **OpenHands** ([security](https://docs.openhands.dev/sdk/guides/security)), chosen because it separates the policy from a risk judge | Each action, with a risk level from a security analyzer | Per conversation, set in code | Policies `AlwaysConfirm`, `NeverConfirm`, `ConfirmRisky` | Code (`conversation.set_confirmation_policy(ConfirmRisky())`) plus an optional analyzer, which may be a language model | The program's own confirmation handler asks | The risk level comes from an analyzer that may itself be a model; nothing a person writes down |
+The three harnesses we ship ourselves (round 28) come first and in depth;
+the others are a shorter comparison.
+
+### 1.1 Claude Code
+
+Sources: [permissions](https://code.claude.com/docs/en/permissions),
+[sandboxing](https://code.claude.com/docs/en/sandboxing),
+[hooks](https://code.claude.com/docs/en/hooks-guide).
+
+- **Unit:** a tool, optionally narrowed by a specifier: `Bash(npm run *)`,
+  `Read(./.env)`, `Edit(src/**)`, `WebFetch(domain:example.com)`,
+  `mcp__server__tool`, `Agent(name)`. Deny and ask rules may also match one
+  top-level input parameter (`Agent(model:opus)`), but never a tool's main
+  content field, because a compound command would bypass it.
+- **Scopes:** managed settings (organisation), user `~/.claude/settings.json`,
+  project `.claude/settings.json`, local `.claude/settings.local.json`, and
+  the session.
+- **Defaults and modes:** `default` (shown as Manual) reads in the working
+  directory without asking and asks before shell commands, edits and web
+  fetches; `acceptEdits` accepts edits and common file commands in the
+  working directory; `plan` only reads; `auto` lets a background classifier
+  check actions against the request instead of asking; `dontAsk` denies
+  whatever would ask; `bypassPermissions` skips prompts except for a few
+  protected actions. Managed settings can disable `auto` and
+  `bypassPermissions`.
+- **Writing and storing:** JSON lists `allow`, `ask`, `deny` in the settings
+  files. **Deny, then ask, then allow; the first match in that order wins**,
+  and specificity does not change it: an allow cannot carve an exception out
+  of a deny.
+- **Asking and "always":** the prompt offers Yes, "Yes, and don't ask again
+  for: npm test *", and No; Tab adds a note sent to the model. Permanent
+  answers for commands and domains are saved to `.claude/settings.local.json`;
+  file edits are remembered only until the session ends. `/permissions` lists
+  every rule with the file it comes from.
+- **Hooks:** a PreToolUse hook runs a command before the prompt and may deny,
+  force a prompt or skip it, but never overrides a deny or ask rule.
+- **Sandbox:** off by default; when on, shell commands and their children run
+  inside an OS boundary (Seatbelt on macOS, bubblewrap and a network
+  namespace on Linux): writes only in the working directory and added
+  folders, network only through a local proxy checking an allowed-domain
+  list that starts empty. In auto-allow mode a sandboxed command needs no
+  prompt.
+- **Weaknesses, as the docs state them:** a Bash rule "isn't a security
+  boundary" (`Bash(curl *)` does not stop `/usr/bin/curl …` or
+  `sh -c 'curl …'`); Read, Edit and WebFetch run outside the sandbox, so
+  `denyRead` does not stop the Read tool; an allow rule also approves an
+  unsandboxed retry; reads default to most of the machine, credential files
+  included.
+
+### 1.2 Codex CLI
+
+Sources: [approvals and security](https://learn.chatgpt.com/docs/agent-approvals-security),
+[sandboxing](https://learn.chatgpt.com/docs/sandboxing),
+[rules](https://learn.chatgpt.com/docs/agent-configuration/rules).
+
+- **Unit:** two separate controls. A **sandbox mode** says what commands can
+  touch: `read-only`, `workspace-write` (edit the workspace, network off
+  unless `sandbox_workspace_write.network_access = true`) or
+  `danger-full-access`. An **approval policy** says when to stop and ask:
+  `on-request` (ask only to cross the sandbox) or `never`. **Rules** are
+  command prefixes that decide what may run outside the sandbox:
+  `prefix_rule(pattern = ["gh", "pr", "view"], decision = "prompt")`.
+- **Scopes:** config layers: managed and team configuration, user
+  `~/.codex/config.toml` and `~/.codex/rules/`, project `<repo>/.codex/`,
+  which loads only for a trusted project.
+- **Defaults and presets:** `workspace-write` with `on-request` in version-
+  controlled folders, `read-only` elsewhere or until the folder is trusted.
+  The presets are "Ask for approval", **"Approve for me"** (the same sandbox,
+  with eligible approval requests sent to an automatic reviewer agent,
+  `approvals_reviewer = "auto_review"`), "Full access"
+  (`danger-full-access` with `never`) and Custom.
+- **Writing and storing:** `.rules` files in a `rules/` folder beside each
+  config layer; `decision` is `allow`, `prompt` or `forbidden`; **the most
+  restrictive matching rule wins**; a rule may carry `match` and `not_match`
+  examples that Codex checks when it loads the rules.
+- **Asking and "always":** allowing a command in the interface writes
+  `~/.codex/rules/default.rules`; "smart approvals" propose a prefix rule
+  during an escalation, which the docs ask people to review carefully.
+- **Protected paths:** `.git`, `.codex` and `.agents` inside a writable root
+  stay read-only, so the agent cannot rewrite its own settings or history.
+- **Weaknesses:** rules are experimental and prefix-only; shell wrappers are
+  split only when the script is a simple chain; an automatic reviewer's
+  approval is a model's judgment.
+
+### 1.3 Antigravity
+
+Google's agent is **Antigravity** today: an app, an IDE, IDE extensions and
+the **Antigravity CLI** (`agy`), which replaced Gemini CLI for unpaid and
+Google One users on 2026-06-18 (notice on the Gemini CLI policy page). Its
+rules are documented. Sources:
+[agent permissions](https://antigravity.google/docs/permissions/),
+[agent settings](https://antigravity.google/docs/agent-settings/),
+[CLI `/permissions`](https://antigravity.google/docs/cli/commands/permissions/),
+[CLI execution modes](https://antigravity.google/docs/cli/modes/),
+[terminal sandbox](https://antigravity.google/docs/sandbox).
+
+- **Unit:** a permission resource written `action(target)`, one engine for
+  the app, the CLI and the IDE: `read_file(path)`, `write_file(path)`,
+  `read_url(domain)`, `execute_url(domain)` (the browser agent),
+  `download_url(domain)`, `command(prefix)` or `command(regex:…)`,
+  `mcp(server/tool)`. Write implies read; a denied read also denies write.
+- **Scopes:** Project, Shared (across all Antigravity products) and Global,
+  edited in the CLI's `/permissions` manager or in
+  `~/.gemini/antigravity-cli/settings.json`; Gemini Enterprise adds
+  organisation controls.
+- **Defaults and presets:** **Request Review** (always ask, no sandbox),
+  **Default** (commands run without asking inside the terminal sandbox,
+  which sees only the workspace and temp folders and has no network; outside
+  it they ask), **Auto** (the same, and commands that must leave the sandbox
+  are evaluated automatically: "safe, reversible commands" run, risky or
+  irreversible ones ask) and **Turbo** (no sandbox, no prompts, the whole
+  filesystem). The CLI's modes are `default`, `accept-edits`, `auto` (its
+  default since 1.5.7 where available) and `plan`. Rules are layered on top
+  of the preset and always take precedence.
+- **Writing and storing:** three lists, Deny, Ask and Allow; "Deny: the action
+  is blocked immediately". Granted paths and domains are compiled into the
+  sandbox: a `read_url` grant becomes an allowed outbound host for `curl` and
+  `npm`, a `write_file` grant a writable folder.
+- **Asking and "always":** a card shows the request, and the person may edit
+  the target before allowing it (widen `src/a.ts` to `src/`); outside the
+  workspace a prompt offers "Yes, and always allow non-workspace access"; a
+  file edit shows its diff and stays open until answered. Every upload from
+  the browser agent needs a one-time approval, even in Turbo.
+- **Weaknesses:** command rules match prefixes; for constructs that can hide
+  a command (`$(…)`, backticks, brace expansion) a rule needs an exact match,
+  which the docs list; Auto's "safe, reversible" is an automatic judgment;
+  the forum has reports of allow-listed commands still prompting.
+
+### 1.4 Shorter comparisons
+
+| Agent | Unit | Default | Ordering | Notable | Weakness |
+| --- | --- | --- | --- | --- | --- |
+| **OpenCode** ([permissions](https://opencode.ai/docs/permissions/)) | `{action, resource, effect}`: read, edit, shell, subagent, external_directory, MCP; plugins may add actions | No match means ask; paths outside the project allowed | **Last match wins** | An operation touching several resources is denied if any is denied | Order decides; a later broad rule silently widens access |
+| **Gemini CLI** ([policy engine](https://geminicli.com/docs/reference/policy-engine/), [trusted folders](https://geminicli.com/docs/cli/trusted-folders/)) | Tool name, command prefix, or a regular expression over arguments as JSON | Modes default, autoEdit, plan, yolo | Tiers Default < Workspace < User < Admin, plus priority 0–999 | "Always" never widens a stricter mode; a global deny hides the tool from the model | Workspace tier disabled because a project could grant itself rights; folder trust off by default |
+| **Goose** ([modes](https://goose-docs.ai/docs/guides/managing-tools/goose-permissions/), [tool permissions](https://goose-docs.ai/docs/guides/managing-tools/tool-permissions/)) | A tool of an extension: Always Allow, Ask Before, Never Allow | **Autonomous** | Per tool over the mode | Smart Approval approves "low-risk" actions | No approval by default; risk is the model's judgment |
+| **Cline** ([auto approve](https://docs.cline.bot/features/auto-approve)) | Categories (read, edit, safe or all commands, browser, MCP) | All off | Toggles | Notifications when approval is needed | "Cline does not use a fixed allowlist": the model marks each command `requires_approval` |
+| **Roo Code** ([auto-approving](https://roocodeinc.github.io/Roo-Code/features/auto-approving-actions/)) | Categories plus allowed and denied command prefixes | Off | Lists | One master Enabled switch pauses everything | Prefix lists over shell text |
+| **OpenHands** ([security](https://docs.openhands.dev/sdk/guides/security)) | Each action with a risk level from an analyzer | Set in code: AlwaysConfirm, NeverConfirm, ConfirmRisky | Policy over analyzer | Policy kept apart from the risk judge | The judge may be a model |
 
 **What recurs:** three answers (allow, ask, deny); several scopes merged with
 a fixed precedence; "always" saved as a written rule; a person-readable list
@@ -65,7 +195,18 @@ installing web code).
 | **A sandboxed run's outside traffic** | Hosts reached through the server's proxy | The plugin's declared destinations are the ceiling; rules may narrow them (`deny fetch github.com for calternal-chat-claude-code`) |
 | **A "direct, full access" run on the person's own machine** (personal space only) | Shell commands, local files and the network on that machine | The server cannot enforce anything there. Two honest options (question R5): leave the harness's own permission system in charge, or translate our rules into the harness's files (`.claude/settings.json`, `.codex/rules/`) as a best effort, labelled as such |
 
-### 2.3 "Auto-approve for me", exactly
+### 2.3 Our own harnesses inside our sandbox
+
+Claude Code, Codex and Antigravity each have their own rule system. Inside a
+hosted sandbox the sandbox and our operation rules are the boundary, so the
+harness runs in its own permissive mode (`bypassPermissions`, Codex's full
+access inside our box, Antigravity's Turbo) and its tool calls reach the
+server as operations, which our rules decide. Running both rule systems would
+ask the person twice for the same action. On the person's own machine
+("direct, full access", personal space only) the harness's own rules are the
+only ones that apply (question R5).
+
+### 2.4 "Auto-approve for me", exactly
 
 The owner's default. Proposed meaning:
 
@@ -83,7 +224,7 @@ The owner's default. Proposed meaning:
 Anything the agent was not given in its scope is simply not reachable; no
 rule changes that.
 
-### 2.4 Where rules live and how they are shown
+### 2.5 Where rules live and how they are shown
 
 - **A person's rules** are one Markdown file in their personal space,
   `Agents/rules.md`, applied to their runs in every space. **A space's
@@ -117,7 +258,8 @@ rule changes that.
 | From | Taken | Not taken |
 | --- | --- | --- |
 | Claude Code | Deny, then ask, then allow; "don't ask again" writes a rule; a note with an answer | Rules over command text; hooks that run code to decide |
-| Codex | "Approve for me" as a named default; `match` and `not_match` examples a rule can carry (proposed for `calternal check`); the agent cannot rewrite its own rules folder | Prefix rules over commands |
+| Codex | "Approve for me" as a named default; the sandbox and the approval rules as two separate controls; `match` and `not_match` examples a rule can carry (proposed for `calternal check`); the agent cannot rewrite its own rules folder | Prefix rules over commands |
+| Antigravity | One `action(target)` engine for every surface; grants compiled into the sandbox (an allowed host becomes an allowed outbound host); editing the target in the prompt before allowing | Turbo's "no isolation"; an automatic "safe, reversible" judge |
 | Gemini CLI | "Always" scoped so it never widens a stricter mode; a project or space cannot grant itself rights beyond its tier | Priority numbers; regular expressions over arguments |
 | OpenCode | Plugins can name new actions (our operations already are that) | Last match wins |
 | Goose, Cline, Roo Code | A master pause switch | Model-judged "safe" or "low risk" |
@@ -126,11 +268,11 @@ rule changes that.
 ## 4. Questions for the owner
 
 **R1. What exactly does "auto-approve for me" include?**
-*What:* the default rule set for a person's own runs (§2.3).
+*What:* the default rule set for a person's own runs (§2.4).
 *Why now:* it is the first thing every agent run meets.
 *Example:* you ask Claude to clean up your notes; it wants to remove 40
 duplicates and email a summary to Lee.
-*Options:* (a) **as in §2.3**: everything allowed in your personal space
+*Options:* (a) **as in §2.4**: everything allowed in your personal space
 except reaching other people; in a shared space also ask before removing or
 changing others' items. Cost: a few prompts in shared spaces. (b) Allow
 everything below the server's risky sheet, everywhere. Cost: an agent can
@@ -195,3 +337,20 @@ says so.
 was added and when it last applied**. Cost: stale rules stay. (b) Expire
 after a year unused. Cost: prompts return without warning.
 *Recommendation:* (a).
+
+**R7. Do our own harnesses run in their permissive mode inside our sandbox?**
+*What:* Claude Code, Codex and Antigravity each ask the person before
+actions by their own rules; inside our hosted sandbox our rules already
+decide every operation, folder write and outbound host (§2.3).
+*Why now:* it decides whether a person is asked once or twice for the same
+action, and what the harness plugins set when they start a run.
+*Example:* Claude Code in a hosted run wants to edit a file in the folder
+you handed it; Claude Code's Manual mode and our rule would both ask.
+*Options:* (a) **the harness runs in its permissive mode
+(`bypassPermissions`, full access inside the box, Turbo), and only our rules
+ask**. Cost: the harness's own protections inside the box (protected paths
+such as `.git`) no longer apply unless our rules repeat them. (b) The harness
+keeps its own default mode as a second layer. Cost: double prompts and two
+rule files to keep in step.
+*Recommendation:* (a), with our default rules protecting `.git` and the
+harness's own settings folders inside a handed folder.
