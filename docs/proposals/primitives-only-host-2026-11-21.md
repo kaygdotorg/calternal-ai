@@ -4,8 +4,8 @@ Status: **revision 5: the single statement of the design**, with the
 owner's answers from rounds one to twenty-five of `docs/morning-2026-11-21.md`
 on `dev` (2026-11-21 to 2026-11-24) applied. The on-disk format of kinds,
 items, collections, sidebars and plugins is specified in
-[kind-and-collection-format-2026-11-24.md](kind-and-collection-format-2026-11-24.md). Where the two disagree, the
-morning report wins. What the owner has not decided is in §13 with the
+[kind-and-collection-format-2026-11-24.md](kind-and-collection-format-2026-11-24.md). Where this proposal and the
+morning report disagree, the morning report wins. What the owner has not decided is in §13 with the
 reason. Revision 2 (`502ab2bc`) keeps the option analysis and both reviews;
 the section files under [`primitives/`](primitives/) are historical where
 this document differs.
