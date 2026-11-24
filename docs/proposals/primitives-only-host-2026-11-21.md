@@ -1,9 +1,11 @@
-# A primitives-only host · revision 4 · 2026-11-24
+# A primitives-only host · revision 5 · 2026-11-24
 
-Status: **revision 4: the single statement of the design**, with the
-owner's answers from rounds one to nineteen of `docs/morning-2026-11-21.md`
-on `dev` (2026-11-21 to 2026-11-23) applied. Where the two disagree, the
-morning report wins. What the owner has not decided is in §12 with the
+Status: **revision 5: the single statement of the design**, with the
+owner's answers from rounds one to twenty-five of `docs/morning-2026-11-21.md`
+on `dev` (2026-11-21 to 2026-11-24) applied. The on-disk format of kinds,
+items, collections, sidebars and plugins is specified in
+[kind-and-collection-format-2026-11-24.md](kind-and-collection-format-2026-11-24.md). Where the two disagree, the
+morning report wins. What the owner has not decided is in §13 with the
 reason. Revision 2 (`502ab2bc`) keeps the option analysis and both reviews;
 the section files under [`primitives/`](primitives/) are historical where
 this document differs.
@@ -18,7 +20,7 @@ opinionated (round 15).
 | Idea | What it means | Built as |
 | --- | --- | --- |
 | **Files, with questions** | Everything a person keeps is a Markdown file in a space, with its history and a stamp of who wrote it. The server answers questions about the files: lists, search, backlinks, unread counts. | Files, Questions |
-| **Calls** | Everything that changes is a call to a named operation, checked once: who is asking, through which plugin, on what. A call runs now, later, in the background or elsewhere (on a machine). People, plugins and agents use the same calls, through the app, the CLI, the API or MCP. | Authority, Running code |
+| **Calls** | Everything that changes is a call to a named operation, checked once: who is asking, through which plugin, on what. Plugin code starts one way: an operation listens to an event (a call, a time, a schedule, a file change, an outside call). People, plugins and agents use the same calls, through the app, the CLI, the API or MCP. | Authority, Running code |
 | **Drawing** | Plugins never draw. They declare how their things look and which collections an app starts with; clients draw that with one catalogue of native components. A web view covers what the catalogue cannot draw. | Drawing |
 
 The server knows nothing about chats, notes, mail, agents or providers;
@@ -34,8 +36,9 @@ forever with no vendor lock-in (round 15).
 | Storage | Files plus per-app engines, spans, a viewer record, layout tables | Markdown files; host state holds stamps and keyed hashes, never text | A chat is `Chats/Lisbon crew/chat.md` |
 | Spaces | Personal and shared spaces of different kinds | One kind of space; the first one stays personal | Ana creates "Lisbon trip" and invites Lee from her group |
 | Changing things | Per-app write paths | Reading is free inside a space; an item changes only through its owning plugin's operations, or directly when its kind is editable outside | Money's ledger changes only through Money |
-| Lists | Binds, sources, extractors, search profiles, layout sections | One query form; a collection is a file; a sidebar is a file listing collections | "Unread" is `{ kind: reading, where: { read: false } }` |
-| Running things | Jobs, intents, attempts, successors, a spool, a relay | One work table; a box; background jobs through one call | Photo thumbnails are one job over a list of items |
+| Lists | Binds, sources, extractors, search profiles, layout sections | One query form with totals (count, sum, min, max, average by one field) and computed fields; a collection is a file; a sidebar is a file listing collections | "This month" is `where: month(date) = month(today())`, `group: category`, `total: sum(amount)` |
+| Running things | Jobs, intents, attempts, successors, a spool, a relay | Events start operations; one work table; background jobs through one call; the server holds long-lived connections | New mail raises an event from the server's IMAP connection |
+| A plugin | A TypeScript package with JSON Schemas, a manifest and an interface description | Markdown files (`plugin.md`, `kinds/`, `collections/`, `sidebars/`) plus one `operations.ts` only for what needs code | Reading List is 51 lines of Markdown and 2 lines of TypeScript, against 226 |
 | Agents | A special engine with consent prompts | Plugins that work through the same operations, scoped by their starter | Claude asked in a chat reads the current chat session by default |
 | Surfaces | A browser route per component, a separate CLI | One declaration exposed as a CLI subcommand, an API path and an MCP action | `calternal chat send` and the MCP action `calternal-chat.send` are the same call |
 | Interface | 87 description shapes, layout caps, entry views | One catalogue of native components plus a web view | A diagram is a catalogue component drawn with Pele |
@@ -52,13 +55,15 @@ The inventory and the fate of every revision-14 name are in
 | Change its own kinds' items through its own operations | Notes edits a note through `calternal-notes` |
 | Call other plugins' operations that its manifest lists, to change their items | Mail files an attachment through `calternal-files` |
 | Declare kinds (with their looks, and whether they are editable outside or operations only) and the collections its app starts with | Chat declares `chats` as operations only |
-| Create files and set fields with no code at all | Reading List's Add form and "Mark read" swipe |
+| Add, change and remove items of its kinds with no code at all, on the app, the CLI, the API and MCP | `calternal reading add --url …` |
+| Declare computed fields and totals in kind and collection files | A budget's `spent: = sum(from(transactions.category).amount)` |
+| Write several changes that commit together or not at all | A transfer between two accounts |
 | Keep small private state per person, and a cache the server may delete at any time | Chat's read positions; a mail index |
 | Run on a call, at a time, on a repeating schedule or when files change, and start background jobs over many items | Photos makes thumbnails for 2,000 new pictures |
 | Run its own program, or the one the person picked, in a hosted sandbox or on a machine a member offered | The Claude harness |
 | Offer operations and events, which the server exposes on the CLI, the API and MCP | `calternal reading-list add <url>` |
 | Fill slots in other apps, picked by the person (what only they see) or the space (what others receive) | A community composer in Chat |
-| Reach listed destinations with credentials the server attaches | A mail plugin fetching mail |
+| Reach listed hosts, a server a member names (that member confirms it), or the public web without sign-ins; the server signs in for HTTP, IMAP and SMTP and holds open connections | A mail plugin on the server's IMAP connection; a feed reader that "reads public web pages, never signs in as you" |
 | Draw with the catalogue, and with a web view where the catalogue has nothing | Mail's HTML body |
 | Serve visitors of a share link with exactly the link's rights | A shared album lets friends download and upload |
 
@@ -77,17 +82,23 @@ The inventory and the fate of every revision-14 name are in
 
 ## 3. The rules a plugin follows
 
-1. **Its data is files in the space**, Markdown wherever no other standard
-   format exists. What it can rebuild is a cache the server may delete.
+1. **It is Markdown files** (`plugin.md`, `kinds/`, `collections/`,
+   `sidebars/`) plus one `operations.ts` only for operations that need code;
+   a plugin without code is identical to a kind made in the app. Its data is
+   files in the space, Markdown wherever no other standard format exists.
+   What it can rebuild is a cache the server may delete.
 2. **Every call goes through the server, as the acting person.** There is no
    other way to reach files, people, the network or other plugins.
 3. **It changes only its own kinds' items, through its own operations**;
    other plugins' items change through theirs.
-4. **One process per plugin per space**, started on first call, stopped when
-   idle; none while disabled, none for a plugin with no code.
-5. **What it sends out is declared**: network destinations, secrets and the
-   programs it starts are listed at install; an update that adds to the list
-   waits for the Owner.
+4. **Its code starts only on events** an operation listens to (a call, a
+   time, a schedule, a file change, an outside call). One process per plugin
+   per space, stopped when idle; none while disabled, none without code.
+5. **What it sends out is declared**, in one of three forms: a fixed list of
+   hosts; "a server a member names", which that member confirms on the
+   server's sheet; or the public web without sign-ins ("Reads public web
+   pages. Never signs in as you."). Secrets and programs are listed too. An
+   update that adds to the list waits for the Owner.
 6. **What it offers and calls is declared**: its operations and events, and
    every other plugin's operation it calls.
 7. **It names things by ID, not by path.**
@@ -108,13 +119,13 @@ with the SDK steer authors and agents to user-friendly, robust patterns.
 | | Personal space (the first one) | A space with members |
 | --- | --- | --- |
 | Members | Only its owner; a chat or file can still be **shared** with others (a share, not membership) | Anyone the Owner invites from their groups; roles reader, editor, manager, owner |
-| Private items | Everything is its owner's | None: every member reads every file within their role |
+| Private items | Everything is its owner's | None: every member reads every file within their role. A member's own state for the space (read positions, drafts, mutes, their sidebar copy) lives in that member's personal space |
 | Agent access | Always available to the owner | A space setting, **on or off**, chosen at creation, told to every member when they join; joining is consent |
 | An agent run's scope | Picked by the starter: default the current chat session, ceiling what the starter may read | The same rule |
 | Who steers an agent | Only the owner, always | Anyone who may write in the chat |
 | "Direct, full access" on the person's own machine | Allowed | Not allowed: sandboxed, or limited to picked folders |
 | A run's log and files | The owner's | Readable by every member who can read its chat |
-| Installs | The owner | The Owner; a member may offer a machine, accepted by the Owner or a Manager with a warning |
+| Installs | The owner | Any member may add a description-only plugin; anything with code or sending out is the Owner's. A member may offer a machine, accepted by the Owner or a Manager with a warning |
 
 - **Spaces are one kind.** Anyone may create spaces, name them and invite
   people from their groups; the creator is the Owner. The first space takes
@@ -134,6 +145,11 @@ with the SDK steer authors and agents to user-friendly, robust patterns.
 
 ### 4.2 Files and records
 
+- **Every write is a list of changes that commit together**; a single change
+  is a list of one.
+- **One standard repeat field** the server understands, the iCalendar repeat
+  rule, shared by Calendar, Tasks, Money and Workouts; "Today" and "Overdue"
+  are queries the server re-runs at the person's midnight.
 - Items are Markdown files; non-Markdown originals stay untouched, with
   standard sidecars such as XMP where a convention exists and app metadata in
   `.calternal/` keyed by stable ID (inherited decisions,
@@ -178,8 +194,17 @@ with the SDK steer authors and agents to user-friendly, robust patterns.
 ### 4.3 Collections and sidebars
 
 - **A collection is a file**: a saved query plus hand-added items, with big
-  views (list, table, board, gallery, calendar) and small views (compact
-  list, strip). The word shown to people is not chosen yet.
+  views (list, table, board, gallery, calendar, timeline, chart; map comes
+  with Photos) and small views (compact list, strip). The word shown to
+  people is not chosen yet.
+- **Computed fields** are spreadsheet-style formulas, written in a kind file
+  (for every view of that kind) or in a collection file (a column of its
+  own), including totals through link fields (`sum(tasks.hours)`). A formula
+  never writes, never reaches the network, has a bounded cost and no
+  cycles; computed values are kept only in the rebuildable cache.
+- **Queries give totals**: count, sum, minimum, maximum and average, grouped
+  by one field; anything more is the plugin's own cache.
+- **A form is the kind's create form**, not a view.
 - **A sidebar is a file listing collections in order.** One collection may
   sit in several sidebars. Customising a sidebar is adding, removing or
   reordering collections and nothing else.
@@ -193,6 +218,11 @@ with the SDK steer authors and agents to user-friendly, robust patterns.
 
 ### 4.4 Plugins and calls
 
+- **A plugin is Markdown files** installed into the space's `.calternal/`
+  (`kinds/`, `collections/`, `sidebars/`); a plugin with code adds one
+  `operations.ts` holding only the operations that need code. The kind
+  file's body is the folder's `AGENTS.md`. **Every kind gets add, change and
+  remove for free** on the CLI, the API and MCP.
 - **Reading is free inside a space** (within the acting person's rights);
   **an item changes only through its owning plugin's operations** (round
   18), or directly for an editable-outside kind.
@@ -202,7 +232,7 @@ with the SDK steer authors and agents to user-friendly, robust patterns.
 - **One process per plugin per space**, stopped when idle (about 16 MiB per
   process while in use, nothing idle, 35–51 ms cold start, measured); a
   disabled plugin costs nothing.
-- The space's Owner installs an app bundle (I2); each plugin can be replaced
+- The space's Owner installs an app bundle (I2), and any member may add a description-only plugin; each plugin can be replaced
   later. Slots are picked by the person (what only they see) or the space
   (what others receive); a missing part falls back or shows an error
   suggesting the official part.
@@ -212,8 +242,14 @@ with the SDK steer authors and agents to user-friendly, robust patterns.
 
 ### 4.5 Running code and background jobs
 
-- One per-space work table with a state column; triggers: a call, a time
-  (once or repeating), a change.
+- **One way to start plugin code: events.** A call, a time, a schedule, a
+  file change and an outside call are all events an operation listens to.
+  One per-space work table with a state column.
+- **The server holds connections that stay open** (an IMAP mailbox) and
+  raises an event when something arrives; the plugin's process may stop
+  when idle.
+- **No job sizes for now:** the operator sets the space machine's size; it
+  is measured again when Photos is built.
 - **Background jobs:** the program is named at install and has no network
   unless a destination is listed. One call starts a job with a program and a
   list of items. The server queues jobs per space and runs them in the
@@ -267,7 +303,7 @@ notification respectively.
 | What | How | Proven? |
 | --- | --- | --- |
 | A plugin's secret | The plugin calls the server's fetch with a named secret; the server attaches it to the request for a listed destination; any service, warned at install (T9) | Designed |
-| Mail | IMAP and SMTP are server calls with a named secret | Not built |
+| Sign-ins that are not web requests | The server connects and signs in for HTTP, IMAP and SMTP and gives the plugin the open connection; mail fetching stays in the plugin (round 21) | Not built |
 | A sandboxed program's credentials | No network; out only through the server's proxy, which adds credentials for listed destinations (round 9) | **Unproven**: HTTPS needs the proxy to terminate TLS with a certificate the sandbox trusts |
 | SSH keys | Held by the server, offered as a signing-agent socket; the key never enters the sandbox | **Unproven** over the machine link; a run holding the socket can sign anything |
 | Harness sign-in files | The exception: mounted into that harness's runs; its updates wait for the person | Built in the revision-14 harness slice |
@@ -305,9 +341,10 @@ notification respectively.
 | Step | Goal | State |
 | --- | --- | --- |
 | 0a, 0b, 1 | Files spike, drawing spike, the first call route with Reading List | **Done** (spikes) |
-| 2 | Grow the spike into the test-mode host: hashes-only recovery and tamper detection, racy-clean, a watcher, collections and sidebars as files, one live window | Next |
+| 2 | Grow the spike into the test-mode host: hashes-only recovery and tamper detection, racy-clean, a watcher, writes as lists of changes, kind, collection and sidebar files in the format of [kind-and-collection-format](kind-and-collection-format-2026-11-24.md) with free add, change and remove, one live window | Next |
+| 2b | Queries: totals by one field, computed fields with the formula evaluator (one hop, bounded, no cycles), the repeat field and the midnight re-run | |
 | 3 | Spaces, sharing, the one check, person tokens; the editable-outside switch with WebDAV exposure | |
-| 4 | Running code: plugin box per space (nothing when disabled), work table, triggers, background jobs | |
+| 4 | Running code: events as the one way to start plugin code, plugin box per space (nothing when disabled), work table, background jobs, server-held connections for HTTP, IMAP and SMTP | |
 | 5 | Records in full; operations-only enforcement; `AGENTS.md` per folder from the kind's declaration | |
 | 6 | Agent runs in hosted sandboxes and on offered machines; restart test | |
 | 7 | **Speed gate:** the same change made through the CLI, MCP and the API, measured against a direct file write on the perf VM; each adapter within the direct write's cost | |
@@ -344,116 +381,166 @@ notification respectively.
 | Drawing | One catalogue, web view otherwise; diagrams as the `calternal-pele` component; native features store through plugin operations | 12, 13, 16 |
 | A rows | A1–A20 and A22–A25 agreed; A3 and A4 are one; A11 changed (read both link forms, no automatic conversion); A13 with "a disabled plugin costs nothing"; A18 changed (personal space: only its owner steers); A21 changed (no outside change to a chat at all) | 2, 11–15 |
 | Authoring | Very easy, through server mechanisms and well-written skills | 15 |
+| Events | One way to start plugin code: a call, a time, a schedule, a file change or an outside call | 21 |
+| Personal state | Read positions, drafts and mutes live in the person's own space; shared spaces keep nothing private | 21 |
+| Sign-ins | The server signs in for HTTP, IMAP and SMTP and gives the plugin the open connection; it holds long-lived connections and raises events | 21, 22 |
+| Destinations | A fixed list; a server a member names, confirmed by that member on the server's sheet; or the public web without sign-ins, worded "Reads public web pages. Never signs in as you." | 21, 22, 23 |
+| Description-only plugins | Any member may add one; code or sending out stays with the Owner | 22 |
+| Writes | Every write is a list of changes that commit together | 22 |
+| Totals | Count, sum, minimum, maximum and average, grouped by one field | 22 |
+| Repeats | One iCalendar repeat field; Today and Overdue re-run at the person's midnight | 22 |
+| Jobs | No job sizes for now; measured again with Photos | 22 |
+| Plugin format | Markdown files (`plugin.md`, `kinds/`, `collections/`, `sidebars/`) plus one `operations.ts` only for code; a no-code plugin equals a kind made in the app; installed into `.calternal/`; the kind file's body is the folder's `AGENTS.md`; every kind gets add, change and remove free | 23, 25 |
+| Formulas | Spreadsheet style, in kind files and collection files, with totals through link fields | 23, 24, 25 |
+| Views | Timeline and chart now, map with Photos; a form is the kind's create form | 23, 24 |
 
-## 11. The app suite: what each needs from the host that the call table does not give yet
+## 11. The app suite: what each needs from the host
 
-The suite the API is tested against (round 15). Five lines each; "nothing"
-where the design already covers it.
+The suite the API is tested against (round 15), walked again after rounds
+21–25. "Nothing" means the design and the format cover it.
 
-**Money** (YNAB, Actual Budget; operations only)
-1. A change across several files at once (a transfer between two accounts)
-   must commit together or not at all; today every write is one file.
-2. Sums and group totals in queries (spent per category per month); the
-   query engine filters and sorts but does not add up.
-3. An exact decimal field type, so amounts never pass through floats.
-4. Bank import is the server's fetch plus a background job: nothing new.
-5. A reconciled ledger is the operations-only switch: nothing new.
+**Money** (operations only): multi-file writes, totals, the repeat field and
+the exact `money` type in the format cover it. Open: totals across accounts
+in different currencies (no exchange-rate rule).
 
-**Workouts** (RP Hypertrophy, MyoAdapt)
-1. A chart component in the catalogue (volume, progression).
-2. The same sums and averages in queries as Money.
-3. Rest timers and reminders are work at a time plus notifications: nothing
-   new.
-4. Health data from the phone arrives through the native app's operations:
-   nothing new.
-5. Otherwise nothing.
+**Workouts:** computed volume, weekly totals and a chart view cover it;
+reminders are events. Nothing.
 
-**Mail** (operations only)
-1. IMAP and SMTP server calls (designed, not built), including a long-lived
-   connection for new-mail push (IDLE), which the request-and-reply fetch
-   does not give.
-2. Raw messages and attachments are files; HTML bodies are a web view:
-   nothing new.
-3. Search over 50,000 bodies is the index: nothing new, but its size and
-   speed are unmeasured.
-4. Delayed send and snooze are work at a time: nothing new.
-5. A thread view across many message files may need the records view to
-   draw items from several files.
+**Mail** (operations only): the server signs in to IMAP and SMTP and holds
+the IDLE connection, raising an event for new mail. Open: the size and speed
+of search over 50,000 bodies is unmeasured, and a thread view that draws
+records from several message files.
 
-**Calendar** (Fantastical, BusyCal; editable outside)
-1. Recurring events in a date-range query: the index cannot expand a
-   repeat rule, so either it learns to, or the plugin supplies computed
-   rows.
-2. Syncing with outside calendars is fetch plus jobs: nothing new.
-3. Time zones in date fields and queries.
-4. A calendar view exists in the catalogue's big views: nothing new.
-5. Invitations go through Mail's operations: nothing new.
+**Calendar:** the repeat field with server-side expansion in date ranges,
+`time` with zones (ADR 0066), calendar and timeline views. Nothing; outside
+calendar sync is fetch plus events.
 
-**Tasks** (TickTick, Things 3; editable outside)
-1. Queries relative to now ("Today", "Overdue") must be re-evaluated when
-   the clock passes a boundary, not only when a file changes.
-2. Repeating tasks are repeating work: nothing new.
-3. Reminders at an exact time on every device: work plus notifications,
-   with delivery timing unmeasured.
-4. Subtasks and links are links: nothing new.
-5. Otherwise nothing.
+**Tasks:** Today and Overdue re-run at the person's midnight; repeating
+tasks are the repeat field; computed `late`. Nothing.
 
-**Notes** (Craft, Obsidian; editable outside)
-1. Two people editing one note at once needs live merging; writes with an
-   expected revision only report a conflict.
-2. Both link forms and rename rewriting: designed (A11, D2).
-3. Block references to a paragraph need anchors in plain notes, as records
-   have.
-4. The editor is a catalogue component: nothing new.
-5. Backlinks and tags are queries: nothing new.
+**Notes:** two people editing one note and linking to a paragraph are
+inherited (ADRs 0045, 0056; §12). Open: how three-way merging meets live
+co-editing on the new host (§12, question S5).
 
-**Files** (Nextcloud; editable outside)
-1. Resumable, chunked upload and ranged download in the call table for
-   large files.
-2. Previews and thumbnails are background jobs: nothing new.
-3. Share links with upload are visitors with the link's rights: nothing
-   new.
-4. WebDAV is the server's own: nothing new.
-5. Version history of binary files: history is designed for text; its cost
-   for large binaries is unstated.
+**Files:** resumable chunked uploads are the inherited sync route (ADR 0044,
+8 MiB chunks); previews are background jobs. Open: history cost for large
+binaries.
 
-**Documents** (Paperless-ngx)
-1. OCR is a background job, but heavy jobs may need more memory or CPU
-   than the space's microVM; a resource class for jobs is missing.
-2. Originals stay untouched with a Markdown sidecar: nothing new.
-3. A consumption folder is a change trigger: nothing new.
-4. Documents arriving by mail go through Mail's operations: nothing new.
-5. Full-text search over OCR text is the index: nothing new.
+**Documents:** OCR is a background job writing the body; the original stays
+untouched. Open: heavy jobs on the space machine, deferred with job sizes
+(round 22).
 
-**Photos** (Immich, PhotoStructure, PhotoPrism; editable outside)
-1. The same resumable upload as Files, for phone backup.
-2. Thumbnails, video transcoding and face or object recognition are heavy
-   jobs: the same missing resource class, possibly a GPU.
-3. A timeline over 100,000 items and a map view: catalogue components and
-   window speed at that size, unmeasured.
-4. EXIF and XMP sidecars are inherited decisions: nothing new.
-5. Albums shared to friends are visitors: nothing new.
+**Photos:** gallery and timeline now, map with Photos; transcoding and
+recognition are background jobs. Open: job size, and window speed over
+100,000 items (not now, round 25).
 
-**Across the suite:** multi-file atomic writes, query aggregates, an exact
-decimal type, a time-relative query refresh, resumable upload and ranged
-read, job resource classes, long-lived outbound connections for mail, live
-merging for notes, and chart, timeline and map components. None of these
-needs app knowledge in the server; each is a generic primitive or
-component.
+## 12. Inherited sync and conflict decisions on the new host
 
-## 12. Still open
+The old app's accepted decisions (read with git from
+`/home/kayg/Developer/calternal` at `origin/dev`) and how each meets the
+primitives-only host.
+
+| ADR | Decision | On the new host |
+| --- | --- | --- |
+| 0021 Saving, offline first | A file is written on the first keystroke; every keystroke goes to local storage first, then to the server with retries; the server flushes after 750 ms of quiet; history per note | **Unchanged** for editable-outside kinds edited in the app. For operations-only kinds the device has no file to write; see question S1 |
+| 0044 One sync route | One route and one ordered, replayable change journal; resumable 8 MiB chunk uploads; the CLI, API and MCP use the same journal | **Unchanged.** It is the sync behind §5's three surfaces; the journal is filtered per space and per person's rights. "MCP Events" through signed webhooks is the outward half of round 7's events |
+| 0045 Conflicts by kind of data | Text: three-way merge against the last synced version; structured files: merged by record through their format plugin; binaries: both copies kept | **Changes for structured files:** the old format plugins were Rust crates on server and clients (0048); plugins are now TypeScript on the server only. See question S2 |
+| 0047 Sync reliability | Silent pushes, catch-up from the journal cursor; an outbox of operation IDs derived from installation, file, base hash and new hash, kept until the server confirms | **Unchanged** for file edits. For coded operations the ID must come from the operation and its input, which is A22's per-gesture key |
+| 0048 Format plugins on server and clients | One Rust parser and merge per format, used offline on devices; heavy jobs only on the server | **Changes:** plugin code never runs on devices (no Wasm, owner 2026-11-19), so a device cannot run a plugin's merge or its coded operations offline (questions S1 to S3). Heavy jobs on the server carry over as background jobs |
+| 0056 Stable block IDs | IDs only for linked blocks, 16 Crockford characters, unique across the library, the server as the authority; delete wins over an offline edit | **Unchanged**, with "the space" in place of the old "Home". Links between spaces are not decided (question S4) |
+| 0066 Tasks: time zones and repeats | Repeating task times float; repeating events keep their zone; one-off times keep their offset; Today is asked with the device's date and zone; a server timer at the person's midnight | **Unchanged**, and the format's `time` and `repeat` types follow it. Round 22's "re-run at the person's midnight" is this timer |
+
+### Questions for the owner
+
+**S1. Which changes apply at once on a device with no connection, and which queue?**
+*What:* coded operations (a transfer in Money, sending a chat message) run
+in the plugin's process on the server. A device without a connection cannot
+run them, while a free add, change or remove of an item is a plain file
+change the device can make itself.
+*Why now:* it decides what every app feels like offline, and what the device
+outbox holds.
+*Example:* on a plane, you mark three tasks done, add a transaction and
+write a chat message.
+*Options:* (a) **free add, change and remove and the kind's declared
+actions (`set read = yes`) apply at once on the device and sync later;
+coded operations queue in the outbox, are shown "not sent yet", and run on
+reconnect**; a queued operation that then fails is shown to the person.
+Cost: some actions look different offline. (b) Everything queues, nothing
+applies until the server answers. Cost: offline use is read-only in feel.
+(c) Plugins may declare an offline form of each operation. Cost: a second
+implementation of every coded operation.
+*Recommendation:* (a). It matches 0021's "local first" for the changes the
+device can make itself, and never pretends a coded operation happened.
+
+**S2. How are two offline versions of a structured file merged without format plugins on devices?**
+*What:* 0045 merged structured files by record through a Rust format plugin
+on both sides. Plugins are now TypeScript on the server only.
+*Why now:* tasks, events and transactions are structured files edited on
+several devices.
+*Example:* your phone sets a task's deadline offline while your laptop
+renames the same task.
+*Options:* (a) **a generic merge driven by the kind file**: the fields are
+declared, so the shared Rust core merges field by field on the server and on
+devices, and keeps both copies when the same field changed on both sides.
+Cost: no kind-specific merge rules. (b) Merge only on the server with the
+plugin's own code; devices keep both versions until they sync. Cost: a plugin
+writes merge code, and devices show conflicts until they reconnect.
+*Recommendation:* (a). The kind file already says what a field is, so one
+merge serves every kind and runs offline.
+
+**S3. Are computed fields and totals available offline?**
+*What:* computed values live in the server's rebuildable cache.
+*Why now:* a budget or a project's remaining hours shown offline must not
+be stale or blank.
+*Example:* offline, you add a transaction; does "left" in the category
+change?
+*Options:* (a) **the shared Rust core evaluates formulas on devices too**,
+over the items the device holds; values are marked provisional until the
+server confirms them. Cost: the evaluator ships to every client, and totals
+over items the device does not hold are incomplete. (b) Offline shows the
+last values from the server. Cost: they do not move until reconnect.
+*Recommendation:* (a), since formulas are declarations, not plugin code.
+
+**S4. May a link point into another space?**
+*What:* block IDs are unique in a space (0056); collections are per space
+(D6). A note in one space may link to a note in another.
+*Why now:* link rewriting on rename and block links need a rule.
+*Example:* your personal journal links to a note in "Lisbon trip".
+*Options:* (a) **links across spaces work for people who can read both, and
+rename rewrites them**, but collections and formulas never cross spaces.
+Cost: the link index spans spaces for one person. (b) Links stay inside a
+space; a link to another space is a plain URL that does not follow renames.
+Cost: cross-space links break on rename.
+*Recommendation:* (a) for links only; it keeps "links follow every rename"
+true.
+
+**S5. How does three-way merging meet two people typing in one note at the same time?**
+*What:* 0045 merges against the last synced version, which suits edits
+made apart. Two people in the same note at once need their keystrokes merged
+live.
+*Why now:* the owner named it as a next gap (round 25).
+*Example:* you and Lee both fix the packing list together.
+*Options:* (a) **the old app's live rooms carry over**: while two people
+have a note open, edits merge live in a room and the file is saved from it;
+three-way merge covers everything else. Cost: a live channel per open note.
+(b) Only three-way merge on save. Cost: overlapping edits make conflict
+copies.
+*Recommendation:* (a), reusing the existing room code.
+
+## 13. Still open
 
 | Item | Why it is still open |
 | --- | --- |
-| Per-person private state in a space with members | "No private items in a shared space" (T2) and "reading is free inside a space" leave read positions, drafts, mutes and a member's own sidebar copy unaddressed: are they visible to others, or kept in the personal space? |
-| Whether agents are simply plugins | The owner asked (round 10) with a request for a table of personal against shared spaces; §4.1 gives the table, but the question itself was not answered |
+| Questions S1–S5 (§12) | New: how inherited sync decisions meet the primitives-only host |
+| Whether agents are simply plugins | Asked in round 10, not answered |
 | The word for a collection | Not chosen (round 19) |
-| How sidebars, collections and sections read to people | The owner said they are still not clear (round 18) before confirming the model in round 19 |
-| Native rendering of `calternal-pele` | The component is decided; whether Pele's SVG output draws natively on Apple platforms is unchecked |
-| The editable-outside switch for kinds not named | Documents, workouts and any community kind: the kind decides, but no default is stated |
+| Native rendering of `calternal-pele` | The component is decided; drawing Pele's output natively is unchecked |
+| The editable-outside switch for kinds not named | Documents, workouts and community kinds: the kind decides, no default stated |
+| Totals across currencies | The format refuses to add different currencies; no exchange-rate rule |
 | Space count per account (T10) | Not answered |
 | Per-person approval of a plugin's use of their data (T6) | Not answered; may be moot under "reading is free inside a space" |
 | Sharing a sidebar | To be designed (A14) |
 | Credentials for sandboxed programs and SSH | Decided, not proven (§6) |
-| The suite's host needs (§11) | Each is a generic addition the owner has not yet been asked about |
+| Notifications, speed at size, heavy jobs | Deferred by the owner (round 25) |
 | The install sheet's motion | Not designed (round 19) |
+| What the server's operator can do against a space's Owner | Asked in round 21, not answered |
