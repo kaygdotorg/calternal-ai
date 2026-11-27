@@ -128,32 +128,29 @@ async fn selected_harness_replies_once_and_enforces_actor_scope_and_egress() {
     let records = wait_for(3).await;
     assert_eq!(records[2]["body"], "Egress: refused");
     assert_eq!(records[2]["run"], run);
-    // The fake provider signals only after its SIGINT-ignoring grandchild
-    // has started sleep. Use the already-mounted, disposable account home.
-    use std::os::fd::AsRawFd;
-    use tokio::io::AsyncReadExt;
-    let home = root
-        .join("accounts")
-        .join(f.owner.to_string())
-        .join("spaces")
-        .join(f.space.to_string())
-        .join("provider-homes/calternal-chat-claude-code");
-    let dir = tokio::fs::File::open(&home).await.unwrap();
-    let endpoint = format!("/proc/self/fd/{}/hold-ready.sock", dir.as_raw_fd());
-    let readiness = tokio::net::UnixListener::bind(endpoint).unwrap();
-    send_input(caller.clone(), 4, json!("hold: stop family"))
-        .await
-        .unwrap();
-    tokio::time::timeout(Duration::from_secs(30), async {
-        let (mut stream, _) = readiness.accept().await.unwrap();
-        let mut signal = [0; 6];
-        stream.read_exact(&mut signal).await.unwrap();
-        assert_eq!(&signal, b"READY\n");
-    })
-    .await
-    .expect("the fake provider did not signal process-family readiness");
     let container =
         PodmanBackend::container_name(f.owner.as_uuid(), run.as_str().unwrap().parse().unwrap());
+    send_input(caller.clone(), 4, json!("hold: ignore signals"))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(12), async {
+        loop {
+            let processes = tokio::process::Command::new("podman")
+                .args(["top", &container, "args"])
+                .output()
+                .await
+                .unwrap();
+            if String::from_utf8_lossy(&processes.stdout)
+                .lines()
+                .any(|line| line.trim() == "sleep 60")
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+    })
+    .await
+    .expect("fake provider did not start the process family");
     let started = std::time::Instant::now();
     f.call(caller.clone(), "s.run.stop", json!({"id":run}), None)
         .await

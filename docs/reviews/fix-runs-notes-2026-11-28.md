@@ -38,6 +38,12 @@ mount point and bounded scratch locations.
   checked address and port 443. Service-level enforcement needs a broker
   that can distinguish services sharing that address.
 
+- Are the preview scratch ceilings enough for real harnesses? Runs use a
+  read-only image and workspace, 64 MiB for the home, 16 MiB for `/tmp`,
+  4 MiB for `/run` and 16 MiB of shared memory. The writable temporary
+  mounts disallow direct execution. The limits trade support for large
+  temporary data and automatic executable updates for bounded storage.
+
 ## Simplification opportunities
 
 - Collapse provider run lifetime and host publication cancellation into one

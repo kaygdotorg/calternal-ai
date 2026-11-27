@@ -29,6 +29,7 @@ use crate::protocol::{Limits, SandboxSpec};
 #[cfg(target_os = "linux")]
 mod family;
 mod ownership;
+mod run_mounts;
 mod run_sign_in;
 
 use run_sign_in::RunSignIn;
@@ -138,6 +139,10 @@ impl PodmanBackend {
             .map_err(SandboxError::new)
     }
 
+    pub(crate) async fn run_work_root(&self) -> SandboxResult<PathBuf> {
+        Ok(self.canonical_root().await?.join(run_mounts::WORK_ROOT))
+    }
+
     /// Account-qualified container name, so a caller reusing another account's
     /// thread UUID can never address its mounts or login home.
     pub fn container_name(account_id: Uuid, thread_id: Uuid) -> String {
@@ -150,6 +155,7 @@ async fn podman(bin: &std::path::Path, args: &[&str]) -> SandboxResult<String> {
     let out = tokio::process::Command::new(bin)
         .args(args)
         .stdin(std::process::Stdio::null())
+        .kill_on_drop(true)
         .output()
         .await
         .map_err(|e| SandboxError(format!("cannot run podman: {}", e.kind())))?;
@@ -175,11 +181,14 @@ impl Backend for PodmanBackend {
         Box::pin(async move {
             let root = self.canonical_root().await?;
             ownership::sweep(&self.podman, &root).await?;
-            match tokio::fs::remove_dir_all(self.root.join("workers")).await {
-                Ok(()) => Ok(()),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                Err(e) => Err(SandboxError::new(e)),
+            for directory in ["workers", run_mounts::WORK_ROOT] {
+                match tokio::fs::remove_dir_all(root.join(directory)).await {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(SandboxError::new(e)),
+                }
             }
+            Ok(())
         })
     }
     fn preference(&self) -> &'static str {
@@ -297,7 +306,9 @@ impl PodmanBackend {
             .join(spec.thread_id.to_string());
             let result = async {
                 let account = root.join("accounts").join(spec.account_id.to_string());
-                let dir = if spec.worker.is_some() {
+                let dir = if let Some(sockets) = egress_directory {
+                    sockets.parent().expect("private run root").join("engine")
+                } else if spec.worker.is_some() {
                     worker_dir.clone()
                 } else {
                     account.join("threads").join(spec.thread_id.to_string())
@@ -309,7 +320,7 @@ impl PodmanBackend {
                 {
                     return Err(SandboxError("shared tools require a dedicated Podman harness".into()));
                 }
-                let (home, login) = if spec.shared_tools.is_some() || credential.is_some() {
+                let (home, login) = if spec.shared_tools.is_some() || egress_directory.is_some() {
                     (PathBuf::new(), PathBuf::new())
                 } else { match harness {
                     Some(harness) => super::provider_home::prepare_harness(
@@ -318,7 +329,8 @@ impl PodmanBackend {
                     None => super::provider_home::prepare(account, &dir, spec).await?,
                 }};
                 let work = dir.join("work");
-                tokio::fs::create_dir_all(&work).await.map_err(|e| {
+                let provision = if egress_directory.is_some() { &dir } else { &work };
+                tokio::fs::create_dir_all(provision).await.map_err(|e| {
                     SandboxError(format!("cannot create work directory: {}", e.kind()))
                 })?;
                 if let Some(worker) = &spec.worker {
@@ -381,61 +393,41 @@ impl PodmanBackend {
                         "--env".into(), "HOME=/home/agent".into(),
                     ]);
                     Some(broker)
+                } else if let Some(sockets) = egress_directory {
+                    run_mounts::apply(
+                        &mut args,
+                        plugin_root.expect("run plugin root"),
+                        sockets,
+                        credential,
+                        &memory,
+                    );
+                    None
                 } else {
                     args.extend([
-                        "--volume".into(), mount, "--workdir".into(), "/work".into(),
-                        "--env".into(), "HOME=/home/agent".into(),
+                        "--volume".into(), mount, "--volume".into(), home_mount,
+                        "--workdir".into(), "/work".into(), "--env".into(), "HOME=/home/agent".into(),
                     ]);
-                    if credential.is_some() {
-                        args.extend([
-                            "--read-only".into(), "--read-only-tmpfs=false".into(),
-                            "--tmpfs".into(), "/home/agent:mode=0700,size=64m,nosuid,nodev".into(),
-                            "--tmpfs".into(), "/tmp:mode=1777,size=16m,nosuid,nodev".into(),
-                            "--tmpfs".into(), "/run:mode=0755,size=4m,nosuid,nodev".into(),
-                        ]);
-                    } else {
-                        args.extend(["--volume".into(), home_mount]);
-                    }
                     None
                 };
-                if spec.worker.is_none() && broker.is_none() {
+                if spec.worker.is_none() && broker.is_none() && egress_directory.is_none() {
                     let login_env = if harness.is_some() {
                         "CALTERNAL_PROVIDER_LOGIN_DIR=/run/calternal-provider-login"
                     } else {
                         "CALTERNAL_CLAUDE_LOGIN_DIR=/run/calternal-provider-login"
                     };
-                    let login_mount = if let Some(credential) = credential {
-                        let name = credential.file_name().expect("validated credential name");
-                        format!("{}:/run/calternal-provider-login/{}:ro", credential.display(), name.to_string_lossy())
-                    } else {
-                        let mode = if harness.is_some_and(|harness| !harness.legacy_profile) || spec.provider_login { "rw" } else { "ro" };
-                        format!("{}:/run/calternal-provider-login:{mode}", login.display())
-                    };
-                    args.extend(["--volume".into(), login_mount, "--env".into(), login_env.into()]);
+                    let mode = if harness.is_some_and(|harness| !harness.legacy_profile) || spec.provider_login { "rw" } else { "ro" };
+                    args.extend([
+                        "--volume".into(),
+                        format!("{}:/run/calternal-provider-login:{mode}", login.display()),
+                        "--env".into(),
+                        login_env.into(),
+                    ]);
                     if harness.is_some() && !self.guest {
                         args.extend([
                             "--network=none".into(),
                             "--pull=never".into(),
                             "--http-proxy=false".into(),
                         ]);
-                        if let Some(plugin_root) = plugin_root {
-                            args.extend([
-                                "--volume".into(),
-                                format!("{}:/opt/calternal-plugin:ro", plugin_root.display()),
-                            ]);
-                        }
-                        if let Some(egress_directory) = egress_directory {
-                            args.extend([
-                                "--pid=private".into(),
-                                "--ipc=private".into(),
-                                "--cap-drop=all".into(),
-                                "--security-opt=no-new-privileges".into(),
-                                "--log-driver=none".into(),
-                                "--image-volume=ignore".into(),
-                                "--volume".into(),
-                                format!("{}:/run/calternal-egress:ro", egress_directory.display()),
-                            ]);
-                        }
                     }
                     if spec.provider_login {
                         args.extend(["--env".into(), "CALTERNAL_PROVIDER_LOGIN=1".into()]);

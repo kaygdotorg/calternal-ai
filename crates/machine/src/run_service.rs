@@ -29,6 +29,7 @@ use uuid::Uuid;
 const MAX_RUNS: usize = 32;
 const MAX_TARGETS: usize = 32;
 const TERMINATE_LIMIT: Duration = Duration::from_millis(1800);
+const CLEANUP_LIMIT: Duration = Duration::from_secs(12);
 const SOCKET_IN_CONTAINER: &str = "/run/calternal-egress/proxy.sock";
 
 /// A start request already authorized by the host route.
@@ -195,12 +196,35 @@ struct RunResources {
 }
 
 impl RunResources {
-    async fn cleanup(&self) {
-        if let Some(proxy) = self.proxy.lock().await.take() {
-            let _ = proxy.shutdown().await;
+    async fn cleanup(&self, id: Uuid) {
+        let proxy = self.proxy.lock().await.take();
+        if let Some(proxy) = proxy {
+            cleanup_proxy(id, proxy).await;
         }
-        let _ = self.sandbox.stop().await;
+        cleanup_sandbox(id, self.sandbox.as_ref()).await;
         self.directory.cleanup().await;
+    }
+}
+
+async fn cleanup_sandbox(id: Uuid, sandbox: &dyn Sandbox) {
+    for attempt in 1..=2 {
+        if matches!(
+            tokio::time::timeout(CLEANUP_LIMIT, sandbox.stop()).await,
+            Ok(Ok(()))
+        ) {
+            return;
+        }
+        eprintln!("harness run {id} sandbox cleanup failed (attempt {attempt})");
+    }
+    eprintln!("harness run {id} artifacts scheduled for startup sweep");
+}
+
+async fn cleanup_proxy(id: Uuid, proxy: ConnectProxy) {
+    if !matches!(
+        tokio::time::timeout(CLEANUP_LIMIT, proxy.shutdown()).await,
+        Ok(Ok(()))
+    ) {
+        eprintln!("harness run {id} proxy cleanup failed");
     }
 }
 
@@ -271,18 +295,12 @@ impl RunService {
             }
         }
 
-        let directory = tokio::task::spawn_blocking(tempfile::tempdir)
+        let run_root = self.inner.backend.run_work_root().await?;
+        let directory = tokio::task::spawn_blocking(move || RunDirectory::create(&run_root))
             .await
             .map_err(|_| RunError::Task)??;
-        let directory = RunDirectory::from_tempdir(directory);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            tokio::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700))
-                .await?;
-        }
         let proxy = ConnectProxy::start(
-            &directory.path().join("proxy.sock"),
+            &directory.socket_path("proxy.sock"),
             request
                 .program
                 .policy
@@ -292,7 +310,7 @@ impl RunService {
             Arc::clone(&self.inner.dialer),
         )
         .await?;
-        let mut control = RunControl::start(&directory.path().join("control.sock")).await?;
+        let mut control = RunControl::start(&directory.socket_path("control.sock")).await?;
         let run_id = Uuid::now_v7();
         let spec = SandboxSpec {
             code_directory: None,
@@ -321,12 +339,18 @@ impl RunService {
         let sandbox = match self
             .inner
             .backend
-            .start_harness_run(&spec, &harness, &plugin_root, directory.path(), &program)
+            .start_harness_run(
+                &spec,
+                &harness,
+                &plugin_root,
+                &directory.sockets(),
+                &program,
+            )
             .await
         {
             Ok(sandbox) => sandbox,
             Err(error) => {
-                let _ = proxy.shutdown().await;
+                cleanup_proxy(run_id, proxy).await;
                 return Err(RunError::Sandbox(error));
             }
         };
@@ -352,19 +376,19 @@ impl RunService {
         {
             Ok(exec) => exec,
             Err(error) => {
-                let _ = sandbox.release().await;
-                let _ = proxy.shutdown().await;
+                cleanup_sandbox(run_id, sandbox.as_ref()).await;
+                cleanup_proxy(run_id, proxy).await;
                 return Err(RunError::Sandbox(error));
             }
         };
         let Some(input) = exec.input.take() else {
-            let _ = sandbox.release().await;
-            let _ = proxy.shutdown().await;
+            cleanup_sandbox(run_id, sandbox.as_ref()).await;
+            cleanup_proxy(run_id, proxy).await;
             return Err(RunError::InputUnavailable);
         };
         if let Err(error) = control.wait_ready().await {
-            let _ = sandbox.release().await;
-            let _ = proxy.shutdown().await;
+            cleanup_sandbox(run_id, sandbox.as_ref()).await;
+            cleanup_proxy(run_id, proxy).await;
             return Err(RunError::Egress(error));
         }
         let resources = Arc::new(RunResources {
@@ -390,7 +414,7 @@ impl RunService {
             let mut runs = self.inner.runs.write().await;
             if runs.contains_key(&run_id) {
                 drop(runs);
-                resources.cleanup().await;
+                resources.cleanup(run_id).await;
                 return Err(RunError::Task);
             }
             runs.insert(run_id, Arc::clone(&state));
@@ -522,7 +546,12 @@ async fn monitor_run(
             }
         }
     };
-    let _ = resources.sandbox.terminate().await;
+    if !matches!(
+        tokio::time::timeout(TERMINATE_LIMIT, resources.sandbox.terminate()).await,
+        Ok(Ok(()))
+    ) {
+        eprintln!("harness run {run_id} process cleanup failed");
+    }
     exit.send_replace(Some(info.clone()));
     if let Some(service) = service.upgrade() {
         service.runs.write().await.remove(&run_id);
@@ -536,7 +565,7 @@ async fn monitor_run(
     } else if log_open {
         let _ = send_run_event(&log, &mut stopping, terminal).await;
     }
-    resources.cleanup().await;
+    resources.cleanup(run_id).await;
 }
 
 async fn send_run_event(

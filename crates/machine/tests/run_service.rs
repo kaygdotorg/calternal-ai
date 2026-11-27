@@ -413,3 +413,60 @@ async fn operator_sign_in_mounts_one_file_for_one_account_space_and_program() {
     service.stop(run.id, &actor).await.unwrap();
     let _ = run.wait_exit().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fake_run_uses_a_read_only_root_and_bounded_temporary_writes() {
+    let _serial = CONTAINER_TEST.lock().await;
+    let root = tempfile::tempdir().unwrap();
+    let Some(backend) = backend(root.path()).await else {
+        return;
+    };
+    let _containers = PodmanGuard::new(root.path());
+    let service = make_service(backend, "127.0.0.1:9".parse().unwrap());
+    let (request, actor) = request();
+    let mut run = service.start(request).await.unwrap();
+    let name = PodmanBackend::container_name(actor.account.as_uuid(), run.id);
+    let output = tokio::process::Command::new("podman")
+        .args([
+            "exec",
+            &name,
+            "/bin/sh",
+            "-ec",
+            r#"if touch /opt/unbounded 2>/dev/null; then exit 1; fi
+               if touch /work/unbounded 2>/dev/null; then exit 2; fi
+               test "$(stat -f -c %T /home/agent)" = tmpfs
+               grep -Eq ' /home/agent tmpfs [^ ]*size=65536k' /proc/mounts
+               grep -Eq ' /tmp tmpfs [^ ]*size=16384k' /proc/mounts
+               printf fixture > /home/agent/writable"#,
+        ])
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "run mount boundary: {:?}",
+        output.status.code()
+    );
+    assert!(!root.path().join("accounts").exists());
+    service.stop(run.id, &actor).await.unwrap();
+    let _ = run.wait_exit().await;
+}
+
+#[tokio::test]
+async fn startup_sweeps_owned_run_artifacts() {
+    use calternal_machine::sandbox::Backend;
+
+    let _serial = CONTAINER_TEST.lock().await;
+    let root = tempfile::tempdir().unwrap();
+    let Some(backend) = backend(root.path()).await else {
+        return;
+    };
+    let _containers = PodmanGuard::new(root.path());
+    let leftover = root.path().join("run-work/run.leftover");
+    let outside = root.path().join("other/keep");
+    tokio::fs::create_dir_all(&leftover).await.unwrap();
+    tokio::fs::create_dir_all(&outside).await.unwrap();
+    backend.initialize().await.unwrap();
+    assert!(!leftover.exists());
+    assert!(outside.exists());
+}
