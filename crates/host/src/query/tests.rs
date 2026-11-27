@@ -43,6 +43,7 @@ fn query_charges_declared_viewer_defaults_before_every_candidate_copy() {
         search: None,
         cursor: None,
         limit: Some(1),
+        records: false,
     };
     let actor = Actor::account(owner);
     let first = Uuid::now_v7();

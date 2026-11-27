@@ -34,6 +34,8 @@ pub(crate) struct Query {
     search: Option<String>,
     cursor: Option<String>,
     limit: Option<usize>,
+    #[serde(default)]
+    records: bool,
 }
 
 #[derive(Deserialize)]
@@ -107,6 +109,7 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
     let mut search = search::Search::new(input.search.as_deref(), &kind.search)?;
     let mut rows = Vec::new();
     let mut inputs = Vec::new();
+    let mut record_rows = Vec::new();
     for row in space.rows.values().filter(|row| row.head.kind == from) {
         budget.row(row)?;
         let records = if kind.records.is_empty() {
@@ -123,6 +126,9 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
             &clock,
             &mut budget,
         )?);
+        if input.records {
+            record_rows.push(records);
+        }
         search.index_body(space, row)?;
         rows.push(row);
     }
@@ -142,6 +148,7 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
         &kind,
         &rows,
         &inputs,
+        input.records.then_some((space, record_rows.as_slice())),
         result,
         cursor,
         limit,
@@ -156,17 +163,8 @@ pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
     let kind = space.kind(&row.head.kind)?;
     let mut budget = Budget::default();
     let records = budget.records(space, input.item)?;
-    let file = space.open_regular(&row.head.path).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
-            Error::conflict("The item file is missing from disk.")
-        } else {
-            internal(error)
-        }
-    })?;
-    let bytes = crate::space::bounded_read(file, budget.limit())?;
-    // The parser and projected values can each own a copy of the source.
-    budget.bytes(bytes.len().saturating_mul(3) as u64)?;
-    let views = space.record_views(&row.head, &bytes, &records, &kind)?;
+    let bytes = load_record_file(space, row, &mut budget)?;
+    let views = record_views(space, row, &bytes, &records, &kind, &mut budget)?;
     let prefix = bytes
         .get(..row.head.prefix as usize)
         .ok_or_else(|| Error::conflict("The item file changed outside the host."))?;
@@ -203,6 +201,35 @@ pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
     result["body"] = Value::String(body.to_owned());
     result["records"] = Value::Array(views);
     Ok(result)
+}
+
+fn load_record_file(space: &Space, row: &Row, budget: &mut Budget) -> Result<Vec<u8>> {
+    let file = space.open_regular(&row.head.path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            Error::conflict("The item file is missing from disk.")
+        } else {
+            internal(error)
+        }
+    })?;
+    let bytes = crate::space::bounded_read(file, budget.limit())?;
+    // The parser and projected values can each own a copy of the source.
+    budget.bytes(bytes.len().saturating_mul(3) as u64)?;
+    Ok(bytes)
+}
+
+fn record_views(
+    space: &Space,
+    row: &Row,
+    bytes: &[u8],
+    records: &[Record],
+    kind: &Kind,
+    budget: &mut Budget,
+) -> Result<Vec<Value>> {
+    let views = space.record_views(&row.head, bytes, records, kind)?;
+    for record in &views {
+        budget.json("writer", &record["writer"])?;
+    }
+    Ok(views)
 }
 
 struct QueryInput {

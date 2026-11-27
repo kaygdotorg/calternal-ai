@@ -29,4 +29,5 @@ Projected item returned by a query.
 | <a id="groups"></a> `groups?` | `unknown`[] | Group keys for this row in a grouped collection. |
 | <a id="id"></a> `id` | `string` | Item UUID. |
 | <a id="kind"></a> `kind` | `string` | Qualified kind name. |
+| <a id="records"></a> `records?` | `unknown`[] | Host-stamped records when the query requests them. |
 | <a id="version"></a> `version` | `number` | Host version for a conditional write. |

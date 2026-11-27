@@ -194,6 +194,8 @@ pub(crate) fn recover_pending(space: &mut Space) -> Result<()> {
         || pending.record.hash != space.hash(&expected)
         || !seal::verify(space, &prior, &expected)?.is_some_and(|claim| {
             claim.actor == pending.actor
+                && claim.run == pending.record.run
+                && claim.actor.account.to_string() == pending.record.author
                 && claim.at == pending.record.at
                 && claim.anchor == pending.record.anchor
         })
@@ -301,7 +303,7 @@ pub(super) fn make_append(
             .expect("record header");
         bytes[newline - 16..newline].copy_from_slice(record.anchor.as_bytes());
     }
-    seal::seal(space, head, actor, now, &mut bytes)?;
+    seal::seal(space, head, actor, now, record.run.as_ref(), &mut bytes)?;
     record.length = bytes.len() as u64;
     record.hash = space.hash(&bytes);
     let mut next = head.clone();

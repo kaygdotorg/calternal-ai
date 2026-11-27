@@ -178,12 +178,28 @@ export interface RowData {
   when?: Record<string, boolean>;
   version: number;
   edited?: number;
+  /** Returned when the query requests records. */
+  records?: RecordData[];
 }
 
-/** One record inside an item returned by `s.read` or pushed over the live socket. */
+/** A person visible to the viewer, identified by their account UUID. */
+export interface RecordPerson {
+  account: string;
+  /** Display name from the host's account directory, when visible. */
+  name: string | null;
+}
+
+/** Authoritative attribution for a record or an unverified outside change. */
+export type RecordWriter =
+  | ({ type: "person" } & RecordPerson)
+  | { type: "run"; id: string; plugin: string | null; starter: RecordPerson }
+  | { type: "outside" };
+
+/** One record returned by `s.read`, an opt-in query, or the live socket. */
 export interface RecordData {
   anchor: string;
   author: string;
+  writer: RecordWriter;
   author_name?: string;
   at: string;
   body: string;
@@ -224,6 +240,7 @@ export interface QuerySpec {
   where?: string;
   sort?: string[];
   limit?: number;
+  records?: boolean;
 }
 
 /** Viewer-aware metadata sent on records snapshots and item changes. */

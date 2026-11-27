@@ -45,6 +45,42 @@ impl Runs {
             .ok_or_else(|| Error::not_found("Run was not found."))
     }
 
+    /// Resolve the starting harness from the admitted run published after its start receipt.
+    pub(crate) fn writer_plugin(
+        &self,
+        id: Uuid,
+        account: calternal_types::AccountId,
+    ) -> Result<&str> {
+        let run = self.find(id)?;
+        match &run.actor.via {
+            Some(Via::Plugin { plugin }) if run.actor.account == account => Ok(plugin),
+            _ => Err(Error::forbidden("The run writer has no starting harness.")),
+        }
+    }
+
+    /// Publish a fixture run without launching a program.
+    #[cfg(test)]
+    pub(crate) fn insert_test_run(
+        &mut self,
+        id: Uuid,
+        space: SpaceId,
+        item: Uuid,
+        actor: Actor,
+        kind: String,
+    ) {
+        let grant = RunScopeGrant { id, space, item };
+        self.entries.push_back(Arc::new(Run {
+            grant,
+            actor,
+            target_kind: kind,
+            cancelled: watch::channel(false).0,
+            log: Log::default(),
+            notify: self.logs.clone(),
+            stopped: AtomicBool::new(false),
+            sends: AsyncMutex::default(),
+        }));
+    }
+
     // This runs under the same per-space lock as Stop and persistent writes.
     pub(crate) fn admit(&self, grant: Option<&RunScopeGrant>) -> Result<()> {
         if let Some(grant) = grant {

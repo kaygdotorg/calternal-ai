@@ -1,4 +1,5 @@
 //! Authenticates an append using its on-disk header and the prior ledger head.
+use super::RunWriter;
 use crate::internal;
 use crate::space::{Head, Space};
 use base64::Engine as _;
@@ -14,6 +15,7 @@ pub(super) struct Claim {
     pub(super) actor: Actor,
     pub(super) at: i64,
     pub(super) anchor: String,
+    pub(super) run: Option<RunWriter>,
 }
 
 pub(super) fn key_anchor(
@@ -45,15 +47,26 @@ pub(super) fn seal(
     head: &Head,
     actor: &Actor,
     at: i64,
+    writer: Option<&RunWriter>,
     payload: &mut Vec<u8>,
 ) -> Result<()> {
     let within_minute = (at.rem_euclid(60_000) as u16).to_le_bytes();
-    let tag = mac(space, head, actor, at, blake3::hash(payload))?;
+    let tag = mac(
+        space,
+        head,
+        actor,
+        at,
+        blake3::hash(payload),
+        writer.map(|run| run.plugin.as_str()),
+    )?;
     let mut claim = [0; TAG_BYTES + 2];
     claim[..2].copy_from_slice(&within_minute);
     claim[2..].copy_from_slice(&tag.as_bytes()[..TAG_BYTES]);
     let run = match actor.via {
-        Some(Via::Run { id, .. }) => format!(".{id}"),
+        Some(Via::Run { id, .. }) => match writer {
+            Some(run) => format!(".{id}.{}", URL_SAFE_NO_PAD.encode(&run.plugin)),
+            None => format!(".{id}"),
+        },
         _ => String::new(),
     };
     let suffix = format!("{PREFIX}{}{run}{SUFFIX}", URL_SAFE_NO_PAD.encode(claim));
@@ -65,6 +78,21 @@ pub(super) fn seal(
     Ok(())
 }
 
+// A legacy suffix carries only a UUID. The extended suffix also carries
+// the starting harness, separately from the plugin authorized to append.
+fn decode_run(suffix: &str) -> Option<(uuid::Uuid, Option<&str>)> {
+    let (id, plugin) = suffix
+        .split_once('.')
+        .map_or((suffix, None), |(id, plugin)| (id, Some(plugin)));
+    Some((uuid::Uuid::parse_str(id).ok()?, plugin))
+}
+
+pub(super) fn run_stamp(header: &str) -> Option<(uuid::Uuid, Option<&str>)> {
+    let (_, stamp) = header.strip_suffix(SUFFIX)?.rsplit_once(PREFIX)?;
+    let (_, suffix) = stamp.split_once('.')?;
+    decode_run(suffix)
+}
+
 pub(super) fn verify(space: &Space, head: &Head, tail: &[u8]) -> Result<Option<Claim>> {
     let decoded = || {
         let newline = tail.iter().position(|b| *b == b'\n')?;
@@ -72,7 +100,7 @@ pub(super) fn verify(space: &Space, head: &Head, tail: &[u8]) -> Result<Option<C
         let (header, encoded) = line.rsplit_once(PREFIX)?;
         let encoded = encoded.strip_suffix(SUFFIX)?;
         let (encoded, run) = match encoded.split_once('.') {
-            Some((tag, id)) => (tag, Some(uuid::Uuid::parse_str(id).ok()?)),
+            Some((tag, suffix)) => (tag, Some(decode_run(suffix)?)),
             None => (encoded, None),
         };
         if encoded.len() != CLAIM_CHARS {
@@ -120,21 +148,46 @@ pub(super) fn verify(space: &Space, head: &Head, tail: &[u8]) -> Result<Option<C
     // Slice 1 admits only the personal-space owner. The owning plugin is
     // the only delegated path that can append to this kind.
     let candidates = match run {
-        Some(id) => [Some(Actor::run(owner, plugin, id)), None],
+        Some((id, _)) => [Some(Actor::run(owner, plugin, id)), None],
         None => [
             Some(Actor::account(owner)),
             Some(Actor::plugin(owner, plugin)),
         ],
     };
+    let writer = match run {
+        Some((id, Some(encoded))) => {
+            let Some(plugin) = URL_SAFE_NO_PAD
+                .decode(encoded)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+            else {
+                return Ok(None);
+            };
+            Some(RunWriter { id, plugin })
+        }
+        _ => None,
+    };
     for actor in candidates.into_iter().flatten() {
-        let expected = mac(space, head, &actor, at, payload)?;
+        let expected = mac(
+            space,
+            head,
+            &actor,
+            at,
+            payload,
+            writer.as_ref().map(|run| run.plugin.as_str()),
+        )?;
         // BLAKE3 Hash equality is constant time. Pad both truncated tags.
         let mut claimed = [0u8; 32];
         let mut computed = [0u8; 32];
         claimed[..TAG_BYTES].copy_from_slice(&tag);
         computed[..TAG_BYTES].copy_from_slice(&expected.as_bytes()[..TAG_BYTES]);
         if blake3::Hash::from(claimed) == blake3::Hash::from(computed) {
-            return Ok(Some(Claim { actor, at, anchor }));
+            return Ok(Some(Claim {
+                actor,
+                at,
+                anchor,
+                run: writer,
+            }));
         }
     }
     Ok(None)
@@ -146,6 +199,7 @@ fn mac(
     actor: &Actor,
     at: i64,
     payload: blake3::Hash,
+    writer_plugin: Option<&str>,
 ) -> Result<blake3::Hash> {
     let mut tag = blake3::Hasher::new_keyed(&space.key);
     tag.update(b"calternal-host:append:v2\0");
@@ -171,5 +225,10 @@ fn mac(
     };
     tag.update(&at.to_le_bytes());
     tag.update(payload.as_bytes());
+    if let Some(plugin) = writer_plugin {
+        tag.update(b"starting-harness\0");
+        tag.update(&(plugin.len() as u64).to_le_bytes());
+        tag.update(plugin.as_bytes());
+    }
     Ok(tag.finalize())
 }

@@ -14,7 +14,7 @@ title: "plugin-sdk: operation-api/type-aliases/Query"
 
 # Type Alias: Query
 
-> **Query** = \{ `cursor?`: `string`; `from`: `string`; `limit?`: `number`; `search?`: `string`; `sort?`: readonly `string`[]; `where?`: `string`; \} \| \{ `collection`: `string`; `cursor?`: `string`; `limit?`: `number`; `search?`: `string`; \}
+> **Query** = \{ `cursor?`: `string`; `from`: `string`; `limit?`: `number`; `records?`: `boolean`; `search?`: `string`; `sort?`: readonly `string`[]; `where?`: `string`; \} \| \{ `collection`: `string`; `cursor?`: `string`; `limit?`: `number`; `records?`: `boolean`; `search?`: `string`; \}
 
 A kind query or a stored collection query accepted by the standalone host.
 
@@ -22,7 +22,7 @@ A kind query or a stored collection query accepted by the standalone host.
 
 ### Type Literal
 
-\{ `cursor?`: `string`; `from`: `string`; `limit?`: `number`; `search?`: `string`; `sort?`: readonly `string`[]; `where?`: `string`; \}
+\{ `cursor?`: `string`; `from`: `string`; `limit?`: `number`; `records?`: `boolean`; `search?`: `string`; `sort?`: readonly `string`[]; `where?`: `string`; \}
 
 #### cursor?
 
@@ -41,6 +41,12 @@ Qualified kind name.
 > `optional` **limit?**: `number`
 
 Page size up to 200.
+
+#### records?
+
+> `optional` **records?**: `boolean`
+
+Include the host-stamped records of each returned item.
 
 #### search?
 
@@ -64,7 +70,7 @@ Formula predicate evaluated by the host.
 
 ### Type Literal
 
-\{ `collection`: `string`; `cursor?`: `string`; `limit?`: `number`; `search?`: `string`; \}
+\{ `collection`: `string`; `cursor?`: `string`; `limit?`: `number`; `records?`: `boolean`; `search?`: `string`; \}
 
 #### collection
 
@@ -83,6 +89,12 @@ Opaque cursor from the previous page.
 > `optional` **limit?**: `number`
 
 Page size up to 200.
+
+#### records?
+
+> `optional` **records?**: `boolean`
+
+Include the host-stamped records of each returned item.
 
 #### search?
 

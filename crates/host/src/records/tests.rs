@@ -250,16 +250,82 @@ fn recovered_append_keeps_authenticated_milliseconds() {
 }
 
 #[test]
-fn recovered_run_append_authenticates_run_id_and_milliseconds() {
+fn legacy_account_label_uses_the_visible_directory_name() {
+    let mut f = Fixture::new();
+    let head = f.add("Legacy author label");
+    f.space.call(&f.actor, Call {
+        call: "s.write".into(),
+        input: json!({"changes":[{"op":"append record","item":head.id,"record":{"body":MESSAGE}}]}),
+        idempotency_key: None,
+        slot_selection: None,
+    }).unwrap();
+    f.space
+        .db
+        .execute("ALTER TABLE records DROP COLUMN run_writer", [])
+        .unwrap();
+    let mut f = f.reopen();
+    f.space.owner_display = Some((f.actor.account, "Current name".into()));
+    let head = &f.space.row(head.id).unwrap().head;
+    let bytes = std::fs::read(f.path(head)).unwrap();
+    let rows = f.space.records(head.id).unwrap();
+    let stored = rows[0].bytes(&bytes).unwrap();
+    assert!(
+        std::str::from_utf8(stored)
+            .unwrap()
+            .starts_with(&format!("**{}**", f.actor.account))
+    );
+    let kind = f.space.kind(&head.kind).unwrap();
+    let views = f.space.record_views(head, &bytes, &rows, &kind).unwrap();
+    assert_eq!(
+        views[0]["writer"],
+        json!({
+            "type":"person", "account":f.actor.account, "name":"Current name"
+        })
+    );
+}
+
+#[test]
+fn recovered_run_append_authenticates_run_id_plugin_and_milliseconds() {
     let mut f = Fixture::new();
     let head = f.add("Run recovery");
     let id = Uuid::new_v4();
     f.actor = Actor::run(f.actor.account, "calternal-chat", id);
+    let plugin = "calternal-chat-claude-code";
+    // The recovery fixture has no worker runtime. Give it the harness manifest
+    // through the same parsed declaration cache used on the normal write path.
+    let mut harness = f.space.plugins["calternal-chat"].clone();
+    harness.manifest.name = "Fixture harness".into();
+    f.space.plugins.insert(plugin.into(), harness);
+    f.space.runs.insert_test_run(
+        id,
+        f.id,
+        head.id,
+        Actor::plugin(f.actor.account, plugin),
+        head.kind.clone(),
+    );
     let at = calternal_types::now_ms().div_euclid(60_000) * 60_000 + 23_456;
     let tail = f.prepare_at(&head, at);
     let claim = seal::verify(&f.space, &head, &tail).unwrap().unwrap();
     assert_eq!((claim.actor, claim.at), (f.actor.clone(), at));
     let text = std::str::from_utf8(&tail).unwrap();
+    assert!(text.starts_with("**Fixture harness**"));
+    assert_eq!(
+        claim.run,
+        Some(RunWriter {
+            id,
+            plugin: plugin.into()
+        })
+    );
+    let header = text.lines().next().unwrap();
+    let (_, Some(encoded_plugin)) = seal::run_stamp(header).unwrap() else {
+        panic!("expected the starting harness in the seal");
+    };
+    let altered = text.replacen(encoded_plugin, "b3RoZXI", 1);
+    assert!(
+        seal::verify(&f.space, &head, altered.as_bytes())
+            .unwrap()
+            .is_none()
+    );
     let altered = text.replacen(&id.to_string(), &Uuid::new_v4().to_string(), 1);
     assert!(
         seal::verify(&f.space, &head, altered.as_bytes())
@@ -268,7 +334,9 @@ fn recovered_run_append_authenticates_run_id_and_milliseconds() {
     );
     f.append_uncommitted(&head, &tail);
     let f = f.reopen();
-    assert_eq!(f.space.records(head.id).unwrap()[0].at, at);
+    let rows = f.space.records(head.id).unwrap();
+    assert_eq!(rows[0].at, at);
+    assert_eq!(rows[0].run.as_ref().unwrap().plugin, plugin);
 }
 
 #[test]

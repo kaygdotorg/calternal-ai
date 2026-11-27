@@ -16,6 +16,8 @@ export type Query =
       "cursor"?: string;
       /** Page size up to 200. */
       "limit"?: number;
+      /** Include the host-stamped records of each returned item. */
+      "records"?: boolean;
     }
   | {
       /** Qualified collection name. */
@@ -26,6 +28,8 @@ export type Query =
       "cursor"?: string;
       /** Page size up to 200. */
       "limit"?: number;
+      /** Include the host-stamped records of each returned item. */
+      "records"?: boolean;
     };
 
 /** Changes supported by the host's atomic write route. */
@@ -170,6 +174,8 @@ export interface Row {
   computed: Fields;
   /** Group keys for this row in a grouped collection. */
   groups?: unknown[];
+  /** Host-stamped records when the query requests them. */
+  records?: unknown[];
   /** Host version for a conditional write. */
   version: number;
 }

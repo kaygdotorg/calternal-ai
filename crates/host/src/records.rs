@@ -2,7 +2,7 @@
 use crate::declarations::{Fields, Kind, OperationForm, apply_fields};
 use crate::internal;
 use crate::space::{Head, Space};
-use calternal_types::{Actor, Error, Result};
+use calternal_types::{Actor, Error, Result, Via};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -43,9 +43,18 @@ pub(crate) struct Record {
     pub(crate) offset: u64,
     pub(crate) length: u64,
     pub(crate) author: String,
+    #[serde(default)]
+    pub(crate) run: Option<RunWriter>,
     pub(crate) at: i64,
     pub(crate) hash: [u8; 32],
     pub(crate) ordinal: u64,
+}
+
+/// Attribution captured from the run's start and committed with the record.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub(crate) struct RunWriter {
+    pub(crate) id: Uuid,
+    pub(crate) plugin: String,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -63,7 +72,7 @@ impl Space {
 
     pub(crate) fn records_limited(&self, item: Uuid, limit: i64) -> Result<Vec<Record>> {
         let mut stmt = self.db.prepare_cached(
-            "SELECT anchor,offset,length,author,at,hash,ordinal FROM records WHERE item=?1 ORDER BY ordinal LIMIT ?2",
+            "SELECT anchor,offset,length,author,at,hash,ordinal,run_writer FROM records WHERE item=?1 ORDER BY ordinal LIMIT ?2",
         ).map_err(internal)?;
         let rows = stmt
             .query_map(params![item.to_string(), limit], |row| {
@@ -75,16 +84,22 @@ impl Space {
                     row.get(4)?,
                     row.get::<_, Vec<u8>>(5)?,
                     row.get::<_, i64>(6)? as u64,
+                    row.get::<_, Option<String>>(7)?,
                 ))
             })
             .map_err(internal)?;
         rows.map(|row| {
-            let (anchor, offset, length, author, at, hash, ordinal) = row.map_err(internal)?;
+            let (anchor, offset, length, author, at, hash, ordinal, run) = row.map_err(internal)?;
             Ok(Record {
                 anchor,
                 offset,
                 length,
                 author,
+                run: run
+                    .as_deref()
+                    .map(serde_json::from_str)
+                    .transpose()
+                    .map_err(internal)?,
                 at,
                 ordinal,
                 hash: hash
@@ -132,15 +147,7 @@ impl Space {
         {
             return rows
                 .iter()
-                .map(|row| {
-                    view(
-                        row.bytes(bytes).expect("verified record"),
-                        &row.anchor,
-                        &row.author,
-                        row.at,
-                        kind,
-                    )
-                })
+                .map(|row| self.record_view(row.bytes(bytes).expect("verified record"), row, kind))
                 .collect();
         }
         // For a changed file, compare each region with its ledger hash before
@@ -169,9 +176,9 @@ impl Space {
                 .get(anchor)
                 .filter(|row| row.offset == start as u64 && self.hash(data) == row.hash);
             if let Some(row) = verified {
-                views.push(view(data, anchor, &row.author, row.at, kind)?);
+                views.push(self.record_view(data, row, kind)?);
             } else {
-                views.push(json!({"anchor":anchor, "author":"outside", "at":null, "fields":{}, "body":null}));
+                views.push(json!({"anchor":anchor, "author":"outside", "writer":{"type":"outside"}, "at":null, "fields":{}, "body":null}));
                 if outside.len() < 1_000 {
                     outside.insert(anchor);
                 }
@@ -203,7 +210,8 @@ impl Record {
 
     pub(crate) fn insert(&self, tx: &Connection, item: Uuid) -> Result<()> {
         tx.execute(
-            "INSERT INTO records VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+            "INSERT INTO records(item,anchor,offset,length,author,at,hash,ordinal,run_writer)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
             params![
                 item.to_string(),
                 self.anchor,
@@ -212,7 +220,12 @@ impl Record {
                 self.author,
                 self.at,
                 &self.hash[..],
-                self.ordinal as i64
+                self.ordinal as i64,
+                self.run
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()
+                    .map_err(internal)?
             ],
         )
         .map_err(internal)?;
@@ -273,21 +286,31 @@ pub(crate) fn escape_body(body: &str) -> String {
     result
 }
 
-fn view(data: &[u8], anchor: &str, author: &str, at: i64, kind: &Kind) -> Result<Value> {
-    let (fields, body) = content(data, kind, true)?;
-    let mut record =
-        json!({"anchor":anchor, "author":author, "at":at, "fields":fields, "body":body});
-    if let Some(run) = data
-        .split(|byte| *byte == b'\n')
-        .next()
-        .and_then(|header| std::str::from_utf8(header).ok())
-        .and_then(|header| header.strip_suffix(seal::SUFFIX)?.rsplit_once(seal::PREFIX))
-        .and_then(|(_, seal)| seal.split_once('.'))
-        .and_then(|(_, id)| Uuid::parse_str(id).ok())
-    {
-        record["run"] = json!(run);
+impl Space {
+    fn person_name(&self, author: &str) -> Option<&str> {
+        self.owner_display.as_ref().and_then(|(account, name)| {
+            (calternal_types::AccountId::parse(author).ok() == Some(*account))
+                .then_some(name.as_str())
+        })
     }
-    Ok(record)
+
+    fn record_view(&self, data: &[u8], row: &Record, kind: &Kind) -> Result<Value> {
+        let (fields, body) = content(data, kind, true)?;
+        let name = self.person_name(&row.author);
+        // Legacy rows carry the run ID in their ledger-hashed bytes.
+        let run = row.run.as_ref().map(|run| run.id).or_else(|| {
+            let (header, _) = std::str::from_utf8(data).ok()?.split_once('\n')?;
+            seal::run_stamp(header).map(|(id, _)| id)
+        });
+        let mut record = json!({"anchor":row.anchor, "author":row.author, "at":row.at, "fields":fields, "body":body});
+        record["writer"] = if let Some(id) = run {
+            record["run"] = json!(id);
+            json!({"type":"run", "id":id, "plugin":row.run.as_ref().map(|run| &run.plugin), "starter":{"account":row.author, "name":name}})
+        } else {
+            json!({"type":"person", "account":row.author, "name":name})
+        };
+        Ok(record)
+    }
 }
 
 fn content(data: &[u8], kind: &Kind, include_fields: bool) -> Result<(Fields, String)> {
@@ -347,36 +370,57 @@ pub(crate) fn encode(
         .transpose()?
         .unwrap_or_default();
     apply_fields(&kind.records, &mut fields, input.fields, existing.is_none())?;
-    let (anchor, author, at) = match existing {
-        Some((row, _)) => (row.anchor.clone(), row.author.clone(), row.at),
-        None => (anchor()?, actor.account.to_string(), now),
-    };
-    let display = space
-        .owner_display
-        .as_ref()
-        .filter(|(account, _)| *account == actor.account)
-        .map_or(author.as_str(), |(_, name)| name.as_str());
-    let mut display_name = String::new();
-    for letter in display.chars() {
-        if matches!(letter, '*' | '·' | '\\') {
-            display_name.push('\\');
+    let (anchor, author, at, run) = match existing {
+        Some((row, _)) => (
+            row.anchor.clone(),
+            row.author.clone(),
+            row.at,
+            row.run.clone(),
+        ),
+        None => {
+            let run = match actor.via {
+                Some(Via::Run { id, .. }) => Some(RunWriter {
+                    id,
+                    plugin: space.runs.writer_plugin(id, actor.account)?.to_owned(),
+                }),
+                _ => None,
+            };
+            (anchor()?, actor.account.to_string(), now, run)
         }
-        if !letter.is_control() {
+    };
+    let mut data = if let Some((_, bytes)) = existing {
+        // Preserve the original attribution and stamp on edits.
+        let (header, _) = std::str::from_utf8(bytes)
+            .map_err(internal)?
+            .split_once('\n')
+            .ok_or_else(|| internal("missing record header"))?;
+        format!("{header}\n")
+    } else {
+        let display = if let Some(run) = &run {
+            &space
+                .plugins
+                .get(&run.plugin)
+                .ok_or_else(|| Error::not_found("The run's harness is unavailable."))?
+                .manifest
+                .name
+        } else {
+            space.person_name(&author).unwrap_or(&author)
+        };
+        let mut display_name = String::new();
+        for letter in display.chars().filter(|letter| !letter.is_control()) {
+            if matches!(letter, '*' | '·' | '\\') {
+                display_name.push('\\');
+            }
             display_name.push(letter);
         }
-    }
-    let when = time::OffsetDateTime::from_unix_timestamp(at.div_euclid(1000))
-        .map_err(internal)?
-        .format(time::macros::format_description!(
-            "[year]-[month]-[day] [hour]:[minute]"
-        ))
-        .map_err(internal)?;
-    let stamp = existing
-        .and_then(|(_, bytes)| bytes.split(|byte| *byte == b'\n').next())
-        .and_then(|header| std::str::from_utf8(header).ok())
-        .and_then(|header| header.rsplit_once(seal::PREFIX))
-        .map_or_else(String::new, |(_, stamp)| format!("{}{stamp}", seal::PREFIX));
-    let mut data = format!("**{display_name}** · {when} ^{anchor}{stamp}\n");
+        let when = time::OffsetDateTime::from_unix_timestamp(at.div_euclid(1000))
+            .map_err(internal)?
+            .format(time::macros::format_description!(
+                "[year]-[month]-[day] [hour]:[minute]"
+            ))
+            .map_err(internal)?;
+        format!("**{display_name}** · {when} ^{anchor}\n")
+    };
     for (name, value) in fields {
         data.push_str(&format!("{name}: {value}\n"));
     }
@@ -395,6 +439,7 @@ pub(crate) fn encode(
         anchor,
         offset,
         author,
+        run,
         at,
         ordinal,
         length: data.len() as u64,
