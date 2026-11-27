@@ -42,6 +42,7 @@ impl Space {
             }
             let installed = plugins.values().cloned().collect::<Vec<_>>();
             let plugin = declarations::parse_plugin(&files, true, Some(&name), &installed)?;
+            check_save_context(&plugin)?;
             if let Some(registration) = registration {
                 let registration = serde_json::from_str(&registration).map_err(internal)?;
                 let source = files
@@ -81,6 +82,7 @@ impl Space {
     ) -> Result<()> {
         let installed = self.plugins.values().cloned().collect::<Vec<_>>();
         let declaration = declarations::parse_plugin(&files, official, None, &installed)?;
+        check_save_context(&declaration)?;
         if self.plugins.contains_key(&declaration.manifest.id) {
             return Err(Error::conflict(
                 "A plugin with that ID is already installed.",
@@ -142,6 +144,25 @@ impl Space {
             .insert(declaration.manifest.id.clone(), declaration);
         Ok(())
     }
+}
+
+// The shared add/change renderer checks the final typed item for every
+// caller. Reject dependencies its clock-only evaluation cannot resolve.
+fn check_save_context(plugin: &declarations::Plugin) -> Result<()> {
+    for kind in plugin.kinds.values().filter(|kind| !kind.checks.is_empty()) {
+        let field = |name: &str| {
+            !matches!(name, "id" | "kind" | "created" | "edited" | "at" | "author" | "anchor")
+                && kind.fields.get(name).is_some_and(|decl| {
+                    !decl.from_metadata && decl.sidecar.is_none() && !decl.heading
+                })
+        };
+        let checks = kind.checks.iter().map(|(check, _)| check);
+        let computed = kind.fields.values().filter_map(|field| field.expression.as_ref());
+        if checks.chain(computed).any(|expr| !expr.uses_only_row_and_clock(field)) {
+            return Err(Error::forbidden("The kind's save checks require unavailable context."));
+        }
+    }
+    Ok(())
 }
 
 fn visit(

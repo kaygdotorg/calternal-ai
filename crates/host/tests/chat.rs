@@ -454,3 +454,30 @@ fn batch_destinations_are_unique_and_case_only_rename_keeps_directory() {
     assert!(std::fs::read_to_string(path).unwrap().contains("CONVERSATION"));
     assert!(!f.space_path().join("Chats/CONVERSATION 3").exists());
 }
+
+#[test]
+fn save_checks_cover_shell_and_worker_and_refuse_unwired_context() {
+    let f = Fixture::new();
+    let bundle = tempfile::tempdir().unwrap();
+    std::fs::create_dir(bundle.path().join("kinds")).unwrap();
+    std::fs::write(bundle.path().join("plugin.md"),
+        "---\nplugin: review-tasks\nname: Review Tasks\nversion: 1.0.0\nformat: 1\nsends out: nothing\n---\nReview task estimates.\n").unwrap();
+    let kind = |check: &str| format!(
+        "---\nkind: tasks\nname: Task\nformat: 1\nfolder: Tasks\neditable: outside\nfields:\n  estimate: number, required\nstate:\n  allowed: yes/no\nchecks:\n  {check}\n---\nTasks.\n");
+    let path = bundle.path().join("kinds/tasks.md");
+    std::fs::write(&path, kind("state.allowed")).unwrap();
+    assert_eq!(
+        f.host.install_local(f.owner, f.space, bundle.path(), false).unwrap_err().code,
+        ErrorCode::Forbidden
+    );
+    std::fs::write(path, kind("estimate > 0, Use a positive estimate")).unwrap();
+    f.host.install_local(f.owner, f.space, bundle.path(), false).unwrap();
+    let add = |n| json!({"op":"add","kind":"review-tasks.tasks","fields":{"estimate":n}});
+    let item = f.shell("s.write", json!({"changes":[add(2)]}))["changes"][0]["id"].clone();
+    for actor in [Actor::account(f.owner), Actor::plugin(f.owner, "review-tasks")] {
+        for change in [add(-1), json!({"op":"change","item":item,"fields":{"estimate":-1}})] {
+            let error = f.call(actor.clone(), "s.write", json!({"changes":[change]}), None).unwrap_err();
+            assert!(error.message.contains("Use a positive estimate"), "{error:?}");
+        }
+    }
+}
