@@ -489,8 +489,10 @@ async function fixture(directory, origin, setupCode) {
     }
 
     // Host restart while a run is active -> verify "Run lost after restart" state
-    await a.page.click('[data-profile]');
-    await a.page.getByRole("menuitem", { name: "Light appearance", exact: true }).click();
+    if ((await a.page.evaluate(() => document.documentElement.getAttribute("data-scheme"))) !== "light") {
+      await a.page.click('[data-profile]');
+      await a.page.getByRole("menuitem", { name: "Light appearance", exact: true }).click();
+    }
     await a.page.click('[data-slot-picker="harness"]');
     await a.page.getByRole("menuitem", { name: "Claude Code", exact: true }).click();
     await a.page.fill('textarea[aria-label="Message"]', "hold: restart check");
