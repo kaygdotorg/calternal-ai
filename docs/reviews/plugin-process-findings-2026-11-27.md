@@ -5,47 +5,81 @@ Lane C, slice 3. [Forgejo #116](https://git.kayg.org/kayg/calternal-ai/issues/11
 [Build plan](../proposals/chat-first-build-plan-2026-11-27.md) ·
 [Format revision 9](../proposals/kind-and-collection-format-2026-11-24.md).
 
-## Implementation choices
+## Real host integration
+
+The asynchronous session and trusted adapters now dispatch declared code
+and route its `s.query`, `s.read`, `s.write`, and `s.state` callbacks
+through lane B's host. `s.me` and `s.space` use the verified personal-space
+call context. The install probe runs against a private snapshot of the
+verified bundle in a Bubblewrap user, network and PID namespace. The
+worker has a read-only SDK and source, a read-only Nix store and no home or
+host data mounts. The Node permissions also restrict filesystem access.
+The host stores the selector catalogue beside the bundle digest. It runs
+registered observers after commit and outside the space lock. Nested
+operations use declared calls and suppress observations back into their
+own call chain.
+
+An append returns lane B's canonical record link. Chat uses it in the
+selected harness call under the same host-owned request lineage. The
+current host shell has no scope-aware run adapter, so a requested
+unavailable harness returns `not-allowed`. The real-host test retries
+that gesture and verifies there is still one append. A separate nested
+rename exercises the authorized `s.call` route against installed Chat.
+Real run startup and deduplication depend on the runs lane.
+
+### Fixture edits in this integration
+
+| File | Changed lines in this branch |
+| --- | --- |
+| `plugins-v2/calternal-chat/kinds/chats.md` | 13 counts after the stored record anchor. 19 changes the read cursor to a record anchor. |
+| `plugins-v2/calternal-chat/plugin.md` | 7 declares the Claude Code harness's qualified start operation. |
+| `plugins-v2/calternal-chat/operations.ts` | 16 documents the qualified start operation. 17 adds it to the send input. 26 binds it in the send handler. 31 awaits the append receipt. 37 checks for a harness. 38 reads the record link. 39–41 return a safe error if the link is missing. 42 passes the chat and prompt link to the harness. 43 closes the conditional. 44 returns the append receipt. |
+
+### Integration boundaries
+
+- The personal-space route verifies its one owner before supplying an
+  actor and on every effect. A wider shared-space launcher needs a
+  decision on cross-actor process reuse. The operator opt-in requires
+  Bubblewrap and the host has no direct Node fallback.
+- Change delivery currently occurs after the committed route and
+  coalesces rows inside one write. The registration survives a restart.
+  An interruption after a commit can lose a notification because this
+  slice does not add a durable delivery queue. A wider at-least-once
+  delivery design needs to preserve the fast append's two flushes.
+- The route admits a selected harness through a literal declared call.
+  A general slot-selected harness grant still needs coordinator review.
+  Coded conditions are refused until the host can check their current
+  viewer context. Cross-plugin calls check recognized item designations
+  and reduce unreadable structured rows to IDs. Opaque extension outputs
+  still require a host policy if they need stronger data-flow controls.
+
+## Transport implementation choices
+
+
 
 | Section | What the lane chose and why |
 | --- | --- |
 | §8.1 and lane B’s route | The SDK uses the revision 9 fixtures' one-key change entries and translates their operation names to the route's `op` tag. A record goes through as `{fields?,body?}` so the Markdown stays in the body. `s.me`, `s.space` and `s.event` use the trusted invocation metadata locally. Session is the only run scope exposed by this slice and the SDK supplies the default. |
 | §8.1 errors | `calternal_types::Error` uses older code spellings and a `details` field. The wire has the ten revision 9 codes and `next`. A pipe-specific code conversion retains the shared Rust error value and serializes the format reply only at the boundary. |
-| §8.2 events | The registry provides admission for declared calls and registered change selectors. The SDK accepts one exported handler per event kind and selector, so every replay picks the same handler. A busy endpoint returns `limit`, allowing the trusted scheduler to retry outside a call chain. This also avoids workers waiting on each other. Lane B needs registration metadata from the install path for `on.change` because the Markdown manifests do not enumerate handler exports. A launcher can discover registrations once in its isolated install probe and store only selector names. Actor rechecks, candidate filtering, coalescing, ancestry, reaction provenance, self-suppression and at-least-once delivery belong to lane B. |
+| §8.2 events | The registry provides admission for declared calls and registered change selectors. The SDK accepts one exported handler per event kind and selector, so every replay picks the same handler. A busy endpoint returns `limit`, allowing the trusted scheduler to retry outside a call chain. This also avoids workers waiting on each other. The isolated install probe caches selector names since the Markdown manifests do not enumerate handler exports. The active route supplies the acting person and call ancestry. A durable queue remains outside this integration. |
 | §8.2 replay and eleventh set | The transport derives stable receipt keys from the event key and the ordinal within each effect type. Nested calls preserve the original gesture context and get their own stable event keys. The harness service must reuse the nested `s.run` receipt. A killed worker before commit leaves no write in the mock. A kill after commit can withhold the reply, and the stable key lets a retry obtain the earlier receipt. |
-| §8.1 and §7.4, eleventh set | The send-and-start mock requires the exact appended record link. `anchor` alone from lane B’s draft cannot form a path-correct Markdown link. The SDK accepts a host-issued `link` on the write receipt. Lane B needs to confirm and supply it or agree on another canonical link representation. The transport carries the typed payload through unchanged and leaves validation to the shared route. |
+| §8.1 and §7.4, eleventh set | The send-and-start gesture uses the host-issued `link` on the append receipt. An anchor is not a path-correct Markdown link by itself. The transport carries the typed payload through unchanged and leaves validation to the shared route. |
 | §2.9, §4.3 and §7.4, eleventh set | Append receipts expose anchors and state accepts an authorized JSON value. Ledger-order counting and the shared typed input declaration belong to the format and call route lanes. The generic SDK handler signature can describe the input for author tooling and leaves runtime validation to that declaration. |
 | §7.1, §8.1, eleventh set | A run callback sends the program ID and scope data. The installed binding from that ID to the contained executable or image stays with lanes B and D. Worker inputs carry no program paths. |
 | Build plan slice 3, existing workspace graphs | `crates/server` imports the old registry and runtime, `crates/machine` imports its space channel, and current npm plugins import the original SDK. Removing those APIs now would break workspace consumers outside this lane. The Rust `operations` feature and Node `calternal-operations` condition select the new transport and SDK. No adapter translates the old protocol into the new one. |
-
-## Fixture lines for the fixture owners
-
-- `plugins-v2/calternal-chat/operations.ts` should accept the selected
-  harness in `SendInput` and call its declared start operation with
-  the newly written record's link. Its manifest needs the corresponding
-  authorized cross-plugin call declaration under the host's slot rules.
-- `plugins-v2/calternal-chat-claude-code/operations.ts` should accept the
-  prompting record link in `StartInput` and pass it through the approved
-  run input mechanism. Today it starts a session with only the chat ID.
-- `plugins-v2/calternal-chat/kinds/chats.md` still uses a timestamp for
-  the read cursor and unread count. The fixture owner should update both
-  when the format engine accepts the anchor type and count expression.
-- The fixture owners should use the shared typed operation-input
-  declaration for the composer and harness slots and bind the harness
-  program ID to its executable or image when those grammars are wired.
 
 ## Security questions for the coordinator
 
 - **Worker containment and reuse (§8.2, primitives-only host T1–T3).**
   The process supervisor clears its inherited environment and owns the
-  pipes. The test launcher uses Node's permissions with disposable code.
-  Before enabling installed code, which OS sandbox enforces zero ambient
-  network and filesystem access, bounded CPU and memory, and descendant
-  termination? A plugin retaining one person's result in module state
+  pipes. The personal-space launcher uses Bubblewrap with a read-only Nix store,
+  SDK and source snapshot, and Node's permissions and heap bound.
+  For a shared space, what runner resource and actor-reuse limits should
+  the operator enforce? A plugin retaining one person's result in module state
   could expose it in a later person's call. Reusing processes across
   people saves cold starts, while recycling on actor change reduces
   retained state and still permits one live worker per installation.
-  Keep external code disabled pending the sandbox and actor-reuse decision.
+  Keep cross-actor reuse disabled pending that decision.
 - **Pipe budget and admission (§8.1–8.2).** An allowed 32 MiB read can
   exceed 64 MiB when its text needs escaping. The current frame limit
   refuses the oversized result and keeps buffering bounded. Raising it
@@ -86,22 +120,24 @@ Lane C, slice 3. [Forgejo #116](https://git.kayg.org/kayg/calternal-ai/issues/11
 ## Verification
 
 The focused gate ran in `~/Developer/lanes/plugin-process-slice3` on
-`claude@calternal-dev-01-compute02` under `~/bin/lock-shared nix develop -c`.
-It ran Cargo formatting and plugin-host tests with the `operations`
-feature, SDK tests and strict TypeScript checking of both untouched
-revision 9 fixtures. The process tests cover actual worker reuse and
-restart, stale and malformed frames, Chat send and rename, receipt
-replay and conflict, a crash before mock commit, and both undeclared
-operation and reaction-run refusal. The send-and-start test uses a
-synthetic Chat handler and the upstream harness.
+`claude@calternal-dev-01-compute02` with `~/bin/lock-shared nix develop -c`.
+Formatting passed. The three Rust packages passed 87 tests, including four
+Bubblewrap tests hitting installed Chat on the real host. The SDK passed
+24 tests, and the two revision 9 operation modules type-checked. Lower-level
+wire tests retain the mock run service until lane D attaches the real one.
+
+Tracing a steady-state coded append on that VM showed 0 item reads,
+0 ledger reads, 0 auth reads, 1 item flush and 1 ledger flush. After
+a rename invalidated the cached file signature, the first append read
+the item twice and still performed two flushes. Both traces scope the
+counts to the real operation and report read syscalls, not logical
+authorization checks or performance timings.
 
 The workspace gate ran under `~/bin/lock-full nix develop -c`. It checked
 all workspace targets and features and the standalone conformance
 manifest, built the bundled plugins and generated Rust and TypeScript
-references. The checked-in public site needs 85 regenerated pages
-under `apps/docs` (84 SDK pages and one crate page). Regeneration was
-verified in the disposable VM checkout. Those files belong to the
-integration path and are required for the clean-checkout docs gate.
+references. The corresponding generated public references are included in this
+integration branch. Rust and SDK tests ran on the same dev VM.
 
 ## Simplification opportunities
 

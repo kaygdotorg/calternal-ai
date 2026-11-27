@@ -67,7 +67,7 @@ export interface Row {
   /** Computed fields evaluated for the acting person. */
   computed: Fields;
   /** Host version for a conditional write. */
-  version: string;
+  version: number;
 }
 
 /** One page of rows and totals from the host. */
@@ -119,7 +119,7 @@ export type Change =
         /** Replacement Markdown body. */
         body?: string;
         /** Required current version for a conditional update. */
-        base?: string;
+        base?: number;
       };
     }
   | {
@@ -177,7 +177,7 @@ export interface WriteResult {
     /** The addressed item. */
     id: ItemId;
     /** The resulting item version. */
-    version: string;
+    version: number;
     /** The resulting record anchor, where applicable. */
     anchor?: string;
     /** Host-issued record link, when the route supplies one. */

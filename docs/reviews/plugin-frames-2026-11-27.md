@@ -39,8 +39,8 @@ stable across replay, independent of the invocation and callback IDs.
 The route scopes receipts by the verified person, space and plugin and
 checks matching retry input. Each `s.write` commits its change list
 atomically. The transport supplies host-side keys as
-`<event-key>:write:<ordinal>`, `<event-key>:call:<ordinal>` and
-`<event-key>:run:<ordinal>`, with separate zero-based sequences. For
+`<event-key>:write:<ordinal>`, `<event-key>:state:<ordinal>`,
+`<event-key>:call:<ordinal>` and `<event-key>:run:<ordinal>`, with separate zero-based sequences. For
 `s.call`, use its derived key as the callee event key and carry the
 original request, reaction provenance, and ancestry through the trusted
 route. A run started
@@ -54,7 +54,7 @@ callback frame.
 | --- | --- | --- |
 | `s.query` | `{from,where?,sort?,group?,totals?,fields?,cursor?,limit?}` or `{collection,cursor?,limit?}` | `{rows,totals,cursor}` |
 | `s.read` | `{item}` | `{id,kind,fields,computed,body,records,version}` |
-| `s.write` | `{changes,preview?}`. Each change holds an `op` tag and the fields in lane B’s route. Records use `{fields?,body?}`. | `{changes:[{id,version,anchor?,link?}]}`. The mock supplies the record link needed for send-and-start. |
+| `s.write` | `{changes,preview?}`. Each change holds an `op` tag and the fields in lane B’s route. Records use `{fields?,body?}`. | `{changes:[{id,version,anchor?,link?}]}`. The real host supplies the record link on append. |
 | `s.state` | `{op:"get",item,key}` or `{op:"set",item,key,value}` | `{value}` |
 | `s.call` | `{operation,input}`. `operation` is a qualified name listed in `calls:`. | The operation’s result |
 | `s.run` | `{program,scope,targets}` | `{id,status}` |
@@ -91,3 +91,10 @@ invalid JSON. It caps serialized frames at 64 MiB excluding LF. Lane B
 owns the underlying item and write limits in format §8.1. The coordinator's
 open isolation and resource questions are in the
 [findings](plugin-process-findings-2026-11-27.md).
+
+The real host's launcher also runs the SDK executable with `--probe` at
+installation. The isolated process receives no invocation or host route
+and emits a single `{calls,changes}` JSON line (at most 64 KiB). The host
+validates the reported names against the declarations and stores the
+catalogue with the authenticated bundle. Read [the host route](host-call-route-2026-11-27.md)
+for the installed execution path.

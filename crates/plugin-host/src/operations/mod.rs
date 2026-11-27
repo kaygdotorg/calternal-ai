@@ -12,9 +12,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use calternal_types::{AccountId, Error, SpaceId};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::io::BufReader;
+use tokio::io::{AsyncReadExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use uuid::Uuid;
@@ -93,6 +93,60 @@ struct Job {
     // Held while an invocation can send callbacks. It forbids a cycle from
     // waiting on an occupied worker, including through a different plugin.
     _permit: OwnedSemaphorePermit,
+}
+
+/// Exported selectors reported by the isolated install probe.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Registrations {
+    /// Coded operation selectors exported by the module.
+    pub calls: Vec<String>,
+    /// Change event selectors exported by the module.
+    pub changes: Vec<String>,
+}
+
+/// Run a trusted, isolated launcher in registration-only mode. The launcher
+/// must exit after emitting one bounded selector catalogue, with no event,
+/// verified actor or host callbacks exposed. Costs one cold process start.
+pub async fn probe(command: Command, deadline: Duration) -> Result<Registrations, Error> {
+    const LIMIT: u64 = 64 * 1024;
+    let mut worker = tokio::task::spawn_blocking(move || Worker::spawn(command))
+        .await
+        .map_err(|_| wire::disconnected())??;
+    drop(worker.input);
+    let outcome = tokio::time::timeout(deadline, async {
+        let mut bytes = Vec::new();
+        worker
+            .output
+            .take(LIMIT + 1)
+            .read_to_end(&mut bytes)
+            .await
+            .map_err(|_| wire::disconnected())?;
+        if bytes.len() as u64 > LIMIT {
+            return Err(wire::oversized());
+        }
+        let status = worker
+            .child
+            .wait()
+            .await
+            .map_err(|_| wire::disconnected())?;
+        if !status.success() || !bytes.ends_with(b"\n") {
+            return Err(wire::disconnected());
+        }
+        crate::strict_json::parse(&bytes).map_err(|_| {
+            Code::Invalid.error(
+                "The operation registrations are invalid.",
+                "Check operations.ts.",
+            )
+        })
+    })
+    .await;
+    outcome.unwrap_or_else(|_| {
+        Err(Code::Timeout.error(
+            "The installation probe did not finish.",
+            "Check operations.ts.",
+        ))
+    })
 }
 
 /// On-demand operation worker for one registered plugin in one space.
@@ -302,6 +356,7 @@ async fn exchange(
     wire::send(input, first).await?;
     let mut id = 1u32;
     let mut writes = 0u32;
+    let mut states = 0u32;
     let mut calls = 0u32;
     let mut runs = 0u32;
     loop {
@@ -316,6 +371,9 @@ async fn exchange(
         };
         let ordinal = match method {
             Method::Write => Some(("write", &mut writes)),
+            Method::State if args.get("op").and_then(Value::as_str) == Some("set") => {
+                Some(("state", &mut states))
+            }
             Method::Call => Some(("call", &mut calls)),
             Method::Run => Some(("run", &mut runs)),
             _ => None,

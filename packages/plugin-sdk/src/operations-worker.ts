@@ -151,14 +151,7 @@ export async function serveOperations(
   input: AsyncIterable<Uint8Array>,
   write: Write,
 ): Promise<void> {
-  const byEvent = new Map<string, Operation<unknown>["handler"]>();
-  for (const value of Object.values(exports)) {
-    if (!object(value) || (value.kind !== "call" && value.kind !== "change")
-      || typeof value.selector !== "string" || typeof value.handler !== "function") continue;
-    const key = `${value.kind}:${value.selector}`;
-    if (byEvent.has(key)) throw new Error("duplicate operation registration");
-    byEvent.set(key, value.handler as Operation<unknown>["handler"]);
-  }
+  const handlers = registrations(exports);
   const frames = newlineFrames(input, maximum);
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const read = async () => {
@@ -171,18 +164,40 @@ export async function serveOperations(
       || (value.event.kind !== "call" && value.event.kind !== "change")
       || !object(value.me) || !object(value.space)) throw new BrokenPipe();
     const invoke = value as unknown as Invoke;
-    await invokeOperation(invoke, byEvent.get(`${invoke.event.kind}:${invoke.selector}`), read, write);
+    await invokeOperation(invoke, handlers[invoke.event.kind].get(invoke.selector), read, write);
   }
+}
+
+function registrations(exports: Record<string, unknown>) {
+  const handlers = {
+    call: new Map<string, Operation<unknown>["handler"]>(),
+    change: new Map<string, Operation<unknown>["handler"]>(),
+  };
+  for (const value of Object.values(exports)) {
+    if (!object(value) || (value.kind !== "call" && value.kind !== "change")
+      || typeof value.selector !== "string" || typeof value.handler !== "function") continue;
+    const selected = handlers[value.kind];
+    if (selected.has(value.selector)) throw new Error("duplicate operation registration");
+    selected.set(value.selector, value.handler as Operation<unknown>["handler"]);
+  }
+  return handlers;
 }
 
 async function main() {
   const entry = process.argv[2];
-  if (process.argv.length !== 3 || !isAbsolute(entry)) throw new Error("expected absolute operations.ts path");
+  const probe = process.argv[3] === "--probe";
+  if (process.argv.length !== (probe ? 4 : 3) || !isAbsolute(entry)) throw new Error("expected absolute operations.ts path");
   globalThis.console = new Console(process.stderr);
   const operations = await import(pathToFileURL(entry).href) as Record<string, unknown>;
-  await serveOperations(operations, process.stdin, line => new Promise<void>((resolve, reject) => {
+  const write: Write = line => new Promise<void>((resolve, reject) => {
     process.stdout.write(line, error => error ? reject(error) : resolve());
-  }));
+  });
+  if (probe) {
+    const { call, change } = registrations(operations);
+    await write(frame({ calls: [...call.keys()], changes: [...change.keys()] }));
+  } else {
+    await serveOperations(operations, process.stdin, write);
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

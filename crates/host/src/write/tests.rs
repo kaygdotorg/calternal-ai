@@ -9,7 +9,9 @@ fn records_keep_two_actors_in_ledger_order() {
     let dir = tempfile::tempdir().unwrap();
     let mut space = Space::open(dir.path(), SpaceId::new(), 7 * 86_400_000).unwrap();
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins-v2/calternal-chat");
-    space.install(&fixture, true).unwrap();
+    space
+        .install(crate::installation::bundle(&fixture).unwrap(), true, None)
+        .unwrap();
     let actor = Actor::plugin(AccountId::new(), "calternal-chat");
     let other = Actor::plugin(AccountId::new(), "calternal-chat");
     let call = |space: &mut Space, actor: &Actor, change| {

@@ -1,5 +1,6 @@
 //! Per-space ledger, declaration cache and publication recovery.
 use crate::declarations::{self, Collection, Fields, Kind, Plugin};
+use crate::worker_calls::InstalledCode;
 use crate::{Call, decode, identity, internal};
 use calternal_fsio::DataLock;
 use calternal_fsio::beneath::Folder;
@@ -23,6 +24,7 @@ PRAGMA secure_delete=ON;
 CREATE TABLE IF NOT EXISTS key_material (id INTEGER PRIMARY KEY CHECK(id=1), key BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS head (id TEXT PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS installations (plugin TEXT PRIMARY KEY, digest BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS worker_registrations (plugin TEXT PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS trash (item TEXT PRIMARY KEY, until INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS trash_expiry ON trash(until);
 CREATE TABLE IF NOT EXISTS history (
@@ -92,6 +94,7 @@ pub(crate) struct Space {
     pub(crate) pending_dir: Folder,
     pub(crate) rows: BTreeMap<Uuid, Row>,
     pub(crate) plugins: BTreeMap<String, Plugin>,
+    pub(crate) code: BTreeMap<String, InstalledCode>,
     pub(crate) retention_ms: i64,
     pub(crate) key: [u8; 32],
     pub(crate) seen: BTreeMap<Uuid, crate::records::Signature>,
@@ -138,6 +141,7 @@ impl Space {
             pending_dir: Folder::open_existing(&pending).map_err(internal)?,
             rows: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            code: BTreeMap::new(),
             retention_ms,
             key,
             seen: BTreeMap::new(),
@@ -324,6 +328,9 @@ impl Space {
                 self.rebuild()?;
                 Ok(json!({"items":self.rows.len()}))
             }
+            name if self.coded(name).is_ok() => Err(Error::unavailable(
+                "Coded operations require an isolated asynchronous worker.",
+            )),
             _ => Err(Error::forbidden("Call is unavailable.")),
         }
     }

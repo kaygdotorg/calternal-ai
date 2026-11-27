@@ -23,7 +23,9 @@ impl Fixture {
         let id = SpaceId::new();
         let mut space = Space::open(root.path(), id, 7 * 86_400_000).unwrap();
         let plugin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins-v2/calternal-chat");
-        space.install(&plugin, true).unwrap();
+        space
+            .install(crate::installation::bundle(&plugin).unwrap(), true, None)
+            .unwrap();
         let actor = Actor::plugin(AccountId::new(), "calternal-chat");
         Self {
             root,

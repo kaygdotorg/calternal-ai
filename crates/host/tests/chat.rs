@@ -18,10 +18,6 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        Self::with_anchor_fixture(false)
-    }
-
-    fn with_anchor_fixture(use_anchor: bool) -> Self {
         let root = tempfile::tempdir().unwrap();
         let auth = Auth::open(
             &root.path().join("auth"),
@@ -45,32 +41,6 @@ impl Fixture {
         let host = Host::new(root.path().into(), auth.clone(), 7).unwrap();
         let plugin =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins-v2/calternal-chat");
-        let plugin = if use_anchor {
-            let target = root.path().join("fixture");
-            copy_bundle(&plugin, &target);
-            let kind = target.join("kinds/chats.md");
-            let text = std::fs::read_to_string(&kind).unwrap();
-            std::fs::write(
-                &kind,
-                text.lines()
-                    .map(|line| {
-                        if line.starts_with("  unread:") {
-                            "  unread: = count(records after state.read through)"
-                        } else if line.starts_with("  read through:") {
-                            "  read through: record anchor"
-                        } else {
-                            line
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n")
-                    + "\n",
-            )
-            .unwrap();
-            target
-        } else {
-            plugin
-        };
         host.install_local(owner, space, &plugin, true).unwrap();
         Self {
             root,
@@ -279,22 +249,9 @@ fn thousand_appends() {
     );
 }
 
-fn copy_bundle(source: &Path, target: &Path) {
-    std::fs::create_dir(target).unwrap();
-    for entry in std::fs::read_dir(source).unwrap() {
-        let entry = entry.unwrap();
-        let target = target.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            copy_bundle(&entry.path(), &target);
-        } else {
-            std::fs::copy(entry.path(), target).unwrap();
-        }
-    }
-}
-
 #[test]
 fn unread_position_survives_deleting_the_marked_record() {
-    let f = Fixture::with_anchor_fixture(true);
+    let f = Fixture::new();
     let id = f.add();
     let append =
         |body| json!({"changes":[{"op":"append record","item":id,"record":{"body":body}}]});
@@ -349,4 +306,18 @@ fn named_query_sorts_pages_and_sees_a_coded_rename() {
         f.shell("s.read", json!({"item":one}))["fields"]["title"],
         "Renamed"
     );
+}
+
+#[test]
+fn code_dispatch_requires_an_isolated_runtime() {
+    let f = Fixture::new();
+    let error = f
+        .call(
+            f.owner.into(),
+            "calternal-chat.chats.send",
+            json!({"chat":f.add(),"text":"Hello"}),
+            Some("coded"),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Unavailable);
 }
