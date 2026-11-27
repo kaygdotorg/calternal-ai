@@ -658,6 +658,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "calternal-format"
+version = "0.1.0"
+dependencies = [
+ "semver",
+ "unicode-general-category 0.6.0",
+ "unicode-normalization",
+ "unicode-security",
+]
+
+[[package]]
 name = "calternal-fsio"
 version = "0.1.0"
 dependencies = [
