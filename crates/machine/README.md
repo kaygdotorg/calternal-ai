@@ -107,6 +107,13 @@ leased space and generation before starting the package in the existing
 worker sandbox. Revoking the session or losing the short space-channel
 lease tears down that placement. [Protocol and verification](../../docs/reviews/space-channel-2026-11-19.md).
 
+## Harness isolation
+
+Podman harness assignments mount only the selected provider profile and disable
+network access with `--network=none`. The run log can still stream through the
+machine control channel. Direct provider egress remains disabled until the host's
+mediated proxy is proven; fake-provider tests do not need network access.
+
 With `--space-vm-config PATH`, the item-head carrier uses an offline 256 MiB,
 two-vCPU Firecracker guest. Use the digest-pinned image assembled by
 `deploy/microvm/build-image.sh` with the Node runtime. The guest stages package

@@ -3,6 +3,7 @@
 //! - Base image by reference (`docker.io/library/alpine:3` or a digest); the image
 //!   must already be present or pullable by the machine user.
 //! - The container's private overlay is disposable. The /work and home bind mounts persist.
+//! - Harness containers use `--network=none` until mediated provider egress is proven.
 //! - `<root>/accounts/<account-id>/threads/<thread-id>/work` is bind-mounted at `/work` and is the working directory.
 //! - Limits map to `--memory`, `--cpus` and `--pids-limit`; defaults are 1 GiB and
 //!   256 processes, the configuration measured on perf-01.
@@ -326,7 +327,7 @@ impl PodmanBackend {
                         login_env.into(),
                     ]);
                     if harness.is_some() && !self.guest {
-                        args.push("--pull=never".into());
+                        args.extend(["--network=none".into(), "--pull=never".into()]);
                     }
                     if spec.provider_login {
                         args.extend(["--env".into(), "CALTERNAL_PROVIDER_LOGIN=1".into()]);
@@ -375,7 +376,7 @@ impl PodmanBackend {
                     args.retain(|arg| arg != "--pull=never");
                     if spec.worker.is_none() {
                         args.extend([
-                            if self.guest_network {
+                            if harness.is_none() && self.guest_network {
                                 "--network=slirp4netns:allow_host_loopback=false"
                             } else {
                                 "--network=none"
