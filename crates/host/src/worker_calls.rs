@@ -347,7 +347,13 @@ impl Host {
                 }
                 "s.declarations" | "s.query" | "s.read" | "s.write" | "s.state" | "s.me"
                 | "s.space" | "index.rebuild" => tokio::task::spawn_blocking(move || {
-                    self.call_scoped(actor, space, call, chain.session.as_ref())
+                    self.call_scoped(
+                        actor,
+                        space,
+                        call,
+                        chain.session.as_ref(),
+                        chain.run.as_ref(),
+                    )
                 })
                 .await
                 .map_err(internal)?,
@@ -369,13 +375,15 @@ impl Host {
         let host = self.clone();
         let who = actor.clone();
         let caller_grant = chain.selection.take();
-        let scope = chain.run.map(|grant| grant.item);
+        let run = chain.run;
+        let scope = run.map(|grant| grant.item);
         let ancestry = chain.plugins.clone();
         let session = chain.session.clone();
         let (invocation, endpoint, key, input, selection) =
             tokio::task::spawn_blocking(move || {
                 host.with_space(&who, space, |storage| {
                     let _admission = host.admit_session_blocking(session.as_ref())?;
+                    storage.runs.admit(run.as_ref())?;
                     let invocation = storage.invocation(&who, &call.call, &call.input)?;
                     if scope.is_some() && scope != invocation.item {
                         return Err(Error::forbidden(

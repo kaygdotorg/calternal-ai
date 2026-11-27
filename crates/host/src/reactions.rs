@@ -108,9 +108,11 @@ impl Host {
         let who = actor.clone();
         let ancestry = chain.plugins.clone();
         let session = chain.session.clone();
+        let run = chain.run;
         let (result, batch) = tokio::task::spawn_blocking(move || {
             host.with_space_slot(&who, space, |storage, slot| {
                 let _admission = host.admit_session_blocking(session.as_ref())?;
+                storage.runs.admit(run.as_ref())?;
                 let (result, disposition, batch) =
                     storage.observe_write(&who, call, &ancestry, slot)?;
                 if !preview && disposition == Disposition::Committed {

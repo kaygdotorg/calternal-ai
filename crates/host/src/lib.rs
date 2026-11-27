@@ -208,7 +208,7 @@ impl Host {
                 "A run requires a host-owned session scope.",
             ));
         }
-        self.call_scoped(actor, id, call, None)
+        self.call_scoped(actor, id, call, None, None)
     }
 
     fn call_scoped(
@@ -217,6 +217,7 @@ impl Host {
         id: SpaceId,
         call: Call,
         session: Option<&Session>,
+        run: Option<&runs::RunScopeGrant>,
     ) -> Result<Value> {
         if call.slot_selection.is_some() {
             return Err(Error::forbidden(
@@ -232,6 +233,7 @@ impl Host {
         };
         self.with_space(&actor, id, |space| {
             let _admission = self.admit_session_blocking(session)?;
+            space.runs.admit(run)?;
             let output = space.call(&actor, call)?;
             if let Some(recipient) = recipient {
                 space.live.notify(recipient);

@@ -214,17 +214,21 @@ async fn dispatch(
     let plugin = crate::identity(&run.actor).0;
     let mut chain = Chain::default();
     chain.run = Some(run.grant);
-    host.clone()
-        .dispatch(
-            Actor::run(run.actor.account, plugin, id),
-            space,
-            Call {
-                call,
-                input,
-                idempotency_key: Some(format!("run:{id}:{key}")),
-                slot_selection: None,
-            },
-            chain,
-        )
-        .await
+    run.admit_callback()?;
+    let dispatch = host.clone().dispatch(
+        Actor::run(run.actor.account, plugin, id),
+        space,
+        Call {
+            call,
+            input,
+            idempotency_key: Some(format!("run:{id}:{key}")),
+            slot_selection: None,
+        },
+        chain,
+    );
+    tokio::select! {
+        biased;
+        _ = run.wait_cancelled() => Err(Error::not_found("Run has stopped.")),
+        result = dispatch => result,
+    }
 }

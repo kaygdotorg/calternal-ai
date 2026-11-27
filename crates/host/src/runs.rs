@@ -2,6 +2,10 @@
 mod log;
 mod output;
 
+#[cfg(test)]
+#[path = "runs/tests.rs"]
+mod publication_tests;
+
 use crate::{Call, Host, decode, internal, space::Receipt};
 use calternal_machine::{
     run_service::{
@@ -20,7 +24,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tokio::sync::{Mutex as AsyncMutex, Notify, broadcast};
+use tokio::sync::{Mutex as AsyncMutex, broadcast, watch};
 use uuid::Uuid;
 
 const MAX_RUNS_PER_SPACE: usize = 32;
@@ -42,10 +46,18 @@ impl Runs {
             .ok_or_else(|| Error::not_found("Run was not found."))
     }
 
+    // This runs under the same per-space lock as Stop and persistent writes.
+    pub(crate) fn admit(&self, grant: Option<&RunScopeGrant>) -> Result<()> {
+        if let Some(grant) = grant {
+            self.find(grant.id)?.admit_callback()?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn cancel_target(&self, item: Uuid) {
         for run in &self.entries {
             if run.grant.item == item && !run.stopped.load(Ordering::Acquire) {
-                run.cancel.notify_one();
+                run.cancelled.send_replace(true);
             }
         }
     }
@@ -72,7 +84,7 @@ struct Run {
     grant: RunScopeGrant,
     actor: Actor,
     target_kind: String,
-    cancel: Arc<Notify>,
+    cancelled: watch::Sender<bool>,
     log: Log,
     notify: broadcast::Sender<()>,
     stopped: AtomicBool,
@@ -80,6 +92,21 @@ struct Run {
 }
 
 impl Run {
+    fn admit_callback(&self) -> Result<()> {
+        if *self.cancelled.borrow() || self.stopped.load(Ordering::Acquire) {
+            return Err(Error::not_found("Run has stopped."));
+        }
+        Ok(())
+    }
+
+    async fn wait_cancelled(&self) {
+        let _ = self
+            .cancelled
+            .subscribe()
+            .wait_for(|cancelled| *cancelled)
+            .await;
+    }
+
     fn publish(&self, event: RunEvent) {
         self.log.publish(event);
         let _ = self.notify.send(());
@@ -332,7 +359,7 @@ impl Host {
             grant: RunScopeGrant { id, space, item },
             actor: actor.clone(),
             target_kind,
-            cancel: Arc::default(),
+            cancelled: watch::channel(false).0,
             log: Log::default(),
             notify,
             stopped: AtomicBool::new(false),
@@ -366,15 +393,15 @@ impl Host {
             return Err(error);
         }
         let mut exit = handle.exit.clone();
-        let cancel = Arc::clone(&run.cancel);
+        let cancel = Arc::clone(&run);
         tokio::spawn(async move {
             tokio::select! {
                 _ = exit.changed() => {}
-                _ = cancel.notified() => {
+                _ = cancel.wait_cancelled() => {
                     if let Err(error) = service.terminate(id).await
                         && !matches!(error, RunError::NotActive)
                     {
-                        eprintln!("calternal-host: retired target run {id} termination: {error}");
+                        eprintln!("calternal-host: cancelled run {id} termination: {error}");
                     }
                 }
             }
@@ -416,9 +443,7 @@ impl Host {
                 Err(Error::request_reused())
             };
         }
-        if run.stopped.load(Ordering::Acquire) {
-            return Err(Error::not_found("Run has stopped."));
-        }
+        run.admit_callback()?;
         if key.is_some() && sends.len() >= MAX_SEND_RECEIPTS {
             return Err(Error::unavailable("This run has too many input receipts."));
         }
@@ -432,6 +457,7 @@ impl Host {
             ));
         }
         let _admission = self.admit_session(installation.as_ref()).await?;
+        run.admit_callback()?;
         self.run_service()?
             .send_input(input.id, &run.actor, bytes)
             .await
@@ -450,14 +476,16 @@ impl Host {
         installation: Option<crate::Session>,
     ) -> Result<Value> {
         let input: StopInput = decode(input)?;
+        let host = self.clone();
         let run = self
             .run_storage(actor.clone(), space, move |storage| {
                 let run = storage.runs.find(input.id)?;
                 storage.permits(&actor, &run.target_kind, false)?;
+                let _admission = host.admit_session_blocking(installation.as_ref())?;
+                run.cancelled.send_replace(true);
                 Ok(Arc::clone(run))
             })
             .await?;
-        let _admission = self.admit_session(installation.as_ref()).await?;
         if !run.stopped.load(Ordering::Acquire) {
             match self.run_service()?.terminate(run.grant.id).await {
                 Ok(()) | Err(RunError::NotActive) => run.stopped.store(true, Ordering::Release),
