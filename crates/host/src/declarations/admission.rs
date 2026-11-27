@@ -5,10 +5,18 @@ use calternal_types::{Error, Result};
 
 pub(super) fn check(plugin: &Plugin) -> Result<()> {
     let manifest = &plugin.manifest;
+    if !manifest.refusals.is_empty() {
+        return Err(Error::forbidden(
+            "This host cannot enforce plugin refusal rules.",
+        ));
+    }
+    if !manifest.extensions.is_empty() {
+        return Err(Error::forbidden(
+            "This host cannot apply plugin extensions.",
+        ));
+    }
     for directive in &manifest.directives {
         let reason = match directive.key.as_str() {
-            "extends" => "This host cannot apply plugin extensions.",
-            "refuses" => "This host cannot enforce plugin refusal rules.",
             "outside" => "This host cannot grant outside access requested by the plugin.",
             "notifications" => "This host cannot deliver plugin notifications.",
             "sign-ins" | "secrets" => "This host cannot supply sign-ins or secrets to the plugin.",
@@ -45,6 +53,11 @@ pub(super) fn check(plugin: &Plugin) -> Result<()> {
     }
 
     for kind in plugin.kinds.values() {
+        if !kind.protected.is_empty() {
+            return Err(Error::forbidden(
+                "This host cannot enforce protected fields declared by a kind.",
+            ));
+        }
         if kind.rights.change.is_some() || !kind.rights.read.is_empty() {
             return Err(Error::forbidden(
                 "This host cannot enforce kind-specific read or change rights.",
@@ -231,4 +244,52 @@ fn unsupported_lookup() -> Error {
     Error::forbidden(
         "This host cannot evaluate a formula that needs other rows, settings or a selected item.",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::parse_plugin;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn install_refuses_typed_declarations_the_host_cannot_apply() {
+        let plugin = |id, block| {
+            format!(
+                "---\nplugin: {id}\nname: Test {id}\nformat: 1\nversion: 1.0.0\n{block}---\nTest.\n"
+            )
+            .into_bytes()
+        };
+        let kind = |block| {
+            format!(
+                "---\nkind: messages\nname: Message\nformat: 1\nfolder: Messages\neditable: operations\nfields:\n  title: text, required\noperations:\n  add\n{block}---\nMessages.\n"
+            )
+            .into_bytes()
+        };
+        let base = BTreeMap::from([
+            ("plugin.md".into(), plugin("base", "")),
+            ("kinds/messages.md".into(), kind("")),
+        ]);
+        let installed = [parse_plugin(&base, false, None, &[]).unwrap()];
+        for (block, expected) in [
+            (
+                "refuses:\n  [base.messages.add]:\n    yes, \"Choose a different message\"\n",
+                "This host cannot enforce plugin refusal rules.",
+            ),
+            (
+                "extends:\n  [base.messages]:\n    fields:\n      flag: yes/no\n",
+                "This host cannot apply plugin extensions.",
+            ),
+        ] {
+            let entry = BTreeMap::from([("plugin.md".into(), plugin("extra", block))]);
+            let result = parse_plugin(&entry, false, None, &installed);
+            assert_eq!(result.err().unwrap().message, expected);
+        }
+        let mut protected = base;
+        protected.insert("kinds/messages.md".into(), kind("protected: title\n"));
+        let result = parse_plugin(&protected, false, None, &[]);
+        assert_eq!(
+            result.err().unwrap().message,
+            "This host cannot enforce protected fields declared by a kind."
+        );
+    }
 }
