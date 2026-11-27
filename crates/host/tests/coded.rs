@@ -447,6 +447,27 @@ async fn chat_can_call_only_the_operation_of_the_selected_slot_filler() {
         true,
     );
     f.install(selected.path().to_owned()).await.unwrap();
+    let catalog = f
+        .call(f.owner.into(), "s.declarations", json!({}), None)
+        .await
+        .unwrap();
+    let plugins = catalog["plugins"].as_array().unwrap();
+    let chat_plugin = plugins
+        .iter()
+        .find(|plugin| plugin["id"] == "calternal-chat")
+        .unwrap();
+    let provider = plugins
+        .iter()
+        .find(|plugin| plugin["id"] == "selected-harness")
+        .unwrap();
+    assert_eq!(
+        chat_plugin["slots"]["harness"]["fillers"][0]["label"],
+        "Test harness"
+    );
+    assert_eq!(
+        provider["fills"]["calternal-chat:harness"]["label"],
+        "Test harness"
+    );
     let neighbor = tempfile::tempdir().unwrap();
     harness_bundle(neighbor.path(), "neighbor", "Neighbor", false);
     f.install(neighbor.path().to_owned()).await.unwrap();

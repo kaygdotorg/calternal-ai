@@ -11,11 +11,13 @@ mod formulas;
 mod install;
 mod kind;
 mod manifest;
+mod places;
 mod secondary;
 
-pub use collection::{Collection, ShareSource, Sort, Source, Total};
-pub use kind::{Editability, ItemForm, Kind, Rights};
-pub use manifest::{Manifest, Program, Refusal, Slot};
+pub use collection::{Collection, CollectionView, ShareSource, Sort, Source, Total};
+pub use kind::{Editability, ItemForm, Kind, PageEntry, Rights};
+pub use manifest::{Manifest, Program, Refusal};
+pub use places::{ComposerBindings, Fill, FillBinding, Slot};
 pub use secondary::{AgentRule, AgentRules, Sidebar, SidebarEntry, parse_agent_rules};
 
 /// One supplied entry in a plugin folder.
@@ -222,6 +224,11 @@ pub(super) fn text(
         )));
     }
     Ok(value)
+}
+
+fn icon(value: &str, site: Site) -> Result<String, Diagnostic> {
+    lines::id(value, site)?;
+    Ok(value.into())
 }
 
 pub(super) fn name(value: &str, site: Site) -> Result<String, Diagnostic> {

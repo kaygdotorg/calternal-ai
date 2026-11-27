@@ -47,6 +47,15 @@ pub struct Total {
     pub field: Option<String>,
 }
 
+/// One collection view, with column expressions retained as whole source strings.
+#[derive(Clone, Debug)]
+pub struct CollectionView {
+    /// The declared view name, including the chart style where present.
+    pub kind: String,
+    /// Ordered view arguments, split only at top-level commas.
+    pub columns: Vec<String>,
+}
+
 /// A compiled collection declaration.
 #[derive(Clone, Debug)]
 pub struct Collection {
@@ -54,6 +63,8 @@ pub struct Collection {
     pub id: String,
     /// The display title.
     pub title: String,
+    /// Optional catalogue icon token for this collection.
+    pub icon: Option<String>,
     /// Declared sources to authorize and load.
     pub sources: Vec<Source>,
     /// Whether to skip the source kind's default filter.
@@ -76,6 +87,8 @@ pub struct Collection {
     pub drop: Option<Directive>,
     /// Ordered view declarations, default first.
     pub views: Vec<Directive>,
+    /// Checked view arguments for presentation, in the same order as views.
+    pub compiled_views: Vec<CollectionView>,
     /// Hand-added items kept as Markdown lines.
     pub body: String,
     pub(crate) computed: Vec<String>,
@@ -92,6 +105,7 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Collection, Diagnostic> {
     let mut result = Collection {
         id: id.into(),
         title: String::new(),
+        icon: None,
         sources: Vec::new(),
         ignoring_default: false,
         share_source: ShareSource::default(),
@@ -103,6 +117,7 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Collection, Diagnostic> {
         expand_repeat: false,
         drop: None,
         views: Vec::new(),
+        compiled_views: Vec::new(),
         body: document.body.into(),
         computed: Vec::new(),
         site: entries[0].site,
@@ -118,6 +133,7 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Collection, Diagnostic> {
             "collection" => matching_id(entry, id)?,
             "title" => result.title = name(value, site)?,
             "format" => format(value, site)?,
+            "icon" => result.icon = Some(super::icon(value, site)?),
             "from" => sources(value, site, &mut result)?,
             "where" => result.condition = Some(entry.expression(value)?),
             "group" => result.group = Some(entry.expression(value)?),
@@ -127,6 +143,9 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Collection, Diagnostic> {
             "fields" => {
                 entry.block()?;
                 result.fields = kind::fields(entry.children, entry.line.depth + 1, key)?;
+                if let Some(site) = result.fields.values().find_map(|field| field.badge) {
+                    return Err(site.error("Declare the badge on a kind's row field"));
+                }
                 result.computed = kind::computed_order(&result.fields)?;
                 for field in result.fields.values_mut() {
                     field.viewer_dependent = field.expression.is_some();
@@ -154,6 +173,7 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Collection, Diagnostic> {
                             | "map"
                             | "folders"
                             | "compact"
+                            | "strip"
                     ) {
                         return Err(view
                             .line
@@ -163,14 +183,29 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Collection, Diagnostic> {
                     if view.value.is_empty() {
                         return Err(view.site.error("Give the view its columns or fields"));
                     }
+                    let columns = view.line.parts(view.value)?;
                     if matches!(
                         view.key,
-                        "list" | "table" | "board" | "compact" | "gallery" | "map" | "folders"
+                        "list"
+                            | "table"
+                            | "board"
+                            | "compact"
+                            | "strip"
+                            | "gallery"
+                            | "map"
+                            | "folders"
                     ) {
-                        for (value, _) in lines::parts(view.value, view.site)? {
+                        for &(value, _) in &columns {
                             view.expression(value)?;
                         }
                     }
+                    result.compiled_views.push(CollectionView {
+                        kind: view.key.into(),
+                        columns: columns
+                            .into_iter()
+                            .map(|(value, _)| value.to_owned())
+                            .collect(),
+                    });
                     result.views.push(view.directive()?);
                 }
                 if result.views.is_empty() {
@@ -223,8 +258,10 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Collection, Diagnostic> {
             .error("Write each hand-added item as a Markdown list link"));
         }
     }
-    if result.views.iter().any(|view| view.key == "folders") && result.sources != [Source::Files] {
-        return Err(result.site.error("The folders view requires from: files"));
+    if result.sources != [Source::Files]
+        && let Some(view) = result.views.iter().find(|view| view.key == "folders")
+    {
+        return Err(view.site.error("The folders view requires from: files"));
     }
     Ok(result)
 }

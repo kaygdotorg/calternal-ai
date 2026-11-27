@@ -1,3 +1,4 @@
+use super::places::{self, Fill, FillBinding, Slot};
 use super::{
     Directive, InstallOptions, PluginFile, definition, format, kind, list, name, path, required,
     sections, text,
@@ -17,22 +18,6 @@ pub struct Program {
     pub path: Option<String>,
     /// True when the bind names an image instead of an executable.
     pub image: bool,
-    pub(crate) site: Site,
-}
-
-/// A place declared by a plugin, with its typed input schema reference.
-#[derive(Clone, Debug)]
-pub struct Slot {
-    /// Whether the person or space can choose several fillers.
-    pub multiple: bool,
-    /// Human-facing explanation of the data a filler receives.
-    pub gives: String,
-    /// Whether the space chooses the filler.
-    pub picked_by_space: bool,
-    /// A suggested filler plugin.
-    pub recommended: Option<String>,
-    /// An operation in this plugin declaring the input schema for the slot.
-    pub input_operation: Option<String>,
     pub(crate) site: Site,
 }
 
@@ -71,6 +56,8 @@ pub struct Manifest {
     pub settings: BTreeMap<String, Field>,
     /// Declared places keyed by their plugin-local slot ID.
     pub slots: BTreeMap<String, Slot>,
+    /// Checked fillers in declaration order.
+    pub fills: Vec<Fill>,
     /// Qualified refusal rules in source order.
     pub refusals: Vec<Refusal>,
     /// Other declaration lines in file order, used by host install and clients.
@@ -84,19 +71,16 @@ impl Manifest {
     /// slot. Missing, ambiguous and non-operation fills grant nothing. This
     /// reads the checked declaration in memory and performs no I/O.
     pub fn operation_fill(&self, owner: &str, slot: &str) -> Option<&str> {
-        let key = format!("{owner}:{slot}");
-        let mut fills = self
-            .directives
-            .iter()
-            .filter(|section| section.key == "fills")
-            .flat_map(|section| &section.children)
-            .filter(|fill| fill.key == key);
+        let mut fills = self.fills.iter().filter(|fill| {
+            fill.slot
+                .as_ref()
+                .is_some_and(|(plugin, name)| plugin == owner && name == slot)
+        });
         let fill = fills.next()?;
-        if fills.next().is_some() {
-            return None;
+        match &fill.binding {
+            FillBinding::Operation(target) if fills.next().is_none() => Some(target),
+            _ => None,
         }
-        let parts = lines::parts(&fill.value, fill.site).ok()?;
-        parts.first()?.0.strip_prefix("operation ")
     }
 
     pub(super) fn is_description_only(&self) -> bool {
@@ -136,6 +120,7 @@ pub(super) fn parse(
         programs: BTreeMap::new(),
         settings: BTreeMap::new(),
         slots: BTreeMap::new(),
+        fills: Vec::new(),
         refusals: Vec::new(),
         directives: Vec::new(),
         body,
@@ -259,65 +244,9 @@ pub(super) fn parse(
                 for place in sections(entry.children, entry.line.depth + 1)? {
                     place.alone()?;
                     if entry.key == "slots" {
-                        lines::id(place.key, place.line.site)?;
-                        let parts = list(place.value, place.site)?;
-                        if parts.len() < 3
-                            || !matches!(parts[0].as_str(), "single" | "many")
-                            || !parts[1].starts_with("gives ")
-                            || !matches!(parts[2].as_str(), "picked by person" | "picked by space")
-                        {
-                            return Err(place.site.error(
-                                "Declare slot cardinality, what it gives, and who picks it",
-                            ));
-                        }
-                        let mut slot = Slot {
-                            multiple: parts[0] == "many",
-                            gives: text(&parts[1][6..], place.site, 120, false)?,
-                            picked_by_space: parts[2] == "picked by space",
-                            recommended: None,
-                            input_operation: None,
-                            site: place.site,
-                        };
-                        for part in &parts[3..] {
-                            if let Some(id) = part
-                                .strip_prefix("recommended ")
-                                .filter(|_| slot.recommended.is_none())
-                            {
-                                lines::id(id, place.site)?;
-                                slot.recommended = Some(id.into());
-                            } else if let Some(operation) = part
-                                .strip_prefix("inputs ")
-                                .filter(|_| slot.input_operation.is_none())
-                            {
-                                let name = operation
-                                    .split_once('.')
-                                    .map_or(operation, |(_, name)| name);
-                                lines::operation_name(name, place.site)?;
-                                slot.input_operation = Some(operation.into());
-                            } else {
-                                return Err(place.site.error(
-                                    "Use one recommended plugin and one inputs operation per slot",
-                                ));
-                            }
-                        }
-                        result.slots.insert(place.key.into(), slot);
-                    } else if let Some(frame) = place.value.strip_prefix("frame ") {
-                        let binding = lines::parts(frame, place.site)?
-                            .first()
-                            .map_or("", |(name, _)| *name);
-                        path(binding, place.site)?;
-                        if !binding.starts_with("frames/") {
-                            return Err(place
-                                .site
-                                .error("A frame must be inside the frames folder"));
-                        }
-                    } else if !place.value.starts_with("operation ")
-                        && !place.value.starts_with("collection ")
-                        && !(place.key == "receive" && place.value.contains(" -> operation "))
-                    {
-                        return Err(place
-                            .site
-                            .error("Fill the place with a frame, operation or collection"));
+                        result.slots.insert(place.key.into(), places::slot(&place)?);
+                    } else {
+                        result.fills.push(places::fill(&place)?);
                     }
                 }
                 result.directives.push(entry.directive()?);

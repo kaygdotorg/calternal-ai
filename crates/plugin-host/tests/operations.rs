@@ -324,7 +324,7 @@ async fn upstream_chat_send_replay_rename_and_error() {
             },
         )
     };
-    let send = json!({"chat":item,"text":"First message"});
+    let send = json!({"item":item,"text":"First message"});
     let first = invoke("chats.send", "send-event", send.clone())
         .await
         .unwrap();
@@ -336,7 +336,7 @@ async fn upstream_chat_send_replay_rename_and_error() {
     let conflict = invoke(
         "chats.send",
         "send-event",
-        json!({"chat":item,"text":"Different"}),
+        json!({"item":item,"text":"Different"}),
     )
     .await
     .unwrap_err();
@@ -344,11 +344,11 @@ async fn upstream_chat_send_replay_rename_and_error() {
     invoke(
         "chats.rename",
         "rename-event",
-        json!({"chat":item,"title":"New title"}),
+        json!({"item":item,"title":"New title"}),
     )
     .await
     .unwrap();
-    let invalid = invoke("chats.send", "empty-event", json!({"chat":item,"text":" "}))
+    let invalid = invoke("chats.send", "empty-event", json!({"item":item,"text":" "}))
         .await
         .unwrap_err();
     assert_eq!(Code::from_error(&invalid), Code::Invalid);
@@ -383,12 +383,15 @@ async fn send_and_start_replay_reuses_write_and_run_receipts() {
     );
     let mock = Arc::new(Mutex::new(Mock::default()));
     let runs = Arc::new(Mutex::new(std::collections::HashMap::new()));
+    let run_inputs = Arc::new(Mutex::new(Vec::new()));
     for _ in 0..2 {
         let (harness, mock, runs) = (harness.clone(), mock.clone(), runs.clone());
+        let run_inputs = run_inputs.clone();
         let response = chat.invoke(delivery(space, actor, EventKind::Call, "send-with-harness", "gesture", item, json!({
             "chat":item,"draft":"Start here","harness":"calternal-chat-claude-code.runs.start"
         })), move |call| {
             let (harness, mock, runs) = (harness.clone(), mock.clone(), runs.clone());
+            let run_inputs = run_inputs.clone();
             async move {
                 match call.method {
                     Method::Write => mock.lock().unwrap().route(item, call),
@@ -403,7 +406,15 @@ async fn send_and_start_replay_reuses_write_and_run_receipts() {
                         event.event.request = Some("gesture".into());
                         harness.invoke(event, move |run| {
                             let runs = runs.clone();
+                            let run_inputs = run_inputs.clone();
                             async move {
+                                if run.method == Method::RunSend {
+                                    assert_eq!(run.input, json!({
+                                        "id":"test-run","input":"[Message](<Chats/Conversation/chat.md#^first-record>)"
+                                    }));
+                                    run_inputs.lock().unwrap().push(run.input);
+                                    return Ok(Value::Null);
+                                }
                                 assert_eq!(run.method, Method::Run);
                                 assert_eq!(run.input, json!({
                                     "program":"calternal-provider-claude-code","scope":"session","targets":[item]
@@ -424,6 +435,7 @@ async fn send_and_start_replay_reuses_write_and_run_receipts() {
     }
     assert_eq!(mock.lock().unwrap().records.len(), 1);
     assert_eq!(runs.lock().unwrap().len(), 1);
+    assert_eq!(run_inputs.lock().unwrap().len(), 2);
 }
 
 #[tokio::test]

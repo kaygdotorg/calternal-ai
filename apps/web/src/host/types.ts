@@ -24,6 +24,8 @@ export interface FieldDecl {
   default?: unknown;
   computed?: boolean;
   formula?: string;
+  /** Whether a row can present this numeric field as a badge. */
+  badge?: boolean;
 }
 
 /** Placement hints on a kind operation (`swipe`, `menu`, `primary`). */
@@ -73,16 +75,25 @@ export interface KindDecl {
   operations: Record<string, OperationDecl>;
 }
 
+/** Installed collection view with ordered column expressions or view arguments. */
+export interface CollectionViewDecl {
+  type: "list" | "table" | "board" | "gallery" | "calendar" | "timeline"
+    | "chart" | "chart bar" | "chart line" | "map" | "folders" | "compact" | "strip";
+  columns: string[];
+}
+
 /** Parsed collection declaration (`collections/<id>.md`). */
 export interface CollectionDecl {
   id: string;
   qualified: string;
   plugin: string;
   title: string;
+  /** Default icon token for links to this collection. */
+  icon?: string | null;
   from: string;
   where?: string;
   sort: string[];
-  views: { type: string; columns: string[] }[];
+  views: CollectionViewDecl[];
 }
 
 /** One entry in a sidebar file (`sidebars/<id>.md`). */
@@ -90,6 +101,8 @@ export interface SidebarEntryDecl {
   type: "collection" | "section";
   title: string;
   collection?: string;
+  /** Icon token declared on this link, which takes precedence over the collection icon. */
+  icon?: string | null;
 }
 
 /** Parsed sidebar declaration (`sidebars/<id>.md`). */
@@ -100,6 +113,16 @@ export interface SidebarDecl {
   entries: SidebarEntryDecl[];
 }
 
+/** Input names from the slot operation's checked schema. */
+export interface ComposerBindingsDecl {
+  /** Text input in the operation schema. */
+  text: string;
+  /** Optional state key on the target kind, without the state prefix. */
+  draft: string | null;
+  /** Optional record-link input in the operation schema. */
+  quote: string | null;
+}
+
 /** Slot declaration from `plugin.md`. */
 export interface SlotDecl {
   name: string;
@@ -108,6 +131,10 @@ export interface SlotDecl {
   recommended: string | null;
   pickedBy: "space" | "person";
   inputOperation: string | null;
+  /** Display label declared by the slot owner. */
+  label?: string | null;
+  /** Checked bindings used to compose text and optional draft and quote values. */
+  composer?: ComposerBindingsDecl | null;
   fillers: (Omit<FillDecl, "slot"> & { plugin: string })[];
 }
 
@@ -116,6 +143,8 @@ export interface FillDecl {
   slot: string;
   kind: "operation" | "frame" | "collection";
   target: string;
+  /** Declared label or the supplying plugin's display name. */
+  label?: string;
 }
 
 /** Parsed plugin declaration bundle returned by the host. */

@@ -25,6 +25,10 @@ pub struct SidebarEntry {
     pub title: Option<String>,
     /// Referenced collection, when this entry opens one.
     pub collection: Option<String>,
+    /// The local collection ID and optional owning plugin, as resolved from link syntax.
+    pub collection_ref: Option<(String, Option<String>)>,
+    /// Optional catalogue icon token on this entry, before collection fallback.
+    pub icon: Option<String>,
     pub(crate) site: Site,
 }
 
@@ -48,6 +52,8 @@ pub(super) fn sidebar(source: &str, id: &str) -> Result<Sidebar, Diagnostic> {
     }
     for (source, site) in body_lines(document.body, document.body_site)? {
         let line = &source[2..];
+        let mut icon = None;
+        let mut collection_ref = None;
         let (collection, title) = if let Some(title) = line.strip_prefix("section: ") {
             super::text(title, site, 40, false)?;
             (None, Some(title.to_owned()))
@@ -69,6 +75,7 @@ pub(super) fn sidebar(source: &str, id: &str) -> Result<Sidebar, Diagnostic> {
                     parse::parse(where_clause, site)?;
                 }
             }
+            collection_ref = Some((target.into(), None));
             (Some(target.into()), None)
         } else {
             let (title, target) = line
@@ -78,9 +85,16 @@ pub(super) fn sidebar(source: &str, id: &str) -> Result<Sidebar, Diagnostic> {
                     site.error("Write a section, folders, each, or a collection link")
                 })?;
             super::text(title, site, 40, false)?;
-            let target = target
-                .strip_suffix(')')
+            let (target, suffix) = target
+                .split_once(')')
                 .ok_or_else(|| site.error("Close the sidebar link with )"))?;
+            let suffix_site = site.after(&source[..source.len() - suffix.len()]);
+            if !suffix.is_empty() {
+                let token = suffix.strip_prefix(", icon: ").ok_or_else(|| {
+                    suffix_site.error("Follow a collection link only with , icon: <token>")
+                })?;
+                icon = Some(super::icon(token, suffix_site.after(", icon: "))?);
+            }
             let target = target
                 .strip_prefix('<')
                 .and_then(|target| target.strip_suffix('>'))
@@ -90,9 +104,11 @@ pub(super) fn sidebar(source: &str, id: &str) -> Result<Sidebar, Diagnostic> {
                 .and_then(|path| path.strip_suffix(".md"))
             {
                 lines::id(local, site)?;
+                collection_ref = Some((local.into(), None));
                 (Some(local.into()), Some(title.to_owned()))
             } else {
-                collection_ref(target, site)?;
+                let (owner, id) = collection_reference(target, site)?;
+                collection_ref = Some((id.into(), Some(owner.into())));
                 (Some(target.into()), Some(title.to_owned()))
             }
         };
@@ -100,6 +116,8 @@ pub(super) fn sidebar(source: &str, id: &str) -> Result<Sidebar, Diagnostic> {
             source: source.into(),
             title,
             collection,
+            collection_ref,
+            icon,
             site,
         });
     }
@@ -176,7 +194,7 @@ pub fn parse_agent_rules(source: &str) -> Result<AgentRules, Diagnostic> {
             if let Some(folder) = location.strip_suffix('/') {
                 path(folder, site)?
             } else {
-                collection_ref(location, site)?
+                collection_reference(location, site)?;
             }
         }
         if let Some(host) = target.strip_prefix("fetch ") {
@@ -225,12 +243,13 @@ fn body_lines(body: &str, start: Site) -> Result<Vec<(&str, Site)>, Diagnostic> 
     Ok(result)
 }
 
-fn collection_ref(target: &str, site: Site) -> Result<(), Diagnostic> {
+fn collection_reference(target: &str, site: Site) -> Result<(&str, &str), Diagnostic> {
     let (plugin, collection) = target.split_once(":collections/").ok_or_else(|| {
         site.error("Name a collection as plugin:collections/id or a folder ending in /")
     })?;
     lines::id(plugin, site)?;
-    lines::id(collection, site)
+    lines::id(collection, site)?;
+    Ok((plugin, collection))
 }
 
 fn clause<'a>(source: &'a str, separator: &str) -> (&'a str, Option<&'a str>) {

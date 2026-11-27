@@ -2,7 +2,9 @@
 
 use super::as_json;
 use crate::space::Space;
-use calternal_format::{self as format, Field, FieldType, OperationForm, Source};
+use calternal_format::{
+    self as format, Field, FieldType, FillBinding, OperationForm, PageEntry, Source,
+};
 use calternal_types::Actor;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -19,25 +21,40 @@ pub(crate) fn describe(space: &Space, actor: &Actor) -> Value {
                 Some((key.clone(), kind_json(id, &qualified, kind)))
             })
             .collect();
-        let collections: Map<_, _> = plugin.collections.iter().filter_map(|(key, collection)| {
-            let [Source::Kind(from)] = collection.sources.as_slice() else { return None };
-            let from = qualify(id, from);
-            if collection.share_source == format::ShareSource::Shared {
-                return None;
-            }
-            space.permits(actor, &from, false).ok()?;
-            let views = collection.views.iter().map(|view| {
-                json!({"type":view.key,"columns":view.value.split(',').map(str::trim).filter(|name| !name.is_empty()).collect::<Vec<_>>()})
-            }).collect::<Vec<_>>();
-            let sort = collection.sort.iter().map(|sort| {
-                let direction = if sort.descending { " desc" } else { "" };
-                format!("{}{direction}", sort.field)
-            }).collect::<Vec<_>>();
-            Some((key.clone(), json!({
-                "id":key,"qualified":qualify(id,key),"plugin":id,"title":collection.title,
-                "from":from,"sort":sort,"views":views
-            })))
-        }).collect();
+        let collections: Map<_, _> = plugin
+            .collections
+            .iter()
+            .filter_map(|(key, collection)| {
+                let [Source::Kind(from)] = collection.sources.as_slice() else {
+                    return None;
+                };
+                let from = qualify(id, from);
+                if collection.share_source == format::ShareSource::Shared {
+                    return None;
+                }
+                space.permits(actor, &from, false).ok()?;
+                let views = collection
+                    .compiled_views
+                    .iter()
+                    .map(|view| json!({"type":view.kind,"columns":view.columns}))
+                    .collect::<Vec<_>>();
+                let sort = collection
+                    .sort
+                    .iter()
+                    .map(|sort| {
+                        let direction = if sort.descending { " desc" } else { "" };
+                        format!("{}{direction}", sort.field)
+                    })
+                    .collect::<Vec<_>>();
+                Some((
+                    key.clone(),
+                    json!({
+                        "id":key,"qualified":qualify(id,key),"plugin":id,"title":collection.title,
+                        "from":from,"sort":sort,"views":views,"icon":collection.icon
+                    }),
+                ))
+            })
+            .collect();
         // Only the person's shell or the owning plugin can see plugin surface
         // details beyond visible kind schemas and collections.
         let shell = actor.via.is_none() || crate::identity(actor).0 == id;
@@ -56,85 +73,102 @@ pub(crate) fn describe(space: &Space, actor: &Actor) -> Value {
             continue;
         }
         let plugin = &space.plugins[*id];
-        let sidebars: Map<_, _> =
-            plugin
-                .sidebars
-                .iter()
-                .map(|(key, sidebar)| {
-                    let entries = sidebar.entries.iter().filter_map(|entry| {
-                if let Some(collection) = &entry.collection {
-                    let qualified = qualify(id, collection);
-                    let (owner, _) = qualified.split_once('.')?;
-                    let collection = space.collection(&qualified).ok()?;
-                    let [Source::Kind(from)] = collection.sources.as_slice() else { return None };
-                    if collection.share_source == format::ShareSource::Shared
-                        || space.permits(actor, &qualify(owner, from), false).is_err() {
-                        return None;
-                    }
-                    let title = entry.title.as_deref().unwrap_or(&collection.title);
-                    Some(json!({"type":"collection","title":title,"collection":qualified}))
-                } else {
-                    entry.title.as_ref().map(|title| json!({"type":"section","title":title}))
-                }
-            }).collect::<Vec<_>>();
-                    (
-                        key.clone(),
-                        json!({"id":key,"plugin":id,"title":sidebar.title,"entries":entries}),
-                    )
-                })
-                .collect();
+        let sidebars: Map<_, _> = plugin
+            .sidebars
+            .iter()
+            .map(|(key, sidebar)| {
+                let entries = sidebar
+                    .entries
+                    .iter()
+                    .filter_map(|entry| sidebar_entry(space, actor, id, entry))
+                    .collect::<Vec<_>>();
+                (
+                    key.clone(),
+                    json!({"id":key,"plugin":id,"title":sidebar.title,"entries":entries}),
+                )
+            })
+            .collect();
         view["sidebars"] = Value::Object(sidebars);
         view["slots"] = Value::Object(plugin.manifest.slots.iter().map(|(key, slot)| {
             let cardinality = if slot.multiple { "many" } else { "single" };
             let slot_id = format!("{id}:{key}");
             let fillers = space.plugins.iter().filter_map(|(provider, bundle)| {
-                let fill = fills(&bundle.manifest).find(|(name, _)| *name == slot_id)?;
-                let value = fill_json(space, actor, provider, fill)?;
-                Some(json!({"plugin":provider,"kind":value["kind"],"target":value["target"]}))
+                let fill = bundle.manifest.fills.iter().find(|fill| fill.place == slot_id)?;
+                let (kind, target) = visible_fill(space, actor, provider, fill)?;
+                let label = fill.label.as_deref().unwrap_or(&bundle.manifest.name);
+                Some(json!({"plugin":provider,"kind":kind,"target":target,"label":label}))
             }).collect::<Vec<_>>();
+            let composer = slot.composer.as_ref().map(|binding| json!({
+                "text":binding.text,"draft":binding.draft,"quote":binding.quote
+            }));
             (key.clone(), json!({
                 "name":key,"cardinality":cardinality,"gives":slot.gives,"pickedBy":if slot.picked_by_space {"space"} else {"person"},
-                "recommended":slot.recommended,"inputOperation":slot.input_operation,"fillers":fillers
+                "recommended":slot.recommended,"inputOperation":slot.input_operation,"fillers":fillers,
+                "label":slot.label,"composer":composer
             }))
         }).collect());
         view["fills"] = Value::Object(
-            fills(&plugin.manifest)
-                .filter_map(|fill| Some((fill.0.to_owned(), fill_json(space, actor, id, fill)?)))
+            plugin
+                .manifest
+                .fills
+                .iter()
+                .filter_map(|fill| {
+                    let (kind, target) = visible_fill(space, actor, id, fill)?;
+                    let label = fill.label.as_deref().unwrap_or(&plugin.manifest.name);
+                    Some((
+                        fill.place.clone(),
+                        json!({
+                            "slot":fill.place,"kind":kind,"target":target,"label":label
+                        }),
+                    ))
+                })
                 .collect(),
         );
     }
     json!({"space":space.id,"plugins":plugins.into_values().collect::<Vec<_>>()})
 }
 
-fn fills(manifest: &format::Manifest) -> impl Iterator<Item = (&str, &str)> {
-    manifest
-        .directives
-        .iter()
-        .filter(|section| section.key == "fills")
-        .flat_map(|section| &section.children)
-        .map(|fill| (fill.key.as_str(), fill.value.as_str()))
-}
-
-fn fill_json(
+fn sidebar_entry(
     space: &Space,
     actor: &Actor,
     plugin: &str,
-    (slot, value): (&str, &str),
+    entry: &format::SidebarEntry,
 ) -> Option<Value> {
-    let (owner, key) = slot.split_once(':')?;
-    space.plugins.get(owner)?.manifest.slots.get(key)?;
-    // Slot admission checks the original compiled declaration. This projection
-    // carries only the validated binding and leaves caller-specific grants to the host.
-    let target = match value.split_once(' ')? {
-        ("operation", _) => space.plugins[plugin].manifest.operation_fill(owner, key)?,
-        ("frame" | "collection", target) => target.split(',').next()?.trim(),
-        _ => return None,
+    let Some((collection, owner)) = &entry.collection_ref else {
+        let title = entry.title.as_ref()?;
+        return Some(json!({"type":"section","title":title}));
     };
-    let (form, _) = value.split_once(' ')?;
-    if actor.via.is_some() && crate::identity(actor).0 != plugin {
+    let owner = owner.as_deref().unwrap_or(plugin);
+    let qualified = qualify(owner, collection);
+    let collection = space.plugins.get(owner)?.collections.get(collection)?;
+    let [Source::Kind(from)] = collection.sources.as_slice() else {
+        return None;
+    };
+    if collection.share_source == format::ShareSource::Shared {
         return None;
     }
-    Some(json!({"slot":slot,"kind":form,"target":target}))
+    space.permits(actor, &qualify(owner, from), false).ok()?;
+    let title = entry.title.as_deref().unwrap_or(&collection.title);
+    Some(json!({"type":"collection","title":title,"collection":qualified,"icon":entry.icon}))
+}
+
+fn visible_fill<'a>(
+    space: &Space,
+    actor: &Actor,
+    provider: &str,
+    fill: &'a format::Fill,
+) -> Option<(&'static str, &'a str)> {
+    if actor.via.is_some() && crate::identity(actor).0 != provider {
+        return None;
+    }
+    let (owner, key) = fill.slot.as_ref()?;
+    space.plugins.get(owner)?.manifest.slots.get(key)?;
+    Some(match &fill.binding {
+        FillBinding::Operation(target) => ("operation", target),
+        FillBinding::Frame(target) => ("frame", target),
+        FillBinding::Collection(target) => ("collection", target),
+        FillBinding::Receive { .. } => return None,
+    })
 }
 
 fn qualify(plugin: &str, key: &str) -> String {
@@ -146,15 +180,17 @@ fn qualify(plugin: &str, key: &str) -> String {
 }
 
 fn kind_json(plugin: &str, qualified: &str, kind: &format::Kind) -> Value {
-    let page = kind.page.iter().map(|entry| {
-        if let Some(fields) = entry.strip_prefix("records(").and_then(|fields| fields.strip_suffix(')')) {
-            return json!({"kind":"records","recordFields":fields.split(',').map(str::trim).collect::<Vec<_>>()});
-        }
-        match entry.as_str() {
-            "body" | "properties" | "records" => json!({"kind":entry}),
-            _ => json!({"kind":"field","name":entry}),
-        }
-    }).collect::<Vec<_>>();
+    let page = kind
+        .compiled_page
+        .iter()
+        .map(|entry| match entry {
+            PageEntry::Body => json!({"kind":"body"}),
+            PageEntry::Properties => json!({"kind":"properties"}),
+            PageEntry::Records(None) => json!({"kind":"records"}),
+            PageEntry::Records(Some(fields)) => json!({"kind":"records","recordFields":fields}),
+            PageEntry::Field(name) => json!({"kind":"field","name":name}),
+        })
+        .collect::<Vec<_>>();
     json!({
         "id":kind.id,"qualified":qualified,"plugin":plugin,"name":kind.name,"folder":kind.folder,
         "editable":if kind.editable == format::Editability::Outside {"outside"} else {"operations"},
@@ -170,6 +206,7 @@ fn fields_json(fields: &BTreeMap<String, Field>) -> Map<String, Value> {
             "type":field.field_type.as_ref().map(field_type).unwrap_or_else(|| "computed".into()),
             "required":field.required,
             "computed":field.expression.is_some(),
+            "badge":field.is_badge(),
         });
         if let Some(default) = field.default.as_ref().and_then(constant) {
             view["default"] = default;

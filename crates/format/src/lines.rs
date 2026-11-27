@@ -43,6 +43,11 @@ impl Line {
         site.after(&self.text[start..offset])
     }
 
+    pub fn parts<'a>(&'a self, value: &'a str) -> Result<Vec<(&'a str, Site)>, Diagnostic> {
+        let start = value.as_ptr() as usize - self.text.as_ptr() as usize;
+        parts_at(value, |offset| self.site_at(start + offset))
+    }
+
     pub fn entry(&self) -> Result<Option<(&str, &str, Site)>, Diagnostic> {
         let scan = scan(&self.text, |offset| self.site_at(offset))?;
         let text = self.text[..scan.end].trim_end();
@@ -228,13 +233,18 @@ fn scan(text: &str, site_at: impl Fn(usize) -> Site) -> Result<Scan, Diagnostic>
 }
 
 pub(crate) fn parts(text: &str, site: Site) -> Result<Vec<(&str, Site)>, Diagnostic> {
-    let text = text.trim_end();
+    parts_at(text, |offset| site.after(&text[..offset]))
+}
+
+fn parts_at(source: &str, site: impl Fn(usize) -> Site) -> Result<Vec<(&str, Site)>, Diagnostic> {
+    let text = source.trim_end();
     let text = text
         .strip_prefix('[')
         .and_then(|inside| inside.strip_suffix(']'))
-        .filter(|inside| scan(inside, |_| site).is_ok())
+        .filter(|inside| scan(inside, |_| site(0)).is_ok())
         .unwrap_or(text);
-    let scan = scan(text, |offset| site.after(&text[..offset]))?;
+    let offset = text.as_ptr() as usize - source.as_ptr() as usize;
+    let scan = scan(text, |position| site(offset + position))?;
     let text = text[..scan.end].trim_end();
     if text.is_empty() {
         return Ok(Vec::new());
@@ -244,13 +254,14 @@ pub(crate) fn parts(text: &str, site: Site) -> Result<Vec<(&str, Site)>, Diagnos
         .into_iter()
         .chain(std::iter::once(text.len()))
         .map(|end| {
-            let part = text[start..end].trim();
-            let position = site.after(&text[..start]);
+            let part = text.get(start..end).unwrap_or_default();
+            let trimmed = part.trim_start();
+            let position = site(offset + start + part.len() - trimmed.len());
             start = end + 2;
-            if part.is_empty() {
+            if trimmed.trim_end().is_empty() {
                 Err(position.error("Write a value between commas"))
             } else {
-                Ok((part, position))
+                Ok((trimmed.trim_end(), position))
             }
         })
         .collect()
@@ -514,7 +525,7 @@ mod appendix {
 
     #[test]
     fn appendix_a_choices_and_durations() {
-        let field = crate::field::declaration("choice(did not happen)", Site::START).unwrap();
+        let field = crate::field::test_declaration("choice(did not happen)", Site::START).unwrap();
         assert_eq!(
             field.field_type,
             Some(crate::FieldType::Choice(vec!["did not happen".into()]))
@@ -547,7 +558,7 @@ mod appendix {
         }
         assert!(crate::dates::duration("6m").is_none());
         let diagnostic =
-            crate::field::declaration("duration, default 2m", Site { line: 6, column: 4 })
+            crate::field::test_declaration("duration, default 2m", Site { line: 6, column: 4 })
                 .unwrap_err();
         assert_eq!(diagnostic.line, 6);
         assert!(diagnostic.message.contains("2min"));
