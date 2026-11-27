@@ -76,9 +76,9 @@ impl Host {
         &self.live
     }
 
-    /// Resolve a bearer session token to its account ID and display name.
-    pub async fn identify_session(&self, bearer: &str) -> Option<(AccountId, String)> {
-        self.auth.identify(bearer).await
+    /// Resolve a bearer session token to its account ID.
+    pub async fn identify_session(&self, bearer: &str) -> Option<AccountId> {
+        self.auth.identify(bearer).await.map(|(account, _)| account)
     }
 
     /// Enable an operator-controlled launcher for new coded installations.

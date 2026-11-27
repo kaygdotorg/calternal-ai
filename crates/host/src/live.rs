@@ -277,7 +277,7 @@ async fn authenticate(
             _ => return None,
         },
     };
-    let Some((account, _)) = host.identify_session(&token).await else {
+    let Some(account) = host.identify_session(&token).await else {
         let _ = send_error(
             socket,
             None,

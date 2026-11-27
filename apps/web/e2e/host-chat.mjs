@@ -111,6 +111,8 @@ async function main() {
     await pageB.goto(baseUrl);
     await pageB.fill('input[name="name"]', "Ada");
     await pageB.click('button[type="submit"]');
+    await pageB.waitForSelector('nav[aria-label="Chat"]');
+    await pageB.click('nav[aria-label="Chat"] button:has-text("Chats")');
     await pageB.waitForSelector('button:has-text("Release prep v2")');
     await pageB.click('button:has-text("Release prep v2")');
     await pageB.waitForSelector('[data-record-anchor]:has-text("First message from Ada")');
@@ -141,12 +143,17 @@ async function main() {
     console.log("PASS test 2: two-context live append and reconnect-from-anchor ordering");
 
     // --- Screenshots (desktop 1280 & phone 390, light & dark) ---
+    await pageA.click('nav[aria-label="Chat"] button:has-text("Chats")');
     await pageA.click('button:has-text("Dependency audit")');
     await pageA.waitForSelector('[data-record-anchor]:has-text("Morning!")');
+    await pageA.fill('textarea[aria-label="Write"]', "On it — summary ready for the release notes.");
+    await pageA.click('button[aria-label="Send"]');
+    await pageA.waitForSelector('[data-record-anchor]:has-text("On it — summary ready")');
+    await pageA.waitForTimeout(350);
     await pageA.screenshot({ path: path.join(SHOT_DIR, "desktop-1280-light.png") });
 
     await pageA.click('button[aria-label="Switch to dark mode"]');
-    await pageA.waitForTimeout(250);
+    await pageA.waitForTimeout(350);
     await pageA.screenshot({ path: path.join(SHOT_DIR, "desktop-1280-dark.png") });
 
     const ctxPhone = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -154,13 +161,16 @@ async function main() {
     await pagePhone.goto(`${baseUrl}&scheme=light`);
     await pagePhone.fill('input[name="name"]', "Ada");
     await pagePhone.click('button[type="submit"]');
+    await pagePhone.click('button[aria-label="Show sidebar"]');
+    await pagePhone.click('nav[aria-label="Chat"] button:has-text("Chats")');
     await pagePhone.waitForSelector('button:has-text("Dependency audit")');
     await pagePhone.click('button:has-text("Dependency audit")');
-    await pagePhone.waitForSelector('[data-record-anchor]:has-text("Morning!")');
+    await pagePhone.waitForSelector('[data-record-anchor]:has-text("On it — summary ready")');
+    await pagePhone.waitForTimeout(350);
     await pagePhone.screenshot({ path: path.join(SHOT_DIR, "phone-390-light.png") });
 
     await pagePhone.click('button[aria-label="Switch to dark mode"]');
-    await pagePhone.waitForTimeout(250);
+    await pagePhone.waitForTimeout(350);
     await pagePhone.screenshot({ path: path.join(SHOT_DIR, "phone-390-dark.png") });
 
     await ctxA.close();

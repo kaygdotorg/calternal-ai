@@ -238,10 +238,13 @@
   .mid {
     flex: 1;
     min-width: 0;
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     gap: 2px;
   }
   .title {
+    width: 100%;
     font-size: var(--text-ui);
     font-weight: var(--strong-weight);
     color: var(--ink);
@@ -250,6 +253,7 @@
     white-space: nowrap;
   }
   .sub {
+    width: 100%;
     font-size: var(--text-label);
     color: var(--ink-3);
     overflow: hidden;

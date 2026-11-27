@@ -26,9 +26,9 @@
     accountName: string;
   } = $props();
 
-  function entryIcon(entry: SidebarEntryDecl): "star" | "list" | "folder" | "archive" {
+  function entryIcon(entry: SidebarEntryDecl): "spark" | "list" | "folder" | "archive" {
     const id = entry.collection?.split(".")[1] ?? "";
-    if (id.includes("pin")) return "star";
+    if (id.includes("pin")) return "spark";
     if (id.includes("arch")) return "archive";
     return "list";
   }

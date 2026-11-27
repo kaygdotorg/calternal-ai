@@ -33,17 +33,18 @@ function parseFrontmatter(text) {
   for (const rawLine of m[1].split(/\r?\n/)) {
     if (!rawLine.trim()) continue;
     if (/^\s{2,}/.test(rawLine) && currentBlock) {
-      const idx = rawLine.indexOf(":");
+      const idx = rawLine.indexOf(": ");
       if (idx === -1) {
-        blocks[currentBlock].push({ key: rawLine.trim(), value: "" });
+        blocks[currentBlock].push({ key: rawLine.trim().replace(/:$/, ""), value: "" });
       } else {
         blocks[currentBlock].push({
           key: rawLine.slice(0, idx).trim(),
-          value: rawLine.slice(idx + 1).trim(),
+          value: rawLine.slice(idx + 2).trim(),
         });
       }
     } else {
-      const idx = rawLine.indexOf(":");
+      const colonSpace = rawLine.indexOf(": ");
+      const idx = colonSpace !== -1 ? colonSpace : rawLine.indexOf(":");
       if (idx === -1) continue;
       const key = rawLine.slice(0, idx).trim();
       const value = rawLine.slice(idx + 1).trim();

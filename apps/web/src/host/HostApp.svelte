@@ -11,7 +11,7 @@
    * - Nothing in this file or its children names any specific plugin or kind.
    */
   import { onDestroy, onMount } from "svelte";
-  import { applyScheme, currentScheme, Icon, Menu, type MenuItem } from "@calternal/ui";
+  import { applyScheme, currentScheme, Icon, ICONS, Menu, type IconName, type MenuItem } from "@calternal/ui";
   import Backdrop from "../shell/Backdrop.svelte";
   import {
     fetchDeclarations,
@@ -546,7 +546,7 @@
             aria-current={activePlugin?.id === p.id ? "page" : undefined}
             onclick={() => (activePluginId = p.id)}
           >
-            <Icon name={(p.icon || "apps") as never} inline />
+            <Icon name={(p.icon in ICONS ? p.icon : "apps") as IconName} inline />
             <span class="strip-lbl">{p.name}</span>
           </button>
         {/each}
