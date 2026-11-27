@@ -43,7 +43,8 @@ Grouped collections return per-row group keys and group totals over all
 matched rows, before pagination. The catalogue supplies field types,
 collection views, operations and declared presentation metadata. Formula
 reads use the current UTC date. Resident spaces invalidate live projections
-on the first maintenance sweep after the UTC date changes.
+on their first successful maintenance sweep after the UTC date changes.
+A busy space can defer invalidation until its next successful sweep.
 
 ## Coded plugins on the personal-space host
 
