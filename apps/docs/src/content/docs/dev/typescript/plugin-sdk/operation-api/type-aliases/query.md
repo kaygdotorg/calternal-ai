@@ -14,15 +14,15 @@ title: "plugin-sdk: operation-api/type-aliases/Query"
 
 # Type Alias: Query
 
-> **Query** = \{ `cursor?`: `string`; `fields?`: readonly `string`[]; `from`: `string`; `group?`: `string`; `limit?`: `number`; `sort?`: readonly `string`[]; `totals?`: readonly `string`[]; `where?`: `string`; \} \| \{ `collection`: `string`; `cursor?`: `string`; `limit?`: `number`; \}
+> **Query** = \{ `cursor?`: `string`; `from`: `string`; `limit?`: `number`; `sort?`: readonly `string`[]; `where?`: `string`; \} \| \{ `collection`: `string`; `cursor?`: `string`; `limit?`: `number`; \}
 
-A kind query or a stored collection query.
+A kind query or a stored collection query accepted by the standalone host.
 
 ## Union Members
 
 ### Type Literal
 
-\{ `cursor?`: `string`; `fields?`: readonly `string`[]; `from`: `string`; `group?`: `string`; `limit?`: `number`; `sort?`: readonly `string`[]; `totals?`: readonly `string`[]; `where?`: `string`; \}
+\{ `cursor?`: `string`; `from`: `string`; `limit?`: `number`; `sort?`: readonly `string`[]; `where?`: `string`; \}
 
 #### cursor?
 
@@ -30,23 +30,11 @@ A kind query or a stored collection query.
 
 Opaque cursor from the previous page.
 
-#### fields?
-
-> `optional` **fields?**: readonly `string`[]
-
-Field projection.
-
 #### from
 
 > **from**: `string`
 
 Qualified kind name.
-
-#### group?
-
-> `optional` **group?**: `string`
-
-Grouping field.
 
 #### limit?
 
@@ -58,13 +46,7 @@ Page size up to 200.
 
 > `optional` **sort?**: readonly `string`[]
 
-Ordered sort expressions.
-
-#### totals?
-
-> `optional` **totals?**: readonly `string`[]
-
-Requested aggregation expressions.
+Ordered sort expressions, up to eight for an ad hoc query.
 
 #### where?
 

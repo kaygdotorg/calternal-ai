@@ -43,6 +43,35 @@ function fields(lines, spaces) {
   }
   return new Map(declarations);
 }
+const fieldDocs = {
+  from: "Qualified kind name.",
+  collection: "Qualified collection name.",
+  filter: "Formula predicate evaluated by the host.",
+  sort: "Ordered sort expressions, up to eight for an ad hoc query.",
+  cursor: "Opaque cursor from the previous page.",
+  limit: "Page size up to 200.",
+  kind: "Qualified kind in which to create the item.",
+  item: "UUID of the item addressed by the change.",
+  fields: "Declared field values to store.",
+  body: "Markdown body to store.",
+  base: "Required current version for a conditional change.",
+  record: "Unstamped record fields and body.",
+  anchor: "Anchor in the item's record stream.",
+};
+const changeDocs = {
+  add: "Create an item with initial values.",
+  change: "Update fields or Markdown.",
+  remove: "Remove an item.",
+  "append record": "Append one record and let the host stamp it.",
+  "change record": "Change the record identified by its anchor.",
+  "remove record": "Remove the record identified by its anchor.",
+};
+function documented(description, declaration, indent) {
+  if (!description) throw Error(`Missing wire documentation for ${declaration}`);
+  return `${indent}/** ${description} */\n${indent}${declaration}`;
+}
+const fieldLine = (name, declaration, indent) => documented(fieldDocs[name], declaration + ";", indent);
+
 const variants = [];
 let variantAttrs = "";
 let active;
@@ -55,7 +84,7 @@ for (const line of body(write, "enum Change").split("\n")) {
     active = { name: variantAttrs.match(/rename = "([^"]+)"/)?.[1] ?? name.toLowerCase(), lines: [] };
     variantAttrs = "";
   } else if (line === "    },") {
-    variants.push([active.name, [...fields(active.lines.join("\n"), 8).values()].join("; ")]);
+    variants.push([active.name, fields(active.lines.join("\n"), 8)]);
     active = undefined;
   } else if (active) {
     active.lines.push(line);
@@ -66,33 +95,49 @@ for (const line of body(write, "enum Change").split("\n")) {
 
 const methods = [];
 let wireName;
+let methodDoc = [];
 for (const line of body(wire, "pub enum Method").split("\n")) {
-  if (!line.trim() || line.trimStart().startsWith("//")) continue;
+  if (!line.trim()) continue;
+  const doc = line.trim().match(/^\/\/\/ (.+)$/)?.[1];
+  if (doc) { methodDoc.push(doc); continue; }
   const rename = /^    #\[serde\(rename = "([^"]+)"\)\]$/.exec(line);
   if (rename) { wireName = rename[1]; continue; }
   const variant = /^    (\w+),$/.exec(line)?.[1];
   if (!variant || !wireName) throw Error(`Unsupported callback method declaration ${line}`);
-  methods.push(`  ${variant[0].toLowerCase()}${variant.slice(1)}: ${JSON.stringify(wireName)},`);
+  const declaration = `${variant[0].toLowerCase()}${variant.slice(1)}: ${JSON.stringify(wireName)},`;
+  methods.push(documented(methodDoc.join(" "), declaration, "  "));
   wireName = undefined;
+  methodDoc = [];
 }
 
 const queryFields = fields(body(query, "pub(crate) struct Query"), 4);
 const queryShape = (required, omitted) => [...queryFields]
   .filter(([name]) => !omitted.includes(name))
-  .map(([name, declaration]) => name === required ? declaration.replace("?:", ":") : declaration)
-  .join("; ");
+  .map(([name, declaration]) => fieldLine(
+    name, name === required ? declaration.replace("?:", ":") : declaration, "      ",
+  ))
+  .join("\n");
 
-const generated = `// Generated from host serde declarations by generate-operation-types.mjs.
-import type { Fields, ItemId, RecordBody } from "./operation-api.js";
+const changeShape = ([name, args]) => [
+  "  | {",
+  documented(changeDocs[name], `${JSON.stringify(name)}: {`, "      "),
+  ...[...args].map(([name, declaration]) => fieldLine(name, declaration, "        ")),
+  "      };",
+  "    }",
+].join("\n");
 
-/** A kind query or a stored collection query accepted by the standalone host. */
+const generated = `/** A kind query or a stored collection query accepted by the standalone host. */
 export type Query =
-  | { ${queryShape("from", ["collection"])} }
-  | { ${queryShape("collection", ["from", "filter", "sort"])} };
+  | {
+${queryShape("from", ["collection"])}
+    }
+  | {
+${queryShape("collection", ["from", "filter", "sort"])}
+    };
 
 /** Changes supported by the host's atomic write route. */
 export type Change =
-${variants.map(([name, args]) => `  | { ${JSON.stringify(name)}: { ${args} } }`).join("\n")};
+${variants.map(changeShape).join("\n")};
 
 /** Change discriminants accepted by the host. */
 export const operationChanges = ${JSON.stringify(variants.map(([name]) => name))} as const;
@@ -105,4 +150,12 @@ ${methods.join("\n")}
 /** One callback wire name. */
 export type OperationMethod = typeof operationMethods[keyof typeof operationMethods];
 `;
-await writeFile(new URL("../src/operation-contract.generated.ts", import.meta.url), generated);
+const contract = new URL("../src/operation-api.ts", import.meta.url);
+const api = await readFile(contract, "utf8");
+const start = "// BEGIN HOST OPERATION CONTRACT\n";
+const end = "// END HOST OPERATION CONTRACT";
+const from = api.indexOf(start);
+const to = api.indexOf(end);
+if (from < 0 || to <= from) throw Error("Missing host operation contract markers");
+const updated = api.slice(0, from + start.length) + generated + api.slice(to);
+if (updated !== api) await writeFile(contract, updated);

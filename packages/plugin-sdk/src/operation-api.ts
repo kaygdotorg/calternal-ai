@@ -1,7 +1,118 @@
 /** Author-facing coded operations for the primitives-only plugin host. @module */
 
-import type { Change, Query } from "./operation-contract.generated.js";
-export type { Change, OperationMethod, Query } from "./operation-contract.generated.js";
+// BEGIN HOST OPERATION CONTRACT
+/** A kind query or a stored collection query accepted by the standalone host. */
+export type Query =
+  | {
+      /** Qualified kind name. */
+      "from": string;
+      /** Formula predicate evaluated by the host. */
+      "where"?: string;
+      /** Ordered sort expressions, up to eight for an ad hoc query. */
+      "sort"?: readonly string[];
+      /** Opaque cursor from the previous page. */
+      "cursor"?: string;
+      /** Page size up to 200. */
+      "limit"?: number;
+    }
+  | {
+      /** Qualified collection name. */
+      "collection": string;
+      /** Opaque cursor from the previous page. */
+      "cursor"?: string;
+      /** Page size up to 200. */
+      "limit"?: number;
+    };
+
+/** Changes supported by the host's atomic write route. */
+export type Change =
+  | {
+      /** Create an item with initial values. */
+      "add": {
+        /** Qualified kind in which to create the item. */
+        "kind": string;
+        /** Declared field values to store. */
+        "fields"?: Fields;
+        /** Markdown body to store. */
+        "body"?: string;
+      };
+    }
+  | {
+      /** Update fields or Markdown. */
+      "change": {
+        /** UUID of the item addressed by the change. */
+        "item": ItemId;
+        /** Declared field values to store. */
+        "fields"?: Fields;
+        /** Markdown body to store. */
+        "body"?: string;
+        /** Required current version for a conditional change. */
+        "base"?: number;
+      };
+    }
+  | {
+      /** Remove an item. */
+      "remove": {
+        /** UUID of the item addressed by the change. */
+        "item": ItemId;
+      };
+    }
+  | {
+      /** Append one record and let the host stamp it. */
+      "append record": {
+        /** UUID of the item addressed by the change. */
+        "item": ItemId;
+        /** Unstamped record fields and body. */
+        "record": RecordBody;
+      };
+    }
+  | {
+      /** Change the record identified by its anchor. */
+      "change record": {
+        /** UUID of the item addressed by the change. */
+        "item": ItemId;
+        /** Anchor in the item's record stream. */
+        "anchor": string;
+        /** Unstamped record fields and body. */
+        "record": RecordBody;
+      };
+    }
+  | {
+      /** Remove the record identified by its anchor. */
+      "remove record": {
+        /** UUID of the item addressed by the change. */
+        "item": ItemId;
+        /** Anchor in the item's record stream. */
+        "anchor": string;
+      };
+    };
+
+/** Change discriminants accepted by the host. */
+export const operationChanges = ["add","change","remove","append record","change record","remove record"] as const;
+
+/** Callback wire names accepted by the host. */
+export const operationMethods = {
+  /** Query rows through the host. */
+  query: "s.query",
+  /** Read an item through the host. */
+  read: "s.read",
+  /** Commit or preview an ordered list atomically through the host. */
+  write: "s.write",
+  /** Get or set viewer state through the host. */
+  state: "s.state",
+  /** Invoke a declared operation through the host. */
+  call: "s.call",
+  /** Start a run through the host. */
+  run: "s.run",
+  /** Send input to a run through the host. */
+  runSend: "s.run.send",
+  /** Stop a run through the host. */
+  runStop: "s.run.stop",
+} as const;
+
+/** One callback wire name. */
+export type OperationMethod = typeof operationMethods[keyof typeof operationMethods];
+// END HOST OPERATION CONTRACT
 
 /** Host-assigned item UUID. */
 export type ItemId = string;

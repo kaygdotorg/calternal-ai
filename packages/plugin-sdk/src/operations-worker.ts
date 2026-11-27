@@ -3,9 +3,10 @@ import { Console } from "node:console";
 import { isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { newlineFrames } from "./newline-frames.js";
-import { operationCodes, type Change, type Operation, type OperationFailure, type OperationsContext } from "./operation-api.js";
-
-import { operationChanges, operationMethods, type OperationMethod } from "./operation-contract.generated.js";
+import {
+  operationChanges, operationCodes, operationMethods,
+  type Change, type Operation, type OperationFailure, type OperationMethod, type OperationsContext,
+} from "./operation-api.js";
 
 const maximum = 64 * 1024 * 1024;
 type Input = Record<string, unknown>;

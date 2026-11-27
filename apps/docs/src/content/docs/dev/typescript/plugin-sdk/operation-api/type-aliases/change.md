@@ -14,15 +14,15 @@ title: "plugin-sdk: operation-api/type-aliases/Change"
 
 # Type Alias: Change
 
-> **Change** = \{ `add`: \{ `body?`: `string`; `fields`: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/); `kind`: `string`; \}; \} \| \{ `change`: \{ `base?`: `number`; `body?`: `string`; `fields?`: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/); `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \} \| \{ `remove`: \{ `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \} \| \{ `move`: \{ `file?`: `string`; `folder?`: `string`; `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \} \| \{ `append record`: \{ `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); `record`: [`RecordBody`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/recordbody/); \}; \} \| \{ `change record`: \{ `anchor`: `string`; `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); `record`: [`RecordBody`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/recordbody/); \}; \} \| \{ `remove record`: \{ `anchor`: `string`; `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \}
+> **Change** = \{ `add`: \{ `body?`: `string`; `fields?`: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/); `kind`: `string`; \}; \} \| \{ `change`: \{ `base?`: `number`; `body?`: `string`; `fields?`: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/); `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \} \| \{ `remove`: \{ `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \} \| \{ `append record`: \{ `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); `record`: [`RecordBody`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/recordbody/); \}; \} \| \{ `change record`: \{ `anchor`: `string`; `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); `record`: [`RecordBody`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/recordbody/); \}; \} \| \{ `remove record`: \{ `anchor`: `string`; `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \}
 
-One write in the atomic change list. Each entry names exactly one change.
+Changes supported by the host's atomic write route.
 
 ## Union Members
 
 ### Type Literal
 
-\{ `add`: \{ `body?`: `string`; `fields`: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/); `kind`: `string`; \}; \}
+\{ `add`: \{ `body?`: `string`; `fields?`: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/); `kind`: `string`; \}; \}
 
 #### add
 
@@ -36,19 +36,19 @@ Create an item with initial values.
 
 > `optional` **body?**: `string`
 
-Initial Markdown body.
+Markdown body to store.
 
-##### add.fields
+##### add.fields?
 
-> **fields**: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/)
+> `optional` **fields?**: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/)
 
-Initial declared field values.
+Declared field values to store.
 
 ##### add.kind
 
 > **kind**: `string`
 
-Kind in which the item belongs.
+Qualified kind in which to create the item.
 
 ***
 
@@ -68,25 +68,25 @@ Update fields or Markdown.
 
 > `optional` **base?**: `number`
 
-Required current version for a conditional update.
+Required current version for a conditional change.
 
 ##### change.body?
 
 > `optional` **body?**: `string`
 
-Replacement Markdown body.
+Markdown body to store.
 
 ##### change.fields?
 
 > `optional` **fields?**: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/)
 
-New values for the named fields.
+Declared field values to store.
 
 ##### change.item
 
 > **item**: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/)
 
-Item to update.
+UUID of the item addressed by the change.
 
 ***
 
@@ -106,39 +106,7 @@ Remove an item.
 
 > **item**: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/)
 
-Item to remove.
-
-***
-
-### Type Literal
-
-\{ `move`: \{ `file?`: `string`; `folder?`: `string`; `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \}
-
-#### move
-
-> **move**: `object`
-
-Move an item within its kind.
-
-##### Type Declaration
-
-##### move.file?
-
-> `optional` **file?**: `string`
-
-Destination filename within the kind.
-
-##### move.folder?
-
-> `optional` **folder?**: `string`
-
-Destination subfolder within the kind.
-
-##### move.item
-
-> **item**: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/)
-
-Item to move.
+UUID of the item addressed by the change.
 
 ***
 
@@ -158,7 +126,7 @@ Append one record and let the host stamp it.
 
 > **item**: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/)
 
-Item whose record stream receives the append.
+UUID of the item addressed by the change.
 
 ##### append record.record
 
@@ -190,13 +158,13 @@ Anchor in the item's record stream.
 
 > **item**: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/)
 
-Item holding the record.
+UUID of the item addressed by the change.
 
 ##### change record.record
 
 > **record**: [`RecordBody`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/recordbody/)
 
-Updated declared fields and body.
+Unstamped record fields and body.
 
 ***
 
@@ -222,4 +190,4 @@ Anchor in the item's record stream.
 
 > **item**: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/)
 
-Item holding the record.
+UUID of the item addressed by the change.

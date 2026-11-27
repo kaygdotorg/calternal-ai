@@ -33,7 +33,7 @@ Host calls and context available while handling one event.
 
 > **call**(`operation`, `input`): `Promise`\<`unknown`\>
 
-Invoke another plugin's listed operation through the same authority check.
+Invoke a declared operation using its plugin.kind.operation identifier.
 
 #### Parameters
 
@@ -88,7 +88,8 @@ Read one item through the host.
 
 > **run**(`program`, `options`): `Promise`\<[`RunHandle`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/runhandle/)\>
 
-Start a declared program with a host-checked scope and targets.
+Start a declared program in the current session. The host needs an
+operator-configured run service to admit the program.
 
 #### Parameters
 
