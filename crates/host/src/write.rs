@@ -3,7 +3,7 @@ mod declared;
 
 use crate::declarations::{Fields, Kind, OperationForm, apply_fields, write_item};
 use crate::records::{self, Record};
-use crate::space::{Head, ITEM_BYTES, Row, Space};
+use crate::space::{Head, ITEM_BYTES, Receipt, Row, Space};
 use crate::{WRITE_BYTES, identity, internal, result};
 use calternal_fsio::names;
 use calternal_types::{Actor, Error, ErrorCode, Result};
@@ -74,12 +74,47 @@ struct Working {
     retired: bool,
 }
 
-pub(crate) fn write(
-    space: &mut Space,
+/// Whether storage published new content, replayed a receipt, or computed a preview.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Disposition {
+    Committed,
+    Replayed,
+    Previewed,
+}
+
+/// The store's write output and the decision used to publish invalidations.
+pub(crate) struct Written {
+    pub(crate) value: Value,
+    pub(crate) disposition: Disposition,
+}
+
+/// A decoded write and its once-checked receipt, used under the space lock.
+pub(crate) struct PreparedWrite {
+    input: Write,
+    identity: String,
+    pub(crate) receipt: Option<Receipt>,
+}
+
+impl PreparedWrite {
+    pub(crate) fn targets(&self) -> impl Iterator<Item = Uuid> + '_ {
+        self.input.changes.iter().filter_map(|change| match change {
+            Change::Add { .. } => None,
+            Change::Update { item, .. }
+            | Change::Perform { item, .. }
+            | Change::Remove { item }
+            | Change::Append { item, .. }
+            | Change::Edit { item, .. }
+            | Change::Redact { item, .. } => Some(*item),
+        })
+    }
+}
+
+pub(crate) fn prepare(
+    space: &Space,
     actor: &Actor,
     input: Write,
     key: Option<String>,
-) -> Result<Value> {
+) -> Result<PreparedWrite> {
     if input.changes.is_empty() || input.changes.len() > 1_000 {
         return Err(Error::invalid_input(
             "A write must have between 1 and 1,000 changes.",
@@ -95,8 +130,24 @@ pub(crate) fn write(
     } else {
         space.receipt(&format!("write:{identity}"), key.as_deref(), &encoded)?
     };
+    Ok(PreparedWrite {
+        input,
+        identity,
+        receipt,
+    })
+}
+
+pub(crate) fn write(space: &mut Space, actor: &Actor, prepared: PreparedWrite) -> Result<Written> {
+    let PreparedWrite {
+        input,
+        identity,
+        receipt,
+    } = prepared;
     if let Some(value) = receipt.as_ref().and_then(|entry| entry.replay.clone()) {
-        return Ok(value);
+        return Ok(Written {
+            value,
+            disposition: Disposition::Replayed,
+        });
     }
     let now = calternal_types::now_ms();
     #[cfg(target_os = "linux")]
@@ -107,7 +158,11 @@ pub(crate) fn write(
         space.permits(actor, &head.kind, true)?;
         let kind = space.kind(&head.kind)?;
         operation(&kind, actor, "append record", None)?;
-        return records::append(space, actor, head, record.clone(), now, receipt.as_ref());
+        let value = records::append(space, actor, head, record.clone(), now, receipt.as_ref())?;
+        return Ok(Written {
+            value,
+            disposition: Disposition::Committed,
+        });
     }
     let mut working = BTreeMap::<Uuid, Working>::new();
     let mut outputs = Vec::with_capacity(input.changes.len());
@@ -284,7 +339,10 @@ pub(crate) fn write(
 
     let value = result(outputs);
     if input.preview {
-        return Ok(value);
+        return Ok(Written {
+            value,
+            disposition: Disposition::Previewed,
+        });
     }
 
     space.recovery_needed = true;
@@ -401,7 +459,10 @@ pub(crate) fn write(
             space.rows.insert(id, current.row);
         }
     }
-    Ok(value)
+    Ok(Written {
+        value,
+        disposition: Disposition::Committed,
+    })
 }
 
 fn operation(kind: &Kind, actor: &Actor, action: &str, fields: Option<&Fields>) -> Result<()> {

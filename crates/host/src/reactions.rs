@@ -5,6 +5,7 @@ use crate::declarations::Plugin;
 use crate::maintenance::Slot;
 use crate::space::{Row, Space};
 use crate::worker_calls::Chain;
+use crate::write::Disposition;
 use crate::{Call, Host, identity, internal};
 use calternal_format::Source;
 use calternal_plugin_host::operations::{Delivery, Event, EventKind, Person};
@@ -89,12 +90,6 @@ struct Prepared {
     listeners: Vec<Listener>,
 }
 
-#[derive(PartialEq, Eq)]
-enum Disposition {
-    Committed,
-    Replayed,
-}
-
 impl Host {
     pub(crate) async fn write_and_notify(
         self: Arc<Self>,
@@ -103,7 +98,6 @@ impl Host {
         call: Call,
         chain: Chain,
     ) -> Result<Value> {
-        let preview = call.input.get("preview") == Some(&Value::Bool(true));
         let host = self.clone();
         let who = actor.clone();
         let ancestry = chain.plugins.clone();
@@ -115,7 +109,7 @@ impl Host {
                 storage.runs.admit(run.as_ref())?;
                 let (result, disposition, batch) =
                     storage.observe_write(&who, call, &ancestry, slot)?;
-                if !preview && disposition == Disposition::Committed {
+                if disposition == Disposition::Committed {
                     storage.live.notify(None);
                 }
                 Ok((result, batch))
@@ -231,51 +225,42 @@ impl Space {
         ancestry: &[String],
         slot: &Slot,
     ) -> Result<(Value, Disposition, Option<(Claim, Vec<Observation>)>)> {
+        let standalone = |space: &mut Self, call| {
+            space
+                .write_call(actor, call)
+                .map(|written| (written.value, written.disposition, None))
+        };
         if call.input.get("preview") == Some(&Value::Bool(true)) {
-            return self
-                .call(actor, call)
-                .map(|value| (value, Disposition::Committed, None));
+            return standalone(self, call);
         }
         let now = calternal_types::now_ms();
         let cutoff = now - self.retention_ms;
         let listeners = self.listeners(actor, ancestry);
         if !has_outbox(&self.db)? {
             if listeners.is_empty() {
-                return self
-                    .call(actor, call)
-                    .map(|value| (value, Disposition::Committed, None));
+                return standalone(self, call);
             }
             self.initialize_outbox()?;
         }
-        // Finish a committed preparation while its post-write row is still
-        // current, including on the first new write after a restart.
+        // Finish a committed preparation while its post-write row is current.
         self.recover_observations(cutoff)?;
         let key = call
             .idempotency_key
             .get_or_insert_with(|| Uuid::now_v7().to_string())
             .clone();
-        let writer = format!("write:{}", serde_json::to_string(actor).map_err(internal)?);
-        let gesture = self.hash(key.as_bytes());
-        let outbox_key = self.hash(&serde_json::to_vec(&(&writer, &gesture)).map_err(internal)?);
-        let replayed = self
-            .db
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM receipts WHERE actor=?1 AND gesture=?2 AND at>=?3)",
-                params![writer, &gesture[..], cutoff],
-                |row| row.get::<_, bool>(0),
-            )
-            .map_err(internal)?;
-        if replayed {
-            // Storage validates the original fingerprint before replaying the
-            // receipt. A replay starts only deliveries still in the outbox.
-            let result = self.call(actor, call)?;
-            let batch = self.claim_observations(slot, outbox_key, cutoff)?;
-            return Ok((result, Disposition::Replayed, batch));
-        }
-        if listeners.is_empty() {
-            return self
-                .call(actor, call)
-                .map(|value| (value, Disposition::Committed, None));
+        let write = self.prepare_write(actor, call)?;
+        let receipt = write.receipt.as_ref().expect("observed write key");
+        let writer = &receipt.actor;
+        let gesture = receipt.proof.gesture;
+        let outbox_key = self.hash(&serde_json::to_vec(&(writer, &gesture)).map_err(internal)?);
+        if receipt.replay.is_some() || listeners.is_empty() {
+            let written = crate::write::write(self, actor, write)?;
+            let batch = if written.disposition == Disposition::Replayed {
+                self.claim_observations(slot, outbox_key, cutoff)?
+            } else {
+                None
+            };
+            return Ok((written.value, written.disposition, batch));
         }
         expire_pending(&self.db, cutoff)?;
         let count = self
@@ -294,13 +279,7 @@ impl Space {
                 "Too many change deliveries are awaiting retry.",
             ));
         }
-        let items = call.input["changes"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .take(1_000)
-            .filter_map(|change| Uuid::parse_str(change.get("item")?.as_str()?).ok())
-            .collect::<BTreeSet<_>>();
+        let items = write.targets().collect::<BTreeSet<_>>();
         let mut before = BTreeMap::new();
         let mut prior_bytes = 0usize;
         for id in items {
@@ -346,7 +325,7 @@ impl Space {
                 params![&outbox_key[..], writer, &gesture[..], now, data],
             )
             .map_err(internal)?;
-        let result = match self.call(actor, call) {
+        let written = match crate::write::write(self, actor, write) {
             Ok(result) => result,
             Err(error) => {
                 // These refusals happen before publication. Keep the
@@ -363,14 +342,14 @@ impl Space {
                 return Err(error);
             }
         };
-        if let Err(error) = self.finish_prepared(&prepared, &result, outbox_key, now) {
+        if let Err(error) = self.finish_prepared(&prepared, &written.value, outbox_key, now) {
             eprintln!(
                 "calternal-host: could not record change deliveries ({:?})",
                 error.code
             );
         }
         let batch = self.claim_observations(slot, outbox_key, cutoff)?;
-        Ok((result, Disposition::Committed, batch))
+        Ok((written.value, written.disposition, batch))
     }
 
     fn matches(&self, actor: &Actor, listener: &Listener, row: &Row) -> bool {
@@ -406,3 +385,6 @@ fn observation_limit() -> Error {
 fn snapshot(row: &Row) -> Value {
     json!({"id":row.head.id,"kind":row.head.kind,"fields":row.fields,"version":row.head.version})
 }
+
+#[cfg(test)]
+mod tests;

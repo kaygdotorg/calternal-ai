@@ -356,7 +356,7 @@ impl Space {
         }
     }
 
-    pub(crate) fn call(&mut self, actor: &Actor, call: Call) -> Result<Value> {
+    fn check_actor(&self, actor: &Actor) -> Result<()> {
         if let Some(
             calternal_types::Via::Plugin { plugin } | calternal_types::Via::Run { plugin, .. },
         ) = &actor.via
@@ -364,6 +364,32 @@ impl Space {
         {
             return Err(Error::forbidden("The calling plugin is unavailable."));
         }
+        Ok(())
+    }
+
+    pub(crate) fn prepare_write(
+        &self,
+        actor: &Actor,
+        call: Call,
+    ) -> Result<crate::write::PreparedWrite> {
+        self.check_actor(actor)?;
+        crate::write::prepare(self, actor, decode(call.input)?, call.idempotency_key)
+    }
+
+    pub(crate) fn write_call(
+        &mut self,
+        actor: &Actor,
+        call: Call,
+    ) -> Result<crate::write::Written> {
+        let prepared = self.prepare_write(actor, call)?;
+        crate::write::write(self, actor, prepared)
+    }
+
+    pub(crate) fn call(&mut self, actor: &Actor, call: Call) -> Result<Value> {
+        if call.call == "s.write" {
+            return Ok(self.write_call(actor, call)?.value);
+        }
+        self.check_actor(actor)?;
         match call.call.as_str() {
             "s.me" => Ok(json!({"id":actor.account,"role":"owner"})),
             "s.space" => Ok(json!({"id":self.id})),
@@ -376,9 +402,6 @@ impl Space {
             }),
             "s.query" => crate::query::query(self, actor, decode(call.input)?),
             "s.read" => crate::query::read(self, actor, decode(call.input)?),
-            "s.write" => {
-                crate::write::write(self, actor, decode(call.input)?, call.idempotency_key)
-            }
             "s.state" => {
                 crate::query::state(self, actor, decode(call.input)?, call.idempotency_key)
             }

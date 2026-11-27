@@ -233,7 +233,6 @@ impl Host {
             ));
         }
         let recipient = match call.call.as_str() {
-            "s.write" if call.input.get("preview") != Some(&Value::Bool(true)) => Some(None),
             "s.state" if call.input.get("op").and_then(Value::as_str) == Some("set") => {
                 Some(Some(actor.account))
             }
@@ -242,6 +241,13 @@ impl Host {
         self.with_space(&actor, id, |space| {
             let _admission = self.admit_session_blocking(session)?;
             space.runs.admit(run)?;
+            if call.call == "s.write" {
+                let written = space.write_call(&actor, call)?;
+                if written.disposition == crate::write::Disposition::Committed {
+                    space.live.notify(None);
+                }
+                return Ok(written.value);
+            }
             let output = space.call(&actor, call)?;
             if let Some(recipient) = recipient {
                 space.live.notify(recipient);

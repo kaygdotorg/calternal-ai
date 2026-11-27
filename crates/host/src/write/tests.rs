@@ -15,7 +15,7 @@ fn records_keep_two_actors_in_ledger_order() {
     let actor = Actor::plugin(AccountId::new(), "calternal-chat");
     let other = Actor::plugin(AccountId::new(), "calternal-chat");
     let call = |space: &mut Space, actor: &Actor, change| {
-        write(
+        let prepared = prepare(
             space,
             actor,
             Write {
@@ -23,7 +23,8 @@ fn records_keep_two_actors_in_ledger_order() {
                 preview: false,
             },
             None,
-        )
+        )?;
+        write(space, actor, prepared).map(|written| written.value)
     };
     let output = call(
         &mut space,

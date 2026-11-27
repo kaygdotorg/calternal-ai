@@ -112,7 +112,7 @@ impl Space {
 
 #[derive(Deserialize, Serialize)]
 pub(crate) struct Receipt {
-    actor: String,
+    pub(crate) actor: String,
     pub(crate) proof: ReceiptProof,
     cutoff: i64,
     pub(crate) replay: Option<Value>,
