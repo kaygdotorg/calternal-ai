@@ -17,6 +17,7 @@ mod slots;
 /// Private wire protocol for an enrolled space runtime.
 pub mod space_channel;
 mod strict_json;
+pub use bounded::json as bounded_json;
 pub use claims::{DeclarationIndex, PackageClaims};
 pub use registry::*;
 pub use registry_v2::ManifestV2;

@@ -5,6 +5,7 @@
 //! request path. Subscriptions reuse the host's authorized `s.query` and
 //! `s.read` paths so viewer-scoped formulas and access checks are never
 //! duplicated.
+mod limits;
 mod run_logs;
 mod subscribe;
 mod wire;
@@ -15,6 +16,8 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use calternal_types::{AccountId, Actor, Error, ErrorCode, SpaceId};
+pub(crate) use limits::Accounts;
+use limits::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -26,8 +29,8 @@ use wire::{LiveSocket, send_error, send_frame};
 /// Maximum bytes accepted in a single client WebSocket text frame.
 pub const MAX_CLIENT_FRAME_BYTES: usize = 64 * 1024;
 
-/// Maximum concurrent live subscriptions allowed on one WebSocket session.
-pub const MAX_SUBSCRIPTIONS: usize = 64;
+/// Maximum concurrent live subscriptions across one account's WebSockets.
+pub const MAX_SUBSCRIPTIONS: usize = 24;
 
 const SPACE_CHANNEL_CAPACITY: usize = 256;
 
@@ -77,6 +80,9 @@ pub(crate) async fn ws_route(
         return StatusCode::UNAUTHORIZED.into_response();
     };
     let account = session.account;
+    let Ok(admission) = host.live_accounts.connect(account) else {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    };
     let actor = Actor::account(account);
     let storage_host = host.clone();
     let viewer = actor.clone();
@@ -101,8 +107,11 @@ pub(crate) async fn ws_route(
     };
     ws.max_message_size(MAX_CLIENT_FRAME_BYTES)
         .max_frame_size(MAX_CLIENT_FRAME_BYTES)
+        .max_write_buffer_size(wire::MAX_OUTGOING_BYTES + 128 * 1024)
         .on_upgrade(move |socket| {
-            serve_socket(host, space, actor, session, receiver, run_logs, socket)
+            serve_socket(
+                host, space, actor, session, admission, receiver, run_logs, socket,
+            )
         })
 }
 
@@ -196,7 +205,7 @@ enum Subscription {
     },
     Query {
         input: Value,
-        last_payload: Option<String>,
+        last_payload: Option<blake3::Hash>,
     },
     Records {
         item: Uuid,
@@ -212,6 +221,7 @@ async fn serve_socket(
     space: SpaceId,
     actor: Actor,
     session: Session,
+    mut admission: Connection,
     mut rx: broadcast::Receiver<()>,
     mut run_logs: broadcast::Receiver<()>,
     socket: WebSocket,
@@ -221,7 +231,7 @@ async fn serve_socket(
     let mut expiry = tokio::time::interval(std::time::Duration::from_secs(60));
     if send_frame(
         &mut socket,
-        &ServerFrame::Ready {
+        ServerFrame::Ready {
             account: actor.account.to_string(),
             space: space.to_string(),
         },
@@ -233,6 +243,10 @@ async fn serve_socket(
     }
 
     let mut subs: HashMap<String, Subscription> = HashMap::new();
+    let mut pending_rows = false;
+    let mut pending_logs = false;
+    let mut refresh = tokio::time::interval(std::time::Duration::from_millis(125));
+    refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
         tokio::select! {
@@ -264,7 +278,7 @@ async fn serve_socket(
                                 continue;
                             }
                         };
-                        if subscribe::handle_client_frame(&host, &actor, space, frame, &mut subs, &mut socket).await.is_err() {
+                        if subscribe::handle_client_frame(&host, &actor, space, frame, &mut subs, &mut admission, &mut socket).await.is_err() {
                             break;
                         }
                     }
@@ -278,32 +292,39 @@ async fn serve_socket(
                 }
             }
             event = run_logs.recv() => {
-                if socket.check().await.is_err() {
-                    break;
-                }
-                if matches!(event, Err(broadcast::error::RecvError::Closed)) {
-                    break;
-                }
-                let mut revoked = Vec::new();
-                for (sub, subscription) in &mut subs {
-                    if let Err(error) = run_logs::refresh(&host, &actor, space, sub, subscription, &mut socket).await {
-                        if send_error(&mut socket, Some(sub.clone()), &error).await.is_err() { return; }
-                        revoked.push(sub.clone());
-                    }
-                }
-                for sub in revoked { subs.remove(&sub); }
+                if matches!(event, Err(broadcast::error::RecvError::Closed)) { break; }
+                pending_logs = true;
             }
             event = rx.recv() => {
-                if socket.check().await.is_err() {
-                    break;
-                }
-                match event {
-                    Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {
+                if matches!(event, Err(broadcast::error::RecvError::Closed)) { break; }
+                pending_rows = true;
+            }
+            _ = refresh.tick() => {
+                if pending_rows {
+                    let count = subs.values().filter(|sub| !matches!(sub, Subscription::RunLog { .. })).count();
+                    if admission.refresh(count) {
+                        pending_rows = false;
                         if refresh_all(&host, &actor, space, &mut subs, &mut socket).await.is_err() {
                             break;
                         }
                     }
-                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+                if pending_logs {
+                    let count = subs.values().filter(|sub| matches!(sub, Subscription::RunLog { finished: false, .. })).count();
+                    if admission.refresh(count) {
+                        pending_logs = false;
+                        let mut revoked = Vec::new();
+                        for (sub, subscription) in &mut subs {
+                            if let Err(error) = run_logs::refresh(&host, &actor, space, sub, subscription, &mut socket).await {
+                                if send_error(&mut socket, Some(sub.clone()), &error).await.is_err() { return; }
+                                revoked.push(sub.clone());
+                            }
+                        }
+                        for sub in revoked {
+                            subs.remove(&sub);
+                            admission.unsubscribe();
+                        }
+                    }
                 }
             }
         }
@@ -343,7 +364,7 @@ async fn eval_subscription(
             input,
             last_payload,
         } => {
-            let value = host
+            let mut value = host
                 .clone()
                 .trusted_call(
                     actor.clone(),
@@ -356,19 +377,13 @@ async fn eval_subscription(
                     },
                 )
                 .await?;
-            let encoded = serde_json::to_string(&value).unwrap_or_default();
-            if last_payload.as_deref() == Some(encoded.as_str()) {
-                return Ok(());
-            }
-            *last_payload = Some(encoded);
             let frame = ServerFrame::Rows {
                 sub: sub_id.to_owned(),
-                rows: value.get("rows").cloned().unwrap_or_else(|| json!([])),
-                totals: value.get("totals").cloned().unwrap_or_else(|| json!({})),
-                cursor: value.get("cursor").cloned().unwrap_or(Value::Null),
+                rows: std::mem::take(&mut value["rows"]),
+                totals: std::mem::take(&mut value["totals"]),
+                cursor: std::mem::take(&mut value["cursor"]),
             };
-            send_frame(socket, &frame).await.map_err(socket_closed)?;
-            Ok(())
+            wire::send_distinct(socket, frame, last_payload).await
         }
         Subscription::Records {
             item,
@@ -377,7 +392,7 @@ async fn eval_subscription(
             last_count,
             last_meta,
         } => {
-            let value = host
+            let mut value = host
                 .clone()
                 .trusted_call(
                     actor.clone(),
@@ -392,16 +407,14 @@ async fn eval_subscription(
                 .await?;
             let version = value.get("version").and_then(Value::as_u64).unwrap_or(0);
             let metadata = RowMetadata {
-                fields: value["fields"].clone(),
-                computed: value["computed"].clone(),
-                state: value["state"].clone(),
-                when: value["when"].clone(),
+                fields: std::mem::take(&mut value["fields"]),
+                computed: std::mem::take(&mut value["computed"]),
+                state: std::mem::take(&mut value["state"]),
+                when: std::mem::take(&mut value["when"]),
             };
-            let records = value
-                .get("records")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
+            let Value::Array(records) = std::mem::take(&mut value["records"]) else {
+                return Err(Error::internal("Missing record projection."));
+            };
             let tail_anchor = records
                 .last()
                 .and_then(|r| r.get("anchor"))
@@ -425,7 +438,7 @@ async fn eval_subscription(
                     records: out,
                     last_anchor: tail_anchor,
                 };
-                send_frame(socket, &frame).await.map_err(socket_closed)?;
+                send_frame(socket, frame).await?;
                 return Ok(());
             }
 
@@ -448,28 +461,26 @@ async fn eval_subscription(
                 for record in appended {
                     send_frame(
                         socket,
-                        &ServerFrame::RecordAppend {
+                        ServerFrame::RecordAppend {
                             sub: sub_id.to_owned(),
                             item: *item,
                             version,
                             record: record.clone(),
                         },
                     )
-                    .await
-                    .map_err(socket_closed)?;
+                    .await?;
                 }
                 if last_meta.as_ref() != Some(&metadata) {
                     send_frame(
                         socket,
-                        &ServerFrame::ItemChange {
+                        ServerFrame::ItemChange {
                             sub: sub_id.to_owned(),
                             item: *item,
                             version,
                             metadata: metadata.clone(),
                         },
                     )
-                    .await
-                    .map_err(socket_closed)?;
+                    .await?;
                 }
                 *last_anchor = tail_anchor;
                 *last_version = version;
@@ -480,6 +491,7 @@ async fn eval_subscription(
 
             if version != *last_version || records.len() != *last_count {
                 // Record edit, redaction, or replacement: send a clean snapshot.
+                let count = records.len();
                 let frame = ServerFrame::Records {
                     sub: sub_id.to_owned(),
                     item: *item,
@@ -487,35 +499,30 @@ async fn eval_subscription(
                     metadata: metadata.clone(),
                     mode: "snapshot",
                     after: None,
-                    records: records.clone(),
+                    records,
                     last_anchor: tail_anchor.clone(),
                 };
                 *last_anchor = tail_anchor;
                 *last_version = version;
-                *last_count = records.len();
+                *last_count = count;
                 *last_meta = Some(metadata.clone());
-                send_frame(socket, &frame).await.map_err(socket_closed)?;
+                send_frame(socket, frame).await?;
             } else if last_meta.as_ref() != Some(&metadata) {
                 *last_meta = Some(metadata.clone());
                 send_frame(
                     socket,
-                    &ServerFrame::ItemChange {
+                    ServerFrame::ItemChange {
                         sub: sub_id.to_owned(),
                         item: *item,
                         version,
                         metadata,
                     },
                 )
-                .await
-                .map_err(socket_closed)?;
+                .await?;
             }
             Ok(())
         }
     }
-}
-
-fn socket_closed(_: ()) -> Error {
-    Error::unavailable("The live socket closed.")
 }
 
 /// Slice `records` strictly after `after` when that anchor is present in the

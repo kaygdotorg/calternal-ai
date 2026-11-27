@@ -2,7 +2,7 @@
 use super::wire::LiveSocket;
 use super::{ServerFrame, Subscription, send_frame};
 use crate::Host;
-use calternal_types::{Actor, Error, Result, SpaceId};
+use calternal_types::{Actor, Result, SpaceId};
 use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -40,13 +40,12 @@ pub(super) async fn refresh(
     if *initial || batch.has_changes() {
         send_frame(
             socket,
-            &ServerFrame::RunLog {
+            ServerFrame::RunLog {
                 sub: sub.to_owned(),
                 batch,
             },
         )
-        .await
-        .map_err(|_| Error::unavailable("The live socket closed."))?;
+        .await?;
     }
     *initial = false;
     *after = Some(offset);

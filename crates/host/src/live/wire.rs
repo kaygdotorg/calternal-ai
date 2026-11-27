@@ -57,17 +57,46 @@ impl LiveSocket {
     }
 }
 
-pub(super) async fn send_frame(
-    socket: &mut LiveSocket,
-    frame: &ServerFrame,
-) -> std::result::Result<(), ()> {
-    let Ok(text) = serde_json::to_string(frame) else {
-        return Err(());
-    };
+pub(super) const MAX_OUTGOING_BYTES: usize = 2 * 1024 * 1024;
+
+async fn encode(frame: ServerFrame) -> Result<Vec<u8>, Error> {
+    static CODECS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
+    let permit = CODECS
+        .try_acquire()
+        .map_err(|_| Error::new(ErrorCode::RetryAfter, "Live frame encoding is busy."))?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        calternal_plugin_host::bounded_json(&frame, MAX_OUTGOING_BYTES)
+            .map_err(|_| Error::new(ErrorCode::TooLarge, "Live result exceeds 2 MiB."))
+    })
+    .await
+    .map_err(crate::internal)?
+}
+
+async fn send_encoded(socket: &mut LiveSocket, encoded: Vec<u8>) -> Result<(), Error> {
+    let text = String::from_utf8(encoded).map_err(crate::internal)?;
     socket
         .send(Message::Text(text.into()))
         .await
-        .map_err(|_| ())
+        .map_err(|_| Error::unavailable("The live socket closed."))
+}
+
+pub(super) async fn send_frame(socket: &mut LiveSocket, frame: ServerFrame) -> Result<(), Error> {
+    send_encoded(socket, encode(frame).await?).await
+}
+
+pub(super) async fn send_distinct(
+    socket: &mut LiveSocket,
+    frame: ServerFrame,
+    last: &mut Option<blake3::Hash>,
+) -> Result<(), Error> {
+    let encoded = encode(frame).await?;
+    let digest = blake3::hash(&encoded);
+    if *last != Some(digest) {
+        send_encoded(socket, encoded).await?;
+        *last = Some(digest);
+    }
+    Ok(())
 }
 
 pub(super) async fn send_error(
@@ -91,7 +120,7 @@ pub(super) async fn send_error(
     };
     send_frame(
         socket,
-        &ServerFrame::Error {
+        ServerFrame::Error {
             sub,
             code,
             message: error.message.clone(),
@@ -99,4 +128,5 @@ pub(super) async fn send_error(
         },
     )
     .await
+    .map_err(|_| ())
 }

@@ -690,3 +690,23 @@ async fn revoked_installation_cannot_commit_the_next_worker_callback() {
     let rows = observation().await.unwrap();
     assert_eq!(rows["rows"].as_array().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn ad_hoc_query_rejects_excess_sort_columns() {
+    let f = Fixture::new().await;
+    f.install(checkout().join("plugins-v2/calternal-chat"))
+        .await
+        .unwrap();
+    let call = f
+        .call(
+            f.owner.into(),
+            "s.query",
+            json!({
+                "from": "calternal-chat.chats",
+                "sort": vec!["edited desc"; 9],
+            }),
+            None,
+        )
+        .await;
+    assert_eq!(call.unwrap_err().code, ErrorCode::InvalidInput);
+}

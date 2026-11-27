@@ -72,6 +72,7 @@ pub struct Host {
     development_plugins: Vec<(String, PathBuf)>,
     runs: Mutex<Option<Arc<calternal_machine::run_service::RunService>>>,
     sessions: session::Registry,
+    live_accounts: live::Accounts,
 }
 
 impl Host {
@@ -90,6 +91,7 @@ impl Host {
             development_plugins: Vec::new(),
             runs: Mutex::default(),
             sessions: session::Registry::default(),
+            live_accounts: live::Accounts::default(),
         })
     }
 

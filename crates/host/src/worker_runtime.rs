@@ -220,7 +220,7 @@ impl WorkerRuntime {
             .arg("--ro-bind")
             .arg(self.sdk.join("dist"))
             .arg("/app/node_modules/@calternal/plugin-sdk/dist")
-            .args(["--chdir", "/app", "--"])
+            .args(["--remount-ro", "/", "--chdir", "/app", "--"])
             .arg(&self.node)
             .args([
                 "--max-old-space-size=128",
@@ -286,6 +286,7 @@ mod tests {
             args.windows(3)
                 .any(|args| args[0] == "--size" && args[2] == "--tmpfs")
         );
+        assert!(args.windows(2).any(|args| args == ["--remount-ro", "/"]));
         let registrations = runtime.probe(source.path()).await.unwrap();
         assert!(registrations.calls.is_empty());
     }

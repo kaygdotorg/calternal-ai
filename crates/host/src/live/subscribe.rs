@@ -1,8 +1,8 @@
 //! Decode subscription selections and send their initial snapshots.
 use super::wire::LiveSocket;
 use super::{
-    ClientFrame, MAX_SUBSCRIPTIONS, ServerFrame, Subscription, eval_subscription, run_logs,
-    send_error, send_frame,
+    ClientFrame, Connection, ServerFrame, Subscription, eval_subscription, run_logs, send_error,
+    send_frame,
 };
 use crate::Host;
 use calternal_types::{Actor, Error, ErrorCode, SpaceId};
@@ -14,12 +14,15 @@ pub(super) async fn handle_client_frame(
     space: SpaceId,
     frame: ClientFrame,
     subs: &mut HashMap<String, Subscription>,
+    admission: &mut Connection,
     socket: &mut LiveSocket,
 ) -> std::result::Result<(), ()> {
     match frame {
-        ClientFrame::Ping => send_frame(socket, &ServerFrame::Pong).await,
+        ClientFrame::Ping => send_frame(socket, ServerFrame::Pong).await.map_err(|_| ()),
         ClientFrame::Unsubscribe { sub } => {
-            subs.remove(&sub);
+            if subs.remove(&sub).is_some() {
+                admission.unsubscribe();
+            }
             Ok(())
         }
         ClientFrame::Subscribe {
@@ -36,84 +39,78 @@ pub(super) async fn handle_client_frame(
                 )
                 .await;
             }
-            if !subs.contains_key(&sub) && subs.len() >= MAX_SUBSCRIPTIONS {
-                return send_error(
-                    socket,
-                    Some(sub),
-                    &Error::new(
-                        ErrorCode::EffectiveScopeLimitExceeded,
-                        "Too many live subscriptions on this session.",
-                    ),
-                )
-                .await;
-            }
-            match (query, records, run_log) {
-                (None, None, Some(request)) => {
-                    let mut subscription = Subscription::RunLog {
+            let (mut subscription, initial_after) = match (query, records, run_log) {
+                (None, None, Some(request)) => (
+                    Subscription::RunLog {
                         run: request.run,
                         after: request.after,
                         initial: true,
                         finished: false,
-                    };
-                    if let Err(error) =
-                        run_logs::refresh(host, actor, space, &sub, &mut subscription, socket).await
-                    {
-                        send_error(socket, Some(sub), &error).await?;
-                    } else {
-                        subs.insert(sub, subscription);
-                    }
-                    Ok(())
-                }
-                (Some(input), None, None) => {
-                    let mut subscription = Subscription::Query {
+                    },
+                    None,
+                ),
+                (Some(input), None, None) => (
+                    Subscription::Query {
                         input,
                         last_payload: None,
-                    };
-                    if let Err(error) =
-                        eval_subscription(host, actor, space, &sub, &mut subscription, None, socket)
-                            .await
-                    {
-                        send_error(socket, Some(sub), &error).await?;
-                    } else {
-                        subs.insert(sub, subscription);
-                    }
-                    Ok(())
-                }
-                (None, Some(req), None) => {
-                    let mut subscription = Subscription::Records {
+                    },
+                    None,
+                ),
+                (None, Some(req), None) => (
+                    Subscription::Records {
                         item: req.item,
-                        last_anchor: req.after.clone(),
+                        last_anchor: None,
                         last_version: 0,
                         last_count: 0,
                         last_meta: None,
-                    };
-                    if let Err(error) = eval_subscription(
-                        host,
-                        actor,
-                        space,
-                        &sub,
-                        &mut subscription,
-                        Some(req.after),
-                        socket,
-                    )
-                    .await
-                    {
-                        send_error(socket, Some(sub), &error).await?;
-                    } else {
-                        subs.insert(sub, subscription);
-                    }
-                    Ok(())
-                }
+                    },
+                    Some(req.after),
+                ),
                 _ => {
-                    send_error(
+                    return send_error(
                         socket,
                         Some(sub),
                         &Error::invalid_input(
                             "Provide one of query, records or run_log in a subscribe frame.",
                         ),
                     )
-                    .await
+                    .await;
                 }
+            };
+            if !admission.refresh(1) {
+                return send_error(
+                    socket,
+                    Some(sub),
+                    &Error::new(ErrorCode::RetryAfter, "Live refresh quota exceeded."),
+                )
+                .await;
+            }
+            let new = !subs.contains_key(&sub);
+            if new && let Err(error) = admission.subscribe() {
+                return send_error(socket, Some(sub), &error).await;
+            }
+            let result = if matches!(subscription, Subscription::RunLog { .. }) {
+                run_logs::refresh(host, actor, space, &sub, &mut subscription, socket).await
+            } else {
+                eval_subscription(
+                    host,
+                    actor,
+                    space,
+                    &sub,
+                    &mut subscription,
+                    initial_after,
+                    socket,
+                )
+                .await
+            };
+            if let Err(error) = result {
+                if new {
+                    admission.unsubscribe();
+                }
+                send_error(socket, Some(sub), &error).await
+            } else {
+                subs.insert(sub, subscription);
+                Ok(())
             }
         }
     }

@@ -1,8 +1,11 @@
 //! Select authorized rows and supply viewer context to the pure format engine.
+mod budget;
+
 use crate::declarations::{self, Collection, FieldType, Kind};
 use crate::internal;
 use crate::records::Record;
 use crate::space::{Row, Space};
+use budget::Budget;
 use calternal_format as format;
 use calternal_types::{Actor, Error, ErrorCode, Result, Via};
 use rusqlite::{OptionalExtension, params};
@@ -45,6 +48,8 @@ pub(crate) enum State {
         value: Value,
     },
 }
+
+const AD_HOC_SORTS: usize = 8;
 
 pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value> {
     let (from, collection) = match (&input.from, &input.collection) {
@@ -92,22 +97,26 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
         .map(Uuid::parse_str)
         .transpose()
         .map_err(|_| Error::invalid_input("Invalid query cursor."))?;
-    let rows = space
-        .rows
-        .values()
-        .filter(|row| row.head.kind == from)
-        .collect::<Vec<_>>();
-    let inputs = rows
-        .iter()
-        .map(|row| {
-            let records = if kind.records.is_empty() {
-                Vec::new()
-            } else {
-                space.records(row.head.id)?
-            };
-            query_input(space, actor, &kind, row, &records)
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let mut budget = Budget::default();
+    let mut rows = Vec::new();
+    let mut inputs = Vec::new();
+    for row in space.rows.values().filter(|row| row.head.kind == from) {
+        budget.row(row)?;
+        let records = if kind.records.is_empty() {
+            Vec::new()
+        } else {
+            budget.records(space, row.head.id)?
+        };
+        inputs.push(query_input(
+            space,
+            actor,
+            &kind,
+            row,
+            &records,
+            &mut budget,
+        )?);
+        rows.push(row);
+    }
     let result = execute(
         &collection,
         &kind,
@@ -167,14 +176,26 @@ pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
     let row = space.row(input.item)?;
     space.permits(actor, &row.head.kind, false)?;
     let kind = space.kind(&row.head.kind)?;
-    let bytes = space.read_item(&row.head)?;
-    let records = space.records(input.item)?;
+    let mut budget = Budget::default();
+    let records = budget.records(space, input.item)?;
+    let file = space.open_regular(&row.head.path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            Error::conflict("The item file is missing from disk.")
+        } else {
+            internal(error)
+        }
+    })?;
+    let bytes = crate::space::bounded_read(file, budget.limit())?;
+    budget.bytes(bytes.len() as u64)?;
     let views = space.record_views(&row.head, &bytes, &records, &kind)?;
-    let prefix = std::str::from_utf8(&bytes[..row.head.prefix as usize]).map_err(internal)?;
+    let prefix = bytes
+        .get(..row.head.prefix as usize)
+        .ok_or_else(|| Error::conflict("The item file changed outside the host."))?;
+    let prefix = std::str::from_utf8(prefix).map_err(internal)?;
     let body = declarations::item_body(prefix)?;
     let mut collection = ad_hoc(None, &[])?;
     collection.ignoring_default = true;
-    let input = query_input(space, actor, &kind, row, &records)?;
+    let input = query_input(space, actor, &kind, row, &records, &mut budget)?;
     let result = execute(
         &collection,
         &kind,
@@ -198,6 +219,11 @@ pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
 }
 
 fn ad_hoc(filter: Option<&str>, sorts: &[String]) -> Result<Collection> {
+    if sorts.len() > AD_HOC_SORTS {
+        return Err(Error::invalid_input(
+            "Use at most eight ad hoc sort columns.",
+        ));
+    }
     static EMPTY: OnceLock<Result<Collection>> = OnceLock::new();
     // The engine currently exposes a plugin parser as the collection
     // constructor. Compile a dependency-free empty plan once for ad hoc calls.
@@ -245,6 +271,7 @@ fn query_input(
     kind: &Kind<'_>,
     row: &Row,
     records: &[Record],
+    budget: &mut Budget,
 ) -> Result<QueryInput> {
     let owner = kind.id.split_once('.').expect("qualified kind").0;
     let state_allowed = match &actor.via {
@@ -263,24 +290,30 @@ fn query_input(
                 "SELECT name,value,ordinal FROM viewer_state WHERE plugin=?1 AND item=?2 AND account=?3",
             )
             .map_err(internal)?;
-        let rows = stmt
-            .query_map(
-                params![owner, row.head.id.to_string(), actor.account.to_string()],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, Option<i64>>(2)?,
-                    ))
-                },
-            )
+        let mut rows = stmt
+            .query(params![
+                owner,
+                row.head.id.to_string(),
+                actor.account.to_string()
+            ])
             .map_err(internal)?;
-        for entry in rows {
-            let (key, raw, position) = entry.map_err(internal)?;
-            let Some(field) = kind.state.get(&key) else {
+        while let Some(entry) = rows.next().map_err(internal)? {
+            let key = entry
+                .get_ref(0)
+                .map_err(internal)?
+                .as_str()
+                .map_err(internal)?;
+            let raw = entry
+                .get_ref(1)
+                .map_err(internal)?
+                .as_str()
+                .map_err(internal)?;
+            let position: Option<i64> = entry.get(2).map_err(internal)?;
+            budget.bytes((key.len() + raw.len()) as u64)?;
+            let Some(field) = kind.state.get(key) else {
                 continue;
             };
-            let value: Value = serde_json::from_str(&raw).map_err(internal)?;
+            let value: Value = serde_json::from_str(raw).map_err(internal)?;
             if let Some(position) = position {
                 let anchor = value
                     .as_str()
@@ -300,7 +333,7 @@ fn query_input(
             } else {
                 declarations::as_format(&value)?
             };
-            state.insert(key, value);
+            state.insert(key.to_owned(), value);
         }
         for (name, field) in &kind.state {
             if !state.contains_key(name)
@@ -349,12 +382,14 @@ pub(crate) fn contains(
     row: &Row,
 ) -> Result<bool> {
     let kind = space.kind(&row.head.kind)?;
+    let mut budget = Budget::default();
+    budget.row(row)?;
     let records = if kind.records.is_empty() {
         Vec::new()
     } else {
-        space.records(row.head.id)?
+        budget.records(space, row.head.id)?
     };
-    let input = query_input(space, actor, &kind, row, &records)?;
+    let input = query_input(space, actor, &kind, row, &records, &mut budget)?;
     let page = format::Page {
         offset: 0,
         limit: 1,
