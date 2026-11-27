@@ -93,17 +93,18 @@ pub(crate) async fn ws_route(
     let storage_host = host.clone();
     let viewer = actor.clone();
     let access = tokio::task::spawn_blocking(move || {
-        storage_host.with_space(&viewer, space, |storage| {
+        storage_host.with_space_slot(&viewer, space, |storage, slot| {
             Ok((
                 storage.live.subscribe(account),
                 storage.runs.logs.subscribe(),
+                slot.live_codecs.clone(),
             ))
         })
     })
     .await
     .map_err(crate::internal)
     .and_then(|access| access);
-    let (receiver, run_logs) = match access {
+    let (receiver, run_logs, codecs) = match access {
         Ok(receiver) => receiver,
         Err(error) => {
             return StatusCode::from_u16(error.code.http_status())
@@ -116,7 +117,7 @@ pub(crate) async fn ws_route(
         .max_write_buffer_size(wire::MAX_OUTGOING_BYTES + 128 * 1024)
         .on_upgrade(move |socket| {
             serve_socket(
-                host, space, actor, session, admission, receiver, run_logs, socket,
+                host, space, actor, session, admission, receiver, run_logs, codecs, socket,
             )
         })
 }
@@ -234,9 +235,10 @@ async fn serve_socket(
     mut admission: Connection,
     mut rx: broadcast::Receiver<()>,
     mut run_logs: broadcast::Receiver<()>,
+    codecs: Arc<tokio::sync::Semaphore>,
     socket: WebSocket,
 ) {
-    let mut socket = LiveSocket::new(socket, host.clone(), session);
+    let mut socket = LiveSocket::new(socket, host.clone(), session, codecs);
     let mut authority = host.auth.spaces().changes();
     let mut expiry = tokio::time::interval(std::time::Duration::from_secs(60));
     if send_frame(

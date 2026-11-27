@@ -502,7 +502,10 @@ impl Host {
         id: Uuid,
         offset: Option<u64>,
     ) -> Result<LogBatch> {
-        self.find_run(actor, space, id).await?.log.after(id, offset)
+        let run = self.find_run(actor, space, id).await?;
+        tokio::task::spawn_blocking(move || run.log.after(id, offset))
+            .await
+            .map_err(internal)?
     }
 
     fn run_service(&self) -> Result<Arc<RunService>> {
