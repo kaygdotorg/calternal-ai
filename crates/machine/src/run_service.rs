@@ -78,7 +78,8 @@ pub enum RunEventKind {
         /// Raw bytes; decoding belongs to the host run route.
         bytes: Vec<u8>,
     },
-    /// Terminal process status; always the last event.
+    /// Terminal process status when the log can deliver it. No data follows it.
+    /// A full log at Stop can omit it. Use the exit watch for definitive status.
     Exit(ExitInfo),
 }
 
@@ -87,6 +88,7 @@ pub struct RunHandle {
     /// UUIDv7 assigned by the machine for this process family.
     pub id: Uuid,
     /// Bounded ordered log stream. A stalled reader applies backpressure.
+    /// If Stop interrupts it, the exit watch still carries the process result.
     pub events: mpsc::Receiver<RunEvent>,
     exit: watch::Receiver<Option<ExitInfo>>,
 }

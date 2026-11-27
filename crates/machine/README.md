@@ -113,7 +113,9 @@ The run service binds an installed plugin executable to a session target and
 starting actor. It starts a rootless network-isolated Podman container with a
 read-only image, plugin bundle and workspace. Bounded temporary mounts contain
 writable run state. Run input checks the starting actor and returns queue
-acceptance. Output events have a monotonic run sequence and a terminal exit.
+acceptance. Output events have a monotonic run sequence. A full output
+channel at Stop can omit the terminal event. The exit watch carries the
+result independently, so the host can publish it after draining the stream.
 
 The host authorizes Stop against the run's original scope. Target removal or
 failed publication can terminate a known run by ID after the target disappears.
