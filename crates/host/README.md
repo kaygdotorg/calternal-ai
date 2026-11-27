@@ -38,8 +38,16 @@ current space and plugin authority on each callback. An existing data-only
 installation has no probed registrations and coded calls stay disabled
 for it.
 
-The sandbox test uses the real Chat fixture and the real call route. On
-the dev VM, set `CALTERNAL_TEST_BWRAP` to the pinned Bubblewrap binary and
-`CALTERNAL_TEST_NODE` to the absolute Node 24 executable in the Nix store,
-then run `cargo test --locked -p calternal-host --test coded -- --include-ignored`
-inside `~/bin/lock-shared nix develop -c`, after building the SDK.
+The ordinary workspace gate builds the SDK before running the Linux
+sandbox tests. For a focused dev VM run:
+
+```sh
+~/bin/lock-shared nix develop -c bash -c '
+  set -e
+  npm run build --workspace @calternal/plugin-sdk
+  cargo test --locked -p calternal-host --test coded
+'
+```
+
+Bubblewrap and Node come from the pinned dev shell. Set
+`CALTERNAL_TEST_BWRAP` or `CALTERNAL_TEST_NODE` to override their paths.

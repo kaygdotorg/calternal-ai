@@ -1,4 +1,6 @@
 //! Exercise the real storage route and revision 9 Chat bundle in the OS sandbox.
+#![cfg(target_os = "linux")]
+
 use calternal_auth::{Auth, AuthConfig};
 use calternal_host::{Call, Host, WorkerRuntime};
 use calternal_types::{AccountId, Actor, ErrorCode, SpaceId};
@@ -18,6 +20,19 @@ fn checkout() -> PathBuf {
         .join("../..")
         .canonicalize()
         .unwrap()
+}
+
+fn program(override_var: &str, executable: &str) -> PathBuf {
+    let candidate = if let Some(path) = std::env::var_os(override_var) {
+        PathBuf::from(path)
+    } else {
+        let path = std::env::var_os("PATH").expect("the dev shell supplies a PATH");
+        std::env::split_paths(&path)
+            .map(|directory| directory.join(executable))
+            .find(|candidate| candidate.is_file())
+            .unwrap_or_else(|| panic!("{executable} is missing from PATH; run in nix develop"))
+    };
+    candidate.canonicalize().unwrap()
 }
 
 impl Fixture {
@@ -40,14 +55,9 @@ impl Fixture {
             .find(|s| s.personal)
             .unwrap()
             .id;
-        let program = |name: &str| {
-            PathBuf::from(
-                std::env::var_os(name).expect("set sandbox and Node paths for the coded host gate"),
-            )
-        };
         let runtime = WorkerRuntime::new(
-            program("CALTERNAL_TEST_BWRAP"),
-            program("CALTERNAL_TEST_NODE"),
+            program("CALTERNAL_TEST_BWRAP", "bwrap"),
+            program("CALTERNAL_TEST_NODE", "node"),
             checkout().join("packages/plugin-sdk"),
         )
         .unwrap();
@@ -99,7 +109,6 @@ impl Fixture {
 }
 
 #[tokio::test]
-#[ignore = "requires an explicit Bubblewrap/Node launcher and built SDK"]
 async fn real_chat_send_rename_and_replay() {
     let f = Fixture::new().await;
     f.install(checkout().join("plugins-v2/calternal-chat"))
@@ -207,7 +216,6 @@ fn observer(root: &Path) {
 }
 
 #[tokio::test]
-#[ignore = "requires an explicit Bubblewrap/Node launcher and built SDK"]
 async fn install_probe_registers_a_change_on_the_real_route() {
     let f = Fixture::new().await;
     f.install(checkout().join("plugins-v2/calternal-chat"))
@@ -281,7 +289,6 @@ async fn install_probe_registers_a_change_on_the_real_route() {
 }
 
 #[tokio::test]
-#[ignore = "requires an explicit Bubblewrap/Node launcher and built SDK"]
 async fn child_exit_cannot_leave_half_of_a_real_write() {
     let f = Fixture::new().await;
     let bundle = tempfile::tempdir().unwrap();
@@ -355,7 +362,6 @@ async fn child_exit_cannot_leave_half_of_a_real_write() {
 }
 
 #[tokio::test]
-#[ignore = "requires an explicit Bubblewrap/Node launcher and built SDK"]
 async fn chat_harness_refusal_reuses_the_record_receipt() {
     let f = Fixture::new().await;
     f.install(checkout().join("plugins-v2/calternal-chat"))
