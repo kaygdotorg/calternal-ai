@@ -181,7 +181,14 @@ export interface Page {
   /** Overall aggregates in declaration order, or an empty object without aggregates. */
   totals: unknown[] | Record<string, never>;
   /** Group key, matched row count and pre-page aggregates for each visible group. */
-  groups: { key: unknown; matched: number; totals: unknown[] }[];
+  groups: {
+    /** Value used by the collection to identify this group. */
+    key: unknown;
+    /** Number of matching items in this group before pagination. */
+    matched: number;
+    /** Group aggregates in the collection's declaration order. */
+    totals: unknown[];
+  }[];
   /** Computed collection header totals keyed by declared name. */
   namedTotals: Fields;
   /** Opaque next-page cursor, or null on the last page. */
