@@ -133,7 +133,9 @@ resolver and dialer exercise this path.
 
 Real sign-in is an opt-in development mode for one account, space and trusted
 installed program. The operator supplies one private credential file and a full
-local image ID. The fake image tests use a synthetic credential file.
+local image ID. The machine copies the checked file into private run storage,
+mounts the copy read-only and removes it with the run. The fake image tests
+use a synthetic credential file.
 Executable program bindings are supported. Image bindings return an explicit
 unsupported error.
 
