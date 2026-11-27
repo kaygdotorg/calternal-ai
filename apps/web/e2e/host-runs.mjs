@@ -56,7 +56,7 @@ async function sendPreviewEcho(page) {
   await picker.click();
   await page.getByRole("menuitem", { name: "Claude Code", exact: true }).click();
   assert.equal(await picker.getAttribute("data-selected-filler"), slot.filler);
-  await page.fill('textarea[aria-label="Write"]', prompt);
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill(prompt);
   await page.click('button[aria-label="Send"]');
   await page.waitForSelector(storedEcho);
   await page.click('button[aria-label="Window menu"]');
