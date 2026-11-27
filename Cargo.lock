@@ -658,6 +658,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "calternal-format"
+version = "0.1.0"
+dependencies = [
+ "unicode-normalization",
+ "unicode-security",
+]
+
+[[package]]
 name = "calternal-fsio"
 version = "0.1.0"
 dependencies = [

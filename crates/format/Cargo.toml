@@ -1,0 +1,18 @@
+[package]
+name = "calternal-format"
+description = "The pure engine that reads, checks and evaluates the kind and collection format: no I/O, no clock, no randomness"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+default = ["unicode"]
+# NFC, single-script and confusable checks of free strings (§1.1a, UTS #39).
+# On by default; a browser build may leave it off because devices only read
+# plugins the server already checked at install.
+unicode = ["dep:unicode-normalization", "dep:unicode-security"]
+
+[dependencies]
+unicode-normalization = { version = "0.1.26", optional = true, default-features = false }
+unicode-security = { version = "0.1.3", optional = true }
