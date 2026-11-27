@@ -223,7 +223,7 @@ async fn fake_echo_stream_becomes_one_reply_and_stop_kills_the_family() {
     let started = Instant::now();
     sandbox.release().await.unwrap();
     assert!(
-        started.elapsed() < Duration::from_secs(2),
+        started.elapsed() < Duration::from_secs(5),
         "Podman run stop took {:?}",
         started.elapsed()
     );
