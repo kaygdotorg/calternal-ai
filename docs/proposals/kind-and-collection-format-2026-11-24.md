@@ -1,12 +1,14 @@
-# The kind and collection format · revision 8
+# The kind and collection format · revision 9
 
-**Revision 8, 2026-11-27** (after revision 7 the same day). This is the single statement of the on-disk
+**Revision 9, 2026-11-27** (round 34: the owner's last answers; Chat is
+built first on this revision). This is the single statement of the on-disk
 format and the plugin call surface; a builder implements from it alone.
 
 It applies, all binding:
 
 - rounds 21 to 33 of `docs/morning-2026-11-21.md`;
-- the eight "Decided by the coordinator" sets of 2026-11-27;
+- round 34 of the morning report, and its later answers the same day;
+- the ten "Decided by the coordinator" sets of 2026-11-27;
 - the security review of revision 7
   ([docs/reviews/format-rev7-security-review-2026-11-27.md](../reviews/format-rev7-security-review-2026-11-27.md)),
   finding by finding, in Appendix D;
@@ -17,7 +19,7 @@ It applies, all binding:
   audit, for context.
 
 Where they contradict older text, the newer wins. The contradictions
-revision 6 resolved are in §19; revisions 7 and 8 are in §21. Items the
+revision 6 resolved are in §19; revisions 7 through 9 are in §21. Items the
 owner has not decided are marked **OPEN** in §17.
 
 The aim (owner, round 33): a very strong, very versatile plugin API that lets
@@ -44,11 +46,11 @@ grammar; a person can write a sum by hand; an agent writes anything larger.
 14. What is never open
 15. A first plugin
 16. Reading List, written out in full
-17. OPEN items
+17. Round 34 decisions and OPEN items
 18. Counts, and two ways to say one thing
 19. Contradictions resolved (revision 6)
 20. Choices that no decision covers
-21. Change list (revisions 7 and 8)
+21. Change list (revisions 7 through 9)
 
 Appendices:
 
@@ -91,8 +93,8 @@ Every folder and file except `plugin.md` is optional.
 - **Kinds made in the app** belong to the built-in plugin `space`
   (`space.<kind>`), in `.calternal/plugins/space/`.
 - **Description-only plugins** have no `operations.ts`, no `frames/`, and
-  declare no sign-ins, secrets, programs, outside addresses, `listens` or
-  `reads`. `sends out: nothing`, or no `sends out` line, both mean nothing
+  declare no sign-ins, secrets, programs, outside addresses, `listens`,
+  `reads` or `refuses`. `sends out: nothing`, or no `sends out` line, both mean nothing
   is sent (review 53). Any member may add one; everything else is
   installed by the Owner. A plugin with `frames/` is installed by the Owner
   after the web warning (sixth set, I1 (a)).
@@ -113,7 +115,8 @@ Every folder and file except `plugin.md` is optional.
   whoever would have to install the new version (the Owner, if it is no
   longer description-only). The eighth set names the lines that always
   wait: any added `listens`, `reads`, `extends`, `fills`, `outside`,
-  notification, destination or sign-in line. A changed kind body or
+  notification, destination or sign-in line. Adding or changing a
+  `refuses:` rule also waits for the Owner. A changed kind body or
   notification template counts as a changed sentence.
 - **Any HTML or script anywhere in a plugin counts as `frames/`** (S14).
 
@@ -157,9 +160,10 @@ grammar (fifth set); item files use YAML (§3.2).
 
 ```ebnf
 file        = "---" NL { header-line } "---" NL body ;
-header-line = indent ( entry | list-item | comment-only | blank ) NL ;
+header-line = indent ( entry | section-line | list-item | comment-only | blank ) NL ;
 indent      = { "  " } ;                         (* steps of exactly two spaces *)
 entry       = key ":" [ " " value ] [ comment ] ;
+section-line = value [ comment ] ;               (* only the forms named by the parent *)
 list-item   = "- " value [ comment ] ;           (* only where L9 allows *)
 key         = name | qualified | place ;         (* §1.3, §1.4, §7.4 *)
 value       = part { "," " " part } ;            (* split only at top level *)
@@ -178,7 +182,7 @@ comment     = " # " { char } | "# " { char } ;   (* L5 *)
 | **L3 Quotes** | Inside double quotes, `\"` and `\\` are the only escapes; the quotes are removed from the value. Text needs quotes only when it holds `, ` at top level, starts with a group character, or must keep `# ` |
 | **L4 Lists** | `[a, b]` and `a, b` are the same list; `[]` is empty |
 | **L5 Comments** | `#` starts a comment only at the start of a line or after a space, **and** only when followed by a space or the end of the line. `#c96f4a` is a value; `# note` is a comment. No comments inside quotes or groups |
-| **L6 Nesting** | Children are indented exactly two spaces more than their parent, to any depth the key's grammar allows. A key may have both a value and children (`ical: VEVENT` with mapping lines) |
+| **L6 Nesting** | Children are indented exactly two spaces more than their parent, to any depth the key's grammar allows. A key may have both a value and children (`ical: VEVENT` with mapping lines). A section line without a key is allowed only where its parent grammar names one, such as `checks`, `together`, `operations`, `listens` or the lines under a refusal target |
 | **L7 Continuation** | A line indented more than two spaces beyond the previous line continues it, joined with one space |
 | **L8 Tabs and blanks** | Tabs are refused at install, naming the line; blank lines are ignored |
 | **L9 List items** | `- ` begins a line only in sidebar bodies and their `extends:` lines (§6), and in agent-rule lines (`agent rules:` in §12, the rules body in §10) |
@@ -238,7 +242,8 @@ comment     = " # " { char } | "# " { char } ;   (* L5 *)
 | `file` | A pattern | no; default `{title}` if the kind has `title`, else the ID | 2.3 |
 | `item` | `file`, `folder with <main file>`, `file(<types>)[, paired]` | no; default `file` | 2.4 |
 | `editable` | `outside` or `operations`; fixed for the kind's life | yes, except on a hidden kind (always operations) | 2.5 |
-| `rights` | `change manager\|owner` | no; default editor | 2.6 |
+| `rights` | `change <role>`, `read <role or group>…` | no; default editor to change, every member to read | 2.6 |
+| `progress` | A number field (0 to 1) shown as live progress while an operation runs (O2) | no | 2.6a |
 | `fields` | Field lines | yes | 2.7 |
 | `records` | Record field lines | no | 2.8 |
 | `state` | Per-person keys | no | 2.9 |
@@ -358,21 +363,65 @@ editable: operations
 | Built-in `add`, `change`, `remove` | Present unless the operations list names them with a condition or as `code` | Only those listed |
 | An outside write | Checked as the built-in operation (§9) | Refused, except through CalDAV or CardDAV as the listed built-ins (§9) |
 
-### 2.6 `rights:` (fifth set; G5)
+### 2.6 `rights:` (fifth set; G5; O4, round 34)
 
 ```text
 rights: change manager|owner
+rights: read <role or group>…
+rights:
+  [change manager|owner]
+  [read <role or group>…]
 ```
 
 ```markdown
-rights: change manager
+rights:
+  change manager
+  read manager, family-adults
 ```
 
-- **What it sets:** the least role that may run add, change, remove,
+Use the inline form for one right and the block form for both. Each right
+may occur once.
+
+- **`change`** is the least role that may run add, change, remove,
   duplicate and record operations on the kind's items, from any surface,
-  including outside writes.
+  including outside writes. An author's own removal stays free (§2.20).
+- **`read`** names the roles or groups (by ID, N1) that may read the kind's
+  items. One matching role or group is enough on that line. A role
+  sets a minimum in the order reader, editor, manager, owner. A named
+  group matches by membership. Each applicable read line must pass.
+  People outside that audience never learn that such an item exists.
+  - Search, collections, totals, counts, sort and group positions,
+    formulas, links, backlinks, snippets and plugin search results never
+    show an unreadable item, its title or its existence (S42). Filter
+    before evaluating conditions, ranking, paging or aggregating. A
+    resolved link to an unreadable item gives the same result as a link
+    to an absent item. This applies to structured data and all
+    host-generated projections.
+  - A stored computed value reads only what every reader of its item may
+    read; otherwise it is computed per viewer (§4.7).
+  - An add, check or `unique:` clash that touches an unreadable item
+    answers `not-allowed`, without saying why.
+  - The one check enforces it, on every path, devices included: a device
+    never receives what its person cannot read. Rights also constrain
+  change, exports, sync, subscriptions and share access.
+- **Folders** get the same two lines in `space.md` (§12). A folder's rights
+  are inherited by every folder and file below it (inherited FB20), and a
+  kind's `read` narrows them further, never widens. Paths changed by a
+  move must pass the checks at both ends.
 - **The words** are the same ones `space.md` uses (§12).
-- **A `read` right** joins it if the owner says yes to O4.
+
+### 2.6a `progress:` (O2, round 34)
+
+```markdown
+progress: done fraction
+```
+
+This names a number field (0 to 1) of the kind. While an operation on the
+item runs, its value is shown as live progress: on a lock screen or Dynamic
+Island on iPhone, in the menu bar on Mac. The plugin's code updates the
+field like any other. The host subscribes only while the operation is
+active and the viewer may read the item. Missing or out-of-range progress
+is indeterminate.
 
 ### 2.7 `fields:`
 
@@ -447,8 +496,8 @@ Felt heavy today.
   and `·` in the name are escaped with `\`.
 - **The record's fields** are the consecutive `key: value` lines after the
   header whose key is a declared record field. The first other line starts
-  the record's text, so `Note: felt heavy` is text when `note` is not
-  declared.
+  the record's Markdown body, so `Note: felt heavy` is body text when
+  `note` is not declared. The body can contain several paragraphs.
 - **A record ends** at the next header line, or at a line holding only
   `---`.
 - **Built-in record fields:** `author` (from the ledger, never from the
@@ -690,7 +739,8 @@ protected: <field>…
 
 - a field;
 - `body`, `properties`, `image` or `preview`;
-- `records(<field>…)`;
+- `records(<field>…)`, showing each record's Markdown body and the listed
+  record fields;
 - `records(from(<kind>.<link field>))`, a records view over several items
   (fifth set);
 - `web(<field>)`, an HTML body in a web view (fifth set).
@@ -760,7 +810,9 @@ placement = swipe | menu | primary
   can remove it, and Trash and history recover it.
 - **Offline (S1):** built-ins, one-liners, open, timer and record
   operations apply on the device at once; coded operations queue as "not
-  sent yet".
+  sent yet". The coded operation runs on the server.
+- **Agent runs:** the default scope is `session` in the `s.run` options
+  (§8.1). There is no formula function for a run scope.
 - **Refused on reconnect:** the change is kept as "not accepted" in the
   outbox, with the reason. It is never dropped and never applied; the
   device never decides rights (sixth set).
@@ -950,7 +1002,9 @@ where`, `totals`, view columns, chart values and agent-rule conditions.
   `together`, `search`, `ical`, `vcard`, the `lines` box mapping or
   notification placeholders (S37).
 - **The one Rust engine** runs on the server, on devices and in the browser
-  as Wasm (round 33).
+  as Wasm (round 33). Formulas and totals run there over the data the
+  device may hold. Plugin TypeScript runs on the server (§2.20). A
+  calculation outside the formula language needs an engine function.
 - **A device's value** is "not yet confirmed" until the server agrees
   (S3).
 
@@ -999,7 +1053,8 @@ stays and the new one is offered, as with sidebars (review 17).
 ### 5.3 `from:` sources
 
 ```text
-from: <kind>…[, ignoring default]
+from: <kind>…[, ignoring default][, <share modifier>]
+<share modifier> = shared with me | ignoring shared
 from: <kind>.records
 from: lines(checkbox)
 from: files
@@ -1012,7 +1067,25 @@ from: files
   `done`, `note` and `task` (review 17).
 - **`files`** lists every file and folder, with `name`, `folder`, `size`,
   `edited`, `type` and `kind`, filtered by the person's rights.
-- **Spaces:** collections never cross spaces (S4; O1 may change this).
+- **Shared collections** (O1, round 34) are the exception to the space
+  boundary for collections. A collection shared with a person supplies
+  its items to that person's own collections of the same fully qualified
+  kind, including a Photos timeline. The source collection's membership
+  and the receiving collection's filters both apply. An incoming row
+  is never a source for sharing that row onward.
+- A kind source in a person's own collection includes local and shared
+  items by default. `shared with me` keeps only shared items.
+  `ignoring shared` keeps only local items. The two modifiers are
+  mutually exclusive. Record, checkbox and file sources are local.
+- **Check each item** against the current source rights and eligible
+  share before drawing it or counting it. One source item appears once
+  even if several shares include it. Eligible look and change grants
+  apply to that original item, and edits and removals under a change
+  grant go through its own checked operations, Trash and history.
+- Filters, columns and direct totals can use the visible rows in the
+  merged window. Formula traversal and whole-kind queries stay in the
+  space of their evaluation. A share confers no right to read the source
+  item's other links or to pass its contents to a plugin or run.
 
 ### 5.4 `totals:` (fifth set: `total` merged in)
 
@@ -1109,6 +1182,7 @@ format: 1
 | `listens` | Other plugins' operations it reacts to after they commit | 7.6 |
 | `notifications` | The texts it may send, as templates | 7.7 |
 | `settings` | Typed settings (inherited ADR 0055) | 7.8 |
+| `refuses` | Conditions that can refuse another plugin's operation | 7.9 |
 | body | What it does, shown at install | |
 
 **Destinations** (review 44, 45; S17, S18; these rules only narrow):
@@ -1331,7 +1405,7 @@ listens:
 
 ```text
 notifications:
-  <name>: "<at least three words of fixed text, with {<field>} placeholders>"
+  <name>: "<at least three words of fixed text, with {<field>} placeholders>"[, actions <operation>…]
 ```
 
 ```markdown
@@ -1349,6 +1423,21 @@ notifications:
   characters removed, never turned into a link, and drawn as a quotation.
 - **The notification always names the plugin**, and the install sheet
   shows every template.
+- **Buttons** (O2, round 34) are operations from the item's own operations
+  list, named with `actions`. They are drawn by the device's system
+  notification. On a locked device only actions the receiving person
+  marked safe are offered. The operation runs as the person who pressed
+  it and goes through the usual checks. A plugin cannot mark an action
+  safe for someone.
+- **Other native surfaces derived from declarations** (O2):
+  - share targets come from `fills: receive`;
+  - there is one generic Shortcut per verb (add, change, open, run an
+    operation), whose options are read from the operations lists;
+  - widgets and the menu bar fill `widget` and `menu bar` places with a
+    collection;
+  - live progress comes from `progress:` (§2.6a).
+  - Apple Health and the camera roll use bridges furnished by the
+    first-party apps. Generic plugins cannot supply device bridge code.
 
 ### 7.8 `settings:`
 
@@ -1364,6 +1453,39 @@ settings:
 
 Formulas read settings as `settings.<id>`. A formula that reads a `per
 person` setting is computed per viewer (§2.9).
+
+### 7.9 `refuses:` (round 34, later the same day)
+
+```text
+refuses:
+  [<qualified operation>]:
+    <condition>, "<sentence>"
+```
+
+```markdown
+refuses:
+  [calternal-money.transactions.add]:
+    amount > 1000 EUR, "Payments over 1,000 EUR need separate approval."
+```
+
+- **When it runs:** the engine evaluates the enabled conditions after the
+  ordinary rights and input checks and before a handler or a write. It
+  uses the same formula limits on the server and the device. The server
+  checks again at submission, including after offline work.
+- **Scope:** the declaration names an installed operation of another
+  plugin in the same space. It sees the authorized operation inputs
+  and the fields of the authorized target when there is one. An input
+  name takes precedence over a field of the same name. The declaring
+  plugin runs no handler and gains no read access or event. The check
+  never changes an input.
+- **When it holds,** the engine refuses the operation with the usual
+  `not-allowed` error, the declaring plugin's name and its quoted
+  sentence. If several match, the refusal uses the first in plugin ID
+  and file order.
+- **What it can never target:** Stop, undo, an author removing their own
+  items or records, or leaving a space (§14).
+- **Disclosure:** the install sheet shows every line. The Owner must
+  approve the declaration and can turn off each condition.
 
 ## 8. Calls, events, the acting person and the write table
 
@@ -1382,13 +1504,30 @@ codes: `not-allowed`, `not-found`, `invalid`, `conflict`, `too-large`,
 | `s.connect(sign-in, item)` | An IMAP or SMTP sign-in for an item | The connection the server holds | `needs-sign-in`, `unreachable` | 1 per sign-in and item |
 | `s.notify(people, { item, template })` | People who may read the item; a declared template | `accepted`, whatever each person's mute (S21) | `not-allowed`, `limit` | 100 recipients |
 | `s.job(program, items, input?)` | A declared program | A job ID; results come back through the plugin's operations | `not-allowed`, `limit` | 10,000 items |
-| `s.run(program, { scope, targets })` | A harness and its scope | A handle `{ id, send(input), stop(), status }`; `send` only by the run's actor, `stop` by anyone who may read the target | `not-allowed`, `limit`, `stopped` | the run's quota |
+| `s.run(program, { scope, targets })` | A declared program and target items, with `scope: session` by default (see below) | A handle `{ id, send(input), stop(), status }`; `send` only by the run's actor, `stop` by anyone who may read the target | `not-allowed`, `limit`, `stopped` | the run's quota |
 | `s.call("<plugin>.<operation>", input)` | A listed operation | Its output | `not-allowed`, and its own errors | depth 8 |
 | `s.state` | `get(item, key)`, `set(item, key, value)` for keys declared in `state:` | This person's value | `invalid`, `too-large` | 64 KiB per person and plugin |
 | `s.cache` | `get`, `set`, `delete`, `file(name)` | Rebuildable data; may be deleted at any time | `limit` | per-plugin quota |
 | `s.share(item, people)` | Who | Only in `on.call` from a live gesture. Opens the server's share sheet, starting at reader and listing only people the person can already see; returns when the person confirms or cancels (review 23, S41) | `not-allowed`, `stopped` | 100 people |
 | `s.outside.mint(item)` | An item of its own kinds | A new outside address below a declared one, with its own token (S1) | `not-allowed`, `limit` | per-plugin quota |
 | `s.me`, `s.space`, `s.event` | — | The acting person and their role; the space; `{ kind, key, item, before?, request? }` | — | — |
+
+In `s.write`, a record carries its declared fields and its Markdown body.
+The host supplies its author, receipt time and anchor.
+
+**Session scope.** With `scope: session`, the host projects each explicit
+target's readable fields and the records in its current session. Use
+the host's record order and receipt times. A gap of at least one hour
+ends a session, including a gap between the last record and the run's
+start. An item with no current records still has its permitted fields.
+The next record starts a new session. The quiet-hour threshold is the
+operator default.
+
+The target set and starting boundary are fixed when the run starts.
+The person's rights and agent rules remain ceilings at every call.
+Writes are fenced to record operations on those targets that the
+harness may call. A record or field link gives no additional run scope.
+The Chat-first build uses this scope only.
 
 ### 8.2 The six events, and who acts
 
@@ -1617,12 +1756,17 @@ strip: <plugin>…
 picks:
   <place>: <plugin>
 rights:
-  <plugin>.<kind>: change manager|owner
+  [<plugin>.<kind>]: <right>
+  [<folder>/]: <right>
+accent: <colour>
+icon: <asset path>
 agent rules:
   - <rule line, §10>
 first run:
   <plugin>: operation <operation>
 theme: <theme>
+
+<right> = change manager|owner | read <role or group>… | change manager|owner, read <role or group>…
 ```
 
 ```markdown
@@ -1634,6 +1778,9 @@ picks:
   shell panel: calternal-chat-claude-code
 rights:
   [calternal-money.transactions]: change manager
+  [Documents/Taxes/]: read manager, family-adults
+accent: "#c96f4a"
+icon: assets/family.png
 agent rules:
   - ask remove on calternal-money.transactions
 first run:
@@ -1652,8 +1799,13 @@ theme: dusk
   - a pick of a part that sends out needs the passkey (T7);
   - an updated profile is offered, never re-applied;
   - the sheet says "tightens rights and rules; sets defaults".
-- **`theme`** is a default each member may change. Whether it may bind
-  everyone is OPEN (§17).
+- **A space's look** (round 34, as recommended): `theme` is a default each
+  member may change for themselves. `accent` and `icon` are the space's own
+  and bind everyone, so a member always knows which space they are in.
+  The accent is a `colour` (§3.1). The icon is a checked image path
+  under the profile's owning `assets/` directory (§1.1a). Neither
+  changes protected host surfaces.
+- **Folder rights** follow §2.6, and are inherited downward.
 
 ## 13. Remote content (sixth and eighth sets; S16)
 
@@ -1682,7 +1834,7 @@ No key, place, extension or profile reaches these:
   renaming or retyping its fields or operations.
 - **A file's identity:** its kind, ID, author stamp and outside-editing
   switch.
-- **Other spaces.**
+- **Other spaces,** except eligible shared collection rows in §5.3.
 - **Sync:** the route, the journal and the merge.
 - **Secrets and reach:** secrets' values, the network list and programs.
 - **The client:** code outside a frame, and CSS.
@@ -1804,45 +1956,57 @@ export const remind = on.time("reading.remind", async (item, s) =>
 - **To appear in the system share sheet,** it adds `fills: receive: url ->
   operation add`.
 
-## 17. OPEN items (the owner's)
+## 17. Decided in round 34, and what stays OPEN
 
-| Item | The question | What each answer changes |
+**Decided (round 34 and its later answers, 2026-11-27):**
+
+| Item | Answer | Written in |
 | --- | --- | --- |
-| **O1** partner sharing across spaces | May a collection include items of another space shared with you? | Yes: `from:` gains `, shared with me` (read-only), and S4 gets one exception. No: unchanged |
-| **O2** native Apple surfaces | Notification buttons, Shortcuts, Live Activities, device bridges | Yes: `notifications:` templates gain `actions: <operation>…` (on a locked device only those marked safe); operations gain a progress value; kinds gain `health: workout`. No: `receive` and `timer` are all there is |
-| **O3** Workouts' first version | Log only, or with progression? | Only whether Workouts has code |
-| **O4** reading rights inside a space | May a kind or folder be readable by fewer people than its space? | Yes: `rights: read manager\|owner\|<group>`, in kinds and `space.md`, enforced by the one check and filtered in every query. A stored computed value then reads only what every reader of its item may read, or else it is per viewer. Sort, group, totals, search snippets and plugin search results are filtered per viewer. An add or check that touches an unreadable item answers `not-allowed` without saying why (S42). No: spaces stay the only read boundary |
-| **`refuses:`** | May a plugin refuse another plugin's operation before it runs? | Yes: `plugin.md` gains `refuses:` with `checks:`-form lines under an operation, evaluated by the engine on both sides, never targeting Stop, undo, own deletes or leaving. No: only `on.after` |
-| **Plugin pure modules on devices** | May a plugin ship a no-I/O module that runs on devices? | Yes: coded operations offline, plugin formula functions, field types and merges. No: unchanged |
-| **A binding space-wide look** | May `space.md`'s `theme:` bind every member? | Yes: members cannot change it. No: a default, plus a space accent and icon |
-| **`session()`** | The server-computed scope of a run (Chat) | Left for Chat's design (fifth set) |
-| **E.1** whose sign-in another member's action may use | May Ana's action use Lee's mail account in a shared space? | **Default now (strict):** a sign-in is used only by its own person (§7.3). **If the owner chooses (a)**, §7.3 gains one paragraph: the sign-in sheet has a switch "Members of *space* may send and read with this account"; when it is on, any member's work may use it, every use is stamped with who used it, and the person can turn it off. **(b)** would instead let anyone who may use the item use its sign-in |
-| **E.2** who writes instruction files (`AGENTS.md`, `CLAUDE.md` …) | May members write instructions that every agent in the folder follows? | **Default now (strict):** only the server writes them (§2.2). **If the owner chooses (b)**, §2.2 gains one paragraph: anyone with write on the folder may write them, and the server prefixes each with "These instructions were written by *person*", which no rule enforces beyond that line |
+| **O1** shared items across spaces | A shared collection's items join the other person's own collections of the same kind; the share's right decides look or change; the one exception to S4 | §5.3 |
+| **O2** iPhone and Mac surfaces | As recommended: notification buttons from the operations list, share targets, one generic Shortcut per verb, a declared progress value; device bridges first-party only | §2.6a, §7.7 |
+| **O4** reading rights inside a space | Yes: `rights: read …` on a kind or folder; nothing reveals an unreadable item, counts included | §2.6, §12 |
+| A space's look | As recommended: the theme is a default; the space's accent and icon bind | §12 |
+| `refuses:` | Yes, as a declared condition only | §7.9 |
+| Plugin code on devices | Not now. Formulas and totals run in the core on the device; a TypeScript operation runs on the server and queues offline; what formulas cannot say becomes a new built-in function | §2.20, §4.7 |
+| `session()` | A run scope, not a formula function | §2.20, §8.1 |
+
+**OPEN (the owner's), with the strict defaults in force:**
+
+| Item | The question | Default now, and the one-paragraph change |
+| --- | --- | --- |
+| **O3** Workouts' first version | Log only, or with progression? | The choice determines whether Workouts ships progression code |
+| **E.1** whose sign-in another member's action may use | May Ana's action use Lee's mail account in a shared space? | **Default (strict):** a sign-in is used only by its own person (§7.3). **If the owner chooses (a):** §7.3 gains a sign-in sheet switch, "Members of *space* may send and read with this account". Every use is stamped, and the person can turn it off |
+| **E.2** who writes instruction files (`AGENTS.md`, `CLAUDE.md` …) | May members write instructions that every agent in the folder follows? | **Default (strict):** only the server writes them (§2.2). **If the owner chooses (b):** anyone with write on the folder may, and the server prefixes "These instructions were written by *person*" |
 
 ## 18. Counts, and two ways to say one thing
 
-| | Revision 6 | Revision 7 | Revision 8 |
-| --- | --- | --- | --- |
-| Line grammar rules | — | 10, plus 6 name and 9 expression rules | the same |
-| Reserved words | — | 47 in four groups | 51 in five groups (`open item`; `password`, `token`, `secret`), plus 6 reserved plugin IDs |
-| Kind keys (with body) | 24 | 26 | 26 (a hidden kind writes no `editable:`) |
-| Field flags | 6 | 7 | 7 |
-| Operation line forms | 12 | 12 | 12 (only 3 allowed in `extends:`) |
-| Field types | 23 | 24, plus 4 built-ins | 24, plus 4 built-ins |
-| Functions | 26 | 25 | 25 |
-| Collection keys (with body) | 13 | 12 | 12 |
-| Views | 12 | 10 | 10 |
-| Sidebar line forms | 5 | 6 | 6 |
-| `plugin.md` keys (with body) | 20 | 19 | 19 |
-| Outside proofs | 3 | 3 | 2 (`signed`, `person`), on top of the token that is always there |
-| Host places | 13 | 12 | 12 |
-| Theme keys | 11 | 11 | 11; palette roles 8 → 6 |
-| Profile keys | 8 | 8 | 8 |
-| Agent rule line forms | 3 | 3 | 3 |
-| Calls | 13 | 13 | 14 (`s.outside.mint`) |
-| Events | 7 | 6 | 6 |
-| Error codes | 10 | 10 | 10 |
-| Size of this document | about 1,540 lines | about 2,020 lines, 14,600 words | about 2,430 lines, 19,500 words |
+| | Revision 6 | Revision 7 | Revision 8  Revision 9 |
+| --- | --- | --- | ---  --- |
+| Line grammar rules | — | 10, plus 6 name and 9 expression rules | the same | 10, plus 6 name and 9 expression rules |
+| Reserved words | — | 47 in four groups | 51 in five groups (`open item`; `password`, `token`, `secret`), plus 6 reserved plugin IDs | 51 in five groups, plus 6 reserved plugin IDs |
+| Kind keys (with body) | 24 | 26 | 26 (a hidden kind writes no `editable:`) | 28 (counting `ical` and `vcard` individually) |
+| Field flags | 6 | 7 | 7 | 7 |
+| Operation line forms | 12 | 12 | 12 (only 3 allowed in `extends:`) | 12 (only 3 allowed in `extends:`) |
+| Field types | 23 | 24, plus 4 built-ins | 24, plus 4 built-ins | 24, plus 4 built-in item fields |
+| Functions | 26 | 25 | 25 | 25 |
+| Collection keys (with body) | 13 | 12 | 12 | 13 |
+| Views | 12 | 10 | 10 | 10 |
+| Sidebar line forms | 5 | 6 | 6 | 6 |
+| `plugin.md` keys (with body) | 20 | 19 | 19 | 21 |
+| Outside proofs | 3 | 3 | 2 (`signed`, `person`), on top of the token that is always there | 2, on top of the mandatory token |
+| Host places | 13 | 12 | 12 | 12 |
+| Theme keys | 11 | 11 | 11; palette roles 8 → 6 | 11; 6 palette roles |
+| Profile keys | 8 | 8 | 8 | 10 |
+| Agent rule line forms | 3 | 3 | 3 | 3 |
+| Calls | 13 | 13 | 14 (`s.outside.mint`) | 14 |
+| Events | 7 | 6 | 6 | 6 |
+| Error codes | 10 | 10 | 10 | 10 |
+| Size of this document | about 1,540 lines | about 2,020 lines, 14,600 words | about 2,430 lines, 19,500 words | about 2,600 lines, 20,900 words |
+
+The revision 9 counts enumerate distinct keys, including the body where
+named. The kind count separates `ical` and `vcard`. The collection count
+includes the body, and the plugin count separates all keys that share a
+table row. The latter two also correct omissions in earlier counts.
 
 **Still two ways to say one thing** (kept apart by the fifth set):
 
@@ -1906,6 +2070,14 @@ Revision 7 adds six, all from the sixth set:
 10. **`assets/`** is the plugin folder for theme files.
 
 ## 21. Change list
+
+### Revision 9 (round 34)
+
+- Added the shared-collection exception and kind and folder read rights.
+- Settled native surfaces, space appearance, and declarative refusals.
+- Kept TypeScript operations on the server and specified `session` as the
+  default run scope. E.1 and E.2 keep their strict defaults.
+
 
 ### Revision 8 (security review of revision 7, eighth set)
 
@@ -2404,7 +2576,7 @@ notes).
 | S39 | Names and values as instructions | §7.2 |
 | S40 | Credential inputs | §7.1, §1.5 |
 | S41 | `s.share` pre-fills and needs no gesture | §8.1 |
-| S42 | Leaks once read rights exist | §17, in O4's "Yes" column |
+| S42 | Leaks once read rights exist | §2.6, §4.7, §5.3, §12 |
 | S43 | Paths, links and parsers | §1.1a |
 | S44 | Removing another person's record over WebDAV | §9 |
 
