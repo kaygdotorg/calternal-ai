@@ -147,7 +147,7 @@
 </div>
 
 <style>
-  .board { display: grid; grid-template-columns: repeat(var(--lanes, 3), minmax(13rem, 1fr)); gap: var(--s-5); height: 100%; min-height: 0; align-items: stretch; overflow-x: auto; }
+  .board { display: grid; grid-template-columns: repeat(var(--lanes, 3), minmax(11rem, 1fr)); gap: var(--s-5); height: 100%; min-height: 0; align-items: stretch; overflow-x: auto; }
   .col { display: flex; flex-direction: column; min-height: 0; border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); transition: background-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
   .col.over { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
   header { flex: none; display: flex; align-items: center; gap: var(--s-4); padding: var(--s-5) var(--s-5) var(--s-3); font-size: var(--text-ui); }

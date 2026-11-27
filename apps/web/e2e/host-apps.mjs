@@ -5,13 +5,22 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 
+/** Toggle appearance through the real profile menu so wallpaper and scheme stay in sync. */
+async function setDesktopScheme(page, scheme) {
+  const cur = await page.evaluate(() => document.documentElement.getAttribute("data-scheme"));
+  if (cur === scheme) return;
+  await page.click("[data-profile]");
+  await page.getByRole("menuitem", { name: scheme === "dark" ? "Dark appearance" : "Light appearance", exact: true }).click();
+  await page.waitForTimeout(300);
+}
+
 /** Drive Reading List and Tasks through the real `/host` UI and capture 1280 + 390 light/dark shots. */
 export async function verifyReadingListAndTasks(a, phone, origin, shotDir) {
   await a.page.waitForSelector('[data-switcher] [data-app="calternal-reading-list"]');
   await a.page.waitForSelector('[data-switcher] [data-app="calternal-tasks"]');
 
-  // Ensure light mode on desktop
-  await a.page.evaluate(() => document.documentElement.setAttribute("data-scheme", "light"));
+  // Ensure light mode on desktop (updates both data-scheme and wallpaper)
+  await setDesktopScheme(a.page, "light");
 
   // --- Reading List: book icon, add link, computed `site`, item page, `Mark read`, board, search ---
   await a.page.click('[data-switcher] [data-app="calternal-reading-list"]');
@@ -24,10 +33,9 @@ export async function verifyReadingListAndTasks(a, phone, origin, shotDir) {
   await a.page.waitForSelector('[data-canvas] .row-wrap:has-text("Layout study"):has-text("example.org")');
   await a.page.waitForTimeout(300);
   await a.page.screenshot({ path: path.join(shotDir, "reading-1280-light.png") });
-  await a.page.evaluate(() => document.documentElement.setAttribute("data-scheme", "dark"));
-  await a.page.waitForTimeout(250);
+  await setDesktopScheme(a.page, "dark");
   await a.page.screenshot({ path: path.join(shotDir, "reading-1280-dark.png") });
-  await a.page.evaluate(() => document.documentElement.setAttribute("data-scheme", "light"));
+  await setDesktopScheme(a.page, "light");
 
   // Open item page (must render ItemPageShell, NOT records composer)
   await a.page.click('[data-canvas] .row-wrap button:has-text("Layout study")');
@@ -64,10 +72,9 @@ export async function verifyReadingListAndTasks(a, phone, origin, shotDir) {
   await a.page.waitForSelector('[data-group="todo"] :text("Ship multi-app client")');
   await a.page.waitForTimeout(300);
   await a.page.screenshot({ path: path.join(shotDir, "tasks-list-1280-light.png") });
-  await a.page.evaluate(() => document.documentElement.setAttribute("data-scheme", "dark"));
-  await a.page.waitForTimeout(250);
+  await setDesktopScheme(a.page, "dark");
   await a.page.screenshot({ path: path.join(shotDir, "tasks-list-1280-dark.png") });
-  await a.page.evaluate(() => document.documentElement.setAttribute("data-scheme", "light"));
+  await setDesktopScheme(a.page, "light");
 
   // Switch to Board -> complete task via `Done` -> see lane change `todo` -> `done`
   await a.page.click('[data-view-tab="board"]');
@@ -84,37 +91,32 @@ export async function verifyReadingListAndTasks(a, phone, origin, shotDir) {
   await a.page.waitForSelector('[data-board] [data-col="todo"] :text("Review PR")');
   await a.page.waitForTimeout(300);
   await a.page.screenshot({ path: path.join(shotDir, "tasks-board-1280-light.png") });
-  await a.page.evaluate(() => document.documentElement.setAttribute("data-scheme", "dark"));
-  await a.page.waitForTimeout(250);
+  await setDesktopScheme(a.page, "dark");
   await a.page.screenshot({ path: path.join(shotDir, "tasks-board-1280-dark.png") });
-  await a.page.evaluate(() => document.documentElement.setAttribute("data-scheme", "light"));
+  await setDesktopScheme(a.page, "light");
 
   // --- Phone 390 light & dark screenshots for Reading List & Tasks ---
-  await phone.page.evaluate(() => sessionStorage.clear());
-  await phone.page.goto(`${origin}/host?scheme=light`);
-  await phone.page.waitForSelector('[data-switcher] [data-app="calternal-reading-list"]');
-  await phone.page.click('[data-switcher] [data-app="calternal-reading-list"]');
-  await phone.page.waitForSelector('[data-sidebar-body] [data-cid="calternal-reading-list.all"]');
-  await phone.page.click('[data-sidebar-body] [data-cid="calternal-reading-list.all"] .tog');
-  await phone.page.waitForSelector('[data-open-title]:has-text("All")');
-  await phone.page.waitForTimeout(350);
-  await phone.page.screenshot({ path: path.join(shotDir, "reading-390-light.png") });
-  await phone.page.evaluate(() => document.documentElement.setAttribute("data-scheme", "dark"));
-  await phone.page.waitForTimeout(250);
-  await phone.page.screenshot({ path: path.join(shotDir, "reading-390-dark.png") });
+  for (const scheme of ["light", "dark"]) {
+    await phone.page.evaluate(() => sessionStorage.clear());
+    await phone.page.goto(`${origin}/host?scheme=${scheme}`);
+    await phone.page.waitForSelector('[data-switcher] [data-app="calternal-reading-list"]');
+    await phone.page.click('[data-switcher] [data-app="calternal-reading-list"]');
+    await phone.page.waitForSelector('[data-sidebar-body] [data-cid="calternal-reading-list.all"]');
+    await phone.page.click('[data-sidebar-body] [data-cid="calternal-reading-list.all"] .tog');
+    await phone.page.waitForSelector('[data-open-title]:has-text("All")');
+    await phone.page.waitForTimeout(350);
+    await phone.page.screenshot({ path: path.join(shotDir, `reading-390-${scheme}.png`) });
 
-  await phone.page.click('button[aria-label="Back to the sidebar"]');
-  await phone.page.waitForSelector('[data-switcher] [data-app="calternal-tasks"]');
-  await phone.page.click('[data-switcher] [data-app="calternal-tasks"]');
-  await phone.page.waitForSelector('[data-sidebar-body] [data-cid="calternal-tasks.all"]');
-  await phone.page.click('[data-sidebar-body] [data-cid="calternal-tasks.all"] .tog');
-  await phone.page.waitForSelector('[data-view-tab="board"]');
-  await phone.page.click('[data-view-tab="board"]');
-  await phone.page.waitForTimeout(350);
-  await phone.page.screenshot({ path: path.join(shotDir, "tasks-390-dark.png") });
-  await phone.page.evaluate(() => document.documentElement.setAttribute("data-scheme", "light"));
-  await phone.page.waitForTimeout(250);
-  await phone.page.screenshot({ path: path.join(shotDir, "tasks-390-light.png") });
+    await phone.page.click('button[aria-label="Back to the sidebar"]');
+    await phone.page.waitForSelector('[data-switcher] [data-app="calternal-tasks"]');
+    await phone.page.click('[data-switcher] [data-app="calternal-tasks"]');
+    await phone.page.waitForSelector('[data-sidebar-body] [data-cid="calternal-tasks.all"]');
+    await phone.page.click('[data-sidebar-body] [data-cid="calternal-tasks.all"] .tog');
+    await phone.page.waitForSelector('[data-view-tab="board"]');
+    await phone.page.click('[data-view-tab="board"]');
+    await phone.page.waitForTimeout(350);
+    await phone.page.screenshot({ path: path.join(shotDir, `tasks-390-${scheme}.png`) });
+  }
 
   // Return desktop to Chat for the host-restart check
   await a.page.click('[data-switcher] [data-app="calternal-chat"]');
