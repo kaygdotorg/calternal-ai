@@ -686,6 +686,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "calternal-host"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "blake3",
+ "calternal-auth",
+ "calternal-format",
+ "calternal-fsio",
+ "calternal-types",
+ "getrandom 0.4.3",
+ "percent-encoding",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "time",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "calternal-machine"
 version = "0.1.0"
 dependencies = [
