@@ -1,4 +1,4 @@
-import { on, type ItemId, type RecordLink, type ItemLink } from "@calternal/plugin-sdk";
+import { on, type ItemId, type RecordLink, type ItemLink, type PersonId } from "@calternal/plugin-sdk";
 
 /** The chat to rename and its new title. */
 export interface RenameInput {
@@ -11,7 +11,7 @@ export interface SendInput {
   chat: ItemId;
   text: string;
   quote?: RecordLink;
-  mentions?: string[];
+  mentions?: PersonId[];
   attachments?: ItemLink[];
 }
 
@@ -29,7 +29,7 @@ export const send = on.call("chats.send", async ({ chat, text, quote, mentions, 
   return s.write([{
     "append record": {
       item: chat,
-      record: { text, quote, mentions, attachments },
+      record: { fields: { quote, mentions, attachments }, body: text },
     },
   }]);
 });
