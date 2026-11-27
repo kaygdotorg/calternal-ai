@@ -12,7 +12,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let root = PathBuf::from(root);
     let auth_dir = root.join("auth");
-    let config = AuthConfig::new(origin)?;
+    let mut config = AuthConfig::new(origin)?;
+    if let Some(proxies) = std::env::var_os("CALTERNAL_TRUSTED_PROXIES") {
+        config.set_trusted_proxies(proxies.to_str().ok_or("Invalid trusted proxy setting.")?)?;
+    }
     let auth_config = config.clone();
     let auth = tokio::task::spawn_blocking(move || Auth::open(&auth_dir, auth_config)).await??;
     let retention =

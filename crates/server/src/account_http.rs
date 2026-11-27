@@ -301,41 +301,13 @@ pub fn source_key(service: &HttpAuth, req: &Request) -> String {
     let Some(peer) = req.extensions().get::<ConnectInfo<SocketAddr>>() else {
         return "unknown".into();
     };
-    let mut client = peer.0.ip();
-    if service.config.trusts_proxy(client) {
-        let values = req.headers().get_all("x-forwarded-for");
-        let parsed = values
+    service.config.transport_source(
+        peer.0.ip(),
+        req.headers()
+            .get_all("x-forwarded-for")
             .iter()
-            .map(|v| v.to_str().ok())
-            .collect::<Option<Vec<_>>>()
-            .and_then(|v| {
-                v.iter()
-                    .flat_map(|v| v.split(','))
-                    .map(|v| v.trim().parse::<std::net::IpAddr>().ok())
-                    .collect::<Option<Vec<_>>>()
-            });
-        if let Some(chain) = parsed {
-            for hop in chain.into_iter().rev() {
-                if !service.config.trusts_proxy(client) {
-                    break;
-                }
-                client = hop;
-            }
-        }
-    }
-    match client {
-        std::net::IpAddr::V4(ip) => ip.to_string(),
-        std::net::IpAddr::V6(ip) => {
-            ip.to_ipv4_mapped()
-                .map(|ip| ip.to_string())
-                .unwrap_or_else(|| {
-                    format!(
-                        "{}/64",
-                        std::net::Ipv6Addr::from(u128::from(ip) & (u128::MAX << 64))
-                    )
-                })
-        }
-    }
+            .map(|header| header.to_str().ok()),
+    )
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

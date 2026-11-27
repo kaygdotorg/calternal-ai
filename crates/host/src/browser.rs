@@ -33,10 +33,9 @@ pub fn router(host: Arc<Host>, config: AuthConfig) -> Router {
         .route("/v1/auth/login/start", post(login_start))
         .route("/v1/auth/login/finish", post(login_finish))
         .route("/v1/auth/logout", post(logout))
-        .layer(middleware::from_fn(private))
         .with_state(Browser {
             host: host.clone(),
-            ttl: config.session_ttl.as_secs(),
+            config: Arc::new(config),
         });
     Router::new()
         .route("/v1/spaces/{space}/call", post(call))
@@ -45,16 +44,21 @@ pub fn router(host: Arc<Host>, config: AuthConfig) -> Router {
         .with_state(host)
         .merge(auth)
         .layer(middleware::from_fn_with_state(origin, origin_guard))
+        .layer(middleware::from_fn(private))
 }
 
 #[derive(Clone)]
 struct Browser {
     host: Arc<Host>,
-    ttl: u64,
+    config: Arc<AuthConfig>,
 }
 
 async fn private(req: Request, next: Next) -> Response {
-    let mut response = next.run(req).await;
+    let mut response = if cookies(req.headers()).nth(1).is_some() {
+        Failure(Error::unauthorized("Sign in to use this host.")).into_response()
+    } else {
+        next.run(req).await
+    };
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -92,14 +96,18 @@ async fn origin_guard(State(origin): State<String>, req: Request, next: Next) ->
     next.run(req).await
 }
 
-pub(crate) fn cookie(headers: &HeaderMap) -> Option<&str> {
-    let mut values = headers
+fn cookies(headers: &HeaderMap) -> impl Iterator<Item = &str> {
+    headers
         .get_all(header::COOKIE)
         .iter()
         .filter_map(|header| header.to_str().ok())
         .flat_map(|header| header.split(';'))
         .filter_map(|part| part.trim().split_once('='))
-        .filter_map(|(key, value)| (key == SESSION).then_some(value));
+        .filter_map(|(key, value)| (key == SESSION).then_some(value))
+}
+
+pub(crate) fn cookie(headers: &HeaderMap) -> Option<&str> {
+    let mut values = cookies(headers);
     let value = values.next()?;
     values.next().is_none().then_some(value)
 }
@@ -207,11 +215,12 @@ async fn setup_start(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request,
 ) -> Reply {
+    let source = source(&browser.config, peer, req.headers());
     let Setup { token, name } = body(req).await?;
     let (_, ceremony, options) = browser
         .host
         .auth
-        .start_setup(&token, &name, &source(peer))
+        .start_setup(&token, &name, &source)
         .await
         .map_err(auth_error)?;
     Ok(Json(json!({"ceremony":ceremony,"options":options})).into_response())
@@ -222,7 +231,7 @@ async fn login_start(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request,
 ) -> Reply {
-    let source = source(peer);
+    let source = source(&browser.config, peer, req.headers());
     let auth = &browser.host.auth;
     auth.admit_http_login(&source).map_err(auth_error)?;
     let Empty {} = body(req).await?;
@@ -230,19 +239,14 @@ async fn login_start(
     Ok(Json(json!({"ceremony":ceremony,"options":options})).into_response())
 }
 
-fn source(peer: SocketAddr) -> String {
-    match peer.ip() {
-        std::net::IpAddr::V4(ip) => ip.to_string(),
-        std::net::IpAddr::V6(ip) => ip.to_ipv4_mapped().map_or_else(
-            || {
-                format!(
-                    "{}/64",
-                    std::net::Ipv6Addr::from(u128::from(ip) & (u128::MAX << 64))
-                )
-            },
-            |ip| ip.to_string(),
-        ),
-    }
+fn source(config: &AuthConfig, peer: SocketAddr, headers: &HeaderMap) -> String {
+    config.transport_source(
+        peer.ip(),
+        headers
+            .get_all("x-forwarded-for")
+            .iter()
+            .map(|header| header.to_str().ok()),
+    )
 }
 
 async fn setup_finish(State(browser): State<Browser>, req: Request) -> Reply {
@@ -289,7 +293,7 @@ async fn signed_in(
     Ok(session_cookie(
         Json(payload).into_response(),
         &token,
-        browser.ttl,
+        browser.config.session_ttl.as_secs(),
     ))
 }
 
@@ -301,11 +305,11 @@ async fn logout(State(browser): State<Browser>, headers: HeaderMap) -> Reply {
     {
         return Err(auth_error(error));
     }
-    Ok(session_cookie(
-        StatusCode::NO_CONTENT.into_response(),
-        "",
-        0,
-    ))
+    let mut response = session_cookie(StatusCode::NO_CONTENT.into_response(), "", 0);
+    response
+        .headers_mut()
+        .insert("clear-site-data", HeaderValue::from_static(r#""cache""#));
+    Ok(response)
 }
 
 fn session_cookie(mut response: Response, value: &str, max_age: u64) -> Response {

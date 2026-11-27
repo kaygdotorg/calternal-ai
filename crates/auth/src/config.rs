@@ -1,5 +1,6 @@
 //! Sign-in settings.
 
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
@@ -170,6 +171,44 @@ impl AuthConfig {
             })
     }
 
+    /// Derive a bounded rate-limit identity from the transport peer and optional
+    /// forwarding headers. Only trusted proxies can advance the chain, and an
+    /// invalid header leaves the transport peer in use. IPv6 sources share a /64.
+    pub fn transport_source<'a>(
+        &self,
+        peer: IpAddr,
+        forwarding: impl IntoIterator<Item = Option<&'a str>>,
+    ) -> String {
+        let mut client = peer;
+        if self.trusts_proxy(peer)
+            && let Some(headers) = forwarding.into_iter().collect::<Option<Vec<_>>>()
+            && let Ok(hops) = headers
+                .iter()
+                .flat_map(|header| header.split(','))
+                .map(|hop| hop.trim().parse::<IpAddr>())
+                .collect::<Result<Vec<_>, _>>()
+        {
+            for hop in hops.into_iter().rev() {
+                if !self.trusts_proxy(client) {
+                    break;
+                }
+                client = hop;
+            }
+        }
+        match client {
+            IpAddr::V4(ip) => ip.to_string(),
+            IpAddr::V6(ip) => ip.to_ipv4_mapped().map_or_else(
+                || {
+                    format!(
+                        "{}/64",
+                        std::net::Ipv6Addr::from(u128::from(ip) & (u128::MAX << 64))
+                    )
+                },
+                |ip| ip.to_string(),
+            ),
+        }
+    }
+
     /// The origin as browsers send it in the `Origin` header.
     pub fn origin_header(&self) -> String {
         self.origin.origin().ascii_serialization()
@@ -198,6 +237,21 @@ mod tests {
 #[cfg(test)]
 mod proxy_tests {
     use super::*;
+    #[test]
+    fn source_traversal_stops_at_the_first_untrusted_hop() {
+        let mut config = AuthConfig::new("http://localhost:8080").unwrap();
+        let peer = "192.0.2.1".parse().unwrap();
+        let headers = [Some("198.51.100.2, 203.0.113.1"), Some("192.0.2.2")];
+        assert_eq!(config.transport_source(peer, headers), "192.0.2.1");
+        config.set_trusted_proxies("192.0.2.0/24").unwrap();
+        assert_eq!(config.transport_source(peer, headers), "203.0.113.1");
+        assert_eq!(config.transport_source(peer, [None]), "192.0.2.1");
+        assert_eq!(
+            config.transport_source("2001:db8::1234".parse().unwrap(), []),
+            "2001:db8::/64",
+        );
+    }
+
     #[test]
     fn proxy_trust_is_explicit_and_validated_atomically() {
         let mut config = AuthConfig::new("http://localhost:8080").unwrap();
