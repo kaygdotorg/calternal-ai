@@ -74,31 +74,14 @@ impl Space {
     fn target(&self, name: &str) -> Result<Target<'_>> {
         let denied = || Error::forbidden("The coded operation is undeclared or unavailable.");
         let (plugin, rest) = name.split_once('.').ok_or_else(denied)?;
+        let (kind, name) = rest.split_once('.').ok_or_else(denied)?;
         let installed = self.plugins.get(plugin).ok_or_else(denied)?;
-        if let Some((kind, name)) = rest.split_once('.') {
-            let (kind, definition) = installed.kinds.get_key_value(kind).ok_or_else(denied)?;
-            let operation = definition
-                .operations
-                .get(name)
-                .filter(|op| op.is_coded())
-                .ok_or_else(denied)?;
-            let plugin = &installed.manifest.id;
-            return Ok(Target {
-                plugin,
-                kind,
-                operation,
-            });
-        }
-        let mut declarations = installed.kinds.iter().filter_map(|(kind, definition)| {
-            Some((
-                kind,
-                definition.operations.get(rest).filter(|op| op.is_coded())?,
-            ))
-        });
-        let (kind, operation) = declarations.next().ok_or_else(denied)?;
-        if declarations.next().is_some() {
-            return Err(denied());
-        }
+        let (kind, definition) = installed.kinds.get_key_value(kind).ok_or_else(denied)?;
+        let operation = definition
+            .operations
+            .get(name)
+            .filter(|op| op.is_coded())
+            .ok_or_else(denied)?;
         Ok(Target {
             plugin: &installed.manifest.id,
             kind,
@@ -119,6 +102,30 @@ impl Space {
             .get(&selection.filler)
             .and_then(|plugin| plugin.manifest.operation_fill(owner, &selection.slot))
             .ok_or_else(denied)?;
+        // Fills use local declaration references, which may omit the kind.
+        // Resolve against the installed registrations before entering the
+        // route's exclusively qualified operation lookup.
+        let operation = if operation.contains('.') {
+            operation
+        } else {
+            let mut matches = self
+                .code
+                .get(&selection.filler)
+                .ok_or_else(denied)?
+                .registration
+                .calls
+                .iter()
+                .filter(|selector| {
+                    selector
+                        .rsplit_once('.')
+                        .is_some_and(|(_, name)| name == operation)
+                });
+            let qualified = matches.next().ok_or_else(denied)?;
+            if matches.next().is_some() {
+                return Err(denied());
+            }
+            qualified
+        };
         let target = self.target(&format!("{}.{operation}", selection.filler))?;
         Ok(SlotGrant {
             owner: owner.into(),
@@ -382,7 +389,7 @@ impl Host {
                                 .manifest
                                 .calls
                                 .iter()
-                                .any(|name| name == &call.call || name == &canonical)
+                                .any(|name| name == &canonical)
                         });
                         let selected = caller_grant.as_ref().is_some_and(|grant| {
                             grant.owner == *plugin && grant.operation == canonical

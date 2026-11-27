@@ -808,3 +808,23 @@ async fn replay_retries_a_busy_observation_once() {
         );
     }
 }
+
+#[tokio::test]
+async fn coded_route_rejects_two_part_alias() {
+    let f = Fixture::new().await;
+    f.install(checkout().join("plugins-v2/calternal-chat"))
+        .await
+        .unwrap();
+    let item = f.chat().await;
+    let alias = f
+        .call(
+            f.owner.into(),
+            "calternal-chat.rename",
+            json!({
+                "item":item, "title":"Alias",
+            }),
+            None,
+        )
+        .await;
+    assert_eq!(alias.unwrap_err().code, ErrorCode::Forbidden);
+}

@@ -1,5 +1,8 @@
 /** Author-facing coded operations for the primitives-only plugin host. @module */
 
+import type { Change, Query } from "./operation-contract.generated.js";
+export type { Change, OperationMethod, Query } from "./operation-contract.generated.js";
+
 /** Host-assigned item UUID. */
 export type ItemId = string;
 /** Host-assigned person UUID used in person and people fields. */
@@ -26,35 +29,6 @@ export interface OperationFailure {
   /** A safe next action. */
   next: string;
 }
-
-/** A kind query or a stored collection query. */
-export type Query =
-  | {
-      /** Qualified kind name. */
-      from: string;
-      /** Formula predicate evaluated by the host. */
-      where?: string;
-      /** Ordered sort expressions. */
-      sort?: readonly string[];
-      /** Grouping field. */
-      group?: string;
-      /** Requested aggregation expressions. */
-      totals?: readonly string[];
-      /** Field projection. */
-      fields?: readonly string[];
-      /** Opaque cursor from the previous page. */
-      cursor?: string;
-      /** Page size up to 200. */
-      limit?: number;
-    }
-  | {
-      /** Qualified collection name. */
-      collection: string;
-      /** Opaque cursor from the previous page. */
-      cursor?: string;
-      /** Page size up to 200. */
-      limit?: number;
-    };
 
 /** Projected item returned by a query. */
 export interface Row {
@@ -95,80 +69,6 @@ export interface RecordBody {
   /** The record's Markdown body. */
   body?: string;
 }
-
-/** One write in the atomic change list. Each entry names exactly one change. */
-export type Change =
-  | {
-      /** Create an item with initial values. */
-      add: {
-        /** Kind in which the item belongs. */
-        kind: string;
-        /** Initial declared field values. */
-        fields: Fields;
-        /** Initial Markdown body. */
-        body?: string;
-      };
-    }
-  | {
-      /** Update fields or Markdown. */
-      change: {
-        /** Item to update. */
-        item: ItemId;
-        /** New values for the named fields. */
-        fields?: Fields;
-        /** Replacement Markdown body. */
-        body?: string;
-        /** Required current version for a conditional update. */
-        base?: number;
-      };
-    }
-  | {
-      /** Remove an item. */
-      remove: {
-        /** Item to remove. */
-        item: ItemId;
-      };
-    }
-  | {
-      /** Move an item within its kind. */
-      move: {
-        /** Item to move. */
-        item: ItemId;
-        /** Destination subfolder within the kind. */
-        folder?: string;
-        /** Destination filename within the kind. */
-        file?: string;
-      };
-    }
-  | {
-      /** Append one record and let the host stamp it. */
-      "append record": {
-        /** Item whose record stream receives the append. */
-        item: ItemId;
-        /** Unstamped record fields and body. */
-        record: RecordBody;
-      };
-    }
-  | {
-      /** Change the record identified by its anchor. */
-      "change record": {
-        /** Item holding the record. */
-        item: ItemId;
-        /** Anchor in the item's record stream. */
-        anchor: string;
-        /** Updated declared fields and body. */
-        record: RecordBody;
-      };
-    }
-  | {
-      /** Remove the record identified by its anchor. */
-      "remove record": {
-        /** Item holding the record. */
-        item: ItemId;
-        /** Anchor in the item's record stream. */
-        anchor: string;
-      };
-    };
 
 /** Receipts in change-list order. */
 export interface WriteResult {
@@ -228,9 +128,10 @@ export interface OperationsContext {
     /** Store the acting person's value. */
     set(item: ItemId, key: string, value: unknown): Promise<unknown>;
   };
-  /** Invoke another plugin's listed operation through the same authority check. */
+  /** Invoke a declared operation using its plugin.kind.operation identifier. */
   call(operation: string, input: unknown): Promise<unknown>;
-  /** Start a declared program with a host-checked scope and targets. */
+  /** Start a declared program in the current session. The host needs an
+   * operator-configured run service to admit the program. */
   run(program: string, options: { scope?: "session"; targets: readonly ItemId[] }): Promise<RunHandle>;
   /** Verified actor and current role for this delivery. */
   readonly me: Readonly<{

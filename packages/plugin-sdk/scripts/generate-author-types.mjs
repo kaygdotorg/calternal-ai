@@ -1,5 +1,6 @@
 // Generate the SDK author types and copy the validation inputs into the SDK.
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import "./generate-operation-types.mjs";
 import { generateAuthorTypes } from "../../contracts/scripts/schema-to-types.mjs";
 
 const contract = new URL("../../../contract/", import.meta.url);

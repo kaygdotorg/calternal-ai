@@ -274,12 +274,10 @@ impl Host {
                 )
                 .map_err(run_error)?;
                 let reply = kind == "calternal-chat.chats"
-                    && manifest.calls.iter().any(|name| {
-                        matches!(
-                            name.as_str(),
-                            "calternal-chat.send" | "calternal-chat.chats.send"
-                        )
-                    });
+                    && manifest
+                        .calls
+                        .iter()
+                        .any(|name| matches!(name.as_str(), "calternal-chat.chats.send"));
                 Ok((Some((program, reply)), receipt, storage.runs.logs.clone()))
             })
             .await?;
