@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS recovered_appends (
 );
 CREATE INDEX IF NOT EXISTS recovered_lookup ON recovered_appends(actor,at);
 CREATE INDEX IF NOT EXISTS recovered_expiry ON recovered_appends(at);
+CREATE TABLE IF NOT EXISTS pending_append (
+  id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL, bytes BLOB NOT NULL
+);
 CREATE TABLE IF NOT EXISTS publication (
   id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL
 );
@@ -205,6 +208,7 @@ impl Space {
         for name in self.pending_dir.entry_names(3_100).map_err(internal)? {
             self.pending_dir.remove(&name).map_err(internal)?;
         }
+        crate::records::recover_pending(self)?;
         self.load_plugins()?;
         self.rebuild()?;
         self.recovery_needed = false;
@@ -544,6 +548,7 @@ impl Space {
     }
 }
 
+#[derive(Deserialize, Serialize)]
 pub(crate) struct Receipt {
     actor: String,
     pub(crate) proof: ReceiptProof,
@@ -551,7 +556,7 @@ pub(crate) struct Receipt {
     pub(crate) replay: Option<Value>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub(crate) struct ReceiptProof {
     pub(crate) gesture: [u8; 32],
     pub(crate) fingerprint: [u8; 32],

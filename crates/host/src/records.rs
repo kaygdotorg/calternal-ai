@@ -15,7 +15,7 @@ mod seal;
 
 #[cfg(target_os = "linux")]
 pub(crate) use append::append;
-pub(crate) use append::{recover_tail, recovered, replay_recovered};
+pub(crate) use append::{recover_pending, recover_tail, recovered, replay_recovered};
 
 const CROCKFORD: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
@@ -36,7 +36,7 @@ impl From<&Metadata> for Signature {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct Record {
     pub(crate) anchor: String,
     pub(crate) offset: u64,
