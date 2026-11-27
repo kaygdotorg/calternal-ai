@@ -109,8 +109,7 @@ the slot owner's operation schema, and installed fillers must match its
 names, types and required fields. `Manifest::refusals` holds the compiled
 conditions for a checked operation. The host applies enabled rules in plugin
 ID and file order after the ordinary check, excluding protected operations.
-It overlays already-authorized inputs on already-authorized stored fields
-and evaluates with no linked sources.
+The revision 10 handoff below gives the checked evaluator for these rules.
 
 ## Follow-up after the integration receipt
 
@@ -127,3 +126,38 @@ The original four lane B signatures are unchanged.
   viewer's authorized query context. It includes transitive dependencies.
   The shared search index may cache fields that can be evaluated from data
   visible to every reader. The host supplies the applicable read scope.
+
+## Revision 10 next-app additions
+
+The original entry points keep their signatures. The host continues to supply
+authorized rows, identity, clock and civil-calendar inputs. The engine owns no
+storage, permissions, clocks or time zone database.
+
+| Surface | Compiled data and host call |
+| --- | --- |
+| Item frontmatter | `parse_item` folds multiline plain, single-quoted and double-quoted scalars, including scalars inside flow sequences. `write_item` reuses source ranges for unchanged values and writes replacement text as quoted text with exact escapes. |
+| Note items | `Kind::line_claim` carries the form, eligible source kinds and a typed checkbox map. `scan_note_lines` returns source ranges, marks, titles and the raw targets of direct child links. `LineClaim::time_fields` combines a time line with the note's date. Resolve links and the calendar tag on the host. Check any linked task status edit through the usual change path. `Source::CheckboxLines` identifies the authorized plain-checkbox source. |
+| Period fields | `Field::period` identifies day, ISO week, month or year. `Period::starts` lists civil buckets. Set `EvalContext::periods` for standalone or header evaluation and `QueryRowContext::periods` for each item's query history. `evaluate_period_field` evaluates one declared field over typed stored and already-computed inputs. Use a fresh snapshot for each bucket and omit failed historical values. |
+| Whole-kind totals | `Collection::named_totals` and `named_total_order` describe the header values. Supply typed, authorized `KindRows` in `EvalContext::kinds` or a `PeriodSnapshot`. Whole-kind rows are taken before collection filters and paging. Supply an empty vector for a known empty kind. Missing kind input is a diagnostic. The result separates named values and isolated diagnostics, with an empty value for a failed total. |
+| Recurrence | `parse_repeat` compiles one rule. `next_occurrence` takes the original seed and an exclusive lower bound. `expand_repeat` implements an individual series and `expand_calendar_window` expands authorized pre-page matches from an expanding collection or calendar view. Supply EXDATE and authorized overrides keyed by the original slot. Occurrences carry both the original slot and effective start. Provide `EvalContext::repeat_start` or per-row `repeat_start` when the original seed is separate from stored fields. |
+| DAV metadata | `Kind::dav` carries checked calendar and contact mappings. Evaluate `DavProperty::unless` before either direction. The protocol lane applies the property and payload limits, app passwords, unmapped snapshots and built-in operation checks. |
+| Rights | `Rights::change_right()` and `Rights::read_audience()` give the typed narrowing and role-or-group alternatives. The host intersects applicable folder, kind and space limits, and uses the existing membership role order. |
+| Refusals | Pass individually enabled `(&Manifest, &Refusal)` pairs and a `RefusalCall` to `evaluate_refusals` after ordinary validation. Supply the checked inputs, authorized stored target fields and verified own-removal flag. Map a returned reason or evaluation failure to the host's permission error. Exempt Stop, undo, own removals and leaving in host routing as well. |
+| Extensions | `Manifest::extensions` preserves contributions in source order. `KindSelector::matches` supports current and future visible kinds. `KindExtension::compute_fields` returns qualified computed values, including Boolean marks. `plan_operation` emits namespaced sets, scoped open filters or dispatch plans. Use the adding plugin's identity and preserve `Kind::protected`. The host owns opt-in, disclosure, target authorization, supervised code and commits. |
+
+The recurrence engine works in civil time. Normalize each series and its
+window to the same local timeline before expansion. An explicit offset on the
+seed works as a fixed offset for arithmetic and UTC UNTIL comparison.
+Resolve named time zones, DST gaps and fold selection in the calendar host.
+Each window is half-open by start. A consumer displaying events that overlap
+the visible boundary should include earlier starts based on their duration
+and clip the projected intervals.
+
+## Integration handoff
+
+The host query and indexing lane consumes note claims, source rows, period
+history and recurrence. The host operation and authorization lane consumes
+rights, refusal results and extension plans. The calendar and contacts
+protocol lane consumes the checked DAV bindings. The declaration projection
+lane consumes extension presentation metadata. No interface changes ship
+with this crate.
