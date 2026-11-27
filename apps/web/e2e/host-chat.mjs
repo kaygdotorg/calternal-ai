@@ -218,6 +218,9 @@ async function fixture(directory, origin, setupCode) {
 
     // Recovery codes step (shown once) — install plugins before entering the space so `calternal-host serve` has not opened the space lock yet.
     await a.page.waitForSelector('h1:has-text("Save your recovery codes")');
+    if (previewUnit) {
+      assert.equal(fs.existsSync(path.join(directory, "first-owner-code")), false, "enrollment removes the spent owner-code file before restart");
+    }
     const codeCount = await a.page.locator('ul[aria-label="Recovery codes"] li').count();
     assert.ok(codeCount >= 8, `expected recovery codes, got ${codeCount}`);
 
