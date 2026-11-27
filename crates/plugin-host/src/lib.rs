@@ -1,14 +1,15 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
-//! Data-only plugin registry and bounded worker-v2 session engine.
-//!
-//! This library never starts a process or grants authority. An execution adapter must
-//! isolate each (plugin, space) worker, deny ambient filesystem/network/credentials,
-//! enforce CPU/memory/deadline limits and kill unresponsive cancelled workers.
-//! Host brokers must recheck current authority at every effect and delivery boundary.
+//! Plugin registry and worker transports. With the `operations` feature, the
+//! primitives-only transport starts a process through a trusted launcher.
+//! The launcher enforces the process boundary and the call route checks
+//! current authority at each effect and delivery boundary.
 mod bounded;
 mod claims;
 mod input_diagnostics;
+/// Process transport for the primitives-only plugin API.
+#[cfg(feature = "operations")]
+pub mod operations;
 mod registry;
 mod registry_v2;
 mod runtime;

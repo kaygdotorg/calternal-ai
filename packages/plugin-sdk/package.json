@@ -5,6 +5,10 @@
   "type": "module",
   "exports": {
     ".": {
+      "calternal-operations": {
+        "types": "./dist/operation-api.d.ts",
+        "import": "./dist/operation-api.js"
+      },
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },

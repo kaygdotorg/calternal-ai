@@ -110,3 +110,22 @@ complete frames. See [durable job waits](../../docs/plugin-api.md#durable-job-wa
 A worker can declare `read_setting_v1` to read an effective setting from its
 own manifest in the invocation's space. The normal broker effect and delivery
 checks apply. The manager API handles overrides and offline conflicts.
+
+## Primitives-only coded operations
+
+The `operations` feature provides one asynchronous endpoint per installed
+coded plugin and space. A trusted launcher supplies the sandbox and the
+call route owns authorization and receipt commits. See the
+[frame contract](../../docs/reviews/plugin-frames-2026-11-27.md).
+
+With the revision 9 Chat vectors in the checkout, run the integration tests
+on the dev VM under the shared gate:
+
+```sh
+~/bin/lock-shared nix develop -c bash -c '
+  set -e
+  npm ci --ignore-scripts --no-audit --no-fund
+  npm run build --workspace @calternal/plugin-sdk
+  PLUGIN_TEST_NODE="$(command -v node)" cargo test --locked -p calternal-plugin-host --features operations
+'
+```
