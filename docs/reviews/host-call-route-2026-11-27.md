@@ -2,7 +2,7 @@
 
 Browser and CLI calls go through `POST /v1/spaces/{space}/call`. The
 space is a UUID. The HTTP adapter resolves a bearer session through the
-auth crate. The request body carries no person, role, plugin identity or
+auth crate. The verified caller must own the personal space. The request body carries no person, role, plugin identity or
 run scope. In-process adapters supply those from their trusted session or
 worker context. The worker transport can wrap the same operation and input
 in its own frame.
@@ -18,16 +18,23 @@ Success is `{"result": ...}`. The error body is `{"error":{"code": "...",
 | --- | --- | --- |
 | `s.query` | `{from, where?, sort?, cursor?, limit?}` or `{collection, cursor?, limit?}`. Collection names are qualified plugin and collection IDs. | `{rows, totals, cursor}`. Rows contain `id`, `kind`, `fields`, `computed` and `version`. `cursor` is opaque and null on the last page. |
 | `s.read` | `{item}` | `{id, kind, fields, computed, body, records, version}` |
-| `s.write` | `{changes, preview?}`. Each change has an `op` tag. | `{changes:[{id, version, anchor?}]}` in input order. Preview performs validation and returns the planned changes. |
+| `s.write` | `{changes, preview?}`. Each change is an object with one operation-name key. | `{changes:[{id, version, anchor?}]}` in input order. Preview performs validation and returns the planned changes. |
 | `s.state` | `{op:"get",item,key}` or `{op:"set",item,key,value}` | `{value}` |
 | `s.me` | `{}` | `{id,role}` |
 | `s.space` | `{}` | `{id}` |
+| `index.rebuild` | `{}` (shell only) | `{items}` |
 
 `s.write` change tags and payloads are `add {kind,fields,body?}`,
 `change {item,fields?,body?,base?}`, `remove {item}`,
 `append record {item,record:{fields?,body?}}`,
 `change record {item,anchor,record:{fields?,body?}}` and
-`remove record {item,anchor}`. Output records add the host's
+`remove record {item,anchor}`. Example for a verified owning-plugin context:
+
+```json
+{"call":"s.write","idempotency_key":"gesture-1","input":{"changes":[{"append record":{"item":"019a0000-0000-7000-8000-000000000001","record":{"body":"Hello"}}}]}}
+```
+
+Output records add the host's
 `anchor`, `author` and `at` fields. An adapter may pass
 `idempotency_key` at the envelope level. The host scopes receipts to
 the verified person, space and plugin. Reusing a live key with different
