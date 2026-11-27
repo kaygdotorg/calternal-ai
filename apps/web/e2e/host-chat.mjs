@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { preview } from "vite";
 import { enterSetupCode, previewReady, previewUnit, service, startPreview } from "./host-preview-service.mjs";
+import { verifyReadingListAndTasks } from "./host-apps.mjs";
 
 const WEB = fileURLToPath(new URL("../", import.meta.url));
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -211,9 +212,9 @@ async function fixture(directory, origin, setupCode) {
     assert.equal(await upgradeStatus(liveUrl, "http://foreign.invalid", "same-site"), 403);
     assert.equal(await upgradeStatus(liveUrl, origin, "same-origin"), 401);
 
-    // Install real Chat + real Claude Code harness on the real host before the browser opens the space
+    // Install real Chat + Claude Code harness + Reading List + Tasks on the real host
     if (!previewUnit) {
-      for (const plugin of ["calternal-chat", "calternal-chat-claude-code"]) {
+      for (const plugin of ["calternal-chat", "calternal-chat-claude-code", "calternal-reading-list", "calternal-tasks"]) {
         await run(
           bin,
           ["install", directory, origin, session.account, session.space, path.join(ROOT, "plugins-v2", plugin), "--official"],
@@ -318,9 +319,10 @@ async function fixture(directory, origin, setupCode) {
     await a.page.waitForSelector('[data-open-title]:has-text("Release prep v2")');
     await a.page.waitForSelector('[data-stream-run][data-run-state="streaming"]:has-text("Echo: hold: live stream check")', { timeout: 15_000 });
 
-    // Stop the active run and verify "Stopped by you" state
+    // Stop the active run and verify "Stopped by you" + "Retry" beside "Dismiss"
     await a.page.click('button[aria-label="Stop"]');
     await a.page.waitForSelector('[data-stream-run][data-run-state="stopped"]:has-text("Stopped by you")', { timeout: 10_000 });
+    await a.page.waitForSelector('[data-stream-run] button:has-text("Retry")');
     await a.page.waitForTimeout(300);
     await a.page.screenshot({ path: path.join(SHOT_DIR, "run-stopped-1280-light.png") });
     await a.page.click('[data-profile]');
@@ -476,6 +478,10 @@ async function fixture(directory, origin, setupCode) {
     await phone.page.waitForTimeout(400);
     assert.equal(await phone.page.locator('[data-switcher]').count(), 0);
     await phone.page.screenshot({ path: path.join(SHOT_DIR, "pair-390-dark-real.png") });
+
+    // Reading List & Tasks E2E + 1280/390 light/dark screenshots
+    await verifyReadingListAndTasks(a, phone, origin, SHOT_DIR);
+    console.log("PASS 5: Reading List & Tasks multi-view collections, item page, typed forms, perform ops, board, totals, and search");
 
     if (previewUnit) {
       console.log(`PASS 5: real preview screenshots written to ${SHOT_DIR}`);
