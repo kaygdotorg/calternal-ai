@@ -10,6 +10,7 @@ mod item;
 mod lines;
 mod note_lines;
 mod operation;
+mod outbound;
 mod period;
 mod query;
 mod repeat;
@@ -31,6 +32,7 @@ pub use operation::{
     Assignment, Change, Operation, OperationForm, OperationInput, apply_operation, check_item,
     operation_conditions,
 };
+pub use outbound::outbound_dns_name;
 pub use period::{KindRows, Period, PeriodSnapshot, evaluate_period_field};
 pub use query::{
     CalendarOccurrence, CalendarSeries, Page, QueryGroup, QueryResult, QueryRow, evaluate_query,

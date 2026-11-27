@@ -4,12 +4,14 @@
 //! bytes over a mounted Unix socket; this module checks each declared hostname,
 //! resolves it on the host for every connection, refuses unsafe answers, and
 //! dials the already-checked address without resolving again.
+mod policy;
 mod tunnel;
 use crate::sandbox::BoxFuture;
+pub(crate) use policy::exclusions;
 use std::{
     collections::HashSet,
     io,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs},
+    net::{IpAddr, SocketAddr, ToSocketAddrs},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -30,7 +32,8 @@ const MAX_SYSTEM_DNS_JOBS: usize = 16;
 
 /// Resolves a declared hostname on the host for each CONNECT request.
 pub trait EgressResolver: Send + Sync + 'static {
-    /// Return all addresses currently associated with host. The proxy rejects
+    /// Resolve an absolute DNS name, including its trailing root label.
+    /// Return all current addresses for the name. The proxy rejects
     /// the entire answer if any address is unsafe. Cost is one system lookup.
     fn resolve<'a>(&'a self, host: &'a str) -> BoxFuture<'a, io::Result<Vec<IpAddr>>>;
 }
@@ -90,6 +93,7 @@ impl EgressDialer for TcpDialer {
 #[derive(Clone, Debug)]
 pub struct EgressPolicy {
     hosts: HashSet<String>,
+    exclusions: Arc<[ipnet::IpNet]>,
 }
 
 impl EgressPolicy {
@@ -104,7 +108,23 @@ impl EgressPolicy {
         for host in hosts {
             allowed.insert(normalize_hostname(host.as_ref())?);
         }
-        Ok(Self { hosts: allowed })
+        Ok(Self {
+            hosts: allowed,
+            exclusions: Arc::default(),
+        })
+    }
+
+    pub(crate) fn excluding(mut self, exclusions: Arc<[ipnet::IpNet]>) -> Self {
+        self.exclusions = exclusions;
+        self
+    }
+
+    fn allows_address(&self, address: IpAddr) -> bool {
+        policy::is_global_unicast(address)
+            && !self
+                .exclusions
+                .iter()
+                .any(|prefix| prefix.contains(&address))
     }
 
     fn allows(&self, host: &str) -> bool {
@@ -118,6 +138,9 @@ pub enum EgressError {
     /// A declared host is not a canonical public DNS name.
     #[error("invalid outbound hostname")]
     InvalidHost,
+    /// Invalid or oversized operator exclusion list.
+    #[error("invalid egress exclusion CIDRs")]
+    InvalidExclusions,
     /// The host-side Unix socket could not be created or managed.
     #[error("cannot start egress proxy: {0}")]
     Io(#[from] io::Error),
@@ -259,20 +282,26 @@ async fn handshake(
 ) -> Option<(String, TcpStream, Vec<u8>, usize)> {
     let mut request = Vec::with_capacity(1024);
     let mut buffer = [0_u8; 2048];
+    let mut checked = 0;
     let header_end = loop {
-        if let Some(position) = find_header_end(&request) {
-            break position;
+        if let Some(size) = find_header_end(&request[checked..]) {
+            break checked + size;
         }
         if request.len() >= MAX_CONNECT_HEADERS {
             refuse(client, "431 Request Header Fields Too Large").await;
             return None;
         }
+        checked = request.len().saturating_sub(3);
         let count = client.read(&mut buffer).await.ok()?;
         if count == 0 {
             return None;
         }
         request.extend_from_slice(&buffer[..count]);
     };
+    if header_end > MAX_CONNECT_HEADERS {
+        refuse(client, "431 Request Header Fields Too Large").await;
+        return None;
+    }
     let Some(host) = parse_connect(&request[..header_end]) else {
         refuse(client, "400 Bad Request").await;
         return None;
@@ -282,14 +311,18 @@ async fn handshake(
         refuse(client, "403 Forbidden").await;
         return None;
     }
-    let addresses = match resolver.resolve(&host).await {
+    let absolute_name = format!("{host}.");
+    let addresses = match resolver.resolve(&absolute_name).await {
         Ok(addresses) if !addresses.is_empty() => addresses,
         _ => {
             refuse(client, "502 Bad Gateway").await;
             return None;
         }
     };
-    if addresses.iter().any(|address| is_denied_address(*address)) {
+    if addresses
+        .iter()
+        .any(|address| !policy.allows_address(*address))
+    {
         eprintln!("harness egress refused unsafe DNS answer for {host}");
         refuse(client, "403 Forbidden").await;
         return None;
@@ -323,7 +356,7 @@ fn find_header_end(bytes: &[u8]) -> Option<usize> {
 fn parse_connect(headers: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(headers).ok()?;
     let mut lines = text.strip_suffix("\r\n\r\n")?.split("\r\n");
-    let mut request = lines.next()?.split_ascii_whitespace();
+    let mut request = lines.next()?.split(' ');
     if request.next()? != "CONNECT" {
         return None;
     }
@@ -339,6 +372,16 @@ fn parse_connect(headers: &[u8]) -> Option<String> {
     let mut found_host = false;
     for line in lines {
         let (name, value) = line.split_once(':')?;
+        if name.is_empty()
+            || !name.bytes().all(header_token)
+            || !value
+                .bytes()
+                .all(|byte| byte == b'\t' || (b' '..=b'~').contains(&byte))
+            || name.eq_ignore_ascii_case("content-length")
+            || name.eq_ignore_ascii_case("transfer-encoding")
+        {
+            return None;
+        }
         if name.eq_ignore_ascii_case("host") {
             if found_host {
                 return None;
@@ -356,79 +399,12 @@ fn parse_connect(headers: &[u8]) -> Option<String> {
     found_host.then_some(host)
 }
 
+fn header_token(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)
+}
+
 fn normalize_hostname(host: &str) -> Result<String, EgressError> {
-    if host.is_empty() || host.len() > 253 || host.ends_with('.') || host.parse::<IpAddr>().is_ok()
-    {
-        return Err(EgressError::InvalidHost);
-    }
-    let normalized = host.to_ascii_lowercase();
-    if normalized == "localhost"
-        || normalized.ends_with(".localhost")
-        || normalized.ends_with(".local")
-        || normalized.ends_with(".internal")
-        || normalized.ends_with(".test")
-    {
-        return Err(EgressError::InvalidHost);
-    }
-    if !normalized.split('.').all(|label| {
-        !label.is_empty()
-            && label.len() <= 63
-            && label.as_bytes()[0].is_ascii_alphanumeric()
-            && label.as_bytes()[label.len() - 1].is_ascii_alphanumeric()
-            && label
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-    }) {
-        return Err(EgressError::InvalidHost);
-    }
-    Ok(normalized)
-}
-
-fn is_denied_address(address: IpAddr) -> bool {
-    match address {
-        IpAddr::V4(address) => is_denied_v4(address),
-        IpAddr::V6(address) => is_denied_v6(address),
-    }
-}
-
-fn is_denied_v4(address: Ipv4Addr) -> bool {
-    let octets = address.octets();
-    let value = u32::from(address);
-    address.is_private()
-        || address.is_loopback()
-        || address.is_link_local()
-        || address.is_unspecified()
-        || address.is_multicast()
-        || octets == [255, 255, 255, 255]
-        || octets[0] == 0
-        || in_v4_range(value, 0x6440_0000, 10)
-        || in_v4_range(value, 0xc000_0000, 24)
-        || in_v4_range(value, 0xc000_0200, 24)
-        || in_v4_range(value, 0xc612_0000, 15)
-        || in_v4_range(value, 0xc633_6400, 24)
-        || in_v4_range(value, 0xcb00_7100, 24)
-        || octets[0] >= 240
-}
-
-fn in_v4_range(address: u32, network: u32, prefix: u32) -> bool {
-    let mask = u32::MAX << (32 - prefix);
-    address & mask == network & mask
-}
-
-fn is_denied_v6(address: Ipv6Addr) -> bool {
-    let segments = address.segments();
-    if let Some(mapped) = address.to_ipv4() {
-        return is_denied_v4(mapped);
-    }
-    address.is_unspecified()
-        || address.is_loopback()
-        || address.is_multicast()
-        || segments[0] & 0xfe00 == 0xfc00
-        || segments[0] & 0xffc0 == 0xfe80
-        || segments[0] == 0x2001 && segments[1] == 0x0
-        || segments[0] == 0x2001 && segments[1] == 0x0db8
-        || segments[0] == 0x2002
-        || segments[0] == 0x0064 && segments[1] == 0xff9b
+    calternal_format::outbound_dns_name(host).ok_or(EgressError::InvalidHost)
 }
 
 #[cfg(test)]
@@ -436,21 +412,40 @@ mod policy_tests {
     use super::*;
 
     #[test]
-    fn refuses_special_use_addresses_and_accepts_a_public_test_address() {
+    fn addresses_require_global_unicast_and_operator_exclusions_are_additive() {
+        let policy = EgressPolicy::new(["example.com"])
+            .unwrap()
+            .excluding(exclusions("93.184.216.0/24, 2606:4700::/32").unwrap());
         for address in [
-            IpAddr::V4(Ipv4Addr::LOCALHOST),
-            IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
-            IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)),
-            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)),
-            IpAddr::V6(Ipv6Addr::LOCALHOST),
-            IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1)),
-            IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1)),
+            "127.0.0.1",
+            "10.0.0.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "192.88.99.1",
+            "93.184.216.34",
+            "::1",
+            "fc00::1",
+            "fe80::1",
+            "::ffff:93.184.216.34",
+            "64:ff9b::1",
+            "64:ff9b:1::1",
+            "4000::1",
+            "2001::1",
+            "2001:10::1",
+            "2001:db8::1",
+            "2002::1",
+            "3fff::1",
+            "2606:4700::1",
         ] {
-            assert!(is_denied_address(address), "{address}");
+            assert!(
+                !policy.allows_address(address.parse().unwrap()),
+                "{address}"
+            );
         }
-        assert!(!is_denied_address(IpAddr::V4(Ipv4Addr::new(
-            93, 184, 216, 34
-        ))));
+        for address in ["1.1.1.1", "2001:4860::8888"] {
+            assert!(policy.allows_address(address.parse().unwrap()), "{address}");
+        }
+        assert!(exclusions("127.0.0.1").is_err());
     }
 
     #[test]
@@ -466,6 +461,9 @@ mod policy_tests {
             "localhost",
             "service.internal",
             "bad host",
+            "single-label",
+            "127.1",
+            "0127.0.0.1",
         ] {
             assert!(normalize_hostname(host).is_err(), "{host}");
         }

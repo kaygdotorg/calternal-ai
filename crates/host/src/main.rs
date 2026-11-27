@@ -165,6 +165,13 @@ async fn attach_runs(host: Host, root: &Path) -> CliResult<(Arc<Host>, Option<Ru
     if let Some((account, space, program, credential)) = sign_in {
         backend = backend.with_run_sign_in(account, space, program, credential)?;
     }
+    if let Some(cidrs) = std::env::var_os("CALTERNAL_RUN_EGRESS_EXCLUDE") {
+        backend = backend.with_run_egress_exclusions(
+            cidrs
+                .to_str()
+                .ok_or("Invalid run egress exclusion setting.")?,
+        )?;
+    }
     let backend = Arc::new(backend);
     backend.initialize().await?;
     let host = host.with_podman_runs(backend.clone(), image);

@@ -47,6 +47,7 @@ pub struct PodmanBackend {
     kvm_fallback: bool,
     guest_network: bool,
     run_sign_in: Option<RunSignIn>,
+    run_egress_exclusions: Arc<[ipnet::IpNet]>,
 }
 
 impl PodmanBackend {
@@ -65,6 +66,7 @@ impl PodmanBackend {
             kvm_fallback: false,
             guest_network: false,
             run_sign_in: None,
+            run_egress_exclusions: Arc::default(),
         }
     }
 
@@ -80,6 +82,20 @@ impl PodmanBackend {
     ) -> SandboxResult<Self> {
         self.run_sign_in = Some(RunSignIn::new(account, space, program, credential_file)?);
         Ok(self)
+    }
+
+    /// Reject resolved run egress addresses in these comma-separated CIDRs
+    /// in addition to the built-in special-use address exclusions.
+    pub fn with_run_egress_exclusions(
+        mut self,
+        cidrs: &str,
+    ) -> Result<Self, crate::egress::EgressError> {
+        self.run_egress_exclusions = crate::egress::exclusions(cidrs)?;
+        Ok(self)
+    }
+
+    pub(crate) fn run_egress_exclusions(&self) -> Arc<[ipnet::IpNet]> {
+        self.run_egress_exclusions.clone()
     }
 
     pub(crate) fn kvm_fallback(mut self) -> Self {

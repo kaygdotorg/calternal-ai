@@ -27,6 +27,17 @@ mount point and bounded scratch locations.
   needs provider-aware request mediation. Keep real mode off by default
   pending that decision.
 
+- Are four simultaneous tunnels, a five-second handshake, a thirty-second
+  idle limit, a three-minute tunnel lifetime and a 64 MiB aggregate transfer
+  ceiling appropriate for preview runs? A slow provider or large conversation
+  can hit these limits and need a new tunnel or run. Raising them would retain
+  host resources longer. The preview uses these bounds pending owner review.
+- Which additional operator networks should egress exclude? An installation
+  can set `CALTERNAL_RUN_EGRESS_EXCLUDE` to a comma-separated list of CIDRs
+  for its own publicly addressed internal networks. The proxy pins the
+  checked address and port 443. Service-level enforcement needs a broker
+  that can distinguish services sharing that address.
+
 ## Simplification opportunities
 
 - Collapse provider run lifetime and host publication cancellation into one

@@ -283,7 +283,11 @@ impl RunService {
         }
         let proxy = ConnectProxy::start(
             &directory.path().join("proxy.sock"),
-            request.program.policy.clone(),
+            request
+                .program
+                .policy
+                .clone()
+                .excluding(self.inner.backend.run_egress_exclusions()),
             Arc::clone(&self.inner.resolver),
             Arc::clone(&self.inner.dialer),
         )
