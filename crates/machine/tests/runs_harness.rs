@@ -4,8 +4,8 @@
 mod podman_guard;
 
 use calternal_machine::{
-    protocol::{HarnessSandbox, Limits, ProviderLoginScope, SandboxSpec},
-    sandbox::{Backend, ExecRequest, OutputEvent, Sandbox, Stream, podman::PodmanBackend},
+    protocol::{HarnessSandbox, Limits, ProviderLoginScope, SandboxSpec, Stream},
+    sandbox::{Backend, ExecRequest, OutputEvent, podman::PodmanBackend},
 };
 use calternal_types::{AccountId, SpaceId};
 use serde_json::{Value, json};
