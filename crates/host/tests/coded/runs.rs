@@ -191,6 +191,7 @@ programs:
   check: executable programs/check
 reads: calternal-chat.chats
 calls: calternal-chat.chats.send
+replies: calternal-chat.chats.send
 fills:
   calternal-chat:harness: operation start, as "Scope check"
 ---

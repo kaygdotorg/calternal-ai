@@ -49,6 +49,10 @@ pub struct Manifest {
     pub reads: Vec<String>,
     /// Qualified operations this plugin may attempt to call.
     pub calls: Vec<String>,
+    /// Reply operations keyed by the fully qualified session target kind.
+    /// These select among existing calls and grant no additional authority.
+    pub replies: BTreeMap<String, String>,
+    pub(crate) reply_site: Site,
     /// Declared outbound destinations.
     pub destinations: Vec<String>,
     /// Program bindings keyed by declaration ID.
@@ -126,6 +130,8 @@ pub(super) fn parse(
         icon: None,
         reads: Vec::new(),
         calls: Vec::new(),
+        replies: BTreeMap::new(),
+        reply_site: Site::START,
         destinations: Vec::new(),
         programs: BTreeMap::new(),
         settings: BTreeMap::new(),
@@ -188,6 +194,17 @@ pub(super) fn parse(
             "needs" => result.directives.push(entry.directive()?),
             "reads" => result.reads = references(value, 2, 2, site)?,
             "calls" => result.calls = references(value, 2, 3, site)?,
+            "replies" => {
+                result.reply_site = site;
+                for target in references(value, 3, 3, site)? {
+                    let (kind, _) = target.rsplit_once('.').expect("qualified reply operation");
+                    if result.replies.insert(kind.into(), target).is_some() {
+                        return Err(
+                            site.error("Declare at most one reply operation per target kind")
+                        );
+                    }
+                }
+            }
             "sends out" => {
                 if value != "nothing" {
                     result.destinations = list(value, site)?;

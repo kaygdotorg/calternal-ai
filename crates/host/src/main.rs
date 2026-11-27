@@ -16,29 +16,21 @@ type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
 #[tokio::main]
 async fn main() -> CliResult<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if let [command, root, web, chat, harness, port] = args.as_slice()
-        && command == "preview-serve"
-    {
-        return dev::serve(
-            Path::new(root),
-            Path::new(web),
-            Path::new(chat),
-            Path::new(harness),
-            Some(port.parse()?),
-        )
-        .await;
-    }
-    if let [command, root, web, chat, harness] = args.as_slice()
-        && command == "dev-serve"
-    {
-        return dev::serve(
-            Path::new(root),
-            Path::new(web),
-            Path::new(chat),
-            Path::new(harness),
-            None,
-        )
-        .await;
+    if let [command, root, web, bundles @ ..] = args.as_slice() {
+        match command.as_str() {
+            "preview-serve" => {
+                let (port, bundles) = bundles.split_last().ok_or("Choose a preview port.")?;
+                return dev::serve(
+                    Path::new(root),
+                    Path::new(web),
+                    bundles,
+                    Some(port.parse()?),
+                )
+                .await;
+            }
+            "dev-serve" => return dev::serve(Path::new(root), Path::new(web), bundles, None).await,
+            _ => {}
+        }
     }
     let [command, root, origin, rest @ ..] = args.as_slice() else {
         return Err("usage: calternal-host serve ROOT ORIGIN ADDRESS | install ROOT ORIGIN OWNER SPACE DIRECTORY [--official]".into());
@@ -160,7 +152,9 @@ async fn attach_runs(host: Host, root: &Path) -> CliResult<(Arc<Host>, Option<Ru
             Err(error) => return Err(error.into()),
         },
         _ => {
-            return Err("Configure the real run image ID and all four run sign-in settings.".into());
+            return Err(
+                "Configure the real run image ID and all four run sign-in settings.".into(),
+            );
         }
     };
     let root = root.join("runs");

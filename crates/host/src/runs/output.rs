@@ -65,7 +65,12 @@ struct Callback {
     input: Value,
 }
 
-pub(super) async fn monitor(host: Weak<Host>, run: Arc<Run>, mut handle: RunHandle, append: bool) {
+pub(super) async fn monitor(
+    host: Weak<Host>,
+    run: Arc<Run>,
+    mut handle: RunHandle,
+    reply_call: Option<String>,
+) {
     let mut pending = Vec::<u8>::new();
     let mut reply = String::new();
     let mut overflow = false;
@@ -126,9 +131,9 @@ pub(super) async fn monitor(host: Weak<Host>, run: Arc<Run>, mut handle: RunHand
                     }
                     continue;
                 }
-                if !append {
+                let Some(reply_call) = reply_call.as_deref() else {
                     continue;
-                }
+                };
                 let event = &frame["event"];
                 match event["type"].as_str() {
                     Some("text_delta") => {
@@ -148,7 +153,8 @@ pub(super) async fn monitor(host: Weak<Host>, run: Arc<Run>, mut handle: RunHand
                             && !run.stopped.load(Ordering::Acquire)
                             && let Some(host) = host.upgrade()
                         {
-                            append_reply(&host, &run, turn, std::mem::take(&mut reply)).await;
+                            append_reply(&host, &run, reply_call, turn, std::mem::take(&mut reply))
+                                .await;
                         }
                         reply.clear();
                         overflow = false;
@@ -174,22 +180,14 @@ pub(super) async fn monitor(host: Weak<Host>, run: Arc<Run>, mut handle: RunHand
     });
 }
 
-async fn append_reply(host: &Arc<Host>, run: &Run, turn: u64, text: String) {
+async fn append_reply(host: &Arc<Host>, run: &Run, call: &str, turn: u64, text: String) {
     let input = json!({"item":run.grant.item,"text":text});
     let key = format!("reply-{turn}");
-    // Chat may still hold its single worker admission slot for the original
-    // Send. Retry with the same append receipt key through that admission.
+    // The slot owner may still be processing the original invocation.
+    // Retry with the same key so the reply can be published only once.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(7);
     loop {
-        match dispatch(
-            host,
-            run,
-            "calternal-chat.chats.send".into(),
-            input.clone(),
-            key.clone(),
-        )
-        .await
-        {
+        match dispatch(host, run, call.to_owned(), input.clone(), key.clone()).await {
             Err(error)
                 if error.code == calternal_types::ErrorCode::RetryAfter
                     && tokio::time::Instant::now() < deadline =>

@@ -1,4 +1,4 @@
-//! Loopback-only operator entry point for the disposable Chat preview.
+//! Loopback-only operator entry point for the development preview.
 use super::{CliResult, attach_runs, open_host};
 use calternal_auth::AuthConfig;
 use std::{
@@ -11,8 +11,7 @@ use tower_http::services::{ServeDir, ServeFile};
 pub(super) async fn serve(
     root: &Path,
     web: &Path,
-    chat: &Path,
-    harness: &Path,
+    bundles: &[String],
     port: Option<u16>,
 ) -> CliResult<()> {
     let root = tokio::fs::canonicalize(root).await?;
@@ -44,10 +43,18 @@ pub(super) async fn serve(
     let origin = format!("http://localhost:{}", listener.local_addr()?.port());
     let config = AuthConfig::new(&origin)?;
     let (host, auth) = open_host(root.clone(), &config).await?;
-    let host = host.with_development_plugins([
-        ("calternal-chat".to_owned(), chat.to_owned()),
-        ("calternal-chat-claude-code".to_owned(), harness.to_owned()),
-    ]);
+    let seeds = bundles
+        .iter()
+        .map(|bundle| {
+            let directory = PathBuf::from(bundle);
+            let id = directory
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or("Name each preview bundle directory after its declared plugin ID.")?;
+            Ok::<_, &str>((id.to_owned(), directory))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let host = host.with_development_plugins(seeds);
     let (host, engine) = attach_runs(host, &root).await?;
     let setup_path = root.join("first-owner-code");
     if let Some(code) = auth.first_owner_token().await? {
@@ -64,7 +71,7 @@ pub(super) async fn serve(
     let app = calternal_host::browser::router(host, config)
         .route_service("/host", ServeFile::new(web.join("index.html")))
         .fallback_service(ServeDir::new(web));
-    println!("Chat host {origin}/host");
+    println!("Preview host {origin}/host");
     println!("First-owner code file {}", setup_path.display());
     let served = async {
         axum::serve(

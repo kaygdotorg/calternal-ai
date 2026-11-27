@@ -223,6 +223,54 @@ fn claude_code_reads_its_fixture_and_needs_a_bound_program() {
 }
 
 #[test]
+fn reply_declarations_select_existing_calls_on_the_slot_owner() {
+    let options = InstallOptions {
+        official: OFFICIAL,
+        installed: &[chat()],
+        ..InstallOptions::default()
+    };
+    let source = HARNESS[0].text.unwrap();
+    let reply = "replies: calternal-chat.chats.send";
+    let parse = |manifest: &str| {
+        let mut files = HARNESS.to_vec();
+        files[0].text = Some(manifest);
+        parse_plugin(&files, &options)
+    };
+    assert_eq!(
+        parse(source).unwrap().manifest.replies["calternal-chat.chats"],
+        "calternal-chat.chats.send"
+    );
+    assert!(
+        parse(&source.replace(reply, ""))
+            .unwrap()
+            .manifest
+            .replies
+            .is_empty()
+    );
+    for replacement in [
+        "replies: calternal-chat.send",
+        "replies: calternal-chat.chats.rename",
+        "replies: calternal-chat.chats.send, calternal-chat.chats.rename",
+    ] {
+        assert_eq!(
+            parse(&source.replace(reply, replacement))
+                .unwrap_err()
+                .path
+                .as_deref(),
+            Some("plugin.md")
+        );
+    }
+    assert!(
+        parse(&source.replace(
+            "calls: calternal-chat.chats.send",
+            "calls: calternal-chat.chats.rename",
+        ))
+        .is_err()
+    );
+    assert!(parse(&source.replace("calternal-chat:harness:", "calternal-chat:missing:")).is_err());
+}
+
+#[test]
 fn ledger_order_distinguishes_messages_with_identical_timestamps() {
     let fields = Fields::new();
     let stamps = ["k2m8q1w4zre7k3f8", "k2m8q1w4zre7k3f9", "k2m8q1w4zre7k3fa"].map(|anchor| {

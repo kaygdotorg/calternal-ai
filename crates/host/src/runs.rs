@@ -290,11 +290,7 @@ impl Host {
                     manifest.destinations.iter().map(String::as_str),
                 )
                 .map_err(run_error)?;
-                let reply = kind == "calternal-chat.chats"
-                    && manifest
-                        .calls
-                        .iter()
-                        .any(|name| matches!(name.as_str(), "calternal-chat.chats.send"));
+                let reply = manifest.replies.get(&kind).cloned();
                 Ok((
                     Some((program, reply, kind)),
                     receipt,
@@ -572,9 +568,9 @@ mod tests {
                 "s.state",
                 json!({"item":other,"op":"get","key":"read through"}),
             ),
-            ("s.query", json!({"from":"calternal-chat.chats"})),
+            ("s.query", json!({"from":"example.entries"})),
             (
-                "calternal-chat.chats.send",
+                "example.entries.publish",
                 json!({"item":other,"text":"outside"}),
             ),
             (

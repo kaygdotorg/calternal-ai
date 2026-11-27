@@ -42,7 +42,7 @@ pub const PROTOCOL_VERSION: u32 = 8;
 /// First machine protocol that supports a broker and distinct tool sandbox.
 pub const SHARED_TOOLS_PROTOCOL_VERSION: u32 = 8;
 
-/// First machine protocol that supports an isolated shared Claude login directory.
+/// First machine protocol that supports an isolated shared provider login directory.
 pub const SHARED_PROVIDER_PROTOCOL_VERSION: u32 = 7;
 
 /// Protocol version that introduced isolated harness assignments.
