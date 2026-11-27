@@ -296,6 +296,7 @@ async fn authenticate(
                 call: "s.space".into(),
                 input: json!({}),
                 idempotency_key: None,
+                slot_selection: None,
             },
         )
         .await;
@@ -450,6 +451,7 @@ async fn eval_subscription(
                         call: "s.query".into(),
                         input: input.clone(),
                         idempotency_key: None,
+                        slot_selection: None,
                     },
                 )
                 .await?;
@@ -483,6 +485,7 @@ async fn eval_subscription(
                         call: "s.read".into(),
                         input: json!({ "item": item }),
                         idempotency_key: None,
+                        slot_selection: None,
                     },
                 )
                 .await?;

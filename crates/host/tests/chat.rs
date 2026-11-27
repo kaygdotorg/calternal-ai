@@ -66,6 +66,7 @@ impl Fixture {
                 call: call.into(),
                 input,
                 idempotency_key: key.map(str::to_owned),
+                slot_selection: None,
             },
         )
     }
@@ -223,6 +224,7 @@ fn restart_keeps_item_and_receipt() {
                 call: "s.write".into(),
                 input: append,
                 idempotency_key: Some("persist".into()),
+                slot_selection: None,
             },
         )
         .unwrap();

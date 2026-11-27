@@ -22,7 +22,7 @@ sequence. Each result carries exactly one of `result` or `error`.
 | Host → worker | `type: "reply", id, result` or `type: "reply", id, error` |
 | Worker → host | `type: "complete", result` or `type: "complete", error` |
 
-`event` is `{kind: "call" | "change", key, item, before?, request?}`,
+`event` is `{kind: "call" | "change", key, item, before?, request?, selected_operation?}`,
 with `item: null` permitted for an itemless operation. Selectors are the
 declared operation name for a call and the declared kind or collection
 for a change. `me: {id,role}`, `space: {id}` and `event` come from the
@@ -98,3 +98,9 @@ and emits a single `{calls,changes}` JSON line (at most 64 KiB). The host
 validates the reported names against the declarations and stores the
 catalogue with the authenticated bundle. Read [the host route](host-call-route-2026-11-27.md)
 for the installed execution path.
+
+
+A verified slot selection can expose the filler's qualified operation
+as `s.event.selected_operation` on the initial coded call. The trusted
+route holds the selection and checks each nested call. The pipe has
+no field for a worker to supply that authority.

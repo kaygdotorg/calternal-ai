@@ -121,6 +121,7 @@ impl Host {
                                 item: Some(event.item),
                                 before: event.before,
                                 request: Some(request),
+                                selected_operation: None,
                             },
                         },
                     )

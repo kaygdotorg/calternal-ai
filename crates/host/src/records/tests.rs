@@ -40,6 +40,7 @@ impl Fixture {
             call: "s.write".to_owned(),
             input: json!({"changes":[{"op":"add","kind":"calternal-chat.chats","fields":{"title":title}}]}),
             idempotency_key: None,
+            slot_selection: None,
         }).unwrap();
         let item = serde_json::from_value(value["changes"][0]["id"].clone()).unwrap();
         self.space.row(item).unwrap().head.clone()
@@ -145,6 +146,7 @@ fn recovers_a_complete_append_and_its_retry_receipt() {
         call: "s.write".into(),
         input: json!({"changes":[{"op":"append record","item":head.id,"record":{"body":message}}]}),
         idempotency_key: Some(GESTURE.into()),
+        slot_selection: None,
     })
     };
     assert_eq!(
@@ -155,6 +157,7 @@ fn recovers_a_complete_append_and_its_retry_receipt() {
         call: "s.write".into(),
         input: json!({"changes":[{"op":"change","item":head.id,"fields":{"archived":true}}]}),
         idempotency_key: Some(GESTURE.into()),
+        slot_selection: None,
     }).unwrap_err();
     assert_eq!(changed_operation.code, calternal_types::ErrorCode::Conflict);
     assert_eq!(replay(&mut f, MESSAGE).unwrap(), expected);
