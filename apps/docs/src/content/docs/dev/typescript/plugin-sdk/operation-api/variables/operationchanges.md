@@ -14,6 +14,6 @@ title: "plugin-sdk: operation-api/variables/operationChanges"
 
 # Variable: operationChanges
 
-> `const` **operationChanges**: readonly \[`"add"`, `"change"`, `"remove"`, `"append record"`, `"change record"`, `"remove record"`\]
+> `const` **operationChanges**: readonly \[`"add"`, `"change"`, `"perform"`, `"remove"`, `"append record"`, `"change record"`, `"remove record"`\]
 
 Change discriminants accepted by the host.

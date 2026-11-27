@@ -34,7 +34,7 @@ pub use operation::{
 pub use period::{KindRows, Period, PeriodSnapshot, evaluate_period_field};
 pub use query::{
     CalendarOccurrence, CalendarSeries, Page, QueryGroup, QueryResult, QueryRow, evaluate_query,
-    expand_calendar_window,
+    evaluate_query_matching, expand_calendar_window,
 };
 pub use repeat::{
     Occurrence, OccurrenceOverride, RepeatRule, expand_repeat, next_occurrence, parse_repeat,

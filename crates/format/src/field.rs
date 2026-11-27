@@ -474,6 +474,14 @@ pub(crate) fn coerce(kind: &FieldType, value: &Value, site: Site) -> Result<Valu
     Ok(result)
 }
 
+impl FieldType {
+    /// Check a value using the same coercion as item and operation validation.
+    /// Validation is in memory and bounded by the supplied value and type.
+    pub fn accepts_value(&self, value: &Value) -> bool {
+        coerce(self, value, Site::START).is_ok()
+    }
+}
+
 pub(crate) fn anchor(text: &str) -> bool {
     text.len() == 16
         && text

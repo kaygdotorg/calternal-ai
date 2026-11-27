@@ -48,6 +48,8 @@ const fieldDocs = {
   collection: "Qualified collection name.",
   filter: "Formula predicate evaluated by the host.",
   sort: "Ordered sort expressions, up to eight for an ad hoc query.",
+  search: "Case-insensitive substring in the kind’s declared search fields.",
+  operation: "Name of the declared operation to evaluate on the current item.",
   cursor: "Opaque cursor from the previous page.",
   limit: "Page size up to 200.",
   kind: "Qualified kind in which to create the item.",
@@ -61,6 +63,7 @@ const fieldDocs = {
 const changeDocs = {
   add: "Create an item with initial values.",
   change: "Update fields or Markdown.",
+  perform: "Evaluate a declared item assignment and commit its changes atomically.",
   remove: "Remove an item.",
   "append record": "Append one record and let the host stamp it.",
   "change record": "Change the record identified by its anchor.",

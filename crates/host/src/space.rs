@@ -134,6 +134,7 @@ pub(crate) struct Space {
     pub(crate) owner_display: Option<(AccountId, String)>,
     pub(crate) recovery_needed: bool,
     pub(crate) next_trash_check: i64,
+    pub(crate) projection_day: time::Date,
     _lock: DataLock,
 }
 
@@ -202,6 +203,7 @@ impl Space {
             owner_display: None,
             recovery_needed: true,
             next_trash_check: 0,
+            projection_day: time::OffsetDateTime::now_utc().date(),
             _lock: lock,
         };
         space.recover()?;

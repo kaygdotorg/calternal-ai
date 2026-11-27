@@ -6,7 +6,7 @@ folder: Tasks
 file: {title}
 editable: outside
 fields:
-  title: text, required, heading
+  title: text, required
   status: choice(todo|doing|done|cancelled|someday), default todo
   scheduled: when
   due: when

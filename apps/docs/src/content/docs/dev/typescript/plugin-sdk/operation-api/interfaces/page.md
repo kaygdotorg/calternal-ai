@@ -21,5 +21,7 @@ One page of rows and totals from the host.
 | Property | Type | Description |
 | ------ | ------ | ------ |
 | <a id="cursor"></a> `cursor` | `string` \| `null` | Opaque next-page cursor, or null on the last page. |
+| <a id="groups"></a> `groups` | `object`[] | Group key, matched row count and pre-page aggregates for each visible group. |
+| <a id="namedtotals"></a> `namedTotals` | [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/) | Computed collection header totals keyed by declared name. |
 | <a id="rows"></a> `rows` | [`Row`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/row/)[] | Rows in the requested order. |
-| <a id="totals"></a> `totals` | [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/) | Computed aggregate results. |
+| <a id="totals"></a> `totals` | `unknown`[] \| `Record`\<`string`, `never`\> | Overall aggregates in declaration order, or an empty object without aggregates. |

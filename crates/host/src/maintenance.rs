@@ -133,6 +133,11 @@ impl Host {
             .as_ref()
             .is_some_and(|space| space.live.has_subscribers() || space.runs.is_active());
         if let Some(space) = &mut entry.space {
+            let day = time::OffsetDateTime::now_utc().date();
+            if space.projection_day != day {
+                space.projection_day = day;
+                space.live.notify(None);
+            }
             if let Err(error) = space.expire_trash() {
                 internal(error);
             }
