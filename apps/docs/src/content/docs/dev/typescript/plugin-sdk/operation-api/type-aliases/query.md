@@ -1,0 +1,97 @@
+---
+title: "plugin-sdk: operation-api/type-aliases/Query"
+---
+
+<!-- Generated from: packages/plugin-sdk/src/author-v2.ts, packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/job-waits.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/newline-frames.ts, packages/plugin-sdk/src/operation-api.ts, packages/plugin-sdk/src/operations-worker.ts, packages/plugin-sdk/src/space-paths.ts, packages/plugin-sdk/src/stdio-worker.ts, packages/plugin-sdk/src/testing.ts, packages/plugin-sdk/src/typed-handlers.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
+
+> **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
+
+[**@calternal/plugin-sdk**](/docs/dev/typescript/plugin-sdk/)
+
+***
+
+[@calternal/plugin-sdk](/docs/dev/typescript/plugin-sdk/) / [operation-api](/docs/dev/typescript/plugin-sdk/operation-api/) / Query
+
+# Type Alias: Query
+
+> **Query** = \{ `cursor?`: `string`; `fields?`: readonly `string`[]; `from`: `string`; `group?`: `string`; `limit?`: `number`; `sort?`: readonly `string`[]; `totals?`: readonly `string`[]; `where?`: `string`; \} \| \{ `collection`: `string`; `cursor?`: `string`; `limit?`: `number`; \}
+
+A kind query or a stored collection query.
+
+## Union Members
+
+### Type Literal
+
+\{ `cursor?`: `string`; `fields?`: readonly `string`[]; `from`: `string`; `group?`: `string`; `limit?`: `number`; `sort?`: readonly `string`[]; `totals?`: readonly `string`[]; `where?`: `string`; \}
+
+#### cursor?
+
+> `optional` **cursor?**: `string`
+
+Opaque cursor from the previous page.
+
+#### fields?
+
+> `optional` **fields?**: readonly `string`[]
+
+Field projection.
+
+#### from
+
+> **from**: `string`
+
+Qualified kind name.
+
+#### group?
+
+> `optional` **group?**: `string`
+
+Grouping field.
+
+#### limit?
+
+> `optional` **limit?**: `number`
+
+Page size up to 200.
+
+#### sort?
+
+> `optional` **sort?**: readonly `string`[]
+
+Ordered sort expressions.
+
+#### totals?
+
+> `optional` **totals?**: readonly `string`[]
+
+Requested aggregation expressions.
+
+#### where?
+
+> `optional` **where?**: `string`
+
+Formula predicate evaluated by the host.
+
+***
+
+### Type Literal
+
+\{ `collection`: `string`; `cursor?`: `string`; `limit?`: `number`; \}
+
+#### collection
+
+> **collection**: `string`
+
+Qualified collection name.
+
+#### cursor?
+
+> `optional` **cursor?**: `string`
+
+Opaque cursor from the previous page.
+
+#### limit?
+
+> `optional` **limit?**: `number`
+
+Page size up to 200.
