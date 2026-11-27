@@ -27,7 +27,7 @@ pub(super) struct Entry {
     pub range: Range<usize>,
     pub first_line: Range<usize>,
     pub key_end: usize,
-    pub comment: Option<usize>,
+    pub comment: Option<Range<usize>>,
     pub site: Site,
 }
 
@@ -137,12 +137,8 @@ pub fn write_item(item: &Item<'_>, fields: &Fields) -> Result<String, Diagnostic
         }
         match (entry, value) {
             (Some(entry), Value::Empty) => {
-                let replacement = entry.comment.map_or_else(String::new, |start| {
-                    format!(
-                        "{}{}",
-                        item.source[start..entry.first_line.end].trim_end_matches(['\r', '\n']),
-                        item.ending
-                    )
+                let replacement = entry.comment.clone().map_or_else(String::new, |range| {
+                    format!("{}{}", newline(&item.source[range]), item.ending)
                 });
                 edits.push((entry.range.clone(), replacement));
             }
@@ -150,7 +146,8 @@ pub fn write_item(item: &Item<'_>, fields: &Fields) -> Result<String, Diagnostic
                 let key_prefix = &item.source[entry.first_line.start..entry.key_end];
                 let comment = entry
                     .comment
-                    .map(|start| newline(&item.source[start..entry.first_line.end]));
+                    .clone()
+                    .map(|range| newline(&item.source[range]));
                 let replacement = yaml::render_entry(key_prefix, value, comment, item.ending)?;
                 edits.push((entry.range.clone(), replacement));
             }
@@ -206,6 +203,38 @@ mod tests {
             parse_item(&result).unwrap().fields()["new.field"],
             item.fields()["new.field"]
         );
+    }
+
+    #[test]
+    fn folds_multiline_scalars_and_keeps_their_source() {
+        let source = concat!(
+            "---\r\n",
+            "plain: first\r\n  second\r\n\r\n  third # plain comment\r\n",
+            "single: 'can''t\r\n  drop # text\r\n\r\n  line' # quoted comment\r\n",
+            "double: \"joined\\\r\n  word and\r\n  space\"\r\n",
+            "list:\r\n  - first\r\n    second\r\n  - 'next\r\n    entry'\r\n",
+            "---\r\nBody\r\n",
+        );
+        let item = parse_item(source).unwrap();
+        let text = |s: &str| Value::Text(s.into());
+        assert_eq!(item.fields()["plain"], text("first second\nthird"));
+        assert_eq!(item.fields()["single"], text("can't drop # text\nline"));
+        assert_eq!(item.fields()["double"], text("joinedword and space"));
+        assert_eq!(
+            item.fields()["list"],
+            Value::List(vec![text("first second"), text("next entry")])
+        );
+        assert_eq!(write_item(&item, item.fields()).unwrap(), source);
+        let replacement = text("first\n\nreplacement  \n");
+        let result = write_item(
+            &item,
+            &Fields::from([("single".into(), replacement.clone())]),
+        )
+        .unwrap();
+        assert!(result.contains("# quoted comment\r\n"));
+        assert!(result.contains("third # plain comment\r\n"));
+        assert_eq!(parse_item(&result).unwrap().fields()["single"], replacement);
+        assert!(parse_item("---\nwrong: \"unclosed\nnext: data\n---\n").is_err());
     }
 
     #[test]
