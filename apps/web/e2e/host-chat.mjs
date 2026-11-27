@@ -1,21 +1,38 @@
 #!/usr/bin/env node
 /**
- * Exercise the real host with the browser data client on a same-origin proxy.
- * The disposable fixture supplies its one-time setup code over a private pipe.
+ * End-to-end Chromium test driving the real `/host` UI screens against the real
+ * `calternal-host` binary on a same-origin loopback proxy.
+ *
+ * Covers:
+ * - First-owner passkey enrollment, one-time recovery codes, ADR 0030 sign-out,
+ *   and discoverable passkey sign-in;
+ * - Cookie and HTTP/WebSocket origin guards;
+ * - Installing `plugins-v2/calternal-chat` and a disposable harness slot filler;
+ * - Creating a chat, sending a message with a harness filler chosen via the
+ *   composer slot picker, renaming via `operation.inputs`, and verifying menu
+ *   items hidden/shown by server-evaluated `row.when`;
+ * - Streaming reply + Stop control surface (local fixture);
+ * - Two independent browser contexts: live append, offline reconnect from the
+ *   last anchor without duplicates, and sign-out revocation;
+ * - Desktop (1280x800) and phone (390x844) screenshots in light and dark mode
+ *   for both list and open-chat states (verifying bottom strip hidden on phone
+ *   while a chat is open).
  */
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
+import fs from "node:fs";
 import { get } from "node:http";
 import { createServer as tcpServer } from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { createServer } from "vite";
+import { preview } from "vite";
 
 const WEB = fileURLToPath(new URL("../", import.meta.url));
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
-const KIND = "calternal-chat.chats";
+const SHOT_DIR = process.env.HOST_SHOT_DIR || "/tmp/browser-chat-shots";
 
 async function port() {
   const probe = tcpServer().listen(0, "127.0.0.1");
@@ -46,15 +63,23 @@ async function waitForHost(api, host) {
 
 function upgradeStatus(url, origin, fetchSite) {
   return new Promise((resolve, reject) => {
-    const request = get(url, {
-      headers: {
-        connection: "upgrade", upgrade: "websocket", "sec-websocket-version": "13",
-        "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", origin, "sec-fetch-site": fetchSite,
+    const request = get(
+      url,
+      {
+        headers: {
+          connection: "upgrade",
+          upgrade: "websocket",
+          "sec-websocket-version": "13",
+          "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+          origin,
+          "sec-fetch-site": fetchSite,
+        },
       },
-    }, (response) => {
-      response.resume();
-      resolve(response.statusCode);
-    });
+      (response) => {
+        response.resume();
+        resolve(response.statusCode);
+      },
+    );
     request.on("upgrade", (response, socket) => {
       socket.destroy();
       resolve(response.statusCode);
@@ -63,8 +88,52 @@ function upgradeStatus(url, origin, fetchSite) {
   });
 }
 
-async function browserClient(browser, origin) {
-  const context = await browser.newContext();
+function writeHarnessFixture(dir) {
+  fs.writeFileSync(
+    path.join(dir, "plugin.md"),
+    [
+      "---",
+      "plugin: test-harness",
+      "name: Test Harness",
+      "version: 1.0.0",
+      "format: 1",
+      "fills:",
+      '  calternal-chat:harness: operation runs.start, as "Test Harness"',
+      "---",
+      "Disposable test filler for the harness slot.",
+    ].join("\n") + "\n",
+  );
+  fs.mkdirSync(path.join(dir, "kinds"), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "kinds/runs.md"),
+    [
+      "---",
+      "kind: runs",
+      "name: Run",
+      "format: 1",
+      "folder: Test Harness",
+      "editable: operations",
+      "fields:",
+      "  title: text, required",
+      "operations:",
+      "  add: title",
+      "  start: code",
+      "---",
+      "Records slot-selected invocations.",
+    ].join("\n") + "\n",
+  );
+  fs.writeFileSync(
+    path.join(dir, "operations.ts"),
+    [
+      'import { on } from "@calternal/plugin-sdk";',
+      'export const start = on.call("runs.start", async ({ prompt }: { prompt: string }, s) =>',
+      '  s.write([{ add: { kind: "test-harness.runs", fields: { title: prompt } } }]));',
+    ].join("\n") + "\n",
+  );
+}
+
+async function openContext(browser, viewport = { width: 1280, height: 800 }) {
+  const context = await browser.newContext({ viewport });
   const page = await context.newPage();
   const cdp = await context.newCDPSession(page);
   await cdp.send("WebAuthn.enable");
@@ -78,45 +147,11 @@ async function browserClient(browser, origin) {
       automaticPresenceSimulation: true,
     },
   });
-  await page.goto(`${origin}/browser-chat-fixture`);
-  await page.evaluate(async () => {
-    const client = await import("/src/host/client.ts");
-    window.host = {
-      client,
-      session: null,
-      live: null,
-      records: [],
-      messages: [],
-      connections: [],
-      query: null,
-      async call(name, input = {}, key) {
-        return client.hostCall(this.session, name, input, key);
-      },
-      subscribe(item) {
-        this.live = new client.LiveClient(this.session, (state) => this.connections.push(state));
-        this.live.subscribeQuery({ collection: "calternal-chat.chats" }, (rows) => { this.query = rows; });
-        this.live.subscribeRecords(item, {
-          onSnapshot: (records) => {
-            this.messages.push(["snapshot", records.map((record) => record.body)]);
-            this.records = records;
-          },
-          onDelta: (records) => {
-            this.messages.push(["delta", records.map((record) => record.body)]);
-            this.records.push(...records);
-          },
-          onAppend: (record) => {
-            this.messages.push(["append", [record.body]]);
-            this.records.push(record);
-          },
-          onItemChange: () => {},
-        });
-      },
-    };
-  });
   return { context, page, cdp, authenticatorId };
 }
 
 async function fixture(directory, origin, setupCode) {
+  fs.mkdirSync(SHOT_DIR, { recursive: true });
   const backend = await port();
   const api = `http://127.0.0.1:${backend}`;
   const address = `127.0.0.1:${backend}`;
@@ -127,58 +162,71 @@ async function fixture(directory, origin, setupCode) {
     CALTERNAL_WORKER_NODE: process.execPath,
     CALTERNAL_WORKER_SDK: path.join(ROOT, "packages/plugin-sdk"),
   };
-  const hostArgs = ["serve", directory, origin, address];
-  const host = spawn(bin, hostArgs, { env, stdio: ["ignore", "ignore", "inherit"] });
+  const host = spawn(bin, ["serve", directory, origin, address], { env, stdio: ["ignore", "ignore", "inherit"] });
   const stop = () => host.kill("SIGTERM");
   process.once("exit", stop);
-  let vite;
+
+  const harnessDir = fs.mkdtempSync(path.join(os.tmpdir(), "calternal-test-harness-"));
+  writeHarnessFixture(harnessDir);
+
+  let server;
   let browser;
   try {
     await waitForHost(api, host);
-    vite = await createServer({
+    server = await preview({
       configFile: false,
       root: WEB,
-      logLevel: "error",
-      optimizeDeps: { noDiscovery: true, include: [] },
-      server: {
+      preview: {
         host: "127.0.0.1",
         port: Number(new URL(origin).port),
         strictPort: true,
-        hmr: false,
         proxy: { "/v1": { target: api, ws: true } },
       },
-      plugins: [{
-        name: "host-chat-fixture",
-        configureServer(server) {
-          server.middlewares.use("/browser-chat-fixture", (_req, res) => {
-            res.setHeader("content-type", "text/html; charset=utf-8");
-            res.end("<!doctype html><title>Browser Chat data client</title>");
-          });
+      plugins: [
+        {
+          name: "spa-host-fallback",
+          configurePreviewServer(srv) {
+            srv.middlewares.use((req, _res, next) => {
+              const pathname = (req.url || "/").split("?")[0];
+              if (pathname === "/host" || pathname.startsWith("/host/")) {
+                req.url = "/index.html";
+              }
+              next();
+            });
+          },
         },
-      }],
+      ],
     });
-    await vite.listen();
+
     browser = await chromium.launch({ headless: true });
-    const a = await browserClient(browser, origin);
-    const session = await a.page.evaluate(async (code) => {
-      const { client } = window.host;
-      const status = await client.sessionStatus();
-      if (!status.setup || status.session) throw new Error("expected fresh host");
-      await client.setupHost(code, "Ada");
-      await client.signOutHost();
-      const signedOut = await client.sessionStatus();
-      if (signedOut.setup || signedOut.session) throw new Error("expected revoked session");
-      window.host.session = await client.signInHost();
-      return window.host.session;
-    }, setupCode);
-    assert.deepEqual(await a.page.evaluate(() => window.host.client.sessionStatus()), {
-      setup: false, session,
-    });
-    assert.equal(Object.hasOwn(session, "token"), false);
+
+    // --- 1. First-owner setup screen, recovery codes shown once, sign-out, passkey sign-in ---
+    const a = await openContext(browser, { width: 1280, height: 800 });
+    await a.page.goto(`${origin}/host`);
+    await a.page.waitForSelector('h1:has-text("Set up Calternal")');
+    await a.page.fill('input[name="token"]', setupCode);
+    await a.page.fill('input[name="name"]', "Ada");
+    await a.page.click('button:has-text("Create passkey")');
+
+    // Recovery codes step (shown once)
+    await a.page.waitForSelector('h1:has-text("Save your recovery codes")');
+    const codeCount = await a.page.locator('ul[aria-label="Recovery codes"] li').count();
+    assert.ok(codeCount >= 8, `expected recovery codes, got ${codeCount}`);
+    await a.page.check('input[type="checkbox"]');
+    await a.page.click('button:has-text("Continue")');
+    await a.page.waitForSelector(".host-shell");
+
+    // Cookie & origin checks
     const cookie = (await a.context.cookies()).find(({ name }) => name === "__Host-calternal_session");
-    assert.ok(cookie?.httpOnly && cookie.secure && cookie.sameSite === "Strict" && cookie.path === "/",
-      "expected strict host-only browser cookie");
+    assert.ok(
+      cookie?.httpOnly && cookie.secure && cookie.sameSite === "Strict" && cookie.path === "/",
+      "expected strict host-only browser cookie",
+    );
     assert.equal(await a.page.evaluate(() => document.cookie.includes("__Host-calternal_session")), false);
+
+    const statusBefore = await a.page.evaluate(() => fetch("/v1/auth/status").then((r) => r.json()));
+    const session = statusBefore.session;
+    assert.ok(session?.account && session?.space, "expected active session");
 
     const hostile = await a.context.request.post(`${origin}/v1/auth/logout`, {
       headers: { origin: "http://foreign.invalid", "sec-fetch-site": "same-site" },
@@ -192,79 +240,215 @@ async function fixture(directory, origin, setupCode) {
     assert.equal(await upgradeStatus(liveUrl, "http://foreign.invalid", "same-site"), 403);
     assert.equal(await upgradeStatus(liveUrl, origin, "same-origin"), 401);
 
-    await run(bin, ["install", directory, origin, session.account, session.space,
-      path.join(ROOT, "plugins-v2/calternal-chat"), "--official"], { env });
+    // Install Chat + Test Harness filler on the real host
+    await run(
+      bin,
+      ["install", directory, origin, session.account, session.space, path.join(ROOT, "plugins-v2/calternal-chat"), "--official"],
+      { env },
+    );
+    await run(
+      bin,
+      ["install", directory, origin, session.account, session.space, harnessDir],
+      { env },
+    );
 
-    const item = await a.page.evaluate(async (kind) => {
-      const h = window.host;
-      const { plugins } = await h.client.fetchDeclarations(h.session);
-      const chat = plugins.find((plugin) => plugin.id === "calternal-chat");
-      if (chat.kinds.chats.operations.send.inputs.item.type !== "link(chats)"
-        || chat.slots.composer.fillers[0].target !== "send") {
-        throw new Error("expected installed Chat declarations");
-      }
-      const created = await h.call("s.write", { changes: [{ op: "add", kind, fields: { title: "Release prep" } }] });
-      const item = created.changes[0].id;
-      await h.call(`${kind}.send`, { item, text: "First message" }, "send-initial");
-      await h.call(`${kind}.rename`, { item, title: "Release prep v2" }, "rename");
-      return item;
-    }, KIND);
-    console.log("PASS passkey enrollment, logout, sign-in, session status, and cookie/origin checks");
-    console.log("PASS compiled declarations, create chat, send, and rename");
+    // Reload to see installed declarations, then test sign-out and passkey sign-in UI
+    await a.page.reload();
+    await a.page.waitForSelector('nav[aria-label="Chat"]');
+    await a.page.click('button[aria-label="Sign out"]');
+    await a.page.waitForSelector('h1:has-text("Sign in")');
+    assert.equal(await a.page.locator('input[name="name"]').count(), 0, "sign-in screen must not ask for a name");
+    await a.page.click('button:has-text("Sign in with a passkey")');
+    await a.page.waitForSelector('nav[aria-label="Chat"]');
+    console.log("PASS 1: passkey setup, recovery codes, sign-out, passkey sign-in, and cookie/origin checks");
 
-    // Simulate access to the same synced passkey in an independent context.
-    const b = await browserClient(browser, origin);
+    // --- 2. Create chat, send with harness chosen, rename via operation.inputs, `when` menu filtering ---
+    await a.page.click('button[aria-label="New Chat"] >> nth=0');
+    await a.page.fill('input[name="title"]', "Release prep");
+    await a.page.click('button:has-text("Create Chat")');
+    await a.page.waitForSelector('[data-open-title]:has-text("Release prep")');
+
+    // Choose harness filler from the composer slot picker (populated from s.declarations)
+    await a.page.waitForSelector('[data-slot-picker="harness"]');
+    await a.page.click('[data-slot-picker="harness"]');
+    await a.page.click('button:has-text("Test Harness")');
+    assert.equal(
+      await a.page.getAttribute('[data-slot-picker="harness"]', "data-selected-filler"),
+      "test-harness",
+    );
+
+    await a.page.fill('textarea[aria-label="Write"]', "First message with harness");
+    await a.page.click('button[aria-label="Send"]');
+    await a.page.waitForSelector('[data-record-anchor]:has-text("First message with harness")');
+
+    // Verify the real host invoked test-harness.runs.start via slot_selection
+    const runsQuery = await a.page.evaluate(async (space) => {
+      const res = await fetch(`/v1/spaces/${space}/call`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ call: "s.query", input: { from: "test-harness.runs" } }),
+      });
+      return res.json();
+    }, session.space);
+    assert.equal(runsQuery.result.rows.length, 1, "expected slot-selected harness run record");
+
+    // Clear harness selection for plain messages
+    await a.page.click('[data-slot-picker="harness"]');
+    await a.page.click('button:has-text("None")');
+
+    // Verify `when` hides `Unpin` while unpinned, then test Rename via operation.inputs
+    await a.page.click('button[aria-label="Item actions"]');
+    await a.page.waitForSelector('button:has-text("Pin")');
+    assert.equal(await a.page.locator('button:has-text("Unpin")').count(), 0, "Unpin must be hidden by row.when");
+    await a.page.click('button:has-text("Rename")');
+    await a.page.fill('input[name="title"]', "Release prep v2");
+    await a.page.click('button[type="submit"]:has-text("Rename")');
+    await a.page.waitForSelector('[data-open-title]:has-text("Release prep v2")');
+
+    // Toggle Pin and verify `row.when` flips: Pin hidden, Unpin shown
+    await a.page.click('button[aria-label="Item actions"]');
+    await a.page.click('button:has-text("Pin")');
+    await a.page.waitForTimeout(200);
+    await a.page.click('button[aria-label="Item actions"]');
+    await a.page.waitForSelector('button:has-text("Unpin")');
+    assert.equal(await a.page.locator('button:has-text("Pin")').count(), 0, "Pin must be hidden by row.when after pinning");
+    await a.page.keyboard.press("Escape");
+    console.log("PASS 2: create, send with harness slot selection, rename via operation.inputs, and row.when menu filtering");
+
+    // --- 3. Streaming reply + Stop control surface (local fixture) ---
+    await a.page.evaluate(() =>
+      window.__hostLive.startStreamDemo(
+        "Claude Code",
+        "Checking the build logs and preparing a concise summary for the release notes.",
+      ),
+    );
+    await a.page.waitForSelector('[data-stream-run]');
+    await a.page.waitForSelector('button[aria-label="Stop"]');
+    await a.page.waitForTimeout(220);
+    const partialText = await a.page.locator('[data-stream-run] .body').innerText();
+    assert.ok(partialText.length > 5, "expected growing reply text");
+    await a.page.click('button[aria-label="Stop"]');
+    await a.page.waitForSelector('[data-stream-run]', { state: "detached" });
+    console.log("PASS 3: growing streamed reply and Stop control fixture");
+
+    // --- 4. Two independent browser contexts: live append, offline reconnect from anchor, sign-out ---
+    const b = await openContext(browser, { width: 1280, height: 800 });
     const { credentials } = await a.cdp.send("WebAuthn.getCredentials", { authenticatorId: a.authenticatorId });
     assert.equal(credentials.length, 1);
     await b.cdp.send("WebAuthn.addCredential", { authenticatorId: b.authenticatorId, credential: credentials[0] });
-    await b.page.evaluate(async (item) => {
-      const h = window.host;
-      h.session = await h.client.signInHost();
-      h.subscribe(item);
-    }, item);
-    await b.page.waitForFunction(() => window.host.records.length === 1 && window.host.query?.length === 1);
-    assert.equal(await b.page.evaluate(() => window.host.query[0].fields.title), "Release prep v2");
-    assert.equal(await b.page.evaluate(() => window.host.query[0].when.pin), true);
-    assert.equal(await b.page.evaluate(() => window.host.query[0].state.pinned), false);
-    await a.page.evaluate((item) => window.host.call("s.state", {
-      op: "set", item, key: "pinned", value: true,
-    }), item);
-    await b.page.waitForFunction(() => window.host.query[0].state.pinned && window.host.query[0].when.unpin);
 
-    const send = (text) => a.page.evaluate(({ kind, item, text }) =>
-      window.host.call(`${kind}.send`, { item, text }, text), { kind: KIND, item, text });
-    await send("Second message");
-    await b.page.waitForFunction(() => window.host.messages.some(([mode]) => mode === "append"));
-    const anchor = await b.page.evaluate(() => window.host.records.at(-1).anchor);
-    assert.ok(anchor);
+    await b.page.goto(`${origin}/host`);
+    await b.page.waitForSelector('h1:has-text("Sign in")');
+    await b.page.click('button:has-text("Sign in with a passkey")');
+    await b.page.waitForSelector('button:has-text("Release prep v2")');
+    await b.page.click('button:has-text("Release prep v2")');
+    await b.page.waitForSelector('[data-record-anchor]:has-text("First message with harness")');
 
-    // Hold the second context offline until both appends have committed.
+    // Append in A -> appears live in B
+    await a.page.fill('textarea[aria-label="Write"]', "Second live message");
+    await a.page.click('button[aria-label="Send"]');
+    await b.page.waitForSelector('[data-record-anchor]:has-text("Second live message")');
+
+    // Offline reconnect from last anchor
     await b.context.setOffline(true);
-    await b.page.evaluate(() => window.host.live.forceReconnect());
-    await b.page.waitForFunction(() => window.host.connections.at(-1) === "reconnecting");
-    await send("Third message");
-    await send("Fourth message");
+    await b.page.evaluate(() => window.__hostLive.forceReconnect());
+    await b.page.waitForSelector('.host-shell[data-live="reconnecting"]');
+
+    await a.page.fill('textarea[aria-label="Write"]', "Third after drop");
+    await a.page.click('button[aria-label="Send"]');
+    await a.page.waitForSelector('[data-record-anchor]:has-text("Third after drop")');
+
+    await a.page.fill('textarea[aria-label="Write"]', "Fourth after drop");
+    await a.page.click('button[aria-label="Send"]');
+    await a.page.waitForSelector('[data-record-anchor]:has-text("Fourth after drop")');
+
     await b.context.setOffline(false);
-    await b.page.waitForFunction(() => window.host.messages.some(([mode]) => mode === "delta"));
-    const seen = await b.page.evaluate(() => window.host.records.map(({ body, anchor }) => ({ body, anchor })));
-    assert.deepEqual(seen.map(({ body }) => body), ["First message", "Second message", "Third message", "Fourth message"]);
-    assert.equal(new Set(seen.map((record) => record.anchor)).size, 4);
-    assert.equal(seen[1].anchor, anchor);
-    const frames = await b.page.evaluate(() => window.host.messages);
-    assert.deepEqual(frames, [
-      ["snapshot", ["First message"]],
-      ["append", ["Second message"]],
-      ["delta", ["Third message", "Fourth message"]],
+    await b.page.waitForSelector('[data-record-anchor]:has-text("Fourth after drop")');
+    const textsB = await b.page.locator("[data-record-anchor] .body").allInnerTexts();
+    assert.deepEqual(textsB, [
+      "First message with harness",
+      "Second live message",
+      "Third after drop",
+      "Fourth after drop",
     ]);
-    await b.page.evaluate(() => window.host.client.signOutHost());
-    await b.page.waitForFunction(() => window.host.connections.at(-1) === "reconnecting");
-    assert.equal((await b.page.evaluate(() => window.host.client.sessionStatus())).session, null);
-    assert.equal((await a.page.evaluate(() => window.host.client.sessionStatus())).session.account, session.account);
-    console.log("PASS two isolated contexts, live append, anchored reconnect, and socket revocation");
+
+    // Sign out B -> returns to sign-in; A stays signed in
+    await b.page.click('button[aria-label="Sign out"]');
+    await b.page.waitForSelector('h1:has-text("Sign in")');
+    const statusA = await a.page.evaluate(() => fetch("/v1/auth/status").then((r) => r.json()));
+    assert.equal(statusA.session.account, session.account);
+    console.log("PASS 4: two-context live append, anchored reconnect ordering, and sign-out revocation");
+
+    // --- 5. Screenshots (1280 and 390, light and dark, list and open chat) ---
+    // Add one more personal chat so the list has two clean personal rows
+    await a.page.click('button[aria-label="New Chat"] >> nth=0');
+    await a.page.fill('input[name="title"]', "Weekly planning");
+    await a.page.click('button:has-text("Create Chat")');
+    await a.page.waitForSelector('[data-open-title]:has-text("Weekly planning")');
+    await a.page.fill('textarea[aria-label="Write"]', "Outline goals for Monday and check open reviews.");
+    await a.page.click('button[aria-label="Send"]');
+    await a.page.waitForSelector('[data-record-anchor]:has-text("Outline goals")');
+
+    // Desktop 1280 light — open chat
+    await a.page.click('button:has-text("Release prep v2")');
+    await a.page.waitForSelector('[data-open-title]:has-text("Release prep v2")');
+    await a.page.waitForTimeout(350);
+    await a.page.screenshot({ path: path.join(SHOT_DIR, "desktop-1280-light-chat.png") });
+
+    // Desktop 1280 light — list only
+    await a.page.click('button[aria-label="Close window"]');
+    await a.page.waitForTimeout(350);
+    await a.page.screenshot({ path: path.join(SHOT_DIR, "desktop-1280-light-list.png") });
+
+    // Desktop 1280 dark — list only & open chat
+    await a.page.click('button[aria-label="Switch to dark mode"]');
+    await a.page.waitForTimeout(350);
+    await a.page.screenshot({ path: path.join(SHOT_DIR, "desktop-1280-dark-list.png") });
+
+    await a.page.click('button:has-text("Release prep v2")');
+    await a.page.waitForSelector('[data-open-title]:has-text("Release prep v2")');
+    await a.page.waitForTimeout(350);
+    await a.page.screenshot({ path: path.join(SHOT_DIR, "desktop-1280-dark-chat.png") });
+
+    // Phone 390 light & dark — list (strip visible) and open chat (strip hidden!)
+    const phone = await openContext(browser, { width: 390, height: 844 });
+    await phone.cdp.send("WebAuthn.addCredential", { authenticatorId: phone.authenticatorId, credential: credentials[0] });
+    await phone.page.goto(`${origin}/host?scheme=light`);
+    await phone.page.waitForSelector('h1:has-text("Sign in")');
+    await phone.page.click('button:has-text("Sign in with a passkey")');
+    await phone.page.waitForSelector('button:has-text("Release prep v2")');
+    await phone.page.waitForTimeout(350);
+    assert.equal(await phone.page.locator('nav[aria-label="Workspace controls"]').count(), 1, "strip visible on phone list");
+    await phone.page.screenshot({ path: path.join(SHOT_DIR, "phone-390-light-list.png") });
+
+    await phone.page.click('button:has-text("Release prep v2")');
+    await phone.page.waitForSelector('[data-open-title]:has-text("Release prep v2")');
+    await phone.page.waitForTimeout(350);
+    assert.equal(
+      await phone.page.locator('nav[aria-label="Workspace controls"]').count(),
+      0,
+      "bottom strip must be hidden on phone while a chat is open",
+    );
+    await phone.page.screenshot({ path: path.join(SHOT_DIR, "phone-390-light-chat.png") });
+
+    // Phone 390 dark — list & open chat
+    await phone.page.goto(`${origin}/host?scheme=dark`);
+    await phone.page.waitForSelector('button:has-text("Release prep v2")');
+    await phone.page.waitForTimeout(350);
+    await phone.page.screenshot({ path: path.join(SHOT_DIR, "phone-390-dark-list.png") });
+
+    await phone.page.click('button:has-text("Release prep v2")');
+    await phone.page.waitForSelector('[data-open-title]:has-text("Release prep v2")');
+    await phone.page.waitForTimeout(350);
+    assert.equal(await phone.page.locator('nav[aria-label="Workspace controls"]').count(), 0);
+    await phone.page.screenshot({ path: path.join(SHOT_DIR, "phone-390-dark-chat.png") });
+
+    console.log(`PASS 5: all 8 desktop & phone (light/dark, list/chat) screenshots written to ${SHOT_DIR}`);
   } finally {
     process.removeListener("exit", stop);
     await browser?.close();
-    await vite?.close();
+    server?.httpServer?.close();
+    fs.rmSync(harnessDir, { recursive: true, force: true });
     if (host.exitCode === null && host.signalCode === null) {
       const exited = once(host, "exit");
       host.kill("SIGTERM");
@@ -276,11 +460,18 @@ async function fixture(directory, origin, setupCode) {
 if (process.argv[2] === "--fixture") {
   const setupCode = await new Promise((resolve, reject) => {
     let value = "";
-    process.stdin.setEncoding("utf8").on("data", (chunk) => { value += chunk; })
-      .on("end", () => resolve(value)).on("error", reject);
+    process.stdin
+      .setEncoding("utf8")
+      .on("data", (chunk) => {
+        value += chunk;
+      })
+      .on("end", () => resolve(value))
+      .on("error", reject);
   });
   await fixture(process.argv[3], process.argv[4], setupCode);
 } else {
   const origin = `http://localhost:${await port()}`;
-  await run("cargo", ["run", "--quiet", "-p", "calternal-host", "--example", "browser-chat-fixture", "--", origin], { cwd: ROOT });
+  await run("cargo", ["run", "--quiet", "-p", "calternal-host", "--example", "browser-chat-fixture", "--", origin], {
+    cwd: ROOT,
+  });
 }

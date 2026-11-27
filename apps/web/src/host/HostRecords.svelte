@@ -1,21 +1,40 @@
 <script lang="ts">
   /**
-   * Generic records view and composer slot drawn strictly from a kind's `page: records(...)`
-   * and `fills:` declarations. Adapts `experiments/drawing-spike/web/src/views/Records.svelte`
-   * and `apps/mockup/src/apps/chat/Conversation.svelte` with zero hardcoded app vocabulary.
+   * Generic records view, composer slot with person-picked secondary slot filler picker,
+   * and growing streamed reply + Stop control surface.
+   * Drawn strictly from `s.declarations` with zero hardcoded plugin vocabulary.
    */
   import { onMount, tick } from "svelte";
   import { Icon, Menu, type MenuItem } from "@calternal/ui";
-  import { dayKey, dayLabel, formatClock, humanize, initials } from "./format";
-  import type { FillDecl, KindDecl, RecordData, RowData } from "./types";
+  import {
+    dayKey,
+    dayLabel,
+    formatClock,
+    humanize,
+    initials,
+    type ResolvedComposer,
+    type ResolvedPickerSlot,
+  } from "./format";
+  import type { KindDecl, RecordData, RowData } from "./types";
+
+  /** Active streamed reply fixture/state drawn with growing text and a Stop control. */
+  export interface ActiveStreamRun {
+    id: string;
+    label: string;
+    text: string;
+    status: "streaming" | "stopping";
+  }
 
   let {
     row,
     kind,
     records,
     viewerId,
-    composerFill,
+    composer,
+    pickerSlot,
+    activeRun = null,
     onsend,
+    onstoprun,
     oneditrecord,
     onremoverecord,
   }: {
@@ -23,16 +42,19 @@
     kind: KindDecl;
     records: RecordData[];
     viewerId: string;
-    composerFill: FillDecl | null;
-    onsend: (body: string, quoteAnchor?: string) => Promise<void>;
+    composer: ResolvedComposer | null;
+    pickerSlot: ResolvedPickerSlot | null;
+    activeRun?: ActiveStreamRun | null;
+    onsend: (body: string, quoteAnchor?: string, selectedFiller?: string | null) => Promise<void>;
+    onstoprun?: () => void;
     oneditrecord: (rec: RecordData) => void;
     onremoverecord: (rec: RecordData) => void;
   } = $props();
 
-  const canQuote = $derived("quote" in kind.records);
+  const canQuote = $derived(Boolean(composer?.quoteInput && "quote" in kind.records));
   const canEdit = $derived("change record" in kind.operations);
   const canRemove = $derived("remove record" in kind.operations);
-  const sendLabel = $derived(composerFill ? humanize(composerFill.target) : "Send");
+  const sendLabel = $derived(composer ? humanize(composer.operation.name) : "Send");
 
   const own = (r: RecordData) => r.author === viewerId;
   const displayName = (r: RecordData) => r.author_name || r.author;
@@ -81,6 +103,22 @@
     if (canRemove && own(menu.r)) items.push({ id: "remove", label: "Remove", icon: "trash", danger: true });
     return items;
   });
+
+  // Secondary slot filler picker (e.g. harness slot) drawn strictly from `s.declarations`.
+  let selectedFiller = $state<string | null>(null);
+  let pickerEl = $state<HTMLElement | null>(null);
+  let pickerOpen = $state(false);
+  const selectedFillerObj = $derived(
+    pickerSlot?.fillers.find((f) => f.plugin === selectedFiller) ?? null,
+  );
+  const pickerItems = $derived<MenuItem[]>(
+    pickerSlot
+      ? [
+          ...pickerSlot.fillers.map((f) => ({ id: f.plugin, label: f.label })),
+          ...(selectedFiller ? [{ id: "__none__", label: "None" }] : []),
+        ]
+      : [],
+  );
 
   let quoting = $state<{ anchor: string; author: string; excerpt: string } | null>(null);
   let draft = $state("");
@@ -139,14 +177,17 @@
     });
   }
 
-  // Keep pinned to the bottom when new records arrive if the viewer was already near the end.
+  // Keep pinned to the bottom when new records arrive or streamed text grows while near the end.
   let prevLen = 0;
+  let prevStreamLen = 0;
   $effect(() => {
     const len = records.length;
-    if (len > prevLen && atEnd) {
-      void tick().then(() => scrollToEnd(prevLen === 0));
+    const sLen = activeRun?.text.length ?? 0;
+    if ((len > prevLen || sLen > prevStreamLen) && atEnd) {
+      void tick().then(() => scrollToEnd(prevLen === 0 && prevStreamLen === 0));
     }
     prevLen = len;
+    prevStreamLen = sLen;
   });
 
   onMount(() => {
@@ -163,8 +204,9 @@
     sending = true;
     sendError = "";
     const quoteAnchor = quoting?.anchor;
+    const filler = selectedFiller;
     try {
-      await onsend(text, quoteAnchor);
+      await onsend(text, quoteAnchor, filler);
       draft = "";
       quoting = null;
       saveDraft();
@@ -185,7 +227,7 @@
     aria-live="polite"
     aria-label="Records"
   >
-    {#if !lines.length}
+    {#if !lines.length && !activeRun}
       <p class="empty">No records yet.</p>
     {/if}
     {#each lines as l (l.key)}
@@ -199,7 +241,6 @@
           class:own={own(r)}
           class:first={l.first}
           class:last={l.last}
-          class:streaming={!!r.streaming}
           data-record-anchor={r.anchor}
           aria-label={`${displayName(r)}, ${formatClock(r.at)}`}
           oncontextmenu={(e) => {
@@ -247,6 +288,26 @@
         </article>
       {/if}
     {/each}
+
+    {#if activeRun}
+      <article
+        class="e first last streaming"
+        data-stream-run={activeRun.id}
+        aria-label={`${activeRun.label}, ${activeRun.status === "stopping" ? "stopping" : "replying"}`}
+        aria-busy="true"
+      >
+        <header class="eh">
+          <span class="pulse-dot" aria-hidden="true"></span>
+          <span class="nm">{activeRun.label}</span>
+          <span class="stream-state">
+            {activeRun.status === "stopping" ? "Stopping…" : "Running…"}
+          </span>
+        </header>
+        <div class="bub stream-bub">
+          <p class="body">{activeRun.text || "…"}</p>
+        </div>
+      </article>
+    {/if}
   </div>
 
   {#if !atEnd}
@@ -260,7 +321,7 @@
     </button>
   {/if}
 
-  {#if composerFill}
+  {#if composer}
     <form class="cp" onsubmit={submitComposer} aria-label="Composer">
       {#if quoting}
         <div class="q">
@@ -280,6 +341,26 @@
         <p class="cerr" role="alert">{sendError}</p>
       {/if}
       <div class="crow">
+        {#if pickerSlot}
+          <button
+            type="button"
+            class="slot-btn"
+            class:picked={!!selectedFillerObj}
+            bind:this={pickerEl}
+            data-slot-picker={pickerSlot.slot.name}
+            data-selected-filler={selectedFillerObj?.plugin ?? ""}
+            aria-label={selectedFillerObj
+              ? `${humanize(pickerSlot.slot.name)}: ${selectedFillerObj.label}`
+              : `Choose ${pickerSlot.slot.name}`}
+            aria-expanded={pickerOpen}
+            onclick={() => (pickerOpen = !pickerOpen)}
+          >
+            <Icon name="spark" inline />
+            <span class="slot-lbl">
+              {selectedFillerObj ? selectedFillerObj.label : humanize(pickerSlot.slot.name)}
+            </span>
+          </button>
+        {/if}
         <textarea
           rows="1"
           bind:value={draft}
@@ -290,14 +371,26 @@
             if (e.key === "Enter" && !e.shiftKey) void submitComposer(e);
           }}
         ></textarea>
-        <button
-          type="submit"
-          class="send"
-          disabled={!draft.trim() || sending}
-          aria-label={sendLabel}
-        >
-          <Icon name="send" inline />
-        </button>
+        {#if activeRun && onstoprun}
+          <button
+            type="button"
+            class="stop"
+            disabled={activeRun.status === "stopping"}
+            aria-label="Stop"
+            onclick={onstoprun}
+          >
+            <Icon name="stop-round" inline />
+          </button>
+        {:else}
+          <button
+            type="submit"
+            class="send"
+            disabled={!draft.trim() || sending}
+            aria-label={sendLabel}
+          >
+            <Icon name="send" inline />
+          </button>
+        {/if}
       </div>
     </form>
   {/if}
@@ -310,6 +403,20 @@
     onclose={() => (menu = null)}
     trigger={menu?.el ?? null}
   />
+
+  {#if pickerSlot}
+    <Menu
+      open={pickerOpen}
+      items={pickerItems}
+      label={humanize(pickerSlot.slot.name)}
+      onpick={(id) => {
+        pickerOpen = false;
+        selectedFiller = id === "__none__" ? null : id;
+      }}
+      onclose={() => (pickerOpen = false)}
+      trigger={pickerEl}
+    />
+  {/if}
 </section>
 
 <style>
@@ -333,7 +440,7 @@
   }
   .empty {
     margin: auto;
-    color: var(--ink-3);
+    color: var(--ink-2);
     font-size: var(--text-ui);
     text-align: center;
   }
@@ -361,15 +468,31 @@
   }
   .e.first { margin-top: var(--s-5); }
   .e.own { align-self: flex-end; align-items: flex-end; }
-  .e.streaming .bub {
+  .stream-bub {
+    border: 1px solid color-mix(in oklab, var(--accent) 28%, transparent);
     transition: height var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+  }
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse var(--dur-pulse, 1800ms) var(--ease-out) infinite;
+  }
+  .stream-state {
+    color: var(--ink-2);
+    font-size: var(--text-label);
   }
   @keyframes rise {
     from { opacity: 0; translate: 0 6px; }
   }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; scale: 1; }
+    50% { opacity: 0.4; scale: 0.85; }
+  }
   @media (prefers-reduced-motion: reduce) {
-    .e { animation: none; }
-    .e.streaming .bub { transition: none; }
+    .e, .pulse-dot { animation: none; }
+    .stream-bub { transition: none; }
   }
   .eh {
     display: flex;
@@ -450,13 +573,14 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+  /* High-contrast timestamp in both light and dark themes (matches mockup Conversation.svelte) */
   .meta {
     position: absolute;
     right: var(--s-5);
     bottom: var(--s-2);
     display: inline-flex;
     gap: var(--s-3);
-    color: var(--ink-3);
+    color: var(--ink-2);
     font-size: var(--text-label);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -475,7 +599,7 @@
     place-items: center;
     border-radius: 50%;
     background: transparent;
-    color: var(--ink-3);
+    color: var(--ink-2);
     opacity: 0;
     cursor: pointer;
     transition: opacity var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
@@ -547,6 +671,32 @@
   }
   .cerr { margin: 0 var(--s-3); color: var(--danger); font-size: var(--text-label); }
   .crow { display: flex; align-items: flex-end; gap: var(--s-3); }
+
+  .slot-btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-height: 34px;
+    padding: 0 var(--s-4);
+    border: 0;
+    border-radius: var(--r-pill);
+    background: var(--hover);
+    color: var(--ink-2);
+    font: inherit;
+    font-size: var(--text-label);
+    font-weight: var(--strong-weight);
+    cursor: pointer;
+    transition: background-color var(--dur-fast) var(--ease-out), scale var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  }
+  .slot-btn:hover { background: rgb(var(--ink-rgb) / 0.12); color: var(--ink); }
+  .slot-btn:active { scale: var(--press-scale); }
+  .slot-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .slot-btn.picked {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
   textarea {
     flex: 1;
     min-width: 0;
@@ -562,7 +712,8 @@
     font-size: var(--text-ui);
     line-height: 1.35;
   }
-  .send {
+  .send,
+  .stop {
     flex: none;
     display: grid;
     place-items: center;
@@ -570,19 +721,27 @@
     height: 34px;
     border: 0;
     border-radius: 50%;
-    background: var(--accent-base);
-    color: #fff;
     cursor: pointer;
     transition: scale var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
   }
-  .send:active { scale: var(--press-scale); }
-  .send:disabled { opacity: 0.4; cursor: default; }
-  .send:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .send {
+    background: var(--accent-base);
+    color: #fff;
+  }
+  .stop {
+    background: var(--danger);
+    color: #fff;
+  }
+  .send:active, .stop:active { scale: var(--press-scale); }
+  .send:disabled, .stop:disabled { opacity: 0.4; cursor: default; }
+  .send:focus-visible, .stop:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   @media (max-width: 759px) {
     .tr { padding-inline: var(--s-4); }
     .e { max-width: 88%; }
     .cp { margin: 0 var(--s-4) var(--s-4); }
-    .send { width: 40px; height: 40px; }
+    .send, .stop { width: 40px; height: 40px; }
+    .slot-btn { min-height: 40px; padding: 0 var(--s-3); }
+    .slot-lbl { max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   }
 </style>

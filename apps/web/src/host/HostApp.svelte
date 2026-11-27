@@ -1,36 +1,47 @@
 <script lang="ts">
   /**
-   * Declaration-driven browser shell for the new host (slices 4 & 5).
+   * Declaration-driven browser shell for the real `calternal-host` (slices 4 & 5).
    *
-   * Look and feel follows `origin/lane/threads-ui` (`apps/mockup`):
+   * Look and feel follows `origin/lane/threads-ui` (`apps/mockup`) and
+   * `docs/native-ui-study.md` / `docs/ui-craft-and-settings-study.md`:
    * - Bare wallpaper canvas (`Backdrop`), no top bands.
    * - Floating glass left sidebar drawn from `sidebars/*.md`.
-   * - Rounded window cards (`--r-pane` / `--r-card`) with floating top-left title pill
+   * - Rounded window cards (`--r-pane`) with floating top-left title pill
    *   and floating top-right operations pill.
-   * - Floating bottom-centre app strip.
-   * - Nothing in this file or its children names any specific plugin or kind.
+   * - Floating bottom-centre app strip (hidden on phone while an item page is open).
+   * - Zero hardcoded plugin or kind names anywhere in this directory.
    */
   import { onDestroy, onMount } from "svelte";
   import { applyScheme, currentScheme, Icon, ICONS, Menu, type IconName, type MenuItem } from "@calternal/ui";
   import Backdrop from "../shell/Backdrop.svelte";
   import {
     fetchDeclarations,
+    hasPendingLogout,
     hostCall,
     LiveClient,
-    loadSession,
+    sessionStatus,
     signOutHost,
+    subscribeAuthChannel,
     type ConnectionState,
   } from "./client";
-  import { humanize, itemMenuActions, rowTitle, type DerivedAction } from "./format";
+  import {
+    humanize,
+    itemMenuActions,
+    operationFormFields,
+    resolveComposerSlot,
+    resolvePickerSlot,
+    rowTitle,
+    type DerivedAction,
+  } from "./format";
   import HostCollection from "./HostCollection.svelte";
   import HostFormSheet, { type FormFieldSpec } from "./HostFormSheet.svelte";
-  import HostRecords from "./HostRecords.svelte";
+  import HostRecords, { type ActiveStreamRun } from "./HostRecords.svelte";
   import HostSidebar from "./HostSidebar.svelte";
   import HostSignIn from "./HostSignIn.svelte";
   import type {
     CollectionDecl,
-    FillDecl,
     KindDecl,
+    LiveItemMetadata,
     PluginDecl,
     RecordData,
     RowData,
@@ -39,7 +50,10 @@
     SpaceDeclarations,
   } from "./types";
 
-  let session = $state<SessionInfo | null>(loadSession());
+  let checkingSession = $state(true);
+  let needsSetup = $state(false);
+  let pendingLogout = $state(hasPendingLogout());
+  let session = $state<SessionInfo | null>(null);
   let declarations = $state<SpaceDeclarations | null>(null);
   let loadError = $state("");
   let liveState = $state<ConnectionState>("closed");
@@ -52,6 +66,10 @@
   let collectionRows = $state<Record<string, RowData[]>>({});
   let sidebarOpen = $state(true);
   let narrow = $state(typeof matchMedia !== "undefined" && matchMedia("(max-width: 759px)").matches);
+
+  // Local fixture state for the growing streamed reply + Stop control surface (until slice 6 wires live runs).
+  let activeRun = $state<ActiveStreamRun | null>(null);
+  let streamTimer: ReturnType<typeof setInterval> | null = null;
 
   let headerMenuEl = $state<HTMLElement | null>(null);
   let headerMenuOpen = $state(false);
@@ -69,6 +87,7 @@
   let live: LiveClient | null = null;
   let unsubQueries: (() => void)[] = [];
   let unsubRecords: (() => void) | null = null;
+  let unsubAuthChannel: (() => void) | null = null;
 
   const plugins = $derived<PluginDecl[]>(declarations?.plugins ?? []);
   const activePlugin = $derived<PluginDecl | null>(
@@ -77,6 +96,7 @@
   const activeSidebar = $derived<SidebarDecl | null>(
     activePlugin ? Object.values(activePlugin.sidebars)[0] ?? null : null,
   );
+  const showStrip = $derived(!(narrow && !!openItem));
 
   function findCollection(qualified: string | null): CollectionDecl | null {
     if (!qualified) return null;
@@ -98,13 +118,12 @@
   );
   const openItemKind = $derived<KindDecl | null>(openItem ? findKind(openItem.kind) : null);
 
-  const composerFill = $derived.by<FillDecl | null>(() => {
-    if (!openItemKind || !activePlugin) return null;
-    for (const fill of Object.values(activePlugin.fills)) {
-      if (fill.kind === "operation") return fill;
-    }
-    return null;
-  });
+  const composer = $derived(
+    activePlugin && openItemKind ? resolveComposerSlot(activePlugin, openItemKind) : null,
+  );
+  const pickerSlot = $derived(
+    activePlugin ? resolvePickerSlot(activePlugin, plugins, composer?.slot.name) : null,
+  );
 
   const collectionCounts = $derived.by<Record<string, number>>(() => {
     const out: Record<string, number> = {};
@@ -125,13 +144,60 @@
     itemActions.map((a) => ({ id: a.id, label: a.label, danger: a.danger })),
   );
 
+  function stopStreamFixture() {
+    if (streamTimer) {
+      clearInterval(streamTimer);
+      streamTimer = null;
+    }
+    if (activeRun) {
+      activeRun = { ...activeRun, status: "stopping" };
+      setTimeout(() => {
+        activeRun = null;
+      }, 150);
+    }
+  }
+
+  function startStreamFixture(label: string, fullText: string) {
+    if (streamTimer) clearInterval(streamTimer);
+    const words = fullText.split(" ");
+    let idx = 0;
+    activeRun = { id: `demo-${Date.now()}`, label, text: "", status: "streaming" };
+    streamTimer = setInterval(() => {
+      idx += 1;
+      if (!activeRun || idx > words.length) {
+        if (streamTimer) clearInterval(streamTimer);
+        streamTimer = null;
+        return;
+      }
+      activeRun = { ...activeRun, text: words.slice(0, idx).join(" ") };
+    }, 60);
+  }
+
   function cleanupLive() {
+    if (streamTimer) {
+      clearInterval(streamTimer);
+      streamTimer = null;
+    }
+    activeRun = null;
     unsubRecords?.();
     unsubRecords = null;
     for (const u of unsubQueries) u();
     unsubQueries = [];
     live?.close();
     live = null;
+  }
+
+  function applyLiveMeta(itemId: string, meta: LiveItemMetadata) {
+    if (openItem && openItem.id === itemId) {
+      openItem = {
+        ...openItem,
+        version: meta.version,
+        fields: meta.fields,
+        computed: meta.computed,
+        state: meta.state,
+        when: meta.when,
+      };
+    }
   }
 
   async function bootSession(s: SessionInfo) {
@@ -143,17 +209,21 @@
       const firstPlugin = decl.plugins[0] ?? null;
       activePluginId = firstPlugin?.id ?? null;
       const firstSidebar = firstPlugin ? Object.values(firstPlugin.sidebars)[0] ?? null : null;
-      const firstCol = firstSidebar?.entries.find((e) => e.type === "collection")?.collection ?? null;
-      activeCollectionId = firstCol;
+      const defaultCol =
+        firstSidebar?.entries.find(
+          (e) => e.type === "collection" && e.collection && firstPlugin?.collections[e.collection.split(".")[1]!]?.views[0]?.type === "list",
+        )?.collection ??
+        firstSidebar?.entries.find((e) => e.type === "collection")?.collection ??
+        null;
+      activeCollectionId = defaultCol;
 
       live = new LiveClient(s, (st) => (liveState = st));
-      // Expose a minimal debug hook for Playwright reconnect-from-anchor tests.
       (window as unknown as Record<string, unknown>).__hostLive = {
         forceReconnect: () => live?.forceReconnect(),
         state: () => liveState,
+        startStreamDemo: (label: string, text: string) => startStreamFixture(label, text),
       };
 
-      // Subscribe to every collection referenced in the active plugin's sidebars.
       if (firstPlugin) {
         for (const col of Object.values(firstPlugin.collections)) {
           const cid = col.qualified;
@@ -176,13 +246,16 @@
     unsubRecords?.();
     unsubRecords = null;
     openRecords = [];
+    if (streamTimer) {
+      clearInterval(streamTimer);
+      streamTimer = null;
+    }
+    activeRun = null;
     if (!item || !live) return;
     unsubRecords = live.subscribeRecords(item.id, {
       onSnapshot: (recs, meta) => {
         openRecords = recs;
-        if (openItem && openItem.id === item.id) {
-          openItem = { ...openItem, version: meta.version, fields: meta.fields, computed: meta.computed };
-        }
+        applyLiveMeta(item.id, meta);
       },
       onDelta: (recs, meta) => {
         if (recs.length) {
@@ -190,9 +263,7 @@
           const fresh = recs.filter((r) => !seen.has(r.anchor));
           if (fresh.length) openRecords = [...openRecords, ...fresh];
         }
-        if (openItem && openItem.id === item.id) {
-          openItem = { ...openItem, version: meta.version, fields: meta.fields, computed: meta.computed };
-        }
+        applyLiveMeta(item.id, meta);
       },
       onAppend: (rec, version) => {
         if (!openRecords.some((r) => r.anchor === rec.anchor)) {
@@ -202,11 +273,7 @@
           openItem = { ...openItem, version };
         }
       },
-      onItemChange: (meta) => {
-        if (openItem && openItem.id === item.id) {
-          openItem = { ...openItem, version: meta.version, fields: meta.fields, computed: meta.computed };
-        }
-      },
+      onItemChange: (meta) => applyLiveMeta(item.id, meta),
     });
   }
 
@@ -288,30 +355,22 @@
       return;
     }
     if (op.form === "code") {
-      // Ask for the kind's primary text field (e.g. `title` for a rename operation).
-      const textField =
-        Object.values(action.kind.fields).find((f) => f.type === "text")?.name ?? "title";
-      const currentVal = typeof row.fields[textField] === "string" ? (row.fields[textField] as string) : "";
+      const fields = operationFormFields(op, row);
+      const qualifiedOp = `${action.kind.plugin}.${action.kind.id}.${op.name}`;
+      if (!fields.length) {
+        await hostCall(session, qualifiedOp, { item: row.id }, `op-${crypto.randomUUID()}`);
+        return;
+      }
       sheet = {
         title: action.label,
         submitLabel: action.label,
-        fields: [
-          {
-            name: textField,
-            label: humanize(textField),
-            type: "text",
-            required: true,
-            value: currentVal,
-          },
-        ],
+        fields,
         onsubmit: async (vals) => {
           if (!session) return;
-          const qualifiedOp = `${action.kind.plugin}.${action.kind.id}.${op.name}`;
-          const singular = action.kind.id.replace(/s$/, "");
           await hostCall(
             session,
             qualifiedOp,
-            { item: row.id, [singular]: row.id, ...vals },
+            { item: row.id, ...vals },
             `op-${crypto.randomUUID()}`,
           );
         },
@@ -319,13 +378,19 @@
     }
   }
 
-  async function sendRecord(body: string, quoteAnchor?: string) {
-    if (!session || !openItem || !openItemKind || !composerFill) return;
-    const qualifiedOp = `${openItemKind.plugin}.${openItemKind.id}.${composerFill.target}`;
-    const singular = openItemKind.id.replace(/s$/, "");
-    const input: Record<string, unknown> = { item: openItem.id, [singular]: openItem.id, text: body };
-    if (quoteAnchor) input.quote = quoteAnchor;
-    await hostCall(session, qualifiedOp, input, `send-${crypto.randomUUID()}`);
+  async function sendRecord(body: string, quoteAnchor?: string, selectedFiller?: string | null) {
+    if (!session || !openItem || !openItemKind || !composer) return;
+    const qualifiedOp = `${openItemKind.plugin}.${openItemKind.id}.${composer.operation.name}`;
+    const input: Record<string, unknown> = {
+      item: openItem.id,
+      [composer.textInput]: body,
+    };
+    if (quoteAnchor && composer.quoteInput) {
+      input[composer.quoteInput] = quoteAnchor;
+    }
+    const slotSelection =
+      selectedFiller && pickerSlot ? { slot: pickerSlot.slot.name, filler: selectedFiller } : undefined;
+    await hostCall(session, qualifiedOp, input, `send-${crypto.randomUUID()}`, slotSelection);
   }
 
   function openEditRecord(rec: RecordData) {
@@ -366,15 +431,21 @@
     applyScheme(scheme);
   }
 
-  async function handleSignOut() {
-    const s = session;
+  function resetToSignedOut() {
     cleanupLive();
     session = null;
     declarations = null;
     openItem = null;
     openRecords = [];
     collectionRows = {};
-    if (s) await signOutHost(s);
+    needsSetup = false;
+  }
+
+  async function handleSignOut() {
+    cleanupLive();
+    const { offline } = await signOutHost();
+    pendingLogout = offline;
+    resetToSignedOut();
   }
 
   onMount(() => {
@@ -392,8 +463,30 @@
       applyScheme(qScheme);
     }
 
-    if (session) void bootSession(session);
-    return () => mq.removeEventListener("change", syncNarrow);
+    unsubAuthChannel = subscribeAuthChannel(() => {
+      resetToSignedOut();
+    });
+
+    void sessionStatus()
+      .then((status) => {
+        needsSetup = status.setup;
+        pendingLogout = hasPendingLogout();
+        if (status.session) {
+          session = status.session;
+          return bootSession(status.session);
+        }
+      })
+      .catch((err) => {
+        loadError = err instanceof Error ? err.message : "Could not reach host.";
+      })
+      .finally(() => {
+        checkingSession = false;
+      });
+
+    return () => {
+      mq.removeEventListener("change", syncNarrow);
+      unsubAuthChannel?.();
+    };
   });
 
   onDestroy(() => cleanupLive());
@@ -401,9 +494,17 @@
 
 <Backdrop />
 
-{#if !session}
+{#if checkingSession}
+  <main class="boot-wait" aria-busy="true" aria-label="Loading">
+    <p class="mark">Calternal</p>
+  </main>
+{:else if !session}
   <HostSignIn
+    {needsSetup}
+    {pendingLogout}
     onsignedin={(s) => {
+      needsSetup = false;
+      pendingLogout = false;
       session = s;
       void bootSession(s);
     }}
@@ -431,7 +532,11 @@
           <p>{loadError}</p>
         </div>
       {:else}
-        <div class="windows" class:split={!narrow && !!openItem && !!activeCollection}>
+        <div
+          class="windows"
+          class:split={!narrow && !!openItem && !!activeCollection}
+          class:no-strip={!showStrip}
+        >
           {#if activeCollection && (!narrow || !openItem)}
             <section class="card win" aria-label={activeCollection.title}>
               <div class="float-bar">
@@ -516,8 +621,11 @@
                 kind={openItemKind}
                 records={openRecords}
                 viewerId={session.account}
-                {composerFill}
+                {composer}
+                {pickerSlot}
+                {activeRun}
                 onsend={sendRecord}
+                onstoprun={stopStreamFixture}
                 oneditrecord={openEditRecord}
                 onremoverecord={openRemoveRecord}
               />
@@ -526,39 +634,41 @@
         </div>
       {/if}
 
-      <!-- Bottom-centre floating glass strip (matches mockup AppStrip) -->
-      <nav class="strip" aria-label="Workspace controls">
-        <button
-          type="button"
-          class="strip-btn"
-          aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-          aria-pressed={sidebarOpen}
-          onclick={() => (sidebarOpen = !sidebarOpen)}
-        >
-          <Icon name="sidebar" inline />
-        </button>
-        {#each plugins as p (p.id)}
+      <!-- Bottom-centre floating glass strip (hidden on phone when an item page is open, per owner decision) -->
+      {#if showStrip}
+        <nav class="strip" aria-label="Workspace controls">
           <button
             type="button"
-            class="strip-btn app-btn"
-            class:cur={activePlugin?.id === p.id}
-            aria-label={p.name}
-            aria-current={activePlugin?.id === p.id ? "page" : undefined}
-            onclick={() => (activePluginId = p.id)}
+            class="strip-btn"
+            aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            aria-pressed={sidebarOpen}
+            onclick={() => (sidebarOpen = !sidebarOpen)}
           >
-            <Icon name={(p.icon in ICONS ? p.icon : "apps") as IconName} inline />
-            <span class="strip-lbl">{p.name}</span>
+            <Icon name="sidebar" inline />
           </button>
-        {/each}
-        <button
-          type="button"
-          class="strip-btn"
-          aria-label={scheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          onclick={toggleScheme}
-        >
-          <Icon name={scheme === "dark" ? "sun" : "moon"} inline />
-        </button>
-      </nav>
+          {#each plugins.filter((p) => Object.keys(p.sidebars).length > 0) as p (p.id)}
+            <button
+              type="button"
+              class="strip-btn app-btn"
+              class:cur={activePlugin?.id === p.id}
+              aria-label={p.name}
+              aria-current={activePlugin?.id === p.id ? "page" : undefined}
+              onclick={() => (activePluginId = p.id)}
+            >
+              <Icon name={(p.icon in ICONS ? p.icon : "apps") as IconName} inline />
+              <span class="strip-lbl">{p.name}</span>
+            </button>
+          {/each}
+          <button
+            type="button"
+            class="strip-btn"
+            aria-label={scheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            onclick={toggleScheme}
+          >
+            <Icon name={scheme === "dark" ? "sun" : "moon"} inline />
+          </button>
+        </nav>
+      {/if}
     </main>
   </div>
 
@@ -589,6 +699,20 @@
 {/if}
 
 <style>
+  .boot-wait {
+    min-height: 100dvh;
+    display: grid;
+    place-content: center;
+    position: relative;
+    z-index: 1;
+  }
+  .mark {
+    font-family: var(--font-brand, var(--font-ui));
+    font-size: var(--text-title);
+    font-weight: var(--strong-weight);
+    color: var(--ink);
+    margin: 0;
+  }
   .host-shell {
     position: fixed;
     inset: 0;
@@ -623,6 +747,9 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--inset, 8px);
     padding-bottom: calc(var(--tier-cap, 48px) + var(--s-4));
+  }
+  .windows.no-strip {
+    padding-bottom: 0;
   }
   .windows.split {
     grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);

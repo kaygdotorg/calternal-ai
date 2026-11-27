@@ -1,15 +1,15 @@
 <script lang="ts">
   /**
    * Generic collection list window drawn from `CollectionDecl` and `KindDecl.row`.
-   * Row actions are generated from `kind.operations` filtered by `when`.
+   * Row actions are generated from `kind.operations` filtered by server-evaluated `row.when`.
    * Sizes follow `docs/native-ui-study.md` §2.3 & §7.3 (56px list rows, 16px inset, 8px selection radius).
    */
   import { Icon, Menu, type MenuItem } from "@calternal/ui";
   import {
+    formatClock,
     initials,
     itemMenuActions,
     rowCount,
-    rowPeople,
     rowTitle,
     type DerivedAction,
   } from "./format";
@@ -76,9 +76,9 @@
     {:else}
       {#each rows as row (row.id)}
         {@const title = rowTitle(row, kind ?? undefined)}
-        {@const people = rowPeople(row, kind ?? undefined)}
         {@const count = rowCount(row, kind ?? undefined)}
         {@const sel = selectedId === row.id}
+        {@const edited = row.edited ? formatClock(row.edited) : ""}
         <div
           class="item-wrap"
           role="listitem"
@@ -96,12 +96,12 @@
             onclick={() => onopen(row)}
           >
             <span class="lead" aria-hidden="true">
-              <span class="av">{initials(people[0] ?? title)}</span>
+              <span class="av">{initials(title)}</span>
             </span>
             <span class="mid">
-              <span class="title">{title}</span>
-              {#if people.length}
-                <span class="sub">{people.join(", ")}</span>
+              <span class="row-title">{title}</span>
+              {#if edited}
+                <span class="row-sub">{edited}</span>
               {/if}
             </span>
             {#if count > 0}
@@ -202,7 +202,7 @@
     align-items: center;
     gap: var(--s-4);
     min-height: 56px;
-    padding: var(--s-3) var(--s-6) var(--s-3) var(--s-5);
+    padding: var(--s-3) var(--s-8) var(--s-3) var(--s-5);
     border: 0;
     border-radius: var(--r-select);
     background: transparent;
@@ -240,25 +240,29 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 2px;
+    text-align: start;
   }
-  .title {
-    width: 100%;
+  .row-title,
+  .row-sub {
+    display: block;
+    margin: 0;
+    padding: 0;
+    text-align: start;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .row-title {
     font-size: var(--text-ui);
     font-weight: var(--strong-weight);
     color: var(--ink);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-  .sub {
-    width: 100%;
+  .row-sub {
     font-size: var(--text-label);
-    color: var(--ink-3);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
   }
   .badge {
     flex: none;
@@ -288,7 +292,7 @@
     border: 0;
     border-radius: 50%;
     background: transparent;
-    color: var(--ink-3);
+    color: var(--ink-2);
     opacity: 0;
     cursor: pointer;
     transition: opacity var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
