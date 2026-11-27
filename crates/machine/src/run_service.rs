@@ -215,7 +215,7 @@ impl RunService {
             backend,
             image,
             authorizer,
-            Arc::new(SystemResolver),
+            Arc::new(SystemResolver::default()),
             Arc::new(TcpDialer),
         )
     }

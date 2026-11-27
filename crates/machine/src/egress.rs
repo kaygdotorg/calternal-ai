@@ -4,26 +4,29 @@
 //! bytes over a mounted Unix socket; this module checks each declared hostname,
 //! resolves it on the host for every connection, refuses unsafe answers, and
 //! dials the already-checked address without resolving again.
+mod tunnel;
 use crate::sandbox::BoxFuture;
 use std::{
     collections::HashSet,
     io,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs},
     path::{Path, PathBuf},
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf, copy_bidirectional},
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, UnixListener, UnixStream},
-    sync::oneshot,
+    sync::{Semaphore, oneshot},
     task::{JoinHandle, JoinSet},
 };
+use tunnel::Limits;
 
 const MAX_CONNECT_HEADERS: usize = 16 * 1024;
-const CONNECT_READ_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_SYSTEM_DNS_JOBS: usize = 16;
 
 /// Resolves a declared hostname on the host for each CONNECT request.
 pub trait EgressResolver: Send + Sync + 'static {
@@ -33,15 +36,37 @@ pub trait EgressResolver: Send + Sync + 'static {
 }
 
 /// Resolves names with the host operating system's configured resolver.
-pub struct SystemResolver;
+pub struct SystemResolver {
+    jobs: Arc<Semaphore>,
+}
+
+impl Default for SystemResolver {
+    fn default() -> Self {
+        Self {
+            jobs: Arc::new(Semaphore::new(MAX_SYSTEM_DNS_JOBS)),
+        }
+    }
+}
 
 impl EgressResolver for SystemResolver {
     fn resolve<'a>(&'a self, host: &'a str) -> BoxFuture<'a, io::Result<Vec<IpAddr>>> {
         Box::pin(async move {
-            Ok(tokio::net::lookup_host((host, 443))
-                .await?
-                .map(|address| address.ip())
-                .collect())
+            let permit = self
+                .jobs
+                .clone()
+                .try_acquire_owned()
+                .map_err(|_| io::Error::other("system DNS lookup capacity exhausted"))?;
+            let host = host.to_owned();
+            // libc lookup may outlive the async handshake deadline. The job
+            // itself owns the permit until libc returns.
+            tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                (host.as_str(), 443)
+                    .to_socket_addrs()
+                    .map(|addresses| addresses.map(|address| address.ip()).collect())
+            })
+            .await
+            .map_err(io::Error::other)?
         })
     }
 }
@@ -126,25 +151,42 @@ impl ConnectProxy {
         resolver: Arc<dyn EgressResolver>,
         dialer: Arc<dyn EgressDialer>,
     ) -> Result<Self, EgressError> {
+        Self::start_limited(socket, policy, resolver, dialer, Limits::default()).await
+    }
+
+    async fn start_limited(
+        socket: &Path,
+        policy: EgressPolicy,
+        resolver: Arc<dyn EgressResolver>,
+        dialer: Arc<dyn EgressDialer>,
+        limits: Limits,
+    ) -> Result<Self, EgressError> {
         let listener = UnixListener::bind(socket)?;
         let (shutdown, mut stop) = oneshot::channel();
         let task = tokio::spawn(async move {
             let mut connections = JoinSet::new();
+            let budget = Arc::new(AtomicU64::new(limits.bytes));
+            let policy = Arc::new(policy);
             loop {
                 tokio::select! {
+                    biased;
                     _ = &mut stop => break,
+                    _ = connections.join_next(), if !connections.is_empty() => {}
                     accepted = listener.accept() => match accepted {
                         Ok((client, _)) => {
-                            let policy = policy.clone();
+                            if connections.len() >= limits.concurrent || budget.load(Ordering::Relaxed) == 0 {
+                                continue;
+                            }
+                            let policy = Arc::clone(&policy);
                             let resolver = Arc::clone(&resolver);
                             let dialer = Arc::clone(&dialer);
+                            let budget = Arc::clone(&budget);
                             connections.spawn(async move {
-                                serve_connection(client, policy, resolver, dialer).await;
+                                serve_connection(client, &policy, resolver.as_ref(), dialer.as_ref(), &budget, limits).await;
                             });
                         }
                         Err(_) => break,
                     },
-                    _ = connections.join_next(), if !connections.is_empty() => {}
                 }
             }
             connections.abort_all();
@@ -187,10 +229,34 @@ impl Drop for ConnectProxy {
 
 async fn serve_connection(
     mut client: UnixStream,
-    policy: EgressPolicy,
-    resolver: Arc<dyn EgressResolver>,
-    dialer: Arc<dyn EgressDialer>,
+    policy: &EgressPolicy,
+    resolver: &dyn EgressResolver,
+    dialer: &dyn EgressDialer,
+    budget: &AtomicU64,
+    limits: Limits,
 ) {
+    let connect = handshake(&mut client, policy, resolver, dialer);
+    if let Ok(Some((host, upstream, request, header_end))) =
+        tokio::time::timeout(limits.handshake, connect).await
+    {
+        tunnel::relay(
+            client,
+            upstream,
+            &request[header_end..],
+            &host,
+            budget,
+            limits,
+        )
+        .await;
+    }
+}
+
+async fn handshake(
+    client: &mut UnixStream,
+    policy: &EgressPolicy,
+    resolver: &dyn EgressResolver,
+    dialer: &dyn EgressDialer,
+) -> Option<(String, TcpStream, Vec<u8>, usize)> {
     let mut request = Vec::with_capacity(1024);
     let mut buffer = [0_u8; 2048];
     let header_end = loop {
@@ -198,118 +264,48 @@ async fn serve_connection(
             break position;
         }
         if request.len() >= MAX_CONNECT_HEADERS {
-            refuse(&mut client, "431 Request Header Fields Too Large").await;
-            return;
+            refuse(client, "431 Request Header Fields Too Large").await;
+            return None;
         }
-        let read = tokio::time::timeout(CONNECT_READ_TIMEOUT, client.read(&mut buffer)).await;
-        let count = match read {
-            Ok(Ok(count)) if count != 0 => count,
-            _ => return,
-        };
+        let count = client.read(&mut buffer).await.ok()?;
+        if count == 0 {
+            return None;
+        }
         request.extend_from_slice(&buffer[..count]);
     };
     let Some(host) = parse_connect(&request[..header_end]) else {
-        refuse(&mut client, "400 Bad Request").await;
-        return;
+        refuse(client, "400 Bad Request").await;
+        return None;
     };
     if !policy.allows(&host) {
         eprintln!("harness egress refused undeclared host {host}");
-        refuse(&mut client, "403 Forbidden").await;
-        return;
+        refuse(client, "403 Forbidden").await;
+        return None;
     }
     let addresses = match resolver.resolve(&host).await {
         Ok(addresses) if !addresses.is_empty() => addresses,
         _ => {
-            refuse(&mut client, "502 Bad Gateway").await;
-            return;
+            refuse(client, "502 Bad Gateway").await;
+            return None;
         }
     };
     if addresses.iter().any(|address| is_denied_address(*address)) {
         eprintln!("harness egress refused unsafe DNS answer for {host}");
-        refuse(&mut client, "403 Forbidden").await;
-        return;
+        refuse(client, "403 Forbidden").await;
+        return None;
     }
     let upstream = match dialer.connect(SocketAddr::new(addresses[0], 443)).await {
         Ok(stream) => stream,
         Err(_) => {
-            refuse(&mut client, "502 Bad Gateway").await;
-            return;
+            refuse(client, "502 Bad Gateway").await;
+            return None;
         }
     };
-    if client
+    client
         .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         .await
-        .is_err()
-    {
-        return;
-    }
-    let mut client = Metered::new(client, &host, "to_run");
-    let mut upstream = Metered::new(upstream, &host, "to_upstream");
-    let early = &request[header_end..];
-    if !early.is_empty() && upstream.write_all(early).await.is_err() {
-        return;
-    }
-    let _ = copy_bidirectional(&mut client, &mut upstream).await;
-}
-
-// Count successful writes, including traffic sent before a tunnel is cancelled.
-struct Metered<'a, S> {
-    stream: S,
-    host: &'a str,
-    direction: &'static str,
-    bytes: u64,
-}
-
-impl<'a, S> Metered<'a, S> {
-    fn new(stream: S, host: &'a str, direction: &'static str) -> Self {
-        Self {
-            stream,
-            host,
-            direction,
-            bytes: 0,
-        }
-    }
-}
-
-impl<S: AsyncRead + Unpin> AsyncRead for Metered<'_, S> {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.stream).poll_read(cx, buf)
-    }
-}
-
-impl<S: AsyncWrite + Unpin> AsyncWrite for Metered<'_, S> {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        let result = Pin::new(&mut self.stream).poll_write(cx, buf);
-        if let Poll::Ready(Ok(written)) = result {
-            self.bytes = self.bytes.saturating_add(written as u64);
-        }
-        result
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.stream).poll_flush(cx)
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.stream).poll_shutdown(cx)
-    }
-}
-
-impl<S> Drop for Metered<'_, S> {
-    fn drop(&mut self) {
-        eprintln!(
-            "harness egress bytes {} {} {}",
-            self.host, self.direction, self.bytes
-        );
-    }
+        .ok()?;
+    Some((host, upstream, request, header_end))
 }
 
 async fn refuse(client: &mut UnixStream, status: &str) {

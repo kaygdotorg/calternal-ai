@@ -143,3 +143,79 @@ async fn private_dns_answer_is_refused_before_connect() {
     assert_eq!(dialer_calls.load(Ordering::SeqCst), 0);
     proxy.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn stalled_handshakes_have_a_ceiling_and_release_their_slots() {
+    use std::{future::pending, time::Duration};
+    use tokio::time::{sleep, timeout};
+
+    struct StalledResolver {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl EgressResolver for StalledResolver {
+        fn resolve<'a>(&'a self, _: &'a str) -> BoxFuture<'a, std::io::Result<Vec<IpAddr>>> {
+            Box::pin(async {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                pending().await
+            })
+        }
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    let socket = root.path().join("proxy.sock");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let proxy = ConnectProxy::start(
+        &socket,
+        EgressPolicy::new(["api.anthropic.com"]).unwrap(),
+        Arc::new(StalledResolver {
+            calls: Arc::clone(&calls),
+        }),
+        Arc::new(calternal_machine::egress::TcpDialer),
+    )
+    .await
+    .unwrap();
+    let open = || async {
+        let mut client = UnixStream::connect(&socket).await.unwrap();
+        let _ = client
+            .write_all(
+                b"CONNECT api.anthropic.com:443 HTTP/1.1\r\nHost: api.anthropic.com:443\r\n\r\n",
+            )
+            .await;
+        client
+    };
+    let mut clients = Vec::new();
+    for _ in 0..4 {
+        clients.push(open().await);
+    }
+    timeout(Duration::from_secs(1), async {
+        while calls.load(Ordering::SeqCst) != 4 {
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let mut rejected = open().await;
+    let mut byte = [0; 1];
+    let result = timeout(Duration::from_millis(500), rejected.read(&mut byte))
+        .await
+        .expect("the fifth handshake must be rejected immediately");
+    assert!(!matches!(result, Ok(1)));
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+
+    for mut client in clients {
+        let result = timeout(Duration::from_secs(6), client.read(&mut byte))
+            .await
+            .expect("stalled DNS outlived the handshake deadline");
+        assert!(!matches!(result, Ok(1)));
+    }
+    let _next = open().await;
+    timeout(Duration::from_secs(1), async {
+        while calls.load(Ordering::SeqCst) != 5 {
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("expired handshakes did not release admission");
+    proxy.shutdown().await.unwrap();
+}
