@@ -6,7 +6,7 @@ use super::{InstallOptions, Kind, Plugin, Section, SidebarEntry, kind, list, sec
 use crate::{
     Change, Diagnostic, EvalContext, Field, FieldType, Fields, Operation, OperationForm,
     OperationInput, Row, Value,
-    expr::NodeKind,
+    expr::{Node, NodeKind, Op},
     lines::{self, Site},
     operation::typed_fields,
     query::computed_values,
@@ -195,6 +195,10 @@ impl KindExtension {
                 .site
                 .error("The extension does not match this visible kind"));
         }
+        self.verify_presentation(kind)
+    }
+
+    fn verify_presentation(&self, kind: &Kind) -> Result<(), Diagnostic> {
         for name in self
             .row
             .iter()
@@ -430,6 +434,56 @@ fn parse_kind(target: &Section<'_>, selector: KindSelector) -> Result<KindExtens
     Ok(result)
 }
 
+fn check_marks(extension: &KindExtension, target: Option<&Kind>) -> Result<(), Diagnostic> {
+    if !extension.fields.values().any(|field| field.mark) {
+        return Ok(());
+    }
+    let mut booleans = BTreeSet::new();
+    for name in &extension.computed {
+        let field = &extension.fields[name];
+        let local = |name: &str| {
+            booleans.contains(name)
+                || extension
+                    .fields
+                    .get(name)
+                    .or_else(|| target.and_then(|kind| kind.fields.get(name)))
+                    .is_some_and(|field| field.mark || field.field_type == Some(FieldType::Bool))
+        };
+        let formula = field.expression.as_ref().expect("computed extension field");
+        if boolean(&formula.root, &local) {
+            booleans.insert(name.as_str());
+        } else if field.mark {
+            return Err(field.site.error("A mark requires a yes/no formula"));
+        }
+    }
+    Ok(())
+}
+
+fn boolean(node: &Node, local: &impl Fn(&str) -> bool) -> bool {
+    let optional =
+        |node: &Node| matches!(&node.kind, NodeKind::Value(Value::Empty)) || boolean(node, local);
+    match &node.kind {
+        NodeKind::Value(Value::Bool(_)) => true,
+        NodeKind::Name(name) => local(name),
+        NodeKind::Member(base, name) => {
+            matches!(&base.kind, NodeKind::Name(scope) if scope == "this") && local(name)
+        }
+        NodeKind::Unary(Op::Not, _) => true,
+        NodeKind::Binary(
+            Op::And | Op::Or | Op::Eq | Op::Ne | Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::In,
+            _,
+            _,
+        ) => true,
+        NodeKind::Call(name, args) => match name.as_str() {
+            "contains" | "links to" => true,
+            "if" => optional(&args[1]) && optional(&args[2]),
+            "first" => args.iter().all(optional),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 pub(super) fn verify(
     plugin: &Plugin,
     options: &InstallOptions<'_>,
@@ -464,15 +518,19 @@ pub(super) fn verify(
                                 .error("Extend a visible kind in another installed plugin")
                         })?;
                     extension.verify_kind(&extension.target, owner, target)?;
-                } else if extension
-                    .row
-                    .iter()
-                    .chain(extension.page.iter().flat_map(|page| &page.fields))
-                    .any(|name| !extension.fields.contains_key(name))
-                {
-                    return Err(extension
-                        .site
-                        .error("Present only the added fields on a dynamic extension target"));
+                    check_marks(extension, Some(target))?;
+                } else {
+                    if extension
+                        .row
+                        .iter()
+                        .chain(extension.page.iter().flat_map(|page| &page.fields))
+                        .any(|name| !extension.fields.contains_key(name))
+                    {
+                        return Err(extension
+                            .site
+                            .error("Present only the added fields on a dynamic extension target"));
+                    }
+                    check_marks(extension, None)?;
                 }
             }
             Extension::Sidebar(extension) => {

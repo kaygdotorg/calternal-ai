@@ -266,7 +266,7 @@ pub(super) fn parse(
                         .map(|(value, site)| text(value, *site, 120, false))
                         .transpose()?;
                     let start = predicate.as_ptr() as usize - child.text.as_ptr() as usize;
-                    let predicate = crate::expr::parse::parse_at(predicate, |offset| {
+                    let predicate = crate::expr::parse::ordinary_at(predicate, |offset| {
                         child.site_at(start + offset)
                     })?;
                     let _ = site;

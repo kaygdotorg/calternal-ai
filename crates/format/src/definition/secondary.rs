@@ -86,7 +86,7 @@ pub(super) fn sidebar_entry(
         lines::id(target, site)?;
         for (part, site) in lines::parts(source, site)? {
             if let Some(where_clause) = part.strip_prefix("where ") {
-                parse::parse(where_clause, site)?;
+                parse::ordinary(where_clause, site)?;
             }
         }
         collection_ref = Some((target.into(), None));
@@ -193,7 +193,7 @@ pub fn parse_agent_rules(source: &str) -> Result<AgentRules, Diagnostic> {
         let (remainder, condition) = clause(remainder, " where ");
         let condition = condition
             .map(|condition| {
-                parse::parse(
+                parse::ordinary(
                     condition,
                     site.after(&source[..condition.as_ptr() as usize - source.as_ptr() as usize]),
                 )

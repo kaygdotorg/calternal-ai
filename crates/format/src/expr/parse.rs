@@ -23,6 +23,19 @@ pub(crate) fn parse(source: &str, site: Site) -> Result<Expression, Diagnostic> 
     parse_at(source, |offset| site.after(&source[..offset]))
 }
 
+pub(crate) fn ordinary(source: &str, site: Site) -> Result<Expression, Diagnostic> {
+    ordinary_at(source, |offset| site.after(&source[..offset]))
+}
+
+pub(crate) fn ordinary_at(
+    source: &str,
+    position: impl Fn(usize) -> Site,
+) -> Result<Expression, Diagnostic> {
+    let expression = parse_at(source, position)?;
+    super::formula_scope(&expression, false, false)?;
+    Ok(expression)
+}
+
 pub(crate) fn parse_at(
     source: &str,
     position: impl Fn(usize) -> Site,

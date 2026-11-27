@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    Diagnostic, Expression, Field, FieldType,
+    Diagnostic, Field, FieldType,
     expr::{Node, NodeKind, Op},
 };
 
@@ -314,45 +314,4 @@ impl<'a, F: Fn(&str, &str) -> Option<&'a FieldType>> NumericProof<'_, F> {
     }
 }
 
-pub(super) fn formula_scope(
-    expression: &Expression,
-    per: bool,
-    totals: bool,
-) -> Result<(), Diagnostic> {
-    walk(&expression.root, &mut |node| {
-        let invalid = |message| Err(node.site.error(message));
-        match &node.kind {
-            NodeKind::Call(name, _) if name == "all" && !totals => {
-                invalid("Use all() only in a named total")
-            }
-            NodeKind::Call(name, _) if name == "previous" && !per => {
-                invalid("Use previous() only in a per-period formula")
-            }
-            NodeKind::Name(name) if name == "period" && !per => {
-                invalid("Use period only in a per-period formula")
-            }
-            _ => Ok(()),
-        }
-    })
-}
-
-pub(super) fn walk(
-    node: &Node,
-    check: &mut impl FnMut(&Node) -> Result<(), Diagnostic>,
-) -> Result<(), Diagnostic> {
-    check(node)?;
-    match &node.kind {
-        NodeKind::Call(_, nodes) | NodeKind::List(nodes) => {
-            for node in nodes {
-                walk(node, check)?;
-            }
-        }
-        NodeKind::Binary(_, a, b) => {
-            walk(a, check)?;
-            walk(b, check)?;
-        }
-        NodeKind::Member(base, _) | NodeKind::Unary(_, base) => walk(base, check)?,
-        NodeKind::Name(_) | NodeKind::Value(_) => {}
-    }
-    Ok(())
-}
+pub(super) use crate::expr::{formula_scope, walk};

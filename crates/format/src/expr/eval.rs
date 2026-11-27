@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
 
+mod scoped;
+pub(crate) use scoped::{is_list_limit, reference_key};
+
 use super::math::{aggregate, comparison, day_value, math};
 
 use super::{Expression, Node, NodeKind, Op};
@@ -353,6 +356,9 @@ impl<'a, 'b> Evaluator<'a, 'b> {
         }
         let base = self.eval(base, element)?;
         if let Value::List(values) = base {
+            if values.len() > 1_000 && values.iter().any(|value| matches!(value, Value::Text(_))) {
+                return Err(scoped::too_many_matches(site));
+            }
             self.charge(values.len(), site)?;
             return values
                 .into_iter()
@@ -410,40 +416,8 @@ impl<'a, 'b> Evaluator<'a, 'b> {
                 })));
             }
             "from" => return self.reverse(args, element, site),
-            "all" => {
-                if !self.named_total {
-                    return Err(site.error("Use all() only in a named total"));
-                }
-                let key = reference_key(&args[0]).expect("checked kind selector");
-                let snapshots = self.snapshot.and_then(|snapshot| snapshot.kinds);
-                let kinds = if self.historical {
-                    snapshots
-                } else {
-                    snapshots.or(self.context.kinds)
-                };
-                let rows = kinds.and_then(|kinds| kinds.get(&key)).ok_or_else(|| {
-                    site.error(format!(
-                        "No authorized whole-kind rows were supplied for {key}"
-                    ))
-                })?;
-                return self.filter_rows(rows, args.get(1), site).map(Value::List);
-            }
-            "previous" => {
-                if self.period.is_none() {
-                    return Err(site.error("Use previous() only in a per-period formula"));
-                }
-                let Some(previous) = self.snapshot.and_then(|snapshot| snapshot.previous) else {
-                    return Ok(Value::Empty);
-                };
-                let old_snapshot = self.snapshot.replace(previous);
-                let old_historical = std::mem::replace(&mut self.historical, true);
-                let old_candidate = self.candidate.take();
-                let result = self.eval(&args[0], None);
-                self.snapshot = old_snapshot;
-                self.historical = old_historical;
-                self.candidate = old_candidate;
-                return result;
-            }
+            "all" => return self.all(args, site),
+            "previous" => return self.previous(&args[0], site),
             "today" => {
                 return Ok(self
                     .context
@@ -510,7 +484,7 @@ impl<'a, 'b> Evaluator<'a, 'b> {
             if let Value::List(values) = first {
                 let limit = if values.iter().any(|value| {
                     matches!(value, Value::Text(key)
-                    if self.context.links.is_some_and(|links| links.contains_key(key)))
+                    if args.get(1).is_some() || self.context.links.is_some_and(|links| links.contains_key(key)))
                 }) {
                     1_000
                 } else {
@@ -604,7 +578,13 @@ impl<'a, 'b> Evaluator<'a, 'b> {
                     .map(str::to_owned)
                     .or_else(|| civil(&self.row.value("start")))
                     .or_else(|| civil(&self.row.value("scheduled")));
-                let after = civil(&after).or_else(|| self.context.today.map(str::to_owned));
+                let after = civil(&after)
+                    .or_else(|| {
+                        seed.as_deref()
+                            .filter(|value| dates::time(value).is_some())
+                            .and_then(|_| self.context.now.and_then(dates::clock_seconds))
+                    })
+                    .or_else(|| self.context.today.map(str::to_owned));
                 if let Some(after) = after {
                     let seed = if self.row.value("repeat from") == Value::Text("completion".into())
                     {
@@ -623,108 +603,6 @@ impl<'a, 'b> Evaluator<'a, 'b> {
             _ => return Err(site.error(format!("The arguments to {name} have the wrong types"))),
         };
         Ok(result)
-    }
-
-    fn reverse(
-        &mut self,
-        args: &[Node],
-        outer: Option<&Value>,
-        site: Site,
-    ) -> Result<Value, Diagnostic> {
-        if outer.is_some() || self.candidate.is_some() || self.hops != 0 {
-            return Err(site.error("A formula follows at most one link"));
-        }
-        let key = reference_key(&args[0])
-            .ok_or_else(|| site.error("Name a kind and its link field in from"))?;
-        let predicate = args.get(1).filter(
-            |node| !matches!(&node.kind, NodeKind::Name(name) if name == "ignoring default"),
-        );
-        let reverse = if self.historical {
-            self.snapshot.and_then(|snapshot| snapshot.reverse)
-        } else {
-            self.context.reverse
-        };
-        let candidates = reverse
-            .and_then(|reverse| reverse.get(&key))
-            .map_or(&[][..], Vec::as_slice);
-        self.hops += 1;
-        let values = self.filter_rows(candidates, predicate, site);
-        self.hops -= 1;
-        values.map(Value::List)
-    }
-
-    fn filter_rows(
-        &mut self,
-        rows: &[Row<'a>],
-        predicate: Option<&Node>,
-        site: Site,
-    ) -> Result<Vec<Value>, Diagnostic> {
-        if rows.len() > 10_000 {
-            return Err(site.error("Too many items to test"));
-        }
-        self.charge(rows.len(), site)?;
-        let mut output = Vec::new();
-        for &row in rows {
-            if let Some(condition) = predicate {
-                let old = self.candidate.replace(row);
-                let passes = self.eval(condition, None);
-                self.candidate = old;
-                if !passes?.truth() {
-                    continue;
-                }
-            }
-            if output.len() == 1_000 {
-                return Err(site.error("Too many items matched the formula"));
-            }
-            output.push(self.clone_row(Some(row), site)?);
-        }
-        Ok(output)
-    }
-
-    fn filter(
-        &mut self,
-        values: Vec<Value>,
-        predicate: Option<&Node>,
-        site: Site,
-        limit: usize,
-    ) -> Result<Vec<Value>, Diagnostic> {
-        if values.len() > 10_000 {
-            return Err(site.error("Too many items to test"));
-        }
-        self.charge(values.len(), site)?;
-        let mut output = Vec::new();
-        for value in values {
-            if let Some(condition) = predicate {
-                let linked;
-                let scope = match &value {
-                    Value::Text(key) => {
-                        linked = self.clone_row(self.link(key, site)?, site)?;
-                        &linked
-                    }
-                    _ => &value,
-                };
-                let previous = self.hops;
-                self.hops += usize::from(matches!(value, Value::Text(_)));
-                let passes = self.eval(condition, Some(scope));
-                self.hops = previous;
-                if !passes?.truth() {
-                    continue;
-                }
-            }
-            if output.len() == limit {
-                return Err(site.error("Too many items matched the formula"));
-            }
-            output.push(value);
-        }
-        Ok(output)
-    }
-}
-
-pub(crate) fn reference_key(node: &Node) -> Option<String> {
-    match &node.kind {
-        NodeKind::Name(name) => Some(name.clone()),
-        NodeKind::Member(base, field) => Some(format!("{}.{}", reference_key(base)?, field)),
-        _ => None,
     }
 }
 

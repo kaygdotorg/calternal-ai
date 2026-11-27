@@ -128,7 +128,7 @@ pub(super) fn parse(entry: &Section<'_>, kind: &Kind) -> Result<DavMapping, Diag
                 let condition = condition
                     .strip_prefix("unless ")
                     .ok_or_else(|| site.error("Use unless followed by a condition"))?;
-                let condition = crate::expr::parse::parse(condition, site.after("unless "))?;
+                let condition = crate::expr::parse::ordinary(condition, site.after("unless "))?;
                 if super::formulas::viewer_dependent(
                     &condition.root,
                     &kind.fields,

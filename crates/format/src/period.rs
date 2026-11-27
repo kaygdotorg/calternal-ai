@@ -49,6 +49,26 @@ impl Period {
         }
     }
 
+    pub(crate) fn precedes(self, previous: &str, current: &str) -> bool {
+        let Some(current) = dates::day(current) else {
+            return false;
+        };
+        let prior_day = self.floor(current) - 1;
+        dates::render_day(prior_day)
+            .and_then(|date| self.label(&date))
+            .is_some_and(|expected| self.label(previous).as_ref() == Some(&expected))
+    }
+
+    fn floor(self, date: i64) -> i64 {
+        let (year, month, _) = dates::civil(date);
+        match self {
+            Self::Day => date,
+            Self::Week => date - (date + 3).rem_euclid(7),
+            Self::Month => dates::day_number(year, month, 1),
+            Self::Year => dates::day_number(year, 1, 1),
+        }
+    }
+
     /// List period starts from the oldest eligible item through the current
     /// period. The supplied history limit must be between zero and 20 years.
     pub fn starts(self, oldest: &str, today: &str, years: u8) -> Result<Vec<String>, Diagnostic> {
@@ -64,14 +84,7 @@ impl Period {
             return Ok(Vec::new());
         }
         let cutoff = dates::shifted_day(today, -12 * i32::from(years), 0).ok_or_else(invalid)?;
-        let mut date = oldest.max(cutoff);
-        let (year, month, _) = dates::civil(date);
-        date = match self {
-            Self::Day => date,
-            Self::Week => date - (date + 3).rem_euclid(7),
-            Self::Month => dates::day_number(year, month, 1),
-            Self::Year => dates::day_number(year, 1, 1),
-        };
+        let mut date = self.floor(oldest.max(cutoff));
         let mut result = Vec::new();
         while date <= today {
             if let Some(rendered) = dates::render_day(date) {

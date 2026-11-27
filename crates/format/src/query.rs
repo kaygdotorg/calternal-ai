@@ -6,7 +6,7 @@ use std::{cmp::Ordering, collections::BTreeMap};
 use crate::{
     Collection, Diagnostic, EvalContext, Field, Fields, Kind, Row, Value,
     expr::{
-        eval::{evaluate_field, evaluate_in},
+        eval::{evaluate_field, evaluate_in, is_list_limit},
         math::aggregate,
     },
     operation::typed_fields,
@@ -220,6 +220,7 @@ fn prepare_row(
     steps: &mut usize,
 ) -> Result<Option<Matched>, Diagnostic> {
     let mut row_context = *context;
+    row_context.periods = None;
     if let Some(per_row) = context.rows.and_then(|rows| match row.metadata.get("id") {
         Some(Value::Text(id)) => rows.get(id),
         _ => None,
@@ -378,11 +379,7 @@ pub(crate) fn computed_values(
             false,
         );
         let value = match value {
-            Err(error)
-                if schema[key].period.is_some() && error.message.starts_with("Too many items") =>
-            {
-                Value::Empty
-            }
+            Err(error) if schema[key].period.is_some() && is_list_limit(&error) => Value::Empty,
             result => result?,
         };
         values.insert(key.clone(), value);

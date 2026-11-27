@@ -184,6 +184,7 @@ fn extensions_cannot_replace_protected_fields_or_write_owner_state() {
             "count(from(messages.link)) > 0",
         ),
         ("saved, note", "saved, from"),
+        ("contains(from, \"newsletter\") and saved", "1"),
     ] {
         assert!(
             reading(&EXTENSIONS.replace(old, replacement), &mail).is_err(),

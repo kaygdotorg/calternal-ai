@@ -101,7 +101,7 @@ pub fn evaluate_refusals<'a>(
     enabled: &[(&'a Manifest, &'a Refusal)],
     call: &RefusalCall<'_>,
 ) -> Result<Option<RefusalMatch<'a>>, Diagnostic> {
-    if call.own_removal || protected(call.operation) {
+    if call.own_removal || call.kind.hidden || protected(call.operation) {
         return Ok(None);
     }
     let target = format!("{}.{}.{}", call.owner, call.kind.id, call.operation);

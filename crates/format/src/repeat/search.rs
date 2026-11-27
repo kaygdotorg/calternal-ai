@@ -60,6 +60,10 @@ impl RepeatRule {
                 break;
             }
             charge()?;
+            if let Some(next) = self.after_clock_mismatch(start) {
+                index = (index + 1).max(self.index(seed.at, next));
+                continue;
+            }
             let mut visit = |at| {
                 if at <= seed.at || at >= upper {
                     return true;
@@ -119,6 +123,23 @@ impl RepeatRule {
             index += 1;
         }
         Ok(())
+    }
+
+    fn after_clock_mismatch(&self, at: i64) -> Option<i64> {
+        let clock = at.rem_euclid(DAY);
+        if self.frequency <= Frequency::Hourly
+            && !self.hours.is_empty()
+            && !self.hours.contains(&(clock / 3600))
+        {
+            return Some((at.div_euclid(3600) + 1) * 3600);
+        }
+        if self.frequency <= Frequency::Minutely
+            && !self.minutes.is_empty()
+            && !self.minutes.contains(&(clock / 60 % 60))
+        {
+            return Some((at.div_euclid(60) + 1) * 60);
+        }
+        None
     }
 
     fn simple_fixed(&self) -> bool {

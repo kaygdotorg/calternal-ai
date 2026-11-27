@@ -791,3 +791,54 @@ fn calendar_and_expanding_collections_share_the_window_engine() {
         );
     }
 }
+
+#[test]
+fn contacts_mapping_and_duplicate_line_claims_are_checked() {
+    let manifest =
+        "---\nplugin: example\nname: Example\nformat: 1\nversion: 1.0.0\n---\nExample.\n";
+    let contact = concat!(
+        "---\nkind: contacts\nname: Contact\nformat: 1\nfolder: Contacts\neditable: outside\n",
+        "fields:\n  title: text, required\n  email: text\n  note: long text\n",
+        "vcard:\n  title: FN\n  email: EMAIL\n  note: NOTE\n---\nContacts.\n",
+    );
+    let files = [
+        PluginFile {
+            path: "plugin.md",
+            text: Some(manifest),
+        },
+        PluginFile {
+            path: "kinds/contacts.md",
+            text: Some(contact),
+        },
+    ];
+    let contacts = parse_plugin(&files, &InstallOptions::default()).unwrap();
+    assert_eq!(
+        contacts.kinds["contacts"].dav[0].component,
+        calternal_format::DavComponent::Card
+    );
+    let unsafe_contact = contact.replace("email: EMAIL", "email: URL");
+    let mut invalid = files;
+    invalid[1].text = Some(&unsafe_contact);
+    assert!(parse_plugin(&invalid, &InstallOptions::default()).is_err());
+
+    let checkboxes = concat!(
+        "---\nkind: entries\nname: Entry\nformat: 1\nfolder: Entries\neditable: outside\n",
+        "lines: checkbox in [notes.pages]\nfields:\n  done: yes/no\n---\nEntries.\n",
+    );
+    let other = checkboxes
+        .replace("kind: entries", "kind: other")
+        .replace("folder: Entries", "folder: Other");
+    let files = [
+        files[0],
+        PluginFile {
+            path: "kinds/entries.md",
+            text: Some(checkboxes),
+        },
+        PluginFile {
+            path: "kinds/other.md",
+            text: Some(&other),
+        },
+    ];
+    let error = parse_plugin(&files, &InstallOptions::default()).unwrap_err();
+    assert!(error.message.contains("same line form"));
+}

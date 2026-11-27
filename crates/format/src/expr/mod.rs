@@ -8,7 +8,7 @@ pub(crate) mod parse;
 pub use eval::{EvalContext, QueryRowContext, Row, evaluate};
 pub use parse::parse_expression;
 
-use crate::{Value, lines::Site};
+use crate::{Diagnostic, Value, lines::Site};
 
 /// A compiled formula, reusable across items and queries.
 #[derive(Clone, Debug)]
@@ -92,4 +92,47 @@ pub(crate) enum Op {
     Sub,
     Mul,
     Div,
+}
+
+pub(crate) fn formula_scope(
+    expression: &Expression,
+    per: bool,
+    totals: bool,
+) -> Result<(), Diagnostic> {
+    walk(&expression.root, &mut |node| {
+        let invalid = |message| Err(node.site.error(message));
+        match &node.kind {
+            NodeKind::Call(name, _) if name == "all" && !totals => {
+                invalid("Use all() only in a named total")
+            }
+            NodeKind::Call(name, _) if name == "previous" && !per => {
+                invalid("Use previous() only in a per-period formula")
+            }
+            NodeKind::Name(name) if name == "period" && !per => {
+                invalid("Use period only in a per-period formula")
+            }
+            _ => Ok(()),
+        }
+    })
+}
+
+pub(crate) fn walk(
+    node: &Node,
+    check: &mut impl FnMut(&Node) -> Result<(), Diagnostic>,
+) -> Result<(), Diagnostic> {
+    check(node)?;
+    match &node.kind {
+        NodeKind::Call(_, nodes) | NodeKind::List(nodes) => {
+            for node in nodes {
+                walk(node, check)?;
+            }
+        }
+        NodeKind::Binary(_, a, b) => {
+            walk(a, check)?;
+            walk(b, check)?;
+        }
+        NodeKind::Member(base, _) | NodeKind::Unary(_, base) => walk(base, check)?,
+        NodeKind::Name(_) | NodeKind::Value(_) => {}
+    }
+    Ok(())
 }

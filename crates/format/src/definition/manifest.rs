@@ -341,7 +341,7 @@ pub(super) fn parse(
                         }
                         result.refusals.push(Refusal {
                             target: key.into(),
-                            condition: parse::parse(condition, *position)?,
+                            condition: parse::ordinary(condition, *position)?,
                             message: sentence,
                             resolved: String::new(),
                             site: refusal.site,
