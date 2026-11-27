@@ -25,3 +25,4 @@ Event context attached by the host. The key is stable across replay.
 | <a id="key"></a> `key` | `string` | Opaque identifier for this logical delivery. |
 | <a id="kind"></a> `kind` | `"call"` \| `"change"` | The registration that opened this event. |
 | <a id="request"></a> `request?` | `string` | Host request identifier when available. |
+| <a id="selected_operation"></a> `selected_operation?` | `string` | Qualified operation resolved from the person's slot selection, when present. |

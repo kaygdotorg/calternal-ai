@@ -5,6 +5,23 @@ Lane C, slice 3. [Forgejo #116](https://git.kayg.org/kayg/calternal-ai/issues/11
 [Build plan](../proposals/chat-first-build-plan-2026-11-27.md) ·
 [Format revision 9](../proposals/kind-and-collection-format-2026-11-24.md).
 
+## Gate and slot follow-ups
+
+- Linux's pinned Nix dev shell supplies Bubblewrap. The ordinary workspace
+  gate builds the SDK before running the sandbox tests. They look up
+  Bubblewrap and Node on PATH and keep the existing optional overrides.
+- Chat no longer lists the Claude Code harness in `plugin.md`. A person's
+  `slot_selection` names the declared slot and installed filler. The host
+  resolves its canonical coded operation and scopes permission to the
+  initiating worker. The selected operation is visible in its event for
+  dispatch. Nested calls and change handlers receive no inherited slot
+  grant. The route exercises the selection, replay, an installed
+  non-filler, a different operation and an input-only harness hint.
+- The fixture removes the `calls:` declaration at former
+  `plugin.md` line 7. In `operations.ts`, line 16 documents the optional
+  operation hint, line 37 resolves the selected operation, line 38 tests
+  its presence, and line 43 calls it with the canonical record link.
+
 ## Real host integration
 
 The asynchronous session and trusted adapters now dispatch declared code
@@ -27,7 +44,7 @@ that gesture and verifies there is still one append. A separate nested
 rename exercises the authorized `s.call` route against installed Chat.
 Real run startup and deduplication depend on the runs lane.
 
-### Fixture edits in this integration
+### Fixture edits in the original integration
 
 | File | Changed lines in this branch |
 | --- | --- |
@@ -46,9 +63,8 @@ Real run startup and deduplication depend on the runs lane.
   An interruption after a commit can lose a notification because this
   slice does not add a durable delivery queue. A wider at-least-once
   delivery design needs to preserve the fast append's two flushes.
-- The route admits a selected harness through a literal declared call.
-  A general slot-selected harness grant still needs coordinator review.
-  Coded conditions are refused until the host can check their current
+- The route admits a selected harness through the person's verified slot
+  selection. Coded conditions are refused until the host can check their current
   viewer context. Cross-plugin calls check recognized item designations
   and reduce unreadable structured rows to IDs. Opaque extension outputs
   still require a host policy if they need stronger data-flow controls.
@@ -87,13 +103,6 @@ Real run startup and deduplication depend on the runs lane.
   state and preserves large reads. Decide the production frame and
   resource budget with the sandbox and route owners. Keep the bounded
   mock behavior for the slice.
-- **Gesture-authorized harness choice (§7.4, §8.1 and eleventh set).**
-  A dynamic harness is chosen by the person but `s.call` can call only
-  declared operations. Does a trusted slot selection admit the selected
-  provider's single start operation, or will Chat list each supported
-  harness? The former allows third-party harnesses with a narrow grant.
-  The latter is simpler and limits the list to known harnesses. The mock
-  admits one explicitly known harness. The frame grants no slot authority.
 
 ## Review gate and counts
 

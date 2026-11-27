@@ -80,6 +80,25 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    /// Find the operation named by this plugin's one fill for the specified
+    /// slot. Missing, ambiguous and non-operation fills grant nothing. This
+    /// reads the checked declaration in memory and performs no I/O.
+    pub fn operation_fill(&self, owner: &str, slot: &str) -> Option<&str> {
+        let key = format!("{owner}:{slot}");
+        let mut fills = self
+            .directives
+            .iter()
+            .filter(|section| section.key == "fills")
+            .flat_map(|section| &section.children)
+            .filter(|fill| fill.key == key);
+        let fill = fills.next()?;
+        if fills.next().is_some() {
+            return None;
+        }
+        let parts = lines::parts(&fill.value, fill.site).ok()?;
+        parts.first()?.0.strip_prefix("operation ")
+    }
+
     pub(super) fn is_description_only(&self) -> bool {
         self.reads.is_empty()
             && self.calls.is_empty()

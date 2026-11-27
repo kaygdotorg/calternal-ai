@@ -4,7 +4,6 @@ name: Chat
 icon: chat
 version: 2.0.0
 format: 1
-calls: calternal-chat-claude-code.runs.start
 sends out: nothing
 slots:
   composer: single, gives "the draft and the open chat", picked by person, recommended calternal-chat

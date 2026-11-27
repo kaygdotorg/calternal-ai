@@ -97,6 +97,7 @@ impl Fixture {
                     call: call.into(),
                     input,
                     idempotency_key: key.map(str::to_owned),
+                    slot_selection: None,
                 },
             )
             .await
@@ -379,4 +380,122 @@ async fn chat_harness_refusal_reuses_the_record_receipt() {
         .await
         .unwrap();
     assert_eq!(data["records"].as_array().unwrap().len(), 1);
+}
+
+fn harness_bundle(root: &Path, plugin: &str, title: &str, fills_chat_slot: bool) {
+    let fill = if fills_chat_slot {
+        "fills:\n  calternal-chat:harness: operation runs.start, as \"Test harness\"\n"
+    } else {
+        ""
+    };
+    std::fs::write(
+        root.join("plugin.md"),
+        format!("---\nplugin: {plugin}\nname: {title}\nversion: 1.0.0\nformat: 1\n{fill}---\n"),
+    )
+    .unwrap();
+    std::fs::create_dir(root.join("kinds")).unwrap();
+    std::fs::write(
+        root.join("kinds/runs.md"),
+        format!("---\nkind: runs\nname: Run\nformat: 1\nfolder: {title}\neditable: operations\nfields:\n  title: text, required\noperations:\n  add: title\n  start: code\n  other: code\n---\nRecords which operation was called.\n"),
+    ).unwrap();
+    std::fs::write(
+        root.join("operations.ts"),
+        format!(r#"
+          import {{ on }} from "@calternal/plugin-sdk";
+          export const start = on.call("runs.start", async ({{ prompt }}: {{ prompt: string }}, s) =>
+              s.write([{{ add: {{ kind: "{plugin}.runs", fields: {{ title: prompt }} }} }}]));
+          export const other = on.call("runs.other", async (_, s) =>
+              s.write([{{ add: {{ kind: "{plugin}.runs", fields: {{ title: "wrong operation" }} }} }}]));
+        "#),
+    ).unwrap();
+}
+
+#[tokio::test]
+async fn chat_can_call_only_the_operation_of_the_selected_slot_filler() {
+    let f = Fixture::new().await;
+    f.install(checkout().join("plugins-v2/calternal-chat"))
+        .await
+        .unwrap();
+    let selected = tempfile::tempdir().unwrap();
+    harness_bundle(
+        selected.path(),
+        "selected-harness",
+        "Selected harness",
+        true,
+    );
+    f.install(selected.path().to_owned()).await.unwrap();
+    let neighbor = tempfile::tempdir().unwrap();
+    harness_bundle(neighbor.path(), "neighbor", "Neighbor", false);
+    f.install(neighbor.path().to_owned()).await.unwrap();
+    let chat = f.chat().await;
+
+    let send = |key, filler: Option<&str>, hint: Option<&str>| {
+        let mut envelope = json!({
+            "call":"calternal-chat.chats.send",
+            "idempotency_key":key,
+            "input":{"chat":chat,"text":"For the selected harness"}
+        });
+        if let Some(filler) = filler {
+            envelope["slot_selection"] = json!({"slot":"harness","filler":filler});
+        }
+        if let Some(hint) = hint {
+            envelope["input"]["harness"] = json!(hint);
+        }
+        f.host.clone().trusted_call(
+            f.owner.into(),
+            f.space,
+            serde_json::from_value(envelope).unwrap(),
+        )
+    };
+
+    let receipt = send("selected", Some("selected-harness"), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        send("selected", Some("selected-harness"), None)
+            .await
+            .unwrap(),
+        receipt
+    );
+    for (key, filler, hint) in [
+        ("non-filler", Some("neighbor"), Some("neighbor.runs.start")),
+        (
+            "different-operation",
+            Some("selected-harness"),
+            Some("selected-harness.runs.other"),
+        ),
+        (
+            "plugin-input-only",
+            None,
+            Some("selected-harness.runs.start"),
+        ),
+    ] {
+        let error = send(key, filler, hint).await.unwrap_err();
+        assert_eq!(error.code, ErrorCode::Forbidden, "{key}");
+    }
+
+    let runs = f
+        .call(
+            f.owner.into(),
+            "s.query",
+            json!({"from":"selected-harness.runs"}),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(runs["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        runs["rows"][0]["fields"]["title"],
+        receipt["changes"][0]["link"]
+    );
+    let neighbor = f
+        .call(
+            f.owner.into(),
+            "s.query",
+            json!({"from":"neighbor.runs"}),
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(neighbor["rows"].as_array().unwrap().is_empty());
 }

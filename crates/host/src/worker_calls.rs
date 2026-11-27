@@ -1,7 +1,7 @@
 //! Dispatches installed code through the same authorized route as session calls.
 use crate::declarations::{Plugin, apply_fields};
 use crate::space::Space;
-use crate::{Call, Host, internal};
+use crate::{Call, Host, SlotSelection, internal};
 use calternal_format::Operation;
 use calternal_plugin_host::operations::{
     Delivery, Event, EventKind, Method, Operations, Person, Registrations,
@@ -36,6 +36,13 @@ impl InstalledCode {
 pub(crate) struct Chain {
     pub(crate) plugins: Vec<String>,
     pub(crate) request: Option<String>,
+    selection: Option<SlotGrant>,
+}
+
+#[derive(Clone)]
+struct SlotGrant {
+    owner: String,
+    operation: String,
 }
 
 struct Invocation {
@@ -83,6 +90,29 @@ impl Space {
             plugin: &installed.manifest.id,
             kind,
             operation,
+        })
+    }
+
+    fn select_filler(&self, owner: &str, selection: &SlotSelection) -> Result<SlotGrant> {
+        let denied =
+            || Error::forbidden("That plugin does not fill this person-picked operation slot.");
+        self.plugins
+            .get(owner)
+            .and_then(|plugin| plugin.manifest.slots.get(&selection.slot))
+            .filter(|slot| !slot.picked_by_space)
+            .ok_or_else(denied)?;
+        let operation = self
+            .plugins
+            .get(&selection.filler)
+            .and_then(|plugin| plugin.manifest.operation_fill(owner, &selection.slot))
+            .ok_or_else(denied)?;
+        let target = self.target(&format!("{}.{operation}", selection.filler))?;
+        Ok(SlotGrant {
+            owner: owner.into(),
+            operation: format!(
+                "{}.{}.{}",
+                target.plugin, target.kind, target.operation.name
+            ),
         })
     }
 
@@ -258,7 +288,7 @@ impl Host {
     ) -> Outcome {
         Box::pin(async move {
             match call.call.as_str() {
-                "s.write" if self.workers.is_some() => {
+                "s.write" if self.workers.is_some() && call.slot_selection.is_none() => {
                     self.write_and_notify(actor, space, call, chain).await
                 }
                 "s.query" | "s.read" | "s.write" | "s.state" | "s.me" | "s.space"
@@ -281,59 +311,78 @@ impl Host {
     ) -> Result<Value> {
         let host = self.clone();
         let who = actor.clone();
-        let (invocation, endpoint, key, input) = tokio::task::spawn_blocking(move || {
-            host.with_space(&who, space, |storage| {
-                let invocation = storage.invocation(&who, &call.call, &call.input)?;
-                if let Some(Via::Plugin { plugin }) = &who.via {
-                    let canonical = format!("{}.{}", invocation.plugin, invocation.selector);
-                    let declared = storage.plugins.get(plugin).is_some_and(|declaration| {
-                        declaration
-                            .manifest
-                            .calls
-                            .iter()
-                            .any(|name| name == &call.call || name == &canonical)
-                    });
-                    if !declared {
-                        return Err(Error::forbidden(
-                            "The caller did not declare this operation.",
-                        ));
+        let caller_grant = chain.selection.take();
+        let (invocation, endpoint, key, input, selection) =
+            tokio::task::spawn_blocking(move || {
+                host.with_space(&who, space, |storage| {
+                    let invocation = storage.invocation(&who, &call.call, &call.input)?;
+                    if let Some(Via::Plugin { plugin }) = &who.via {
+                        let canonical = format!("{}.{}", invocation.plugin, invocation.selector);
+                        let declared = storage.plugins.get(plugin).is_some_and(|declaration| {
+                            declaration
+                                .manifest
+                                .calls
+                                .iter()
+                                .any(|name| name == &call.call || name == &canonical)
+                        });
+                        let selected = caller_grant.as_ref().is_some_and(|grant| {
+                            grant.owner == *plugin && grant.operation == canonical
+                        });
+                        if !declared && !selected {
+                            return Err(Error::forbidden(
+                                "The operation was not declared or selected by the person.",
+                            ));
+                        }
+                        storage.validate_designations(&who, &call.input)?;
                     }
-                    storage.validate_designations(&who, &call.input)?;
-                }
-                let original = call
-                    .idempotency_key
-                    .take()
-                    .unwrap_or_else(|| Uuid::now_v7().to_string());
-                if original.is_empty()
-                    || original.len() > 128
-                    || original.chars().any(char::is_control)
-                {
-                    return Err(Error::invalid_input("Invalid idempotency key."));
-                }
-                let key = blake3::Hash::from_bytes(
-                    storage.hash(
-                        &serde_json::to_vec(&(
-                            &who,
-                            &invocation.plugin,
-                            &invocation.selector,
-                            &original,
-                        ))
-                        .map_err(internal)?,
-                    ),
-                )
-                .to_hex()
-                .to_string();
-                let endpoint = host.endpoint(storage, &invocation.plugin)?;
-                Ok((invocation, endpoint, key, call.input))
+                    let selection = call
+                        .slot_selection
+                        .as_ref()
+                        .map(|selection| {
+                            if who.via.is_some() {
+                                return Err(Error::forbidden(
+                                    "Only a person can select a slot filler.",
+                                ));
+                            }
+                            storage.select_filler(&invocation.plugin, selection)
+                        })
+                        .transpose()?;
+                    let original = call
+                        .idempotency_key
+                        .take()
+                        .unwrap_or_else(|| Uuid::now_v7().to_string());
+                    if original.is_empty()
+                        || original.len() > 128
+                        || original.chars().any(char::is_control)
+                    {
+                        return Err(Error::invalid_input("Invalid idempotency key."));
+                    }
+                    let key = blake3::Hash::from_bytes(
+                        storage.hash(
+                            &serde_json::to_vec(&(
+                                &who,
+                                &invocation.plugin,
+                                &invocation.selector,
+                                &original,
+                            ))
+                            .map_err(internal)?,
+                        ),
+                    )
+                    .to_hex()
+                    .to_string();
+                    let endpoint = host.endpoint(storage, &invocation.plugin)?;
+                    Ok((invocation, endpoint, key, call.input, selection))
+                })
             })
-        })
-        .await
-        .map_err(internal)??;
+            .await
+            .map_err(internal)??;
         if chain.plugins.len() >= 8 || chain.plugins.contains(&invocation.plugin) {
             return Err(Error::forbidden(
                 "The coded operation would repeat or exceed call depth.",
             ));
         }
+        let selected_operation = selection.as_ref().map(|grant| grant.operation.clone());
+        chain.selection = selection;
         chain.plugins.push(invocation.plugin.clone());
         let request = chain.request.get_or_insert_with(|| key.clone()).clone();
         self.deliver(
@@ -354,6 +403,7 @@ impl Host {
                     item: invocation.item,
                     before: None,
                     request: Some(request),
+                    selected_operation,
                 },
             },
         )
@@ -385,7 +435,7 @@ impl Host {
         let space = delivery.space;
         endpoint
             .invoke(delivery, move |callback| {
-                let (host, actor, chain) = (self.clone(), actor.clone(), chain.clone());
+                let (host, actor, mut chain) = (self.clone(), actor.clone(), chain.clone());
                 async move {
                     let name = match callback.method {
                         Method::Query => "s.query",
@@ -410,6 +460,7 @@ impl Host {
                             ));
                         }
                     };
+                    chain.selection = None;
                     host.dispatch(
                         actor,
                         space,
@@ -417,6 +468,7 @@ impl Host {
                             call: name.into(),
                             input: callback.input,
                             idempotency_key: callback.idempotency_key,
+                            slot_selection: None,
                         },
                         chain,
                     )
@@ -444,6 +496,7 @@ impl Host {
                         call: nested.operation,
                         input: nested.input,
                         idempotency_key: key,
+                        slot_selection: None,
                     },
                     chain,
                 )
