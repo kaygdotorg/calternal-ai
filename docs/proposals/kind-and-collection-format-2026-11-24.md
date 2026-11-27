@@ -1,12 +1,15 @@
-# The kind and collection format · revision 7
+# The kind and collection format · revision 8
 
-**Revision 7, 2026-11-27.** This is the single statement of the on-disk
+**Revision 8, 2026-11-27** (after revision 7 the same day). This is the single statement of the on-disk
 format and the plugin call surface; a builder implements from it alone.
 
 It applies, all binding:
 
 - rounds 21 to 33 of `docs/morning-2026-11-21.md`;
-- the six "Decided by the coordinator" sets of 2026-11-27;
+- the eight "Decided by the coordinator" sets of 2026-11-27;
+- the security review of revision 7
+  ([docs/reviews/format-rev7-security-review-2026-11-27.md](../reviews/format-rev7-security-review-2026-11-27.md)),
+  finding by finding, in Appendix D;
 - the implementer review of revision 6
   ([docs/reviews/format-rev6-implementer-review-2026-11-27.md](../reviews/format-rev6-implementer-review-2026-11-27.md)),
   finding by finding, in Appendix C;
@@ -14,7 +17,7 @@ It applies, all binding:
   audit, for context.
 
 Where they contradict older text, the newer wins. The contradictions
-revision 6 resolved are in §19; revision 7's changes are in §21. Items the
+revision 6 resolved are in §19; revisions 7 and 8 are in §21. Items the
 owner has not decided are marked **OPEN** in §17.
 
 The aim (owner, round 33): a very strong, very versatile plugin API that lets
@@ -45,13 +48,14 @@ grammar; a person can write a sum by hand; an agent writes anything larger.
 18. Counts, and two ways to say one thing
 19. Contradictions resolved (revision 6)
 20. Choices that no decision covers
-21. Change list from revision 6
+21. Change list (revisions 7 and 8)
 
 Appendices:
 
 - A. The grammar proved by hand
 - B. The four kinds rewritten
-- C. The 63 review findings
+- C. The 63 review findings (revision 6)
+- D. The 44 security findings (revision 7), the eight partly closed fixes, and the seven attackers
 
 ## 0. Notation
 
@@ -98,9 +102,53 @@ Every folder and file except `plugin.md` is optional.
   file whose format, functions or keys it does not know, naming them; it
   never half-reads a newer file.
 - **A plugin's identity is its ID plus its source** (Git address or signing
-  key). `calternal-` is reserved for plugins on the operator's list. A
-  plugin installed under a removed plugin's ID from another source starts
-  empty, and the old values stay read-only (review 50).
+  key). Agent rules, picks and state are keyed by ID plus source (S23).
+  - `calternal-` is reserved for plugins on the operator's list.
+  - `space`, `home`, `files`, `lines`, `calternal` and `outside` are
+    reserved plugin IDs.
+  - A plugin installed under a removed plugin's ID from another source
+    starts empty, and the old values stay read-only (review 50).
+- **Updates** (S4) install by themselves only if every install sentence
+  the server derives is unchanged or narrower. Otherwise they wait for
+  whoever would have to install the new version (the Owner, if it is no
+  longer description-only). The eighth set names the lines that always
+  wait: any added `listens`, `reads`, `extends`, `fills`, `outside`,
+  notification, destination or sign-in line. A changed kind body or
+  notification template counts as a changed sentence.
+- **Any HTML or script anywhere in a plugin counts as `frames/`** (S14).
+
+### 1.1a Text on sheets, and one rule for every free string and path (S23, S43)
+
+- **Every sentence on the install and update sheets is the server's own,**
+  derived from declarations. Plugin text (name, body, labels) is drawn
+  below it as quoted plain text, without images or links. Names are shown
+  with their source and plugin ID.
+- **Every free string**, wherever it appears, passes one check in the
+  parser:
+  - it is NFC;
+  - it has no Cc or Cf characters (bidi controls, zero-width characters),
+    and no U+2028, U+2029 or U+0085;
+  - it has a length limit: name 40, label 40, message 120, body 4 KiB;
+  - a name is in a single script (UTS #39);
+  - a `name` confusable with a plugin on the operator's list needs that
+    plugin's source;
+  - a host is shown as an A-label when it is not ASCII.
+- **Every path**, in a definition file or a call, is relative and
+  normalized, has no `..`, and lies inside its named folder. Served folders
+  refuse symlinks, hard links and special files.
+- **XMP** is parsed without DTDs or entities, and capped in size.
+- **One derived flag, "reaches other people or the outside"** (S9, S16,
+  S24, S33).
+  - **When it is set:** the operation's plugin declares `sends out`, SMTP
+    or HTTP sign-ins or `notifications`, or the operation uses `s.share`,
+    or calls an operation that has the flag.
+  - **Where it is used:** the server computes it once and uses it for the
+    sheet sentence, R1's ask (§10), the risky-install passkey, the proxy
+    rule (§13) and reactions (§8.2).
+  - **`the public web`:** its sentence is "Can send what it reads to any
+    website." A plugin with `the public web` plus `reads`, `listens` or a
+    place that gives items is a risky install (passkey) (S24).
+
 
 ### 1.2 The line grammar of definition files
 
@@ -171,10 +219,11 @@ comment     = " # " { char } | "# " { char } ;   (* L5 *)
 
 | Group | Words |
 | --- | --- |
-| Formula words | `and`, `or`, `not`, `in`, `yes`, `no`, `true`, `false`, `empty`, `this`, `item`, `period`, `records`, `settings`, `state`, `ask` |
+| Formula words | `and`, `or`, `not`, `in`, `yes`, `no`, `true`, `false`, `empty`, `this`, `open item`, `item`, `period`, `records`, `settings`, `state`, `ask` |
 | Built-in fields | `id`, `kind`, `created`, `edited`, `author`, `at`, `anchor` |
 | Operation words (operation names may not equal them) | `add`, `change`, `remove`, `duplicate`, `set`, `open`, `where`, `timer`, `after`, `within`, `only`, `when`, `code`, `append record`, `change record`, `remove record`, `swipe`, `menu`, `primary`, `mark` |
 | Source words (kind IDs may not equal them) | `files`, `lines`, `space`, `home` |
+| Credential names (field and input names may not equal them, S40) | `password`, `token`, `secret` |
 
 ## 2. Kind files
 
@@ -188,7 +237,7 @@ comment     = " # " { char } | "# " { char } ;   (* L5 *)
 | `folder` | A pattern | yes | 2.3 |
 | `file` | A pattern | no; default `{title}` if the kind has `title`, else the ID | 2.3 |
 | `item` | `file`, `folder with <main file>`, `file(<types>)[, paired]` | no; default `file` | 2.4 |
-| `editable` | `outside` or `operations`; fixed for the kind's life | yes | 2.5 |
+| `editable` | `outside` or `operations`; fixed for the kind's life | yes, except on a hidden kind (always operations) | 2.5 |
 | `rights` | `change manager\|owner` | no; default editor | 2.6 |
 | `fields` | Field lines | yes | 2.7 |
 | `records` | Record field lines | no | 2.8 |
@@ -224,8 +273,19 @@ fields:
 Links saved to read later. One file per link.
 ```
 
-`AGENTS.md` is written only into a folder the kind created, and begins with
-the plugin's name (review 43).
+**Instruction files** (S5; strict default until the owner answers E.2,
+§17):
+
+- The server keeps a list of names that harnesses load as instructions:
+  `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.claude/`, `.codex/` and
+  `.cursorrules`, extended as harnesses appear.
+- In every folder these are written only by the server: over WebDAV, by a
+  run, by a plugin or as a mail attachment, any other write under such a
+  name gets a new name by rule 0023 (`AGENTS 2.md`).
+- The server writes a kind's body only into a folder the kind created, and
+  the file opens with one fixed line: "Written from the kind *X* of plugin
+  *Y*, added by *Z*. It describes files; it gives no instructions."
+
 
 ### 2.3 `folder:` and `file:` patterns
 
@@ -244,10 +304,16 @@ file: {date:YYYY-MM-DD} {plan day}
 - **Names in braces:** `{<field>}` names one of the kind's own fields, and
   a link field gives the linked item's row text. A field in a pattern must
   be required or have a default. Braces hold no dots.
-- **What a folder pattern may not do** (review 43; it only narrows): it is
-  relative, with no `..`; it never starts with `.calternal`; and it never
-  equals or contains another installed kind's folder. A clash refuses the
-  install.
+- **What a folder pattern may not do** (review 43, S6; it only narrows):
+  - it is relative, with no `..`;
+  - it never starts with `.calternal`;
+  - it may not equal, contain, or lie inside another installed kind's
+    folder (`Notes/Inbox` against `Notes` is a clash), and a clash refuses
+    the install.
+- **Each value filled into a segment** is one path segment: no `/` or `\`,
+  not `.` or `..`, no leading `.`, sanitized by rule 0023. A filled path
+  that lands in another kind's folder or in `.calternal/` refuses the
+  write.
 - **File names** follow inherited 0023: Unicode NFC, unsafe characters
   replaced, and a clash gets " 2".
 - **When a pattern field changes**, the server moves the file and rewrites
@@ -256,7 +322,9 @@ file: {date:YYYY-MM-DD} {plan day}
   - A rename from a `heading` field is applied when the editor closes, or
     after 30 s idle (review 33).
 - **`plus marked folders`** adds folders a person marks for this kind;
-  their files are indexed in place and never moved.
+  their files are indexed in place and never moved. A marked folder obeys
+  the same rules as a pattern, and a file that is already an item keeps
+  its kind (S6).
 
 ### 2.4 `item:` forms
 
@@ -438,6 +506,13 @@ Other rules:
 - **Targets:** the kinds named may be this plugin's own (bare) or another
   plugin's (in brackets).
 - **Plain checkboxes** are listed by `from: lines(checkbox)` (§5.3).
+- **One claim per line form and target** (S28): one kind per line form per
+  target kind. A second claim refuses the install, as a folder clash does.
+- **A box ticked in a note** is checked as the linked item's `change` for
+  the writer. If that is refused, the box is put back (S26).
+- **The calendar an event belongs to** is stored by the core when the line
+  or the item is written, from the line's first top-level area tag (else
+  Journal). No formula looks it up (seventh set).
 - **Ticking offline** updates the item at once (S1). A box changed over
   WebDAV is compared against its base, and the newest edit wins.
 
@@ -452,6 +527,10 @@ unique: date
   through the generic merge.
 - **`duplicate`** is refused on a unique kind.
 - **Restoring** an item over a live one merges into it (review 32).
+- **Taken IDs** (S27): an add whose ID is taken gets a new ID, on every
+  path. On a unique kind the server derives the ID itself. An add that
+  merges into a live item, or a restore over one, is checked as that item's
+  `change` for the writer.
 
 ### 2.12 `together:`
 
@@ -521,6 +600,12 @@ hidden: keep 90d
   WebDAV and search. It holds a plugin's durable data that is neither a
   person's file nor rebuildable (sync tokens, an outbound queue). Its items
   skip Trash at the end of `keep` (sixth set).
+- **A hidden kind is always operations-only**, so `editable:` is not
+  written (S13).
+- **Only its own plugin reaches a hidden kind.** It never appears in
+  another plugin's `reads`, `calls`, `extends`, `listens`, `lines`,
+  `from()`, `link()` or collections.
+- **A description-only plugin** may not declare a hidden kind.
 - **Removing a plugin with hidden kinds:**
   - the remove sheet counts what each holds ("3 messages not sent") and
     offers an export;
@@ -582,6 +667,16 @@ ical: VEVENT
 - **Unmapped properties and unknown vCard lines** are kept exactly in host
   state, as the item's sent snapshot (inherited 0067), never in the
   Markdown file (review 63).
+- **What is served back** (S31) is an allowlist without addresses or URLs:
+  - no `ATTENDEE` or `ORGANIZER` unless mapped;
+  - no `ATTACH` or `URL`;
+  - `VALARM` only as `DISPLAY`;
+  - at most 64 KiB per item.
+- **Plugin code** never pushes unmapped properties upstream.
+- **No scheduling:** the server does no CalDAV scheduling (RFC 6638).
+- **Signing in:** DAV uses per-person app passwords, each for one space
+  and for DAV only. They are listed, revocable, and end with the person's
+  access.
 
 ### 2.19 `row:`, `page:` and `protected:`
 
@@ -607,7 +702,10 @@ protected: from, outside sender
 ```
 
 - **Protected fields** are drawn by the host, in a strip outside any
-  replacement frame.
+  replacement frame, in a host font that themes cannot change (S34).
+- **`web(<field>)`** draws only in a sealed frame on its own opaque origin,
+  with scripts, forms, navigation and plugins off and `default-src
+  'none'`. Images load only after a tap, through the proxy (§13; S14).
 - **Additions** (§7.2) never push protected fields out of view.
 
 ### 2.20 `operations:`
@@ -652,6 +750,14 @@ placement = swipe | menu | primary
   (review 15).
 - **`change record`** without `within` lets the author change the record
   at any time.
+- **`duplicate`** clears `data` fields and other plugins' added fields.
+  Records keep their ledger authors in the copy (S30).
+- **Removing one's own work** (S22, eighth set): an author may always
+  remove their own item or record to Trash. This is a server built-in,
+  outside `rights:`, `when` and the operations list. A kind's `remove:
+  when` governs only others' items. Restoring from Trash puts back what a
+  rule protected. The cost: the author of a reconciled Money transaction
+  can remove it, and Trash and history recover it.
 - **Offline (S1):** built-ins, one-liners, open, timer and record
   operations apply on the device at once; coded operations queue as "not
   sent yet".
@@ -681,19 +787,25 @@ placement = swipe | menu | primary
 | `durations` | Lengths | a list | — | `alert: durations` |
 | `choice(<a>\|<b>…)` | One value of a set, in board column order; values may hold spaces | a string | — | `status: choice(todo\|doing\|done)` |
 | `tags` | Words; `/` nests | a list of strings without `#` | a comma string | `tags: tags` |
-| `url` | A web address | a string | — | `url: url` |
+| `url` | An absolute `https:` or `http:` address, or `mailto:` (S15); anything else, in fields and body links alike, is a Problem | a string | — | `url: url` |
 | `link(<kind>)`, `links(<kind>)` | Items; `any` allowed | a quoted Markdown link, or a list | a bare path or `[[wiki link]]` | `project: link(projects)` |
 | `link(<kind> records)` | One record (fifth set) | a quoted link with `#^<anchor>` | — | `quote: link(chats records)` |
 | `person`, `people` | People of the space | the person's ID | — | `owner: person` |
 | `repeat` | An iCalendar rule; at most one per kind | `FREQ=WEEKLY;BYDAY=MO` | — | `repeat: repeat` |
 | `place` | Latitude, longitude, name | a map `lat`, `lon`, `name` | — | `where: place` |
 | `file` | A stored file (inherited 0028) | a quoted Markdown link | — | `scan: file` |
-| `colour` | A colour | `"#c96f4a"` | — | `colour: colour` |
-| `data` | A structured value only the plugin's code changes | a map | — | `source: data` |
+| `colour` | `#rrggbb` only (S15) | `"#c96f4a"` | — | `colour: colour` |
+| `data` | A structured value that only the owning plugin's code changes, on every path (outside writes, other plugins, `duplicate`) | a map | — | `source: data` |
 | `records(<field>: <type>…)` | Small records in the frontmatter | a list of maps | — | `log: records(done: time, due: date, skipped: date)` |
 
 **Built-in fields** every item has, read-only: `id`, `kind`, `created`,
-`edited`.
+`edited`. They, and a record's `author` and `at`, come from host state.
+Frontmatter keys with those names are ignored, and `at` and every write's
+time are the server's time of receipt. A device's clock is kept for display
+only, clamped to the last sync, and "newest wins" uses receipt order (S26).
+
+**Every value is drawn as data**, never concatenated into markup or style
+(S15).
 
 ### 3.2 Item YAML (review 10)
 
@@ -728,9 +840,9 @@ where`, `totals`, view columns, chart values and agent-rule conditions.
 | Rule | Text |
 | --- | --- |
 | **X1 Literals** | Numbers `12.5`; money `12.50 EUR`; text in double quotes; `yes`, `no`; dates `2026-11-24`; durations (X5); `empty` |
-| **X2 Names** | A field (N4); a linked item's field with one dot, one hop only (`project.name`); a key of a `data` field with a dot (`source.owned`, which is not a hop); records as `records`; `item.<field>` for the record's item in a records collection; `settings.<id>`; `state.<key>`; `period` in `per` fields; `this` (X4) |
+| **X2 Names** | A field (N4); a linked item's field with one dot, one hop only (`project.name`); a key of a `data` field with a dot (`source.owned`, which is not a hop); records as `records`; `item.<field>` for the record's item in a records collection; `settings.<id>`; `state.<key>`; `period` in `per` fields; `this`, `open item` (X4) |
 | **X3 Choice values** | Choice values are text and are always quoted in formulas, including in `set`, `drop:`, `in (…)` and board conditions: `status = "did not happen"` |
-| **X4 Scope** | Inside a list function's condition, names are the element's. The outer item is `this.<field>`; `period`, `settings.` and `state.` are global. In a collection's `where`, `this` is the open item whose page shows the collection (`links to this`). A name the element lacks is an install error |
+| **X4 Scope** | Inside a list function's condition, names are the element's. The outer item is `this.<field>`; `period`, `settings.` and `state.` are global. `this` always means the item the formula belongs to; in a collection's condition, the item open in the window is `open item` (`links to open item`, seventh set). A name the element lacks is an install error |
 | **X5 Durations** | Units `s`, `min`, `h`, `d`, `w`, `mo`, `y`, written without a space (`30min`, `6mo`); `m` alone is refused, naming the line |
 | **X6 Numbers, units and money** | `number` is an exact decimal. A two-unit number is stored in the first unit; the unit table is the engine's own. Arithmetic across currencies is an error value |
 
@@ -740,7 +852,7 @@ where`, `totals`, view columns, chart values and agent-rule conditions.
 | --- | --- |
 | **X7 Precedence** | Highest first: call and `.`; unary `-`; `* /`; `+ -`; comparisons `= != < <= > >= in`; `not`; `and`; `or`; left to right. `date + duration` is a date; `date - date` is a duration |
 | **X8 Empty** | `x = empty` and `x != empty` test for no value (fifth set: no `empty(x)` function). In a condition, empty counts as false; any other comparison with empty is false; arithmetic with empty is empty. `first(a, b, …)` gives the first non-empty value, for "otherwise" |
-| **X9 Membership** | `x in ("a", "b")`. `links to <item>` is true when the item links to that item (`links to this`) |
+| **X9 Membership** | `x in ("a", "b")`. `links to <item>` is true when the item links to that item (`links to open item`) |
 
 ### 4.3 Every function
 
@@ -792,6 +904,17 @@ where`, `totals`, view columns, chart values and agent-rule conditions.
   Computed fields added through `extends:` may not use `from()` or `all()`
   (review 52).
 - **No cycles;** `previous()` is not a cycle.
+- **Bounds within the limits** (S38):
+  - dates outside 1900–2200 are a Problem;
+  - periods count at most 20 years back (operator default);
+  - repeat expansion is capped per view, and `next()` searches at most 10
+    years;
+  - each query has a step budget per viewer, counted in the plugin's
+    budget;
+  - an expression nests at most 64 deep, and a formula holds at most
+    4 KiB;
+  - line items are capped per note;
+  - the engine's budgets are the same on every device.
 
 ### 4.5 Time
 
@@ -822,6 +945,10 @@ where`, `totals`, view columns, chart values and agent-rule conditions.
 
 - **Stored values** live only in the rebuildable index.
 - **Values that depend on the viewer** are computed at query time.
+  Per-viewer is transitive: a field that reads one is per viewer.
+  Per-viewer fields may not appear in `folder`, `file`, `unique`,
+  `together`, `search`, `ical`, `vcard`, the `lines` box mapping or
+  notification placeholders (S37).
 - **The one Rust engine** runs on the server, on devices and in the browser
   as Wasm (round 33).
 - **A device's value** is "not yet confirmed" until the server agrees
@@ -858,7 +985,7 @@ stays and the new one is offered, as with sidebars (review 17).
 | table | `table: <column>…` | `table: date, payee, amount` |
 | board | `board: <choice or yes/no field>`, or `board: <row condition>, <column condition>` (a matrix) | `board: status` · `board: priority in ("urgent", "high"), urgent` |
 | gallery | `gallery: image\|preview\|<file field>, <column>…` | `gallery: image` |
-| calendar | `calendar: <time field>[ .. <time field>][, colour <field>]` | `calendar: start .. ends, colour own calendar.colour` |
+| calendar | `calendar: <time field>[ .. <time field>][, colour <field>]` | `calendar: start .. ends, colour calendar.colour` |
 | timeline | `timeline: <date field> .. <date field>` | `timeline: starts .. ends` |
 | chart | `chart[ bar\|line]: <total> by <field or formula>` | `chart line: sum(volume) by week(item.date)` |
 | map | `map: <place field>` | `map: place` |
@@ -946,7 +1073,7 @@ format: 1
 ---
 - [Today](<../collections/today.md>)
 - [Loose ends](<calternal-tasks:collections/loose-ends>)
-- each: calendars, where account = empty, under "Calendars" -> week by own calendar
+- each: calendars, where account = empty, under "Calendars" -> week by calendar
 - each: tags of tasks -> all-tasks
 - section: Collections
 - folders: Documents, Photos, Notes
@@ -974,7 +1101,7 @@ format: 1
 | `calls` | Other plugins' operations its code calls | `calls: calternal-files.add` |
 | `sends out` | `nothing`, or hosts, `a server you name`, `the public web` | `sends out: caldav.icloud.com, a server you name` |
 | `sign-ins` | Accounts the server signs in to; several allowed (G12) | 7.3 |
-| `secrets` | Values the Owner enters once, each for one host | `secrets: maps key for api.maptiler.com` |
+| `secrets` | Values the Owner enters once, each for one host and one header | `secrets: maps key for api.maptiler.com in X-Api-Key` |
 | `programs` | Programs it runs in the sandbox or in jobs | `programs: ffmpeg, ocr` |
 | `outside` | Outside addresses, and how each proves itself | 7.5 |
 | `extends` | Additions to other plugins' kinds, sidebars and Home | 7.2 |
@@ -984,14 +1111,25 @@ format: 1
 | `settings` | Typed settings (inherited ADR 0055) | 7.8 |
 | body | What it does, shown at install | |
 
-**Destinations** (review 44, 45; these rules only narrow):
+**Destinations** (review 44, 45; S17, S18; these rules only narrow):
 
-- **Secrets and sign-ins** are attached only to requests for their own
-  host.
-- **`the public web` and `a server you name`** never reach loopback,
-  link-local, private, carrier-grade or mesh ranges, or the server's own
-  addresses. This is checked on the connected address after DNS. The
-  operator may allow named private hosts.
+- **Every destination is checked on the connected address after DNS:**
+  fixed hosts, `a server you name` and `the public web` alike, and on every
+  redirect hop.
+  - The check applies to `s.fetch`, `s.connect`, the proxy, CalDAV sync
+    and sandbox egress.
+  - Loopback, link-local, private, carrier-grade and mesh ranges, and the
+    server's own addresses, are never reached.
+  - The operator may allow named private hosts.
+- **Secrets** (`secrets: <name> for <host> in <header>`) are put only in
+  that header, over TLS with a valid certificate. A secret is never put in
+  a URL or a body, never carried across a redirect, and scrubbed from
+  answers.
+- **`a server you name`** has its name and port stored with the sign-in
+  when the person confirms it. A change asks that person again.
+- **No operation input or field holds a credential** (S40). Sign-ins and
+  secrets are entered only on the server's sheet. The install check
+  refuses field and input names `password`, `token` and `secret`.
 
 ### 7.2 `extends:` (M2)
 
@@ -1037,6 +1175,11 @@ extends:
   values stay (G1).
 - **Added operations** run as the adding plugin, and change the owner's
   fields only through the owner's listed operations.
+  - In `extends:`, the only operation lines allowed are `set` on the
+    plugin's own added fields, `open where` and `code`.
+  - The only placement is `menu` (S29).
+  - Operations added by a member's plugin appear only for members who turn
+    them on, in menus and in MCP alike.
 - **Look additions:**
   - they append at the lowest priority and never cover `protected:`
     fields;
@@ -1044,8 +1187,13 @@ extends:
   - additions from a plugin a member (not the Owner) added are shown only
     to members who turn them on (review 48).
 - **`any kind with <type>`** matches stored fields of exactly that type and
-  excludes hidden kinds. A later kind's install sheet lists the additions
-  it receives, and each can be turned off (review 40).
+  excludes hidden kinds. Matches are re-evaluated when a kind is installed,
+  created in the app or updated. Each new match is listed on that sheet,
+  or as a notice for app-made kinds, and starts off when it comes from a
+  member's plugin (review 40, S36).
+- **Agents** get a member's plugin's operations only if they turned them
+  on, named `plugin.operation`. Every field value and plugin text reaches
+  them labelled as data, in a server-written frame (S39).
 - **What additions cannot do:** remove, rename, retype or reorder the
   owner's fields, operations or places.
 - **The install sheet** lists every addition by target.
@@ -1065,6 +1213,11 @@ sign-ins:
 Each sign-in is tied to the person who added it and to the item it serves.
 The plugin reaches it only through `s.connect` or `s.fetch`, and never sees
 its value.
+
+**Who may use it** is OPEN (E.1, §17). Until the owner answers, the strict
+default holds: a sign-in is used only in work whose acting person (§8.2) is
+the person who added it. Any other use fails with `not-allowed`, and every
+use is stamped with who used it.
 
 ### 7.4 Places: `slots:` and `fills:` (M1, G13)
 
@@ -1101,6 +1254,7 @@ fills:
   calternal-chat:composer: frame frames/composer.html
 ```
 
+- **`frame <path>`** names a file inside `frames/` (S14).
 - **Place keys follow L1:** `kind [calternal-mail.messages] panel` and
   `calternal-chat:composer` are each one key, ending at the first `: `.
 - **A place gives only what its row says.** A part calls only its own
@@ -1112,28 +1266,48 @@ fills:
 - **Errors stay local:** a broken part draws an error in its own place.
 - **The first run** is set only in `space.md` (§12; sixth set).
 
-### 7.5 `outside:` (C2, sixth set)
+### 7.5 `outside:` (C2, sixth and eighth sets)
 
 ```text
 outside:
-  <name>: secret|signed <header> with <secret>|person[, methods <METHOD>…]
+  <name>: [signed <header> with <secret>, ][person, ]methods <METHOD>…
 ```
 
 ```markdown
 outside:
-  scanner: secret, methods POST
-  github: signed X-Hub-Signature-256 with webhook secret
+  scanner: methods POST
+  github: signed X-Hub-Signature-256 with webhook secret, methods POST
+  api: person, methods GET POST
 ```
 
-- **The address** is its own web address,
-  `https://outside.<server>/<space>/<plugin>/<name>/…`. It sets no cookies,
-  marks every response sandboxed, and is never on the app's address. The
-  operator sets the name and certificate once.
-- **How a request proves itself:** `secret`, the address itself is secret;
-  `signed`, the server also checks the sender's signature; `person`, a
-  person's token.
-- **The request** reaches `on.outside(name)` whole, and the operation
-  answers with a status, headers and a body.
+- **The address:** every outside address is
+  `https://outside.<server>/<space>/<plugin>/<name>/<token>/…`. The token
+  is 128 bits made by the server, shown once on the sheet and rotatable. A
+  plugin may mint addresses below it (`s.outside.mint(item)`), each with
+  its own token.
+  - Without the token the server answers 404 and wakes nothing.
+  - Requests are rate-limited per address, and bodies and answers have a
+    size and time bound (operator default) (S1).
+- **Proofs:** the token is always required. `signed` adds a signature
+  check, and `person` adds a person's token that proves only this address:
+  the person ticked it, and it is refused on the API. (`secret` and
+  `signed` are one proof now; review simplification.)
+- **The server strips every proof** (the address token, the signature
+  header and the person's token) and every cookie before the request
+  reaches the plugin, so a plugin can never replay them (S2).
+- **Cookies and headers** (S25):
+  - the app's cookies are `__Host-` and `SameSite=Strict`;
+  - the app's API refuses requests whose `Origin` or `Sec-Fetch-Site` is
+    the outside origin;
+  - outside answers pass only a header allowlist: `Content-Type` from a
+    list, `Cache-Control`, `ETag`, and `Location` within the plugin's own
+    path;
+  - every answer is marked sandboxed;
+  - the operator may give outside its own registrable domain, which is
+    recommended.
+- **The request reaches `on.outside(name)` whole** (method, path below the
+  token, allowed headers, body), and the operation answers with a status,
+  headers and a body.
 
 ### 7.6 `listens:` (M3)
 
@@ -1149,15 +1323,15 @@ listens:
 
 - **Disclosure:** the install sheet says what the event carries ("Sees
   every mail received, with its sender").
-- **Never delivered:** inputs of sign-in or secret fields.
+- **Never delivered:** credentials. No input can hold one (§7.1).
 - **A listener that also sends out** is a risky install, confirmed with a
   passkey (review 51).
 
-### 7.7 `notifications:` (sixth set)
+### 7.7 `notifications:` (sixth and eighth sets)
 
 ```text
 notifications:
-  <name>: "<text with {<field>} placeholders>"
+  <name>: "<at least three words of fixed text, with {<field>} placeholders>"
 ```
 
 ```markdown
@@ -1165,8 +1339,16 @@ notifications:
   remind: "Time to read {title}"
 ```
 
-`s.notify` sends only these templates, filled from the item's fields. The
-install sheet shows every sentence. Free notification text is never open.
+`s.notify` sends only these templates. S20's rules:
+
+- **Fixed text:** a template has at least three words of fixed text, never
+  only a placeholder.
+- **Placeholders** take only stored fields of the item: never computed,
+  `data` or added fields, and never fields the plugin's own code wrote.
+- **Each filled value** is cut to 60 characters, with control and format
+  characters removed, never turned into a link, and drawn as a quotation.
+- **The notification always names the plugin**, and the install sheet
+  shows every template.
 
 ### 7.8 `settings:`
 
@@ -1185,7 +1367,7 @@ person` setting is computed per viewer (§2.9).
 
 ## 8. Calls, events, the acting person and the write table
 
-### 8.1 The thirteen calls
+### 8.1 The fourteen calls
 
 **Errors:** one caller-safe shape, `{ code, message, next }`, with ten
 codes: `not-allowed`, `not-found`, `invalid`, `conflict`, `too-large`,
@@ -1198,53 +1380,87 @@ codes: `not-allowed`, `not-found`, `invalid`, `conflict`, `too-large`,
 | `s.write(changes, { preview? })` | A list of `add(kind, fields, body?)`, `change(item, fields?, body?, base?)`, `remove(item)`, `move(item, folder?, file?)`, `append record(item, record)`, `change record(item, anchor, record)`, `remove record(item, anchor)` | New IDs and versions; with `preview`, the plan for a confirm sheet | `invalid`, `conflict`, `not-allowed`, `too-large`, `limit` | 1,000 changes, 16 MiB; all or nothing |
 | `s.fetch(req, { secret?, sign-in? })` | An HTTP request to a declared destination | `{ status, headers, body }` | `not-allowed`, `unreachable`, `needs-sign-in`, `too-large`, `timeout` | 32 MiB, 60 s |
 | `s.connect(sign-in, item)` | An IMAP or SMTP sign-in for an item | The connection the server holds | `needs-sign-in`, `unreachable` | 1 per sign-in and item |
-| `s.notify(people, { item, template })` | People who may read the item; a declared template | Delivered, or skipped (muted) | `not-allowed`, `limit` | 100 recipients |
+| `s.notify(people, { item, template })` | People who may read the item; a declared template | `accepted`, whatever each person's mute (S21) | `not-allowed`, `limit` | 100 recipients |
 | `s.job(program, items, input?)` | A declared program | A job ID; results come back through the plugin's operations | `not-allowed`, `limit` | 10,000 items |
 | `s.run(program, { scope, targets })` | A harness and its scope | A handle `{ id, send(input), stop(), status }`; `send` only by the run's actor, `stop` by anyone who may read the target | `not-allowed`, `limit`, `stopped` | the run's quota |
 | `s.call("<plugin>.<operation>", input)` | A listed operation | Its output | `not-allowed`, and its own errors | depth 8 |
 | `s.state` | `get(item, key)`, `set(item, key, value)` for keys declared in `state:` | This person's value | `invalid`, `too-large` | 64 KiB per person and plugin |
 | `s.cache` | `get`, `set`, `delete`, `file(name)` | Rebuildable data; may be deleted at any time | `limit` | per-plugin quota |
-| `s.share(item, people, role)` | Who, and which role | Opens the server's share sheet, pre-filled; returns when the person confirms or cancels (review 23) | `not-allowed`, `stopped` | 100 people |
+| `s.share(item, people)` | Who | Only in `on.call` from a live gesture. Opens the server's share sheet, starting at reader and listing only people the person can already see; returns when the person confirms or cancels (review 23, S41) | `not-allowed`, `stopped` | 100 people |
+| `s.outside.mint(item)` | An item of its own kinds | A new outside address below a declared one, with its own token (S1) | `not-allowed`, `limit` | per-plugin quota |
 | `s.me`, `s.space`, `s.event` | — | The acting person and their role; the space; `{ kind, key, item, before?, request? }` | — | — |
 
-### 8.2 The six events (sixth set: `on.schedule` folded into `on.time`)
+### 8.2 The six events, and who acts
 
-| Event | Fires when | Receives | Returns | Acting person (review 20) |
-| --- | --- | --- | --- | --- |
-| `on.call` | The operation is run | The form's fields or the input | An output or an error | Who ran it |
-| `on.time(<kind>.<field>)` | A `time`, `date` or `when` field arrives (a date at 09:00 in the acting person's zone), or a `repeat` field's occurrence | The item, and the occurrence | nothing | The item's author (sixth set) |
-| `on.change(<kind or collection>)` | Items of its own kinds or of `reads` kinds change; for a collection, when an item enters, leaves or changes | The item, and `s.event.before` | nothing | Who made the change |
-| `on.outside(<name>)` | A request reaches a declared address | `{ method, path, headers, body }` | `{ status, headers, body }` | `person`: that person. `secret` or `signed`: no person, so only the plugin's own kinds are writable and `s.notify` is refused |
-| `on.connection(<sign-in>)` | Data arrives on a held connection | The item and what arrived | nothing | The sign-in's person |
-| `on.after(<plugin>.<operation>)` | A `listens` operation has committed | `{ input, result }`, filtered to what the acting person may read | nothing; it may call operations | Who ran that operation |
+| Event | Fires when | Receives | Returns |
+| --- | --- | --- | --- |
+| `on.call` | The operation is run | The form's fields or the input | An output or an error |
+| `on.time(<kind>.<field>)` | A `time`, `date` or `when` field arrives (a date at 09:00 in the acting person's zone), or a `repeat` field's occurrence | The item, and the occurrence | nothing |
+| `on.change(<kind or collection>)` | Items of its own kinds or of `reads` kinds change; for a collection, when an item enters, leaves or changes | The item, and `s.event.before` | nothing |
+| `on.outside(<name>)` | A request with the token reaches a declared address | `{ method, path, headers, body }` | `{ status, headers, body }` |
+| `on.connection(<sign-in>)` | Data arrives on a held connection | The item and what arrived | nothing |
+| `on.after(<plugin>.<operation>)` | A `listens` operation has committed | `{ input, result }`, filtered to what the acting person may read | nothing; it may call operations |
 
-- **The space profile's first run** acts as the Owner.
-- **A missed time** fires once on restart.
-- **A repeat** fires at most every 5 minutes (operator default).
+**One "who acts" rule** (S9, S10, eighth set; replacing per-event cases):
+
+- **The person who last directed work at the item acts:**
+  - for a gesture or a call (`on.call`), the person who made it;
+  - for a change (`on.change`, `on.after`), the person who made the change
+    or ran the operation;
+  - for a time (`on.time`), the person who last changed the item, stamped
+    in history (the arming person);
+  - for a connection (`on.connection`), the sign-in's person;
+  - for an outside request with `person`, that person;
+  - for the space profile's first run, the Owner.
+- **Rights are re-read when the work runs.** If the acting person is no
+  longer a member or has lost the rights, the work does not run, and the
+  item is listed in the plugin's Problems.
+- **A run's context travels along:** work a run causes carries the run
+  through every event it raises, and each operation in the chain is
+  checked against that run's agent rules (§10).
+- **A reaction the person did not direct at this plugin**:
+  - cannot use `s.run` or `s.share`;
+  - reads `s.state` only for its own kinds;
+  - may call an operation that reaches other people (§1.1a) only when the
+    event came from that person's own gesture, not a run's.
+- **The sheet says** "Acts as whoever changes *X*: then may *calls list*".
+- **With no person** (an outside request without `person`), a handler
+  reads and writes only the plugin's own kinds. `s.call`, `s.run`,
+  `s.share`, `s.connect` and `s.notify` are refused, and `s.fetch` reaches
+  only declared hosts (S3).
+- **Timing:** a missed time fires once on restart; a repeat fires at most
+  every 5 minutes (operator default).
 
 **Delivery:**
 
 - **One path:** `on.change` and `on.after` are raised by the call route
   after commit.
-- **At least once, with a key.** The server keys each write as (event key,
-  index of the write within the run), so a replayed handler that writes in
-  the same order replays exactly (review 21).
+- **At least once, with a key.** Each write is keyed as (event key, index
+  of the write within the run), so a replayed handler that writes in the
+  same order replays exactly (review 21).
 - **Coalescing:** changes are coalesced per item.
 - **Loops:** call depth travels with the event key across deliveries. A
-  plugin never receives `on.after` or `on.change` for a commit its own
-  code caused, directly or through `s.call`. An event at depth 8 is not
+  plugin never receives `on.after` or `on.change` for a commit its own code
+  caused, directly or through `s.call`. An event at depth 8 is not
   delivered, and is shown on the plugin's Problems (review 36).
 - **Processes:** one per plugin per space, stopped when idle.
 
-### 8.3 What `s.write` may touch (review 22)
+### 8.3 What `s.write` may touch (review 22, S11, S13)
 
 | Target | Allowed changes |
 | --- | --- |
-| The plugin's own kinds | Every change form |
-| Another plugin's editable-outside kind named in `reads:` | Every change form except `move`, as the acting person |
+| The plugin's own kinds | Every change form; `data` fields only here |
+| Another plugin's editable-outside kind | Only through that kind's built-ins named in `calls:` (`calls: calternal-notes.notes.change`; the sheet says "Can change your notes"); `reads:` grants reading only (C4) |
 | Another plugin's operations-only kind | Only the plugin's own added keys (§7.2) |
+| Another plugin's hidden kind | Nothing |
 | `move` | Only within the item's own kind's folder tree; refused for patterned kinds unless the pattern fields change with it |
-| Any other file | Nothing. Moving files in general is the person's own built-in on `from: files`, not plugin code |
+| Any other file | Nothing |
+
+**`s.call` designation** (S12): an item named in `s.call`'s input counts
+only if the caller could read it itself (its own kinds, `reads:`), or
+received it from a place, an event or an earlier result. Otherwise the call
+fails `not-found` before the callee runs. Items in the output of kinds the
+caller cannot read return as IDs only.
 
 ## 9. Outside writes (WebDAV, CalDAV, CardDAV)
 
@@ -1256,10 +1472,16 @@ Review 12, 13, 33, 38, 47 and 49, and the sixth set.
   A failure refuses the whole request with the reason (HTTP 403 or 409).
   A Problem is only a file the server finds changed on disk outside its
   own protocols.
-- **`data` fields** cannot be changed by an outside write.
-- **Records:** adding or changing a record not authored by the writer is
-  refused, and so is changing one outside its window. The page always
-  draws the author from the ledger.
+- **`data` fields** are changed only by the owning plugin's code, on every
+  path.
+- **Kind and exposure follow the item's ID** in host state, never its path
+  (S7). The `files` built-in moves an item only within its kind's folder
+  tree, and operations-only items are moved only by their plugin's
+  operations.
+- **Records:** adding, changing or *removing* a record not authored by the
+  writer is refused (Managers may remove, inherited D4). So is reordering
+  records, and changing one outside its window. The page always draws the
+  author from the ledger (S44).
 - **Which kind a new file belongs to:** the kind whose folder pattern
   matches it most deeply. When two kinds match the same path, the `file:`
   pattern decides; a full tie was already refused at install.
@@ -1303,6 +1525,17 @@ format: 1
 
 - **`in`:** a collection is written `<plugin>:collections/<id>`, and a
   folder ends in `/` (review 19).
+- **Who may change the rules files** (S8): `Agents/rules.md` and
+  `.calternal/agent-rules.md` change only through the server's own sheet
+  (Settings, or the "Always allow" prompt). An operation, a run, a plugin
+  or an outside write never changes them; they are host screens for §14.
+- **Matching** (S32): a rule matches if its `on`, `in` and `where` hold
+  before *or* after the change. A move is checked as `remove` at its source
+  and `add` at its destination.
+- **Reaching other people** (S33) uses the derived flag of §1.1a. R1's
+  "ask" for it is a floor that only the person's own "Always allow" lifts,
+  for their own runs. A space's rules may hold `allow` only for operations
+  that do not reach other people.
 - **The condition** runs to ` outside this chat`, ` for ` or the end of the
   line, and may not contain those words outside quotes.
 - **Precedence:** deny, then ask, then allow; the most restrictive match
@@ -1326,7 +1559,7 @@ theme: <id>
 name: <name>
 format: 1
 palette:
-  background|text|accent|link|warning|success|danger|muted: "<colour>"
+  background|text|accent|link|success|muted: "<colour>"
 fonts:
   interface|chat|code|wordmark: <assets/ file>|<a font on the server's list>
 icons: <assets/ folder: one SVG per host icon name>
@@ -1367,6 +1600,12 @@ for:
 - **What a theme cannot set:** CSS, positions or sizes.
 - **Guarantees:** a contrast floor; reduced motion always wins; host
   screens are not themed.
+- **Never themeable** (S34): the warning and danger colours, and the icons
+  in protected strips and host warnings. Protected fields, addresses and
+  amounts are drawn in a host font.
+- **Assets:** theme SVGs are reduced to paths, with no script,
+  `foreignObject`, `href` or `style`. Fonts with contextual substitutions
+  across letters are refused.
 - **Assets** pass the font, wallpaper and sound checks.
 
 ## 12. The space profile, `.calternal/space.md` (M5)
@@ -1407,15 +1646,26 @@ theme: dusk
   install sheet lists every line.
 - **It only tightens:** it raises roles and narrows rules, never widens
   them, and installs nothing itself.
-- **`first run`** runs once per app, as the Owner. It is the only
-  first-run declaration.
+- **`first run`** runs once, when the Owner applies the profile, as the
+  Owner. It is the only first-run declaration.
+- **Not tightening** (S35):
+  - a pick of a part that sends out needs the passkey (T7);
+  - an updated profile is offered, never re-applied;
+  - the sheet says "tightens rights and rules; sets defaults".
 - **`theme`** is a default each member may change. Whether it may bind
   everyone is OPEN (§17).
 
-## 13. Remote content (sixth set)
+## 13. Remote content (sixth and eighth sets; S16)
 
-- **Only stored values** load, never computed or added fields. They load as
+- **Only stored values** load, never computed or added fields, and only as
   images or previews, through the server's proxy, without cookies.
+- **Who wrote the value:** the proxy loads a value only if a person, or an
+  outside sender, wrote it. A value written by plugin code loads only when
+  its host is in that plugin's `sends out`.
+- **Every hop**, redirects included, passes §7.1's address rules.
+- **What it fetches:** only `http` or `https` on ports 80 and 443, and only
+  image types. There is a size and time cap, and no headers are forwarded.
+- **The cache** is per space. Plugin code cannot reach the proxy.
 - **Mail bodies** load nothing remote until the person taps (inherited
   I1).
 - **Frames** reach the network only under their own origin's rules and the
@@ -1441,7 +1691,9 @@ No key, place, extension or profile reaches these:
 - **Host-reserved shortcuts.**
 - **Another person's private state.**
 - **A person's own way out:** nothing may refuse Stop, undo, deleting
-  one's own items, or leaving a space.
+  one's own items or records to Trash (§2.20), or leaving a space.
+- **The agent rules files** (§10).
+- **Instruction files** (§2.2).
 - **The canvas of windows**, for now.
 
 ## 15. A first plugin
@@ -1540,7 +1792,7 @@ format: 1
 ```
 
 ```ts
-// operations.ts: the only code, for the reminder; it acts as the item's author
+// operations.ts: the only code, for the reminder; it acts as whoever last changed the item
 export const remind = on.time("reading.remind", async (item, s) =>
   s.notify([s.me], { item, template: "remind" }));
 ```
@@ -1559,35 +1811,38 @@ export const remind = on.time("reading.remind", async (item, s) =>
 | **O1** partner sharing across spaces | May a collection include items of another space shared with you? | Yes: `from:` gains `, shared with me` (read-only), and S4 gets one exception. No: unchanged |
 | **O2** native Apple surfaces | Notification buttons, Shortcuts, Live Activities, device bridges | Yes: `notifications:` templates gain `actions: <operation>…` (on a locked device only those marked safe); operations gain a progress value; kinds gain `health: workout`. No: `receive` and `timer` are all there is |
 | **O3** Workouts' first version | Log only, or with progression? | Only whether Workouts has code |
-| **O4** reading rights inside a space | May a kind or folder be readable by fewer people than its space? | Yes: `rights: read manager\|owner\|<group>`, in kinds and `space.md`, enforced by the one check and filtered in every query. No: spaces stay the only read boundary |
+| **O4** reading rights inside a space | May a kind or folder be readable by fewer people than its space? | Yes: `rights: read manager\|owner\|<group>`, in kinds and `space.md`, enforced by the one check and filtered in every query. A stored computed value then reads only what every reader of its item may read, or else it is per viewer. Sort, group, totals, search snippets and plugin search results are filtered per viewer. An add or check that touches an unreadable item answers `not-allowed` without saying why (S42). No: spaces stay the only read boundary |
 | **`refuses:`** | May a plugin refuse another plugin's operation before it runs? | Yes: `plugin.md` gains `refuses:` with `checks:`-form lines under an operation, evaluated by the engine on both sides, never targeting Stop, undo, own deletes or leaving. No: only `on.after` |
 | **Plugin pure modules on devices** | May a plugin ship a no-I/O module that runs on devices? | Yes: coded operations offline, plugin formula functions, field types and merges. No: unchanged |
 | **A binding space-wide look** | May `space.md`'s `theme:` bind every member? | Yes: members cannot change it. No: a default, plus a space accent and icon |
 | **`session()`** | The server-computed scope of a run (Chat) | Left for Chat's design (fifth set) |
+| **E.1** whose sign-in another member's action may use | May Ana's action use Lee's mail account in a shared space? | **Default now (strict):** a sign-in is used only by its own person (§7.3). **If the owner chooses (a)**, §7.3 gains one paragraph: the sign-in sheet has a switch "Members of *space* may send and read with this account"; when it is on, any member's work may use it, every use is stamped with who used it, and the person can turn it off. **(b)** would instead let anyone who may use the item use its sign-in |
+| **E.2** who writes instruction files (`AGENTS.md`, `CLAUDE.md` …) | May members write instructions that every agent in the folder follows? | **Default now (strict):** only the server writes them (§2.2). **If the owner chooses (b)**, §2.2 gains one paragraph: anyone with write on the folder may write them, and the server prefixes each with "These instructions were written by *person*", which no rule enforces beyond that line |
 
 ## 18. Counts, and two ways to say one thing
 
-| | Revision 6 | Revision 7 |
-| --- | --- | --- |
-| Line grammar rules | — | 10 (L1–L10); also 6 name rules, 9 expression rules |
-| Reserved words | — | 47, in four groups |
-| Kind keys (with body) | 24 | 26 (`rights` replaces `change`; `state` and `hidden` added; `shown` gone) |
-| Field flags | 6 | 7 (`mark`) |
-| Operation line forms | 12 | 12 |
-| Field types | 23 | 24 (link to a record), plus 4 built-ins |
-| Functions | 26 | 25 (`empty(x)` gone) |
-| Collection keys (with body) | 13 | 12 (`total` merged into `totals`) |
-| Views | 12 | 10 (`strip` into `compact`, `matrix` into `board`) |
-| Sidebar line forms | 5 | 6 (`each` gained a tag form) |
-| `plugin.md` keys (with body) | 20 | 19 (`search` gone, `notifications` added) |
-| `extends:` sub-keys | 5 | 5 (`marks` gone, `together` added) |
-| Host places | 13 | 12 (`first run` gone) |
-| Theme keys | 11 | 11 |
-| Profile keys | 8 | 8 |
-| Agent rule line forms | 3 | 3 |
-| Calls | 13 | 13 |
-| Events | 7 | 6 |
-| Error codes | 10 | 10 |
+| | Revision 6 | Revision 7 | Revision 8 |
+| --- | --- | --- | --- |
+| Line grammar rules | — | 10, plus 6 name and 9 expression rules | the same |
+| Reserved words | — | 47 in four groups | 51 in five groups (`open item`; `password`, `token`, `secret`), plus 6 reserved plugin IDs |
+| Kind keys (with body) | 24 | 26 | 26 (a hidden kind writes no `editable:`) |
+| Field flags | 6 | 7 | 7 |
+| Operation line forms | 12 | 12 | 12 (only 3 allowed in `extends:`) |
+| Field types | 23 | 24, plus 4 built-ins | 24, plus 4 built-ins |
+| Functions | 26 | 25 | 25 |
+| Collection keys (with body) | 13 | 12 | 12 |
+| Views | 12 | 10 | 10 |
+| Sidebar line forms | 5 | 6 | 6 |
+| `plugin.md` keys (with body) | 20 | 19 | 19 |
+| Outside proofs | 3 | 3 | 2 (`signed`, `person`), on top of the token that is always there |
+| Host places | 13 | 12 | 12 |
+| Theme keys | 11 | 11 | 11; palette roles 8 → 6 |
+| Profile keys | 8 | 8 | 8 |
+| Agent rule line forms | 3 | 3 | 3 |
+| Calls | 13 | 13 | 14 (`s.outside.mint`) |
+| Events | 7 | 6 | 6 |
+| Error codes | 10 | 10 | 10 |
+| Size of this document | about 1,540 lines | about 2,020 lines, 14,600 words | about 2,430 lines, 19,500 words |
 
 **Still two ways to say one thing** (kept apart by the fifth set):
 
@@ -1635,7 +1890,7 @@ Revision 7 adds six, all from the sixth set:
    reserve` is renamed `reserve`.
 3. **One form for built-in arguments, `remove: when …`.** The review would
    allow both `remove, when` and `remove: when`.
-4. **Placements may be combined** (`swipe, primary`).
+4. **Placements may be combined** (`swipe, primary`), except in `extends:`, which allows `menu` only (S29).
 5. **Kind formulas that read `state.` or `per person` settings are computed
    per viewer**, instead of refused as the review proposed. This is more
    versatile; the cost is that those fields have no index.
@@ -1646,10 +1901,72 @@ Revision 7 adds six, all from the sixth set:
    read` stands.
 8. **Unmapped CalDAV properties live in host state**, as the sent snapshot
    (inherited 0067), never in the Markdown file.
-9. **Palette roles:** eight named roles.
+9. **Palette roles:** six named roles. Warning and danger are the host's
+   own and cannot be themed (S34).
 10. **`assets/`** is the plugin folder for theme files.
 
-## 21. Change list from revision 6
+## 21. Change list
+
+### Revision 8 (security review of revision 7, eighth set)
+
+- **New §1.1a:**
+  - text on sheets;
+  - one rule for free strings and one for paths;
+  - XMP without DTDs;
+  - the derived flag "reaches other people or the outside";
+  - reserved plugin IDs;
+  - updates that wait.
+- **Instruction files** are written only by the server (§2.2; E.2 strict
+  default).
+- **Folder patterns** may not nest in either direction; filled segment
+  values and marked folders are checked (§2.3).
+- **Lines:** one claim per line form, ticked boxes checked as `change`, and
+  the calendar link stored by the core (§2.10).
+- **IDs:** taken IDs and merging adds (§2.11).
+- **Hidden kinds** are operations-only and reachable only by their own
+  plugin (§2.15).
+- **CalDAV:** an allowlist of served properties, no scheduling, DAV app
+  passwords (§2.18).
+- **`web()`** draws in a sealed frame; protected text uses a host font
+  (§2.19).
+- **`duplicate`** clears bindings; an author may always remove their own
+  work (§2.20, §14).
+- **Values:** `url` and `colour` values are checked, built-in fields come
+  from host state, receipt time is used, and values are drawn as data
+  (§3.1).
+- **`open item`** replaces the second meaning of `this` (§4.1, seventh
+  set).
+- **Cost bounds** within the limits; per-viewer values are transitive and
+  kept out of shared places (§4.4, §4.7).
+- **Destinations:** every destination is checked after DNS on every hop;
+  secrets only in their header; `a server you name` is bound when
+  confirmed; no credential inputs (§7.1).
+- **Sign-ins** are used only by their person (§7.3; E.1 strict default).
+- **`extends:` operations** are limited to three line forms and `menu`;
+  matches re-evaluated; agents see values as data (§7.2).
+- **Outside addresses** carry a server token, have proofs stripped, cookies
+  and headers locked down, and `secret` merged into the token (§7.5).
+- **Notification templates** need fixed words; placeholders take stored
+  values only (§7.7).
+- **One "who acts" rule:**
+  - timers act as the arming person;
+  - rights are re-read when work runs;
+  - a run's context travels along;
+  - no-person handlers are limited (§8.2).
+- **`s.write`** writes another plugin's kind only through `calls:` of its
+  built-ins; `s.call` has a designation rule; `s.notify` returns
+  `accepted`; `s.share` needs a live gesture; `s.outside.mint` is new (§8.1,
+  §8.3).
+- **Outside writes:** kind by ID; records cannot be removed by others (§9).
+- **Agent rules files** are server-only; rules match before or after a
+  change; moves count twice; R1's floor (§10).
+- **Themes:** warnings are not themeable; SVG and font limits (§11).
+- **Profiles:** pick passkey, `first run` on apply, updates offered (§12).
+- **The remote-content proxy** has its own rules (§13).
+- **OPEN:** E.1 and E.2 added; O4 gains S42's leaks (§17).
+
+### Revision 7 (implementer review of revision 6, fifth and sixth sets)
+
 
 - **Grammar:** the EBNF line grammar with L1–L10, name rules N1–N6,
   reserved words, and expression rules X1–X9 (review 1–9; fifth set).
@@ -1740,7 +2057,7 @@ line (L6). The lines that matter:
 | --- | --- |
 | `mark read: set read = yes, when not read, swipe, primary` | L2 splits it into four parts; one-liner (§2.20); placements combine (choice 4) |
 | **`board: read`** | §5.2: boards accept yes/no fields (choice 7) |
-| **`s.me` in `on.time`** | §8.2: `on.time` acts as the item's author |
+| **`s.me` in `on.time`** | §8.2: `on.time` acts as the arming person (eighth set) |
 | **`sends out: nothing`** | §1.1: `nothing` and no line mean the same. The line is dropped here, and the plugin has code anyway |
 | `search: title, site, body` | §2.16: `site` is a stored computed field |
 | `notifications:` / `remind: "Time to read {title}"` | §7.7 |
@@ -1749,7 +2066,7 @@ line (L6). The lines that matter:
 
 | Line | Rule |
 | --- | --- |
-| **`own calendar: = first(calendar, first(under(tags, "area")))`** | X8: `first(a, b)` replaces `or` |
+| **`calendar: link(calendars)`** (was `own calendar`, a link mixed with a tag) | §2.10: the core stores the calendar when the line or item is written (seventh set); no formula |
 | **`ends: = first(end, start + if(all day, 1d, 15min))`** | X8, X5 |
 | **`did not happen: set status = "did not happen", when not logged, menu`** | X3: quoted choice value |
 | **`ical: VEVENT` with children** | L6 |
@@ -1806,7 +2123,7 @@ fields:
   time zone: text
   location: text
   people: links(calternal-contacts.contacts)
-  calendar: link(calendars)
+  calendar: link(calendars)                 # stored by the core from the first area tag (seventh set)
   task: link(calternal-tasks.tasks)
   tags: tags
   status: choice(did not happen)
@@ -1817,7 +2134,6 @@ fields:
   alert: durations
   source: data
   remote description: long text
-  own calendar: = first(calendar, first(under(tags, "area")))
   ends: = first(end, start + if(all day, 1d, 15min))
   length: = ends - start
   logged: = ends <= now()
@@ -1967,7 +2283,7 @@ One session per file; each set is a record in the body.
 | 17 | Collection details | §5.1, §5.3; §4.2 X9 | |
 | 18 | `each:` default collection | §6 | |
 | 19 | Agent rule lines | §10 | |
-| 20 | The acting person | §8.2 | A timer acts as the item's author (sixth set), not "who last set the field" |
+| 20 | The acting person | §8.2 | Revision 8: one "who acts" rule; a timer acts as the arming person, with rights re-read when it fires (eighth set, S10) |
 | 21 | Write keys | §8.2 | |
 | 22 | What `s.write` may touch | §8.3 | No `moves files` line (choice 6) |
 | 23 | `s.share` | §8.1 | |
@@ -2015,3 +2331,96 @@ One session per file; each set is a record in the body.
 **Totals:** 63 findings, 63 fixed, 0 not taken. Seven are fixed differently
 from the review's smallest fix: 3, 4, 15, 20, 22, 24 and 53 (see §20 and the
 notes).
+
+## Appendix D. The security review of revision 7
+
+### D.1 The eight partly closed fixes, now closed at the harm
+
+| # | The harm | How revision 8 stops it, not only the found case |
+| --- | --- | --- |
+| 41 | A plugin's outside traffic acting as the app, or trading on its name | Every proof and cookie is stripped before delivery, so nothing replayable reaches the plugin. The app's cookies are `__Host-` and `SameSite=Strict`, and its API refuses requests from the outside origin, so same-site requests do nothing. Answers pass only a header allowlist (`Location` only inside the plugin's path), so redirects and downloads cannot borrow the operator's name. A server token makes the address really secret (§7.5) |
+| 42 | Plugin HTML running without the Owner's yes | Any HTML or script anywhere in a plugin counts as `frames/`, `frame <path>` must be inside `frames/`, and `web()` draws only in a sealed frame with no scripts or network (§1.1, §7.4, §2.19). There is no other way for HTML to reach a renderer |
+| 43 | Something other than the server steering agents or capturing another kind's files | Instruction-file names are written only by the server, by any route (§2.2). Folder patterns may not nest either way; filled values are single segments; marked folders obey the same rules; kind and exposure follow the ID, not the path (§2.3, §9). One path rule applies to every path (§1.1a) |
+| 44 | A secret leaving through its own host or a redirect | Secrets go only into their declared header, over valid TLS, never into URLs or bodies, never across redirects, and are scrubbed from answers. `a server you name` is bound when it is confirmed (§7.1) |
+| 45 | Reaching the inside | Every destination, fixed hosts included, is checked after DNS on every hop, for every route that opens a connection (fetch, connect, proxy, CalDAV sync, sandbox egress) (§7.1) |
+| 46 | Data leaving through loads nobody declared | The proxy loads only values a person or an outside sender wrote. A value written by code loads only when its host is in `sends out`, every hop is checked, the proxy serves images only, and plugin code cannot reach it (§13) |
+| 50 | A plugin passing for another | Sheet sentences are the server's own; plugin text is quoted. Names are single-script and checked for confusables against the operator's list, and shown with source and ID. More IDs are reserved, and rules, picks and state are keyed by ID plus source (§1.1, §1.1a) |
+| 51 | Credentials reaching a listener | No input or field can hold a credential: sign-ins and secrets are entered only on the server's sheet, and the names `password`, `token` and `secret` are refused (§7.1, §1.5). So there is nothing to filter out of `on.after` |
+
+### D.2 The seven attackers: what now stops each attempt that got through
+
+| Attacker | Attempts, and the rule that stops each |
+| --- | --- |
+| **B.1 Member adding description-only plugins** | 1a capture files: no nesting either way, §2.3 · 1b filled folder: one-segment values, §2.3 · 1c HTML page: HTML counts as frames, `web()` sealed, §1.1, §2.19 · 1d script link: `url` schemes, §3.1 · 1e claim lines: one claim per line form, §2.10 · 1f instruction as a name: free-string rule, and agents see data in a frame, §1.1a, §7.2 · 1g mark others' folders: marked folders obey the pattern rules, §2.3 |
+| **B.2 Malicious update** | 2a widen: updates wait unless narrower, §1.1 · 2b harvest tokens: no credential inputs, proofs stripped, §7.1, §7.5 · 2c DNS rebinding: checked after DNS on every hop, fixed hosts too, §7.1 · 2d leak a secret: header-only secrets, §7.1 · 2e send with `nothing`: proxy loads code-written values only for declared hosts, §13 · 2f who muted: `s.notify` returns `accepted`, §8.1 · 2g free text: template rules, §7.7 |
+| **B.3 Outsider** | 3a call a webhook: the token, §7.5 · 3b reflect data: no-person handlers touch only own kinds, §8.2 · 3c lock-screen text: placeholders only from stored values, quoted, cut, §7.7 · 3d invitation: no CalDAV scheduling, served-property allowlist, §2.18 · 3e attachment `AGENTS.md`: renamed, §2.2 · 3f XMP entities: no DTDs, §1.1a |
+| **B.4 Agent run with hostile content** | 4a rewrite its rules: rules files are server-only, §10 · 4b act through a reaction: the run's context travels with its events, §8.2 · 4c leave a scoped rule: rules match before or after, moves count twice, §10 · 4d plant instructions: instruction files are server-only, §2.2 · 4e escape the folder: one path rule, no symlinks, §1.1a · 4f follow instructions in data: values reach agents as labelled data, §7.2 |
+| **B.5 Owner against a member** | 5a repoint a sign-in: bound on confirmation, §7.1 · 5b use Lee's sign-in: only its person (E.1 default), §7.3 · 5c lift Lee's ask: R1's floor; space rules cannot allow reaching people, §10 · 5d stop own deletes: authors always remove their own, §2.20 · 5e route open items: sending picks need the passkey, §12 |
+| **B.6 Plugin against plugin** | 6a hidden queue: hidden kinds reachable only by their plugin, §2.15 · 6b read without `reads:`: `s.call` designation rule, §8.3 · 6c write through `reads:`: writes only through `calls:` of built-ins, §8.3 · 6d built-ins on operations-only kinds: `extends:` allows only own-field `set`, `open where` and `code`, §7.2 · 6e take the swipe: `extends:` placements are `menu` only, §7.2 |
+| **B.7 Modified client** | 7a record time: server receipt time, §3.1 · 7b taken ID: new ID, checked as `change`, §2.11 · 7c tick a box: checked as `change`, box put back, §2.10 · 7d forge `edited`: built-ins come from host state, §3.1 |
+
+### D.3 S1 to S44
+
+| # | Finding | Fixed in |
+| --- | --- | --- |
+| S1 | The outside address holds no secret | §7.5 (token, rate and size limits, `s.outside.mint`) |
+| S2 | The `person` proof reaches the plugin | §7.5 (stripped; address-only token) |
+| S3 | No-person events have no read or call rule | §8.2 |
+| S4 | Which updates wait | §1.1 |
+| S5 | Instruction files | §2.2 (strict default; E.2 OPEN in §17) |
+| S6 | Nested patterns, filled values, marked folders | §2.3 |
+| S7 | Moves change kind and exposure | §9 |
+| S8 | Agents write their own rules | §10 |
+| S9 | Reactions carry an agent past its rules | §8.2 |
+| S10 | A timer acts as the item's author | §8.2 (the arming person; rights re-read) |
+| S11 | `reads:` grants writes | §8.3 |
+| S12 | `s.call` designation | §8.3 |
+| S13 | Hidden kinds reachable | §2.15, §8.3 |
+| S14 | HTML without frames | §1.1, §2.19, §7.4 |
+| S15 | `url` schemes and `colour` text | §3.1 |
+| S16 | The proxy | §13 |
+| S17 | Fixed hosts and private ranges | §7.1 |
+| S18 | Where a secret goes; binding a named server | §7.1 |
+| S19 | Who may use a sign-in | §7.3 (strict default; E.1 OPEN in §17) |
+| S20 | Templates carry free text | §7.7 |
+| S21 | `s.notify` reveals mutes | §8.1 |
+| S22 | Refusing removal of one's own items | §2.20, §14 |
+| S23 | Sheet text and identity | §1.1, §1.1a |
+| S24 | "The public web" can send | §1.1a |
+| S25 | Same-site outside origin; plugin headers | §7.5 |
+| S26 | Client-chosen times, bases, built-ins | §2.10, §3.1 |
+| S27 | Adds on existing items | §2.11 |
+| S28 | Two claims on one line form | §2.10 |
+| S29 | `extends:` operations and placements | §7.2 |
+| S30 | `duplicate` copies bindings | §2.20 |
+| S31 | CalDAV unmapped properties, scheduling, credentials | §2.18 |
+| S32 | Rule conditions and folders stepped around | §10 |
+| S33 | "Reaching other people" | §1.1a, §10 |
+| S34 | Themes recolour warnings | §11, §2.19 |
+| S35 | Non-tightening profile keys | §12 |
+| S36 | `any kind with` drifts | §7.2 |
+| S37 | Per-viewer values in shared places | §4.7 |
+| S38 | Cost within the limits | §4.4 |
+| S39 | Names and values as instructions | §7.2 |
+| S40 | Credential inputs | §7.1, §1.5 |
+| S41 | `s.share` pre-fills and needs no gesture | §8.1 |
+| S42 | Leaks once read rights exist | §17, in O4's "Yes" column |
+| S43 | Paths, links and parsers | §1.1a |
+| S44 | Removing another person's record over WebDAV | §9 |
+
+**Totals:** 44 findings, 44 fixed, 0 not taken. Two (S5, S19) are fixed by
+the strict default, with the owner's question kept OPEN.
+
+### D.4 The review's simplification opportunities
+
+All eight are taken, since each only removes:
+
+- one "who acts" rule (§8.2);
+- one derived "reaches other people or the outside" flag (§1.1a);
+- one rule for free strings and one for paths (§1.1a);
+- `secret` and `signed` as one proof, the token (§7.5);
+- `hidden` implies operations-only (§2.15);
+- writes to another plugin's kind through `calls:` of its built-ins
+  (§8.3);
+- no "skipped (muted)" result (§8.1);
+- one `data` rule on every path (§3.1).
