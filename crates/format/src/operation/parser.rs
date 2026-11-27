@@ -55,7 +55,10 @@ pub(crate) fn parse(
                 if name != "item" {
                     lines::field_name(name, line.site)?;
                 }
-                let field = field::declaration(value, site)?;
+                let field = field::declaration(value, site, line)?;
+                if let Some(site) = field.badge {
+                    return Err(site.error("A badge is a row field flag"));
+                }
                 if field.field_type.is_none()
                     || field.heading
                     || field.sidecar.is_some()

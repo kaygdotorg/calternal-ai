@@ -10,7 +10,7 @@ fields:
   title: text, required
   people: people
   archived: yes/no, default no
-  unread: = count(records after state.read through)
+  unread: = count(records after state.read through), badge
 records:
   quote: link(chats records)
   mentions: people
