@@ -209,7 +209,7 @@ impl Sandbox for DirectSandbox {
                 .env("PATH", path)
                 .env("HOME", &self.home)
                 .envs(request.env.iter().map(|(k, v)| (k, v)))
-                .env("CALTERNAL_CLAUDE_LOGIN_DIR", &self.login);
+                .env("CALTERNAL_PROVIDER_LOGIN_DIR", &self.login);
             if self.provider_login {
                 cmd.env("CALTERNAL_PROVIDER_LOGIN", "1");
             }

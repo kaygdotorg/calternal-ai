@@ -13,6 +13,8 @@ pub mod operations;
 mod registry;
 mod registry_v2;
 mod runtime;
+/// Provider adapter policy for machine-local shared tools.
+pub mod shared_tools;
 mod slots;
 /// Private wire protocol for an enrolled space runtime.
 pub mod space_channel;

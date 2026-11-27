@@ -24,7 +24,7 @@ try {
       process.env.CALTERNAL_GATEWAY_URL = gateway.baseUrl;
       await main(binary, true, true);
     } finally { gateway.close(); }
-  } else if (process.argv.length === 2 && process.env.CALTERNAL_CLAUDE_LOGIN_DIR) {
+  } else if (process.argv.length === 2 && (process.env.CALTERNAL_PROVIDER_LOGIN_DIR || process.env.CALTERNAL_CLAUDE_LOGIN_DIR)) {
     await linkSharedLogin();
     await main(binary, true);
   } else {

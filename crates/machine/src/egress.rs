@@ -451,13 +451,13 @@ mod policy_tests {
     #[test]
     fn hostname_policy_is_exact_and_ascii_canonical() {
         assert_eq!(
-            normalize_hostname("API.Anthropic.com").unwrap(),
-            "api.anthropic.com"
+            normalize_hostname("API.Example.com").unwrap(),
+            "api.example.com"
         );
         for host in [
             "127.0.0.1",
-            "api.anthropic.com.",
-            "*.anthropic.com",
+            "api.example.com.",
+            "*.example.com",
             "localhost",
             "service.internal",
             "bad host",

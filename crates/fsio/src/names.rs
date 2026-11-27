@@ -25,6 +25,15 @@ pub fn fold(name: &str) -> String {
     nfc(name).to_lowercase().nfc().collect()
 }
 
+/// Whether a file name is reserved for tool instructions, ignoring case and
+/// Unicode normalization. A caller may pass an ordinary file name or stem plus .md.
+pub fn is_instruction_file(name: &str) -> bool {
+    matches!(
+        fold(name).as_str(),
+        "agents.md" | "claude.md" | "gemini.md" | ".cursorrules"
+    )
+}
+
 /// Turns a title into a safe file stem: NFC, no path separators or
 /// control characters, no leading dots, trimmed, and at most 120
 /// characters. Empty titles become `Untitled`.

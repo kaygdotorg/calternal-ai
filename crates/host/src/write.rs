@@ -510,7 +510,7 @@ fn path_for(
         None => kind.file.clone(),
     };
     let mut stem = names::stem_from_title(&value);
-    if matches!(names::fold(&stem).as_str(), "agents" | "claude" | "gemini") {
+    if names::is_instruction_file(&format!("{stem}.md")) {
         stem.push_str(" 2");
     }
     let candidate = |filename: &str| {

@@ -14,7 +14,7 @@ fn generic_sources_contain_no_chat_or_claude_code_identities() {
             "--exclude=tests.rs",
             "--exclude=*_tests.rs",
             "--",
-            r"\b(chat|chats|calternal-chat|claude[-_ ]code)\b",
+            r"\b(chat|chats|calternal-(chat|reading-list|tasks)|claude|anthropic)\b|CLAUDE_(CODE|LOGIN)|claudeAiOauth",
         ])
         .arg(host.join("src"))
         .arg(machine.join("src"))

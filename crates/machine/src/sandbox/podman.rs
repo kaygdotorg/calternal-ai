@@ -410,17 +410,12 @@ impl PodmanBackend {
                     None
                 };
                 if spec.worker.is_none() && broker.is_none() && egress_directory.is_none() {
-                    let login_env = if harness.is_some() {
-                        "CALTERNAL_PROVIDER_LOGIN_DIR=/run/calternal-provider-login"
-                    } else {
-                        "CALTERNAL_CLAUDE_LOGIN_DIR=/run/calternal-provider-login"
-                    };
                     let mode = if harness.is_some_and(|harness| !harness.legacy_profile) || spec.provider_login { "rw" } else { "ro" };
                     args.extend([
                         "--volume".into(),
                         format!("{}:/run/calternal-provider-login:{mode}", login.display()),
                         "--env".into(),
-                        login_env.into(),
+                        "CALTERNAL_PROVIDER_LOGIN_DIR=/run/calternal-provider-login".into(),
                     ]);
                     if harness.is_some() && !self.guest {
                         args.extend([

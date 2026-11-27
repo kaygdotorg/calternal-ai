@@ -327,15 +327,7 @@ pub struct Limits {
     pub pids: Option<u32>,
 }
 
-/// Fixed provider routes supported by the machine-local inference broker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SharedToolsProvider {
-    /// Anthropic Messages API.
-    Claude,
-    /// OpenAI Responses API.
-    Codex,
-}
+pub use calternal_plugin_host::shared_tools::SharedToolsProvider;
 
 /// Scope of one turn's tool executor. The machine resolves the credential locally.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
