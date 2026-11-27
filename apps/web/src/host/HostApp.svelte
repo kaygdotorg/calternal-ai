@@ -96,8 +96,10 @@
   let customSidebars = $state<{ id: string; name: string }[]>([]);
   let stripOrder = $state<string[]>([]);
   let collectionRows = $state<Record<string, RowData[]>>({});
+  let collectionErrors = $state<Record<string, string>>({});
   let itemsById = $state<Record<string, RowData>>({});
   let recordsByItem = $state<Record<string, RecordData[]>>({});
+  let itemErrors = $state<Record<string, string>>({});
   let runsByItem = $state<Record<string, ItemRunState>>({});
 
   const wins = createWindows((itemId) => {
@@ -174,11 +176,21 @@
     if (!live || itemSubs.has(itemId)) return;
     const unsub = live.subscribeRecords(itemId, {
       onSnapshot: (recs, meta) => {
+        if (itemId in itemErrors) {
+          const nextErr = { ...itemErrors };
+          delete nextErr[itemId];
+          itemErrors = nextErr;
+        }
         recordsByItem = { ...recordsByItem, [itemId]: recs };
         applyLiveMeta(itemId, meta);
         maybeClearCompletedRun(itemId, recs);
       },
       onDelta: (recs, meta) => {
+        if (itemId in itemErrors) {
+          const nextErr = { ...itemErrors };
+          delete nextErr[itemId];
+          itemErrors = nextErr;
+        }
         const cur = recordsByItem[itemId] ?? [];
         let next = cur;
         if (recs.length) {
@@ -201,6 +213,14 @@
         maybeClearCompletedRun(itemId, next);
       },
       onItemChange: (meta) => applyLiveMeta(itemId, meta),
+      onError: (_code, message) => {
+        // Invalidate the affected item view so stale data is never shown as live.
+        const nextRecs = { ...recordsByItem };
+        delete nextRecs[itemId];
+        recordsByItem = nextRecs;
+        clearItemRun(itemId);
+        itemErrors = { ...itemErrors, [itemId]: message || "This item is no longer available." };
+      },
     });
     itemSubs.set(itemId, unsub);
   }
@@ -267,7 +287,6 @@
         text: run.text,
         status: run.status,
         promptLink: run.promptLink,
-        lastAnchorBefore: run.lastAnchorBefore,
       };
       savePersistedRun(session.space, payload);
     } else {
@@ -275,15 +294,12 @@
     }
   }
 
-  /** Replace the streaming bubble once the host's stored reply record arrives on `records`. */
+  /** Replace the streaming bubble once the host's stored reply record carrying `run.id` arrives. */
   function maybeClearCompletedRun(itemId: string, recs: RecordData[]) {
     const run = runsByItem[itemId];
-    if (!run || !session) return;
+    if (!run || !run.id) return;
     if (run.status !== "streaming" && run.status !== "starting") return;
-    const prevIdx = run.lastAnchorBefore ? recs.findIndex((r) => r.anchor === run.lastAnchorBefore) : -1;
-    const afterPrompt = prevIdx >= 0 ? recs.slice(prevIdx + 1) : recs;
-    const hasReplyRecord = afterPrompt.some((r) => r.author !== session!.account);
-    if (hasReplyRecord) {
+    if (recs.some((r) => r.run === run.id)) {
       clearItemRun(itemId);
     }
   }
@@ -291,14 +307,14 @@
   function attachRunLog(itemId: string, initial: ItemRunState) {
     if (!live || !initial.id) return;
     detachRunSub(itemId);
-    const parser = new RunLogParser();
+    const parser = new RunLogParser(initial.offset);
     runsByItem = { ...runsByItem, [itemId]: initial };
     persistRunState(initial);
 
     const unsub = live.subscribeRunLog(
       initial.id,
       {
-        onBatch: (chunks, offset, stopped) => {
+        onBatch: (chunks, _offset, stopped) => {
           const cur = runsByItem[itemId];
           if (!cur || cur.id !== initial.id) return;
           const parsed = parser.feed(chunks);
@@ -313,11 +329,9 @@
             if (cur.status === "stopping") {
               nextStatus = "stopped";
             } else if (turnDone) {
-              // The reply turn completed; if the stored record is already here, replace immediately.
+              // The reply turn completed; replace immediately if the run-stamped record is already here.
               const recs = recordsByItem[itemId] ?? [];
-              const prevIdx = cur.lastAnchorBefore ? recs.findIndex((r) => r.anchor === cur.lastAnchorBefore) : -1;
-              const afterPrompt = prevIdx >= 0 ? recs.slice(prevIdx + 1) : recs;
-              if (session && afterPrompt.some((r) => r.author !== session!.account)) {
+              if (recs.some((r) => r.run === cur.id)) {
                 clearItemRun(itemId);
                 return;
               }
@@ -329,7 +343,7 @@
           const updated: ItemRunState = {
             ...cur,
             text: nextText,
-            offset,
+            offset: parsed.safeOffset,
             turnDone,
             status: nextStatus,
           };
@@ -428,7 +442,6 @@
       status: saved.text ? "streaming" : "starting",
       turnDone: false,
       promptLink: saved.promptLink,
-      lastAnchorBefore: saved.lastAnchorBefore,
     });
   }
 
@@ -436,6 +449,8 @@
     for (const unsub of runSubs.values()) unsub();
     runSubs.clear();
     runsByItem = {};
+    itemErrors = {};
+    collectionErrors = {};
     for (const unsub of itemSubs.values()) unsub();
     itemSubs.clear();
     for (const u of unsubQueries) u();
@@ -465,18 +480,33 @@
       for (const p of decl.plugins) {
         for (const col of Object.values(p.collections)) {
           const cid = col.qualified;
-          const unsub = live.subscribeQuery({ collection: cid }, (rows) => {
-            collectionRows = { ...collectionRows, [cid]: rows };
-            const nextItems = { ...itemsById };
-            for (const r of rows) nextItems[r.id] = r;
-            itemsById = nextItems;
-            if (savedOpen && !restoredOpen && nextItems[savedOpen]) {
-              restoredOpen = true;
-              wins.navigate("item", savedOpen);
-              pushed = true;
-              restorePersistedRunForItem(savedOpen);
-            }
-          });
+          const unsub = live.subscribeQuery(
+            { collection: cid },
+            (rows) => {
+              if (cid in collectionErrors) {
+                const nextErr = { ...collectionErrors };
+                delete nextErr[cid];
+                collectionErrors = nextErr;
+              }
+              collectionRows = { ...collectionRows, [cid]: rows };
+              const nextItems = { ...itemsById };
+              for (const r of rows) nextItems[r.id] = r;
+              itemsById = nextItems;
+              if (savedOpen && !restoredOpen && nextItems[savedOpen]) {
+                restoredOpen = true;
+                wins.navigate("item", savedOpen);
+                pushed = true;
+                restorePersistedRunForItem(savedOpen);
+              }
+            },
+            (_code, message) => {
+              // Invalidate stale collection rows when the live query reports an error.
+              const nextRows = { ...collectionRows };
+              delete nextRows[cid];
+              collectionRows = nextRows;
+              collectionErrors = { ...collectionErrors, [cid]: message || "Could not load this collection." };
+            },
+          );
           unsubQueries.push(unsub);
         }
       }
@@ -974,7 +1004,9 @@
             {#if w.kind === "collection"}
               {@const col = findCollection(w.ref)}
               {@const kind = col ? findKind(col.from) : null}
-              {#if col}
+              {#if collectionErrors[w.ref]}
+                <p class="err" role="alert">{collectionErrors[w.ref]}</p>
+              {:else if col}
                 <HostCollection
                   collection={col}
                   {kind}
@@ -991,7 +1023,9 @@
               {@const plugin = kind ? plugins.find((p) => p.id === kind.plugin) ?? null : null}
               {@const comp = plugin && kind ? resolveComposerSlot(plugin, kind) : null}
               {@const picker = plugin ? resolvePickerSlot(plugin, comp?.slot.name) : null}
-              {#if row && kind}
+              {#if itemErrors[w.ref]}
+                <p class="err" role="alert">{itemErrors[w.ref]}</p>
+              {:else if row && kind}
                 <HostRecords
                   {row}
                   {kind}

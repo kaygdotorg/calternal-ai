@@ -190,6 +190,8 @@ export interface RecordData {
   fields: Record<string, unknown>;
   edited?: boolean;
   redacted?: boolean;
+  /** Run UUID stamped on records written by an agent run. */
+  run?: string;
   /** Optional in-progress streaming indicator (from run logs). */
   streaming?: boolean;
 }

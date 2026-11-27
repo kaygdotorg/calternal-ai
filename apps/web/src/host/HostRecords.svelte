@@ -87,7 +87,7 @@
     }
   });
 
-  const own = (r: RecordData) => r.author === viewerId;
+  const own = (r: RecordData) => !r.run && r.author === viewerId;
   const displayName = (r: RecordData) => r.author_name || r.author;
 
   type Line =
