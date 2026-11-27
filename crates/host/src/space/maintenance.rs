@@ -7,7 +7,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Maximum live or recovered retry receipts retained by one space.
+/// Maximum live retry receipts retained by one space.
 const SPACE_RECEIPTS: i64 = 16_384;
 const MAINTENANCE_BATCH: usize = 64;
 
@@ -30,14 +30,6 @@ impl Space {
                 params![cutoff, MAINTENANCE_BATCH as i64],
             )
             .map_err(internal)?;
-        let recovered = tx
-            .execute(
-                "DELETE FROM recovered_appends WHERE rowid IN
-              (SELECT rowid FROM recovered_appends WHERE at<?1 ORDER BY at LIMIT ?2)",
-                params![cutoff, MAINTENANCE_BATCH as i64],
-            )
-            .map_err(internal)?;
-
         let entries = {
             let mut stmt = tx
                 .prepare_cached("SELECT item FROM trash WHERE until<=?1 ORDER BY until LIMIT ?2")
@@ -68,8 +60,7 @@ impl Space {
             folder.sync().map_err(internal)?;
         }
         tx.commit().map_err(internal)?;
-        self.next_trash_check = if [entries.len(), receipts, recovered].contains(&MAINTENANCE_BATCH)
-        {
+        self.next_trash_check = if [entries.len(), receipts].contains(&MAINTENANCE_BATCH) {
             now
         } else {
             now + 60_000
@@ -178,7 +169,7 @@ impl Receipt {
 }
 
 /// Check the constant-time ledger counter before storing another retry receipt.
-pub(crate) fn receipt_capacity(db: &Connection) -> Result<bool> {
+fn receipt_capacity(db: &Connection) -> Result<bool> {
     db.query_row(
         "SELECT total < ?1 FROM receipt_usage WHERE id=1",
         [SPACE_RECEIPTS],

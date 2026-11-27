@@ -214,12 +214,6 @@ impl Host {
             [cutoff],
         )
         .map_err(internal)?;
-        tx.execute(
-            "DELETE FROM recovered_appends WHERE rowid IN
-                (SELECT rowid FROM recovered_appends WHERE at<?1 ORDER BY at LIMIT 64)",
-            [cutoff],
-        )
-        .map_err(internal)?;
         crate::reactions::expire_pending(&tx, cutoff)?;
         let expired = {
             let mut query = tx

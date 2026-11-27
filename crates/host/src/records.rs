@@ -15,7 +15,7 @@ mod seal;
 
 #[cfg(target_os = "linux")]
 pub(crate) use append::append;
-pub(crate) use append::{recover_pending, recover_tail, recovered, replay_recovered};
+pub(crate) use append::recover_pending;
 
 const CROCKFORD: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 

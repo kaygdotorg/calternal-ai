@@ -1,4 +1,4 @@
-//! Two-flush single append, crash adoption and retry receipt promotion.
+//! Two-flush single append and recovery from durable preparation.
 use super::{Input, Record, Signature, encode, link, seal};
 use crate::internal;
 use crate::space::{Head, Receipt, Space};
@@ -6,7 +6,6 @@ use calternal_types::{Actor, Error, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use uuid::Uuid;
 
 /// Fast path adapted from the host spike. The checked directory descriptor
 /// pins the read handle and procfs reopens the same inode with write access.
@@ -191,6 +190,18 @@ pub(crate) fn recover_pending(space: &mut Space) -> Result<()> {
     if prior.length != pending.record.offset || prior.version + 1 != pending.next.version {
         return Err(internal("Pending append has a different ledger head"));
     }
+    if pending.record.length != expected.len() as u64
+        || pending.record.hash != space.hash(&expected)
+        || !seal::verify(space, &prior, &expected)?.is_some_and(|claim| {
+            claim.actor == pending.actor
+                && claim.at == pending.record.at
+                && claim.anchor == pending.record.anchor
+        })
+    {
+        return Err(Error::conflict(
+            "The prepared append does not match its authenticated record.",
+        ));
+    }
     let file = space.open_regular(&prior.path).map_err(internal)?;
     use std::os::unix::fs::MetadataExt;
     let metadata = file.metadata().map_err(internal)?;
@@ -304,158 +315,6 @@ pub(super) fn make_append(
         ));
     }
     Ok((next, record, bytes))
-}
-
-pub(crate) fn recover_tail(
-    space: &mut Space,
-    head: &mut Head,
-    bytes: &[u8],
-    file: &std::fs::File,
-    signature: Signature,
-) -> Result<()> {
-    let tail = &bytes[head.length as usize..];
-    let Some(claim) = seal::verify(space, head, tail)? else {
-        return Ok(());
-    };
-    let rows = space.records(head.id)?;
-    if rows.iter().any(|row| {
-        !row.bytes(bytes)
-            .is_some_and(|data| space.hash(data) == row.hash)
-    }) {
-        return Ok(());
-    }
-    let fresh = claim.at >= calternal_types::now_ms() - space.retention_ms;
-    if fresh && !crate::space::receipt_capacity(&space.db)? {
-        return Ok(());
-    }
-    let record = Record {
-        anchor: claim.anchor,
-        offset: head.length,
-        length: tail.len() as u64,
-        author: claim.actor.account.to_string(),
-        at: claim.at,
-        ordinal: head.version + 1,
-        hash: space.hash(tail),
-    };
-    let mut next = head.clone();
-    next.version = record.ordinal;
-    next.edited = head.edited.max(record.at);
-    next.length += record.length;
-    let attribution = serde_json::to_string(&claim.actor).map_err(internal)?;
-    // A process crash can leave complete, unflushed bytes in the page
-    // cache. Re-establish file durability before committing the recovered receipt.
-    if Signature::from(&file.metadata().map_err(internal)?) != signature {
-        return Err(Error::conflict(
-            "The recovery file changed during verification.",
-        ));
-    }
-    file.sync_data().map_err(internal)?;
-    let output = append_result(&next, &record);
-    let tx = space.db.transaction().map_err(internal)?;
-    stamp_append(
-        &tx,
-        space.retention_ms,
-        &next,
-        &record,
-        &claim.actor,
-        None,
-        &output,
-    )?;
-    if fresh {
-        tx.execute(
-            "INSERT INTO recovered_appends VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
-            params![
-                &claim.tag[..],
-                head.id.to_string(),
-                attribution,
-                record.ordinal as i64,
-                record.offset as i64,
-                record.anchor,
-                record.at,
-                &claim.effect[..],
-                output.to_string(),
-                head.kind,
-            ],
-        )
-        .map_err(internal)?;
-    }
-    tx.commit().map_err(internal)?;
-    *head = next;
-    Ok(())
-}
-
-pub(crate) struct Recovered {
-    pub(crate) item: Uuid,
-    kind: String,
-    tag: Vec<u8>,
-    at: i64,
-    effect: Vec<u8>,
-    result: String,
-}
-
-pub(crate) fn recovered(
-    space: &Space,
-    actor: &Actor,
-    receipt: &Receipt,
-) -> Result<Option<Recovered>> {
-    let attribution = serde_json::to_string(actor).map_err(internal)?;
-    let cutoff = calternal_types::now_ms() - space.retention_ms;
-    let mut stmt = space
-        .db
-        .prepare_cached(
-            "SELECT tag,item,ordinal,offset,anchor,at,effect,result,kind FROM recovered_appends
-         WHERE actor=?1 AND at>=?2",
-        )
-        .map_err(internal)?;
-    let mut rows = stmt.query(params![attribution, cutoff]).map_err(internal)?;
-    while let Some(row) = rows.next().map_err(internal)? {
-        let item =
-            Uuid::parse_str(&row.get::<_, String>(1).map_err(internal)?).map_err(internal)?;
-        let ordinal = row.get::<_, i64>(2).map_err(internal)? as u64;
-        let offset = row.get::<_, i64>(3).map_err(internal)? as u64;
-        let anchor: String = row.get(4).map_err(internal)?;
-        if seal::key_anchor(space, item, ordinal, offset, actor, &receipt.proof.gesture)? == anchor
-        {
-            return Ok(Some(Recovered {
-                item,
-                kind: row.get(8).map_err(internal)?,
-                tag: row.get(0).map_err(internal)?,
-                at: row.get(5).map_err(internal)?,
-                effect: row.get(6).map_err(internal)?,
-                result: row.get(7).map_err(internal)?,
-            }));
-        }
-    }
-    Ok(None)
-}
-
-pub(crate) fn replay_recovered(
-    space: &mut Space,
-    actor: &Actor,
-    input: Input,
-    receipt: &Receipt,
-    recovered: Recovered,
-) -> Result<Value> {
-    let kind = space.kind(&recovered.kind)?;
-    let (_, bytes) = encode(space, &kind, actor, input, None, (0, 0), recovered.at)?;
-    let body = bytes
-        .iter()
-        .position(|byte| *byte == b'\n')
-        .expect("record header")
-        + 1;
-    if space.hash(&bytes[body..]) != recovered.effect.as_slice() {
-        return Err(Error::request_reused());
-    }
-    let result = serde_json::from_str(&recovered.result).map_err(internal)?;
-    let tx = space.db.transaction().map_err(internal)?;
-    tx.execute(
-        "DELETE FROM recovered_appends WHERE tag=?1",
-        [recovered.tag],
-    )
-    .map_err(internal)?;
-    receipt.store(&tx, &result, recovered.at)?;
-    tx.commit().map_err(internal)?;
-    Ok(result)
 }
 
 pub(super) fn append_result(head: &Head, record: &Record) -> Value {

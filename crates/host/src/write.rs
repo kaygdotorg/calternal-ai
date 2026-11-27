@@ -89,16 +89,6 @@ pub(crate) fn write(
     if let Some(value) = receipt.as_ref().and_then(|entry| entry.replay.clone()) {
         return Ok(value);
     }
-    if let Some(receipt) = &receipt
-        && let Some(recovered) = records::recovered(space, actor, receipt)?
-    {
-        if let [Change::Append { item, record }] = input.changes.as_slice()
-            && *item == recovered.item
-        {
-            return records::replay_recovered(space, actor, record.clone(), receipt, recovered);
-        }
-        return Err(Error::request_reused());
-    }
     let now = calternal_types::now_ms();
     #[cfg(target_os = "linux")]
     if !input.preview

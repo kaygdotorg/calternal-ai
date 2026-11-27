@@ -16,7 +16,7 @@ use std::sync::OnceLock;
 use uuid::Uuid;
 
 mod maintenance;
-pub(crate) use maintenance::{Receipt, receipt_capacity};
+pub(crate) use maintenance::Receipt;
 
 pub(crate) const TRASH_MS: i64 = 30 * 86_400_000;
 /// Maximum indexed items and retained Trash entries in one space.
@@ -60,26 +60,15 @@ CREATE TABLE IF NOT EXISTS receipts (
   result TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (actor, gesture)
 );
 CREATE INDEX IF NOT EXISTS receipts_age ON receipts(at);
-CREATE TABLE IF NOT EXISTS recovered_appends (
-  tag BLOB PRIMARY KEY, item TEXT NOT NULL, actor TEXT NOT NULL, ordinal INTEGER NOT NULL,
-  offset INTEGER NOT NULL, anchor TEXT NOT NULL, at INTEGER NOT NULL,
-  effect BLOB NOT NULL, result TEXT NOT NULL, kind TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS recovered_lookup ON recovered_appends(actor,at);
-CREATE INDEX IF NOT EXISTS recovered_expiry ON recovered_appends(at);
 CREATE TABLE IF NOT EXISTS receipt_usage (
   id INTEGER PRIMARY KEY CHECK(id=1), total INTEGER NOT NULL
 );
 INSERT INTO receipt_usage SELECT 1,
-  (SELECT count(*) FROM receipts) + (SELECT count(*) FROM recovered_appends)
+  (SELECT count(*) FROM receipts)
   WHERE NOT EXISTS (SELECT 1 FROM receipt_usage WHERE id=1);
 CREATE TRIGGER IF NOT EXISTS receipt_added AFTER INSERT ON receipts
   BEGIN UPDATE receipt_usage SET total=total+1 WHERE id=1; END;
 CREATE TRIGGER IF NOT EXISTS receipt_removed AFTER DELETE ON receipts
-  BEGIN UPDATE receipt_usage SET total=total-1 WHERE id=1; END;
-CREATE TRIGGER IF NOT EXISTS recovered_added AFTER INSERT ON recovered_appends
-  BEGIN UPDATE receipt_usage SET total=total+1 WHERE id=1; END;
-CREATE TRIGGER IF NOT EXISTS recovered_removed AFTER DELETE ON recovered_appends
   BEGIN UPDATE receipt_usage SET total=total-1 WHERE id=1; END;
 CREATE TABLE IF NOT EXISTS pending_append (
   id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL, bytes BLOB NOT NULL
@@ -88,6 +77,25 @@ CREATE TABLE IF NOT EXISTS publication (
   id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL
 );
 ";
+
+// Retire unpromoted seal receipts on the first open of an earlier ledger.
+fn retire_seal_receipts(db: &mut Connection) -> Result<()> {
+    let existing = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='recovered_appends')",
+        [],
+        |row| row.get::<_, bool>(0),
+    ).map_err(internal)?;
+    if existing {
+        let tx = db.transaction().map_err(internal)?;
+        tx.execute_batch(
+            "DROP TABLE recovered_appends;
+             UPDATE receipt_usage SET total=(SELECT count(*) FROM receipts) WHERE id=1;",
+        )
+        .map_err(internal)?;
+        tx.commit().map_err(internal)?;
+    }
+    Ok(())
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct Head {
@@ -163,8 +171,9 @@ impl Space {
         let lock = DataLock::acquire_at(&private_handle, &private).map_err(internal)?;
         let ledger = private.join("ledger.sqlite3");
         calternal_fsio::private::file(&ledger).map_err(internal)?;
-        let db = Connection::open(ledger).map_err(internal)?;
+        let mut db = Connection::open(ledger).map_err(internal)?;
         db.execute_batch(SCHEMA).map_err(internal)?;
+        retire_seal_receipts(&mut db)?;
         db.execute_batch(VIEWER_STATE_SCHEMA).map_err(internal)?;
         let key: Option<Vec<u8>> = db
             .query_row("SELECT key FROM key_material WHERE id=1", [], |row| {
@@ -395,10 +404,9 @@ impl Space {
                 .map_err(internal)?
         };
         for encoded in heads {
-            let mut head: Head = serde_json::from_str(&encoded).map_err(internal)?;
+            let head: Head = serde_json::from_str(&encoded).map_err(internal)?;
             let file = self.open_regular(&head.path).map_err(internal)?;
-            let signature = crate::records::Signature::from(&file.metadata().map_err(internal)?);
-            let bytes = bounded_read(file.try_clone().map_err(internal)?, ITEM_BYTES)?;
+            let bytes = bounded_read(file, ITEM_BYTES)?;
             let prefix = bytes
                 .get(..head.prefix as usize)
                 .ok_or_else(|| Error::conflict("Item file was shortened on disk."))?;
@@ -406,9 +414,6 @@ impl Space {
                 return Err(Error::conflict(
                     "Item frontmatter or body was altered on disk.",
                 ));
-            }
-            if bytes.len() as u64 > head.length {
-                crate::records::recover_tail(self, &mut head, &bytes, &file, signature)?;
             }
             let (fields, _) =
                 declarations::parse_item(std::str::from_utf8(prefix).map_err(internal)?)?;

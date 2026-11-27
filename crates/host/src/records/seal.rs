@@ -14,8 +14,6 @@ pub(super) struct Claim {
     pub(super) actor: Actor,
     pub(super) at: i64,
     pub(super) anchor: String,
-    pub(super) tag: [u8; TAG_BYTES],
-    pub(super) effect: [u8; 32],
 }
 
 pub(super) fn key_anchor(
@@ -136,13 +134,7 @@ pub(super) fn verify(space: &Space, head: &Head, tail: &[u8]) -> Result<Option<C
         claimed[..TAG_BYTES].copy_from_slice(&tag);
         computed[..TAG_BYTES].copy_from_slice(&expected.as_bytes()[..TAG_BYTES]);
         if blake3::Hash::from(claimed) == blake3::Hash::from(computed) {
-            return Ok(Some(Claim {
-                actor,
-                at,
-                anchor,
-                tag,
-                effect: space.hash(&tail[newline + 1..]),
-            }));
+            return Ok(Some(Claim { actor, at, anchor }));
         }
     }
     Ok(None)
