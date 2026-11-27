@@ -1,0 +1,34 @@
+#!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+import { spawn } from "node:child_process";
+
+const shim = "/opt/calternal-plugin/bin";
+const search = (process.env.PATH || "").split(path.delimiter).filter(entry => entry !== shim);
+let executable = null;
+for (const entry of search) {
+  const candidate = path.join(entry, "claude");
+  try {
+    fs.accessSync(candidate, fs.constants.X_OK);
+    executable = candidate;
+    break;
+  } catch {}
+}
+if (!executable) process.exit(127);
+
+const env = {
+  ...process.env,
+  HTTP_PROXY: "http://127.0.0.1:17853",
+  HTTPS_PROXY: "http://127.0.0.1:17853",
+  ALL_PROXY: "http://127.0.0.1:17853",
+  http_proxy: "http://127.0.0.1:17853",
+  https_proxy: "http://127.0.0.1:17853",
+  all_proxy: "http://127.0.0.1:17853",
+};
+delete env.NO_PROXY;
+delete env.no_proxy;
+const child = spawn(executable, process.argv.slice(2), { env, stdio: "inherit" });
+process.on("SIGTERM", () => child.kill("SIGTERM"));
+process.on("SIGINT", () => child.kill("SIGINT"));
+child.once("error", () => process.exit(127));
+child.once("exit", (code, signal) => process.exit(code ?? (signal ? 128 : 1)));

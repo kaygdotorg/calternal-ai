@@ -54,7 +54,11 @@ pub(super) fn seal(
     let mut claim = [0; TAG_BYTES + 2];
     claim[..2].copy_from_slice(&within_minute);
     claim[2..].copy_from_slice(&tag.as_bytes()[..TAG_BYTES]);
-    let suffix = format!("{PREFIX}{}{SUFFIX}", URL_SAFE_NO_PAD.encode(claim));
+    let run = match actor.via {
+        Some(Via::Run { id, .. }) => format!(".{id}"),
+        _ => String::new(),
+    };
+    let suffix = format!("{PREFIX}{}{run}{SUFFIX}", URL_SAFE_NO_PAD.encode(claim));
     let newline = payload
         .iter()
         .position(|b| *b == b'\n')
@@ -69,6 +73,10 @@ pub(super) fn verify(space: &Space, head: &Head, tail: &[u8]) -> Result<Option<C
         let line = std::str::from_utf8(&tail[..newline]).ok()?;
         let (header, encoded) = line.rsplit_once(PREFIX)?;
         let encoded = encoded.strip_suffix(SUFFIX)?;
+        let (encoded, run) = match encoded.split_once('.') {
+            Some((tag, id)) => (tag, Some(uuid::Uuid::parse_str(id).ok()?)),
+            None => (encoded, None),
+        };
         if encoded.len() != CLAIM_CHARS {
             return None;
         }
@@ -101,9 +109,10 @@ pub(super) fn verify(space: &Space, head: &Head, tail: &[u8]) -> Result<Option<C
             minute + within_minute,
             owner,
             plugin,
+            run,
         ))
     };
-    let Some((header, newline, tag, anchor, at, owner, plugin)) = decoded() else {
+    let Some((header, newline, tag, anchor, at, owner, plugin, run)) = decoded() else {
         return Ok(None);
     };
     let mut payload = blake3::Hasher::new();
@@ -112,7 +121,14 @@ pub(super) fn verify(space: &Space, head: &Head, tail: &[u8]) -> Result<Option<C
     let payload = payload.finalize();
     // Slice 1 admits only the personal-space owner. The owning plugin is
     // the only delegated path that can append to this kind.
-    for actor in [Actor::account(owner), Actor::plugin(owner, plugin)] {
+    let candidates = match run {
+        Some(id) => [Some(Actor::run(owner, plugin, id)), None],
+        None => [
+            Some(Actor::account(owner)),
+            Some(Actor::plugin(owner, plugin)),
+        ],
+    };
+    for actor in candidates.into_iter().flatten() {
         let expected = mac(space, head, &actor, at, payload)?;
         // BLAKE3 Hash equality is constant time. Pad both truncated tags.
         let mut claimed = [0u8; 32];
@@ -150,6 +166,12 @@ fn mac(
         None => tag.update(&[0]),
         Some(Via::Plugin { plugin }) => {
             tag.update(&[1]);
+            tag.update(&(plugin.len() as u64).to_le_bytes());
+            tag.update(plugin.as_bytes())
+        }
+        Some(Via::Run { plugin, id }) => {
+            tag.update(&[2]);
+            tag.update(id.as_bytes());
             tag.update(&(plugin.len() as u64).to_le_bytes());
             tag.update(plugin.as_bytes())
         }

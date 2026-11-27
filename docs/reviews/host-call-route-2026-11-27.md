@@ -108,6 +108,33 @@ the installed filler's one declared coded operation. The worker sees
 the qualified operation in `s.event.selected_operation`. Its `s.call`
 is admitted only for that operation under the active selection. The
 selection does not carry through reactions or further nested calls.
-An operation name in plugin input supplies no selection. The run
-adapter and durable reaction delivery across restart remain separate
-integration work.
+An operation name in plugin input supplies no selection. A selected harness starts a session-scoped run for the original Chat item's
+UUID. Chat returns its append receipt with an additional `run` result
+containing the ID and status. A replay preserves both the append and run IDs. A gesture that reused its key
+with a different harness fails with `conflict`.
+The restart sweep terminates old process families. Start receipts survive and
+report those runs as `stopped` on replay. Live output is held in memory.
+
+## Runs
+
+The installed plugin's `programs:` binding supplies the executable and its
+`sends out:` list supplies the exact CONNECT allowlist. Both run inside the
+operator-configured Podman boundary with a disposable provider profile.
+
+- `s.run.send {id,input}` sends from the starting person or their starting
+  harness invocation. `s.run.stop {id}` requires current read access to the
+  target. Both methods are available on the authenticated call route.
+- Only the item of the originating coded operation establishes session scope.
+  The target list must equal that one item. The run context follows nested
+  callbacks and checks explicit targets before dispatch. It admits reads and
+  state for the session, session-bound coded calls, and single record appends.
+  A cross-session target receives `not-allowed`.
+- A harness can emit a newline-delimited
+  `{"host_call":{"id":1,"call":"s.read","input":{"item":"…"}}}` frame. The
+  host checks its bound identity and scope and returns a `host_reply` input
+  with the same ID, carrying `result` or an `error`. IDs rise within each
+  process; the host derives retry keys itself.
+- A successful adapter completion sends the buffered reply through
+  `calternal-chat.chats.send` under the run context. The host stamps the
+  run UUID into the authenticated record header and returns it as `run`
+  on that record.

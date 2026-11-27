@@ -40,6 +40,9 @@ owners can change `declarations::parse_plugin` and
 `format::InstallOptions::installed` to accept a slice of borrowed definitions
 or a borrowed keyed catalog. New SQLite ledgers use an integer primary key
 for order. Existing add-only ledgers keep their recorded SQLite row order.
+The slice 6 merge keeps its ordered reload query and program permission
+checks, and uses the lane's stricter rowid alias and borrowed reload catalog.
+Run seals bind the slice 6 run ID and the exact recorded milliseconds.
 
 S1 pins the operator-selected base for opening a space and walks both space
 roots through no-follow directory descriptors. The host configures an

@@ -248,6 +248,28 @@ fn recovered_append_keeps_authenticated_milliseconds() {
 }
 
 #[test]
+fn recovered_run_append_authenticates_run_id_and_milliseconds() {
+    let mut f = Fixture::new();
+    let head = f.add("Run recovery");
+    let id = Uuid::new_v4();
+    f.actor = Actor::run(f.actor.account, "calternal-chat", id);
+    let at = calternal_types::now_ms().div_euclid(60_000) * 60_000 + 23_456;
+    let (_, tail) = f.tail_at(&head, at);
+    let claim = seal::verify(&f.space, &head, &tail).unwrap().unwrap();
+    assert_eq!((claim.actor, claim.at), (f.actor.clone(), at));
+    let text = std::str::from_utf8(&tail).unwrap();
+    let altered = text.replacen(&id.to_string(), &Uuid::new_v4().to_string(), 1);
+    assert!(
+        seal::verify(&f.space, &head, altered.as_bytes())
+            .unwrap()
+            .is_none()
+    );
+    f.append_uncommitted(&head, &tail);
+    let f = f.reopen();
+    assert_eq!(f.space.records(head.id).unwrap()[0].at, at);
+}
+
+#[test]
 fn durable_append_preparation_repairs_partial_bytes_and_preserves_outside_edits() {
     use super::append::Pending;
 

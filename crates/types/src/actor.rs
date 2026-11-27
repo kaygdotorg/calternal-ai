@@ -26,6 +26,13 @@ pub enum Via {
         /// The thread the agent runs in.
         thread: Uuid,
     },
+    /// A session-scoped harness run acting through an installed plugin.
+    Run {
+        /// The calling plugin's manifest ID.
+        plugin: String,
+        /// The host-issued run ID.
+        id: Uuid,
+    },
     /// A plugin invocation acting for the account.
     Plugin {
         /// The plugin's manifest ID.
@@ -45,6 +52,17 @@ impl Actor {
             via: Some(Via::Agent { thread }),
         }
     }
+    /// An installed plugin acting inside a verified harness run.
+    pub fn run(account: AccountId, plugin: impl Into<String>, id: Uuid) -> Self {
+        Self {
+            account,
+            via: Some(Via::Run {
+                plugin: plugin.into(),
+                id,
+            }),
+        }
+    }
+
     /// A plugin acting for `account`. Cost: one string allocation.
     pub fn plugin(account: AccountId, plugin: impl Into<String>) -> Self {
         Self {
@@ -76,6 +94,9 @@ impl fmt::Display for Actor {
                     self.account,
                     thread.hyphenated()
                 )
+            }
+            Some(Via::Run { plugin, id }) => {
+                write!(f, "plugin {plugin} in run {id} for {}", self.account)
             }
             Some(Via::Plugin { plugin }) => write!(f, "plugin {plugin} for {}", self.account),
         }

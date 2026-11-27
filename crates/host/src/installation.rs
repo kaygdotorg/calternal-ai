@@ -45,6 +45,7 @@ impl Space {
             }
             let plugin = declarations::parse_plugin(&files, true, Some(&name), &plugins)?;
             check_save_context(&plugin)?;
+            self.set_program_permissions(&plugin, files.keys())?;
             if let Some(registration) = registration {
                 let registration = serde_json::from_str(&registration).map_err(internal)?;
                 let source = files
@@ -65,6 +66,30 @@ impl Space {
             .map(|plugin| (plugin.manifest.id.clone(), plugin))
             .collect();
         self.code = code;
+        Ok(())
+    }
+
+    fn set_program_permissions<'a>(
+        &self,
+        plugin: &declarations::Plugin,
+        paths: impl Iterator<Item = &'a String>,
+    ) -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        for path in paths.filter(|path| {
+            path.starts_with("bin/")
+                || plugin
+                    .manifest
+                    .programs
+                    .values()
+                    .any(|program| !program.image && program.path.as_ref() == Some(path))
+        }) {
+            let file = self
+                .open_regular(&format!(".calternal/plugins/{}/{path}", plugin.manifest.id))
+                .map_err(internal)?;
+            let mut permissions = file.metadata().map_err(internal)?.permissions();
+            permissions.set_mode(0o555);
+            file.set_permissions(permissions).map_err(internal)?;
+        }
         Ok(())
     }
 
@@ -121,8 +146,8 @@ impl Space {
         self.recovery_needed = true;
         let digest = self.bundle_digest(&files);
         let placements = files
-            .into_iter()
-            .map(|(path, data)| self.stage(format!("{base}/{path}"), None, Some(&data)))
+            .iter()
+            .map(|(path, data)| self.stage(format!("{base}/{path}"), None, Some(data)))
             .collect::<Result<Vec<_>>>()?;
         let tx = self.db.transaction().map_err(internal)?;
         tx.execute(
@@ -147,6 +172,7 @@ impl Space {
         .map_err(internal)?;
         tx.commit().map_err(internal)?;
         self.finish(&placements)?;
+        self.set_program_permissions(&declaration, files.keys())?;
         if let Some(code) = code {
             self.code.insert(declaration.manifest.id.clone(), code);
         }
@@ -201,10 +227,13 @@ fn visit(
                 "Plugin has too many entries or contains an invalid name.",
             ));
         }
+        if parent.is_empty() && matches!(name.as_str(), "test" | "README.md") {
+            continue;
+        }
         if parent.is_empty()
             && matches!(
                 name.as_str(),
-                "kinds" | "collections" | "sidebars" | "templates"
+                "kinds" | "collections" | "sidebars" | "templates" | "programs" | "bin"
             )
         {
             visit(
@@ -216,8 +245,13 @@ fn visit(
         } else {
             let definition = if parent.is_empty() {
                 matches!(name.as_str(), "plugin.md" | "operations.ts")
-            } else {
+            } else if matches!(
+                parent,
+                "kinds/" | "collections/" | "sidebars/" | "templates/"
+            ) {
                 name.ends_with(".md")
+            } else {
+                matches!(parent, "programs/" | "bin/")
             };
             if !definition {
                 return Err(Error::forbidden(

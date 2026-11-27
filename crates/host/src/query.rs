@@ -188,6 +188,12 @@ pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
     let mut result = render_row(&kind, row, &input, &result.rows[0].computed, &today, &now)?;
     result["body"] = json!(body);
     result["records"] = json!(views);
+    if matches!(actor.via, Some(calternal_types::Via::Run { .. })) {
+        let row = result.as_object_mut().expect("rendered read row");
+        for field in ["state", "when", "computed"] {
+            row.remove(field);
+        }
+    }
     Ok(result)
 }
 

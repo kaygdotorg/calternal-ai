@@ -105,33 +105,31 @@ pub(crate) fn parse_plugin(
     )
     .map_err(invalid)?;
     let manifest = &plugin.manifest;
-    if !manifest.destinations.is_empty()
-        || !manifest.programs.is_empty()
-        || manifest.directives.iter().any(|key| {
-            matches!(
-                key.key.as_str(),
-                "extends"
-                    | "outside"
-                    | "notifications"
-                    | "sign-ins"
-                    | "secrets"
-                    | "listens"
-                    | "refuses"
-            )
-        })
-    {
+    // Program and destination declarations feed the scope-checked run service;
+    // they do not grant a container ambient network or filesystem access.
+    if manifest.directives.iter().any(|key| {
+        matches!(
+            key.key.as_str(),
+            "extends"
+                | "outside"
+                | "notifications"
+                | "sign-ins"
+                | "secrets"
+                | "listens"
+                | "refuses"
+        )
+    }) {
         return Err(Error::forbidden(
             "This host slice cannot grant the plugin's declarations.",
         ));
     }
     for kind in plugin.kinds.values() {
-        if kind.hidden
-            || !kind.rights.read.is_empty()
+        if !kind.rights.read.is_empty()
             || kind.plus_marked_folders
             || kind.unique.is_some()
-            || kind.keep.is_some()
+            || (!kind.hidden && kind.keep.is_some())
             || matches!(kind.item, format::ItemForm::Binary { .. })
-            || kind.folder.as_ref().is_none_or(|name| !plain_folder(name))
+            || (!kind.hidden && kind.folder.as_ref().is_none_or(|name| !plain_folder(name)))
             || matches!(&kind.item, format::ItemForm::Folder(main) if reserved_name(main) || main.contains('/'))
             || (kind.file.contains(['{', '}'])
                 && kind

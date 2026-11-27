@@ -270,7 +270,19 @@ pub(crate) fn escape_body(body: &str) -> String {
 
 fn view(data: &[u8], anchor: &str, author: &str, at: i64, kind: &Kind) -> Result<Value> {
     let (fields, body) = content(data, kind)?;
-    Ok(json!({"anchor":anchor, "author":author, "at":at, "fields":fields, "body":body}))
+    let mut record =
+        json!({"anchor":anchor, "author":author, "at":at, "fields":fields, "body":body});
+    if let Some(run) = data
+        .split(|byte| *byte == b'\n')
+        .next()
+        .and_then(|header| std::str::from_utf8(header).ok())
+        .and_then(|header| header.strip_suffix(seal::SUFFIX)?.rsplit_once(seal::PREFIX))
+        .and_then(|(_, seal)| seal.split_once('.'))
+        .and_then(|(_, id)| Uuid::parse_str(id).ok())
+    {
+        record["run"] = json!(run);
+    }
+    Ok(record)
 }
 
 fn content(data: &[u8], kind: &Kind) -> Result<(Fields, String)> {
@@ -352,7 +364,12 @@ pub(crate) fn encode(
             "[year]-[month]-[day] [hour]:[minute]"
         ))
         .map_err(internal)?;
-    let mut data = format!("**{display_name}** · {when} ^{anchor}\n");
+    let stamp = existing
+        .and_then(|(_, bytes)| bytes.split(|byte| *byte == b'\n').next())
+        .and_then(|header| std::str::from_utf8(header).ok())
+        .and_then(|header| header.rsplit_once(seal::PREFIX))
+        .map_or_else(String::new, |(_, stamp)| format!("{}{stamp}", seal::PREFIX));
+    let mut data = format!("**{display_name}** · {when} ^{anchor}{stamp}\n");
     for (name, value) in fields {
         data.push_str(&format!("{name}: {value}\n"));
     }

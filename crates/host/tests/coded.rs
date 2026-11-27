@@ -11,6 +11,7 @@ use std::sync::Arc;
 struct Fixture {
     _root: tempfile::TempDir,
     host: Arc<Host>,
+    auth: Auth,
     owner: AccountId,
     space: SpaceId,
 }
@@ -62,13 +63,14 @@ impl Fixture {
         )
         .unwrap();
         let host = Arc::new(
-            Host::new(root.path().into(), auth, 7)
+            Host::new(root.path().into(), auth.clone(), 7)
                 .unwrap()
                 .with_worker_runtime(runtime),
         );
         Self {
             _root: root,
             host,
+            auth,
             owner,
             space,
         }
@@ -543,3 +545,6 @@ async fn chat_can_call_only_the_operation_of_the_selected_slot_filler() {
         .unwrap();
     assert!(neighbor["rows"].as_array().unwrap().is_empty());
 }
+
+#[path = "coded/runs.rs"]
+mod runs;

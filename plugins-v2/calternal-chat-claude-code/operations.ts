@@ -1,16 +1,33 @@
 import { on, type ItemId, type RecordLink } from "@calternal/plugin-sdk";
 
-/** Inputs supplied by Chat for a session-scoped run. */
+/** The chat and newly appended prompt supplied by the Chat send operation. */
 export interface StartInput {
-  /** The only item the run may target. */
+  /** The session item fixed by the selected Chat send operation. */
   chat: ItemId;
-  /** Host-issued link to the record that prompted the run. */
+  /** Host receipt link for the prompt record in that session. */
   prompt: RecordLink;
 }
 
-/** Starts the adapter for the open chat and sends its prompting record link as the first input. */
+/** Starts the adapter in the open chat and supplies the new message in scope. */
 export const start = on.call("runs.start", async ({ chat, prompt }: StartInput, s) => {
   const run = await s.run("calternal-provider-claude-code", { scope: "session", targets: [chat] });
-  await run.send(prompt);
-  return { id: run.id };
+  if (run.status !== "running") return { id: run.id, status: run.status };
+  await run.send({
+    version: 1,
+    seq: 1,
+    command: {
+      type: "start",
+      model: "claude-haiku-5-5",
+      options: { effort: "low" },
+      cwd: "/work",
+      instructions: "Answer the supplied chat message.",
+      resume: null,
+    },
+  });
+  await run.send({
+    version: 1,
+    seq: 2,
+    command: { type: "send", prompt, context: [] },
+  });
+  return { id: run.id, status: run.status };
 });

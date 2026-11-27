@@ -144,6 +144,14 @@ async fn call(
 }
 
 async fn session_info(host: &Host, account: AccountId) -> Result<Value, Failure> {
+    let (name, space) = personal_space(host, account).await?;
+    Ok(json!({"account":account,"name":name,"space":space}))
+}
+
+async fn personal_space(
+    host: &Host,
+    account: AccountId,
+) -> Result<(String, calternal_types::SpaceId), Failure> {
     let (_, name) = host
         .auth
         .find(&account.to_string())
@@ -157,7 +165,7 @@ async fn session_info(host: &Host, account: AccountId) -> Result<Value, Failure>
         .into_iter()
         .find(|space| space.personal)
         .ok_or_else(|| Error::not_found("Personal space was not found."))?;
-    Ok(json!({"account":account,"name":name,"space":space.id}))
+    Ok((name, space.id))
 }
 
 async fn status(State(browser): State<Browser>, headers: HeaderMap) -> Reply {
@@ -285,8 +293,14 @@ async fn signed_in(
     token: String,
     codes: Vec<String>,
 ) -> Reply {
-    let session = session_info(&browser.host, account).await?;
-    let mut payload = json!({"session":session});
+    let (name, space) = personal_space(&browser.host, account).await?;
+    if !browser.host.development_plugins.is_empty() {
+        let host = browser.host.clone();
+        tokio::task::spawn_blocking(move || host.ensure_development_plugins(account, space))
+            .await
+            .map_err(internal)??;
+    }
+    let mut payload = json!({"session":{"account":account,"name":name,"space":space}});
     if !codes.is_empty() {
         payload["recovery_codes"] = json!(codes);
     }
@@ -427,5 +441,86 @@ mod tests {
             response.headers()[header::SET_COOKIE],
             "__Host-calternal_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0"
         );
+    }
+
+    #[tokio::test]
+    async fn development_sign_in_seeds_both_bundles_once() {
+        use crate::WorkerRuntime;
+        use calternal_auth::Auth;
+        use std::path::PathBuf;
+
+        fn executable(name: &str) -> PathBuf {
+            std::env::split_paths(&std::env::var_os("PATH").unwrap())
+                .map(|dir| dir.join(name))
+                .find(|path| path.is_file())
+                .unwrap()
+                .canonicalize()
+                .unwrap()
+        }
+
+        let data = tempfile::tempdir().unwrap();
+        let root = data.path().to_owned();
+        let config = AuthConfig::new("http://localhost").unwrap();
+        let auth_path = root.join("auth");
+        let auth_config = config.clone();
+        let auth = tokio::task::spawn_blocking(move || Auth::open(&auth_path, auth_config))
+            .await
+            .unwrap()
+            .unwrap();
+        let account = auth.create("Dev owner").await.unwrap().id;
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap();
+        let runtime = WorkerRuntime::new(
+            executable("bwrap"),
+            executable("node"),
+            repo.join("packages/plugin-sdk"),
+        )
+        .unwrap();
+        let host = Host::new(root, auth, 7)
+            .unwrap()
+            .with_worker_runtime(runtime)
+            .with_development_plugins(
+                ["calternal-chat", "calternal-chat-claude-code"]
+                    .map(|id| (id.to_owned(), repo.join("plugins-v2").join(id))),
+            );
+        let browser = Browser {
+            host: Arc::new(host),
+            config: Arc::new(config),
+        };
+        let (_, space) = personal_space(&browser.host, account).await.ok().unwrap();
+        for _ in 0..2 {
+            let result = signed_in(
+                &browser,
+                account,
+                "synthetic-fixture-session".into(),
+                Vec::new(),
+            )
+            .await;
+            assert_eq!(result.ok().unwrap().status(), StatusCode::OK);
+        }
+        let result = browser
+            .host
+            .clone()
+            .trusted_call(
+                account.into(),
+                space,
+                Call {
+                    call: "s.declarations".into(),
+                    input: json!({}),
+                    idempotency_key: None,
+                    slot_selection: None,
+                },
+            )
+            .await
+            .unwrap();
+        let plugins = result["plugins"].as_array().unwrap();
+        for id in ["calternal-chat", "calternal-chat-claude-code"] {
+            assert_eq!(
+                plugins.iter().filter(|plugin| plugin["id"] == id).count(),
+                1
+            );
+        }
     }
 }

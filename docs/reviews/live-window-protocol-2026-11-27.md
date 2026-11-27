@@ -68,3 +68,20 @@ Reusing an existing `sub` ID replaces that subscription.
    state write queues an event for that viewer only. Shared row and record
    data are checked through the receiving actor’s authorized read path before
    serialization.
+
+## Run logs
+
+Subscribe with `{"type":"subscribe","sub":"answer","run_log":{"run":"RUN_UUID","after":0}}`.
+The run ID comes from Chat's send result. `after` is the last received chunk
+offset, exclusive. Omitting it starts at the first retained chunk. The socket uses the same authenticated
+person and rechecks that person's read access to the run target before sending
+each batch.
+
+The `run_log` response contains `sub`, `run`, `offset`, `chunks`, and
+`stopped`. Each chunk has an increasing offset and either
+`event: "data"` with its stream and base64 bytes, or `event: "exit"` with
+the process status. A subscription starts with a batch even when the run
+has yet to emit output. The terminal batch sets `stopped`. Reconnect with
+the last offset to receive only the suffix. An offset older than retained
+output returns `conflict`. The host retains up to 256 chunks or 1 MiB per
+run, and removes the in-memory logs on restart.

@@ -84,6 +84,12 @@ const HARNESS: &[PluginFile<'_>] = &[
             "../../../plugins-v2/calternal-chat-claude-code/operations.ts"
         )),
     },
+    PluginFile {
+        path: "programs/calternal-provider-claude-code",
+        text: Some(include_str!(
+            "../../../plugins-v2/calternal-chat-claude-code/programs/calternal-provider-claude-code"
+        )),
+    },
 ];
 
 const OFFICIAL: &[(&str, &str)] = &[
@@ -203,31 +209,16 @@ fn claude_code_reads_its_fixture_and_needs_a_bound_program() {
             Some(calternal_format::FieldType::Link(target.into()))
         );
     }
-    assert!(
-        harness.manifest.programs["calternal-provider-claude-code"]
-            .path
-            .is_none()
-    );
-    let manifest = HARNESS[0].text.unwrap().replace(
-        "programs: calternal-provider-claude-code",
-        "programs:\n  calternal-provider-claude-code: executable programs/adapter",
-    );
-    let mut files = HARNESS.to_vec();
-    files[0].text = Some(&manifest);
+    let program = &harness.manifest.programs["calternal-provider-claude-code"];
     assert_eq!(
-        parse_plugin(&files, &options).unwrap_err().path.as_deref(),
+        program.path.as_deref(),
+        Some("programs/calternal-provider-claude-code")
+    );
+    assert!(!program.image);
+    let missing = &HARNESS[..HARNESS.len() - 1];
+    assert_eq!(
+        parse_plugin(missing, &options).unwrap_err().path.as_deref(),
         Some("plugin.md")
-    );
-    files.push(PluginFile {
-        path: "programs/adapter",
-        text: None,
-    });
-    let harness = parse_plugin(&files, &options).unwrap();
-    assert_eq!(
-        harness.manifest.programs["calternal-provider-claude-code"]
-            .path
-            .as_deref(),
-        Some("programs/adapter")
     );
 }
 
