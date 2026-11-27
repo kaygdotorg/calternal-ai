@@ -51,6 +51,10 @@ impl Fixture {
     }
 
     fn tail(&self, head: &Head) -> (Value, Vec<u8>) {
+        self.tail_at(head, calternal_types::now_ms())
+    }
+
+    fn tail_at(&self, head: &Head, at: i64) -> (Value, Vec<u8>) {
         let receipt = self
             .space
             .receipt(&self.scope(), Some(GESTURE), REQUEST)
@@ -60,15 +64,8 @@ impl Fixture {
             fields: Fields::new(),
             body: Some(MESSAGE.to_owned()),
         };
-        let (next, record, bytes) = make_append(
-            &self.space,
-            head,
-            &self.actor,
-            input,
-            calternal_types::now_ms(),
-            Some(&receipt),
-        )
-        .unwrap();
+        let (next, record, bytes) =
+            make_append(&self.space, head, &self.actor, input, at, Some(&receipt)).unwrap();
         (append_result(&next, &record), bytes)
     }
 
@@ -140,7 +137,7 @@ fn recovers_a_complete_append_and_its_retry_receipt() {
     assert_eq!(f.space.row(head.id).unwrap().head.version, head.version + 1);
     let stamp = std::str::from_utf8(&tail).unwrap().lines().next().unwrap();
     let comment_start = stamp.find(seal::PREFIX).unwrap();
-    assert_eq!(stamp.len() - comment_start, 34);
+    assert_eq!(stamp.len() - comment_start, 36);
     let replay = |f: &mut Fixture, message: &str| {
         f.space.call(&f.actor, Call {
         call: "s.write".into(),
@@ -233,4 +230,125 @@ fn the_author_can_edit_only_inside_the_declared_window() {
     .unwrap();
     assert!(can_edit(&kind, &f.actor, &record, now).is_ok());
     assert!(can_edit(&kind, &f.actor, &record, now + 2 * 3_600_000).is_err());
+}
+
+#[test]
+fn recovered_append_keeps_authenticated_milliseconds() {
+    let mut f = Fixture::new();
+    let head = f.add("Precise");
+    let at = calternal_types::now_ms().div_euclid(60_000) * 60_000 + 59_123;
+    let (_, tail) = f.tail_at(&head, at);
+    f.append_uncommitted(&head, &tail);
+    let f = f.reopen();
+    assert_eq!(f.space.records(head.id).unwrap()[0].at, at);
+    assert_eq!(
+        f.space.row(head.id).unwrap().head.edited,
+        at.max(head.edited)
+    );
+}
+
+#[test]
+fn recovered_run_append_authenticates_run_id_and_milliseconds() {
+    let mut f = Fixture::new();
+    let head = f.add("Run recovery");
+    let id = Uuid::new_v4();
+    f.actor = Actor::run(f.actor.account, "calternal-chat", id);
+    let at = calternal_types::now_ms().div_euclid(60_000) * 60_000 + 23_456;
+    let (_, tail) = f.tail_at(&head, at);
+    let claim = seal::verify(&f.space, &head, &tail).unwrap().unwrap();
+    assert_eq!((claim.actor, claim.at), (f.actor.clone(), at));
+    let text = std::str::from_utf8(&tail).unwrap();
+    let altered = text.replacen(&id.to_string(), &Uuid::new_v4().to_string(), 1);
+    assert!(
+        seal::verify(&f.space, &head, altered.as_bytes())
+            .unwrap()
+            .is_none()
+    );
+    f.append_uncommitted(&head, &tail);
+    let f = f.reopen();
+    assert_eq!(f.space.records(head.id).unwrap()[0].at, at);
+}
+
+#[test]
+fn durable_append_preparation_repairs_partial_bytes_and_preserves_outside_edits() {
+    use super::append::Pending;
+
+    for mode in ["partial", "outside", "complete with outside suffix"] {
+        let mut f = Fixture::new();
+        let head = f.add("Crash");
+        let prior = std::fs::read(f.path(&head)).unwrap();
+        let input = Input {
+            fields: Fields::new(),
+            body: Some(MESSAGE.into()),
+        };
+        let receipt = f
+            .space
+            .receipt(&f.scope(), Some(GESTURE), REQUEST)
+            .unwrap()
+            .unwrap();
+        let (next, record, bytes) = make_append(
+            &f.space,
+            &head,
+            &f.actor,
+            input,
+            calternal_types::now_ms(),
+            Some(&receipt),
+        )
+        .unwrap();
+        let expected = append_result(&next, &record);
+        Pending {
+            next,
+            record,
+            actor: &f.actor,
+            receipt: Some(&receipt),
+        }
+        .stage(&f.space.db, &bytes)
+        .unwrap();
+        let outside =
+            b"**Outside** \xc2\xb7 2026-11-27 12:30 ^0123456789abcdef\n\nOutside message\n";
+        let written = match mode {
+            "partial" => bytes[..5].to_vec(),
+            "outside" => outside.to_vec(),
+            _ => [bytes.as_slice(), outside].concat(),
+        };
+        f.append_uncommitted(&head, &written);
+        f = f.reopen();
+        let on_disk = std::fs::read(f.path(&head)).unwrap();
+        match mode {
+            "partial" => {
+                assert_eq!(on_disk, prior);
+                assert!(f.space.records(head.id).unwrap().is_empty());
+                f.space.call(&f.actor, Call {
+                    call: "s.write".into(),
+                    input: json!({"changes":[{"op":"append record","item":head.id,"record":{"body":MESSAGE}}]}),
+                    idempotency_key: Some(GESTURE.into()),
+                    slot_selection: None,
+                }).unwrap();
+                assert_eq!(f.space.records(head.id).unwrap().len(), 1);
+            }
+            "outside" => {
+                assert_eq!(on_disk, [prior, written].concat());
+                f.verify_outside(&head);
+            }
+            _ => {
+                assert_eq!(on_disk, [prior, written].concat());
+                let rows = f.space.records(head.id).unwrap();
+                assert_eq!(rows.len(), 1);
+                let head = &f.space.row(head.id).unwrap().head;
+                let kind = f.space.kind(&head.kind).unwrap();
+                assert_eq!(
+                    f.space.record_views(head, &on_disk, &rows, &kind).unwrap()[1]["author"],
+                    "outside"
+                );
+                assert_eq!(
+                    f.space
+                        .receipt(&f.scope(), Some(GESTURE), REQUEST)
+                        .unwrap()
+                        .unwrap()
+                        .replay,
+                    Some(expected)
+                );
+            }
+        }
+    }
 }

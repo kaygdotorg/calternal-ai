@@ -1,8 +1,14 @@
 use std::collections::BTreeMap;
 
-use crate::{Diagnostic, Fields, Value, lines::Site};
+use crate::{
+    Diagnostic, Fields, Value,
+    lines::{Site, forbidden, header_line},
+};
 
 use super::Entry;
+
+mod render;
+pub(super) use render::{quoted, render_entry};
 
 #[derive(Clone, Copy)]
 pub(super) struct Line<'a> {
@@ -44,9 +50,32 @@ impl<'a> Line<'a> {
 }
 
 type Entries = BTreeMap<String, Entry>;
+const MAX_ENTRIES: usize = 4096;
+const MAX_KEY_BYTES: usize = 256;
+
+fn entry(remaining: &mut usize, site: Site) -> Result<(), Diagnostic> {
+    *remaining = remaining
+        .checked_sub(1)
+        .ok_or_else(|| site.error("Item frontmatter exceeds 4096 entries"))?;
+    Ok(())
+}
+
+/// Validate a decoded key before storing it as item structure.
+pub(super) fn check_key(key: &str, site: Site) -> Result<(), Diagnostic> {
+    if key.is_empty() || key.len() > MAX_KEY_BYTES || key.chars().any(forbidden) {
+        return Err(
+            site.error("Use a nonempty key within 256 bytes without control or format characters")
+        );
+    }
+    Ok(())
+}
 
 pub(super) fn parse(lines: &[Line<'_>]) -> Result<(Fields, Entries), Diagnostic> {
-    let mut parser = Parser { lines, at: 0 };
+    let mut parser = Parser {
+        lines,
+        at: 0,
+        remaining: MAX_ENTRIES,
+    };
     let mut entries = Entries::new();
     let values = parser.map(0, 0, Some(&mut entries))?;
     if let Some(line) = parser.peek() {
@@ -58,6 +87,7 @@ pub(super) fn parse(lines: &[Line<'_>]) -> Result<(Fields, Entries), Diagnostic>
 struct Parser<'a> {
     lines: &'a [Line<'a>],
     at: usize,
+    remaining: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -83,6 +113,7 @@ impl<'a> Parser<'a> {
             .peek()
             .filter(|line| line.indent == indent && list_entry(&line.text[indent..]).is_none())
         {
+            entry(&mut self.remaining, line.site)?;
             let text = &line.text[indent..];
             let (key, value, colon) = key_value(text, line.site)?;
             if fields.contains_key(&key) {
@@ -130,7 +161,7 @@ impl<'a> Parser<'a> {
             return self.block(raw, line, indent);
         }
         if !raw.is_empty() {
-            return scalar(raw, site, depth);
+            return scalar(raw, site, depth, &mut self.remaining);
         }
         let Some(next) = self.peek() else {
             return Ok(Value::Empty);
@@ -153,8 +184,10 @@ impl<'a> Parser<'a> {
             let (raw, _) = without_comment(rest);
             let raw = raw.trim_end();
             let site = line.site.after("- ");
+            entry(&mut self.remaining, site)?;
             self.at += 1;
             if !raw.is_empty() && mapping_colon(raw).is_some() && !raw.starts_with('[') {
+                entry(&mut self.remaining, site)?;
                 let (key, text, _) = key_value(raw, site)?;
                 let value = self.value(text.trim_end(), line, site, indent + 2, depth)?;
                 let mut fields = Fields::from([(key.clone(), value)]);
@@ -276,6 +309,7 @@ fn key_value(text: &str, site: Site) -> Result<(String, &str, usize), Diagnostic
         }
         _ => key.into(),
     };
+    check_key(&key, site)?;
     if key == "<<" {
         return Err(site.error("YAML merge keys are forbidden"));
     }
@@ -310,7 +344,12 @@ fn without_comment(text: &str) -> (&str, Option<usize>) {
     (text, None)
 }
 
-fn scalar(text: &str, site: Site, depth: usize) -> Result<Value, Diagnostic> {
+fn scalar(
+    text: &str,
+    site: Site,
+    depth: usize,
+    remaining: &mut usize,
+) -> Result<Value, Diagnostic> {
     if depth > 64 {
         return Err(site.error("Keep frontmatter nesting within 64 levels"));
     }
@@ -322,7 +361,7 @@ fn scalar(text: &str, site: Site, depth: usize) -> Result<Value, Diagnostic> {
         b'[' if text.starts_with("[[") && text.ends_with("]]") && !text.contains(',') => {
             Ok(Value::Text(text.into()))
         }
-        b'[' => flow(text, site, depth),
+        b'[' => flow(text, site, depth, remaining),
         b'&' | b'*' | b'!' | b'{' | b'}' => Err(site
             .error("Anchors, aliases, tags and flow mappings are forbidden in item frontmatter")),
         _ if mapping_colon(text).is_some() => {
@@ -348,7 +387,7 @@ fn scalar(text: &str, site: Site, depth: usize) -> Result<Value, Diagnostic> {
     }
 }
 
-fn flow(text: &str, site: Site, depth: usize) -> Result<Value, Diagnostic> {
+fn flow(text: &str, site: Site, depth: usize, remaining: &mut usize) -> Result<Value, Diagnostic> {
     let tail = text
         .strip_prefix('[')
         .and_then(|text| text.strip_suffix(']'))
@@ -357,6 +396,7 @@ fn flow(text: &str, site: Site, depth: usize) -> Result<Value, Diagnostic> {
     let mut quote = None;
     let mut escape = false;
     let mut start = 0;
+    let mut part_site = site.after("[");
     let mut values = Vec::new();
     for (index, ch) in tail.char_indices() {
         if escape {
@@ -382,7 +422,9 @@ fn flow(text: &str, site: Site, depth: usize) -> Result<Value, Diagnostic> {
                     if part.is_empty() {
                         return Err(site.error("Put a value between list commas"));
                     }
-                    values.push(scalar(part, site.after(&text[..start + 1]), depth + 1)?);
+                    entry(remaining, part_site)?;
+                    values.push(scalar(part, part_site, depth + 1, remaining)?);
+                    part_site = part_site.after(&tail[start..=index]);
                     start = index + 1;
                 }
                 _ => {}
@@ -394,7 +436,8 @@ fn flow(text: &str, site: Site, depth: usize) -> Result<Value, Diagnostic> {
     }
     let part = tail[start..].trim();
     if !part.is_empty() {
-        values.push(scalar(part, site.after(&text[..start + 1]), depth + 1)?)
+        entry(remaining, part_site)?;
+        values.push(scalar(part, part_site, depth + 1, remaining)?);
     }
     Ok(Value::List(values))
 }
@@ -492,109 +535,11 @@ fn decode_quote(text: &str, site: Site) -> Result<String, Diagnostic> {
     Ok(result)
 }
 
-pub(super) fn quoted(text: &str) -> String {
-    let mut output = String::from("\"");
-    for ch in text.chars() {
-        match ch {
-            '"' => output.push_str("\\\""),
-            '\\' => output.push_str("\\\\"),
-            '\r' => output.push_str("\\r"),
-            '\n' => output.push_str("\\n"),
-            '\t' => output.push_str("\\t"),
-            control if control.is_control() => {
-                output.push_str(&format!("\\u{:04x}", control as u32))
-            }
-            _ => output.push(ch),
-        }
-    }
-    output.push('"');
-    output
-}
-
-pub(super) fn render_entry(
-    key: &str,
-    value: &Value,
-    comment: Option<&str>,
-    ending: &str,
-) -> Result<String, Diagnostic> {
-    let mut output = String::new();
-    render(key, value, comment, ending, 0, &mut output)?;
-    Ok(output)
-}
-
-fn render(
-    key: &str,
-    value: &Value,
-    comment: Option<&str>,
-    ending: &str,
-    depth: usize,
-    result: &mut String,
-) -> Result<(), Diagnostic> {
-    if depth >= 64 {
-        return Err(Site::START.error("Keep frontmatter nesting within 64 levels"));
-    }
-    result.extend(std::iter::repeat_n(' ', depth * 2));
-    result.push_str(key);
-    let scalar = match value {
-        Value::Map(fields) if !fields.is_empty() => None,
-        Value::Map(_) => {
-            return Err(Site::START.error("An empty map has no supported item representation"));
-        }
-        Value::List(values) if !values.is_empty() => None,
-        Value::List(_) => Some("[]".into()),
-        Value::Empty => Some("null".into()),
-        Value::Number(value) => Some(value.to_string()),
-        Value::Bool(value) => Some(value.to_string()),
-        Value::Money { amount, currency } => Some(quoted(&format!("{amount} {currency}"))),
-        Value::Text(value) => Some(quoted(value)),
-        Value::Date(value) if crate::dates::day(value).is_some() => Some(value.clone()),
-        Value::Time(value) if crate::dates::time(value).is_some() => Some(value.clone()),
-        Value::Date(_) | Value::Time(_) => {
-            return Err(Site::START.error("Use a valid civil date or time"));
-        }
-        Value::Duration { months: 0, seconds } => Some(quoted(&format!("{seconds}s"))),
-        Value::Duration { months, seconds: 0 } => Some(quoted(&format!("{months}mo"))),
-        Value::Duration { months, seconds } if *months >= 0 && *seconds >= 0 => {
-            Some(quoted(&format!("P{months}MT{seconds}S")))
-        }
-        Value::Duration { .. } => {
-            return Err(Site::START.error("This mixed-sign duration cannot be written to an item"));
-        }
-    };
-    if let Some(scalar) = scalar {
-        result.push(' ');
-        result.push_str(&scalar);
-    }
-    if let Some(comment) = comment {
-        result.push(' ');
-        result.push_str(comment);
-    }
-    result.push_str(ending);
-    match value {
-        Value::Map(fields) => {
-            for (key, value) in fields {
-                render(
-                    &format!("{}:", quoted(key)),
-                    value,
-                    None,
-                    ending,
-                    depth + 1,
-                    result,
-                )?;
-            }
-        }
-        Value::List(values) => {
-            for value in values {
-                render("-", value, None, ending, depth + 1, result)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
 pub(super) fn record_field(text: &str, site: Site) -> Result<Value, Diagnostic> {
+    header_line(Site::START, text.len())?;
     let (_, value, colon) = key_value(text, site)?;
     let (value, _) = without_comment(value);
-    scalar(value.trim_end(), site.after(&text[..colon + 1]), 0)
+    scalar(value.trim_end(), site.after(&text[..colon + 1]), 0, &mut {
+        MAX_ENTRIES
+    })
 }

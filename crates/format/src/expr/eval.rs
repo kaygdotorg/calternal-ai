@@ -14,20 +14,20 @@ pub struct Row<'a> {
     pub metadata: &'a Fields,
 }
 
-impl Row<'_> {
+impl<'a> Row<'a> {
     pub(crate) fn value(&self, name: &str) -> Value {
-        self.metadata
-            .get(name)
-            .or_else(|| {
-                (!matches!(
-                    name,
-                    "id" | "kind" | "created" | "edited" | "author" | "at" | "anchor"
-                ))
-                .then(|| self.fields.get(name))
-                .flatten()
-            })
-            .cloned()
-            .unwrap_or_default()
+        self.get(name).cloned().unwrap_or_default()
+    }
+
+    fn get(self, name: &str) -> Option<&'a Value> {
+        self.metadata.get(name).or_else(|| {
+            (!matches!(
+                name,
+                "id" | "kind" | "created" | "edited" | "author" | "at" | "anchor"
+            ))
+            .then(|| self.fields.get(name))
+            .flatten()
+        })
     }
 
     fn as_value(self) -> Value {
@@ -123,7 +123,7 @@ struct Evaluator<'a, 'b> {
     hops: usize,
 }
 
-impl Evaluator<'_, '_> {
+impl<'a> Evaluator<'a, '_> {
     fn charge(&mut self, count: usize, site: Site) -> Result<(), Diagnostic> {
         *self.steps = self
             .steps
@@ -132,10 +132,56 @@ impl Evaluator<'_, '_> {
         Ok(())
     }
 
+    fn charge_bytes(&mut self, bytes: usize, site: Site) -> Result<(), Diagnostic> {
+        self.charge(bytes.div_ceil(64), site)
+    }
+
+    fn charge_fields(&mut self, fields: &Fields, site: Site) -> Result<(), Diagnostic> {
+        self.charge(fields.len(), site)?;
+        for (key, value) in fields {
+            self.charge_bytes(key.len(), site)?;
+            self.charge_value(value, site)?;
+        }
+        Ok(())
+    }
+
+    fn charge_value(&mut self, value: &Value, site: Site) -> Result<(), Diagnostic> {
+        match value {
+            Value::Text(text) | Value::Date(text) | Value::Time(text) => {
+                self.charge_bytes(text.len(), site)
+            }
+            Value::Map(fields) => self.charge_fields(fields, site),
+            Value::List(values) => {
+                self.charge(values.len(), site)?;
+                for value in values {
+                    self.charge_value(value, site)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn clone_value(&mut self, value: Option<&Value>, site: Site) -> Result<Value, Diagnostic> {
+        if let Some(value) = value {
+            self.charge_value(value, site)?;
+        }
+        Ok(value.cloned().unwrap_or_default())
+    }
+
+    fn clone_row(&mut self, row: Option<Row<'_>>, site: Site) -> Result<Value, Diagnostic> {
+        let Some(row) = row else {
+            return Ok(Value::Empty);
+        };
+        self.charge_fields(row.fields, site)?;
+        self.charge_fields(row.metadata, site)?;
+        Ok(row.as_value())
+    }
+
     fn eval(&mut self, node: &Node, element: Option<&Value>) -> Result<Value, Diagnostic> {
         self.charge(1, node.site)?;
         match &node.kind {
-            NodeKind::Value(value) => Ok(value.clone()),
+            NodeKind::Value(value) => self.clone_value(Some(value), node.site),
             NodeKind::Name(name) => self.name(name, element, node.site),
             NodeKind::Member(base, field) => self.member(base, field, element, node.site),
             NodeKind::List(values) => values
@@ -179,31 +225,28 @@ impl Evaluator<'_, '_> {
         element: Option<&Value>,
         site: Site,
     ) -> Result<Value, Diagnostic> {
-        Ok(match name {
-            "this" => self.row.as_value(),
-            "item" => self.context.item.map_or(Value::Empty, Row::as_value),
-            "open item" => self.context.open_item.map_or(Value::Empty, Row::as_value),
+        match name {
+            "this" => self.clone_row(Some(self.row), site),
+            "item" => self.clone_row(self.context.item, site),
+            "open item" => self.clone_row(self.context.open_item, site),
             "records" => {
                 self.charge(self.context.records.len(), site)?;
-                Value::List(
-                    self.context
-                        .records
-                        .iter()
-                        .map(|row| row.as_value())
-                        .collect(),
-                )
+                self.context
+                    .records
+                    .iter()
+                    .map(|row| self.clone_row(Some(*row), site))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(Value::List)
             }
-            _ => element.map_or_else(
-                || self.row.value(name),
-                |value| {
-                    if let Value::Map(fields) = value {
-                        fields.get(name).cloned().unwrap_or_default()
-                    } else {
-                        Value::Empty
-                    }
-                },
-            ),
-        })
+            _ => {
+                let value = match element {
+                    None => self.row.get(name),
+                    Some(Value::Map(fields)) => fields.get(name),
+                    Some(_) => None,
+                };
+                self.clone_value(value, site)
+            }
+        }
     }
 
     fn member(
@@ -214,16 +257,23 @@ impl Evaluator<'_, '_> {
         site: Site,
     ) -> Result<Value, Diagnostic> {
         if let NodeKind::Name(name) = &base.kind {
+            let row = match name.as_str() {
+                "this" => Some(Some(self.row)),
+                "item" => Some(self.context.item),
+                "open item" => Some(self.context.open_item),
+                _ => None,
+            };
+            if let Some(row) = row {
+                let value = row.and_then(|row| row.get(field));
+                return self.clone_value(value, site);
+            }
             let scope = match name.as_str() {
                 "state" => Some(self.context.state),
                 "settings" => Some(self.context.settings),
                 _ => None,
             };
             if let Some(scope) = scope {
-                return Ok(scope
-                    .and_then(|fields| fields.get(field))
-                    .cloned()
-                    .unwrap_or_default());
+                return self.clone_value(scope.and_then(|fields| fields.get(field)), site);
             }
         }
         let base = self.eval(base, element)?;
@@ -241,15 +291,16 @@ impl Evaluator<'_, '_> {
     fn read_member(&mut self, value: Value, field: &str, site: Site) -> Result<Value, Diagnostic> {
         match value {
             Value::Map(mut fields) => Ok(fields.remove(field).unwrap_or_default()),
-            Value::Text(key) => self
-                .link(&key, site)
-                .map(|row| row.map_or(Value::Empty, |row| row.value(field))),
+            Value::Text(key) => {
+                let value = self.link(&key, site)?.and_then(|row| row.get(field));
+                self.clone_value(value, site)
+            }
             Value::Empty => Ok(Value::Empty),
             _ => Err(site.error("This value has no fields")),
         }
     }
 
-    fn link(&self, key: &str, site: Site) -> Result<Option<Row<'_>>, Diagnostic> {
+    fn link(&self, key: &str, site: Site) -> Result<Option<Row<'a>>, Diagnostic> {
         if self.hops >= 1 {
             return Err(site.error("A formula follows at most one link"));
         }
@@ -295,8 +346,8 @@ impl Evaluator<'_, '_> {
                 return Ok(self
                     .context
                     .now
-                    .filter(|value| dates::time(value).is_some())
-                    .map_or(Value::Empty, |time| Value::Time(time.into())));
+                    .and_then(dates::clock_seconds)
+                    .map_or(Value::Empty, Value::Time));
             }
             _ => {}
         }
@@ -378,8 +429,12 @@ impl Evaluator<'_, '_> {
             .transpose()?
             .unwrap_or_default();
         let result = match (name, first, second) {
-            ("contains", Value::Text(text), Value::Text(part)) => Value::Bool(text.contains(&part)),
+            ("contains", Value::Text(text), Value::Text(part)) => {
+                self.charge_bytes(text.len().saturating_add(part.len()), site)?;
+                Value::Bool(text.contains(&part))
+            }
             ("domain", Value::Text(url), _) => {
+                self.charge_bytes(url.len(), site)?;
                 super::functions::domain(&url).map_or(Value::Empty, Value::Text)
             }
             ("under", Value::List(tags), Value::Text(parent)) => {
@@ -458,12 +513,11 @@ impl Evaluator<'_, '_> {
         }
         self.charge(candidates.len(), site)?;
         self.hops += 1;
-        let values = self.filter(
-            candidates.iter().map(|row| row.as_value()).collect(),
-            predicate,
-            site,
-            1000,
-        );
+        let values = candidates
+            .iter()
+            .map(|row| self.clone_row(Some(*row), site))
+            .collect::<Result<Vec<_>, _>>()
+            .and_then(|values| self.filter(values, predicate, site, 1000));
         self.hops -= 1;
         values.map(Value::List)
     }
@@ -482,13 +536,17 @@ impl Evaluator<'_, '_> {
         let mut output = Vec::new();
         for value in values {
             if let Some(condition) = predicate {
+                let linked;
                 let scope = match &value {
-                    Value::Text(key) => self.link(key, site)?.map_or(Value::Empty, Row::as_value),
-                    _ => value.clone(),
+                    Value::Text(key) => {
+                        linked = self.clone_row(self.link(key, site)?, site)?;
+                        &linked
+                    }
+                    _ => &value,
                 };
                 let previous = self.hops;
                 self.hops += usize::from(matches!(value, Value::Text(_)));
-                let passes = self.eval(condition, Some(&scope));
+                let passes = self.eval(condition, Some(scope));
                 self.hops = previous;
                 if !passes?.truth() {
                     continue;
@@ -522,3 +580,6 @@ fn round_places(value: Value, site: Site) -> Result<u32, Diagnostic> {
         _ => Err(site.error("The number of decimal places must be a whole number")),
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, ops::Range};
 
 use crate::{
     Diagnostic, Fields, Value,
-    lines::{Site, newline},
+    lines::{Site, header_line, header_window, newline},
 };
 
 /// An item with decoded fields and the source needed for lossless field edits.
@@ -56,7 +56,8 @@ impl<'a> Item<'a> {
 
 /// Read frontmatter from a Markdown item. The body is never rewritten on read.
 pub fn parse_item(source: &str) -> Result<Item<'_>, Diagnostic> {
-    let ending = if source
+    let window = header_window(source);
+    let ending = if window
         .lines()
         .next()
         .is_some_and(|line| source[line.len()..].starts_with("\r\n"))
@@ -65,7 +66,7 @@ pub fn parse_item(source: &str) -> Result<Item<'_>, Diagnostic> {
     } else {
         "\n"
     };
-    let mut lines = source.split_inclusive('\n').enumerate();
+    let mut lines = window.split_inclusive('\n').enumerate();
     let Some((_, opening)) = lines.next() else {
         return Ok(Item {
             source,
@@ -90,7 +91,7 @@ pub fn parse_item(source: &str) -> Result<Item<'_>, Diagnostic> {
     let mut yaml = Vec::new();
     for (index, raw) in lines {
         let text = newline(raw);
-        if text == "---" {
+        if text == "---" && (raw.ends_with('\n') || offset + raw.len() == source.len()) {
             let (fields, entries) = yaml::parse(&yaml)?;
             return Ok(Item {
                 source,
@@ -102,11 +103,12 @@ pub fn parse_item(source: &str) -> Result<Item<'_>, Diagnostic> {
             });
         }
         let line = index + 1;
+        header_line(Site { line, column: 1 }, offset + raw.len())?;
         yaml.push(yaml::Line::new(text, line, offset, offset + raw.len())?);
         offset += raw.len();
     }
     Err(Site {
-        line: source.lines().count() + 1,
+        line: window.lines().count() + 1,
         column: 1,
     }
     .error("Close the item frontmatter with a line containing only ---"))
@@ -120,11 +122,7 @@ pub fn write_item(item: &Item<'_>, fields: &Fields) -> Result<String, Diagnostic
     let mut edits = Vec::new();
     let mut additions = String::new();
     for (key, value) in fields {
-        if key.is_empty() || key.contains(char::is_control) {
-            return Err(item
-                .site(key)
-                .error("Use a nonempty field key without controls"));
-        }
+        yaml::check_key(key, item.site(key))?;
         if matches!(
             key.as_str(),
             "id" | "kind" | "created" | "edited" | "at" | "author" | "anchor"
@@ -226,5 +224,20 @@ mod tests {
             )
             .is_err()
         );
+    }
+    #[test]
+    fn frontmatter_limits_apply_before_body_and_reject_structural_controls() {
+        let too_many_lines = format!("---\n{}---\n", "# ignored\n".repeat(4097));
+        let too_many_bytes = format!("---\ntext: {}\n---\n", "a".repeat(256 * 1024));
+        let too_many_entries = format!("---\nlist: [{}0]\n---\n", "0,".repeat(4096));
+        for source in [&too_many_lines, &too_many_bytes, &too_many_entries] {
+            assert!(parse_item(source).is_err());
+        }
+        for key in ["bad\u{202e}", r#""bad\u202e""#, r#""bad\u0001""#] {
+            assert!(parse_item(&format!("---\nouter:\n  {key}: text\n---\n")).is_err());
+        }
+        let body = format!("\u{202e} literal\n{}", "a".repeat(256 * 1024));
+        let source = format!("---\nvalid: yes\n---\n{body}");
+        assert_eq!(parse_item(&source).unwrap().body(), body);
     }
 }

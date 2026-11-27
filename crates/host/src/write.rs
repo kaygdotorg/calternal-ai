@@ -8,7 +8,7 @@ use calternal_types::{Actor, Error, ErrorCode, Result};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -248,6 +248,40 @@ pub(crate) fn write(
             ));
         }
     }
+    let added = working
+        .values()
+        .filter(|item| item.before.is_none() && !item.retired)
+        .count();
+    if added != 0 {
+        let trash: i64 = space
+            .db
+            .query_row("SELECT count(*) FROM trash", [], |row| row.get(0))
+            .map_err(internal)?;
+        if (space.rows.len() + added) as i64 + trash > crate::space::SPACE_ITEMS as i64 {
+            return Err(Error::new(
+                ErrorCode::TooLarge,
+                "The space has reached its item and Trash limit.",
+            ));
+        }
+    }
+    let mut destinations = BTreeSet::new();
+    let live = space
+        .rows
+        .iter()
+        .filter(|(id, _)| !working.contains_key(id))
+        .map(|(_, row)| &row.head)
+        .chain(
+            working
+                .values()
+                .filter(|item| !item.retired)
+                .map(|item| &item.row.head),
+        );
+    for head in live {
+        if !destinations.insert(names::fold(&head.path)) {
+            return Err(Error::conflict("Multiple items would share a destination."));
+        }
+    }
+
     let value = result(outputs);
     if input.preview {
         return Ok(value);
@@ -441,7 +475,8 @@ fn path_for(
         .map(|item| names::fold(&item.row.head.path))
         .collect();
     let file = names::unique_md_name(&stem, |filename| {
-        if old_path.is_some_and(|old| names::fold(old) == candidate(filename)) {
+        let folded = names::fold(&candidate(filename));
+        if old_path.is_some_and(|old| names::fold(old) == folded) {
             return false;
         }
         let entry = if kind.main.is_some() {
@@ -449,7 +484,7 @@ fn path_for(
         } else {
             filename
         };
-        on_disk.contains(entry) || planned.contains(&candidate(filename))
+        on_disk.contains(entry) || planned.contains(&folded)
     });
     let path = candidate(&file);
     if calternal_types::is_reserved_space_path(&path) {
