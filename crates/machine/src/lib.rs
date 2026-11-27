@@ -18,6 +18,7 @@
 mod bootstrap;
 pub mod cli;
 pub mod connection;
+pub mod egress;
 pub mod enroll;
 pub mod identity;
 pub mod link;
