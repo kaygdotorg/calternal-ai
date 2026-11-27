@@ -16,7 +16,7 @@
 
 use std::collections::HashSet;
 use std::os::unix::process::CommandExt as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
@@ -193,7 +193,7 @@ impl Backend for PodmanBackend {
         &'a self,
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        self.start_container(spec, None)
+        self.start_container(spec, None, None, None)
     }
 
     fn start_harness<'a>(
@@ -201,7 +201,36 @@ impl Backend for PodmanBackend {
         spec: &'a SandboxSpec,
         harness: &'a crate::protocol::HarnessSandbox,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        self.start_container(spec, Some(harness))
+        self.start_container(spec, Some(harness), None, None)
+    }
+}
+
+/// Starts a harness with a read-only plugin bundle and one host-side egress socket.
+impl PodmanBackend {
+    /// Start a network-isolated harness with its installed plugin mounted
+    /// read-only at /opt/calternal-plugin and its run proxy mounted read-only at
+    /// /run/calternal-egress. Cost includes normal Podman container creation.
+    pub fn start_harness_run<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: &'a crate::protocol::HarnessSandbox,
+        plugin_root: &'a Path,
+        egress_directory: &'a Path,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        Box::pin(async move {
+            if self.guest || self.kvm_fallback {
+                return Err(SandboxError(
+                    "mediated harness egress requires rootless Podman".into(),
+                ));
+            }
+            self.start_container(
+                spec,
+                Some(harness),
+                Some(plugin_root),
+                Some(egress_directory),
+            )
+            .await
+        })
     }
 }
 
@@ -210,6 +239,8 @@ impl PodmanBackend {
         &'a self,
         spec: &'a SandboxSpec,
         harness: Option<&'a crate::protocol::HarnessSandbox>,
+        plugin_root: Option<&'a Path>,
+        egress_directory: Option<&'a Path>,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
             let root = self.canonical_root().await?;
@@ -327,7 +358,23 @@ impl PodmanBackend {
                         login_env.into(),
                     ]);
                     if harness.is_some() && !self.guest {
-                        args.extend(["--network=none".into(), "--pull=never".into()]);
+                        args.extend([
+                            "--network=none".into(),
+                            "--pull=never".into(),
+                            "--http-proxy=false".into(),
+                        ]);
+                        if let Some(plugin_root) = plugin_root {
+                            args.extend([
+                                "--volume".into(),
+                                format!("{}:/opt/calternal-plugin:ro", plugin_root.display()),
+                            ]);
+                        }
+                        if let Some(egress_directory) = egress_directory {
+                            args.extend([
+                                "--volume".into(),
+                                format!("{}:/run/calternal-egress:ro", egress_directory.display()),
+                            ]);
+                        }
                     }
                     if spec.provider_login {
                         args.extend(["--env".into(), "CALTERNAL_PROVIDER_LOGIN=1".into()]);

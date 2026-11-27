@@ -1,24 +1,28 @@
 # Claude Code chat harness
 
-The revision 9 manifest declares the program ID
-`calternal-provider-claude-code`. Its bundle-local executable is
-`programs/calternal-provider-claude-code`; the wrapper delegates to the
-existing adapter installed by
-`plugins/calternal-claude-code/Containerfile`. This keeps the provider
-protocol and Claude stream handling in one place.
+The revision 9 manifest binds program ID `calternal-provider-claude-code` to
+`programs/calternal-provider-claude-code` inside this plugin. The wrapper starts
+the local egress bridge, opens the host run-control socket, then delegates Claude
+stream handling to the existing `plugins/calternal-claude-code` adapter installed
+in the container image.
 
-The fake-provider acceptance image uses a script that echoes the supplied
-prompt as a Claude stream-json text delta. It has no credentials and no
-network access. A `hold:` prompt starts a child process only so the Podman
-stop test can verify that the process family ends within two seconds.
+The container has `--network=none`. The bridge forwards only to the per-run host
+CONNECT proxy. The host proxy allows the exact `sends out:` hostnames, resolves
+them itself for every CONNECT, rejects unsafe IP ranges, and records host and
+byte counts. The fake provider test redirects the checked numeric endpoint to a
+local test server. There is no real Claude invocation or sign-in.
 
-On the dev VM, run `nix develop -c npm run build:plugins`, then
-`nix develop -c plugins-v2/calternal-chat-claude-code/test/build-echo-image.sh`.
-Run the `calternal-machine` `runs_harness` integration test with
-`CALTERNAL_TEST_PROVIDER_IMAGE=localhost/calternal-chat-claude-code-fake:dev`
-under the shared gate lock.
+Build the adapter and fake image on the dev VM, then run the fake integration
+tests under the shared lock:
 
-The harness container has `--network=none` in this slice. The approved
-mediated path for reaching Anthropic remains a coordinator question because
-the host proxy is not proven. No real Claude sign-in or provider binary is
-used by the fake test.
+```sh
+~/bin/lock-shared nix develop -c npm run build:plugins
+~/bin/lock-shared nix develop -c plugins-v2/calternal-chat-claude-code/test/build-echo-image.sh
+~/bin/lock-shared nix develop -c cargo test -p calternal-machine --test egress_proxy
+~/bin/lock-shared nix develop -c cargo test -p calternal-machine --test run_service
+```
+
+The egress tests cover an allowed host, an undeclared host, and a private resolver
+answer. The run-service tests verify the allowed tunnel reaches its local test
+server, direct networking is blocked, actor-bound input, ordered output, and a
+process-family Stop within two seconds.

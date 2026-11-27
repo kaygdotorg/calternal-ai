@@ -107,12 +107,29 @@ leased space and generation before starting the package in the existing
 worker sandbox. Revoking the session or losing the short space-channel
 lease tears down that placement. [Protocol and verification](../../docs/reviews/space-channel-2026-11-19.md).
 
-## Harness isolation
+## Harness runs
 
-Podman harness assignments mount only the selected provider profile and disable
-network access with `--network=none`. The run log can still stream through the
-machine control channel. Direct provider egress remains disabled until the host's
-mediated proxy is proven; fake-provider tests do not need network access.
+The run service accepts an executable binding resolved inside an installed plugin
+bundle, fixes a session's target list and starting actor, and starts a rootless
+Podman container with `--network=none`. The plugin bundle and per-run socket
+directory are read-only mounts. Run input is accepted only from the starting
+actor; Stop asks the host authorizer whether the caller may read every fixed
+target. Output events have an ordered per-run sequence, and Exit is terminal.
+Podman termination kills the container's process family before workspace cleanup,
+with a 1.5-second kill-command bound and a two-second Stop budget.
+
+The only outbound path is a per-run host CONNECT proxy. A loopback bridge forwards
+through a Unix socket to the host. The proxy admits only exact manifest `sends out`
+hostnames on port 443, resolves each request on the host, rejects unsafe addresses,
+and connects to the checked numeric address. Its tunnel log contains the hostname
+and byte counts only. Direct container networking stays disabled. This mechanism
+is exercised with a fake provider and an injected resolver/dialer; no real Claude
+program or provider sign-in is used. Executable program bindings are supported;
+image bindings currently return an explicit unsupported error.
+
+On the dev VM, the service tests are `cargo test -p calternal-machine --test
+run_service`; CONNECT policy tests are `cargo test -p calternal-machine --test
+egress_proxy`. Both use the local fake only.
 
 With `--space-vm-config PATH`, the item-head carrier uses an offline 256 MiB,
 two-vCPU Firecracker guest. Use the digest-pinned image assembled by

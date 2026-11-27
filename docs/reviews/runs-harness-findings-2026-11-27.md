@@ -1,39 +1,44 @@
 # Runs and Claude Code harness findings - 2026-11-27
 
-Lane D, slice 6. References: chat-first build plan slice 6; primitives-only host sections 6-7; format revision 9 sections 2.9, 2.20, 7.1, 7.4 and 8.1; lane C frame contract at origin/lane/plugin-process commit 499b5b3f. Reuse: crates/machine PodmanBackend, start_harness, provider_home, Sandbox exec/release, and plugins/calternal-claude-code adapter and Containerfile.
+Lane D, slice 6. References: chat-first build plan slice 6; primitives-only host sections 6-7; format revision 9 sections 2.9, 2.20, 7.1, 7.4 and 8.1; lane C frame contract at commit 499b5b3f. Reuse: `PodmanBackend`, its harness profile and streamed exec, the existing Claude Code adapter and Containerfile, the host records route, and the slot-selected `s.run` dispatch.
 
-## Decisions and gaps
+## Status and decisions
+
+The host CONNECT egress proxy and machine run service pass their dev VM gates with the fake provider. The host `s.run`/Chat append integration is the remaining step in this lane and is not claimed as verified here. No real Claude executable or provider sign-in was used.
 
 | Section | Finding and choice |
 | --- | --- |
-| Format 7.1; lane C run frame | The lane C example uses program ID calternal-chat-claude-code, but the revision 9 manifest declares calternal-provider-claude-code. Use the manifest ID. The executable wrapper in this plugin's programs folder binds it to the existing adapter in the image. |
-| Format 8.1; lane C run handoff | The host records path is now on dev, and lane C is wiring s.call and s.run to it. Until that lands, follow the coordinator: keep the reply sink stub. This smoke test uses a generated run ID and ends at an in-memory ReplySinkStub. Run lookup, actor/space binding, session target resolution, send authority (acting person only), and stop authority (anyone who can read a target) are not proven by this machine-layer test. |
-| Format 2.20 and 8.1 | The host resolves scope=session at start and fixes it to the current chat session. The test target is synthetic; the host must supply and enforce the real session target. |
-| Format 7.4; coordinator set 11 | Send-and-start is one Chat call under one request key. Chat send must include the chosen harness, append the message, then call its declared start operation with the append receipt's host-issued canonical link. Claude StartInput must accept that link and use it as the run's first input. The fixture operations do not do this; record the follow-up without editing fixtures. |
-| Format 2.9; coordinator set 11 | Unread state is an anchor, not a timestamp: count ledger records after state.read through in ledger order. The chats kind still types read through as time and compares at >; both fixture lines need updating by their owner. |
-| Coordinator set 11; rev 9 slot rules | Composer and harness slots take inputs from one typed operation-input declaration, fixed per format version with no optional extras or negotiation. The fixtures need this wiring; do not edit them. |
-| Coordinator set 12; lane C frames | Trusted slot selection admits one declared operation. Receipts carry a canonical link; change selectors are discovered once at install; oversized frames are refused; installed code stays off outside tests until OS sandboxing; workers recycle when the actor changes. This smoke test does not enable operations.ts or implement host/worker policy. |
-| Primitives-only host section 6 | No verified mediated egress for api.anthropic.com exists. Podman harnesses use --network=none, including nested Podman; the fake provider needs no network. Ask the coordinator which mediated route is approved before enabling a real provider. No real Claude command or sign-in was used. |
-| Coordinator set 13 | Append tagging, developer-only local installs, and retention do not change this machine slice; durability and receipts remain with the host records lane. |
+| Format 7.1 and lane C run frames | The installed manifest binds `calternal-provider-claude-code` to the executable in this plugin's `programs/` folder. The wrapper starts the bridge and control channel, then delegates stream handling to the existing adapter in the image. |
+| Format 8.1 | The machine library starts a fixed session target set, accepts input only from the starting actor, streams ordered output, and asks the host authorizer before Stop. The host owns link resolution, scope enforcement on calls, idempotency, and appending the reply through `calternal-chat.send`; that path remains under verification. |
+| Format 2.20 | Session scope is resolved by the host and fixed to the current chat session at start. Every host route call made by a run must recheck the same scope and session. |
+| Format 7.4; coordinator set 11 | Send-and-start is one Chat call under one request key. Chat send includes the chosen harness, appends the message, and starts it with the append receipt's host-issued canonical link. The harness operation accepts that link as its first actor input. The Chat fixture still needs the coordinator-specified wiring; it was not edited. |
+| Format 2.9; coordinator set 11 | Unread state is a record anchor: count ledger records after `state.read through` in ledger order. The Chat fixture still types and compares this value as a timestamp; its owner must update it. |
+| Coordinator set 11; revision 9 slots | A slot gets typed inputs from its one typed operation-input declaration, with no optional extras or negotiation. Fixture declarations still need this wiring; they were not edited. |
+| Coordinator set 12; lane C frames | Trusted slot selection admits one declared operation; append receipts carry a canonical link; change selectors are discovered once at install; oversized frames are refused; installed code stays off outside tests until OS sandboxing; workers recycle when the actor changes. This run service consumes the declared `s.run` call. |
+| Egress decision | The container uses `--network=none`. A per-run read-only socket reaches a host CONNECT proxy that accepts only declared hostnames on port 443, resolves every request itself, rejects unsafe answers, and dials the checked numeric address. The injected fake-test resolver redirects the allowed hostname to a local server. Tunnel logs carry hostname and byte counts only. |
+| Format program binding | This harness declares an executable. The runner explicitly rejects image bindings; the format's exact image artifact/loading semantics are not defined by this slice's test vector. Keep that gap visible rather than interpreting an image path as an executable or container tag. |
+| Stop boundary | The host authorizer permits Stop only for a caller who can read every fixed target. The wrapper kills the container process family, and the machine reports Exit after the exec ends. The fake ignores SIGINT and has a child; the test checks Stop completes within two seconds. |
+| Coordinator set 13 | Append tagging, developer-only local installs, and retention do not change this slice; durability and request receipts remain with the host records implementation. |
 
 ## Fixture lines for their owner
 
-- plugins-v2/calternal-chat/operations.ts: include the selected harness; use the new record's canonical link to start it under the same request key.
-- plugins-v2/calternal-chat-claude-code/operations.ts: accept the prompting record link and send it as the run's first actor input.
-- plugins-v2/calternal-chat/kinds/chats.md: make read through an anchor and count after it in ledger order.
+- `plugins-v2/calternal-chat/operations.ts`: include the chosen harness and start it with the new record's canonical link under the same request key.
+- `plugins-v2/calternal-chat-claude-code/operations.ts`: accept the prompting record link and send it as the run's first actor input.
+- `plugins-v2/calternal-chat/kinds/chats.md`: make read-through an anchor and count ledger records after it in order.
 - Slot declarations: reference the single typed operation-input declaration.
 
 ## Verification and hot-path counts
 
-The focused gate passed on claude@calternal-dev-01-compute02 in ~/Developer/lanes/runs-harness under the shared lock and nix develop:
-- npm ci and npm run build:plugins passed.
-- The fake echo image built with test/build-echo-image.sh.
-- cargo test -p calternal-machine --test runs_harness -- --nocapture passed 1 test after merging host records from dev.
-- cargo fmt --check -p calternal-machine passed.
+All commands below ran on `claude@calternal-dev-01-compute02`, in `~/Developer/lanes/runs-harness`, through `~/bin/lock-shared nix develop -c ...`.
 
-For the path exercised, host ledger reads: 0; SQLite reads: 0; durable record flushes: 0; in-memory reply-sink appends: 1. These counts are structural because the host record route is not called; they are not instrumented performance measurements. Provider-profile and container lifecycle I/O are not counted. Lane B measured two flushes for a host append; this test makes no append durability claim. Podman engine removal is bounded at 5 seconds after one observed teardown took 2.92 seconds; the adapter Exit must still arrive within 2 seconds after release returns.
+- `cargo test -p calternal-machine`: passed; 34 unit tests, 1 address test, 3 egress tests, 1 harness-assignment test, 4 worker tests, 6 Podman tests, 1 exec-environment test, 3 run-service tests and 1 harness test. Two native/performance tests were ignored by their existing requirements.
+- `cargo fmt --check -p calternal-machine`: passed.
+- `cargo doc --locked -p calternal-machine --no-deps --all-features`: passed.
+- The run-service tests cover an allowed CONNECT reaching a local fake server, direct networking blocked, input from another actor refused, ordered logs, and process-family Stop within two seconds. The proxy unit tests cover an undeclared host and a private DNS answer.
+
+Machine run path storage counts: 0 ledger reads, 0 SQLite reads, 0 durable record flushes. The run service validates the installed executable with two path canonicalizations and one metadata read; it does not append records. Host route read/flush counts will be recorded after its integration gate passes. These are structural counts, not performance measurements.
+
 ## Simplification opportunities
 
-- If this echo fixture grows, merge its echo and process-hold modes with the existing adapter fake instead of maintaining two provider simulators.
-- Once the host installs a complete plugin bundle as the program image, the test image builder and wrapper may be unnecessary; keep the manifest ID binding.
-- Keep actor, space, target and run-ID checks in the trusted host service, not duplicated in the generic sandbox layer.
+- The Chat harness uses an executable binding; image bindings can stay out of this runner until the format defines the plugin-local image artifact and loader.
+- The harness wrapper and test image both carry small adapter-launch details. If the host later supplies the executable directly in its plugin bundle image, one copy can be removed.

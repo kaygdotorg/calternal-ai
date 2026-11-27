@@ -97,6 +97,12 @@ pub enum EgressError {
     /// The proxy or run-control task ended before it could be stopped cleanly.
     #[error("egress control task failed")]
     Task,
+    /// The wrapper never connected to its host control socket.
+    #[error("run wrapper did not connect to the host control socket")]
+    ControlNotConnected,
+    /// The wrapper connected but did not send the expected readiness frame.
+    #[error("run wrapper did not complete the control handshake")]
+    ControlHandshake,
     /// The wrapper did not connect to its host control socket in time.
     #[error("run control socket did not become ready")]
     ControlTimeout,
@@ -415,7 +421,7 @@ mod policy_tests {
 /// Host-side stop channel for one harness wrapper in a network-isolated container.
 pub struct RunControl {
     stop: mpsc::Sender<()>,
-    ready: Option<oneshot::Receiver<()>>,
+    ready: Option<oneshot::Receiver<Result<(), EgressError>>>,
     closed: watch::Receiver<bool>,
     task: Option<JoinHandle<()>>,
 }
@@ -429,16 +435,24 @@ impl RunControl {
         let (ready_tx, ready) = oneshot::channel();
         let (closed_tx, closed) = watch::channel(false);
         let task = tokio::spawn(async move {
-            let Ok(Ok((mut stream, _))) =
-                tokio::time::timeout(Duration::from_secs(5), listener.accept()).await
-            else {
-                return;
+            let accepted = tokio::time::timeout(Duration::from_secs(5), listener.accept()).await;
+            let (mut stream, _) = match accepted {
+                Ok(Ok(connection)) => connection,
+                Ok(Err(_)) => {
+                    let _ = ready_tx.send(Err(EgressError::Task));
+                    return;
+                }
+                Err(_) => {
+                    let _ = ready_tx.send(Err(EgressError::ControlNotConnected));
+                    return;
+                }
             };
             let mut hello = [0_u8; 6];
             if stream.read_exact(&mut hello).await.is_err() || &hello != b"READY\n" {
+                let _ = ready_tx.send(Err(EgressError::ControlHandshake));
                 return;
             }
-            let _ = ready_tx.send(());
+            let _ = ready_tx.send(Ok(()));
             if stop_rx.recv().await.is_some() {
                 if stream.write_all(b"STOP\n").await.is_err() || stream.flush().await.is_err() {
                     closed_tx.send_replace(true);
@@ -460,10 +474,11 @@ impl RunControl {
     /// Wait until the wrapper has connected and sent its readiness frame.
     pub async fn wait_ready(&mut self) -> Result<(), EgressError> {
         let ready = self.ready.take().ok_or(EgressError::Task)?;
-        tokio::time::timeout(Duration::from_secs(5), ready)
+        tokio::time::timeout(Duration::from_secs(6), ready)
             .await
             .map_err(|_| EgressError::ControlTimeout)?
-            .map_err(|_| EgressError::Task)
+            .map_err(|_| EgressError::Task)??;
+        Ok(())
     }
 
     /// Ask the wrapper to kill every process in its private container.
