@@ -440,3 +440,17 @@ fn an_existing_personal_ledger_keeps_its_viewer_state() {
         .unwrap();
     assert_eq!(row["state"]["draft"], "Still here");
 }
+
+#[test]
+fn batch_destinations_are_unique_and_case_only_rename_keeps_directory() {
+    let f = Fixture::new();
+    let add = || json!({"op":"add","kind":KIND,"fields":{"title":"Conversation"}});
+    let added = f.shell("s.write", json!({"changes":[add(),add()]}));
+    let first = &added["changes"][0]["id"];
+    assert!(f.space_path().join("Chats/Conversation/chat.md").is_file());
+    assert!(f.space_path().join("Chats/Conversation 2/chat.md").is_file());
+    f.plugin(json!({"changes":[{"op":"change","item":first,"fields":{"title":"CONVERSATION"}}]}), None);
+    let path = f.space_path().join("Chats/Conversation/chat.md");
+    assert!(std::fs::read_to_string(path).unwrap().contains("CONVERSATION"));
+    assert!(!f.space_path().join("Chats/CONVERSATION 3").exists());
+}
