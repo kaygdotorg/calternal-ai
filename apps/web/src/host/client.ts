@@ -12,6 +12,7 @@ import type {
   LiveItemMetadata,
   LiveServerFrame,
   QuerySpec,
+  QueryWindowResult,
   RecordData,
   RowData,
   RunLogChunk,
@@ -338,7 +339,7 @@ export type ConnectionState = "connecting" | "open" | "reconnecting" | "closed";
 interface QueryListener {
   kind: "query";
   spec: QuerySpec;
-  onRows: (rows: RowData[], totals: Record<string, unknown>) => void;
+  onRows: (result: QueryWindowResult) => void;
   onError?: (code: string, message: string) => void;
 }
 
@@ -420,7 +421,14 @@ export class LiveClient {
       }
       if (frame.type === "rows") {
         const sub = this.subs.get(frame.sub);
-        if (sub?.kind === "query") sub.onRows(frame.rows, frame.totals);
+        if (sub?.kind === "query") {
+          sub.onRows({
+            rows: frame.rows,
+            groups: frame.groups ?? [],
+            totals: frame.totals ?? {},
+            namedTotals: frame.namedTotals ?? {},
+          });
+        }
         return;
       }
       if (frame.type === "records") {
@@ -503,7 +511,7 @@ export class LiveClient {
   /** Subscribe to a collection or ad-hoc query; returns an unsubscribe callback. */
   subscribeQuery(
     spec: QuerySpec,
-    onRows: (rows: RowData[], totals: Record<string, unknown>) => void,
+    onRows: (result: QueryWindowResult) => void,
     onError?: (code: string, message: string) => void,
   ): () => void {
     const id = `q${this.nextId++}`;

@@ -60,7 +60,7 @@
 
 <nav class="sb" class:narrow class:mac aria-label="Sidebar" data-sidebar>
   <header class="wm" data-top-line>
-    <h1 style:font-family={cursive ? "var(--wm-font)" : "var(--font-ui)"} class:ui={!cursive}>
+    <h1 style:font-family={cursive ? "var(--wm-font)" : "var(--font-ui)"} class:ui={!cursive} class:long={title.length > 9}>
       <button type="button" class="wmb" disabled={home} onclick={onhome} aria-label={home ? "calternal" : `${title}: back to the start`}>
         {#if titleSlot}{@render titleSlot()}{:else}<span>{title}</span>{/if}
       </button>
@@ -101,9 +101,9 @@
 
 <style>
   .sb { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 0 var(--s-3); gap: var(--s-3); box-sizing: border-box; }
-  .wm { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-5) var(--s-5) var(--s-1); } .wm h1 { min-width: 0; } .wt { flex: none; display: inline-flex; gap: var(--s-3); } .sb.mac .wm { padding-top: 44px; }
-  .wm h1 { margin: 0; font-size: 32px; line-height: 1.15; font-weight: 600; letter-spacing: 0.01em; font-synthesis: none; } .wm h1.ui { font-weight: var(--strong-weight); letter-spacing: 0; }
-  .wmb { display: block; max-width: 100%; text-align: start; color: inherit; font: inherit; letter-spacing: inherit; padding-inline: var(--s-2); margin-inline: calc(var(--s-2) * -1); cursor: default; } .wmb:not(:disabled) { cursor: pointer; }
+  .wm { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-5) var(--s-5) var(--s-1); } .wm h1 { flex: 1; min-width: 0; } .wt { flex: none; display: inline-flex; gap: var(--s-3); } .sb.mac .wm { padding-top: 44px; }
+  .wm h1 { margin: 0; font-size: 32px; line-height: 1.15; font-weight: 600; letter-spacing: 0.01em; font-synthesis: none; } .wm h1.ui { font-weight: var(--strong-weight); letter-spacing: 0; } .wm h1.long { font-size: 25px; letter-spacing: 0; }
+  .wmb { display: block; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: start; color: inherit; font: inherit; letter-spacing: inherit; padding-inline: 0 var(--s-2); cursor: default; } .wmb:not(:disabled) { cursor: pointer; }
   .foot { container-type: inline-size; flex: none; display: flex; align-items: center; justify-content: flex-start; gap: var(--s-4); padding: 0 var(--s-3) var(--s-3) var(--s-3); --fp-h: var(--tb-h); }
   .foot :global(.fp) { flex: none; height: var(--fp-h); }
   .foot :global(.fp.round) { width: var(--fp-h) !important; height: var(--fp-h) !important; display: grid; place-items: center; --ib: var(--fp-h); }

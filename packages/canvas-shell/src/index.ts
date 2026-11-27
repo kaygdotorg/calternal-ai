@@ -4,6 +4,9 @@
  * snapping canvas, window chrome, sidebar chrome, bottom-centre strip, and motion.
  */
 export { default as Canvas } from "./canvas/Canvas.svelte";
+export { default as BoardShell, type BoardColumn } from "./canvas/BoardShell.svelte";
+export { default as TableShell, type TableColumn } from "./canvas/TableShell.svelte";
+export { default as ItemPageShell } from "./canvas/ItemPageShell.svelte";
 export { default as Sidebar } from "./shell/Sidebar.svelte";
 export { default as AppStrip, type StripItem } from "./shell/AppStrip.svelte";
 export { default as Av } from "./shell/Av.svelte";

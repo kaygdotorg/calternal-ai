@@ -26,6 +26,7 @@
     hasPendingLogout,
     hostCall,
     LiveClient,
+    readItem,
     sessionStatus,
     signOutHost,
     subscribeAuthChannel,
@@ -33,15 +34,19 @@
   } from "./client";
   import {
     humanize,
+    isStateSetOperation,
     itemMenuActions,
+    kindHasRecords,
     operationFormFields,
     resolveComposerSlot,
     resolvePickerSlot,
+    resolveReadPositionStateKey,
     rowTitle,
     type DerivedAction,
   } from "./format";
   import HostCollection from "./HostCollection.svelte";
   import HostFormSheet, { type FormFieldSpec } from "./HostFormSheet.svelte";
+  import HostItemPage from "./HostItemPage.svelte";
   import HostRecords, { type ActiveStreamRun } from "./HostRecords.svelte";
   import HostSidebar from "./HostSidebar.svelte";
   import {
@@ -56,9 +61,11 @@
   import HostSignIn from "./HostSignIn.svelte";
   import type {
     CollectionDecl,
+    ItemDetail,
     KindDecl,
     LiveItemMetadata,
     PluginDecl,
+    QueryWindowResult,
     RecordData,
     RowData,
     SessionInfo,
@@ -91,16 +98,24 @@
     lastAnchorBefore?: string | null;
   }
 
+  const EMPTY_QUERY_RESULT: QueryWindowResult = { rows: [], groups: [], totals: {}, namedTotals: {} };
+
   let activePluginId = $state<string | null>(null);
   let selectedCollectionId = $state<string | null>(null);
   let customSidebars = $state<{ id: string; name: string }[]>([]);
   let stripOrder = $state<string[]>([]);
-  let collectionRows = $state<Record<string, RowData[]>>({});
+  let collectionResults = $state<Record<string, QueryWindowResult>>({});
+  let collectionSearch = $state<Record<string, string>>({});
   let collectionErrors = $state<Record<string, string>>({});
   let itemsById = $state<Record<string, RowData>>({});
+  let itemDetails = $state<Record<string, ItemDetail>>({});
   let recordsByItem = $state<Record<string, RecordData[]>>({});
   let itemErrors = $state<Record<string, string>>({});
   let runsByItem = $state<Record<string, ItemRunState>>({});
+
+  const collectionRows = $derived<Record<string, RowData[]>>(
+    Object.fromEntries(Object.entries(collectionResults).map(([k, v]) => [k, v.rows])),
+  );
 
   const wins = createWindows((itemId) => {
     const row = itemsById[itemId];
@@ -111,14 +126,15 @@
     title: string;
     submitLabel: string;
     fields?: FormFieldSpec[];
+    omitEmptyOptional?: boolean;
     confirmText?: string;
     danger?: boolean;
-    onsubmit: (values: Record<string, string>) => Promise<void>;
+    onsubmit: (values: Record<string, unknown>) => Promise<void>;
   }
   let sheet = $state<SheetConfig | null>(null);
 
   let live: LiveClient | null = null;
-  let unsubQueries: (() => void)[] = [];
+  const querySubs = new Map<string, () => void>();
   const itemSubs = new Map<string, () => void>();
   const runSubs = new Map<string, () => void>();
   let unsubAuthChannel: (() => void) | null = null;
@@ -242,16 +258,41 @@
     }
   }
 
-  // Keep open item windows subscribed to live records automatically.
+  function refreshItemDetail(itemId: string) {
+    if (!session) return;
+    void readItem(session, itemId)
+      .then((detail) => {
+        itemDetails = { ...itemDetails, [itemId]: detail };
+        if (itemId in itemErrors) {
+          const nextErr = { ...itemErrors };
+          delete nextErr[itemId];
+          itemErrors = nextErr;
+        }
+      })
+      .catch((err) => {
+        itemErrors = { ...itemErrors, [itemId]: err instanceof Error ? err.message : "Could not load item." };
+      });
+  }
+
+  // Keep open item windows subscribed to live records (for records kinds) or refreshed via s.read (for non-records kinds).
   $effect(() => {
-    const openIds = new Set<string>();
+    const openRecordIds = new Set<string>();
     for (const w of wins.list) {
-      if (w.kind === "item") openIds.add(w.ref);
-      else if (w.kind === "app" && w.sel) openIds.add(w.sel);
+      const id = w.kind === "item" ? w.ref : w.kind === "app" ? w.sel : null;
+      if (!id) continue;
+      const row = itemsById[id];
+      const kind = row ? findKind(row.kind) : null;
+      if (kind && !kindHasRecords(kind)) {
+        if (!itemDetails[id] || itemDetails[id]!.version !== row?.version) {
+          refreshItemDetail(id);
+        }
+      } else {
+        openRecordIds.add(id);
+      }
     }
-    for (const id of openIds) ensureItemSubscribed(id);
+    for (const id of openRecordIds) ensureItemSubscribed(id);
     for (const [id, unsub] of itemSubs) {
-      if (!openIds.has(id)) { unsub(); itemSubs.delete(id); }
+      if (!openRecordIds.has(id)) { unsub(); itemSubs.delete(id); }
     }
   });
 
@@ -346,6 +387,7 @@
             offset: parsed.safeOffset,
             turnDone,
             status: nextStatus,
+            canRetry: nextStatus === "stopped" ? Boolean(cur.fillerOp && cur.promptLink) : cur.canRetry,
           };
           runsByItem = { ...runsByItem, [itemId]: updated };
           persistRunState(updated);
@@ -451,12 +493,49 @@
     runsByItem = {};
     itemErrors = {};
     collectionErrors = {};
+    itemDetails = {};
+    collectionResults = {};
+    collectionSearch = {};
     for (const unsub of itemSubs.values()) unsub();
     itemSubs.clear();
-    for (const u of unsubQueries) u();
-    unsubQueries = [];
+    for (const unsub of querySubs.values()) unsub();
+    querySubs.clear();
     live?.close();
     live = null;
+  }
+
+  function subscribeCollection(cid: string, search = "", onFirstRestore?: (rows: RowData[]) => void) {
+    if (!live) return;
+    const prev = querySubs.get(cid);
+    if (prev) prev();
+    const spec = search.trim() ? { collection: cid, search: search.trim() } : { collection: cid };
+    const unsub = live.subscribeQuery(
+      spec,
+      (res) => {
+        if (cid in collectionErrors) {
+          const nextErr = { ...collectionErrors };
+          delete nextErr[cid];
+          collectionErrors = nextErr;
+        }
+        collectionResults = { ...collectionResults, [cid]: res };
+        const nextItems = { ...itemsById };
+        for (const r of res.rows) nextItems[r.id] = r;
+        itemsById = nextItems;
+        onFirstRestore?.(res.rows);
+      },
+      (_code, message) => {
+        const nextResults = { ...collectionResults };
+        delete nextResults[cid];
+        collectionResults = nextResults;
+        collectionErrors = { ...collectionErrors, [cid]: message || "Could not load this collection." };
+      },
+    );
+    querySubs.set(cid, unsub);
+  }
+
+  function setCollectionSearch(cid: string, query: string) {
+    collectionSearch = { ...collectionSearch, [cid]: query };
+    subscribeCollection(cid, query);
   }
 
   async function bootSession(s: SessionInfo) {
@@ -480,34 +559,17 @@
       for (const p of decl.plugins) {
         for (const col of Object.values(p.collections)) {
           const cid = col.qualified;
-          const unsub = live.subscribeQuery(
-            { collection: cid },
-            (rows) => {
-              if (cid in collectionErrors) {
-                const nextErr = { ...collectionErrors };
-                delete nextErr[cid];
-                collectionErrors = nextErr;
-              }
-              collectionRows = { ...collectionRows, [cid]: rows };
-              const nextItems = { ...itemsById };
-              for (const r of rows) nextItems[r.id] = r;
-              itemsById = nextItems;
-              if (savedOpen && !restoredOpen && nextItems[savedOpen]) {
-                restoredOpen = true;
-                wins.navigate("item", savedOpen);
-                pushed = true;
-                restorePersistedRunForItem(savedOpen);
-              }
-            },
-            (_code, message) => {
-              // Invalidate stale collection rows when the live query reports an error.
-              const nextRows = { ...collectionRows };
-              delete nextRows[cid];
-              collectionRows = nextRows;
-              collectionErrors = { ...collectionErrors, [cid]: message || "Could not load this collection." };
-            },
-          );
-          unsubQueries.push(unsub);
+          subscribeCollection(cid, "", (rows) => {
+            if (savedOpen && !restoredOpen && rows.some((r) => r.id === savedOpen)) {
+              restoredOpen = true;
+              const found = rows.find((r) => r.id === savedOpen)!;
+              const ownerPlugin = found.kind.split(".")[0];
+              if (ownerPlugin) activePluginId = ownerPlugin;
+              wins.navigate("item", savedOpen);
+              pushed = true;
+              restorePersistedRunForItem(savedOpen);
+            }
+          });
         }
       }
 
@@ -573,20 +635,31 @@
     return id;
   }
 
+  function needsVersion(kind: KindDecl, fieldNames: string[]): boolean {
+    if (!kind.together?.length) return false;
+    return kind.together.some((grp) => grp.some((f) => fieldNames.includes(f)));
+  }
+
   function openAddSheet(kind: KindDecl) {
     const addOp = kind.operations.add;
     if (!addOp || !session) return;
     const fieldNames = addOp.fields.length ? addOp.fields : ["title"];
-    const fields: FormFieldSpec[] = fieldNames.map((name) => ({
-      name,
-      label: humanize(name),
-      type: kind.fields[name]?.type ?? "text",
-      required: kind.fields[name]?.required ?? true,
-    }));
+    const fields: FormFieldSpec[] = fieldNames.map((name) => {
+      const fdecl = kind.fields[name];
+      return {
+        name,
+        label: humanize(name),
+        type: fdecl?.type ?? "text",
+        required: Boolean(fdecl?.required),
+        choices: fdecl?.choices,
+        itemType: fdecl?.itemType,
+      };
+    });
     sheet = {
       title: `New ${kind.name}`,
       submitLabel: `Create ${kind.name}`,
       fields,
+      omitEmptyOptional: true,
       onsubmit: async (vals) => {
         if (!session) return;
         const res = await hostCall<{ changes: { id: string; version: number }[] }>(
@@ -604,30 +677,138 @@
             computed: {},
             version: res.changes[0]?.version ?? 0,
           };
-          openItem(created);
+          if (kindHasRecords(kind)) openItem(created);
         }
       },
     };
   }
 
+  function openEditItemSheet(row: RowData, detail: ItemDetail | null, kind: KindDecl) {
+    if (!session) return;
+    const editableFields: FormFieldSpec[] = Object.values(kind.fields)
+      .filter((f) => !f.computed)
+      .map((f) => ({
+        name: f.name,
+        label: humanize(f.name),
+        type: f.type,
+        required: Boolean(f.required),
+        choices: f.choices,
+        itemType: f.itemType,
+        value: detail?.fields[f.name] ?? row.fields[f.name],
+      }));
+    const hasBody = kind.page.some((p) => p.kind === "body");
+    if (hasBody) {
+      editableFields.push({
+        name: "__body__",
+        label: "Notes",
+        type: "long text",
+        required: false,
+        value: detail?.body ?? "",
+      });
+    }
+    sheet = {
+      title: `Edit ${kind.name}`,
+      submitLabel: "Save",
+      fields: editableFields,
+      omitEmptyOptional: false,
+      onsubmit: async (vals) => {
+        if (!session) return;
+        const nextFields: Record<string, unknown> = {};
+        let bodyVal: string | undefined;
+        for (const [k, v] of Object.entries(vals)) {
+          if (k === "__body__") bodyVal = typeof v === "string" ? v : "";
+          else nextFields[k] = v;
+        }
+        const change: Record<string, unknown> = { op: "change", item: row.id, fields: nextFields };
+        if (hasBody && bodyVal !== undefined) change.body = bodyVal;
+        if (needsVersion(kind, Object.keys(nextFields))) change.version = detail?.version ?? row.version;
+        await hostCall(session, "s.write", { changes: [change] }, `edit-${crypto.randomUUID()}`);
+        refreshItemDetail(row.id);
+      },
+    };
+  }
+
+  function openRemoveItemSheet(row: RowData, kind: KindDecl) {
+    if (!session) return;
+    const title = rowTitle(row, kind);
+    sheet = {
+      title: `Trash ${kind.name}`,
+      submitLabel: "Move to Trash",
+      confirmText: `Move "${title}" to Trash?`,
+      danger: true,
+      onsubmit: async () => {
+        if (!session) return;
+        await hostCall(session, "s.write", { changes: [{ op: "remove", item: row.id }] }, `rm-${crypto.randomUUID()}`);
+        const w = wins.list.find((x) => x.kind === "item" && x.ref === row.id);
+        if (w) wins.close(w.id);
+        if (session) saveLastOpenItem(session.space, null);
+      },
+    };
+  }
+
+  async function moveItemField(row: RowData, field: string, value: string | boolean) {
+    if (!session) return;
+    const kind = findKind(row.kind);
+    const change: Record<string, unknown> = { op: "change", item: row.id, fields: { [field]: value } };
+    if (kind && needsVersion(kind, [field])) change.version = row.version;
+    await hostCall(session, "s.write", { changes: [change] }, `move-${crypto.randomUUID()}`);
+  }
+
   async function runAction(row: RowData, action: DerivedAction) {
     if (!session) return;
     const op = action.operation;
-    if (op.form === "set" && op.target) {
-      if (op.target.startsWith("state.")) {
+    if (op.form === "remove") {
+      openRemoveItemSheet(row, action.kind);
+      return;
+    }
+    if (op.form === "set") {
+      if (isStateSetOperation(op) && op.target) {
         const key = op.target.slice("state.".length);
         await hostCall(session, "s.state", { op: "set", item: row.id, key, value: op.value });
-      } else {
-        await hostCall(session, "s.write", {
-          changes: [{ op: "change", item: row.id, fields: { [op.target]: op.value } }],
-        });
+        return;
       }
+      const askEntries = (op.assignments ?? []).filter((a) => a.ask);
+      if (askEntries.length) {
+        const fields: FormFieldSpec[] = askEntries.map((a) => {
+          const fdecl = action.kind.fields[a.target];
+          return {
+            name: a.target,
+            label: humanize(a.target),
+            type: fdecl?.type ?? "text",
+            required: true,
+            choices: fdecl?.choices,
+            itemType: fdecl?.itemType,
+            value: row.fields[a.target],
+          };
+        });
+        sheet = {
+          title: action.label,
+          submitLabel: action.label,
+          fields,
+          onsubmit: async (vals) => {
+            if (!session) return;
+            await hostCall(
+              session,
+              "s.write",
+              { changes: [{ op: "perform", item: row.id, operation: op.name, fields: vals }] },
+              `perf-${crypto.randomUUID()}`,
+            );
+          },
+        };
+        return;
+      }
+      await hostCall(
+        session,
+        "s.write",
+        { changes: [{ op: "perform", item: row.id, operation: op.name, fields: {} }] },
+        `perf-${crypto.randomUUID()}`,
+      );
       return;
     }
     if (op.form === "change" && op.target) {
-      await hostCall(session, "s.write", {
-        changes: [{ op: "change", item: row.id, fields: { [op.target]: op.value } }],
-      });
+      const change: Record<string, unknown> = { op: "change", item: row.id, fields: { [op.target]: op.value } };
+      if (needsVersion(action.kind, [op.target])) change.version = row.version;
+      await hostCall(session, "s.write", { changes: [change] });
       return;
     }
     if (op.form === "code") {
@@ -826,7 +1007,7 @@
     wins.clear();
     session = null;
     declarations = null;
-    collectionRows = {};
+    collectionResults = {};
     itemsById = {};
     recordsByItem = {};
     needsSetup = false;
@@ -1010,11 +1191,14 @@
                 <HostCollection
                   collection={col}
                   {kind}
-                  rows={collectionRows[w.ref] ?? []}
+                  result={collectionResults[w.ref] ?? EMPTY_QUERY_RESULT}
                   selectedId={wins.selected}
+                  searchQuery={collectionSearch[w.ref] ?? ""}
+                  onsearch={(q) => setCollectionSearch(w.ref, q)}
                   onopen={openItem}
                   onadd={openAddSheet}
                   onaction={runAction}
+                  onmoveField={moveItemField}
                 />
               {/if}
             {:else if w.kind === "item"}
@@ -1023,24 +1207,43 @@
               {@const plugin = kind ? plugins.find((p) => p.id === kind.plugin) ?? null : null}
               {@const comp = plugin && kind ? resolveComposerSlot(plugin, kind) : null}
               {@const picker = plugin ? resolvePickerSlot(plugin, comp?.slot.name) : null}
+              {@const readStateKey = kind ? resolveReadPositionStateKey(kind) : null}
               {#if itemErrors[w.ref]}
                 <p class="err" role="alert">{itemErrors[w.ref]}</p>
               {:else if row && kind}
-                <HostRecords
-                  {row}
-                  {kind}
-                  records={recordsByItem[row.id] ?? []}
-                  viewerId={session?.account ?? ""}
-                  composer={comp}
-                  pickerSlot={picker}
-                  activeRun={runsByItem[row.id] ?? null}
-                  onsend={(body, quote, filler) => sendRecord(row, kind, body, quote, filler)}
-                  onstoprun={() => stopActiveRun(row.id)}
-                  onretryrun={() => retryRunStart(row.id)}
-                  ondismissrun={() => clearItemRun(row.id)}
-                  oneditrecord={(rec) => openEditRecord(row.id, rec)}
-                  onremoverecord={(rec) => openRemoveRecord(row.id, rec)}
-                />
+                {#if kindHasRecords(kind)}
+                  <HostRecords
+                    {row}
+                    {kind}
+                    {plugins}
+                    records={recordsByItem[row.id] ?? []}
+                    viewerId={session?.account ?? ""}
+                    composer={comp}
+                    pickerSlot={picker}
+                    activeRun={runsByItem[row.id] ?? null}
+                    onsend={(body, quote, filler) => sendRecord(row, kind, body, quote, filler)}
+                    onstoprun={() => stopActiveRun(row.id)}
+                    onretryrun={() => retryRunStart(row.id)}
+                    ondismissrun={() => clearItemRun(row.id)}
+                    onmarkread={readStateKey
+                      ? (anchor) => {
+                          if (!session || row.state?.[readStateKey] === anchor) return;
+                          void hostCall(session, "s.state", { op: "set", item: row.id, key: readStateKey, value: anchor }).catch(() => {});
+                        }
+                      : undefined}
+                    oneditrecord={(rec) => openEditRecord(row.id, rec)}
+                    onremoverecord={(rec) => openRemoveRecord(row.id, rec)}
+                  />
+                {:else}
+                  <HostItemPage
+                    {row}
+                    detail={itemDetails[row.id] ?? null}
+                    {kind}
+                    onaction={runAction}
+                    onedit={openEditItemSheet}
+                    onremove={openRemoveItemSheet}
+                  />
+                {/if}
               {/if}
             {/if}
           {/snippet}
@@ -1076,6 +1279,7 @@
       title={sheet.title}
       submitLabel={sheet.submitLabel}
       fields={sheet.fields}
+      omitEmptyOptional={sheet.omitEmptyOptional}
       confirmText={sheet.confirmText}
       danger={sheet.danger}
       onsubmit={sheet.onsubmit}
