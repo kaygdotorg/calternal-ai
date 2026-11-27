@@ -52,7 +52,9 @@ pub(crate) fn parse(
                 let (name, value, site) = line
                     .entry()?
                     .ok_or_else(|| line.site.error("Declare a name and type for the input"))?;
-                lines::field_name(name, line.site)?;
+                if name != "item" {
+                    lines::field_name(name, line.site)?;
+                }
                 let field = field::declaration(value, site)?;
                 if field.field_type.is_none()
                     || field.heading

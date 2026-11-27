@@ -317,9 +317,56 @@ fn code_dispatch_requires_an_isolated_runtime() {
         .call(
             f.owner.into(),
             "calternal-chat.chats.send",
-            json!({"chat":f.add(),"text":"Hello"}),
+            json!({"item":f.add(),"text":"Hello"}),
             Some("coded"),
         )
         .unwrap_err();
     assert_eq!(error.code, ErrorCode::Unavailable);
+}
+
+#[test]
+fn declares_chat_surfaces_and_evaluates_viewer_state_before_delivery() {
+    let f = Fixture::new();
+    let catalog = f.shell("s.declarations", json!({}));
+    let chat = &catalog["plugins"][0];
+    assert_eq!(catalog["space"], f.space.to_string());
+    assert_eq!(
+        chat["kinds"]["chats"]["operations"]["send"]["inputs"]["text"]["type"],
+        "long text"
+    );
+    assert_eq!(
+        chat["sidebars"]["chat"]["entries"][0]["collection"],
+        "calternal-chat.pinned"
+    );
+    assert_eq!(chat["slots"]["composer"]["fillers"][0]["target"], "send");
+    let id = f.add();
+    let read =
+        || f.shell("s.query", json!({"collection":"calternal-chat.chats"}))["rows"][0].clone();
+    let before = read();
+    assert_eq!(before["state"]["pinned"], false);
+    assert_eq!(before["state"]["draft"], Value::Null);
+    assert_eq!(before["when"]["pin"], true);
+    assert_eq!(before["when"]["unpin"], false);
+    f.shell(
+        "s.state",
+        json!({"op":"set","item":id,"key":"pinned","value":true}),
+    );
+    let after = read();
+    assert_eq!(after["state"]["pinned"], true);
+    assert_eq!(after["when"]["pin"], false);
+    assert_eq!(after["when"]["unpin"], true);
+    // Live refresh calls the same dispatcher. A different person's identity
+    // cannot receive this personal row or any of its records.
+    for (method, input) in [
+        ("s.query", json!({"from":KIND})),
+        ("s.read", json!({"item":id})),
+        ("s.declarations", json!({})),
+    ] {
+        assert_eq!(
+            f.call(f.second.into(), method, input, None)
+                .unwrap_err()
+                .code,
+            ErrorCode::NotFound
+        );
+    }
 }

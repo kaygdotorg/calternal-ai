@@ -26,7 +26,17 @@ operations:
   add: title
   change: only archived
   rename: code, menu
+    inputs:
+      item: link(chats), required
+      title: text, required
   send: code
+    inputs:
+      item: link(chats), required
+      text: long text, required
+      quote: link(chats records)
+      mentions: people
+      attachments: links(any)
+      harness: text
   change record: quote, mentions, attachments, within 48h
   remove record
   mark read: set state.read through = ask

@@ -305,7 +305,15 @@ pub(super) fn parse(
             kind.id.clone()
         }
     }
-    for entry in &mut kind.operations.values_mut() {
+    for entry in kind.operations.values() {
+        if let Some(field) = entry.inputs.get("item")
+            && (!field.required
+                || !matches!(&field.field_type, Some(FieldType::Link(link)) if link == &kind.id))
+        {
+            return Err(field
+                .site
+                .error("Declare item as a required link to this kind."));
+        }
         entry.verify(
             &kind.fields,
             &kind.state,
