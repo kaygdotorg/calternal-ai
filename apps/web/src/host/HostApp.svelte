@@ -1007,7 +1007,7 @@
     wins.clear();
     session = null;
     declarations = null;
-    collectionRows = {};
+    collectionResults = {};
     itemsById = {};
     recordsByItem = {};
     needsSetup = false;

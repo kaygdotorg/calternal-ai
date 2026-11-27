@@ -1,3 +1,11 @@
+<script lang="ts" module>
+  export interface BoardColumn<T> {
+    id: string;
+    label: string;
+    items: T[];
+  }
+</script>
+
 <script lang="ts" generics="T extends { id: string }">
   /**
    * Shared board (kanban) layout from `apps/mockup/src/canvas/views/BoardView.svelte`.
@@ -8,12 +16,6 @@
   import type { Snippet } from "svelte";
   import { tokenEase } from "@calternal/ui";
   import { ms } from "../motion";
-
-  export interface BoardColumn<T> {
-    id: string;
-    label: string;
-    items: T[];
-  }
 
   let {
     columns,

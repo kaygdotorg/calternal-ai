@@ -1,3 +1,12 @@
+<script lang="ts" module>
+  export interface TableColumn {
+    key: string;
+    label: string;
+    align?: "start" | "end";
+    sortable?: boolean;
+  }
+</script>
+
 <script lang="ts" generics="T extends { id: string }">
   /**
    * Shared table layout from `apps/mockup/src/canvas/views/TableView.svelte`.
@@ -5,13 +14,6 @@
    * and keyboard-accessible row selection. Used by both `apps/mockup` and `apps/web`.
    */
   import type { Snippet } from "svelte";
-
-  export interface TableColumn {
-    key: string;
-    label: string;
-    align?: "start" | "end";
-    sortable?: boolean;
-  }
 
   let {
     columns,
