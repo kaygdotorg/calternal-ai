@@ -1,7 +1,7 @@
 ---
 collection: open
 title: Open
-icon: checkmark
+icon: check
 format: 1
 from: tasks
 where: is open

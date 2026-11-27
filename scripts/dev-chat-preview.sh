@@ -17,7 +17,7 @@ if [[ ${1:-} == --build-release && $# == 2 ]]; then
     cp -R apps/web/dist "$release/web"
     mkdir "$release/sdk"
     cp -R packages/plugin-sdk/dist packages/plugin-sdk/package.json "$release/sdk/"
-    cp -R plugins-v2/{calternal-chat,calternal-chat-claude-code} "$release/"
+    cp -R plugins-v2/{calternal-chat,calternal-chat-claude-code,calternal-reading-list,calternal-tasks} "$release/"
     printf 'CALTERNAL_WORKER_BWRAP=%s\nCALTERNAL_WORKER_NODE=%s\nCALTERNAL_RUN_IMAGE=%s\n' \
         "$(command -v bwrap)" "$(command -v node)" "localhost/calternal-dev-chat-fake:${image_key%% *}" >"$release/runtime.env"
     exit
@@ -58,7 +58,7 @@ WorkingDirectory=%h/Developer/lanes/chat-preview
 Environment=PATH=/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin
 Environment=CALTERNAL_WORKER_SDK=%h/Developer/lanes/chat-preview/current/sdk
 EnvironmentFile=%h/Developer/lanes/chat-preview/current/runtime.env
-ExecStart=%h/Developer/lanes/chat-preview/current/calternal-host preview-serve %h/Developer/lanes/chat-preview/data %h/Developer/lanes/chat-preview/current/web %h/Developer/lanes/chat-preview/current/calternal-chat %h/Developer/lanes/chat-preview/current/calternal-chat-claude-code 24317
+ExecStart=%h/Developer/lanes/chat-preview/current/calternal-host preview-serve %h/Developer/lanes/chat-preview/data %h/Developer/lanes/chat-preview/current/web %h/Developer/lanes/chat-preview/current/calternal-chat %h/Developer/lanes/chat-preview/current/calternal-chat-claude-code %h/Developer/lanes/chat-preview/current/calternal-reading-list %h/Developer/lanes/chat-preview/current/calternal-tasks 24317
 Restart=on-failure
 RestartSec=3
 UMask=0077

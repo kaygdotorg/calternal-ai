@@ -1,4 +1,4 @@
-//! Loopback-only operator entry point for the disposable Chat preview.
+//! Loopback-only operator entry point for the disposable development preview.
 use super::{CliResult, attach_runs, open_host};
 use calternal_auth::AuthConfig;
 use std::{
@@ -11,10 +11,24 @@ use tower_http::services::{ServeDir, ServeFile};
 pub(super) async fn serve(
     root: &Path,
     web: &Path,
-    chat: &Path,
-    harness: &Path,
+    bundles: &[String],
     port: Option<u16>,
 ) -> CliResult<()> {
+    if bundles.is_empty() {
+        return Err("Supply at least one local plugin bundle directory.".into());
+    }
+    let plugins = bundles
+        .iter()
+        .map(|bundle| {
+            let path = PathBuf::from(bundle);
+            let id = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or("Use a plugin directory named after its ID.")?
+                .to_owned();
+            Ok::<_, Box<dyn std::error::Error>>((id, path))
+        })
+        .collect::<CliResult<Vec<_>>>()?;
     let root = tokio::fs::canonicalize(root).await?;
     let web = tokio::fs::canonicalize(web).await?;
     if root.starts_with(&web)
@@ -44,10 +58,7 @@ pub(super) async fn serve(
     let origin = format!("http://localhost:{}", listener.local_addr()?.port());
     let config = AuthConfig::new(&origin)?;
     let (host, auth) = open_host(root.clone(), &config).await?;
-    let host = host.with_development_plugins([
-        ("calternal-chat".to_owned(), chat.to_owned()),
-        ("calternal-chat-claude-code".to_owned(), harness.to_owned()),
-    ]);
+    let host = host.with_development_plugins(plugins);
     let (host, engine) = attach_runs(host, &root).await?;
     let setup_path = root.join("first-owner-code");
     if let Some(code) = auth.first_owner_token().await? {
@@ -64,7 +75,7 @@ pub(super) async fn serve(
     let app = calternal_host::browser::router(host, config)
         .route_service("/host", ServeFile::new(web.join("index.html")))
         .fallback_service(ServeDir::new(web));
-    println!("Chat host {origin}/host");
+    println!("Development host {origin}/host");
     println!("First-owner code file {}", setup_path.display());
     let served = async {
         axum::serve(
