@@ -35,8 +35,7 @@ pub(super) fn apply(
             base,
             ..
         } => {
-            let patch = declared::plan(kind, &item.row, &operation, &fields)?;
-            declared::update(space, kind, item, patch, None, base)?;
+            declared::perform(space, kind, item, &operation, &fields, base)?;
             Ok(("perform", None))
         }
         Change::Remove { .. } => {

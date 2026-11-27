@@ -1,4 +1,5 @@
 use super::*;
+use crate::declarations;
 use calternal_types::{AccountId, SpaceId};
 use std::path::Path;
 
@@ -108,4 +109,44 @@ fn restart_finishes_a_durable_batch_without_replacing_its_first_placement() {
         b"second"
     );
     assert!(reopened.pending_dir.names().unwrap().is_empty());
+}
+
+#[test]
+fn perform_uses_the_planner_save_check_without_revalidating() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut space = Space::open(dir.path(), SpaceId::new(), 7 * 86_400_000).unwrap();
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins-v2/calternal-reading-list");
+    space
+        .install(crate::installation::bundle(&path).unwrap(), true, None)
+        .unwrap();
+    let actor = Actor::account(AccountId::new());
+    let call = |space: &mut Space, change| {
+        let prepared = prepare(
+            space,
+            &actor,
+            Write {
+                changes: vec![serde_json::from_value(change).unwrap()],
+                preview: false,
+            },
+            None,
+        )?;
+        write(space, &actor, prepared).map(|result| result.value)
+    };
+    let added = call(
+        &mut space,
+        json!({"op":"add", "kind":"calternal-reading-list.reading",
+        "fields":{"title":"Read me", "url":"https://example.test/"}}),
+    )
+    .unwrap();
+    declarations::ITEM_SAVE_CHECKS.with(|count| count.set(0));
+    let id = &added["changes"][0]["id"];
+    call(
+        &mut space,
+        json!({"op":"perform", "item":id, "operation":"mark read"}),
+    )
+    .unwrap();
+    declarations::ITEM_SAVE_CHECKS.with(|count| assert_eq!(count.get(), 0));
+    let id = serde_json::from_value(id.clone()).unwrap();
+    assert_eq!(space.row(id).unwrap().fields["read"], true);
 }
