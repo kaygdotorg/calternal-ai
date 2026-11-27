@@ -60,7 +60,8 @@ impl Space {
             plugins.push(plugin);
         }
         self.browser_catalog.take();
-        self.plugins = plugins.into_iter()
+        self.plugins = plugins
+            .into_iter()
             .map(|plugin| (plugin.manifest.id.clone(), plugin))
             .collect();
         self.code = code;
@@ -85,8 +86,10 @@ impl Space {
         registration: Option<Registrations>,
     ) -> Result<()> {
         if self.plugins.len() >= SPACE_INSTALLATIONS {
-            return Err(Error::new(calternal_types::ErrorCode::TooLarge,
-                "The space has reached its installed plugin limit."));
+            return Err(Error::new(
+                calternal_types::ErrorCode::TooLarge,
+                "The space has reached its installed plugin limit.",
+            ));
         }
         let installed = self.plugins.values().cloned().collect::<Vec<_>>();
         let declaration = declarations::parse_plugin(&files, official, None, &installed)?;
@@ -159,15 +162,26 @@ impl Space {
 fn check_save_context(plugin: &declarations::Plugin) -> Result<()> {
     for kind in plugin.kinds.values().filter(|kind| !kind.checks.is_empty()) {
         let field = |name: &str| {
-            !matches!(name, "id" | "kind" | "created" | "edited" | "at" | "author" | "anchor")
-                && kind.fields.get(name).is_some_and(|decl| {
-                    !decl.from_metadata && decl.sidecar.is_none() && !decl.heading
-                })
+            !matches!(
+                name,
+                "id" | "kind" | "created" | "edited" | "at" | "author" | "anchor"
+            ) && kind
+                .fields
+                .get(name)
+                .is_some_and(|decl| !decl.from_metadata && decl.sidecar.is_none() && !decl.heading)
         };
         let checks = kind.checks.iter().map(|(check, _)| check);
-        let computed = kind.fields.values().filter_map(|field| field.expression.as_ref());
-        if checks.chain(computed).any(|expr| !expr.uses_only_row_and_clock(field)) {
-            return Err(Error::forbidden("The kind's save checks require unavailable context."));
+        let computed = kind
+            .fields
+            .values()
+            .filter_map(|field| field.expression.as_ref());
+        if checks
+            .chain(computed)
+            .any(|expr| !expr.uses_only_row_and_clock(field))
+        {
+            return Err(Error::forbidden(
+                "The kind's save checks require unavailable context.",
+            ));
         }
     }
     Ok(())
@@ -247,12 +261,19 @@ mod tests {
         }
         drop(space);
         let mut opened = super::Space::open(root.path(), id, 86_400_000).unwrap();
-        opened.db.execute_batch("PRAGMA reverse_unordered_selects=ON; VACUUM;").unwrap();
-        let sequence: (i64, i64) = opened.db.query_row(
-            "SELECT (SELECT sequence FROM installations WHERE plugin='z-first'),
-                    (SELECT sequence FROM installations WHERE plugin='a-last')", [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        ).unwrap();
+        opened
+            .db
+            .execute_batch("PRAGMA reverse_unordered_selects=ON; VACUUM;")
+            .unwrap();
+        let sequence: (i64, i64) = opened
+            .db
+            .query_row(
+                "SELECT (SELECT sequence FROM installations WHERE plugin='z-first'),
+                    (SELECT sequence FROM installations WHERE plugin='a-last')",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
         assert!(sequence.0 < sequence.1);
         opened.load_plugins().unwrap();
         assert_eq!(opened.plugins.len(), 2);

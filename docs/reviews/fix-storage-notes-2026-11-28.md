@@ -73,3 +73,12 @@ Morning question: are 10,000 item/Trash entries, 32 installs and 16,384
 receipts acceptable for the preview? For example, bulk importing a larger
 library would require higher aggregate limits and a storage budget. Keep
 these ceilings until the operator reviews observed disk and memory use.
+
+## Format work limits
+
+S6 allows 256 KiB and 4,096 physical lines of frontmatter. Definitions
+allow 2,048 logical entries, including definitions with continuations.
+Item YAML allows 4,096 aggregate mapping and list entries and 256 bytes
+per structural key after decoding. Literal Markdown body text stays intact.
+Formula evaluation charges one step per 64 bytes of cloned fields or
+searched text, in addition to collection entries and formula nodes.

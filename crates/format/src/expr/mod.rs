@@ -24,14 +24,21 @@ impl Expression {
         fn local(node: &Node, field: &impl Fn(&str) -> bool) -> bool {
             match &node.kind {
                 NodeKind::Value(_) => true,
-                NodeKind::Name(name) => !matches!(name.as_str(),
-                    "this" | "item" | "open item" | "records" | "state" | "settings")
-                    && field(name),
-                NodeKind::Member(base, name) => matches!(&base.kind,
-                    NodeKind::Name(scope) if scope == "this") && field(name),
-                NodeKind::Call(name, args) => !matches!(name.as_str(),
-                    "from" | "links to" | "records after")
-                    && args.iter().all(|arg| local(arg, field)),
+                NodeKind::Name(name) => {
+                    !matches!(
+                        name.as_str(),
+                        "this" | "item" | "open item" | "records" | "state" | "settings"
+                    ) && field(name)
+                }
+                NodeKind::Member(base, name) => {
+                    matches!(&base.kind,
+                    NodeKind::Name(scope) if scope == "this")
+                        && field(name)
+                }
+                NodeKind::Call(name, args) => {
+                    !matches!(name.as_str(), "from" | "links to" | "records after")
+                        && args.iter().all(|arg| local(arg, field))
+                }
                 NodeKind::List(values) => values.iter().all(|value| local(value, field)),
                 NodeKind::Unary(_, value) => local(value, field),
                 NodeKind::Binary(_, left, right) => local(left, field) && local(right, field),

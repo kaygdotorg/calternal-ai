@@ -243,18 +243,34 @@ pub(crate) fn write(
             ));
         }
     }
-    let added = working.values().filter(|item| item.before.is_none() && !item.retired).count();
+    let added = working
+        .values()
+        .filter(|item| item.before.is_none() && !item.retired)
+        .count();
     if added != 0 {
-        let trash: i64 = space.db.query_row("SELECT count(*) FROM trash", [], |row| row.get(0))
+        let trash: i64 = space
+            .db
+            .query_row("SELECT count(*) FROM trash", [], |row| row.get(0))
             .map_err(internal)?;
         if (space.rows.len() + added) as i64 + trash > crate::space::SPACE_ITEMS as i64 {
-            return Err(Error::new(ErrorCode::TooLarge, "The space has reached its item and Trash limit."));
+            return Err(Error::new(
+                ErrorCode::TooLarge,
+                "The space has reached its item and Trash limit.",
+            ));
         }
     }
     let mut destinations = BTreeSet::new();
-    let live = space.rows.iter().filter(|(id, _)| !working.contains_key(id))
+    let live = space
+        .rows
+        .iter()
+        .filter(|(id, _)| !working.contains_key(id))
         .map(|(_, row)| &row.head)
-        .chain(working.values().filter(|item| !item.retired).map(|item| &item.row.head));
+        .chain(
+            working
+                .values()
+                .filter(|item| !item.retired)
+                .map(|item| &item.row.head),
+        );
     for head in live {
         if !destinations.insert(names::fold(&head.path)) {
             return Err(Error::conflict("Multiple items would share a destination."));

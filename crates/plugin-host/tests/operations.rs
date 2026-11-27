@@ -304,11 +304,12 @@ async fn upstream_chat_send_replay_rename_and_error() {
         path.is_file(),
         "Provision the upstream Chat vectors in this disposable test checkout"
     );
-    let kind = std::fs::read_to_string(
-        repo.join("plugins-v2/calternal-chat/kinds/chats.md"),
-    ).unwrap();
-    for operation in ["    inputs:\n      item: link(chats), required\n      text:",
-                      "    inputs:\n      item: link(chats), required\n      title:"] {
+    let kind =
+        std::fs::read_to_string(repo.join("plugins-v2/calternal-chat/kinds/chats.md")).unwrap();
+    for operation in [
+        "    inputs:\n      item: link(chats), required\n      text:",
+        "    inputs:\n      item: link(chats), required\n      title:",
+    ] {
         assert!(kind.contains(operation), "Chat input declaration changed");
     }
     let space = SpaceId::new();

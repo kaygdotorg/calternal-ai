@@ -28,7 +28,9 @@ pub(crate) fn append(
     let metadata = read.metadata().map_err(internal)?;
     let initial = Signature::from(&metadata);
     if metadata.uid() != space.storage_owner || metadata.mode() & 0o022 != 0 {
-        return Err(Error::forbidden("The host must have exclusive write access to the record file."));
+        return Err(Error::forbidden(
+            "The host must have exclusive write access to the record file.",
+        ));
     }
     if metadata.nlink() != 1 || metadata.len() != head.length {
         return Err(Error::conflict("The record stream has outside changes."));
@@ -59,7 +61,12 @@ pub(crate) fn append(
     let end = head.length;
     let (next, record, bytes) = make_append(space, &head, actor, input, now, receipt)?;
     let output = append_result(&next, &record);
-    let pending = Pending { next, record, actor, receipt };
+    let pending = Pending {
+        next,
+        record,
+        actor,
+        receipt,
+    };
 
     // The FULL WAL commit is the durable replay source. On any subsequent
     // error, even an uncertain commit, the next call must recover first.
@@ -90,7 +97,9 @@ fn writable(read: &std::fs::File, initial: Signature) -> Result<std::fs::File> {
         .open(format!("/proc/self/fd/{}", read.as_raw_fd()))
         .map_err(internal)?;
     if Signature::from(&file.metadata().map_err(internal)?) != initial {
-        return Err(Error::conflict("The record stream changed during the call."));
+        return Err(Error::conflict(
+            "The record stream changed during the call.",
+        ));
     }
     Ok(file)
 }
@@ -119,36 +128,65 @@ impl Pending<&Actor, &Receipt> {
         // power loss the preceding FULL commit and synced file can replay it.
         // Keep autocheckpointing on the next FULL commit, outside this phase.
         let db = &mut space.db;
-        let checkpoint: i64 = db.pragma_query_value(None, "wal_autocheckpoint", |r| r.get(0))
+        let checkpoint: i64 = db
+            .pragma_query_value(None, "wal_autocheckpoint", |r| r.get(0))
             .map_err(internal)?;
-        db.pragma_update(None, "wal_autocheckpoint", 0).map_err(internal)?;
+        db.pragma_update(None, "wal_autocheckpoint", 0)
+            .map_err(internal)?;
         let result = (|| {
-            db.pragma_update(None, "synchronous", "NORMAL").map_err(internal)?;
+            db.pragma_update(None, "synchronous", "NORMAL")
+                .map_err(internal)?;
             self.finalize(db, space.retention_ms, output)
         })();
-        let sync = db.pragma_update(None, "synchronous", "FULL").map_err(internal);
-        let checkpoint = db.pragma_update(None, "wal_autocheckpoint", checkpoint).map_err(internal);
+        let sync = db
+            .pragma_update(None, "synchronous", "FULL")
+            .map_err(internal);
+        let checkpoint = db
+            .pragma_update(None, "wal_autocheckpoint", checkpoint)
+            .map_err(internal);
         result.and(sync).and(checkpoint)
     }
 
     fn finalize(&self, db: &mut Connection, retention: i64, output: &Value) -> Result<()> {
         let tx = db.transaction().map_err(internal)?;
-        stamp_append(&tx, retention, &self.next, &self.record, self.actor, self.receipt, output)?;
-        tx.execute("DELETE FROM pending_append WHERE id=1", []).map_err(internal)?;
+        stamp_append(
+            &tx,
+            retention,
+            &self.next,
+            &self.record,
+            self.actor,
+            self.receipt,
+            output,
+        )?;
+        tx.execute("DELETE FROM pending_append WHERE id=1", [])
+            .map_err(internal)?;
         tx.commit().map_err(internal)
     }
 }
 
 /// Resolve a durable preparation before exposing the reopened space.
 pub(crate) fn recover_pending(space: &mut Space) -> Result<()> {
-    let pending: Option<(String, Vec<u8>)> = space.db.query_row(
-        "SELECT data,bytes FROM pending_append WHERE id=1",
-        [], |row| Ok((row.get(0)?, row.get(1)?)),
-    ).optional().map_err(internal)?;
-    let Some((data, expected)) = pending else { return Ok(()); };
+    let pending: Option<(String, Vec<u8>)> = space
+        .db
+        .query_row(
+            "SELECT data,bytes FROM pending_append WHERE id=1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(internal)?;
+    let Some((data, expected)) = pending else {
+        return Ok(());
+    };
     let pending: Pending<Actor, Receipt> = serde_json::from_str(&data).map_err(internal)?;
-    let prior: String = space.db.query_row("SELECT data FROM head WHERE id=?1",
-        [pending.next.id.to_string()], |row| row.get(0)).map_err(internal)?;
+    let prior: String = space
+        .db
+        .query_row(
+            "SELECT data FROM head WHERE id=?1",
+            [pending.next.id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(internal)?;
     let prior: Head = serde_json::from_str(&prior).map_err(internal)?;
     if prior.length != pending.record.offset || prior.version + 1 != pending.next.version {
         return Err(internal("Pending append has a different ledger head"));
@@ -157,23 +195,33 @@ pub(crate) fn recover_pending(space: &mut Space) -> Result<()> {
     use std::os::unix::fs::MetadataExt;
     let metadata = file.metadata().map_err(internal)?;
     if metadata.uid() != space.storage_owner || metadata.mode() & 0o022 != 0 {
-        return Err(Error::forbidden("The host must have exclusive write access to the record file."));
+        return Err(Error::forbidden(
+            "The host must have exclusive write access to the record file.",
+        ));
     }
     let signature = Signature::from(&metadata);
-    let bytes = crate::space::bounded_read(file.try_clone().map_err(internal)?, crate::space::ITEM_BYTES)?;
+    let bytes = crate::space::bounded_read(
+        file.try_clone().map_err(internal)?,
+        crate::space::ITEM_BYTES,
+    )?;
     let prefix = bytes.get(..prior.prefix as usize);
     let tail = bytes.get(prior.length as usize..);
     if !prefix.is_some_and(|prefix| space.hash(prefix) == prior.hash)
         || tail.is_none()
         || space.records(prior.id)?.iter().any(|row| {
-            !row.bytes(&bytes).is_some_and(|bytes| space.hash(bytes) == row.hash)
+            !row.bytes(&bytes)
+                .is_some_and(|bytes| space.hash(bytes) == row.hash)
         })
     {
-        return Err(Error::conflict("The pending append's ledger prefix changed on disk."));
+        return Err(Error::conflict(
+            "The pending append's ledger prefix changed on disk.",
+        ));
     }
     let tail = tail.expect("verified length");
     if Signature::from(&file.metadata().map_err(internal)?) != signature {
-        return Err(Error::conflict("The recovery file changed during verification."));
+        return Err(Error::conflict(
+            "The recovery file changed during verification.",
+        ));
     }
     if tail.starts_with(&expected) {
         file.sync_data().map_err(internal)?;
@@ -189,16 +237,23 @@ pub(crate) fn recover_pending(space: &mut Space) -> Result<()> {
     if expected.starts_with(tail) {
         #[cfg(target_os = "linux")]
         if !tail.is_empty() {
-            writable(&file, signature)?.set_len(prior.length).map_err(internal)?;
+            writable(&file, signature)?
+                .set_len(prior.length)
+                .map_err(internal)?;
         }
         #[cfg(not(target_os = "linux"))]
         if !tail.is_empty() {
-            return Err(Error::conflict("Interrupted append recovery requires the Linux host."));
+            return Err(Error::conflict(
+                "Interrupted append recovery requires the Linux host.",
+            ));
         }
         file.sync_data().map_err(internal)?;
     }
     // Nonmatching bytes belong to the outside-edit path. Keep them intact.
-    space.db.execute("DELETE FROM pending_append WHERE id=1", []).map_err(internal)?;
+    space
+        .db
+        .execute("DELETE FROM pending_append WHERE id=1", [])
+        .map_err(internal)?;
     Ok(())
 }
 

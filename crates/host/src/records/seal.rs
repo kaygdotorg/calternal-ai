@@ -42,16 +42,19 @@ pub(super) fn key_anchor(
     ))
 }
 
-pub(super) fn seal(space: &Space, head: &Head, actor: &Actor, at: i64, payload: &mut Vec<u8>) -> Result<()> {
+pub(super) fn seal(
+    space: &Space,
+    head: &Head,
+    actor: &Actor,
+    at: i64,
+    payload: &mut Vec<u8>,
+) -> Result<()> {
     let within_minute = (at.rem_euclid(60_000) as u16).to_le_bytes();
     let tag = mac(space, head, actor, at, blake3::hash(payload))?;
     let mut claim = [0; TAG_BYTES + 2];
     claim[..2].copy_from_slice(&within_minute);
     claim[2..].copy_from_slice(&tag.as_bytes()[..TAG_BYTES]);
-    let suffix = format!(
-        "{PREFIX}{}{SUFFIX}",
-        URL_SAFE_NO_PAD.encode(claim)
-    );
+    let suffix = format!("{PREFIX}{}{SUFFIX}", URL_SAFE_NO_PAD.encode(claim));
     let newline = payload
         .iter()
         .position(|b| *b == b'\n')
@@ -90,7 +93,15 @@ pub(super) fn verify(space: &Space, head: &Head, tail: &[u8]) -> Result<Option<C
             AccountId::parse(&head.author).ok()?,
             head.kind.split_once('.')?.0,
         );
-        Some((header, newline, tag, anchor, minute + within_minute, owner, plugin))
+        Some((
+            header,
+            newline,
+            tag,
+            anchor,
+            minute + within_minute,
+            owner,
+            plugin,
+        ))
     };
     let Some((header, newline, tag, anchor, at, owner, plugin)) = decoded() else {
         return Ok(None);
@@ -121,7 +132,13 @@ pub(super) fn verify(space: &Space, head: &Head, tail: &[u8]) -> Result<Option<C
     Ok(None)
 }
 
-fn mac(space: &Space, head: &Head, actor: &Actor, at: i64, payload: blake3::Hash) -> Result<blake3::Hash> {
+fn mac(
+    space: &Space,
+    head: &Head,
+    actor: &Actor,
+    at: i64,
+    payload: blake3::Hash,
+) -> Result<blake3::Hash> {
     let mut tag = blake3::Hasher::new_keyed(&space.key);
     tag.update(b"calternal-host:append:v2\0");
     tag.update(head.id.as_bytes());
