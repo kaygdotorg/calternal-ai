@@ -13,7 +13,7 @@ export interface SendInput {
   quote?: RecordLink;
   mentions?: PersonId[];
   attachments?: ItemLink[];
-  /** Qualified start operation chosen at the harness slot. */
+  /** Optional requested operation, checked against the host's slot selection. */
   harness?: string;
 }
 
@@ -34,12 +34,13 @@ export const send = on.call("chats.send", async ({ chat, text, quote, mentions, 
       record: { fields: { quote, mentions, attachments }, body: text },
     },
   }]);
-  if (harness) {
+  const operation = harness ?? s.event.selected_operation;
+  if (operation) {
     const prompt = receipt.changes[0].link;
     if (!prompt) {
       throw { code: "unreachable", message: "The record link is unavailable.", next: "Retry the message." };
     }
-    await s.call(harness, { chat, prompt });
+    await s.call(operation, { chat, prompt });
   }
   return receipt;
 });

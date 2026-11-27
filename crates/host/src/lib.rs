@@ -27,7 +27,8 @@ use std::sync::{Arc, Mutex};
 pub const WRITE_BYTES: usize = 16 * 1024 * 1024;
 
 /// A request from a session or a trusted in-process adapter. The envelope
-/// carries only operation data. The adapter supplies identity separately.
+/// carries operation data and a person’s optional slot selection. The
+/// adapter supplies identity separately.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Call {
@@ -38,6 +39,19 @@ pub struct Call {
     pub input: Value,
     /// Optional per-gesture or per-handler-write retry key.
     pub idempotency_key: Option<String>,
+    /// A person-picked slot and filler to check before dispatching coded work.
+    pub slot_selection: Option<SlotSelection>,
+}
+
+/// An untrusted selection resolved against installed declarations by the
+/// host before it can authorize a worker callback.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SlotSelection {
+    /// Slot ID local to the plugin owning the coded operation.
+    pub slot: String,
+    /// Installed filler plugin ID selected for this slot.
+    pub filler: String,
 }
 
 type Slot = Arc<Mutex<Option<Space>>>;
@@ -135,6 +149,11 @@ impl Host {
     /// plugin via the shared actor type. A run needs a scope-aware adapter
     /// before it can call the host. This method blocks on space storage.
     pub fn call(&self, actor: Actor, id: SpaceId, call: Call) -> Result<Value> {
+        if call.slot_selection.is_some() {
+            return Err(Error::forbidden(
+                "A slot selection requires a person’s coded operation.",
+            ));
+        }
         self.with_space(&actor, id, |space| space.call(&actor, call))
     }
 

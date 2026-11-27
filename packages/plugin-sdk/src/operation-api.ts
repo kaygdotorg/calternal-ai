@@ -197,6 +197,8 @@ export interface OperationEvent {
   before?: unknown;
   /** Host request identifier when available. */
   request?: string;
+  /** Qualified operation resolved from the person's slot selection, when present. */
+  selected_operation?: string;
 }
 
 /** Handle for a run in the current operation. */

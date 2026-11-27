@@ -55,6 +55,9 @@ pub struct Event {
     /// Host request identifier, when available for this event.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request: Option<String>,
+    /// Qualified operation of the filler selected on this host request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected_operation: Option<String>,
 }
 
 /// A host-admitted event and its caller-visible input.

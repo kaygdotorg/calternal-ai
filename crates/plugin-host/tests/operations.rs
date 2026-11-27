@@ -82,6 +82,7 @@ fn delivery(
             item: Some(item),
             before: None,
             request: None,
+            selected_operation: None,
         },
     }
 }

@@ -68,7 +68,18 @@ After a successful write the host sends an item observation to matching
 registered plugins, excluding plugins already in the write's ancestry.
 The worker callback is outside the space lock.
 
-The append path already supplies the record link consumed by Chat's
-optional harness call. The selected harness operation must be listed
-in the calling manifest. The run adapter and durable delivery of
-reactions across a host restart remain separate integration work.
+The append path supplies the record link consumed by Chat's optional
+harness call. The person selects a filler using the call envelope:
+
+```json
+{"call":"calternal-chat.chats.send","input":{"chat":"019a0000-0000-7000-8000-000000000001","text":"Hello"},"idempotency_key":"gesture-1","slot_selection":{"slot":"harness","filler":"my-harness"}}
+```
+
+The route checks the calling plugin's person-picked slot and resolves
+the installed filler's one declared coded operation. The worker sees
+the qualified operation in `s.event.selected_operation`. Its `s.call`
+is admitted only for that operation under the active selection. The
+selection does not carry through reactions or further nested calls.
+An operation name in plugin input supplies no selection. The run
+adapter and durable reaction delivery across restart remain separate
+integration work.
