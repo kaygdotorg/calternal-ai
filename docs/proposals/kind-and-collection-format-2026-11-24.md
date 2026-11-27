@@ -1,14 +1,14 @@
-# The kind and collection format · revision 9
+# The kind and collection format · revision 10
 
-**Revision 9, 2026-11-27** (round 34: the owner's last answers; Chat is
-built first on this revision). This is the single statement of the on-disk
+**Revision 10, 2026-11-28** (Chat-first implementation and coordinator
+sets 11–16 and the browser follow-up). This is the single statement of the on-disk
 format and the plugin call surface; a builder implements from it alone.
 
 It applies, all binding:
 
 - rounds 21 to 33 of `docs/morning-2026-11-21.md`;
 - round 34 of the morning report, and its later answers the same day;
-- the ten "Decided by the coordinator" sets of 2026-11-27;
+- the sixteen "Decided by the coordinator" sets of 2026-11-27;
 - the security review of revision 7
   ([docs/reviews/format-rev7-security-review-2026-11-27.md](../reviews/format-rev7-security-review-2026-11-27.md)),
   finding by finding, in Appendix D;
@@ -19,7 +19,8 @@ It applies, all binding:
   audit, for context.
 
 Where they contradict older text, the newer wins. The contradictions
-revision 6 resolved are in §19; revisions 7 through 9 are in §21. Items the
+revision 6 resolved are in §19. See §21 for revisions 7–10 and the
+closing section for differences between the decisions and the code. Items the
 owner has not decided are marked **OPEN** in §17.
 
 The aim (owner, round 33): a very strong, very versatile plugin API that lets
@@ -50,7 +51,8 @@ grammar; a person can write a sum by hand; an agent writes anything larger.
 18. Counts, and two ways to say one thing
 19. Contradictions resolved (revision 6)
 20. Choices that no decision covers
-21. Change list (revisions 7 through 9)
+21. Change list (revisions 7 through 10)
+22. Code and specification disagree (after the appendices)
 
 Appendices:
 
@@ -79,7 +81,8 @@ expressions) that Appendix A cites.
   templates/<name>.md    starting bodies for new items
   themes/<name>.md       themes (§11)
   profiles/<name>.md     space profiles the Owner may apply (§12)
-  assets/                fonts, icons, sounds, wallpapers for themes
+  assets/                recognised data files such as fonts and raster images
+  programs/              example location for bound executable or image files
   frames/                web code drawn in a sealed frame
   operations.ts          operations that need code
 ```
@@ -118,7 +121,17 @@ Every folder and file except `plugin.md` is optional.
   notification, destination or sign-in line. Adding or changing a
   `refuses:` rule also waits for the Owner. A changed kind body or
   notification template counts as a changed sentence.
-- **Any HTML or script anywhere in a plugin counts as `frames/`** (S14).
+- **Classify assets by content.** The host uses a short allowlist of
+  recognised image, font and plain-text types. Everything else, including
+  SVG, HTML and any file capable of carrying script, is classified as a
+  frame and requires Owner install and the frame warning. An extension or
+  a supplied MIME type grants no authority (S14, set 14).
+- **Chat-first installation** uses a local bundle folder in the developer
+  path. The in-app install path still needs binding of the plugin ID to
+  its source and the approval sheet in §1.1a. The server checks definition
+  text at install and sends compiled declarations to devices (§8.1).
+  Devices draw those declarations without shipping the Unicode install
+  checks (set 14).
 
 ### 1.1a Text on sheets, and one rule for every free string and path (S23, S43)
 
@@ -426,8 +439,8 @@ is indeterminate.
 ### 2.7 `fields:`
 
 ```text
-<name>: <type>[, required][, default <value>][, heading][, was <old>[|<older>]…][, from metadata][, in sidecar[ <property>]]
-<name>: [per day|week|month|year ]= <formula>[, mark]
+<name>: <type>[, required][, default <value>][, heading][, was <old>[|<older>]…][, from metadata][, in sidecar[ <property>]][, badge]
+<name>: [per day|week|month|year ]= <formula>[, mark|badge]
 ```
 
 ```markdown
@@ -451,6 +464,7 @@ fields:
 | `from metadata` | Read from the file's embedded metadata; read-only; file items only |
 | `in sidecar [<property>]` | Stored in the XMP sidecar, under that property if named; file items only |
 | `mark` | On a yes/no computed field: shows the field's name as a label on the item when true (fifth set). In an addition, it is drawn with the adding plugin's icon, never in the host's warning style |
+| `badge` | On a numeric field or numeric formula result: marks it for badge presentation when selected in a row. Use the field name as the badge label and include the value in the accessible name, for example “3 unread.” |
 
 - **Computed fields** start with `=`. Their values live only in the
   rebuildable index, never in the item.
@@ -493,7 +507,20 @@ Felt heavy today.
 
 - **The header** is exactly `**<name>** · <YYYY-MM-DD HH:MM> ^<16
   Crockford characters>`, written by the server, with the time in UTC. `*`
-  and `·` in the name are escaped with `\`.
+  and `·` in the name are escaped with `\`. The anchor ends at the first
+  space. A trailing HTML comment is opaque host data. The format reader
+  includes it in the header source span and preserves its bytes when
+  editing frontmatter. It accepts untagged headers too.
+- **Host append seal.** New appends end the header with a 34-byte
+  ` <!--ca1 <22 base64url characters>-->` suffix. The host flushes the
+  file and then the ledger. The keyed seal binds the item, position,
+  offset, author and record bytes, including the header time and
+  anchor. For a keyed gesture, the anchor also binds the request key.
+  Only the host verifies the seal.
+  On restart the host can adopt a complete verified tail and recover
+  its receipt. An unverified, torn or moved tail enters the outside-change
+  path. Shared writers still need an authoritative author source for
+  recovery.
 - **The record's fields** are the consecutive `key: value` lines after the
   header whose key is a declared record field. The first other line starts
   the record's Markdown body, so `Note: felt heavy` is body text when
@@ -517,12 +544,16 @@ state:
 
 ```markdown
 state:
-  read: text
+  read through: record anchor
   muted: yes/no, default no
 ```
 
 - **What it holds:** per-person keys for this kind's items, stored in the
   person's personal space (round 21).
+- **`record anchor`** stores the bare 16-character host anchor, as
+  `read through` above. It denotes a ledger position in this item.
+  Use `count(records after state.read through)` for unread, including
+  when adjacent records have the same timestamp.
 - **Writing:** one-liners set them (`mute: set state.muted = yes, menu`).
 - **Reading:** formulas and checks read them as `state.<key>`. A formula
   that reads `state.` or a per-person setting is computed per viewer when
@@ -789,8 +820,25 @@ placement = swipe | menu | primary
 | state | `mute: set state.muted = yes, menu` |
 | open | `today: open where date = today(), primary` |
 | timer | `rest: timer settings.rest, after append record` |
-| coded | `reconcile: code, menu` |
+| coded | `reconcile: code, menu` with an optional nested `inputs:` block |
 | records | `append record: exercise, weight, reps, primary` · `change record: weight, reps, within 48h` · `remove record` |
+
+A coded operation can declare a nonempty `inputs:` block under its
+operation line. Each child has a name and stored field type with the
+applicable input flags, such as `required`. Built-in operations use their
+own forms above. Calls, slot schemas, refusal checks and generated help
+use this declaration. For an item-scoped coded operation, declare
+`item: link(<its kind>), required` and pass the target UUID under `item`.
+An operation without this input has no event item. Other links are
+ordinary inputs, such as a targetless harness receiving a chat UUID.
+
+```markdown
+operations:
+  rename: code, menu
+    inputs:
+      item: link(chats), required
+      title: text, required
+```
 
 - **`set <field> = <value>`** takes a formula; choice values are quoted
   (X3).
@@ -849,6 +897,7 @@ placement = swipe | menu | primary
 | `colour` | `#rrggbb` only (S15) | `"#c96f4a"` | — | `colour: colour` |
 | `data` | A structured value that only the owning plugin's code changes, on every path (outside writes, other plugins, `duplicate`) | a map | — | `source: data` |
 | `records(<field>: <type>…)` | Small records in the frontmatter | a list of maps | — | `log: records(done: time, due: date, skipped: date)` |
+| `record anchor` | A host record position, used in per-person state (§2.9) | Stored as state | A bare 16-character anchor | `read through: record anchor` |
 
 **Built-in fields** every item has, read-only: `id`, `kind`, `created`,
 `edited`. They, and a record's `author` and `at`, come from host state.
@@ -896,7 +945,7 @@ where`, `totals`, view columns, chart values and agent-rule conditions.
 | **X3 Choice values** | Choice values are text and are always quoted in formulas, including in `set`, `drop:`, `in (…)` and board conditions: `status = "did not happen"` |
 | **X4 Scope** | Inside a list function's condition, names are the element's. The outer item is `this.<field>`; `period`, `settings.` and `state.` are global. `this` always means the item the formula belongs to; in a collection's condition, the item open in the window is `open item` (`links to open item`, seventh set). A name the element lacks is an install error |
 | **X5 Durations** | Units `s`, `min`, `h`, `d`, `w`, `mo`, `y`, written without a space (`30min`, `6mo`); `m` alone is refused, naming the line |
-| **X6 Numbers, units and money** | `number` is an exact decimal. A two-unit number is stored in the first unit; the unit table is the engine's own. Arithmetic across currencies is an error value |
+| **X6 Numbers, units and money** | `number` is base ten, with up to 38 coefficient digits and up to 18 fractional places. Division truncates toward zero at 18 places. `round` rounds ties away from zero. A two-unit number is stored in the first unit; the unit table is the engine's own. Arithmetic across currencies is an error value |
 
 ### 4.2 Operators and empty
 
@@ -912,7 +961,7 @@ where`, `totals`, view columns, chart values and agent-rule conditions.
 | --- | --- |
 | `if(c, a, b)` | `if(late, "Late", "On time")` |
 | `sum(list[, condition])` | `sum(tasks.hours)` |
-| `count(list[, condition])` | `count(depends on, status != "done")` |
+| `count(list[, condition])`, `count(records after state.<key>)` | `count(depends on, status != "done")`, `count(records after state.read through)` |
 | `min(list[, condition])`, `min(a, b)` | `min(available, 0)` |
 | `max(list[, condition])`, `max(a, b)` | `max(previous(available), 0)` |
 | `average(list[, condition])` | `average(records.reps)` |
@@ -934,6 +983,12 @@ where`, `totals`, view columns, chart values and agent-rule conditions.
 | `domain(url)` | `domain(url)` |
 | `contains(text, part)` | `contains(subject, "invoice")` |
 
+- **`count(records after state.<key>)`** counts visible records strictly
+  after the anchor in the current item's ledger order. For a removed
+  record the host may supply its retained position as the number of
+  visible records at or before it. Empty state or an anchor missing
+  from both the visible records and the supplied positions counts all
+  visible records.
 - **Twenty-five functions** (fifth set: `empty(x)` removed).
 - **`week`, `month` and `year`** return the period itself (`2026-11`).
 - **New functions** come only from the engine; plugins never ship their
@@ -1016,6 +1071,7 @@ where`, `totals`, view columns, chart values and agent-rule conditions.
 | --- | --- | --- |
 | `collection` | ID | `collection: unread` |
 | `title` | Name | `title: Unread` |
+| `icon` | Optional catalogue icon token | `icon: archive` |
 | `format` | `1` | `format: 1` |
 | `from` | Sources (5.3) | `from: tasks, events` |
 | `where` | A condition | `where: not read` |
@@ -1045,6 +1101,7 @@ stays and the new one is offered, as with sidebars (review 17).
 | map | `map: <place field>` | `map: place` |
 | folders | `folders: <column>…` (`from: files` only) | `folders: name, edited, size` |
 | compact | `compact: <column>…`, small: a widget, a carousel or a sidebar preview, laid out by its place | `compact: image` |
+| strip | `strip: <column>…`, a horizontal sequence of compact rows, including in a sidebar | `strip: title, people, unread` |
 
 - **A column** is a field or a formula (fifth set).
 - **Dropping into a board group** sets the field, or makes the group's
@@ -1130,8 +1187,8 @@ removing or reordering lines. Each member's copy lives in their personal
 space; an update keeps a changed copy and offers the new one (G2).
 
 ```text
-- [<title>](<relative link to a collection>)
-- [<title>](<<plugin>:collections/<id>>)
+- [<title>](<relative link to a collection>)[, icon: <token>]
+- [<title>](<<plugin>:collections/<id>>)[, icon: <token>]
 - each: <kind>[, where <condition>][, sort <field>[ asc|desc]][, under "<heading>"] -> <collection> by <link field>
 - each: tags of <kind>[, under "<parent tag>"] -> <collection>
 - section: <heading>
@@ -1158,6 +1215,10 @@ format: 1
 - **`each: tags of <kind>`** makes one entry per top-level tag, or per
   child of `<parent tag>`. Opening it filters `<collection>` to that tag
   and its children.
+- **Entry icons** are optional catalogue tokens, as on a collection.
+  A linked entry uses its explicit token first, then the collection's
+  token. With neither, draw the text label alone. The compiled catalog
+  carries the collection and entry icon values. Icons are decorative.
 - **Links to another plugin's collection** grant nothing.
 - **Lines another plugin adds** (§7.2) are drawn after this file's lines,
   and are removed like any line.
@@ -1171,11 +1232,11 @@ format: 1
 | `plugin`, `name`, `icon`, `version`, `format` | ID (N1), what people see, a semantic version, `1` | `version: 1.0.0` |
 | `needs` | Only for versions and `optional`; everything else is derived from `reads`, `calls`, `extends`, `listens` and link types (sixth set) | `needs: calternal-contacts >=1 optional` |
 | `reads` | Other plugins' kinds its code may query, read and get `on.change` for (C4) | `reads: calternal-mail.messages` |
-| `calls` | Other plugins' operations its code calls | `calls: calternal-files.add` |
+| `calls` | Other plugins' operations its code calls outside a person-picked slot admission (§7.4) | `calls: calternal-files.add` |
 | `sends out` | `nothing`, or hosts, `a server you name`, `the public web` | `sends out: caldav.icloud.com, a server you name` |
 | `sign-ins` | Accounts the server signs in to; several allowed (G12) | 7.3 |
 | `secrets` | Values the Owner enters once, each for one host and one header | `secrets: maps key for api.maptiler.com in X-Api-Key` |
-| `programs` | Programs it runs in the sandbox or in jobs | `programs: ffmpeg, ocr` |
+| `programs` | Plugin-local program bindings for runs or jobs | `programs:` / `  ocr: executable programs/ocr` |
 | `outside` | Outside addresses, and how each proves itself | 7.5 |
 | `extends` | Additions to other plugins' kinds, sidebars and Home | 7.2 |
 | `slots`, `fills` | Places it offers, and places it fills | 7.4 |
@@ -1184,6 +1245,13 @@ format: 1
 | `settings` | Typed settings (inherited ADR 0055) | 7.8 |
 | `refuses` | Conditions that can refuse another plugin's operation | 7.9 |
 | body | What it does, shown at install | |
+
+A `programs:` block maps a program ID to `executable <path>` or
+`image <path>` inside the installed bundle. The format parser also reads
+a bare path as an executable. Install checks that the bound file is
+present, shows the binding to the Owner, and requires Owner approval.
+Only a bound program can be supplied for execution. Image artifact
+loading remains open in the run service.
 
 **Destinations** (review 44, 45; S17, S18; these rules only narrow):
 
@@ -1312,7 +1380,8 @@ use is stamped with who used it.
 
 ```text
 slots:
-  <slot>: single|many, gives "<what>", picked by person|space[, recommended <plugin>]
+  <slot>: single|many, <gives>, picked by person|space[, recommended <plugin>][, inputs <operation>][, label "<name>"]
+  <gives> = gives "<what>" | gives text <input>[, draft state.<key>][, quote <input>]
 fills:
   <place>: frame <path>|operation <operation>|collection <id>[, as "<label>"]
   receive: url|text|file… -> operation <operation>
@@ -1320,19 +1389,43 @@ fills:
 
 ```markdown
 slots:
-  composer: single, gives "the draft and the chat", picked by person, recommended calternal-chat-composer
+  composer: single, gives text text, draft state.draft, quote quote, picked by person, recommended calternal-chat, inputs chats.send, label "Message"
 fills:
   kind [calternal-mail.messages] panel: frame frames/summary.html
   search: operation search archive, as "Mail archive"
   receive: url, text -> operation add
-  calternal-chat:composer: frame frames/composer.html
+  calternal-chat:composer: operation send
 ```
 
 - **`frame <path>`** names a file inside `frames/` (S14).
 - **Place keys follow L1:** `kind [calternal-mail.messages] panel` and
   `calternal-chat:composer` are each one key, ending at the first `: `.
-- **A place gives only what its row says.** A part calls only its own
-  operations and what `calls:` lists.
+- **Typed slot inputs.** `inputs <operation>` references one local
+  operation's nonempty typed input block, by unambiguous name or
+  `<kind>.<operation>`. Operation fillers use that schema, fixed per
+  format version, with no optional extras or negotiation.
+- **Composer binding.** The typed form of `gives` identifies a composer
+  and names the text input in the operation's schema. The draft clause,
+  if present, names a per-person state key of compatible text type on
+  the target kind. The quote clause, if present, names a record-link
+  input in that schema. The selected readable record supplies its
+  host-issued link. The exact wire path for obtaining a link for an
+  existing record still needs implementation. Binding names refer
+  to the schema, which stays the single source of types.
+- **Slot and filler labels.** A slot can declare `label "<name>"`.
+  The compiled catalog carries that label and preserves an optional
+  filler `as "<label>"` as the filler's display label in both the slot
+  picker and the fill projection. A filler without a label uses the
+  supplying plugin's name. IDs remain the values sent in selections.
+- **A place gives only what its row says.** A person can select an
+  installed plugin for a person-picked slot in the call envelope,
+  `"slot_selection":{"slot":"harness","filler":"my-harness"}`.
+  The host resolves that filler to its one declared coded operation
+  and supplies its qualified name as `s.event.selected_operation`.
+  Under that selection the calling plugin may call that operation
+  without a `calls:` entry. The selection doesn't travel to reactions
+  or further nested calls. An operation name in ordinary input grants
+  no authority.
 - **Places that see typed text** say so on the pick screen, and are called
   only when the person opens that entry or scope.
 - **A plugin's search** answers only in a scope the person picked, within
@@ -1489,7 +1582,7 @@ refuses:
 
 ## 8. Calls, events, the acting person and the write table
 
-### 8.1 The fourteen calls
+### 8.1 The fifteen calls
 
 **Errors:** one caller-safe shape, `{ code, message, next }`, with ten
 codes: `not-allowed`, `not-found`, `invalid`, `conflict`, `too-large`,
@@ -1497,23 +1590,55 @@ codes: `not-allowed`, `not-found`, `invalid`, `conflict`, `too-large`,
 
 | Call | Input | Output | Errors | Bound |
 | --- | --- | --- | --- | --- |
-| `s.query(q)` | `{ from, where, sort, group, totals, fields, cursor }` | `{ rows, totals, cursor }` | `not-allowed`, `invalid` | 200 rows a page |
-| `s.read(item)` | An item ID | `{ id, kind, fields, computed, body, records }` | `not-found`, `not-allowed` | 32 MiB |
-| `s.write(changes, { preview? })` | A list of `add(kind, fields, body?)`, `change(item, fields?, body?, base?)`, `remove(item)`, `move(item, folder?, file?)`, `append record(item, record)`, `change record(item, anchor, record)`, `remove record(item, anchor)` | New IDs and versions; with `preview`, the plan for a confirm sheet | `invalid`, `conflict`, `not-allowed`, `too-large`, `limit` | 1,000 changes, 16 MiB; all or nothing |
+| `s.declarations()` | `{}` | `{space, plugins}`: compiled reachable kinds, fields, operations and inputs, collections, sidebars, slots and fills | `not-allowed` | installed catalog |
+| `s.query(q)` | `{ from, where, sort, group, totals, fields, cursor }` or a qualified `collection` with pagination | `{ rows, totals, cursor }`; rows include viewer `state` and operation-name booleans in `when` | `not-allowed`, `invalid` | 200 rows a page |
+| `s.read(item)` | An item ID | `{ id, kind, fields, computed, state, when, edited, version, body, records }` | `not-found`, `not-allowed` | 32 MiB |
+| `s.write(changes, { preview? })` | A list of `add(kind, fields, body?)`, `change(item, fields?, body?, base?)`, `remove(item)`, `move(item, folder?, file?)`, `append record(item, record)`, `change record(item, anchor, record)`, `remove record(item, anchor)` | `{changes:[{id, version, anchor?, link?}]}` in input order; with `preview`, the plan for a confirm sheet | `invalid`, `conflict`, `not-allowed`, `too-large`, `limit` | 1,000 changes, 16 MiB; all or nothing |
 | `s.fetch(req, { secret?, sign-in? })` | An HTTP request to a declared destination | `{ status, headers, body }` | `not-allowed`, `unreachable`, `needs-sign-in`, `too-large`, `timeout` | 32 MiB, 60 s |
 | `s.connect(sign-in, item)` | An IMAP or SMTP sign-in for an item | The connection the server holds | `needs-sign-in`, `unreachable` | 1 per sign-in and item |
 | `s.notify(people, { item, template })` | People who may read the item; a declared template | `accepted`, whatever each person's mute (S21) | `not-allowed`, `limit` | 100 recipients |
 | `s.job(program, items, input?)` | A declared program | A job ID; results come back through the plugin's operations | `not-allowed`, `limit` | 10,000 items |
 | `s.run(program, { scope, targets })` | A declared program and target items, with `scope: session` by default (see below) | A handle `{ id, send(input), stop(), status }`; `send` only by the run's actor, `stop` by anyone who may read the target | `not-allowed`, `limit`, `stopped` | the run's quota |
-| `s.call("<plugin>.<operation>", input)` | A listed operation | Its output | `not-allowed`, and its own errors | depth 8 |
+| `s.call("<plugin>.<operation>", input)` | A listed or slot-selected operation | Its output | `not-allowed`, and its own errors | depth 8 |
 | `s.state` | `get(item, key)`, `set(item, key, value)` for keys declared in `state:` | This person's value | `invalid`, `too-large` | 64 KiB per person and plugin |
 | `s.cache` | `get`, `set`, `delete`, `file(name)` | Rebuildable data; may be deleted at any time | `limit` | per-plugin quota |
 | `s.share(item, people)` | Who | Only in `on.call` from a live gesture. Opens the server's share sheet, starting at reader and listing only people the person can already see; returns when the person confirms or cancels (review 23, S41) | `not-allowed`, `stopped` | 100 people |
 | `s.outside.mint(item)` | An item of its own kinds | A new outside address below a declared one, with its own token (S1) | `not-allowed`, `limit` | per-plugin quota |
-| `s.me`, `s.space`, `s.event` | — | The acting person and their role; the space; `{ kind, key, item, before?, request? }` | — | — |
+| `s.me`, `s.space`, `s.event` | — | The acting person and their role; the space; `{ kind, key, item, before?, request?, selected_operation? }` | — | — |
 
 In `s.write`, a record carries its declared fields and its Markdown body.
-The host supplies its author, receipt time and anchor.
+The host supplies its author, receipt time and anchor. A committed append
+receipt supplies a canonical Markdown record link, for example
+`[Record](<Chats/A%20chat/chat.md#^0123456789abcdef>)`. Consumers resolve the
+anchor in the authorized space if the path changes. Chat sends and starts
+in one coded call under one outer request key. It appends the full
+message, then calls the selected filler with `{chat: item, prompt: link}`.
+Retries with that same key reuse the append receipt and the nested call's
+derived key. The append remains committed if start fails. This provides
+one gesture and a retryable sequence across two effects.
+
+**Browser and live delivery.** The call route is
+`POST /v1/spaces/{space}/call`. See the [host call contract](../reviews/host-call-route-2026-11-27.md)
+for the request envelope and the implemented input subset. Both query
+rows and read metadata carry `state` and `when`. Clients draw the
+host-evaluated operation conditions. The host checks authorization again
+on execution. The browser uses a Secure, HttpOnly, SameSite=Strict
+`__Host-calternal_session` cookie with `Path=/` and no Domain. The
+WebSocket checks the configured origin and authenticates from that cookie
+at upgrade. The existing private admin flow issues a fresh installation's
+first-owner code. The development test supplies its disposable code by pipe.
+
+Live query and record windows apply authorized reads for the receiving
+person before sending. Private state invalidates only that person's
+window. Losing access must send an explicit revocation so a client
+closes the affected window and drops its data. Until that exists, live
+windows stay owner-only. Session sign-out already closes its socket.
+See the [live protocol](../reviews/live-window-protocol-2026-11-27.md).
+
+**Retention.** Request receipts default to 7 days
+(`CALTERNAL_RECEIPT_RETENTION_DAYS`); after expiry a retry is a new request.
+Trash defaults to 30 days. The host checks for expired Trash on
+access. The action log is pruned with receipts for this slice.
 
 **Session scope.** With `scope: session`, the host projects each explicit
 target's readable fields and the records in its current session. Use
@@ -1573,7 +1698,10 @@ The Chat-first build uses this scope only.
 **Delivery:**
 
 - **One path:** `on.change` and `on.after` are raised by the call route
-  after commit.
+  after commit. An isolated install probe discovers the `on.change`
+  selector names. The host validates and stores names, not handler
+  code from the probe, and reuses those registrations. Prefix a
+  selector with `collection:` to distinguish it from a kind.
 - **At least once, with a key.** Each write is keyed as (event key, index
   of the write within the run), so a replayed handler that writes in the
   same order replays exactly (review 21).
@@ -1582,7 +1710,15 @@ The Chat-first build uses this scope only.
   plugin never receives `on.after` or `on.change` for a commit its own code
   caused, directly or through `s.call`. An event at depth 8 is not
   delivered, and is shown on the plugin's Problems (review 36).
-- **Processes:** one per plugin per space, stopped when idle.
+- **Processes:** at most one active worker per plugin and space.
+  The worker stops on idle and is recycled when the acting person
+  changes, so cached results cannot cross between people. Installed
+  code stays off without an OS sandbox with filesystem and network
+  isolation, resource bounds and process-family cleanup.
+- **Worker frames:** one UTF-8 JSON value per line, at most 64 MiB
+  excluding LF. Oversized callback results return `too-large` in a
+  bounded error frame. Oversized or invalid inbound worker frames
+  fail the invocation. Chunked results are deferred.
 
 ### 8.3 What `s.write` may touch (review 22, S11, S13)
 
@@ -1822,6 +1958,12 @@ theme: dusk
   I1).
 - **Frames** reach the network only under their own origin's rules and the
   web warning (§1.1).
+- **Run egress** is through the host proxy alone, to hostnames declared
+  in the harness's `sends out:`. The run sandbox has no direct network
+  route. The proxy resolves names, refuses private and internal addresses,
+  dials the checked address and logs only the hostname and byte counts.
+  The first run-service implementation mediates CONNECT on port 443
+  through a per-run socket.
 
 ## 14. What is never open
 
@@ -1980,33 +2122,31 @@ export const remind = on.time("reading.remind", async (item, s) =>
 
 ## 18. Counts, and two ways to say one thing
 
-| | Revision 6 | Revision 7 | Revision 8  Revision 9 |
-| --- | --- | --- | ---  --- |
-| Line grammar rules | — | 10, plus 6 name and 9 expression rules | the same | 10, plus 6 name and 9 expression rules |
-| Reserved words | — | 47 in four groups | 51 in five groups (`open item`; `password`, `token`, `secret`), plus 6 reserved plugin IDs | 51 in five groups, plus 6 reserved plugin IDs |
-| Kind keys (with body) | 24 | 26 | 26 (a hidden kind writes no `editable:`) | 28 (counting `ical` and `vcard` individually) |
-| Field flags | 6 | 7 | 7 | 7 |
-| Operation line forms | 12 | 12 | 12 (only 3 allowed in `extends:`) | 12 (only 3 allowed in `extends:`) |
-| Field types | 23 | 24, plus 4 built-ins | 24, plus 4 built-ins | 24, plus 4 built-in item fields |
-| Functions | 26 | 25 | 25 | 25 |
-| Collection keys (with body) | 13 | 12 | 12 | 13 |
-| Views | 12 | 10 | 10 | 10 |
-| Sidebar line forms | 5 | 6 | 6 | 6 |
-| `plugin.md` keys (with body) | 20 | 19 | 19 | 21 |
-| Outside proofs | 3 | 3 | 2 (`signed`, `person`), on top of the token that is always there | 2, on top of the mandatory token |
-| Host places | 13 | 12 | 12 | 12 |
-| Theme keys | 11 | 11 | 11; palette roles 8 → 6 | 11; 6 palette roles |
-| Profile keys | 8 | 8 | 8 | 10 |
-| Agent rule line forms | 3 | 3 | 3 | 3 |
-| Calls | 13 | 13 | 14 (`s.outside.mint`) | 14 |
-| Events | 7 | 6 | 6 | 6 |
-| Error codes | 10 | 10 | 10 | 10 |
-| Size of this document | about 1,540 lines | about 2,020 lines, 14,600 words | about 2,430 lines, 19,500 words | about 2,600 lines, 20,900 words |
+| Surface | Revision 10 |
+| --- | --- |
+| Line grammar | 10 line rules, 6 name rules and 9 expression rules |
+| Reserved words | 51 in five groups, plus 6 reserved plugin IDs |
+| Kind keys | 28 including body and separate `ical` and `vcard` keys |
+| Field flags | 8 including `badge` |
+| Operation line forms | 12 (3 in `extends:`), with one new nested key, `inputs`, on coded operations |
+| Field types | 25 entries including `record anchor`, plus 4 built-in item fields |
+| Functions | 25, with a new form of `count` |
+| Collection keys | 14 including body and `icon` |
+| Views | 11 including `strip` |
+| Sidebar line forms | 6, with an optional `icon` clause on collection entries |
+| `plugin.md` keys | 21 including body; `programs` is an existing key with named child bindings; slot clauses add `inputs <operation>` and `label`, with typed bindings under `gives` |
+| Outside proofs | 2 beyond the mandatory token |
+| Host places | 12 |
+| Theme keys | 11; 6 palette roles |
+| Profile keys | 10 |
+| Agent rule line forms | 3 |
+| Calls | 15 including `s.declarations`, counting `s.me`, `s.space` and `s.event` together as the context row |
+| Events | 6 |
+| Error codes | 10 |
 
-The revision 9 counts enumerate distinct keys, including the body where
-named. The kind count separates `ical` and `vcard`. The collection count
-includes the body, and the plugin count separates all keys that share a
-table row. The latter two also correct omissions in earlier counts.
+The call count is the design surface in §8.1. See the
+[host call contract](../reviews/host-call-route-2026-11-27.md) for the
+standalone host's smaller implemented surface.
 
 **Still two ways to say one thing** (kept apart by the fifth set):
 
@@ -2070,6 +2210,20 @@ Revision 7 adds six, all from the sixth set:
 10. **`assets/`** is the plugin folder for theme files.
 
 ## 21. Change list
+
+### Revision 10 (Chat-first implementation, sets 11–16)
+
+- Anchor state and ledger-order unread, typed coded inputs and slots, and
+  one send-and-start gesture with a host receipt link.
+- Bound programs, conservative assets, scoped slot admission, isolated
+  handler discovery and worker limits.
+- Host record seal, exact numbers, compiled declarations, viewer-aware row
+  metadata and cookie-authenticated live windows.
+- Local developer installation, retention, private operator setup, live
+  revocation and mediated run egress.
+- Browser follow-up decisions add catalogue icons, an explicit numeric
+  badge, a strip view, slot and filler labels, and typed composer
+  bindings. These declarations still need implementation.
 
 ### Revision 9 (round 34)
 
@@ -2596,3 +2750,42 @@ All eight are taken, since each only removes:
   (§8.3);
 - no "skipped (muted)" result (§8.1);
 - one `data` rule on every path (§3.1).
+
+
+### Chat fixture follow-up
+
+Line numbers refer to merged `dev` at `32dc5517`. These are the proposed
+fixture edits once the corresponding parser and host changes land.
+
+| File and line | Change |
+| --- | --- |
+| [Chat `kinds/chats.md:13`](../../plugins-v2/calternal-chat/kinds/chats.md#L13) | Use `unread: = count(records after state.read through), badge`. The existing row already lists `unread`. |
+| [Chat `collections/pinned.md:9`](../../plugins-v2/calternal-chat/collections/pinned.md#L9) | Replace `compact: title, people, unread` with `strip: title, people, unread`. |
+| [Chat `collections/archived.md:3`](../../plugins-v2/calternal-chat/collections/archived.md#L3), [Chat `sidebars/chat.md:10`](../../plugins-v2/calternal-chat/sidebars/chat.md#L10) | Add `icon: archive` after the collection title for all uses of the collection. To make it specific to this sidebar instead, append `, icon: archive` to the Archived entry. One declaration suffices. |
+| [Chat `plugin.md:9`](../../plugins-v2/calternal-chat/plugin.md#L9) | Use the composer declaration in §7.4. It references `chats.send` and binds the existing `text`, `state.draft` and `quote`. |
+| [Chat `plugin.md:10`](../../plugins-v2/calternal-chat/plugin.md#L10) | Add `label "Ask an agent"`. Add `inputs <local operation>` when there is a Chat-owned operation declaring the exact `chat` and `prompt` input pair. The current harness slot has no local schema it can reference. |
+| [Claude Code `plugin.md:7`](../../plugins-v2/calternal-chat-claude-code/plugin.md#L7) and [line 11](../../plugins-v2/calternal-chat-claude-code/plugin.md#L11) | Replace the flat program line with a `programs:` block and `calternal-provider-claude-code: executable programs/calternal-provider-claude-code` when the bound file lands. Keep the existing `as "Claude Code"` on the fill and carry it through the host projection. |
+| [Claude Code `kinds/runs.md:10`](../../plugins-v2/calternal-chat-claude-code/kinds/runs.md#L10), [`operations.ts:4`](../../plugins-v2/calternal-chat-claude-code/operations.ts#L4) and [line 9](../../plugins-v2/calternal-chat-claude-code/operations.ts#L9) | Add `inputs:` beneath `start: code`, with `chat: link(calternal-chat.chats), required` and `prompt: link(calternal-chat.chats records), required`. Add `prompt: RecordLink` to the handler schema and use it as the first actor input. `start` remains targetless. |
+
+## 22. Code and specification disagree
+
+This list compares the coordinator's decisions with `dev` at
+`32dc5517` and marks branch-only evidence separately.
+
+| Area | Decision | Observed code or evidence |
+| --- | --- | --- |
+| Typed slots and harness start | Slot input schemas come from typed operations. The harness starts from the new message link. | The engine validates `inputs <operation>` when present. Chat's two slots omit it. The bundled harness has no typed `start` block and its handler consumes only `chat`; Chat already sends `prompt` from the receipt. The host call report's send envelope also still shows `chat` where merged code requires `item`. |
+| Send and start replay | One request key covers append and start, with no duplicate effects on retry. | Subkeys and append replay exist. A mock proved one start and the merged host proved append replay after a refused start. The real run start remains unconnected to the merged host, so replay with a real run is unproven. |
+| Program and asset admission | Owner approval for bound plugin-local programs and frame-capable content; recognised assets may stay data. | The parser still accepts a flat program ID list and the merged Claude Code fixture uses it. The host refuses programs, destinations and assets/frames. Lane D binds an executable on its branch, and its runner refuses image bindings. The shared content classifier and in-app install approval flow remain pending. |
+| Browser presentation follow-up | Collection and entry icons, the numeric badge flag, the strip view, slot and filler labels, and composer bindings are explicit. | At `origin/lane/browser-chat` `4d0c500d`, sidebar entry icons are omitted, badges and composer roles are inferred, pinned rows use the list renderer, and fill labels are dropped by the host. The new declaration syntax is specified here for follow-up; it has no parser or client implementation yet. |
+| Compiled declarations | The host ships checked declarations to devices. | The JSON projection is live in the browser. The proposed shared Rust browser engine build without install checks is still unmeasured. The projection splits validated sidebar/collection/page strings and omits some declared presentation details, including fill labels. |
+| Worker isolation and reactions | Isolated code with CPU and memory bounds and process-family cleanup. Committed reactions are replayable. | The merged launcher is opt-in Bubblewrap with namespaces, a six-second deadline and a Node heap limit. A whole-worker CPU and memory quota is unproven. The install probe and actor recycling are implemented. Change delivery is post-commit in memory and can be lost on host stop. |
+| First owner and access loss | Private operator issuance, and an explicit content-revocation frame before non-owner live access. | Passkey enrolment uses inherited auth and a disposable setup code passed by pipe in the browser test. Standalone operator issuance through the private admin flow has no end-to-end proof. The personal-space host admits only the owner and closes sockets on session revocation; it has no per-window permission-loss frame or client purge contract. |
+| Run egress | Every run uses the declared-host proxy. | The fake-provider tests on lane D (`293af65a`) exercise proxy-only access and process-family Stop. The merged host still refuses the harness manifest, has no wired run service and has no real provider proof. |
+| Broader format and rights | The full proposal covers shared spaces and collections, broader formula and operation forms, and DAV and other surfaces. | This host admits one owner per personal space. Shared grants and shared-writer tail recovery are absent. Conditional coded dispatch and path-link rewrite support are partial. The engine findings list deferred grammar and repeat/total cases. Browser row conditions do not establish those execution paths. |
+
+Sources are the [coordinator's sets 11–16](../morning-2026-11-21.md#decided-by-the-coordinator-eleventh-set-the-four-gaps-chat-found-the-owner-can-overturn-any),
+[format engine findings](../reviews/format-engine-findings-2026-11-27.md),
+[host core findings](../reviews/host-core-findings-2026-11-27.md),
+[worker findings](../reviews/plugin-process-findings-2026-11-27.md),
+and [browser findings](../reviews/browser-chat-findings-2026-11-27.md).

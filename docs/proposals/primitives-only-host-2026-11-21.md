@@ -12,7 +12,9 @@ items, collections, sidebars and plugins is specified in
 morning report disagree, the morning report wins. What the owner has not decided is in §13 with the
 reason. Revision 2 (`502ab2bc`) keeps the option analysis and both reviews;
 the section files under [`primitives/`](primitives/) are historical where
-this document differs.
+this document differs. The 2026-11-28 update records the Chat-first call
+surface and build status in §§4.4, 5 and 9, with format revision 10 as
+the declaration reference.
 
 Principle (owner, round 9): **harden the space, plugin and VM boundary
 rather than make promises the server cannot enforce.** The plugin API is
@@ -99,15 +101,18 @@ The inventory and the fate of every revision-14 name are in
 4. **Its code starts only on events** an operation listens to (a call, a
    time, a schedule, a file change, an outside HTTP request on its own web
    address, data on a held connection, or another plugin's committed
-   operation: six events, a time including a repeat's occurrence; format r7 §8). One process per plugin
-   per space, stopped when idle; none while disabled, none without code.
+   operation: six events, a time including a repeat's occurrence; format
+   §8). At most one active worker per plugin and space, stopped on idle
+   and recycled when the acting person changes. A disabled or
+   description-only plugin has no worker.
 5. **What it sends out is declared**, in one of three forms: a fixed list of
    hosts; "a server a member names", which that member confirms on the
    server's sheet; or the public web without sign-ins ("Reads public web
    pages. Never signs in as you."). Secrets and programs are listed too. An
    update that adds to the list waits for the Owner.
-6. **What it offers and calls is declared**: its operations and events, and
-   every other plugin's operation it calls.
+6. **What it offers and calls is declared** in operations, events and
+   `calls:`. A person-picked slot also grants the one operation its
+   selected installed filler declares, for that invocation.
 7. **It names things by ID, not by path.**
 8. **Its interface is described** with the catalogue; a web view only where
    the catalogue has nothing.
@@ -241,12 +246,14 @@ with the SDK steer authors and agents to user-friendly, robust patterns.
   reads another plugin's kinds only when `reads:` names them** (C4, format
   r6); **an item changes only through its owning plugin's operations** (round
   18), or directly for an editable-outside kind.
-- A plugin calls only operations its manifest lists; the called plugin acts
-  with its own grant, limited to what the acting person may do (T1). The
-  reach set is a later tightening plugins never see.
-- **One process per plugin per space**, stopped when idle (about 16 MiB per
-  process while in use, nothing idle, 35–51 ms cold start, measured); a
-  disabled plugin costs nothing.
+- A plugin can call operations its manifest lists or the coded operation
+  of the installed filler selected by the person for this call. The
+  called plugin acts with its own grant, limited by the acting person's
+  rights (T1). The host resolves the selection and keeps it local to
+  that invocation.
+- **At most one active worker per plugin per space**, stopped when idle
+  and recycled when the actor changes. The standalone host requires
+  the operator's isolated Bubblewrap launcher for installed code.
 - The space's Owner installs an app bundle (I2), and any member may add a description-only plugin; each plugin can be replaced
   later. Slots are picked by the person (what only they see) or the space
   (what others receive); a missing part falls back or shows an error
@@ -254,6 +261,20 @@ with the SDK steer authors and agents to user-friendly, robust patterns.
 - Visitors through a share link use the plugin with the link's rights only:
   no secrets, network or agents (T12). The share sheet says that a web-view
   plugin's pages can reach the internet in a browser.
+
+**Calls on the standalone Chat-first host**
+
+| Surface | Available on merged `dev` | Boundary |
+| --- | --- | --- |
+| `POST /v1/spaces/{space}/call` | `s.declarations`, `s.query`, `s.read`, `s.write`, `s.state`, `s.me`, `s.space`; installed coded operations by qualified name; shell maintenance via `index.rebuild` | Personal-space owner. Browser uses an origin-checked cookie; CLI sessions can use a bearer credential. |
+| Isolated `operations.ts` | `s.query`, `s.read`, `s.write`, `s.state`, `s.call`; host-supplied `s.me`, `s.space` and `s.event` context | `on.call` and post-commit `on.change`. The worker protocol also defines `s.run`, `s.run.send` and `s.run.stop`; the merged route refuses them until a scope-aware run adapter is attached. |
+| `GET /v1/spaces/{space}/live` | Cookie-authenticated WebSocket for collection/query rows and item records | Owner-only. Reconnect uses the last record anchor. Rights-loss revocation is required before non-owner windows. |
+
+The full fifteen-call design is in [format §8.1](kind-and-collection-format-2026-11-24.md#81-the-fifteen-calls).
+The standalone host does not expose `s.fetch`, `s.connect`, `s.notify`,
+`s.job`, `s.cache`, `s.share` or `s.outside.mint`.
+See the [host call route](../reviews/host-call-route-2026-11-27.md) and
+[live protocol](../reviews/live-window-protocol-2026-11-27.md) for payloads.
 
 ### 4.5 Running code and background jobs
 
@@ -303,8 +324,9 @@ A plugin declares each operation and event once. The server exposes each as
 a CLI subcommand (`calternal <plugin> <operation>`, human output by default,
 `--json`), an API path (`POST /api/spaces/<space>/calls/<plugin>/<operation>`)
 and an MCP action (`<plugin>.<operation>`), three adapters over one route
-with the same rights check. Events are a watch, a subscription and an MCP
-notification respectively.
+with the same rights check. The Chat-first HTTP adapter uses
+`POST /v1/spaces/{space}/call` with the operation name in the envelope.
+Generated CLI and MCP actions are later work for this host.
 
 - **API tokens are always one person's**, limited to the operations they
   tick, ended when they lose access; there are no space tokens.
@@ -355,20 +377,28 @@ notification respectively.
 
 ## 9. Build plan
 
-| Step | Goal | State |
+The earlier file, records and drawing spikes informed the
+[Chat-first slices](chat-first-build-plan-2026-11-27.md). The table records
+merged `dev` at `32dc5517` and labels branch evidence.
+
+| Slice | Goal | State |
 | --- | --- | --- |
-| 0a, 0b, 1 | Files spike, drawing spike, the first call route with Reading List | **Done** (spikes) |
-| 2 | Grow the spike into the test-mode host: hashes-only recovery and tamper detection, racy-clean, a watcher, writes as lists of changes, kind, collection and sidebar files in the format of [kind-and-collection-format](kind-and-collection-format-2026-11-24.md) with free add, change and remove, one live window | Next |
-| 2b | Queries: totals by one field, computed fields with the formula evaluator (one hop, bounded, no cycles), the repeat field and the midnight re-run | |
-| 3 | Spaces, sharing, the one check, person tokens; the editable-outside switch with WebDAV exposure | |
-| 4 | Running code: events as the one way to start plugin code, plugin box per space (nothing when disabled), work table, background jobs, server-held connections for HTTP, IMAP and SMTP | |
-| 5 | Records in full; operations-only enforcement; `AGENTS.md` per folder from the kind's declaration | |
-| 6 | Agent runs in hosted sandboxes and on offered machines; restart test | |
-| 7 | **Speed gate:** the same change made through the CLI, MCP and the API, measured against a direct file write on the perf VM; each adapter within the direct write's cost | |
-| 8 | Calls between plugins, slots and picks, bundles, the server sheet | |
-| 9 | Drawing in full, `calternal-pele`, the web view with its warning | |
-| 10 | The app suite (§11), one app at a time, polishing each | |
-| 11 | Delete the native engines and v0 models | |
+| Spikes | File writes and call route with Reading List, record appends and declaration-driven drawing | Complete as spikes. |
+| 0 | Shared format engine for declarations, Markdown items and records, formulas and pure operations | Merged. Reads the two Chat bundles and runs the in-scope fixture vectors. DAV, extensions, themes, profiles, line items and broader repeat/total cases remain pending. |
+| 1 | One personal space, local plugin install, Markdown items, atomic writes, rebuildable query index and checked call route | Merged. The host installs the Chat bundle and supports add, change, remove, query and rebuild. Shared rights, external editing and app install approval remain pending. |
+| 2 | Ledger-authored records, append receipts and recovery, per-person state | Merged. Two-flush sealed append, verified tail adoption, record changes/redaction and anchor-based unread. Shared-writer recovery needs an authoritative writer source. |
+| 3 | Isolated operation workers and slot-selected calls | Merged. Bubblewrap, typed inputs, reaction probe, Chat send/rename and append replay. Durable change delivery and real run-start replay remain pending. |
+| 4 | Live windows | Merged. Owner-only cookie-authenticated collection and record subscriptions, anchor reconnect and sign-out socket close. Explicit rights-loss revocation remains pending. |
+| 5 | Browser on the real host | Merged host and browser data-client proof for passkey sign-in, declarations, writes and two browser contexts. Browser branch `4d0c500d` adds the screens, shared shell, generated forms and picker; its tests use a disposable filler and a local stream/Stop fixture. |
+| 6 | A scoped hosted harness run, streaming, Stop and one completed reply record | Partial on runs branch `293af65a`. Fake-provider Podman service and mediated egress verified there. Host `s.run`, scope checks through Chat, real streaming through the UI and final append remain pending. |
+| 7 | One browser-to-harness journey with a scoped run, live reply, Stop and durable result | Pending on the new host. |
+| 8 | Agent rules and prompts | After the Chat-first goal. |
+| 9 and later | Sharing, broader plugin APIs and app suite, native clients, offline outbox, DAV, jobs, held connections, full install flow, generated CLI and MCP actions, and the speed comparison across adapters | Pending on the new host. Production cutover and retirement of the old engines follow those gates. |
+
+Status sources are the [coordinator report](../morning-2026-11-21.md),
+[host core findings](../reviews/host-core-findings-2026-11-27.md),
+[worker findings](../reviews/plugin-process-findings-2026-11-27.md) and
+[browser findings](../reviews/browser-chat-findings-2026-11-27.md).
 
 ## 10. Decided
 
