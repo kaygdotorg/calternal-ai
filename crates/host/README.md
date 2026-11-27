@@ -73,3 +73,13 @@ Start, input and Stop use the [host call route](../../docs/reviews/host-call-rou
 Run output uses the [live window socket](../../docs/reviews/live-window-protocol-2026-11-27.md).
 After a host restart, a repeated start request returns the original run ID
 with status `stopped`. The live log starts empty with the new host process.
+
+## Disposable Chat preview
+
+On the dev VM, run `scripts/dev-chat-host.sh` from this checkout. The script
+builds the web client, standalone host and fake provider under the shared
+build lock. It serves the client on a free loopback port and prints its URL
+and a private first-owner code file path. Open the URL locally or forward
+that same port over SSH. Complete passkey enrollment with the code from the
+file. The host installs Chat and its harness into the owner's space during
+sign-in. Stop the preview with Ctrl+C.

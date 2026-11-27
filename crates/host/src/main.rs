@@ -8,11 +8,25 @@ use std::{
     sync::Arc,
 };
 
+#[path = "main_dev.rs"]
+mod dev;
+
 type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 #[tokio::main]
 async fn main() -> CliResult<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let [command, root, web, chat, harness] = args.as_slice()
+        && command == "dev-serve"
+    {
+        return dev::serve(
+            Path::new(root),
+            Path::new(web),
+            Path::new(chat),
+            Path::new(harness),
+        )
+        .await;
+    }
     let [command, root, origin, rest @ ..] = args.as_slice() else {
         return Err("usage: calternal-host serve ROOT ORIGIN ADDRESS | install ROOT ORIGIN OWNER SPACE DIRECTORY [--official]".into());
     };
@@ -79,10 +93,19 @@ async fn open_host(root: PathBuf, config: &AuthConfig) -> CliResult<(Host, Auth)
     Ok((host, auth))
 }
 
-async fn attach_runs(
-    host: Host,
-    root: &Path,
-) -> CliResult<(Arc<Host>, Option<calternal_fsio::DataLock>)> {
+struct RunningEngine {
+    backend: Arc<PodmanBackend>,
+    _lock: calternal_fsio::DataLock,
+}
+
+impl RunningEngine {
+    async fn cleanup(self) -> CliResult<()> {
+        self.backend.initialize().await?;
+        Ok(())
+    }
+}
+
+async fn attach_runs(host: Host, root: &Path) -> CliResult<(Arc<Host>, Option<RunningEngine>)> {
     let host = Arc::new(host);
     let image = match std::env::var("CALTERNAL_RUN_IMAGE") {
         Ok(image) => image,
@@ -95,6 +118,12 @@ async fn attach_runs(
         .await??;
     let backend = Arc::new(PodmanBackend::new("podman", root, &image));
     backend.initialize().await?;
-    let host = host.with_podman_runs(backend, image);
-    Ok((host, Some(lock)))
+    let host = host.with_podman_runs(backend.clone(), image);
+    Ok((
+        host,
+        Some(RunningEngine {
+            backend,
+            _lock: lock,
+        }),
+    ))
 }

@@ -109,12 +109,29 @@ export CALTERNAL_TEST_PROVIDER_IMAGE=localhost/calternal-runs-harness-merged:dev
 
 Machine passed 7 tests. Host and plugin transport passed 77 tests. These
 include the real Chat and harness bundles producing one run-stamped reply,
-an authenticated second person's input refusal, a cross-chat prompt refusal,
+a second registered person's input refusal, a cross-chat prompt refusal,
 sandbox output callbacks exercising cross-chat read and write denial,
 undeclared egress refusal, a stable retry and changed-filler conflict, and
 Stop under two seconds. Chromium used a cookie-authenticated socket to
 confirm chunk offsets, exclusive replay after a reconnect and the same
 stopped run ID after a restart.
+
+## Disposable browser host
+
+`scripts/dev-chat-host.sh` builds the merged web client, host, and fake
+image under the build lock. The host holds its selected IPv4 loopback
+socket from allocation through serving and excludes port 4313. It writes
+the enrollment code to a new mode-`0600` file under a disposable lane
+directory. On the first completed passkey sign-in it installs Chat and the
+harness, in that order.
+
+The merged-export smoke ran `sh -n scripts/dev-chat-host.sh` and
+`scripts/dev-chat-host.sh` in the locked dev shell. The built client
+returned its module HTML, `/v1/auth/status` reported a fresh setup and
+`stat -c '%a' "$private_file"` returned `600`. A separate
+`cargo test --locked -p calternal-host --lib development_sign_in_seeds_both_bundles_once`
+checked that the sign-in handler installs both real bundles once, including
+when sign-in is retried.
 
 ## Simplification opportunities
 

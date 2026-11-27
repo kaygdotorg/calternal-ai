@@ -67,6 +67,7 @@ pub struct Host {
     retention_ms: i64,
     spaces: Mutex<HashMap<SpaceId, Slot>>,
     workers: Option<WorkerRuntime>,
+    development_plugins: Vec<(String, PathBuf)>,
     runs: Mutex<Option<Arc<calternal_machine::run_service::RunService>>>,
 }
 
@@ -83,6 +84,7 @@ impl Host {
             retention_ms: i64::from(retention_days) * 86_400_000,
             spaces: Mutex::default(),
             workers: None,
+            development_plugins: Vec::new(),
             runs: Mutex::default(),
         })
     }
@@ -97,6 +99,31 @@ impl Host {
     pub fn with_worker_runtime(mut self, runtime: WorkerRuntime) -> Self {
         self.workers = Some(runtime);
         self
+    }
+
+    /// Supply trusted local plugin bundles to seed the disposable browser
+    /// host's personal space on sign-in. Ordinary hosts have no seed bundles.
+    pub fn with_development_plugins(
+        mut self,
+        plugins: impl IntoIterator<Item = (String, PathBuf)>,
+    ) -> Self {
+        self.development_plugins.extend(plugins);
+        self
+    }
+
+    fn ensure_development_plugins(&self, owner: AccountId, id: SpaceId) -> Result<()> {
+        let actor = Actor::account(owner);
+        for (plugin, directory) in &self.development_plugins {
+            let installed = |space: &mut Space| Ok(space.plugins.contains_key(plugin));
+            if !self.with_space(&actor, id, installed)?
+                && let Err(error) = self.install_local(owner, id, directory, true)
+                && (error.code != calternal_types::ErrorCode::Conflict
+                    || !self.with_space(&actor, id, installed)?)
+            {
+                return Err(error);
+            }
+        }
+        Ok(())
     }
 
     /// Authenticate a bearer session and dispatch a shell call. Storage I/O
