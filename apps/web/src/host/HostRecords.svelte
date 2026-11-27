@@ -17,12 +17,17 @@
   } from "./format";
   import type { KindDecl, RecordData, RowData } from "./types";
 
-  /** Active streamed reply fixture/state drawn with growing text and a Stop control. */
+  /** Real agent run lifecycle states rendered with motion in the transcript. */
+  export type RunUiState = "starting" | "streaming" | "stopping" | "stopped" | "failed" | "lost";
+
+  /** Active or recently-terminated run state drawn in the records view. */
   export interface ActiveStreamRun {
     id: string;
     label: string;
     text: string;
-    status: "streaming" | "stopping";
+    status: RunUiState;
+    error?: string;
+    canRetry?: boolean;
   }
 
   let {
@@ -35,6 +40,8 @@
     activeRun = null,
     onsend,
     onstoprun,
+    onretryrun,
+    ondismissrun,
     oneditrecord,
     onremoverecord,
   }: {
@@ -47,16 +54,40 @@
     activeRun?: ActiveStreamRun | null;
     onsend: (body: string, quoteAnchor?: string, selectedFiller?: string | null) => Promise<void>;
     onstoprun?: () => void;
+    onretryrun?: () => void;
+    ondismissrun?: () => void;
     oneditrecord: (rec: RecordData) => void;
     onremoverecord: (rec: RecordData) => void;
   } = $props();
 
-  const canQuote = $derived(Boolean(composer?.quoteInput && "quote" in kind.records));
+  const canQuote = $derived(Boolean(composer?.quoteInput && composer.quoteInput in kind.records));
   const canEdit = $derived("change record" in kind.operations);
   const canRemove = $derived("remove record" in kind.operations);
   const sendLabel = $derived(composer ? humanize(composer.operation.name) : "Send");
+  const composerLabel = $derived(composer?.label || "Write");
+  const runIsActive = $derived(
+    activeRun !== null &&
+      (activeRun.status === "starting" || activeRun.status === "streaming" || activeRun.status === "stopping"),
+  );
+  const runStatusText = $derived.by(() => {
+    if (!activeRun) return "";
+    switch (activeRun.status) {
+      case "starting":
+        return "Starting…";
+      case "streaming":
+        return "Replying…";
+      case "stopping":
+        return "Stopping…";
+      case "stopped":
+        return "Stopped by you";
+      case "failed":
+        return "Failed to start";
+      case "lost":
+        return "Run lost after restart";
+    }
+  });
 
-  const own = (r: RecordData) => r.author === viewerId;
+  const own = (r: RecordData) => !r.run && r.author === viewerId;
   const displayName = (r: RecordData) => r.author_name || r.author;
 
   type Line =
@@ -127,22 +158,31 @@
   let scroller = $state<HTMLElement>();
   let atEnd = $state(true);
 
-  const draftKey = $derived(`calternal.host.draft.${row.id}`);
-  let lastDraftKey = "";
+  const draftKey = $derived(
+    composer?.draftState ? `calternal.host.${composer.draftState}.${row.id}` : null,
+  );
+  let lastDraftKey: string | null = null;
   $effect(() => {
     const key = draftKey;
     if (key === lastDraftKey) return;
     lastDraftKey = key;
-    try {
-      draft = localStorage.getItem(key) ?? "";
-    } catch {
+    if (!key) {
       draft = "";
+    } else {
+      try {
+        const stored = localStorage.getItem(key);
+        const stateDraft = composer?.draftState ? row.state?.[composer.draftState] : undefined;
+        draft = stored ?? (typeof stateDraft === "string" ? stateDraft : "");
+      } catch {
+        draft = "";
+      }
     }
     quoting = null;
     sendError = "";
   });
 
   function saveDraft() {
+    if (!draftKey) return;
     try {
       if (draft) localStorage.setItem(draftKey, draft);
       else localStorage.removeItem(draftKey);
@@ -297,19 +337,41 @@
     {#if activeRun}
       <article
         class="e first last streaming"
+        class:run-failed={activeRun.status === "failed"}
+        class:run-lost={activeRun.status === "lost"}
+        class:run-stopped={activeRun.status === "stopped"}
         data-stream-run={activeRun.id}
-        aria-label={`${activeRun.label}, ${activeRun.status === "stopping" ? "stopping" : "replying"}`}
-        aria-busy="true"
+        data-run-state={activeRun.status}
+        aria-label={`${activeRun.label}, ${runStatusText}`}
+        aria-busy={runIsActive ? "true" : "false"}
       >
         <header class="eh">
-          <span class="pulse-dot" aria-hidden="true"></span>
+          <span class="pulse-dot" class:idle={!runIsActive} aria-hidden="true"></span>
           <span class="nm">{activeRun.label}</span>
-          <span class="stream-state">
-            {activeRun.status === "stopping" ? "Stopping…" : "Running…"}
-          </span>
+          <span class="stream-state">{runStatusText}</span>
         </header>
         <div class="bub stream-bub">
-          <p class="body">{activeRun.text || "…"}</p>
+          {#if activeRun.text}
+            <p class="body">{activeRun.text}</p>
+          {:else if activeRun.status === "failed"}
+            <p class="body run-note">{activeRun.error || "Could not start the run."}</p>
+          {:else if activeRun.status === "lost"}
+            <p class="body run-note">The host restarted before this reply finished.</p>
+          {:else if activeRun.status === "stopped"}
+            <p class="body run-note">Stopped before any reply was written.</p>
+          {:else}
+            <p class="body">…</p>
+          {/if}
+          {#if !runIsActive}
+            <div class="run-actions">
+              {#if activeRun.status === "failed" && activeRun.canRetry && onretryrun}
+                <button type="button" class="run-act primary" onclick={onretryrun}>Retry</button>
+              {/if}
+              {#if ondismissrun}
+                <button type="button" class="run-act" onclick={ondismissrun}>Dismiss</button>
+              {/if}
+            </div>
+          {/if}
         </div>
       </article>
     {/if}
@@ -350,14 +412,14 @@
           rows="1"
           bind:value={draft}
           oninput={saveDraft}
-          placeholder="Write…"
-          aria-label="Write"
+          placeholder={composerLabel}
+          aria-label={composerLabel}
           onkeydown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) void submitComposer(e);
           }}
         ></textarea>
         {#if pickerSlot}
-          {@const slotLabel = pickerSlot.slot.label?.trim() || humanize(pickerSlot.slot.name)}
+          {@const slotLabel = pickerSlot.label}
           <button
             type="button"
             class="slot-btn"
@@ -367,7 +429,7 @@
             data-selected-filler={selectedFillerObj?.plugin ?? ""}
             aria-label={selectedFillerObj
               ? `${slotLabel}: ${selectedFillerObj.label}`
-              : `Choose ${slotLabel.toLowerCase()}`}
+              : slotLabel}
             aria-expanded={pickerOpen}
             onclick={() => (pickerOpen = !pickerOpen)}
           >
@@ -377,11 +439,11 @@
             </span>
           </button>
         {/if}
-        {#if activeRun && onstoprun}
+        {#if runIsActive && onstoprun}
           <button
             type="button"
             class="stop"
-            disabled={activeRun.status === "stopping"}
+            disabled={activeRun?.status === "stopping" || !activeRun?.id}
             aria-label="Stop"
             onclick={onstoprun}
           >
@@ -476,8 +538,10 @@
   .e.own { align-self: flex-end; align-items: flex-end; }
   .stream-bub {
     border: 1px solid color-mix(in oklab, var(--accent) 28%, transparent);
-    transition: height var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+    transition: height var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out), border-color var(--dur-base) var(--ease-out);
   }
+  .run-failed .stream-bub { border-color: color-mix(in oklab, var(--danger) 45%, transparent); }
+  .run-lost .stream-bub, .run-stopped .stream-bub { border-color: rgb(var(--ink-rgb) / 0.16); }
   .pulse-dot {
     width: 8px;
     height: 8px;
@@ -485,10 +549,31 @@
     background: var(--accent);
     animation: pulse var(--dur-pulse, 1800ms) var(--ease-out) infinite;
   }
+  .pulse-dot.idle { animation: none; opacity: 0.45; }
+  .run-failed .pulse-dot { background: var(--danger); opacity: 0.85; }
   .stream-state {
     color: var(--ink-2);
     font-size: var(--text-label);
   }
+  .run-note { color: var(--ink-2); font-style: italic; }
+  .run-actions { display: flex; gap: var(--s-3); margin-top: var(--s-2); }
+  .run-act {
+    min-height: 28px;
+    padding: 0 var(--s-4);
+    border: 0;
+    border-radius: var(--r-pill);
+    background: var(--hover);
+    color: var(--ink);
+    font: inherit;
+    font-size: var(--text-label);
+    font-weight: var(--strong-weight);
+    cursor: pointer;
+    transition: background-color var(--dur-fast) var(--ease-out), scale var(--dur-fast) var(--ease-out);
+  }
+  .run-act.primary { background: var(--accent-soft); color: var(--accent); }
+  .run-act:hover { background: rgb(var(--ink-rgb) / 0.12); }
+  .run-act:active { scale: var(--press-scale); }
+  .run-act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @keyframes rise {
     from { opacity: 0; translate: 0 6px; }
   }

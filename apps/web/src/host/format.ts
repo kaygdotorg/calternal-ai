@@ -97,12 +97,12 @@ export function rowTitle(row: RowData, kind?: KindDecl): string {
   return "Untitled";
 }
 
-/** Extract a numeric badge from computed fields listed in `row:` using `FieldDecl.computed` and its declared field name. */
+/** Extract a numeric badge from fields explicitly flagged `badge: true` in `s.declarations`. */
 export function rowBadge(row: RowData, kind?: KindDecl): { value: number; name: string } | null {
   if (!kind) return null;
   for (const col of kind.row) {
     const decl = kind.fields[col];
-    if (decl?.computed || decl?.formula || decl?.type === "number") {
+    if (decl?.badge) {
       const v = readRowValue(row, col);
       if (typeof v === "number" && v > 0) return { value: v, name: col };
     }
@@ -184,27 +184,30 @@ export function operationFormFields(op: OperationDecl, row?: RowData): DerivedFo
   return out;
 }
 
-/** Resolved composer slot metadata from `s.declarations`. */
+/** Resolved composer slot metadata from `s.declarations` (r10 `slot.composer` bindings). */
 export interface ResolvedComposer {
   slot: SlotDecl;
   operation: OperationDecl;
+  label: string;
   textInput: string;
+  draftState: string | null;
   quoteInput: string | null;
 }
 
 /** Resolved person-picked secondary slot (e.g. a runner/harness slot) and its installed fillers. */
 export interface ResolvedPickerSlot {
   slot: SlotDecl;
+  label: string;
   fillers: { plugin: string; label: string; target: string }[];
 }
 
 /**
- * Find the composer operation for `kind` from `plugin.slots` (any single slot whose installed
- * operation filler targets an operation declared on `kind`). Zero hardcoded slot or plugin names.
+ * Find the composer operation for `kind` from `plugin.slots` using the host's
+ * checked `slot.composer` bindings (r10). Zero heuristics or hardcoded names.
  */
 export function resolveComposerSlot(plugin: PluginDecl, kind: KindDecl): ResolvedComposer | null {
   for (const slot of Object.values(plugin.slots)) {
-    if (slot.cardinality !== "single") continue;
+    if (slot.cardinality !== "single" || !slot.composer) continue;
     const filler =
       slot.fillers.find((f) => f.plugin === slot.recommended && f.kind === "operation") ??
       slot.fillers.find((f) => f.kind === "operation");
@@ -212,28 +215,24 @@ export function resolveComposerSlot(plugin: PluginDecl, kind: KindDecl): Resolve
     const opName = filler.target.includes(".") ? filler.target.split(".").pop()! : filler.target;
     const op = kind.operations[opName];
     if (!op) continue;
-    const inputs = Object.values(op.inputs ?? {});
-    const textField =
-      inputs.find((f) => f.name !== "item" && (f.type === "long text" || f.type === "text") && f.required) ??
-      inputs.find((f) => f.name !== "item" && (f.type === "long text" || f.type === "text"));
-    const quoteField = inputs.find((f) => f.type.startsWith("link(") && f.type.includes("records"));
     return {
       slot,
       operation: op,
-      textInput: textField?.name ?? "text",
-      quoteInput: quoteField?.name ?? null,
+      label: slot.label?.trim() || humanize(slot.name),
+      textInput: slot.composer.text,
+      draftState: slot.composer.draft,
+      quoteInput: slot.composer.quote,
     };
   }
   return null;
 }
 
 /**
- * Find any other person-picked single slot on `plugin` that has installed operation fillers
- * (e.g. an optional agent runner slot) and resolve each filler's display name from `allPlugins`.
+ * Find any other person-picked single slot on `plugin` that has installed operation fillers,
+ * using the slot's declared `label` and each filler's declared `as` `label`.
  */
 export function resolvePickerSlot(
   plugin: PluginDecl,
-  allPlugins: PluginDecl[],
   excludeSlotName?: string,
 ): ResolvedPickerSlot | null {
   for (const slot of Object.values(plugin.slots)) {
@@ -243,14 +242,12 @@ export function resolvePickerSlot(
     if (!opFillers.length) continue;
     return {
       slot,
-      fillers: opFillers.map((f) => {
-        const owner = allPlugins.find((p) => p.id === f.plugin);
-        return {
-          plugin: f.plugin,
-          label: owner?.name || humanize(f.plugin),
-          target: f.target,
-        };
-      }),
+      label: slot.label?.trim() || humanize(slot.name),
+      fillers: opFillers.map((f) => ({
+        plugin: f.plugin,
+        label: f.label?.trim() || f.plugin,
+        target: f.target,
+      })),
     };
   }
   return null;

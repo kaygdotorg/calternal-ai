@@ -190,6 +190,8 @@ export interface RecordData {
   fields: Record<string, unknown>;
   edited?: boolean;
   redacted?: boolean;
+  /** Run UUID stamped on records written by an agent run. */
+  run?: string;
   /** Optional in-progress streaming indicator (from run logs). */
   streaming?: boolean;
 }
@@ -233,6 +235,21 @@ export interface LiveItemMetadata {
   when: Record<string, boolean>;
 }
 
+/** One chunk delivered in a `run_log` live frame. */
+export type RunLogChunk =
+  | { offset: number; event: "data"; stream: "stdout" | "stderr"; bytes: string }
+  | { offset: number; event: "exit"; code: number | null; signal?: string | null };
+
+/** Live run log batch frame from `GET /v1/spaces/{space}/live`. */
+export interface RunLogFrame {
+  type: "run_log";
+  sub: string;
+  run: string;
+  offset: number;
+  chunks: RunLogChunk[];
+  stopped: boolean;
+}
+
 /** Server-to-client frame on `GET /v1/spaces/{space}/live`. */
 export type LiveServerFrame =
   | { type: "ready"; account: string; space: string }
@@ -248,5 +265,6 @@ export type LiveServerFrame =
     })
   | { type: "record_append"; sub: string; item: string; version: number; record: RecordData }
   | (LiveItemMetadata & { type: "item_change"; sub: string; item: string })
+  | RunLogFrame
   | { type: "error"; sub: string | null; code: string; message: string; next: string }
   | { type: "pong" };

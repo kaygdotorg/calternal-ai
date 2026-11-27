@@ -14,6 +14,7 @@ import type {
   QuerySpec,
   RecordData,
   RowData,
+  RunLogChunk,
   SessionInfo,
   SpaceDeclarations,
 } from "./types";
@@ -338,6 +339,7 @@ interface QueryListener {
   kind: "query";
   spec: QuerySpec;
   onRows: (rows: RowData[], totals: Record<string, unknown>) => void;
+  onError?: (code: string, message: string) => void;
 }
 
 interface RecordsListener {
@@ -348,9 +350,18 @@ interface RecordsListener {
   onDelta: (records: RecordData[], meta: LiveItemMetadata) => void;
   onAppend: (record: RecordData, version: number) => void;
   onItemChange: (meta: LiveItemMetadata) => void;
+  onError?: (code: string, message: string) => void;
 }
 
-type Listener = QueryListener | RecordsListener;
+interface RunLogListener {
+  kind: "run_log";
+  run: string;
+  offset: number;
+  onBatch: (chunks: RunLogChunk[], offset: number, stopped: boolean) => void;
+  onError: (code: string, message: string) => void;
+}
+
+type Listener = QueryListener | RecordsListener | RunLogListener;
 
 /**
  * Single WebSocket per browser session carrying all active query and record
@@ -395,6 +406,10 @@ export class LiveClient {
         return;
       }
       if (frame.type === "ready") {
+        if (frame.account !== this.session.account || frame.space !== this.session.space) {
+          this.close();
+          return;
+        }
         this.ready = true;
         this.reconnectDelay = 250;
         this.stateListener?.("open");
@@ -410,7 +425,7 @@ export class LiveClient {
       }
       if (frame.type === "records") {
         const sub = this.subs.get(frame.sub);
-        if (sub?.kind === "records") {
+        if (sub?.kind === "records" && frame.item === sub.item) {
           sub.lastAnchor = frame.last_anchor;
           const { version, fields, computed, state, when } = frame;
           const meta = { version, fields, computed, state, when };
@@ -421,7 +436,7 @@ export class LiveClient {
       }
       if (frame.type === "record_append") {
         const sub = this.subs.get(frame.sub);
-        if (sub?.kind === "records") {
+        if (sub?.kind === "records" && frame.item === sub.item) {
           sub.lastAnchor = frame.record.anchor;
           sub.onAppend(frame.record, frame.version);
         }
@@ -429,9 +444,26 @@ export class LiveClient {
       }
       if (frame.type === "item_change") {
         const sub = this.subs.get(frame.sub);
-        if (sub?.kind === "records") {
+        if (sub?.kind === "records" && frame.item === sub.item) {
           const { version, fields, computed, state, when } = frame;
           sub.onItemChange({ version, fields, computed, state, when });
+        }
+        return;
+      }
+      if (frame.type === "run_log") {
+        const sub = this.subs.get(frame.sub);
+        if (sub?.kind === "run_log" && frame.run === sub.run) {
+          sub.offset = frame.offset;
+          sub.onBatch(frame.chunks, frame.offset, frame.stopped);
+        }
+        return;
+      }
+      if (frame.type === "error" && frame.sub) {
+        const sub = this.subs.get(frame.sub);
+        if (sub?.kind === "run_log") {
+          sub.onError(frame.code, frame.message);
+        } else if (sub?.kind === "query" || sub?.kind === "records") {
+          sub.onError?.(frame.code, frame.message);
         }
       }
     });
@@ -459,6 +491,8 @@ export class LiveClient {
   private sendSubscribe(id: string, listener: Listener): void {
     if (listener.kind === "query") {
       this.send({ type: "subscribe", sub: id, query: listener.spec });
+    } else if (listener.kind === "run_log") {
+      this.send({ type: "subscribe", sub: id, run_log: { run: listener.run, after: listener.offset } });
     } else {
       const records: Record<string, unknown> = { item: listener.item };
       if (listener.lastAnchor) records.after = listener.lastAnchor;
@@ -467,9 +501,13 @@ export class LiveClient {
   }
 
   /** Subscribe to a collection or ad-hoc query; returns an unsubscribe callback. */
-  subscribeQuery(spec: QuerySpec, onRows: (rows: RowData[], totals: Record<string, unknown>) => void): () => void {
+  subscribeQuery(
+    spec: QuerySpec,
+    onRows: (rows: RowData[], totals: Record<string, unknown>) => void,
+    onError?: (code: string, message: string) => void,
+  ): () => void {
     const id = `q${this.nextId++}`;
-    const listener: QueryListener = { kind: "query", spec, onRows };
+    const listener: QueryListener = { kind: "query", spec, onRows, onError };
     this.subs.set(id, listener);
     this.sendSubscribe(id, listener);
     return () => {
@@ -492,6 +530,27 @@ export class LiveClient {
       this.subs.delete(id);
       this.send({ type: "unsubscribe", sub: id });
     };
+  }
+
+  /** Subscribe to one run's live log stream from an exclusive chunk offset; resumes automatically on reconnect. */
+  subscribeRunLog(
+    run: string,
+    handlers: Omit<RunLogListener, "kind" | "run" | "offset">,
+    initialOffset = 0,
+  ): () => void {
+    const id = `l${this.nextId++}`;
+    const listener: RunLogListener = { kind: "run_log", run, offset: initialOffset, ...handlers };
+    this.subs.set(id, listener);
+    this.sendSubscribe(id, listener);
+    return () => {
+      this.subs.delete(id);
+      this.send({ type: "unsubscribe", sub: id });
+    };
+  }
+
+  /** Stop an active run through `s.run.stop`. */
+  static stopRun(session: SessionInfo, runId: string): Promise<unknown> {
+    return hostCall(session, "s.run.stop", { id: runId });
   }
 
   /** Force-drop the underlying WebSocket (for reconnect tests) and let it auto-reconnect from `lastAnchor`. */
