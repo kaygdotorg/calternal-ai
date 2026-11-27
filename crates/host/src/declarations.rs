@@ -420,6 +420,12 @@ fn entry<'a>(path: &'a str, directory: &str) -> Option<&'a str> {
     (!name.contains('/')).then_some(name)
 }
 
+pub(crate) fn item_body(source: &str) -> Result<&str> {
+    split(source)
+        .map(|(_, body)| body)
+        .ok_or_else(|| Error::invalid_input("Item needs YAML frontmatter."))
+}
+
 pub(crate) fn parse_item(source: &str) -> Result<(Fields, &str)> {
     let (yaml, body) =
         split(source).ok_or_else(|| Error::invalid_input("Item needs YAML frontmatter."))?;

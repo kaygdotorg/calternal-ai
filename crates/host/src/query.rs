@@ -154,7 +154,7 @@ pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
     let records = space.records(input.item)?;
     let views = space.record_views(&row.head, &bytes, &records, kind)?;
     let prefix = std::str::from_utf8(&bytes[..row.head.prefix as usize]).map_err(internal)?;
-    let (_, body) = crate::declarations::parse_item(prefix)?;
+    let body = crate::declarations::item_body(prefix)?;
     let mut result = render_row(space, kind, row)?;
     result["body"] = json!(body);
     result["records"] = json!(views);

@@ -15,7 +15,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("usage: calternal-host serve ROOT ORIGIN ADDRESS | install ROOT ORIGIN OWNER SPACE DIRECTORY [--official]".into());
     };
     let root = PathBuf::from(root);
-    let auth = Auth::open(&root.join("auth"), AuthConfig::new(origin)?)?;
+    let auth_dir = root.join("auth");
+    let config = AuthConfig::new(origin)?;
+    let auth = tokio::task::spawn_blocking(move || Auth::open(&auth_dir, config)).await??;
     let retention =
         std::env::var("CALTERNAL_RECEIPT_RETENTION_DAYS").map_or(Ok(7), |raw| raw.parse())?;
     let host = Arc::new(Host::new(root, auth, retention)?);

@@ -7,9 +7,10 @@ license.workspace = true
 
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
+base64.workspace = true
 blake3.workspace = true
+percent-encoding.workspace = true
 getrandom.workspace = true
-tempfile.workspace = true
 calternal-auth.workspace = true
 calternal-fsio.workspace = true
 calternal-types.workspace = true
@@ -21,3 +22,6 @@ time = { workspace = true, features = ["formatting", "macros"] }
 tokio.workspace = true
 uuid = { workspace = true, features = ["v7"] }
 
+
+[dev-dependencies]
+tempfile.workspace = true

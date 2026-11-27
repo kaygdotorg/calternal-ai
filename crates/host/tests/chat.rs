@@ -117,7 +117,7 @@ impl Fixture {
     fn add(&self) -> Value {
         self.shell(
             "s.write",
-            json!({"changes":[{"add":{"kind":KIND,"fields":{"title":"A small chat"}}}]}),
+            json!({"changes":[{"op":"add","kind":KIND,"fields":{"title":"A small chat"}}]}),
         )["changes"][0]["id"]
             .clone()
     }
@@ -154,8 +154,8 @@ fn installs_chat_adds_markdown_and_rebuilds_query() {
             f.owner.into(),
             "s.write",
             json!({"changes":[
-                {"change":{"item":id,"fields":{"archived":true}}},
-                {"change":{"item":id,"fields":{"title":"refused"}}}
+                {"op":"change","item":id,"fields":{"archived":true}},
+                {"op":"change","item":id,"fields":{"title":"refused"}}
             ]}),
             None,
         )
@@ -173,8 +173,14 @@ fn records_are_attributed_and_replays_do_not_append() {
 
     let f = Fixture::new();
     let id = f.add();
-    let append = json!({"changes":[{"append record":{"item":id,"record":{"body":"A message"}}}]});
+    let append =
+        json!({"changes":[{"op":"append record","item":id,"record":{"body":"A message"}}]});
     let first = f.plugin(append.clone(), Some("first"));
+    let anchor = first["changes"][0]["anchor"].as_str().unwrap();
+    assert_eq!(
+        first["changes"][0]["link"],
+        format!("[Record](<Chats/A%20small%20chat/chat.md#^{anchor}>)")
+    );
     assert_eq!(f.plugin(append, Some("first")), first);
     let data = f.shell("s.read", json!({"item":id}));
     assert_eq!(data["records"].as_array().unwrap().len(), 1);
@@ -186,7 +192,7 @@ fn records_are_attributed_and_replays_do_not_append() {
             f.second.into(),
             "s.write",
             json!({"changes":[
-                {"remove record":{"item":id,"anchor":first["changes"][0]["anchor"]}}
+                {"op":"remove record","item":id,"anchor":first["changes"][0]["anchor"]}
             ]}),
             None,
         )
@@ -194,6 +200,11 @@ fn records_are_attributed_and_replays_do_not_append() {
     assert_eq!(refusal.code, ErrorCode::NotFound);
 
     let path = f.space_path().join("Chats/A small chat/chat.md");
+    assert!(
+        std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("**Ada** · ")
+    );
     let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
     write!(
         file,
@@ -210,7 +221,7 @@ fn records_are_attributed_and_replays_do_not_append() {
             Actor::plugin(f.owner, "calternal-chat"),
             "s.write",
             json!({"changes":[
-                {"append record":{"item":id,"record":{"body":"Later"}}}
+                {"op":"append record","item":id,"record":{"body":"Later"}}
             ]}),
             None,
         )
@@ -222,7 +233,7 @@ fn records_are_attributed_and_replays_do_not_append() {
 fn restart_keeps_item_and_receipt() {
     let f = Fixture::new();
     let id = f.add();
-    let append = json!({"changes":[{"append record":{"item":id,"record":{"body":"Persist"}}}]});
+    let append = json!({"changes":[{"op":"append record","item":id,"record":{"body":"Persist"}}]});
     let first = f.plugin(append.clone(), Some("persist"));
     let Fixture {
         root,
@@ -252,7 +263,7 @@ fn restart_keeps_item_and_receipt() {
 fn thousand_appends() {
     let f = Fixture::new();
     let id = f.add();
-    let one = |n| json!({"changes":[{"append record":{"item":id,"record":{"body":format!("Message {n}")}}}]});
+    let one = |n| json!({"changes":[{"op":"append record","item":id,"record":{"body":format!("Message {n}")}}]});
     f.plugin(one(0), Some("warmup"));
     eprintln!("HOST_APPEND_BEGIN");
     for n in 1..=1_000 {
@@ -285,7 +296,8 @@ fn copy_bundle(source: &Path, target: &Path) {
 fn unread_position_survives_deleting_the_marked_record() {
     let f = Fixture::with_anchor_fixture(true);
     let id = f.add();
-    let append = |body| json!({"changes":[{"append record":{"item":id,"record":{"body":body}}}]});
+    let append =
+        |body| json!({"changes":[{"op":"append record","item":id,"record":{"body":body}}]});
     let first = f.plugin(append("First"), None)["changes"][0]["anchor"].clone();
     let second = f.plugin(append("Second"), None)["changes"][0]["anchor"].clone();
     let unread = || f.shell("s.read", json!({"item":id}))["computed"]["unread"].clone();
@@ -297,7 +309,7 @@ fn unread_position_survives_deleting_the_marked_record() {
     assert_eq!(unread(), 1);
     f.shell(
         "s.write",
-        json!({"changes":[{"remove record":{"item":id,"anchor":first}}]}),
+        json!({"changes":[{"op":"remove record","item":id,"anchor":first}]}),
     );
     assert_eq!(unread(), 1);
     f.shell(
@@ -305,4 +317,36 @@ fn unread_position_survives_deleting_the_marked_record() {
         json!({"op":"set","item":id,"key":"read through","value":second}),
     );
     assert_eq!(unread(), 0);
+}
+
+#[test]
+fn named_query_sorts_pages_and_sees_a_coded_rename() {
+    let f = Fixture::new();
+    let one = f.add();
+    let added = f.shell(
+        "s.write",
+        json!({"changes":[{"op":"add","kind":KIND,"fields":{"title":"B chat"}}]}),
+    );
+    let two = &added["changes"][0]["id"];
+    let first = f.shell(
+        "s.query",
+        json!({"from":KIND,"where":"not archived","sort":["title desc"],"limit":1}),
+    );
+    assert_eq!(first["rows"][0]["id"], *two);
+    let second = f.shell(
+        "s.query",
+        json!({"from":KIND,"where":"not archived","sort":["title desc"],"limit":1,"cursor":first["cursor"]}),
+    );
+    assert_eq!(second["rows"][0]["id"], one);
+    assert_eq!(second["cursor"], Value::Null);
+    f.plugin(
+        json!({"changes":[{"op":"change","item":one,"fields":{"title":"Renamed"}}]}),
+        None,
+    );
+    assert!(f.space_path().join("Chats/Renamed/chat.md").is_file());
+    assert!(!f.space_path().join("Chats/A small chat/chat.md").exists());
+    assert_eq!(
+        f.shell("s.read", json!({"item":one}))["fields"]["title"],
+        "Renamed"
+    );
 }

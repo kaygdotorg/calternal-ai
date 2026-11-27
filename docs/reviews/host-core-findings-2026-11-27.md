@@ -69,16 +69,20 @@ Work and merge blockers are tracked in [Forgejo #115](https://git.kayg.org/kayg/
   represents approval of risky installs? A locally selected directory is
   only sufficient for the privileged developer path. Updates and wider
   declarations stay disabled here.
-- **Format §8.1, crash between append flushes.** The normal path publishes
-  the durable file first and then commits its verified offset, author,
-  history and receipt in SQLite. After power loss in that interval the
-  item fails closed with an uncommitted tail. The coordinator needs to
-  decide whether to pay for a durable pre-intent, or accept the
-  two-flush path with a provable recovery marker. A pre-intent protects
-  the ability to continue writing after interruption at the cost of an
-  extra flush. Without one, the host cannot safely distinguish an
-  incomplete append from changes made outside the host. This blocks
-  merge of the append path until the policy and recovery are settled.
+- **Format §2.8 and §8.1, coordinator's thirteenth set.** A sole
+  positioned append writes ` <!--calternal-append:v1 <payload>-->` at
+  the end of its Markdown header. The payload is base64url with a
+  128-bit keyed BLAKE3 tag. It covers the item UUID, ordinal, byte
+  offset, actor, timestamp, keyed request and input digests, and all
+  record bytes including the header and anchor. The host key is in
+  owner-only ledger state. The raw retry key is absent from the file.
+  With an idempotency key and a 14-byte plugin ID such as
+  `calternal-chat`, the comment costs 194 bytes. The binary payload is
+  46 bytes plus the plugin ID and 64 bytes when a receipt is present.
+  Normal writes sync the file before committing the ledger. Recovery
+  re-syncs a complete, verified tail, then reconstructs the author
+  stamp, head and receipt. A torn, altered or relocated tail remains
+  an outside change and refuses further writes.
 - **Review gate 7 and format §2.20.** Receipts default to 7 days and use
   `CALTERNAL_RECEIPT_RETENTION_DAYS`. Item removal goes to 30-day Trash.
   This slice checks expiry in bounded batches on access. Historical

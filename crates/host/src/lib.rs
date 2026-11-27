@@ -2,6 +2,7 @@
 #![deny(missing_docs)]
 
 mod declarations;
+mod installation;
 mod query;
 mod records;
 mod space;
@@ -72,7 +73,20 @@ impl Host {
             .identify(bearer)
             .await
             .ok_or_else(|| Error::unauthorized("Sign in to use this space."))?;
-        tokio::task::spawn_blocking(move || self.call(Actor::account(account), space, call))
+        self.trusted_call(Actor::account(account), space, call)
+            .await
+    }
+
+    /// Dispatch from a trusted asynchronous adapter on a blocking thread.
+    /// The adapter verifies the person and any plugin identity before calling.
+    /// Storage and authorization errors are returned through the shared error type.
+    pub async fn trusted_call(
+        self: Arc<Self>,
+        actor: Actor,
+        space: SpaceId,
+        call: Call,
+    ) -> Result<Value> {
+        tokio::task::spawn_blocking(move || self.call(actor, space, call))
             .await
             .map_err(internal)?
     }
@@ -98,6 +112,21 @@ impl Host {
     /// before it can call the host. This method blocks on space storage.
     pub fn call(&self, actor: Actor, id: SpaceId, call: Call) -> Result<Value> {
         self.with_space(&actor, id, |space| space.call(&actor, call))
+    }
+
+    fn owner_display(&self, account: AccountId) -> Result<String> {
+        let key = account.to_string();
+        let lookup = self.auth.find(&key);
+        let (_, name) = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => handle.block_on(lookup),
+            Err(_) => tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(internal)?
+                .block_on(lookup),
+        }
+        .map_err(internal)?;
+        Ok(name)
     }
 
     fn with_space<T>(
@@ -128,7 +157,10 @@ impl Host {
         // receipt lookup see the same version of the filesystem and ledger.
         let mut opened = slot.lock().map_err(internal)?;
         if opened.is_none() {
-            *opened = Some(Space::open(&self.root, id, self.retention_ms)?);
+            let display = self.owner_display(actor.account)?;
+            let mut space = Space::open(&self.root, id, self.retention_ms)?;
+            space.owner_display = Some((actor.account, display));
+            *opened = Some(space);
         }
         let space = opened.as_mut().expect("space initialized");
         space.recover()?;

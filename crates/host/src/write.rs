@@ -20,7 +20,7 @@ pub(crate) struct Write {
 }
 
 #[derive(Deserialize, Serialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(tag = "op", rename_all = "lowercase", deny_unknown_fields)]
 enum Change {
     Add {
         kind: String,
@@ -28,7 +28,8 @@ enum Change {
         fields: Fields,
         body: Option<String>,
     },
-    Change {
+    #[serde(rename = "change")]
+    Update {
         item: Uuid,
         #[serde(default)]
         fields: Fields,
@@ -97,15 +98,7 @@ pub(crate) fn write(
         space.permits(actor, &head.kind, true)?;
         let kind = space.kind(&head.kind)?;
         operation(kind, actor, "append record", None)?;
-        return records::append(
-            space,
-            actor,
-            head,
-            record.clone(),
-            now,
-            receipt.as_ref(),
-            &identity,
-        );
+        return records::append(space, actor, head, record.clone(), now, receipt.as_ref());
     }
     let mut working = BTreeMap::<Uuid, Working>::new();
     let mut outputs = Vec::with_capacity(input.changes.len());
@@ -152,7 +145,7 @@ pub(crate) fn write(
             }
             other => {
                 let id = match &other {
-                    Change::Change { item, .. }
+                    Change::Update { item, .. }
                     | Change::Remove { item }
                     | Change::Append { item, .. }
                     | Change::Edit { item, .. }
@@ -215,6 +208,15 @@ pub(crate) fn write(
             outputs.last_mut().expect("change result")["anchor"] = json!(anchor);
         }
         stamps.push((item, current.row.head.version, action, anchor));
+    }
+    for (output, (item, _, action, anchor)) in outputs.iter_mut().zip(&stamps) {
+        if *action == "append record" {
+            let head = &working.get(item).expect("planned record item").row.head;
+            output["link"] = json!(records::link(
+                &head.path,
+                anchor.as_deref().expect("append anchor")
+            ));
+        }
     }
     let value = result(outputs);
     if input.preview {
@@ -459,7 +461,7 @@ fn apply(
 ) -> Result<(&'static str, Option<String>)> {
     let head = &mut item.row.head;
     match change {
-        Change::Change {
+        Change::Update {
             fields, body, base, ..
         } => {
             operation(kind, actor, "change", Some(&fields))?;
@@ -478,7 +480,7 @@ fn apply(
                 return Err(Error::conflict("The item version changed."));
             }
             let before = head.prefix as usize;
-            let (_, original) = crate::declarations::parse_item(
+            let original = crate::declarations::item_body(
                 std::str::from_utf8(&item.bytes[..before]).map_err(internal)?,
             )?;
             apply_fields(&kind.fields, &mut item.row.fields, fields, false)?;
@@ -508,8 +510,7 @@ fn apply(
                 actor,
                 record,
                 None,
-                item.bytes.len() as u64,
-                head.version + 1,
+                (item.bytes.len() as u64, head.version + 1),
                 now,
             )?;
             let anchor = row.anchor.clone();
@@ -533,8 +534,7 @@ fn apply(
                         .bytes(&item.bytes)
                         .ok_or_else(|| internal("record bytes are missing"))?,
                 )),
-                previous.offset,
-                previous.ordinal,
+                (previous.offset, previous.ordinal),
                 now,
             )?;
             replace_record(item, index, &bytes);
@@ -574,72 +574,4 @@ fn replace_record(item: &mut Working, index: usize, bytes: &[u8]) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use calternal_types::{AccountId, SpaceId};
-    use std::path::Path;
-
-    #[test]
-    fn records_keep_two_actors_in_ledger_order() {
-        // Slice 1 exposes only personal spaces. Exercise the record ledger
-        // with two already-authorized contexts without adding a sharing API.
-        let dir = tempfile::tempdir().unwrap();
-        let mut space = Space::open(dir.path(), SpaceId::new(), 7 * 86_400_000).unwrap();
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins-v2/calternal-chat");
-        space.install(&fixture, true).unwrap();
-        let actor = Actor::plugin(AccountId::new(), "calternal-chat");
-        let other = Actor::plugin(AccountId::new(), "calternal-chat");
-        let call = |space: &mut Space, actor: &Actor, change| {
-            write(
-                space,
-                actor,
-                Write {
-                    changes: vec![serde_json::from_value(change).unwrap()],
-                    preview: false,
-                },
-                None,
-            )
-        };
-        let output = call(
-            &mut space,
-            &actor,
-            json!({"add":{"kind":"calternal-chat.chats", "fields":{"title":"Two writers"}}}),
-        )
-        .unwrap();
-        let item = output["changes"][0]["id"].clone();
-        let output = call(
-            &mut space,
-            &actor,
-            json!({"append record":{"item":item,"record":{"body":"one"}}}),
-        )
-        .unwrap();
-        let first = output["changes"][0]["anchor"].clone();
-        call(
-            &mut space,
-            &other,
-            json!({"append record":{"item":item,"record":{"body":"two"}}}),
-        )
-        .unwrap();
-        let denied = call(
-            &mut space,
-            &other,
-            json!({"remove record":{"item":item,"anchor":first}}),
-        )
-        .unwrap_err();
-        assert_eq!(denied.code, ErrorCode::Forbidden);
-        let id = serde_json::from_value(item.clone()).unwrap();
-        let records = space.records(id).unwrap();
-        assert_eq!(records[0].author, actor.account.to_string());
-        assert_eq!(records[1].author, other.account.to_string());
-        assert!(records[0].ordinal < records[1].ordinal);
-        call(
-            &mut space,
-            &actor,
-            json!({"remove record":{"item":item,"anchor":first}}),
-        )
-        .unwrap();
-        let records = space.records(id).unwrap();
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].author, other.account.to_string());
-    }
-}
+mod tests;

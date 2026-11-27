@@ -18,7 +18,7 @@ Success is `{"result": ...}`. The error body is `{"error":{"code": "...",
 | --- | --- | --- |
 | `s.query` | `{from, where?, sort?, cursor?, limit?}` or `{collection, cursor?, limit?}`. Collection names are qualified plugin and collection IDs. | `{rows, totals, cursor}`. Rows contain `id`, `kind`, `fields`, `computed` and `version`. `cursor` is opaque and null on the last page. |
 | `s.read` | `{item}` | `{id, kind, fields, computed, body, records, version}` |
-| `s.write` | `{changes, preview?}`. Each change is an object with one operation-name key. | `{changes:[{id, version, anchor?}]}` in input order. Preview performs validation and returns the planned changes. |
+| `s.write` | `{changes, preview?}`. Each change carries its operation in `op`. | `{changes:[{id, version, anchor?, link?}]}` in input order. Preview performs validation and returns the planned changes. |
 | `s.state` | `{op:"get",item,key}` or `{op:"set",item,key,value}` | `{value}` |
 | `s.me` | `{}` | `{id,role}` |
 | `s.space` | `{}` | `{id}` |
@@ -31,8 +31,15 @@ Success is `{"result": ...}`. The error body is `{"error":{"code": "...",
 `remove record {item,anchor}`. Example for a verified owning-plugin context:
 
 ```json
-{"call":"s.write","idempotency_key":"gesture-1","input":{"changes":[{"append record":{"item":"019a0000-0000-7000-8000-000000000001","record":{"body":"Hello"}}}]}}
+{"call":"s.write","idempotency_key":"gesture-1","input":{"changes":[{"op":"append record","item":"019a0000-0000-7000-8000-000000000001","record":{"body":"Hello"}}]}}
 ```
+
+An append receipt includes the item's space-relative Markdown path and
+the host-issued anchor in a Markdown link such as
+`[Record](<Chats/A%20chat/chat.md#^0123456789abcdef>)`. Consumers resolve
+the anchor within the authorized space if the path has changed. The SDK
+translates a plugin author's single-key change object into the wire's
+`op`-tagged object before sending the callback.
 
 Output records add the host's
 `anchor`, `author` and `at` fields. An adapter may pass

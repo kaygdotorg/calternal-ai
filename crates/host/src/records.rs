@@ -1,7 +1,7 @@
 //! Ledger-backed Markdown records. Disk headers carry no authority.
 use crate::declarations::{Fields, Kind, apply_fields};
 use crate::internal;
-use crate::space::{Head, Space};
+use crate::space::{Head, Receipt, Space};
 use calternal_types::{Actor, Error, Result};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
@@ -9,6 +9,10 @@ use serde_json::{Value, json};
 use std::fs::Metadata;
 use std::os::unix::fs::MetadataExt;
 use uuid::Uuid;
+
+mod seal;
+
+use seal::Claim;
 
 const CROCKFORD: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
@@ -148,14 +152,39 @@ impl Space {
         }
         let by_anchor: std::collections::BTreeMap<_, _> =
             rows.iter().map(|row| (row.anchor.as_str(), row)).collect();
-        regions.windows(2).map(|pair| {
+        let mut views = Vec::new();
+        let mut outside = std::collections::BTreeSet::new();
+        for pair in regions.windows(2) {
             let (start, anchor) = pair[0];
             let data = &bytes[start..pair[1].0];
-            match by_anchor.get(anchor).filter(|row| row.offset == start as u64 && self.hash(data) == row.hash) {
-                Some(row) => view(data, anchor, &row.author, row.at, kind),
-                None => Ok(json!({"anchor":anchor, "author":"outside", "at":null, "fields":{}, "body":null})),
+            let verified = by_anchor
+                .get(anchor)
+                .filter(|row| row.offset == start as u64 && self.hash(data) == row.hash);
+            if let Some(row) = verified {
+                views.push(view(data, anchor, &row.author, row.at, kind)?);
+            } else {
+                views.push(json!({"anchor":anchor, "author":"outside", "at":null, "fields":{}, "body":null}));
+                if outside.len() < 1_000 {
+                    outside.insert(anchor);
+                }
             }
-        }).collect()
+        }
+        if !outside.is_empty() {
+            let tx = self.db.unchecked_transaction().map_err(internal)?;
+            let now = calternal_types::now_ms();
+            tx.execute("DELETE FROM history WHERE at<?1", [now - self.retention_ms])
+                .map_err(internal)?;
+            for anchor in outside {
+                tx.execute(
+                    "INSERT OR IGNORE INTO history(item,version,actor,action,anchor,at)
+                      VALUES(?1,?2,'outside','outside record',?3,?4)",
+                    params![head.id.to_string(), head.version as i64, anchor, now],
+                )
+                .map_err(internal)?;
+            }
+            tx.commit().map_err(internal)?;
+        }
+        Ok(views)
     }
 }
 
@@ -183,13 +212,25 @@ impl Record {
     }
 }
 
-fn anchor() -> String {
+fn anchor() -> Result<String> {
     let mut bytes = [0; 16];
-    getrandom::fill(&mut bytes[..10]).expect("operating system randomness");
+    getrandom::fill(&mut bytes[..10]).map_err(internal)?;
     let bits = u128::from_le_bytes(bytes);
-    (0..16)
+    Ok((0..16)
         .map(|i| CROCKFORD[((bits >> (75 - 5 * i)) & 31) as usize] as char)
-        .collect()
+        .collect())
+}
+
+pub(crate) fn link(path: &str, anchor: &str) -> String {
+    const ESCAPE: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
+        .add(b' ')
+        .add(b'%')
+        .add(b'#')
+        .add(b'<')
+        .add(b'>')
+        .add(b'?');
+    let destination = percent_encoding::utf8_percent_encode(path, ESCAPE);
+    format!("[Record](<{destination}#^{anchor}>)")
 }
 
 pub(crate) fn valid_anchor(anchor: &str) -> bool {
@@ -197,6 +238,10 @@ pub(crate) fn valid_anchor(anchor: &str) -> bool {
 }
 
 fn header_anchor(line: &str) -> Option<&str> {
+    let line = line
+        .strip_suffix("-->")
+        .and_then(|line| line.rsplit_once(seal::PREFIX))
+        .map_or(line, |(header, _)| header);
     let (_, rest) = line.strip_prefix("**")?.split_once("** · ")?;
     let (when, anchor) = rest.rsplit_once(" ^")?;
     (when.len() == 16 && valid_anchor(anchor)).then_some(anchor)
@@ -263,8 +308,7 @@ pub(crate) fn encode(
     actor: &Actor,
     input: Input,
     existing: Option<(&Record, &[u8])>,
-    offset: u64,
-    ordinal: u64,
+    (offset, ordinal): (u64, u64),
     now: i64,
 ) -> Result<(Record, Vec<u8>)> {
     if kind.records.is_empty() {
@@ -275,16 +319,31 @@ pub(crate) fn encode(
         .transpose()?
         .unwrap_or_default();
     apply_fields(&kind.records, &mut fields, input.fields, existing.is_none())?;
-    let (anchor, author, at) = existing
-        .map(|(r, _)| (r.anchor.clone(), r.author.clone(), r.at))
-        .unwrap_or_else(|| (anchor(), actor.account.to_string(), now));
+    let (anchor, author, at) = match existing {
+        Some((row, _)) => (row.anchor.clone(), row.author.clone(), row.at),
+        None => (anchor()?, actor.account.to_string(), now),
+    };
+    let display = space
+        .owner_display
+        .as_ref()
+        .filter(|(account, _)| *account == actor.account)
+        .map_or(author.as_str(), |(_, name)| name.as_str());
+    let mut display_name = String::new();
+    for letter in display.chars() {
+        if matches!(letter, '*' | '·' | '\\') {
+            display_name.push('\\');
+        }
+        if !letter.is_control() {
+            display_name.push(letter);
+        }
+    }
     let when = time::OffsetDateTime::from_unix_timestamp(at / 1000)
         .map_err(internal)?
         .format(time::macros::format_description!(
             "[year]-[month]-[day] [hour]:[minute]"
         ))
         .map_err(internal)?;
-    let mut data = format!("**{author}** · {when} ^{anchor}\n");
+    let mut data = format!("**{display_name}** · {when} ^{anchor}\n");
     for (name, value) in fields {
         data.push_str(&format!("{name}: {value}\n"));
     }
@@ -344,11 +403,10 @@ pub(crate) fn can_edit(kind: &Kind, actor: &Actor, record: &Record, now: i64) ->
 pub(crate) fn append(
     space: &mut Space,
     actor: &Actor,
-    mut head: Head,
+    head: Head,
     input: Input,
     now: i64,
     receipt: Option<&crate::space::Receipt>,
-    attribution: &str,
 ) -> Result<Value> {
     use std::io::Read;
     use std::os::{fd::AsRawFd, unix::fs::FileExt};
@@ -387,40 +445,19 @@ pub(crate) fn append(
             "The record stream changed during the call.",
         ));
     }
-    let kind = space.kind(&head.kind)?;
     let end = head.length;
-    head.version += 1;
-    let (record, bytes) = encode(space, kind, actor, input, None, end, head.version, now)?;
-    head.length += bytes.len() as u64;
-    head.edited = now;
-    if head.length > crate::space::ITEM_BYTES as u64 {
-        return Err(Error::new(
-            calternal_types::ErrorCode::TooLarge,
-            "The item exceeds 32 MiB.",
-        ));
-    }
-    let output = crate::result(vec![
-        json!({"id":head.id,"version":head.version,"anchor":record.anchor}),
-    ]);
+    let (next, record, bytes, claim) = make_append(space, &head, actor, input, now, receipt)?;
+    let output = append_result(&next, &record);
     let tx = space.db.transaction().map_err(internal)?;
-    tx.execute(
-        "DELETE FROM history WHERE at<?1",
-        [now - space.retention_ms],
-    )
-    .map_err(internal)?;
-    record.insert(&tx, head.id)?;
-    tx.execute(
-        "UPDATE head SET data=?2 WHERE id=?1",
-        params![
-            head.id.to_string(),
-            serde_json::to_string(&head).map_err(internal)?
-        ],
-    )
-    .map_err(internal)?;
-    tx.execute("INSERT INTO history(item,version,actor,action,anchor,at) VALUES(?1,?2,?3,'append record',?4,?5)", params![head.id.to_string(),head.version as i64,attribution,record.anchor,now]).map_err(internal)?;
-    if let Some(receipt) = receipt {
-        receipt.store(&tx, &output, now)?;
-    }
+    stamp_append(
+        &tx,
+        space.retention_ms,
+        &next,
+        &record,
+        &claim.actor,
+        receipt,
+        &output,
+    )?;
     if let Err(error) = file
         .write_all_at(&bytes, end)
         .and_then(|_| file.sync_data())
@@ -430,13 +467,159 @@ pub(crate) fn append(
             .map_err(internal)?;
         return Err(internal(error));
     }
-    let signature = Signature::from(&file.metadata().map_err(internal)?);
     if let Err(error) = tx.commit() {
         space.recovery_needed = true;
         return Err(internal(error));
     }
-    space.seen.insert(head.id, signature);
-    let id = head.id;
-    space.rows.get_mut(&id).expect("indexed record item").head = head;
+    let id = next.id;
+    space.rows.get_mut(&id).expect("indexed record item").head = next;
+    if let Ok(metadata) = file.metadata() {
+        space.seen.insert(id, Signature::from(&metadata));
+    } else {
+        space.seen.remove(&id);
+    }
     Ok(output)
 }
+
+fn make_append(
+    space: &Space,
+    head: &Head,
+    actor: &Actor,
+    input: Input,
+    now: i64,
+    receipt: Option<&Receipt>,
+) -> Result<(Head, Record, Vec<u8>, Claim)> {
+    let kind = space.kind(&head.kind)?;
+    let (mut record, mut bytes) = encode(
+        space,
+        kind,
+        actor,
+        input,
+        None,
+        (head.length, head.version + 1),
+        now,
+    )?;
+    let claim = Claim {
+        actor: actor.clone(),
+        at: now,
+        proof: receipt.map(|receipt| receipt.proof),
+    };
+    claim.seal(space, head, &mut bytes)?;
+    record.length = bytes.len() as u64;
+    record.hash = space.hash(&bytes);
+    let mut next = head.clone();
+    next.version += 1;
+    next.edited = now;
+    next.length += record.length;
+    if next.length > crate::space::ITEM_BYTES as u64 {
+        return Err(Error::new(
+            calternal_types::ErrorCode::TooLarge,
+            "The item exceeds 32 MiB.",
+        ));
+    }
+    Ok((next, record, bytes, claim))
+}
+
+pub(crate) fn recover_tail(
+    space: &mut Space,
+    head: &mut Head,
+    bytes: &[u8],
+    file: &std::fs::File,
+    signature: Signature,
+) -> Result<()> {
+    let tail = &bytes[head.length as usize..];
+    let Some((claim, anchor)) = Claim::verify(space, head, tail) else {
+        return Ok(());
+    };
+    let rows = space.records(head.id)?;
+    if rows.iter().any(|row| {
+        !row.bytes(bytes)
+            .is_some_and(|data| space.hash(data) == row.hash)
+    }) {
+        return Ok(());
+    }
+    let record = Record {
+        anchor,
+        offset: head.length,
+        length: tail.len() as u64,
+        author: claim.actor.account.to_string(),
+        at: claim.at,
+        ordinal: head.version + 1,
+        hash: space.hash(tail),
+    };
+    let mut next = head.clone();
+    next.version = record.ordinal;
+    next.edited = record.at;
+    next.length += record.length;
+    let attribution = serde_json::to_string(&claim.actor).map_err(internal)?;
+    let cutoff = calternal_types::now_ms() - space.retention_ms;
+    let receipt = claim
+        .proof
+        .filter(|_| claim.at >= cutoff)
+        .map(|proof| Receipt::recover(format!("write:{attribution}"), proof, cutoff));
+    // A process crash can leave complete, unflushed bytes in the page
+    // cache. Re-establish file durability before committing the recovered receipt.
+    if Signature::from(&file.metadata().map_err(internal)?) != signature {
+        return Err(Error::conflict(
+            "The recovery file changed during verification.",
+        ));
+    }
+    file.sync_data().map_err(internal)?;
+    let output = append_result(&next, &record);
+    let tx = space.db.transaction().map_err(internal)?;
+    stamp_append(
+        &tx,
+        space.retention_ms,
+        &next,
+        &record,
+        &claim.actor,
+        receipt.as_ref(),
+        &output,
+    )?;
+    tx.commit().map_err(internal)?;
+    *head = next;
+    Ok(())
+}
+
+fn append_result(head: &Head, record: &Record) -> Value {
+    crate::result(vec![json!({
+        "id":head.id,"version":head.version,"anchor":record.anchor,
+        "link":link(&head.path, &record.anchor),
+    })])
+}
+
+fn stamp_append(
+    tx: &Connection,
+    retention_ms: i64,
+    head: &Head,
+    record: &Record,
+    actor: &Actor,
+    receipt: Option<&Receipt>,
+    output: &Value,
+) -> Result<()> {
+    tx.execute(
+        "DELETE FROM history WHERE at<?1",
+        [calternal_types::now_ms() - retention_ms],
+    )
+    .map_err(internal)?;
+    record.insert(tx, head.id)?;
+    tx.execute(
+        "UPDATE head SET data=?2 WHERE id=?1",
+        params![
+            head.id.to_string(),
+            serde_json::to_string(head).map_err(internal)?
+        ],
+    )
+    .map_err(internal)?;
+    tx.execute(
+        "INSERT INTO history(item,version,actor,action,anchor,at) VALUES(?1,?2,?3,'append record',?4,?5)",
+        params![head.id.to_string(), head.version as i64, serde_json::to_string(actor).map_err(internal)?, record.anchor, record.at],
+    ).map_err(internal)?;
+    if let Some(receipt) = receipt {
+        receipt.store(tx, output, record.at)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;
