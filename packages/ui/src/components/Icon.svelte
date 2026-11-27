@@ -6,12 +6,10 @@
   // `solid` fills the shape with the ink (a stop square, a record dot); `bold` draws the line one third heavier (a glyph that carries a control by itself, the send arrow). Both change only the drawing, never the size.
   let { name, inline = false, solid = false, bold = false }: { name: IconName; inline?: boolean; solid?: boolean; bold?: boolean } = $props();
   const small = $derived(inline);
-  // The dots of "more" are round caps on a zero-length line: they need a thicker stroke.
-  const dots = $derived(name === "more");
   const px = $derived(small ? "var(--glyph-inline)" : "var(--glyph)");
 </script>
 
-<svg style:width={px} style:height={px} style:stroke-width={dots ? "max(var(--glyph-stroke), 2.6)" : bold ? `calc(${small ? "var(--glyph-inline-stroke)" : "var(--glyph-stroke)"} * 1.33)` : small ? "var(--glyph-inline-stroke)" : "var(--glyph-stroke)"} viewBox="0 0 24 24" fill={solid ? "currentColor" : "none"} stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" data-icon={name} aria-hidden="true" focusable="false"><path d={ICONS[name]} /></svg>
+<svg style:width={px} style:height={px} style:stroke-width={bold ? `calc(${small ? "var(--glyph-inline-stroke)" : "var(--glyph-stroke)"} * 1.33)` : small ? "var(--glyph-inline-stroke)" : "var(--glyph-stroke)"} viewBox="0 0 24 24" fill={solid ? "currentColor" : "none"} stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" data-icon={name} aria-hidden="true" focusable="false"><path d={ICONS[name]} /></svg>
 
 <style>
   svg { flex: none; display: block; }

@@ -5,6 +5,7 @@
  */
 export const ICONS = {
   threads: "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-7l-4 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM8.5 9.5h7M8.5 12.5h4",
+  chat: "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-7l-4 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM8.5 9.5h7M8.5 12.5h4",
   notes: "M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM14 3v5h5M9 13h6M9 17h4",
   tasks: "M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM8 12l3 3 5-6",
   files: "M3.5 7.5a2 2 0 0 1 2-2h3.6l1.9 2h7.5a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z",
@@ -17,7 +18,8 @@ export const ICONS = {
   up: "M12 19V5M6 11l6-6 6 6",
   down: "M12 5v14M6 13l6 6 6-6",
   back: "M15 5l-7 7 7 7",
-  more: "M5 12h.01M12 12h.01M19 12h.01",
+  // three dots drawn as tiny circles, so they take the tier stroke like every other glyph (a zero-length line needed a heavier one)
+  more: "M5 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M11 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M17 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0",
   sidebar: "M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM9 4v16",
   "sidebar-right": "M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM15 4v16",
   apps: "M4.5 4.5h5v5h-5zM14.5 4.5h5v5h-5zM4.5 14.5h5v5h-5zM14.5 14.5h5v5h-5z",
@@ -65,6 +67,26 @@ export const ICONS = {
   codex: "M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zM9 10l2.5 2L9 14M13.5 14.5H16",
   claude: "M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4",
   quote: "M6 6v12M10 8h9M10 12h9M10 16h6",
+  // drawn in the mockup lanes on the same grid (round caps, the same strokes) and moved here: mail, calendar, a push pin, the drag grip, sort, board and gallery views, a coin, phone, a map pin, a gift, a flag, repeat, a tag, waiting, subtasks
+  mail: "M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM3.5 7.5l8.5 6 8.5-6",
+  phone: "M5 4h3.5l1.5 4-2 1.5a11 11 0 0 0 5.5 5.5l1.5-2 4 1.5V18a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2z",
+  mappin: "M12 21s-6.5-5.7-6.5-11a6.5 6.5 0 0 1 13 0c0 5.3-6.5 11-6.5 11zM12 7.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z",
+  gift: "M4 11h16v9H4zM3 7.5h18V11H3zM12 7.5V20M12 7.5C10.8 4.5 7 4.5 7 6.4c0 1.4 2.6 1.1 5 1.1zM12 7.5c1.2-3 5-3 5-1.1 0 1.4-2.6 1.1-5 1.1z",
+  flag: "M6 21V4M6 5h11l-2.5 4 2.5 4H6",
+  repeat: "M17 3l3 3-3 3M20 6H9a5 5 0 0 0-5 5M7 21l-3-3 3-3M4 18h11a5 5 0 0 0 5-5",
+  tag: "M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7a1 1 0 0 1 .7.3l8 8a1 1 0 0 1 0 1.4l-7.7 7.7a1 1 0 0 1-1.4 0l-8-8a1 1 0 0 1-.3-.7zM8 8h.01",
+  waiting: "M7 3h10M7 21h10M8 3v3.5a4 4 0 0 0 1.6 3.2L12 12l-2.4 2.3A4 4 0 0 0 8 17.5V21M16 3v3.5a4 4 0 0 1-1.6 3.2L12 12l2.4 2.3a4 4 0 0 1 1.6 3.2V21",
+  subtasks: "M5 5.5l1.5 1.5L9 4.5M12 6h8M5 12.5l1.5 1.5L9 11.5M12 13h8M5 19.5l1.5 1.5L9 18.5M12 20h8",
+  coin: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM14.5 9.4c-.4-.8-1.4-1.3-2.5-1.3-1.4 0-2.5.8-2.5 1.9 0 2.5 5.2 1.1 5.2 3.7 0 1.1-1.1 2-2.7 2-1.2 0-2.3-.5-2.8-1.5M12 6.5v1.6M12 16v1.5",
+  sort: "M7 5v14M7 19l-3-3M7 19l3-3M17 19V5M17 5l-3 3M17 5l3 3",
+  pin: "M9 4h6l-1 5 3 3v2H7v-2l3-3-1-5zM12 14v6",
+  grip: "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01",
+  board: "M4 5h5v14H4zM10 5h4v9h-4zM15 5h5v6h-5z",
+  gallery: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
+  calendar: "M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM4 10h16M8 3v4M16 3v4",
+  reply: "M9.5 6L4 11.5 9.5 17M4 11.5h9a7 7 0 0 1 7 7V19",
+  replyall: "M7 6L2.5 10.5 7 15M12 6l-4.5 4.5L12 15M7.5 10.5H14a6 6 0 0 1 6 6V18",
+  forward: "M14.5 6L20 11.5 14.5 17M20 11.5h-9a7 7 0 0 0-7 7V19",
 } as const;
 
 /** The name of an icon in the set. */

@@ -170,7 +170,7 @@
     box-sizing: border-box;
     clip-path: inset(50%);
     opacity: 0;
-    transition: opacity 160ms ease-out;
+    transition: opacity var(--dur-fast) var(--ease-out);
   }
   .open .inner {
     opacity: 1;
