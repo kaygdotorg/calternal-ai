@@ -1,7 +1,8 @@
 # Host run wiring · 2026-11-27
 
 Lane G, slice 6, [Forgejo #117](https://git.kayg.org/kayg/calternal-ai/issues/117).
-The base includes the shared browser shell on `dev` at `b348e053`.
+The base includes the shared browser shell and typed revision 10 declarations
+on `dev` at `3686979a`.
 
 ## Findings
 
@@ -54,7 +55,9 @@ The base includes the shared browser shell on `dev` at `b348e053`.
 - Installed declarations already compiled by the host supply program and
   policy. Installation reload now follows explicit insertion order so
   Chat's dependency is available before its harness. The transport tests
-  use the current required `item` field. These address R1 S8 and S10.
+  use the current required `item` field. The format fixture includes the
+  checked-in executable and verifies rejection when that file is omitted.
+  These changes also address R1 S8 and S10.
 - The host tracks up to 32 runs per open space and the machine admits 32
   active runs. Each run log holds 256 chunks or 1 MiB, and remembers at
   most 128 input keys. Eviction removes completed logs first. Starts use
@@ -95,19 +98,21 @@ directory. The merged export used the pinned Nix shell and a lane-specific
 fake image tag. Rust artifacts were cached within the lane.
 
 ```sh
+export CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
 export CARGO_TARGET_DIR="$HOME/Developer/lanes/runs-harness/target"
 export HOST_BIN="$CARGO_TARGET_DIR/debug/calternal-host"
-export CALTERNAL_TEST_PROVIDER_IMAGE=localhost/calternal-runs-harness-merged:dev
+export CALTERNAL_TEST_PROVIDER_IMAGE=localhost/calternal-runs-harness-rev10:dev
 ~/bin/lock-shared nix develop -c npm ci
 ~/bin/lock-shared nix develop -c npm run build:plugins
 ~/bin/lock-shared nix develop -c plugins-v2/calternal-chat-claude-code/test/build-echo-image.sh "$CALTERNAL_TEST_PROVIDER_IMAGE"
-~/bin/lock-shared nix develop -c cargo fmt --check -p calternal-host -p calternal-machine -p calternal-types -p calternal-plugin-host
+~/bin/lock-shared nix develop -c cargo fmt --all --check
 ~/bin/lock-shared nix develop -c cargo test --locked -p calternal-machine --test egress_proxy --test run_service --test runs_harness
-~/bin/lock-shared nix develop -c cargo test --locked -p calternal-host -p calternal-plugin-host --features calternal-plugin-host/operations
+~/bin/lock-shared nix develop -c cargo test --locked -p calternal-format -p calternal-host -p calternal-plugin-host --features calternal-plugin-host/operations
 ~/bin/lock-shared nix develop -c node apps/web/e2e/host-runs.mjs
 ```
 
-Machine passed 7 tests. Host and plugin transport passed 77 tests. These
+Machine passed 7 tests. Format passed 27, host passed 34, and plugin
+transport passed 44. These
 include the real Chat and harness bundles producing one run-stamped reply,
 a second registered person's input refusal, a cross-chat prompt refusal,
 sandbox output callbacks exercising cross-chat read and write denial,
@@ -115,6 +120,13 @@ undeclared egress refusal, a stable retry and changed-filler conflict, and
 Stop under two seconds. Chromium used a cookie-authenticated socket to
 confirm chunk offsets, exclusive replay after a reconnect and the same
 stopped run ID after a restart.
+
+The full `~/bin/lock-shared nix develop -c env CARGO_BUILD_JOBS=2 ./scripts/check-docs.sh`
+passed. It checked the workspace and conformance crate, generated Rust
+references, and passed the generated-page and TypeScript documentation
+checks. Regenerating the stale machine page accounted for the only
+generated Markdown change. The final format fixture also passed
+`~/bin/lock-shared nix develop -c cargo check --locked --all-targets --all-features -p calternal-format`.
 
 ## Disposable browser host
 
@@ -125,13 +137,13 @@ the enrollment code to a new mode-`0600` file under a disposable lane
 directory. On the first completed passkey sign-in it installs Chat and the
 harness, in that order.
 
-The merged-export smoke ran `sh -n scripts/dev-chat-host.sh` and
+The revision 10 merged-export smoke ran `sh -n scripts/dev-chat-host.sh` and
 `scripts/dev-chat-host.sh` in the locked dev shell. The built client
 returned its module HTML, `/v1/auth/status` reported a fresh setup and
 `stat -c '%a' "$private_file"` returned `600`. A separate
 `cargo test --locked -p calternal-host --lib development_sign_in_seeds_both_bundles_once`
 checked that the sign-in handler installs both real bundles once, including
-when sign-in is retried.
+when sign-in is retried. The revision 10 smoke bound port 24817.
 
 ## Simplification opportunities
 
