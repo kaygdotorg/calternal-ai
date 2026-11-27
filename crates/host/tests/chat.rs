@@ -370,3 +370,73 @@ fn declares_chat_surfaces_and_evaluates_viewer_state_before_delivery() {
         );
     }
 }
+
+#[test]
+fn installing_another_plugin_refreshes_the_browser_catalog() {
+    let f = Fixture::new();
+    let initial = f.shell("s.declarations", json!({}));
+    assert_eq!(initial["plugins"].as_array().unwrap().len(), 1);
+    let extra = tempfile::tempdir().unwrap();
+    std::fs::write(
+        extra.path().join("plugin.md"),
+        "---\nplugin: extra\nname: Extra\nversion: 1.0.0\nformat: 1\n---\n",
+    )
+    .unwrap();
+    f.host
+        .install_local(f.owner, f.space, extra.path(), false)
+        .unwrap();
+    let catalog = f.shell("s.declarations", json!({}));
+    assert_eq!(catalog["plugins"][1]["id"], "extra");
+}
+
+#[test]
+fn an_existing_personal_ledger_keeps_its_viewer_state() {
+    let f = Fixture::new();
+    let item = f.add();
+    f.shell(
+        "s.state",
+        json!({"op":"set","item":item,"key":"draft","value":"Still here"}),
+    );
+    let Fixture {
+        root,
+        auth,
+        host,
+        owner,
+        space,
+        ..
+    } = f;
+    drop(host);
+    let db = rusqlite::Connection::open(
+        root.path()
+            .join("state")
+            .join(space.to_string())
+            .join("ledger.sqlite3"),
+    )
+    .unwrap();
+    db.execute_batch(
+        "ALTER TABLE viewer_state RENAME TO scoped_viewer_state;
+         CREATE TABLE viewer_state (
+           plugin TEXT NOT NULL, item TEXT NOT NULL, name TEXT NOT NULL,
+           value TEXT NOT NULL, ordinal INTEGER, PRIMARY KEY(plugin,item,name)
+         );
+         INSERT INTO viewer_state SELECT plugin,item,name,value,ordinal FROM scoped_viewer_state;
+         DROP TABLE scoped_viewer_state;",
+    )
+    .unwrap();
+    drop(db);
+
+    let reopened = Host::new(root.path().into(), auth, 7).unwrap();
+    let row = reopened
+        .call(
+            owner.into(),
+            space,
+            Call {
+                call: "s.read".into(),
+                input: json!({"item":item}),
+                idempotency_key: None,
+                slot_selection: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(row["state"]["draft"], "Still here");
+}

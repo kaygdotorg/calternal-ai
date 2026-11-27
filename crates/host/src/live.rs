@@ -5,6 +5,8 @@
 //! request path. Subscriptions reuse the host's authorized `s.query` and
 //! `s.read` paths so viewer-scoped formulas and access checks are never
 //! duplicated.
+mod wire;
+
 use crate::{Call, Host};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
@@ -14,9 +16,10 @@ use calternal_types::{AccountId, Actor, Error, ErrorCode, SpaceId};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use uuid::Uuid;
+use wire::{send_error, send_frame};
 
 /// Maximum bytes accepted in a single client WebSocket text frame.
 pub const MAX_CLIENT_FRAME_BYTES: usize = 64 * 1024;
@@ -26,42 +29,33 @@ pub const MAX_SUBSCRIPTIONS: usize = 64;
 
 const SPACE_CHANNEL_CAPACITY: usize = 256;
 
-/// Per-space live notification channels, separated by viewer. Channels carry
-/// invalidations only. Every outgoing row and record is re-read with the
-/// receiving account's current authority before it enters a socket frame.
+/// Live notification channels for one space, separated by viewer. Channels
+/// carry invalidations only. Every outgoing row and record is re-read with
+/// the receiving account's authority before it enters a socket frame.
 #[derive(Default)]
-pub struct Hub {
-    spaces: Mutex<HashMap<SpaceId, HashMap<AccountId, broadcast::Sender<()>>>>,
+pub(crate) struct Hub {
+    viewers: HashMap<AccountId, broadcast::Sender<()>>,
 }
 
 impl Hub {
-    /// Subscribe one account to a space's invalidations. The caller verifies
-    /// space access before registering. Holds the map lock for memory work only.
-    pub fn subscribe(&self, space: SpaceId, account: AccountId) -> broadcast::Receiver<()> {
-        let mut spaces = self.spaces.lock().expect("live hub lock");
-        let viewers = spaces.entry(space).or_default();
-        viewers.retain(|_, sender| sender.receiver_count() != 0);
-        viewers
+    fn subscribe(&mut self, account: AccountId) -> broadcast::Receiver<()> {
+        self.viewers
+            .retain(|_, sender| sender.receiver_count() != 0);
+        self.viewers
             .entry(account)
             .or_insert_with(|| broadcast::channel(SPACE_CHANNEL_CAPACITY).0)
             .subscribe()
     }
 
-    /// Publish a committed change. A personal state invalidation is queued
-    /// only for that person, including when other sessions fall behind.
-    pub fn notify(&self, space: SpaceId, viewer: Option<AccountId>) {
-        let mut spaces = self.spaces.lock().expect("live hub lock");
-        if let Some(viewers) = spaces.get_mut(&space) {
-            viewers.retain(|account, sender| {
-                if viewer.is_none_or(|viewer| viewer == *account) {
-                    let _ = sender.send(());
-                }
-                sender.receiver_count() != 0
-            });
-            if viewers.is_empty() {
-                spaces.remove(&space);
+    // The space lock serializes this nonblocking publication with the commit.
+    // A private invalidation is kept out of other accounts' lagged streams.
+    pub(crate) fn notify(&mut self, viewer: Option<AccountId>) {
+        self.viewers.retain(|account, sender| {
+            if viewer.is_none_or(|viewer| viewer == *account) {
+                let _ = sender.send(());
             }
-        }
+            sender.receiver_count() != 0
+        });
     }
 }
 
@@ -81,26 +75,27 @@ pub(crate) async fn ws_route(
         return StatusCode::UNAUTHORIZED.into_response();
     };
     let actor = Actor::account(account);
-    let check = host
-        .clone()
-        .trusted_call(
-            actor.clone(),
-            space,
-            Call {
-                call: "s.space".into(),
-                input: json!({}),
-                idempotency_key: None,
-                slot_selection: None,
-            },
-        )
-        .await;
-    if let Err(error) = check {
-        return StatusCode::from_u16(error.code.http_status())
-            .expect("shared HTTP status")
-            .into_response();
-    }
+    let storage_host = host.clone();
+    let viewer = actor.clone();
+    let access = tokio::task::spawn_blocking(move || {
+        storage_host.with_space(&viewer, space, |storage| {
+            Ok(storage.live.subscribe(account))
+        })
+    })
+    .await
+    .map_err(crate::internal)
+    .and_then(|access| access);
+    let receiver = match access {
+        Ok(receiver) => receiver,
+        Err(error) => {
+            return StatusCode::from_u16(error.code.http_status())
+                .expect("shared HTTP status")
+                .into_response();
+        }
+    };
     ws.max_message_size(MAX_CLIENT_FRAME_BYTES)
-        .on_upgrade(move |socket| serve_socket(host, space, actor, token, socket))
+        .max_frame_size(MAX_CLIENT_FRAME_BYTES)
+        .on_upgrade(move |socket| serve_socket(host, space, actor, token, receiver, socket))
 }
 
 #[derive(Debug, Deserialize)]
@@ -197,6 +192,7 @@ async fn serve_socket(
     space: SpaceId,
     actor: Actor,
     token: String,
+    mut rx: broadcast::Receiver<()>,
     mut socket: WebSocket,
 ) {
     let mut authority = host.auth.spaces().changes();
@@ -214,7 +210,6 @@ async fn serve_socket(
         return;
     }
 
-    let mut rx = host.live().subscribe(space, actor.account);
     let mut subs: HashMap<String, Subscription> = HashMap::new();
 
     loop {
@@ -595,109 +590,5 @@ pub(crate) fn slice_after(
     }
 }
 
-async fn send_frame(socket: &mut WebSocket, frame: &ServerFrame) -> std::result::Result<(), ()> {
-    let Ok(text) = serde_json::to_string(frame) else {
-        return Err(());
-    };
-    socket
-        .send(Message::Text(text.into()))
-        .await
-        .map_err(|_| ())
-}
-
-async fn send_error(
-    socket: &mut WebSocket,
-    sub: Option<String>,
-    error: &Error,
-) -> std::result::Result<(), ()> {
-    let (code, next) = match error.code {
-        ErrorCode::Unauthorized => ("needs-sign-in", "Sign in and try again."),
-        ErrorCode::Forbidden | ErrorCode::PasskeyReverificationRequired => {
-            ("not-allowed", "Check your access.")
-        }
-        ErrorCode::NotFound => ("not-found", "Check the requested ID."),
-        ErrorCode::Conflict => ("conflict", "Refresh before retrying."),
-        ErrorCode::InvalidInput => ("invalid", "Check the subscription arguments."),
-        ErrorCode::TooLarge => ("too-large", "Reduce the frame size."),
-        ErrorCode::EffectiveScopeLimitExceeded | ErrorCode::RetryAfter => {
-            ("limit", "Reduce active subscriptions and try again.")
-        }
-        ErrorCode::Internal | ErrorCode::Unavailable => ("unreachable", "Try again later."),
-    };
-    send_frame(
-        socket,
-        &ServerFrame::Error {
-            sub,
-            code,
-            message: error.message.clone(),
-            next,
-        },
-    )
-    .await
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn slice_after_returns_only_subsequent_records_in_order() {
-        let records = vec![
-            json!({"anchor": "a1", "body": "one"}),
-            json!({"anchor": "a2", "body": "two"}),
-            json!({"anchor": "a3", "body": "three"}),
-        ];
-        let (mode, delta, after) = slice_after(&records, Some("a1"));
-        assert_eq!(mode, "delta");
-        assert_eq!(after.as_deref(), Some("a1"));
-        assert_eq!(delta.len(), 2);
-        assert_eq!(delta[0]["anchor"], "a2");
-        assert_eq!(delta[1]["anchor"], "a3");
-    }
-
-    #[test]
-    fn slice_after_falls_back_to_snapshot_for_unknown_anchor() {
-        let records = vec![
-            json!({"anchor": "a1", "body": "one"}),
-            json!({"anchor": "a2", "body": "two"}),
-        ];
-        let (mode, out, after) = slice_after(&records, Some("gone"));
-        assert_eq!(mode, "snapshot");
-        assert!(after.is_none());
-        assert_eq!(out.len(), 2);
-    }
-
-    #[test]
-    fn hub_notifies_only_matching_space() {
-        let hub = Hub::default();
-        let s1 = SpaceId::new();
-        let s2 = SpaceId::new();
-        let owner = AccountId::new();
-        let other = AccountId::new();
-        let mut rx1 = hub.subscribe(s1, owner);
-        let mut rx1_other = hub.subscribe(s1, other);
-        let mut rx2 = hub.subscribe(s2, owner);
-        hub.notify(s1, None);
-        assert!(rx1.try_recv().is_ok());
-        assert!(rx1_other.try_recv().is_ok());
-        assert!(rx2.try_recv().is_err());
-
-        // Simulate an idle peer in a multi-person space. Private changes
-        // must neither enqueue an event for the peer nor lag its channel.
-        for _ in 0..(SPACE_CHANNEL_CAPACITY + 1) {
-            hub.notify(s1, Some(owner));
-        }
-        assert!(matches!(
-            rx1.try_recv(),
-            Err(broadcast::error::TryRecvError::Lagged(_))
-        ));
-        assert!(matches!(
-            rx1_other.try_recv(),
-            Err(broadcast::error::TryRecvError::Empty)
-        ));
-        assert!(matches!(
-            rx2.try_recv(),
-            Err(broadcast::error::TryRecvError::Empty)
-        ));
-    }
-}
+mod tests;

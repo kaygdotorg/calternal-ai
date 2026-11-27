@@ -185,6 +185,7 @@ async function fixture(directory, origin, setupCode) {
       data: {},
     });
     assert.equal(hostile.status(), 403);
+    assert.equal(hostile.headers()["cache-control"], "no-store");
     const missingOrigin = await a.context.request.post(`${origin}/v1/auth/logout`, { data: {} });
     assert.equal(missingOrigin.status(), 403);
     const liveUrl = `${api}/v1/spaces/${session.space}/live`;
@@ -225,6 +226,10 @@ async function fixture(directory, origin, setupCode) {
     assert.equal(await b.page.evaluate(() => window.host.query[0].fields.title), "Release prep v2");
     assert.equal(await b.page.evaluate(() => window.host.query[0].when.pin), true);
     assert.equal(await b.page.evaluate(() => window.host.query[0].state.pinned), false);
+    await a.page.evaluate((item) => window.host.call("s.state", {
+      op: "set", item, key: "pinned", value: true,
+    }), item);
+    await b.page.waitForFunction(() => window.host.query[0].state.pinned && window.host.query[0].when.unpin);
 
     const send = (text) => a.page.evaluate(({ kind, item, text }) =>
       window.host.call(`${kind}.send`, { item, text }, text), { kind: KIND, item, text });

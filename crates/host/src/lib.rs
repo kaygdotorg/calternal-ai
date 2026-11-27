@@ -66,7 +66,6 @@ pub struct Host {
     retention_ms: i64,
     spaces: Mutex<HashMap<SpaceId, Slot>>,
     workers: Option<WorkerRuntime>,
-    live: live::Hub,
 }
 
 impl Host {
@@ -82,13 +81,7 @@ impl Host {
             retention_ms: i64::from(retention_days) * 86_400_000,
             spaces: Mutex::default(),
             workers: None,
-            live: live::Hub::default(),
         })
-    }
-
-    /// Return the per-space live window notification hub.
-    pub fn live(&self) -> &live::Hub {
-        &self.live
     }
 
     /// Resolve a bearer session token to its account ID.
@@ -175,11 +168,13 @@ impl Host {
             }
             _ => None,
         };
-        let output = self.with_space(&actor, id, |space| space.call(&actor, call))?;
-        if let Some(recipient) = recipient {
-            self.live.notify(id, recipient);
-        }
-        Ok(output)
+        self.with_space(&actor, id, |space| {
+            let output = space.call(&actor, call)?;
+            if let Some(recipient) = recipient {
+                space.live.notify(recipient);
+            }
+            Ok(output)
+        })
     }
 
     fn owner_display(&self, account: AccountId) -> Result<String> {

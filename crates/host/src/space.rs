@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
+use std::sync::OnceLock;
 use uuid::Uuid;
 
 pub(crate) const TRASH_MS: i64 = 30 * 86_400_000;
@@ -97,6 +98,8 @@ pub(crate) struct Space {
     pub(crate) pending_dir: Folder,
     pub(crate) rows: BTreeMap<Uuid, Row>,
     pub(crate) plugins: BTreeMap<String, Plugin>,
+    pub(crate) browser_catalog: OnceLock<Value>,
+    pub(crate) live: crate::live::Hub,
     pub(crate) code: BTreeMap<String, InstalledCode>,
     pub(crate) retention_ms: i64,
     pub(crate) key: [u8; 32],
@@ -145,6 +148,8 @@ impl Space {
             pending_dir: Folder::open_existing(&pending).map_err(internal)?,
             rows: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            browser_catalog: OnceLock::new(),
+            live: crate::live::Hub::default(),
             code: BTreeMap::new(),
             retention_ms,
             key,
@@ -344,7 +349,13 @@ impl Space {
         match call.call.as_str() {
             "s.me" => Ok(json!({"id":actor.account,"role":"owner"})),
             "s.space" => Ok(json!({"id":self.id})),
-            "s.declarations" => Ok(declarations::browser::describe(self, actor)),
+            "s.declarations" => Ok(if actor.via.is_none() {
+                self.browser_catalog
+                    .get_or_init(|| declarations::browser::describe(self, actor))
+                    .clone()
+            } else {
+                declarations::browser::describe(self, actor)
+            }),
             "s.query" => crate::query::query(self, actor, decode(call.input)?),
             "s.read" => crate::query::read(self, actor, decode(call.input)?),
             "s.write" => {

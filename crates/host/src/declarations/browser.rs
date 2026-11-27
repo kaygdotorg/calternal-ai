@@ -1,8 +1,8 @@
 //! Browser presentation metadata projected from the installed format catalog.
 
-use super::{as_json, invalid};
+use super::as_json;
 use crate::space::Space;
-use calternal_format::{self as format, Field, FieldType, Fields, OperationForm, Source};
+use calternal_format::{self as format, Field, FieldType, OperationForm, Source};
 use calternal_types::Actor;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -56,32 +56,33 @@ pub(crate) fn describe(space: &Space, actor: &Actor) -> Value {
             continue;
         }
         let plugin = &space.plugins[*id];
-        let sidebars: Map<_, _> = plugin
-            .sidebars
-            .iter()
-            .map(|(key, sidebar)| {
-                let entries = sidebar.entries.iter().filter_map(|entry| {
+        let sidebars: Map<_, _> =
+            plugin
+                .sidebars
+                .iter()
+                .map(|(key, sidebar)| {
+                    let entries = sidebar.entries.iter().filter_map(|entry| {
                 if let Some(collection) = &entry.collection {
                     let qualified = qualify(id, collection);
-                    let (owner, key) = qualified.split_once('.')?;
+                    let (owner, _) = qualified.split_once('.')?;
                     let collection = space.collection(&qualified).ok()?;
                     let [Source::Kind(from)] = collection.sources.as_slice() else { return None };
-                    if !space.plugins[owner].collections.contains_key(key)
-                        || collection.share_source == format::ShareSource::Shared
+                    if collection.share_source == format::ShareSource::Shared
                         || space.permits(actor, &qualify(owner, from), false).is_err() {
                         return None;
                     }
-                    Some(json!({"type":"collection","title":entry.title,"collection":qualified}))
+                    let title = entry.title.as_deref().unwrap_or(&collection.title);
+                    Some(json!({"type":"collection","title":title,"collection":qualified}))
                 } else {
                     entry.title.as_ref().map(|title| json!({"type":"section","title":title}))
                 }
             }).collect::<Vec<_>>();
-                (
-                    key.clone(),
-                    json!({"id":key,"plugin":id,"title":sidebar.title,"entries":entries}),
-                )
-            })
-            .collect();
+                    (
+                        key.clone(),
+                        json!({"id":key,"plugin":id,"title":sidebar.title,"entries":entries}),
+                    )
+                })
+                .collect();
         view["sidebars"] = Value::Object(sidebars);
         view["slots"] = Value::Object(plugin.manifest.slots.iter().map(|(key, slot)| {
             let cardinality = if slot.multiple { "many" } else { "single" };
@@ -276,18 +277,5 @@ fn operation_json(operation: &format::Operation) -> Value {
 }
 
 fn constant(expression: &format::Expression) -> Option<Value> {
-    let empty = Fields::new();
-    format::evaluate(
-        expression,
-        format::Row {
-            fields: &empty,
-            metadata: &empty,
-        },
-        &format::EvalContext::default(),
-    )
-    .map_err(invalid)
-    .ok()
-    .filter(|value| *value != format::Value::Empty)
-    .as_ref()
-    .map(as_json)
+    expression.literal().map(as_json)
 }

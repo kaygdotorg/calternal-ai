@@ -79,14 +79,15 @@ impl Host {
         let ancestry = chain.plugins.clone();
         let (result, events) = tokio::task::spawn_blocking(move || {
             host.with_space(&who, space, |storage| {
-                storage.observe_write(&who, call, &ancestry)
+                let observed = storage.observe_write(&who, call, &ancestry)?;
+                if !preview {
+                    storage.live.notify(None);
+                }
+                Ok(observed)
             })
         })
         .await
         .map_err(internal)??;
-        if !preview {
-            self.live.notify(space, None);
-        }
         for event in events {
             let host = self.clone();
             let watcher = Actor::plugin(actor.account, &event.plugin);
