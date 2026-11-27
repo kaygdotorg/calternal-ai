@@ -87,3 +87,54 @@ async fn stop_fences_a_queued_callback_before_persistent_publication() {
         .unwrap();
     assert_eq!(current["records"], json!([]));
 }
+
+#[test]
+fn scoped_route_checks_every_target_before_dispatch() {
+    let grant = RunScopeGrant {
+        id: Uuid::now_v7(),
+        space: SpaceId::new(),
+        item: Uuid::now_v7(),
+    };
+    let actor = Actor::run(calternal_types::AccountId::new(), "harness", grant.id);
+    let other = Uuid::now_v7();
+    for (call, input) in [
+        ("s.read", json!({"item":other})),
+        (
+            "s.state",
+            json!({"item":other,"op":"get","key":"read through"}),
+        ),
+        ("s.query", json!({"from":"example.entries"})),
+        (
+            "example.entries.publish",
+            json!({"item":other,"text":"outside"}),
+        ),
+        (
+            "s.write",
+            json!({"changes":[{"op":"append record","item":grant.item},{"op":"append record","item":other}]}),
+        ),
+    ] {
+        let call = Call {
+            call: call.into(),
+            input,
+            idempotency_key: None,
+            slot_selection: None,
+        };
+        assert_eq!(
+            grant.check(&actor, grant.space, &call).unwrap_err().code,
+            ErrorCode::Forbidden
+        );
+    }
+    let read = Call {
+        call: "s.read".into(),
+        input: json!({"item":grant.item}),
+        idempotency_key: None,
+        slot_selection: None,
+    };
+    assert!(grant.check(&actor, grant.space, &read).is_ok());
+    assert!(
+        grant
+            .check(&Actor::account(actor.account), grant.space, &read)
+            .is_err()
+    );
+    assert!(grant.check(&actor, SpaceId::new(), &read).is_err());
+}

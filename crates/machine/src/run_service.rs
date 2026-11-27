@@ -88,22 +88,27 @@ pub struct RunHandle {
     pub id: Uuid,
     /// Bounded ordered log stream. A stalled reader applies backpressure.
     pub events: mpsc::Receiver<RunEvent>,
-    /// Final status becomes available even if the log stream is not consumed.
-    pub exit: watch::Receiver<Option<ExitInfo>>,
+    exit: watch::Receiver<Option<ExitInfo>>,
 }
 
 impl RunHandle {
-    /// Wait until the machine reports the process exit.
-    pub async fn wait_exit(&mut self) -> ExitInfo {
-        loop {
-            if let Some(exit) = self.exit.borrow().clone() {
-                return exit;
-            }
-            if self.exit.changed().await.is_err() {
-                return ExitInfo {
-                    error: Some("run status channel closed".into()),
-                    ..ExitInfo::default()
-                };
+    /// Observe process exit independently of ownership of the log stream.
+    /// Each waiter holds its own receiver and reports a closed status channel.
+    pub fn wait_exit(
+        &self,
+    ) -> impl std::future::Future<Output = ExitInfo> + Send + 'static + use<> {
+        let mut exit = self.exit.clone();
+        async move {
+            loop {
+                if let Some(status) = exit.borrow().clone() {
+                    return status;
+                }
+                if exit.changed().await.is_err() {
+                    return ExitInfo {
+                        error: Some("run status channel closed".into()),
+                        ..ExitInfo::default()
+                    };
+                }
             }
         }
     }
@@ -584,3 +589,7 @@ async fn send_run_event(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "run_service/exit_tests.rs"]
+mod exit_tests;

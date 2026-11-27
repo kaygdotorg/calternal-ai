@@ -3,8 +3,7 @@ mod log;
 mod output;
 
 #[cfg(test)]
-#[path = "runs/tests.rs"]
-mod publication_tests;
+mod tests;
 
 use crate::{Call, Host, decode, internal, space::Receipt};
 use calternal_machine::{
@@ -392,11 +391,11 @@ impl Host {
             }
             return Err(error);
         }
-        let mut exit = handle.exit.clone();
+        let exit = handle.wait_exit();
         let cancel = Arc::clone(&run);
         tokio::spawn(async move {
             tokio::select! {
-                _ = exit.changed() => {}
+                _ = exit => {}
                 _ = cancel.wait_cancelled() => {
                     if let Err(error) = service.terminate(id).await
                         && !matches!(error, RunError::NotActive)
@@ -586,61 +585,5 @@ fn run_error(error: RunError) -> Error {
             eprintln!("calternal-host: run service: {error}");
             Error::unavailable("The run service could not complete the request.")
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn scoped_route_checks_every_target_before_dispatch() {
-        let grant = RunScopeGrant {
-            id: Uuid::now_v7(),
-            space: SpaceId::new(),
-            item: Uuid::now_v7(),
-        };
-        let actor = Actor::run(calternal_types::AccountId::new(), "harness", grant.id);
-        let other = Uuid::now_v7();
-        for (call, input) in [
-            ("s.read", json!({"item":other})),
-            (
-                "s.state",
-                json!({"item":other,"op":"get","key":"read through"}),
-            ),
-            ("s.query", json!({"from":"example.entries"})),
-            (
-                "example.entries.publish",
-                json!({"item":other,"text":"outside"}),
-            ),
-            (
-                "s.write",
-                json!({"changes":[{"op":"append record","item":grant.item},{"op":"append record","item":other}]}),
-            ),
-        ] {
-            let call = Call {
-                call: call.into(),
-                input,
-                idempotency_key: None,
-                slot_selection: None,
-            };
-            assert_eq!(
-                grant.check(&actor, grant.space, &call).unwrap_err().code,
-                ErrorCode::Forbidden
-            );
-        }
-        let read = Call {
-            call: "s.read".into(),
-            input: json!({"item":grant.item}),
-            idempotency_key: None,
-            slot_selection: None,
-        };
-        assert!(grant.check(&actor, grant.space, &read).is_ok());
-        assert!(
-            grant
-                .check(&Actor::account(actor.account), grant.space, &read)
-                .is_err()
-        );
-        assert!(grant.check(&actor, SpaceId::new(), &read).is_err());
     }
 }

@@ -424,7 +424,7 @@ async fn fake_run_uses_a_read_only_root_and_bounded_temporary_writes() {
     let _containers = PodmanGuard::new(root.path());
     let service = make_service(backend, "127.0.0.1:9".parse().unwrap());
     let (request, actor) = request();
-    let mut run = service.start(request).await.unwrap();
+    let run = service.start(request).await.unwrap();
     let name = PodmanBackend::container_name(actor.account.as_uuid(), run.id);
     let output = tokio::process::Command::new("podman")
         .args([
