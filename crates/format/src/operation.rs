@@ -70,6 +70,39 @@ pub enum OperationForm {
     RemoveRecord,
 }
 
+/// Evaluate all of a kind's operation preconditions for one authorized row.
+/// Uses precomputed row fields and one shared expression budget. An evaluation
+/// failure leaves its operation unavailable for this row.
+pub fn operation_conditions(
+    kind: &Kind,
+    row: Row<'_>,
+    computed: &Fields,
+    context: &EvalContext<'_>,
+) -> Result<BTreeMap<String, bool>, Diagnostic> {
+    let mut fields = typed_fields(&kind.fields, row.fields, |_| kind.site, true)?;
+    fields.extend(
+        computed
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone())),
+    );
+    let row = Row {
+        fields: &fields,
+        metadata: row.metadata,
+    };
+    let mut steps = 50_000;
+    Ok(kind
+        .operations
+        .iter()
+        .map(|(name, operation)| {
+            let available = operation.condition.as_ref().is_none_or(|condition| {
+                crate::expr::eval::evaluate_in(condition, row, context, &mut steps)
+                    .is_ok_and(|value| value.truth())
+            });
+            (name.clone(), available)
+        })
+        .collect())
+}
+
 /// One target and value in a set operation.
 #[derive(Clone, Debug)]
 pub struct Assignment {

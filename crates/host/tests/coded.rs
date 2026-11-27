@@ -120,12 +120,32 @@ async fn real_chat_send_rename_and_replay() {
     f.call(
         owner.clone(),
         "calternal-chat.chats.send",
-        json!({"chat":item,"text":"Prime the append cache"}),
+        json!({"item":item,"text":"Prime the append cache"}),
         Some("prime"),
     )
     .await
     .unwrap();
-    let input = json!({"chat":item,"text":"Hello"});
+    let wrong_target = f
+        .call(
+            owner.clone(),
+            "calternal-chat.chats.send",
+            json!({"item":uuid::Uuid::now_v7(),"text":item}),
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(wrong_target.code, ErrorCode::NotFound);
+    let guessed_target = f
+        .call(
+            owner.clone(),
+            "calternal-chat.chats.send",
+            json!({"chat":item,"text":"No aliases"}),
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(guessed_target.code, ErrorCode::InvalidInput);
+    let input = json!({"item":item,"text":"Hello"});
     eprintln!("CODED_APPEND_BEGIN");
     let first = f
         .call(
@@ -164,7 +184,7 @@ async fn real_chat_send_rename_and_replay() {
         .call(
             owner.clone(),
             "calternal-chat.chats.send",
-            json!({"chat":item,"text":"Changed input"}),
+            json!({"item":item,"text":"Changed input"}),
             Some("gesture"),
         )
         .await
@@ -173,7 +193,7 @@ async fn real_chat_send_rename_and_replay() {
     f.call(
         owner.clone(),
         "calternal-chat.chats.rename",
-        json!({"chat":item,"title":"Renamed"}),
+        json!({"item":item,"title":"Renamed"}),
         None,
     )
     .await
@@ -187,7 +207,7 @@ async fn real_chat_send_rename_and_replay() {
         .call(
             owner,
             "calternal-chat.chats.undeclared",
-            json!({"chat":item}),
+            json!({"item":item}),
             None,
         )
         .await
@@ -212,7 +232,7 @@ fn observer(root: &Path) {
             if (await s.state.get(created, "seen") !== true) throw Error("state not visible");
         });
         export const relay = on.call("observations.relay", async ({ chat }: { chat: string }, s) =>
-            s.call("calternal-chat.chats.rename", { chat, title: "Relay" }));
+            s.call("calternal-chat.chats.rename", { item: chat, title: "Relay" }));
     "#).unwrap();
 }
 
@@ -229,7 +249,7 @@ async fn install_probe_registers_a_change_on_the_real_route() {
     f.call(
         f.owner.into(),
         "calternal-chat.chats.send",
-        json!({"chat":chat,"text":"Hello"}),
+        json!({"item":chat,"text":"Hello"}),
         Some("observed"),
     )
     .await
@@ -310,7 +330,10 @@ async fn child_exit_cannot_leave_half_of_a_real_write() {
     let kind_text = std::fs::read_to_string(&kind).unwrap();
     std::fs::write(
         kind,
-        kind_text.replace("  rename: code", "  crash: code\n  rename: code"),
+        kind_text.replace(
+            "  rename: code",
+            "  crash: code\n    inputs:\n      item: link(chats), required\n  rename: code",
+        ),
     )
     .unwrap();
     use std::io::Write;
@@ -320,11 +343,11 @@ async fn child_exit_cannot_leave_half_of_a_real_write() {
         .unwrap()
         .write_all(
             br#"
-            export const crash = on.call("chats.crash", async ({ chat }: {chat: ItemId}, s) => {
+            export const crash = on.call("chats.crash", async ({ item }: {item: ItemId}, s) => {
                 await Promise.all([
                     s.write([
-                        { change: { item: chat, fields: { archived: true } } },
-                        { "append record": { item: chat, record: { body: "All or nothing" } } }
+                        { change: { item, fields: { archived: true } } },
+                        { "append record": { item, record: { body: "All or nothing" } } }
                     ]),
                     new Promise(() => setTimeout(() => process.exit(23), 20))
                 ]);
@@ -338,7 +361,7 @@ async fn child_exit_cannot_leave_half_of_a_real_write() {
         .call(
             f.owner.into(),
             "calternal-chat.chats.crash",
-            json!({"chat":item}),
+            json!({"item":item}),
             Some("crash"),
         )
         .await
@@ -355,7 +378,7 @@ async fn child_exit_cannot_leave_half_of_a_real_write() {
     f.call(
         f.owner.into(),
         "calternal-chat.chats.rename",
-        json!({"chat":item,"title":"Recovered"}),
+        json!({"item":item,"title":"Recovered"}),
         None,
     )
     .await
@@ -371,7 +394,7 @@ async fn chat_harness_refusal_reuses_the_record_receipt() {
     let item = f.chat().await;
     for _ in 0..2 {
         let error = f.call(f.owner.into(), "calternal-chat.chats.send",
-            json!({"chat":item,"text":"For the harness","harness":"calternal-chat-claude-code.runs.start"}),
+            json!({"item":item,"text":"For the harness","harness":"calternal-chat-claude-code.runs.start"}),
             Some("send-start")).await.unwrap_err();
         assert_eq!(error.code, ErrorCode::Forbidden);
     }
@@ -433,7 +456,7 @@ async fn chat_can_call_only_the_operation_of_the_selected_slot_filler() {
         let mut envelope = json!({
             "call":"calternal-chat.chats.send",
             "idempotency_key":key,
-            "input":{"chat":chat,"text":"For the selected harness"}
+            "input":{"item":chat,"text":"For the selected harness"}
         });
         if let Some(filler) = filler {
             envelope["slot_selection"] = json!({"slot":"harness","filler":filler});

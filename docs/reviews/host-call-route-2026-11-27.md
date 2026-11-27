@@ -1,8 +1,9 @@
 # Host call route · 2026-11-27
 
 Browser and CLI calls go through `POST /v1/spaces/{space}/call`. The
-space is a UUID. The HTTP adapter resolves a bearer session through the
-auth crate. The verified caller must own the personal space. The request body carries no person, role, plugin identity or
+space is a UUID. The HTTP adapter resolves a session through the auth crate. Browsers
+use the strict HttpOnly host cookie and send the configured origin.
+CLI calls can still supply a bearer session. The verified caller must own the personal space. The request body carries no person, role, plugin identity or
 run scope. In-process adapters supply those from their trusted session or
 worker context. The worker transport can wrap the same operation and input
 in its own frame.
@@ -16,8 +17,9 @@ Success is `{"result": ...}`. The error body is `{"error":{"code": "...",
 
 | Call | Input | Result |
 | --- | --- | --- |
-| `s.query` | `{from, where?, sort?, cursor?, limit?}` or `{collection, cursor?, limit?}`. Collection names are qualified plugin and collection IDs. | `{rows, totals, cursor}`. Rows contain `id`, `kind`, `fields`, `computed` and `version`. `cursor` is opaque and null on the last page. |
-| `s.read` | `{item}` | `{id, kind, fields, computed, body, records, version}` |
+| `s.declarations` | `{}` | `{space, plugins}` with the reachable installed kinds, fields, operations and inputs, collections, sidebars, slots and fillers. |
+| `s.query` | `{from, where?, sort?, cursor?, limit?}` or `{collection, cursor?, limit?}`. Collection names are qualified plugin and collection IDs. | `{rows, totals, cursor}`. Rows contain `id`, `kind`, `fields`, `computed`, viewer `state`, server-evaluated `when`, `edited` and `version`. `cursor` is opaque and null on the last page. |
+| `s.read` | `{item}` | The same row metadata plus `body` and `records`. |
 | `s.write` | `{changes, preview?}`. Each change carries its operation in `op`. | `{changes:[{id, version, anchor?, link?}]}` in input order. Preview performs validation and returns the planned changes. |
 | `s.state` | `{op:"get",item,key}` or `{op:"set",item,key,value}` | `{value}` |
 | `s.me` | `{}` | `{id,role}` |
@@ -59,7 +61,10 @@ coded operations. Name the plugin, kind and operation, as in
 `calternal-chat.chats.send`. The two-part name is accepted when it names
 one unambiguous coded operation in the plugin. The worker pipe gets the
 kind-qualified selector, current acting person, space and stable event
-key from the host. Worker effects return through the same checked route.
+key from the host. An item-scoped operation declares
+`item: link(<its kind>), required` in its typed inputs and accepts the
+target UUID under that key. An operation without that input has no
+event item. Worker effects return through the same checked route.
 
 The isolated install probe discovers `on.change` selectors. A selector
 names a kind or collection visible to the installing plugin's code.

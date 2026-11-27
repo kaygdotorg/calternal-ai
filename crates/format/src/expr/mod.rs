@@ -16,6 +16,17 @@ pub struct Expression {
     pub(crate) root: Node,
 }
 
+impl Expression {
+    /// Borrow the value when the expression is a single literal. No evaluation
+    /// or context lookup is performed.
+    pub fn literal(&self) -> Option<&Value> {
+        match &self.root.kind {
+            NodeKind::Value(value) => Some(value),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct Node {
     pub kind: NodeKind,

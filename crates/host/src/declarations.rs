@@ -1,4 +1,6 @@
 //! Adapter from verified bundle bytes and JSON values to the pure format engine.
+pub(crate) mod browser;
+
 use calternal_format as format;
 use calternal_types::{AccountId, Error, Result};
 use serde_json::{Map, Value};

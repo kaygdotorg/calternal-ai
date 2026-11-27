@@ -276,7 +276,13 @@ impl Auth {
     /// Never conveys space authority. Revoke fencing is shared by clones in this
     /// process; separately opened services/processes do not share that fence.
     pub async fn identify(&self, token: &str) -> Option<(AccountId, InstallationId)> {
-        crate::session::identify(&self.inner, token).await
+        crate::session::identify(&self.inner, token, true).await
+    }
+
+    /// Recheck a live session for passive delivery without renewing its idle
+    /// expiry. Uses the same cache, lookup and revocation fence as identification.
+    pub async fn check_session(&self, token: &str) -> Option<(AccountId, InstallationId)> {
+        crate::session::identify(&self.inner, token, false).await
     }
 
     /// Lists this account's live installations, newest first.

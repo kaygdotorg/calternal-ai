@@ -105,7 +105,7 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
             } else {
                 space.records(row.head.id)?
             };
-            query_input(space, &kind, row, &records)
+            query_input(space, actor, &kind, row, &records)
         })
         .collect::<Result<Vec<_>>>()?;
     let result = execute(
@@ -143,11 +143,21 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
         .iter()
         .map(declarations::as_json)
         .collect::<Vec<_>>();
+    let (today, now) = declarations::clock()?;
     let rows = page
         .rows
         .into_iter()
-        .map(|selected| render_row(rows[selected.index], &selected.computed))
-        .collect::<Vec<_>>();
+        .map(|selected| {
+            render_row(
+                &kind,
+                rows[selected.index],
+                &inputs[selected.index],
+                &selected.computed,
+                &today,
+                &now,
+            )
+        })
+        .collect::<Result<Vec<_>>>()?;
     Ok(
         json!({"rows":rows,"totals":if totals.is_empty() {json!({})} else {json!(totals)}, "cursor":page.next}),
     )
@@ -164,16 +174,18 @@ pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
     let body = declarations::item_body(prefix)?;
     let mut collection = ad_hoc(None, &[])?;
     collection.ignoring_default = true;
+    let input = query_input(space, actor, &kind, row, &records)?;
     let result = execute(
         &collection,
         &kind,
-        &[query_input(space, &kind, row, &records)?],
+        std::slice::from_ref(&input),
         format::Page {
             offset: 0,
             limit: 1,
         },
     )?;
-    let mut result = render_row(row, &result.rows[0].computed);
+    let (today, now) = declarations::clock()?;
+    let mut result = render_row(&kind, row, &input, &result.rows[0].computed, &today, &now)?;
     result["body"] = json!(body);
     result["records"] = json!(views);
     Ok(result)
@@ -223,6 +235,7 @@ struct QueryInput {
 
 fn query_input(
     space: &Space,
+    actor: &Actor,
     kind: &Kind<'_>,
     row: &Row,
     records: &[Record],
@@ -234,17 +247,20 @@ fn query_input(
         let mut stmt = space
             .db
             .prepare_cached(
-                "SELECT name,value,ordinal FROM viewer_state WHERE plugin=?1 AND item=?2",
+                "SELECT name,value,ordinal FROM viewer_state WHERE plugin=?1 AND item=?2 AND account=?3",
             )
             .map_err(internal)?;
         let rows = stmt
-            .query_map(params![owner, row.head.id.to_string()], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<i64>>(2)?,
-                ))
-            })
+            .query_map(
+                params![owner, row.head.id.to_string(), actor.account.to_string()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<i64>>(2)?,
+                    ))
+                },
+            )
             .map_err(internal)?;
         for entry in rows {
             let (key, raw, position) = entry.map_err(internal)?;
@@ -313,14 +329,19 @@ fn query_input(
     })
 }
 
-pub(crate) fn contains(space: &Space, collection: &Collection, row: &Row) -> Result<bool> {
+pub(crate) fn contains(
+    space: &Space,
+    actor: &Actor,
+    collection: &Collection,
+    row: &Row,
+) -> Result<bool> {
     let kind = space.kind(&row.head.kind)?;
     let records = if kind.records.is_empty() {
         Vec::new()
     } else {
         space.records(row.head.id)?
     };
-    let input = query_input(space, &kind, row, &records)?;
+    let input = query_input(space, actor, &kind, row, &records)?;
     let page = format::Page {
         offset: 0,
         limit: 1,
@@ -385,9 +406,61 @@ fn execute(
         .map_err(declarations::invalid)
 }
 
-fn render_row(row: &Row, computed: &format::Fields) -> Value {
+fn render_row(
+    kind: &Kind<'_>,
+    row: &Row,
+    input: &QueryInput,
+    computed: &format::Fields,
+    today: &str,
+    now: &str,
+) -> Result<Value> {
+    let empty = format::Fields::new();
+    let records = input
+        .records
+        .iter()
+        .map(|metadata| format::Row {
+            fields: &empty,
+            metadata,
+        })
+        .collect::<Vec<_>>();
+    let context = format::EvalContext {
+        today: Some(today),
+        now: Some(now),
+        offset_seconds: Some(0),
+        state: Some(&input.state),
+        records: &records,
+        record_positions: Some(&input.record_positions),
+        ..format::EvalContext::default()
+    };
+    let when = format::operation_conditions(
+        kind.compiled,
+        format::Row {
+            fields: &input.fields,
+            metadata: &input.metadata,
+        },
+        computed,
+        &context,
+    )
+    .map_err(declarations::invalid)?;
     let computed = declarations::as_json(&format::Value::Map(computed.clone()));
-    json!({"id":row.head.id,"kind":row.head.kind,"fields":row.fields,"computed":computed,"version":row.head.version})
+    let state = kind
+        .state
+        .keys()
+        .map(|key| {
+            (
+                key.clone(),
+                input
+                    .state
+                    .get(key)
+                    .map(declarations::as_json)
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    Ok(
+        json!({"id":row.head.id,"kind":row.head.kind,"fields":row.fields,"computed":computed,
+        "state":state,"when":when,"version":row.head.version,"edited":row.head.edited}),
+    )
 }
 
 pub(crate) fn state(
@@ -415,7 +488,7 @@ pub(crate) fn state(
         .0
         .to_owned();
     let Some(value) = set else {
-        return Ok(json!({"value":state_value(space, &kind, item, &name)?}));
+        return Ok(json!({"value":state_value(space, actor, &kind, item, &name)?}));
     };
     if !value.is_null()
         && !field
@@ -446,6 +519,7 @@ pub(crate) fn state(
     if let Some(replay) = receipt.as_ref().and_then(|receipt| receipt.replay.clone()) {
         return Ok(replay);
     }
+    let account = actor.account.to_string();
     let is_anchor = field.field_type == Some(FieldType::Anchor);
     let tx = space.db.transaction().map_err(internal)?;
     let ordinal = if is_anchor && !value.is_null() {
@@ -463,14 +537,14 @@ pub(crate) fn state(
     };
     if value.is_null() {
         tx.execute(
-            "DELETE FROM viewer_state WHERE plugin=?1 AND item=?2 AND name=?3",
-            params![owner, item.to_string(), name],
+            "DELETE FROM viewer_state WHERE plugin=?1 AND item=?2 AND name=?3 AND account=?4",
+            params![owner, item.to_string(), name, account],
         )
         .map_err(internal)?;
     } else {
         let size: i64 = tx.query_row("SELECT COALESCE(SUM(length(CAST(value AS BLOB)) + length(CAST(name AS BLOB)) + length(item)),0)
-            FROM viewer_state WHERE plugin=?1 AND NOT(item=?2 AND name=?3)",
-            params![owner, item.to_string(), name], |row| row.get(0)).map_err(internal)?;
+            FROM viewer_state WHERE plugin=?1 AND account=?4 AND NOT(item=?2 AND name=?3)",
+            params![owner, item.to_string(), name, account], |row| row.get(0)).map_err(internal)?;
         if size as usize + serialized.len() + name.len() + 36 > 65_536 {
             return Err(Error::new(
                 ErrorCode::TooLarge,
@@ -478,9 +552,9 @@ pub(crate) fn state(
             ));
         }
         tx.execute(
-            "INSERT INTO viewer_state VALUES(?1,?2,?3,?4,?5)
+            "INSERT INTO viewer_state VALUES(?1,?2,?3,?4,?5,?6)
             ON CONFLICT DO UPDATE SET value=excluded.value, ordinal=excluded.ordinal",
-            params![owner, item.to_string(), name, serialized, ordinal],
+            params![owner, item.to_string(), name, serialized, ordinal, account],
         )
         .map_err(internal)?;
     }
@@ -491,7 +565,7 @@ pub(crate) fn state(
     Ok(response)
 }
 
-fn state_value(space: &Space, kind: &Kind, item: Uuid, name: &str) -> Result<Value> {
+fn state_value(space: &Space, actor: &Actor, kind: &Kind, item: Uuid, name: &str) -> Result<Value> {
     let field = kind
         .state
         .get(name)
@@ -500,8 +574,8 @@ fn state_value(space: &Space, kind: &Kind, item: Uuid, name: &str) -> Result<Val
     let stored: Option<String> = space
         .db
         .query_row(
-            "SELECT value FROM viewer_state WHERE plugin=?1 AND item=?2 AND name=?3",
-            params![owner, item.to_string(), name],
+            "SELECT value FROM viewer_state WHERE plugin=?1 AND item=?2 AND name=?3 AND account=?4",
+            params![owner, item.to_string(), name, actor.account.to_string()],
             |row| row.get(0),
         )
         .optional()
