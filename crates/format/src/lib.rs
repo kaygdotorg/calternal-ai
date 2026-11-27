@@ -13,9 +13,10 @@ mod query;
 mod value;
 
 pub use definition::{
-    AgentRule, AgentRules, Collection, Directive, Editability, InstallOptions, ItemForm, Kind,
-    Manifest, Plugin, PluginFile, Program, Refusal, Rights, ShareSource, Sidebar, SidebarEntry,
-    Slot, Sort, Source, Total, parse_agent_rules, parse_plugin,
+    AgentRule, AgentRules, Collection, CollectionView, ComposerBindings, Directive, Editability,
+    Fill, FillBinding, InstallOptions, ItemForm, Kind, Manifest, PageEntry, Plugin, PluginFile,
+    Program, Refusal, Rights, ShareSource, Sidebar, SidebarEntry, Slot, Sort, Source, Total,
+    parse_agent_rules, parse_plugin,
 };
 pub use expr::{EvalContext, Expression, QueryRowContext, Row, evaluate, parse_expression};
 pub use field::{Field, FieldType};

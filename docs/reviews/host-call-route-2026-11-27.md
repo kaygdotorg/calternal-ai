@@ -54,6 +54,29 @@ supplies operation dispatch and event context. The runs lane supplies the
 trusted run context. Run calls require a scope binding before they can use
 this route.
 
+## Presentation declarations
+
+`s.declarations` projects the checked, installed catalog. Kind fields carry
+a boolean `badge` flag. Collection views carry their declared `type`, including
+`strip`, and an ordered `columns` array that preserves commas inside formulas.
+Collections and sidebar links each carry their own `icon` token or null.
+Use the link's token first and then the collection's.
+
+Slots carry their optional `label`, the existing `inputOperation` reference
+and either null or a `composer` object. Its `text` and optional `quote`
+are names in that operation's typed inputs, while `draft` is an optional
+state key without the `state.` prefix. Chat declares the following composer binding.
+
+```json
+{"label":"Message","inputOperation":"chats.send","composer":{"text":"text","draft":"draft","quote":"quote"}}
+```
+
+Both the slot picker and the supplying plugin's fill projection carry
+the fill's display `label`, falling back to the supplying plugin's name.
+Picker values still use plugin IDs. An icon, label or composer input name
+confers no authority. The record-link binding names an input type and
+obtaining a link for an existing record still requires a host operation.
+
 ## Coded operations
 
 The session and trusted asynchronous adapters also dispatch installed
@@ -77,7 +100,7 @@ The append path supplies the record link consumed by Chat's optional
 harness call. The person selects a filler using the call envelope:
 
 ```json
-{"call":"calternal-chat.chats.send","input":{"chat":"019a0000-0000-7000-8000-000000000001","text":"Hello"},"idempotency_key":"gesture-1","slot_selection":{"slot":"harness","filler":"my-harness"}}
+{"call":"calternal-chat.chats.send","input":{"item":"019a0000-0000-7000-8000-000000000001","text":"Hello"},"idempotency_key":"gesture-1","slot_selection":{"slot":"harness","filler":"my-harness"}}
 ```
 
 The route checks the calling plugin's person-picked slot and resolves
