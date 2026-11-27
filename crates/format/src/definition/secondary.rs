@@ -51,78 +51,88 @@ pub(super) fn sidebar(source: &str, id: &str) -> Result<Sidebar, Diagnostic> {
         }
     }
     for (source, site) in body_lines(document.body, document.body_site)? {
-        let line = &source[2..];
-        let mut icon = None;
-        let mut collection_ref = None;
-        let (collection, title) = if let Some(title) = line.strip_prefix("section: ") {
-            super::text(title, site, 40, false)?;
-            (None, Some(title.to_owned()))
-        } else if let Some(folders) = line.strip_prefix("folders: ") {
-            for folder in list(folders, site)? {
-                path(&folder, site)?
-            }
-            (None, None)
-        } else if let Some(each) = line.strip_prefix("each: ") {
-            let (source, target) = each
-                .rsplit_once(" -> ")
-                .ok_or_else(|| site.error("Give each a collection after ->"))?;
-            let target = target
-                .split_once(" by ")
-                .map_or(target, |(collection, _)| collection);
-            lines::id(target, site)?;
-            for (part, site) in lines::parts(source, site)? {
-                if let Some(where_clause) = part.strip_prefix("where ") {
-                    parse::parse(where_clause, site)?;
-                }
-            }
-            collection_ref = Some((target.into(), None));
-            (Some(target.into()), None)
-        } else {
-            let (title, target) = line
-                .strip_prefix('[')
-                .and_then(|line| line.split_once("]("))
-                .ok_or_else(|| {
-                    site.error("Write a section, folders, each, or a collection link")
-                })?;
-            super::text(title, site, 40, false)?;
-            let (target, suffix) = target
-                .split_once(')')
-                .ok_or_else(|| site.error("Close the sidebar link with )"))?;
-            let suffix_site = site.after(&source[..source.len() - suffix.len()]);
-            let suffix = lines::uncommented(suffix, suffix_site)?;
-            if !suffix.is_empty() {
-                let token = suffix.strip_prefix(", icon: ").ok_or_else(|| {
-                    suffix_site.error("Follow a collection link only with , icon: <token>")
-                })?;
-                icon = Some(super::icon(token, suffix_site.after(", icon: "))?);
-            }
-            let target = target
-                .strip_prefix('<')
-                .and_then(|target| target.strip_suffix('>'))
-                .unwrap_or(target);
-            if let Some(local) = target
-                .strip_prefix("../collections/")
-                .and_then(|path| path.strip_suffix(".md"))
-            {
-                lines::id(local, site)?;
-                collection_ref = Some((local.into(), None));
-                (Some(local.into()), Some(title.to_owned()))
-            } else {
-                let (owner, id) = collection_reference(target, site)?;
-                collection_ref = Some((id.into(), Some(owner.into())));
-                (Some(target.into()), Some(title.to_owned()))
-            }
-        };
-        result.entries.push(SidebarEntry {
-            source: source.into(),
-            title,
-            collection,
-            collection_ref,
-            icon,
-            site,
-        });
+        result
+            .entries
+            .push(sidebar_entry(source, site, "../collections/")?);
     }
     Ok(result)
+}
+
+pub(super) fn sidebar_entry(
+    source: &str,
+    site: Site,
+    relative: &str,
+) -> Result<SidebarEntry, Diagnostic> {
+    let line = source
+        .strip_prefix("- ")
+        .ok_or_else(|| site.error("Begin each sidebar entry with - and a space"))?;
+    let mut icon = None;
+    let mut collection_ref = None;
+    let (collection, title) = if let Some(title) = line.strip_prefix("section: ") {
+        super::text(title, site, 40, false)?;
+        (None, Some(title.to_owned()))
+    } else if let Some(folders) = line.strip_prefix("folders: ") {
+        for folder in list(folders, site)? {
+            path(&folder, site)?
+        }
+        (None, None)
+    } else if let Some(each) = line.strip_prefix("each: ") {
+        let (source, target) = each
+            .rsplit_once(" -> ")
+            .ok_or_else(|| site.error("Give each a collection after ->"))?;
+        let target = target
+            .split_once(" by ")
+            .map_or(target, |(collection, _)| collection);
+        lines::id(target, site)?;
+        for (part, site) in lines::parts(source, site)? {
+            if let Some(where_clause) = part.strip_prefix("where ") {
+                parse::parse(where_clause, site)?;
+            }
+        }
+        collection_ref = Some((target.into(), None));
+        (Some(target.into()), None)
+    } else {
+        let (title, target) = line
+            .strip_prefix('[')
+            .and_then(|line| line.split_once("]("))
+            .ok_or_else(|| site.error("Write a section, folders, each, or a collection link"))?;
+        super::text(title, site, 40, false)?;
+        let (target, suffix) = target
+            .split_once(')')
+            .ok_or_else(|| site.error("Close the sidebar link with )"))?;
+        let suffix_site = site.after(&source[..source.len() - suffix.len()]);
+        let suffix = lines::uncommented(suffix, suffix_site)?;
+        if !suffix.is_empty() {
+            let token = suffix.strip_prefix(", icon: ").ok_or_else(|| {
+                suffix_site.error("Follow a collection link only with , icon: <token>")
+            })?;
+            icon = Some(super::icon(token, suffix_site.after(", icon: "))?);
+        }
+        let target = target
+            .strip_prefix('<')
+            .and_then(|target| target.strip_suffix('>'))
+            .unwrap_or(target);
+        if let Some(local) = target
+            .strip_prefix(relative)
+            .and_then(|path| path.strip_suffix(".md"))
+        {
+            lines::id(local, site)?;
+            collection_ref = Some((local.into(), None));
+            (Some(local.into()), Some(title.to_owned()))
+        } else {
+            let (owner, id) = collection_reference(target, site)?;
+            collection_ref = Some((id.into(), Some(owner.into())));
+            (Some(target.into()), Some(title.to_owned()))
+        }
+    };
+    Ok(SidebarEntry {
+        source: source.into(),
+        title,
+        collection,
+        collection_ref,
+        icon,
+        site,
+    })
 }
 
 /// Parsed agent rules in file order. The host applies precedence and authority.

@@ -505,6 +505,17 @@ fn verify_fields(
     {
         return Err(site("unique").error("Name one stored field as the uniqueness key"));
     }
+    let mut protected = std::collections::BTreeSet::new();
+    for name in &kind.protected {
+        if !kind.fields.contains_key(name) && !matches!(name.as_str(), "id" | "created" | "edited")
+        {
+            return Err(site("protected")
+                .error(format!("Name a declared protected field instead of {name}")));
+        }
+        if !protected.insert(name) {
+            return Err(site("protected").error(format!("List protected field {name} once")));
+        }
+    }
     if let Some(progress) = &kind.progress
         && kind
             .fields

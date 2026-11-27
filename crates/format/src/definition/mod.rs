@@ -8,6 +8,8 @@ use crate::{
 
 mod collection;
 mod dav;
+mod extensions;
+pub use extensions::{Extension, ExtensionPage, KindExtension, KindSelector, SidebarExtension};
 mod formulas;
 mod install;
 mod kind;
@@ -168,6 +170,7 @@ pub fn parse_plugin(
     }
     install::verify(&plugin, &paths, options)?;
     refusals::verify(&mut plugin.manifest, options).map_err(|error| located(error, "plugin.md"))?;
+    extensions::verify(&plugin, options, &paths).map_err(|error| located(error, "plugin.md"))?;
     Ok(plugin)
 }
 

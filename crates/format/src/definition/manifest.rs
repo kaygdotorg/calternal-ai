@@ -59,6 +59,8 @@ pub struct Manifest {
     pub slots: BTreeMap<String, Slot>,
     /// Qualified refusal rules in source order.
     pub refusals: Vec<Refusal>,
+    /// Kind, sidebar and Home contributions in manifest order.
+    pub extensions: Vec<super::Extension>,
     /// Other declaration lines in file order, used by host install and clients.
     pub directives: Vec<Directive>,
     /// Description text shown at install.
@@ -129,6 +131,7 @@ pub(super) fn parse(
         settings: BTreeMap::new(),
         slots: BTreeMap::new(),
         refusals: Vec::new(),
+        extensions: Vec::new(),
         directives: Vec::new(),
         body,
     };
@@ -352,11 +355,7 @@ pub(super) fn parse(
                     key = entry.key
                 )));
             }
-            "extends" => {
-                return Err(
-                    site.error("Plugin extensions are deferred beyond the Chat-first format slice")
-                );
-            }
+            "extends" => result.extensions = super::extensions::parse(entry)?,
             key => return Err(entry.line.site.error(format!("Unknown plugin key {key}"))),
         }
     }
