@@ -127,7 +127,7 @@ pub(super) fn make_append(
             .expect("record header");
         bytes[newline - 16..newline].copy_from_slice(record.anchor.as_bytes());
     }
-    seal::seal(space, head, actor, &mut bytes)?;
+    seal::seal(space, head, actor, now, &mut bytes)?;
     record.length = bytes.len() as u64;
     record.hash = space.hash(&bytes);
     let mut next = head.clone();

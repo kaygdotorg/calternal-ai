@@ -346,7 +346,7 @@ pub(crate) fn encode(
             display_name.push(letter);
         }
     }
-    let when = time::OffsetDateTime::from_unix_timestamp(at / 1000)
+    let when = time::OffsetDateTime::from_unix_timestamp(at.div_euclid(1000))
         .map_err(internal)?
         .format(time::macros::format_description!(
             "[year]-[month]-[day] [hour]:[minute]"

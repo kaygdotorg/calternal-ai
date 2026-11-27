@@ -5,10 +5,10 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use calternal_types::{AccountId, Actor, Result, Via};
 
-pub(super) const PREFIX: &str = " <!--ca1 ";
+pub(super) const PREFIX: &str = " <!--ca2 ";
 pub(super) const SUFFIX: &str = "-->";
 const TAG_BYTES: usize = 16;
-const TAG_CHARS: usize = 22;
+const CLAIM_CHARS: usize = 24;
 
 pub(super) struct Claim {
     pub(super) actor: Actor,
@@ -42,11 +42,15 @@ pub(super) fn key_anchor(
     ))
 }
 
-pub(super) fn seal(space: &Space, head: &Head, actor: &Actor, payload: &mut Vec<u8>) -> Result<()> {
-    let tag = mac(space, head, actor, blake3::hash(payload))?;
+pub(super) fn seal(space: &Space, head: &Head, actor: &Actor, at: i64, payload: &mut Vec<u8>) -> Result<()> {
+    let within_minute = (at.rem_euclid(60_000) as u16).to_le_bytes();
+    let tag = mac(space, head, actor, at, blake3::hash(payload))?;
+    let mut claim = [0; TAG_BYTES + 2];
+    claim[..2].copy_from_slice(&within_minute);
+    claim[2..].copy_from_slice(&tag.as_bytes()[..TAG_BYTES]);
     let suffix = format!(
         "{PREFIX}{}{SUFFIX}",
-        URL_SAFE_NO_PAD.encode(&tag.as_bytes()[..TAG_BYTES])
+        URL_SAFE_NO_PAD.encode(claim)
     );
     let newline = payload
         .iter()
@@ -62,10 +66,15 @@ pub(super) fn verify(space: &Space, head: &Head, tail: &[u8]) -> Result<Option<C
         let line = std::str::from_utf8(&tail[..newline]).ok()?;
         let (header, encoded) = line.rsplit_once(PREFIX)?;
         let encoded = encoded.strip_suffix(SUFFIX)?;
-        if encoded.len() != TAG_CHARS {
+        if encoded.len() != CLAIM_CHARS {
             return None;
         }
-        let tag: [u8; TAG_BYTES] = URL_SAFE_NO_PAD.decode(encoded).ok()?.try_into().ok()?;
+        let claim: [u8; TAG_BYTES + 2] = URL_SAFE_NO_PAD.decode(encoded).ok()?.try_into().ok()?;
+        let within_minute = i64::from(u16::from_le_bytes(claim[..2].try_into().ok()?));
+        if within_minute >= 60_000 {
+            return None;
+        }
+        let tag: [u8; TAG_BYTES] = claim[2..].try_into().ok()?;
         let anchor = super::header_anchor(header)?.to_owned();
         let (_, rest) = header.rsplit_once("** · ")?;
         let (stamp, _) = rest.rsplit_once(" ^")?;
@@ -81,7 +90,7 @@ pub(super) fn verify(space: &Space, head: &Head, tail: &[u8]) -> Result<Option<C
             AccountId::parse(&head.author).ok()?,
             head.kind.split_once('.')?.0,
         );
-        Some((header, newline, tag, anchor, minute, owner, plugin))
+        Some((header, newline, tag, anchor, minute + within_minute, owner, plugin))
     };
     let Some((header, newline, tag, anchor, at, owner, plugin)) = decoded() else {
         return Ok(None);
@@ -93,7 +102,7 @@ pub(super) fn verify(space: &Space, head: &Head, tail: &[u8]) -> Result<Option<C
     // Slice 1 admits only the personal-space owner. The owning plugin is
     // the only delegated path that can append to this kind.
     for actor in [Actor::account(owner), Actor::plugin(owner, plugin)] {
-        let expected = mac(space, head, &actor, payload)?;
+        let expected = mac(space, head, &actor, at, payload)?;
         // BLAKE3 Hash equality is constant time. Pad both truncated tags.
         let mut claimed = [0u8; 32];
         let mut computed = [0u8; 32];
@@ -112,9 +121,9 @@ pub(super) fn verify(space: &Space, head: &Head, tail: &[u8]) -> Result<Option<C
     Ok(None)
 }
 
-fn mac(space: &Space, head: &Head, actor: &Actor, payload: blake3::Hash) -> Result<blake3::Hash> {
+fn mac(space: &Space, head: &Head, actor: &Actor, at: i64, payload: blake3::Hash) -> Result<blake3::Hash> {
     let mut tag = blake3::Hasher::new_keyed(&space.key);
-    tag.update(b"calternal-host:append:v1\0");
+    tag.update(b"calternal-host:append:v2\0");
     tag.update(head.id.as_bytes());
     tag.update(&(head.version + 1).to_le_bytes());
     tag.update(&head.length.to_le_bytes());
@@ -129,6 +138,7 @@ fn mac(space: &Space, head: &Head, actor: &Actor, payload: blake3::Hash) -> Resu
         }
         Some(Via::Agent { .. }) => return Err(internal("append actor has no supported identity")),
     };
+    tag.update(&at.to_le_bytes());
     tag.update(payload.as_bytes());
     Ok(tag.finalize())
 }

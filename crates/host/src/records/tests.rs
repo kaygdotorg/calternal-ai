@@ -51,6 +51,10 @@ impl Fixture {
     }
 
     fn tail(&self, head: &Head) -> (Value, Vec<u8>) {
+        self.tail_at(head, calternal_types::now_ms())
+    }
+
+    fn tail_at(&self, head: &Head, at: i64) -> (Value, Vec<u8>) {
         let receipt = self
             .space
             .receipt(&self.scope(), Some(GESTURE), REQUEST)
@@ -65,7 +69,7 @@ impl Fixture {
             head,
             &self.actor,
             input,
-            calternal_types::now_ms(),
+            at,
             Some(&receipt),
         )
         .unwrap();
@@ -140,7 +144,7 @@ fn recovers_a_complete_append_and_its_retry_receipt() {
     assert_eq!(f.space.row(head.id).unwrap().head.version, head.version + 1);
     let stamp = std::str::from_utf8(&tail).unwrap().lines().next().unwrap();
     let comment_start = stamp.find(seal::PREFIX).unwrap();
-    assert_eq!(stamp.len() - comment_start, 34);
+    assert_eq!(stamp.len() - comment_start, 36);
     let replay = |f: &mut Fixture, message: &str| {
         f.space.call(&f.actor, Call {
         call: "s.write".into(),
@@ -233,4 +237,16 @@ fn the_author_can_edit_only_inside_the_declared_window() {
     .unwrap();
     assert!(can_edit(&kind, &f.actor, &record, now).is_ok());
     assert!(can_edit(&kind, &f.actor, &record, now + 2 * 3_600_000).is_err());
+}
+
+#[test]
+fn recovered_append_keeps_authenticated_milliseconds() {
+    let mut f = Fixture::new();
+    let head = f.add("Precise");
+    let at = calternal_types::now_ms().div_euclid(60_000) * 60_000 + 59_123;
+    let (_, tail) = f.tail_at(&head, at);
+    f.append_uncommitted(&head, &tail);
+    let f = f.reopen();
+    assert_eq!(f.space.records(head.id).unwrap()[0].at, at);
+    assert_eq!(f.space.row(head.id).unwrap().head.edited, at.max(head.edited));
 }
