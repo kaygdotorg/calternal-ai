@@ -36,9 +36,6 @@ PRAGMA synchronous=FULL;
 PRAGMA secure_delete=ON;
 CREATE TABLE IF NOT EXISTS key_material (id INTEGER PRIMARY KEY CHECK(id=1), key BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS head (id TEXT PRIMARY KEY, data TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS installations (
-  sequence INTEGER PRIMARY KEY, plugin TEXT NOT NULL UNIQUE, digest BLOB NOT NULL
-);
 CREATE TABLE IF NOT EXISTS worker_registrations (plugin TEXT PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS trash (item TEXT PRIMARY KEY, until INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS trash_expiry ON trash(until);
@@ -175,6 +172,7 @@ impl Space {
         calternal_fsio::private::file(&ledger).map_err(internal)?;
         let mut db = Connection::open(ledger).map_err(internal)?;
         db.execute_batch(SCHEMA).map_err(internal)?;
+        crate::installation::ensure_sequence(&mut db)?;
         retire_seal_receipts(&mut db)?;
         db.execute_batch(VIEWER_STATE_SCHEMA).map_err(internal)?;
         let key: Option<Vec<u8>> = db

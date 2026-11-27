@@ -6,7 +6,7 @@ use crate::worker_calls::{InstalledCode, validate_registrations};
 use calternal_fsio::beneath::Folder;
 use calternal_plugin_host::operations::Registrations;
 use calternal_types::{Error, Result};
-use rusqlite::params;
+use rusqlite::{Connection, params};
 use std::collections::BTreeMap;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
@@ -15,15 +15,44 @@ const PLUGIN_BYTES: usize = 16 * 1024 * 1024;
 const PLUGIN_FILES: usize = 256;
 const SPACE_INSTALLATIONS: usize = 32;
 
+const INSTALLATIONS: &str = "CREATE TABLE IF NOT EXISTS installations (
+    sequence INTEGER PRIMARY KEY, plugin TEXT NOT NULL UNIQUE, digest BLOB NOT NULL
+);";
+
+/// Give every installation an explicit, durable sequence. One atomic schema
+/// conversion preserves the earlier insertion order when opening older data.
+pub(crate) fn ensure_sequence(db: &mut Connection) -> Result<()> {
+    db.execute_batch(INSTALLATIONS).map_err(internal)?;
+    let sequenced = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('installations') WHERE name='sequence')",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(internal)?;
+    if !sequenced {
+        let tx = db.transaction().map_err(internal)?;
+        tx.execute_batch("ALTER TABLE installations RENAME TO unsequenced_installations;")
+            .map_err(internal)?;
+        tx.execute_batch(INSTALLATIONS).map_err(internal)?;
+        tx.execute_batch(
+            "INSERT INTO installations(sequence,plugin,digest)
+             SELECT rowid, plugin, digest FROM unsequenced_installations ORDER BY rowid;
+             DROP TABLE unsequenced_installations;",
+        )
+        .map_err(internal)?;
+        tx.commit().map_err(internal)?;
+    }
+    Ok(())
+}
+
 impl Space {
     pub(crate) fn load_plugins(&mut self) -> Result<()> {
         let mut plugins = Vec::new();
         let mut code = BTreeMap::new();
-        // The INTEGER PRIMARY KEY is a durable alias for rowid. Older
-        // add-only ledgers can still be read in their recorded rowid order.
         let mut stmt = self
             .db
-            .prepare_cached("SELECT i.plugin,i.digest,r.data FROM installations AS i LEFT JOIN worker_registrations AS r ON r.plugin=i.plugin ORDER BY i.rowid")
+            .prepare_cached("SELECT i.plugin,i.digest,r.data FROM installations AS i LEFT JOIN worker_registrations AS r ON r.plugin=i.plugin ORDER BY i.sequence")
             .map_err(internal)?;
         let trusted = stmt
             .query_map([], |row| {
@@ -311,6 +340,47 @@ mod tests {
         assert!(sequence.0 < sequence.1);
         opened.load_plugins().unwrap();
         assert_eq!(opened.plugins.len(), 2);
+    }
+
+    #[test]
+    fn earlier_installations_are_upgraded_to_explicit_sequence_once() {
+        let root = tempfile::tempdir().unwrap();
+        let id = calternal_types::SpaceId::new();
+        let mut space = super::Space::open(root.path(), id, 86_400_000).unwrap();
+        for plugin in ["z-first", "a-last"] {
+            let files = [(
+                "plugin.md".into(),
+                format!("---\nplugin: {plugin}\nname: {plugin}\nversion: 1.0.0\nformat: 1\n---\n")
+                    .into_bytes(),
+            )]
+            .into_iter()
+            .collect();
+            space.install(files, false, None).unwrap();
+        }
+        space
+            .db
+            .execute_batch(
+                "ALTER TABLE installations RENAME TO current_installations;
+             CREATE TABLE installations(plugin TEXT PRIMARY KEY, digest BLOB NOT NULL);
+             INSERT INTO installations(plugin,digest)
+                SELECT plugin,digest FROM current_installations ORDER BY sequence;
+             DROP TABLE current_installations;",
+            )
+            .unwrap();
+        drop(space);
+        for _ in 0..2 {
+            let opened = super::Space::open(root.path(), id, 86_400_000).unwrap();
+            let mut rows = opened
+                .db
+                .prepare("SELECT plugin FROM installations ORDER BY sequence")
+                .unwrap();
+            let plugins = rows
+                .query_map([], |row| row.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            assert_eq!(plugins, ["z-first", "a-last"]);
+        }
     }
 
     #[test]
