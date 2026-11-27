@@ -17,6 +17,13 @@ use uuid::Uuid;
 pub(crate) const TRASH_MS: i64 = 30 * 86_400_000;
 pub(crate) const ITEM_BYTES: usize = 32 * 1024 * 1024;
 
+const VIEWER_STATE_SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS viewer_state (
+  plugin TEXT NOT NULL, item TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL, ordinal INTEGER,
+  account TEXT NOT NULL, PRIMARY KEY(plugin,account,item,name)
+);
+";
+
 const SCHEMA: &str = "
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=FULL;
@@ -52,10 +59,6 @@ CREATE TABLE IF NOT EXISTS recovered_appends (
 );
 CREATE INDEX IF NOT EXISTS recovered_lookup ON recovered_appends(actor,at);
 CREATE INDEX IF NOT EXISTS recovered_expiry ON recovered_appends(at);
-CREATE TABLE IF NOT EXISTS viewer_state (
-  plugin TEXT NOT NULL, item TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL, ordinal INTEGER,
-  PRIMARY KEY(plugin,item,name)
-);
 CREATE TABLE IF NOT EXISTS publication (
   id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL
 );
@@ -117,6 +120,7 @@ impl Space {
         calternal_fsio::private::file(&ledger).map_err(internal)?;
         let db = Connection::open(ledger).map_err(internal)?;
         db.execute_batch(SCHEMA).map_err(internal)?;
+        db.execute_batch(VIEWER_STATE_SCHEMA).map_err(internal)?;
         let key: Option<Vec<u8>> = db
             .query_row("SELECT key FROM key_material WHERE id=1", [], |row| {
                 row.get(0)
@@ -153,6 +157,30 @@ impl Space {
         };
         space.recover()?;
         Ok(space)
+    }
+
+    // Assign rows written by the earlier personal-only schema to the
+    // verified sole viewer. A single atomic conversion preserves drafts and anchors.
+    pub(crate) fn scope_existing_viewer_state(&mut self, owner: AccountId) -> Result<()> {
+        let scoped: bool = self.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('viewer_state') WHERE name='account')",
+            [],
+            |row| row.get(0),
+        ).map_err(internal)?;
+        if scoped {
+            return Ok(());
+        }
+        let tx = self.db.transaction().map_err(internal)?;
+        tx.execute_batch("ALTER TABLE viewer_state RENAME TO personal_viewer_state;")
+            .map_err(internal)?;
+        tx.execute_batch(VIEWER_STATE_SCHEMA).map_err(internal)?;
+        tx.execute(
+            "INSERT INTO viewer_state SELECT plugin,item,name,value,ordinal,?1 FROM personal_viewer_state",
+            [owner.to_string()],
+        ).map_err(internal)?;
+        tx.execute_batch("DROP TABLE personal_viewer_state;")
+            .map_err(internal)?;
+        tx.commit().map_err(internal)
     }
 
     pub(crate) fn recover(&mut self) -> Result<()> {

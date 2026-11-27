@@ -168,10 +168,16 @@ impl Host {
                 "A slot selection requires a person’s coded operation.",
             ));
         }
-        let mutates = matches!(call.call.as_str(), "s.write" | "s.state");
+        let recipient = match call.call.as_str() {
+            "s.write" if call.input.get("preview") != Some(&Value::Bool(true)) => Some(None),
+            "s.state" if call.input.get("op").and_then(Value::as_str) == Some("set") => {
+                Some(Some(actor.account))
+            }
+            _ => None,
+        };
         let output = self.with_space(&actor, id, |space| space.call(&actor, call))?;
-        if mutates {
-            self.live.notify(id);
+        if let Some(recipient) = recipient {
+            self.live.notify(id, recipient);
         }
         Ok(output)
     }
@@ -213,6 +219,7 @@ impl Host {
         if opened.is_none() {
             let display = self.owner_display(actor.account)?;
             let mut space = Space::open(&self.root, id, self.retention_ms)?;
+            space.scope_existing_viewer_state(actor.account)?;
             space.owner_display = Some((actor.account, display));
             *opened = Some(space);
         }

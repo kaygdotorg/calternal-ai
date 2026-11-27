@@ -10,7 +10,7 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
-use calternal_types::{Actor, Error, ErrorCode, SpaceId};
+use calternal_types::{AccountId, Actor, Error, ErrorCode, SpaceId};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -26,50 +26,40 @@ pub const MAX_SUBSCRIPTIONS: usize = 64;
 
 const SPACE_CHANNEL_CAPACITY: usize = 256;
 
-/// Notification published when a space's stored items, records or viewer state
-/// change. Carries only a monotonic revision counter; subscribers re-read
-/// through their own authorized context.
-#[derive(Clone, Copy, Debug)]
-pub struct SpaceEvent {
-    /// Monotonic per-space revision number.
-    pub revision: u64,
-}
-
-struct SpaceChannel {
-    sender: broadcast::Sender<SpaceEvent>,
-    revision: u64,
-}
-
-/// Per-space broadcast hub owned by [`Host`].
+/// Per-space live notification channels, separated by viewer. Channels carry
+/// invalidations only. Every outgoing row and record is re-read with the
+/// receiving account's current authority before it enters a socket frame.
 #[derive(Default)]
 pub struct Hub {
-    spaces: Mutex<HashMap<SpaceId, SpaceChannel>>,
+    spaces: Mutex<HashMap<SpaceId, HashMap<AccountId, broadcast::Sender<()>>>>,
 }
 
 impl Hub {
-    /// Subscribe to change notifications for a single space.
-    pub fn subscribe(&self, space: SpaceId) -> broadcast::Receiver<SpaceEvent> {
-        let mut map = self.spaces.lock().expect("live hub lock");
-        map.entry(space)
-            .or_insert_with(|| SpaceChannel {
-                sender: broadcast::channel(SPACE_CHANNEL_CAPACITY).0,
-                revision: 0,
-            })
-            .sender
+    /// Subscribe one account to a space's invalidations. The caller verifies
+    /// space access before registering. Holds the map lock for memory work only.
+    pub fn subscribe(&self, space: SpaceId, account: AccountId) -> broadcast::Receiver<()> {
+        let mut spaces = self.spaces.lock().expect("live hub lock");
+        let viewers = spaces.entry(space).or_default();
+        viewers.retain(|_, sender| sender.receiver_count() != 0);
+        viewers
+            .entry(account)
+            .or_insert_with(|| broadcast::channel(SPACE_CHANNEL_CAPACITY).0)
             .subscribe()
     }
 
-    /// Wake all active live sessions watching `space` after a committed write
-    /// or state change. Drops silently when no session is connected.
-    pub fn notify(&self, space: SpaceId) {
-        let mut map = self.spaces.lock().expect("live hub lock");
-        if let Some(channel) = map.get_mut(&space) {
-            channel.revision = channel.revision.saturating_add(1);
-            let _ = channel.sender.send(SpaceEvent {
-                revision: channel.revision,
+    /// Publish a committed change. A personal state invalidation is queued
+    /// only for that person, including when other sessions fall behind.
+    pub fn notify(&self, space: SpaceId, viewer: Option<AccountId>) {
+        let mut spaces = self.spaces.lock().expect("live hub lock");
+        if let Some(viewers) = spaces.get_mut(&space) {
+            viewers.retain(|account, sender| {
+                if viewer.is_none_or(|viewer| viewer == *account) {
+                    let _ = sender.send(());
+                }
+                sender.receiver_count() != 0
             });
-            if channel.sender.receiver_count() == 0 {
-                map.remove(&space);
+            if viewers.is_empty() {
+                spaces.remove(&space);
             }
         }
     }
@@ -151,8 +141,8 @@ enum ServerFrame {
         sub: String,
         item: Uuid,
         version: u64,
-        fields: Value,
-        computed: Value,
+        #[serde(flatten)]
+        metadata: RowMetadata,
         mode: &'static str,
         after: Option<String>,
         records: Vec<Value>,
@@ -168,8 +158,8 @@ enum ServerFrame {
         sub: String,
         item: Uuid,
         version: u64,
-        fields: Value,
-        computed: Value,
+        #[serde(flatten)]
+        metadata: RowMetadata,
     },
     Error {
         sub: Option<String>,
@@ -178,6 +168,14 @@ enum ServerFrame {
         next: &'static str,
     },
     Pong,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct RowMetadata {
+    fields: Value,
+    computed: Value,
+    state: Value,
+    when: Value,
 }
 
 enum Subscription {
@@ -190,7 +188,7 @@ enum Subscription {
         last_anchor: Option<String>,
         last_version: u64,
         last_count: usize,
-        last_meta: String,
+        last_meta: Option<RowMetadata>,
     },
 }
 
@@ -216,18 +214,18 @@ async fn serve_socket(
         return;
     }
 
-    let mut rx = host.live().subscribe(space);
+    let mut rx = host.live().subscribe(space, actor.account);
     let mut subs: HashMap<String, Subscription> = HashMap::new();
 
     loop {
         tokio::select! {
             _ = authority.changed() => {
-                if host.identify_session(&token).await != Some(actor.account) {
+                if host.auth.check_session(&token).await.map(|session| session.0) != Some(actor.account) {
                     break;
                 }
             }
             _ = expiry.tick() => {
-                if host.identify_session(&token).await != Some(actor.account) {
+                if host.auth.check_session(&token).await.map(|session| session.0) != Some(actor.account) {
                     break;
                 }
             }
@@ -263,7 +261,7 @@ async fn serve_socket(
                 }
             }
             event = rx.recv() => {
-                if host.identify_session(&token).await != Some(actor.account) {
+                if host.auth.check_session(&token).await.map(|session| session.0) != Some(actor.account) {
                     break;
                 }
                 match event {
@@ -339,7 +337,7 @@ async fn handle_client_frame(
                         last_anchor: req.after.clone(),
                         last_version: 0,
                         last_count: 0,
-                        last_meta: String::new(),
+                        last_meta: None,
                     };
                     if let Err(error) = eval_subscription(
                         host,
@@ -453,9 +451,12 @@ async fn eval_subscription(
                 )
                 .await?;
             let version = value.get("version").and_then(Value::as_u64).unwrap_or(0);
-            let fields = value.get("fields").cloned().unwrap_or_else(|| json!({}));
-            let computed = value.get("computed").cloned().unwrap_or_else(|| json!({}));
-            let meta_encoded = format!("{fields}|{computed}");
+            let metadata = RowMetadata {
+                fields: value["fields"].clone(),
+                computed: value["computed"].clone(),
+                state: value["state"].clone(),
+                when: value["when"].clone(),
+            };
             let records = value
                 .get("records")
                 .and_then(Value::as_array)
@@ -473,13 +474,12 @@ async fn eval_subscription(
                 *last_anchor = tail_anchor.clone();
                 *last_version = version;
                 *last_count = records.len();
-                *last_meta = meta_encoded;
+                *last_meta = Some(metadata.clone());
                 let frame = ServerFrame::Records {
                     sub: sub_id.to_owned(),
                     item: *item,
                     version,
-                    fields,
-                    computed,
+                    metadata,
                     mode,
                     after: used_after,
                     records: out,
@@ -491,6 +491,7 @@ async fn eval_subscription(
 
             // Incremental update after a space event.
             let pure_append = records.len() > *last_count
+                && version.checked_sub(*last_version) == Some((records.len() - *last_count) as u64)
                 && match last_anchor.as_deref() {
                     None => *last_count == 0,
                     Some(prev) => {
@@ -516,15 +517,14 @@ async fn eval_subscription(
                     )
                     .await;
                 }
-                if *last_meta != meta_encoded {
+                if last_meta.as_ref() != Some(&metadata) {
                     let _ = send_frame(
                         socket,
                         &ServerFrame::ItemChange {
                             sub: sub_id.to_owned(),
                             item: *item,
                             version,
-                            fields,
-                            computed,
+                            metadata: metadata.clone(),
                         },
                     )
                     .await;
@@ -532,7 +532,7 @@ async fn eval_subscription(
                 *last_anchor = tail_anchor;
                 *last_version = version;
                 *last_count = records.len();
-                *last_meta = meta_encoded;
+                *last_meta = Some(metadata.clone());
                 return Ok(());
             }
 
@@ -542,8 +542,7 @@ async fn eval_subscription(
                     sub: sub_id.to_owned(),
                     item: *item,
                     version,
-                    fields,
-                    computed,
+                    metadata: metadata.clone(),
                     mode: "snapshot",
                     after: None,
                     records: records.clone(),
@@ -552,18 +551,17 @@ async fn eval_subscription(
                 *last_anchor = tail_anchor;
                 *last_version = version;
                 *last_count = records.len();
-                *last_meta = meta_encoded;
+                *last_meta = Some(metadata.clone());
                 let _ = send_frame(socket, &frame).await;
-            } else if *last_meta != meta_encoded {
-                *last_meta = meta_encoded;
+            } else if last_meta.as_ref() != Some(&metadata) {
+                *last_meta = Some(metadata.clone());
                 let _ = send_frame(
                     socket,
                     &ServerFrame::ItemChange {
                         sub: sub_id.to_owned(),
                         item: *item,
                         version,
-                        fields,
-                        computed,
+                        metadata,
                     },
                 )
                 .await;
@@ -674,10 +672,32 @@ mod tests {
         let hub = Hub::default();
         let s1 = SpaceId::new();
         let s2 = SpaceId::new();
-        let mut rx1 = hub.subscribe(s1);
-        let mut rx2 = hub.subscribe(s2);
-        hub.notify(s1);
-        assert_eq!(rx1.try_recv().unwrap().revision, 1);
+        let owner = AccountId::new();
+        let other = AccountId::new();
+        let mut rx1 = hub.subscribe(s1, owner);
+        let mut rx1_other = hub.subscribe(s1, other);
+        let mut rx2 = hub.subscribe(s2, owner);
+        hub.notify(s1, None);
+        assert!(rx1.try_recv().is_ok());
+        assert!(rx1_other.try_recv().is_ok());
         assert!(rx2.try_recv().is_err());
+
+        // Simulate an idle peer in a multi-person space. Private changes
+        // must neither enqueue an event for the peer nor lag its channel.
+        for _ in 0..(SPACE_CHANNEL_CAPACITY + 1) {
+            hub.notify(s1, Some(owner));
+        }
+        assert!(matches!(
+            rx1.try_recv(),
+            Err(broadcast::error::TryRecvError::Lagged(_))
+        ));
+        assert!(matches!(
+            rx1_other.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+        assert!(matches!(
+            rx2.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
     }
 }

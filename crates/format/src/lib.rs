@@ -22,6 +22,7 @@ pub use field::{Field, FieldType};
 pub use item::{Item, Record, parse_item, parse_records, write_item};
 pub use operation::{
     Assignment, Change, Operation, OperationForm, OperationInput, apply_operation, check_item,
+    operation_conditions,
 };
 pub use query::{Page, QueryGroup, QueryResult, QueryRow, evaluate_query};
 pub use value::{Decimal, Fields, InvalidDecimal, Value};

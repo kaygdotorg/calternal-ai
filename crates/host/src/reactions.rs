@@ -73,6 +73,7 @@ impl Host {
         call: Call,
         chain: Chain,
     ) -> Result<Value> {
+        let preview = call.input.get("preview") == Some(&Value::Bool(true));
         let host = self.clone();
         let who = actor.clone();
         let ancestry = chain.plugins.clone();
@@ -83,7 +84,9 @@ impl Host {
         })
         .await
         .map_err(internal)??;
-        self.live.notify(space);
+        if !preview {
+            self.live.notify(space, None);
+        }
         for event in events {
             let host = self.clone();
             let watcher = Actor::plugin(actor.account, &event.plugin);
@@ -188,7 +191,7 @@ impl Space {
                 let snapshot = snapshot(row);
                 let membership = listeners
                     .iter()
-                    .map(|listener| self.matches(listener, row))
+                    .map(|listener| self.matches(actor, listener, row))
                     .collect::<Vec<_>>();
                 Some((id, (snapshot, membership)))
             })
@@ -214,7 +217,7 @@ impl Space {
             }
             for (index, listener) in listeners.iter().enumerate() {
                 let before_member = previous.is_some_and(|(_, membership)| membership[index]);
-                let after_member = current.is_some_and(|row| self.matches(listener, row));
+                let after_member = current.is_some_and(|row| self.matches(actor, listener, row));
                 if before_member || after_member {
                     let key = blake3::Hash::from_bytes(
                         self.hash(
@@ -244,7 +247,7 @@ impl Space {
         Ok((result, events))
     }
 
-    fn matches(&self, listener: &Listener, row: &Row) -> bool {
+    fn matches(&self, actor: &Actor, listener: &Listener, row: &Row) -> bool {
         if listener.kind != row.head.kind {
             return false;
         }
@@ -252,7 +255,7 @@ impl Space {
             None => true,
             Some(id) => self
                 .collection(id)
-                .and_then(|collection| crate::query::contains(self, collection, row))
+                .and_then(|collection| crate::query::contains(self, actor, collection, row))
                 .unwrap_or_else(|error| {
                     let _ = internal(error);
                     false
