@@ -331,10 +331,6 @@ async function fixture(directory, origin, setupCode) {
     await a.page.getByRole("menuitem", { name: "Light appearance", exact: true }).click();
     await a.page.click('[data-stream-run] button:has-text("Dismiss")');
     await a.page.waitForSelector('[data-stream-run]', { state: "detached" });
-
-    // Clear harness selection before plain multi-context sync tests
-    await a.page.click('[data-slot-picker="harness"]');
-    await a.page.getByRole("menuitem", { name: "None", exact: true }).click();
     console.log("PASS 3: real harness live streaming, mid-run reload resume, and Stop control");
 
     // --- 4. Two independent browser contexts: live append, offline reconnect from anchor, sign-out ---
