@@ -34,6 +34,15 @@ pub(crate) struct Runs {
     pub(crate) logs: broadcast::Sender<()>,
 }
 
+impl Runs {
+    pub(crate) fn is_active(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|run| !run.stopped.load(Ordering::Acquire))
+            || Arc::strong_count(&self.start) > 1
+    }
+}
+
 impl Default for Runs {
     fn default() -> Self {
         Self {

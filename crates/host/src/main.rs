@@ -120,6 +120,7 @@ impl RunningEngine {
 
 async fn attach_runs(host: Host, root: &Path) -> CliResult<(Arc<Host>, Option<RunningEngine>)> {
     let host = Arc::new(host);
+    host.start_maintenance();
     let sign_in = std::env::var_os("CALTERNAL_RUN_SIGN_IN_DIR").map(PathBuf::from);
     let real_image = std::env::var_os("CALTERNAL_REAL_RUN_IMAGE");
     let image = match (real_image, &sign_in) {

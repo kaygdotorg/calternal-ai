@@ -6,6 +6,7 @@ pub mod browser;
 mod declarations;
 mod installation;
 pub mod live;
+mod maintenance;
 mod query;
 mod reactions;
 mod records;
@@ -20,6 +21,7 @@ pub use worker_runtime::WorkerRuntime;
 
 use calternal_auth::Auth;
 use calternal_types::{AccountId, Actor, Error, Result, SpaceId, Via};
+use maintenance::Slot;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use session::Session;
@@ -58,8 +60,6 @@ pub struct SlotSelection {
     /// Installed filler plugin ID selected for this slot.
     pub filler: String,
 }
-
-type Slot = Arc<Mutex<Option<Space>>>;
 
 /// The one call dispatcher. It opens space storage on demand and serializes
 /// publication only within the affected space.
@@ -267,21 +267,19 @@ impl Host {
         {
             return Err(Error::not_found("Personal space was not found."));
         }
-        let slot = {
-            let mut slots = self.spaces.lock().map_err(internal)?;
-            slots.entry(id).or_default().clone()
-        };
+        let slot = self.space_slot(id)?;
         // Keep the space lock across persistence so publication, recovery and
         // receipt lookup see the same version of the filesystem and ledger.
-        let mut opened = slot.lock().map_err(internal)?;
-        if opened.is_none() {
+        let mut opened = slot.resident.lock().map_err(internal)?;
+        opened.visited = std::time::Instant::now();
+        if opened.space.is_none() {
             let display = self.owner_display(actor.account)?;
             let mut space = Space::open(&self.root, id, self.retention_ms)?;
             space.scope_existing_viewer_state(actor.account)?;
             space.owner_display = Some((actor.account, display));
-            *opened = Some(space);
+            opened.space = Some(space);
         }
-        let space = opened.as_mut().expect("space initialized");
+        let space = opened.space.as_mut().expect("space initialized");
         space.recover()?;
         space.expire_trash()?;
         f(space)

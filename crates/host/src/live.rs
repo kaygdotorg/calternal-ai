@@ -43,13 +43,19 @@ pub(crate) struct Hub {
 }
 
 impl Hub {
-    fn subscribe(&mut self, account: AccountId) -> broadcast::Receiver<()> {
+    pub(crate) fn subscribe(&mut self, account: AccountId) -> broadcast::Receiver<()> {
         self.viewers
             .retain(|_, sender| sender.receiver_count() != 0);
         self.viewers
             .entry(account)
             .or_insert_with(|| broadcast::channel(SPACE_CHANNEL_CAPACITY).0)
             .subscribe()
+    }
+
+    pub(crate) fn has_subscribers(&self) -> bool {
+        self.viewers
+            .values()
+            .any(|sender| sender.receiver_count() != 0)
     }
 
     // The space lock serializes this nonblocking publication with the commit.
