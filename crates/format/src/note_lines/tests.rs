@@ -204,3 +204,26 @@ fn existing_app_line_vectors() {
         assert_eq!(found.join(","), expected, "{id}");
     }
 }
+
+#[test]
+fn gym_week_direct_links_follow_the_parent_list_marker() {
+    let note = concat!(
+        "1. 12:00 - 14:00 Gym ^k2m8q1w4zre7k3f9\n",
+        "   - [Gym](<../Tasks/Gym.md>)\n",
+        "   - Follow [a reference](<ignored.md>)\n",
+        "     - [Grandchild](<ignored.md>)\n",
+        "2. [ ] Task\n",
+        "   - [[Tasks/Task|Task]]\n",
+    );
+    let items = scan_note_lines(note).unwrap();
+    assert_eq!(items[0].child_links, ["../Tasks/Gym.md"]);
+    assert_eq!(items[1].child_links, ["Tasks/Task"]);
+    assert!(matches!(
+        items[0].item,
+        LineItem::Time {
+            start: Some("12:00"),
+            end: Some("14:00"),
+            ..
+        }
+    ));
+}

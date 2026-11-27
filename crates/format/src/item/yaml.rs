@@ -127,7 +127,7 @@ impl<'a> Parser<'a> {
             let value_site = line.site.after(&text[..prefix]);
             let mut trailing = comment.map(|index| line.start + indent + prefix + index..line.end);
             let parsed = self.value(
-                value.trim_end(),
+                value.trim_end_matches([' ', '\t']),
                 line,
                 value_site,
                 indent,
@@ -193,15 +193,21 @@ impl<'a> Parser<'a> {
                 break;
             };
             let (raw, _) = without_comment(rest);
-            let raw = raw.trim_end();
+            let raw = raw.trim_end_matches([' ', '\t']);
             let site = line.site.after("- ");
             entry(&mut self.remaining, site)?;
             self.at += 1;
             if !raw.is_empty() && mapping_colon(raw).is_some() && !raw.starts_with('[') {
                 entry(&mut self.remaining, site)?;
                 let (key, text, _) = key_value(raw, site)?;
-                let value =
-                    self.value(text.trim_end(), line, site, indent + 2, depth, &mut None)?;
+                let value = self.value(
+                    text.trim_end_matches([' ', '\t']),
+                    line,
+                    site,
+                    indent + 2,
+                    depth,
+                    &mut None,
+                )?;
                 let mut fields = Fields::from([(key.clone(), value)]);
                 if let Some(next) = self.peek().filter(|next| next.indent > indent) {
                     for (key, value) in self.map(next.indent, depth + 1, None)? {
@@ -327,7 +333,21 @@ fn key_value(text: &str, site: Site) -> Result<(String, &str, usize), Diagnostic
     Ok((key, text[colon + 1..].trim_start_matches(' '), colon))
 }
 
+fn plain_comment(text: &str) -> (&str, Option<usize>) {
+    let mut separated = true;
+    for (index, ch) in text.char_indices() {
+        if ch == '#' && separated {
+            return (&text[..index], Some(index));
+        }
+        separated = matches!(ch, ' ' | '\t');
+    }
+    (text, None)
+}
+
 fn without_comment(text: &str) -> (&str, Option<usize>) {
+    if !text.starts_with(['"', '\'', '[']) {
+        return plain_comment(text);
+    }
     let mut quote = None;
     let mut escaped = false;
     let mut previous = ' ';

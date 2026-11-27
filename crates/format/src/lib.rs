@@ -32,7 +32,10 @@ pub use operation::{
     operation_conditions,
 };
 pub use period::{KindRows, Period, PeriodSnapshot, evaluate_period_field};
-pub use query::{Page, QueryGroup, QueryResult, QueryRow, evaluate_query};
+pub use query::{
+    CalendarOccurrence, CalendarSeries, Page, QueryGroup, QueryResult, QueryRow, evaluate_query,
+    expand_calendar_window,
+};
 pub use repeat::{
     Occurrence, OccurrenceOverride, RepeatRule, expand_repeat, next_occurrence, parse_repeat,
 };

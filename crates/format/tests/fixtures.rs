@@ -385,6 +385,14 @@ fn reading_list_and_appendix_b() {
         if id == "events" {
             assert_eq!(kind.line_claim.as_ref().unwrap().targets, ["days"]);
             assert_eq!(kind.dav[0].properties.len(), 8);
+            let lines =
+                calternal_format::scan_note_lines("23:30 - 01:00 Late session\nall day Away")
+                    .unwrap();
+            let claim = kind.line_claim.as_ref().unwrap();
+            let timed = claim.time_fields(&lines[0].item, "2026-11-27").unwrap();
+            assert_eq!(timed["end"], Value::Time("2026-11-28T01:00:00".into()));
+            let all_day = claim.time_fields(&lines[1].item, "2026-11-27").unwrap();
+            assert_eq!(all_day["start"], Value::Date("2026-11-27".into()));
         }
         if id == "tasks" {
             let claim = kind.line_claim.as_ref().unwrap();
@@ -707,4 +715,79 @@ fn remaining_standalone_specification_examples() {
     assert_eq!(item.fields()["read"], Value::Bool(false));
     let agents = parse_agent_rules(document("---\nrules: agents")).unwrap();
     assert_eq!(agents.rules.len(), 4);
+}
+
+#[test]
+fn calendar_and_expanding_collections_share_the_window_engine() {
+    use calternal_format::{
+        CalendarSeries, OccurrenceOverride, expand_calendar_window, parse_repeat,
+    };
+    let manifest =
+        "---\nplugin: calendar\nname: Calendar\nformat: 1\nversion: 1.0.0\n---\nEvents.\n";
+    let kind = "---\nkind: entries\nname: Entry\nformat: 1\nfolder: Entries\neditable: outside\nfields:\n  start: when\n  repeat: repeat\n---\nEntries.\n";
+    let rule = parse_repeat("FREQ=WEEKLY;BYDAY=MO,TH,FR").unwrap();
+    let override_slot = [OccurrenceOverride {
+        original: "2026-11-23",
+        start: "2026-11-26",
+    }];
+    let input = [
+        CalendarSeries {
+            index: 2,
+            start: "2026-11-23",
+            rule: Some(&rule),
+            exclusions: &["2026-11-27"],
+            overrides: &override_slot,
+        },
+        CalendarSeries {
+            index: 9,
+            start: "2026-11-25T11:00:00",
+            rule: None,
+            exclusions: &[],
+            overrides: &[],
+        },
+    ];
+    for view in [
+        "views:\n  calendar: start\n",
+        "expand: repeat\nviews:\n  list: start\n",
+    ] {
+        let collection = format!(
+            "---\ncollection: entries\ntitle: Entries\nformat: 1\nfrom: entries\n{view}---\n"
+        );
+        let plugin = parse_plugin(
+            &[
+                PluginFile {
+                    path: "plugin.md",
+                    text: Some(manifest),
+                },
+                PluginFile {
+                    path: "kinds/entries.md",
+                    text: Some(kind),
+                },
+                PluginFile {
+                    path: "collections/entries.md",
+                    text: Some(&collection),
+                },
+            ],
+            &InstallOptions::default(),
+        )
+        .unwrap();
+        let occurrences = expand_calendar_window(
+            &plugin.collections["entries"],
+            &input,
+            "2026-11-24",
+            "2026-11-28",
+        )
+        .unwrap();
+        assert_eq!(
+            occurrences
+                .iter()
+                .map(|slot| slot.index)
+                .collect::<Vec<_>>(),
+            [9, 2, 2]
+        );
+        assert_eq!(
+            occurrences[1].occurrence.original,
+            Value::Date("2026-11-23".into())
+        );
+    }
 }

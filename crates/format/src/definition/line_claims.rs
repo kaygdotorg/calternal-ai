@@ -25,6 +25,42 @@ pub struct LineClaim {
     pub checkbox: Option<CheckboxMapping>,
 }
 
+impl LineClaim {
+    /// Project a scanned time line into the kind's fields, using the source
+    /// note's civil date. An end clock before its start falls on the next day.
+    pub fn time_fields(
+        &self,
+        item: &crate::LineItem<'_>,
+        date: &str,
+    ) -> Result<crate::Fields, Diagnostic> {
+        let site = lines::Site::START;
+        let crate::LineItem::Time { start, end, title } = item else {
+            return Err(site.error("Select a scanned time line"));
+        };
+        let day = crate::dates::day(date)
+            .filter(|_| self.form == LineForm::Time)
+            .ok_or_else(|| {
+                site.error("Time lines require a time claim and the note's valid civil date")
+            })?;
+        let start_value = start.map_or_else(
+            || Value::Date(date.into()),
+            |clock| Value::Time(format!("{date}T{clock}:00")),
+        );
+        let mut fields = crate::Fields::from([
+            ("start".into(), start_value),
+            ("all day".into(), Value::Bool(start.is_none())),
+            ("title".into(), Value::Text((*title).into())),
+        ]);
+        if let Some(end) = end {
+            let end_day = day + i64::from(start.is_some_and(|start| *end < start));
+            let end_date = crate::dates::render_day(end_day)
+                .ok_or_else(|| site.error("The end clock crosses the supported date range"))?;
+            fields.insert("end".into(), Value::Time(format!("{end_date}T{end}:00")));
+        }
+        Ok(fields)
+    }
+}
+
 /// How a linked item's stored field mirrors its checkbox.
 #[derive(Clone, Debug)]
 pub struct CheckboxMapping {
@@ -89,8 +125,8 @@ pub(super) fn parse(entry: &Section<'_>, kind: &Kind) -> Result<LineClaim, Diagn
             }
             for (name, allowed) in [
                 ("title", &[FieldType::Text][..]),
-                ("start", &[FieldType::When, FieldType::Time][..]),
-                ("end", &[FieldType::When, FieldType::Time][..]),
+                ("start", &[FieldType::When][..]),
+                ("end", &[FieldType::When][..]),
                 ("all day", &[FieldType::Bool][..]),
             ] {
                 if kind

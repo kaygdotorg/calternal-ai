@@ -1,3 +1,6 @@
+mod calendar;
+pub use calendar::{CalendarOccurrence, CalendarSeries, expand_calendar_window};
+
 use std::{cmp::Ordering, collections::BTreeMap};
 
 use crate::{

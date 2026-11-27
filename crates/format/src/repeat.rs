@@ -6,7 +6,8 @@ use crate::{Diagnostic, Value, dates, lines::Site};
 
 mod rule;
 mod search;
-use rule::{Frequency, Stamp, parse_at};
+pub(crate) use rule::Stamp;
+use rule::{Frequency, parse_at};
 
 /// A checked iCalendar recurrence rule. Expansion needs the original DTSTART.
 #[derive(Clone, Debug)]
@@ -103,16 +104,52 @@ pub fn expand_repeat(
     exclusions: &[&str],
     overrides: &[OccurrenceOverride<'_>],
 ) -> Result<Vec<Occurrence>, Diagnostic> {
-    let site = Site::START;
-    let stamp = |text| Stamp::parse(text).ok_or_else(|| site.error("Supply a valid date or time"));
-    let seed = stamp(start)?;
-    let lower = stamp(window_start)?.at;
-    let upper = stamp(window_end)?.at;
-    let first_day = lower.div_euclid(86400);
-    let last_day = dates::shifted_day(first_day, 120, 0).unwrap_or(first_day);
-    if lower >= upper || upper > last_day * 86400 + lower.rem_euclid(86400) {
-        return Err(site.error("Supply a nonempty recurrence window of at most ten years"));
+    expand_series(
+        rule,
+        start,
+        Window::parse(window_start, window_end)?,
+        exclusions,
+        overrides,
+        &mut 1_000_000,
+    )
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Window {
+    pub lower: i64,
+    pub upper: i64,
+}
+
+impl Window {
+    pub fn parse(start: &str, end: &str) -> Result<Self, Diagnostic> {
+        let lower = parse_stamp(start)?.at;
+        let upper = parse_stamp(end)?.at;
+        let first_day = lower.div_euclid(86400);
+        let last_day = dates::shifted_day(first_day, 120, 0).unwrap_or(first_day);
+        if lower >= upper || upper > last_day * 86400 + lower.rem_euclid(86400) {
+            return Err(
+                Site::START.error("Supply a nonempty recurrence window of at most ten years")
+            );
+        }
+        Ok(Self { lower, upper })
     }
+}
+
+pub(crate) fn parse_stamp(text: &str) -> Result<Stamp, Diagnostic> {
+    Stamp::parse(text).ok_or_else(|| Site::START.error("Supply a valid date or time"))
+}
+
+pub(crate) fn expand_series(
+    rule: &RepeatRule,
+    start: &str,
+    window: Window,
+    exclusions: &[&str],
+    overrides: &[OccurrenceOverride<'_>],
+    steps: &mut usize,
+) -> Result<Vec<Occurrence>, Diagnostic> {
+    let site = Site::START;
+    let seed = parse_stamp(start)?;
+    let Window { lower, upper } = window;
     let mut excluded_days = BTreeSet::new();
     let mut excluded_times = BTreeSet::new();
     let mut changed = BTreeMap::new();
@@ -120,7 +157,7 @@ pub fn expand_repeat(
         return Err(site.error("A repeat may supply at most 10,000 exceptions"));
     }
     for text in exclusions {
-        let exclusion = stamp(text)?;
+        let exclusion = parse_stamp(text)?;
         if exclusion.timed {
             excluded_times.insert(exclusion.at);
         } else {
@@ -128,9 +165,19 @@ pub fn expand_repeat(
         }
     }
     for item in overrides {
-        let original = stamp(item.original)?.at;
-        let current = stamp(item.start)?;
-        if changed.insert(original, current).is_some() {
+        let original = parse_stamp(item.original)?;
+        let current = parse_stamp(item.start)?;
+        let mut slot = false;
+        if original.timed == seed.timed {
+            rule.search(&seed, original.at, original.at + 1, steps, site, |_| {
+                slot = true;
+                false
+            })?;
+        }
+        if !slot {
+            return Err(site.error("An override must name an original recurrence slot"));
+        }
+        if changed.insert(original.at, current).is_some() {
             return Err(site.error("A recurrence slot may have only one override"));
         }
     }
@@ -143,7 +190,10 @@ pub fn expand_repeat(
             found.push((moved.at, Occurrence { original, start }));
         }
     }
-    rule.search(&seed, lower, upper, &mut 1_000_000, site, |at| {
+    *steps = steps
+        .checked_sub(exclusions.len().saturating_add(overrides.len()))
+        .ok_or_else(|| site.error("The recurrence is too costly"))?;
+    rule.search(&seed, lower, upper, steps, site, |at| {
         if !changed.contains_key(&at)
             && !excluded_days.contains(&at.div_euclid(86400))
             && !excluded_times.contains(&at)

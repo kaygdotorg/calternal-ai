@@ -15,7 +15,7 @@ pub(super) enum Frequency {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct Stamp {
+pub(crate) struct Stamp {
     pub at: i64,
     pub timed: bool,
     pub offset: Option<i32>,

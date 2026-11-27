@@ -156,14 +156,8 @@ impl RepeatRule {
         let (seed_year, seed_month, _) = dates::civil(seed_day);
         let period = match self.frequency {
             Frequency::Yearly if !self.week_numbers.is_empty() => {
-                let target_year = if day < week_one(year, self.week_start) {
-                    year - 1
-                } else if day >= week_one(year + 1, self.week_start) {
-                    year + 1
-                } else {
-                    year
-                };
-                target_year - seed_year
+                week_year(year, day, self.week_start)
+                    - week_year(seed_year, seed_day, self.week_start)
             }
             Frequency::Yearly => year - seed_year,
             Frequency::Monthly => 12 * (year - seed_year) + month - seed_month,
@@ -182,7 +176,11 @@ impl RepeatRule {
         let offset = index * self.interval;
         match self.frequency {
             Frequency::Yearly => {
-                let year = year + offset;
+                let year = if self.week_numbers.is_empty() {
+                    year
+                } else {
+                    week_year(year, seed_day, self.week_start)
+                } + offset;
                 let start_of = |year| {
                     if self.week_numbers.is_empty() {
                         dates::day_number(year, 1, 1)
@@ -333,6 +331,16 @@ fn weekday(day: i64) -> i64 {
 
 fn week_floor(day: i64, week_start: i64) -> i64 {
     day - (weekday(day) - week_start).rem_euclid(7)
+}
+
+fn week_year(year: i64, day: i64, start: i64) -> i64 {
+    if day < week_one(year, start) {
+        year - 1
+    } else if day >= week_one(year + 1, start) {
+        year + 1
+    } else {
+        year
+    }
 }
 
 fn week_one(year: i64, week_start: i64) -> i64 {

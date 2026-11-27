@@ -213,6 +213,7 @@ mod tests {
             "single: 'can''t\r\n  drop # text\r\n\r\n  line' # quoted comment\r\n",
             "double: \"joined\\\r\n  word and\r\n  space\"\r\n",
             "list:\r\n  - first\r\n    second\r\n  - 'next\r\n    entry'\r\n",
+            "flow: [one\r\n  two, 'love\r\n\r\n  words',\r\n  [yes, 2]] # list\r\n",
             "---\r\nBody\r\n",
         );
         let item = parse_item(source).unwrap();
@@ -224,6 +225,11 @@ mod tests {
             item.fields()["list"],
             Value::List(vec![text("first second"), text("next entry")])
         );
+        let Value::List(flow) = &item.fields()["flow"] else {
+            panic!("flow list")
+        };
+        assert_eq!(flow[0], text("one two"));
+        assert_eq!(flow[1], text("love\nwords"));
         assert_eq!(write_item(&item, item.fields()).unwrap(), source);
         let replacement = text("first\n\nreplacement  \n");
         let result = write_item(

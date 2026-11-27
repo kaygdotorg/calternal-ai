@@ -11,6 +11,8 @@ pub struct NoteLine<'a> {
     pub range: Range<usize>,
     /// The one-based physical line number.
     pub number: usize,
+    /// Raw targets of directly nested standalone link bullets in source order.
+    pub child_links: Vec<&'a str>,
     /// The notation and borrowed contents of this line.
     pub item: LineItem<'a>,
 }
@@ -62,7 +64,8 @@ pub fn scan_note_lines(source: &str) -> Result<Vec<NoteLine<'_>>, Diagnostic> {
         return Err(Site::START.error("A note with line items may contain at most 65,536 lines"));
     }
     let regions = regions(&lines);
-    let mut items = Vec::new();
+    let mut items: Vec<NoteLine<'_>> = Vec::new();
+    let mut parents: Vec<(usize, Range<usize>)> = Vec::new();
     for (index, (&line, region)) in lines.iter().zip(regions).enumerate() {
         if region != Region::Body {
             continue;
@@ -71,6 +74,24 @@ pub fn scan_note_lines(source: &str) -> Result<Vec<NoteLine<'_>>, Diagnostic> {
         let (text, quoted) = content(line);
         let list = list_body(text);
         let mut title = list.unwrap_or(text);
+        let column = text.as_ptr() as usize - line.as_ptr() as usize;
+        let item_start = items.len();
+        if !text.is_empty() && (list.is_some() || !quoted) {
+            while parents
+                .last()
+                .is_some_and(|(child_column, _)| column < *child_column)
+            {
+                parents.pop();
+            }
+        }
+        if let Some((child_column, parent)) = parents.last()
+            && column == *child_column
+            && let Some(link) = list.and_then(direct_link)
+        {
+            for parent_item in &mut items[parent.clone()] {
+                parent_item.child_links.push(link);
+            }
+        }
         let mut add = |item| {
             if items.len() >= MAX_ITEMS {
                 return Err(Site {
@@ -82,6 +103,7 @@ pub fn scan_note_lines(source: &str) -> Result<Vec<NoteLine<'_>>, Diagnostic> {
             items.push(NoteLine {
                 range: offset..offset + line.len(),
                 number: index + 1,
+                child_links: Vec::new(),
                 item,
             });
             Ok(())
@@ -97,6 +119,12 @@ pub fn scan_note_lines(source: &str) -> Result<Vec<NoteLine<'_>>, Diagnostic> {
         }
         if !quoted && let Some(item) = time_item(title) {
             add(item)?;
+        }
+        if let Some(body) = list
+            && items.len() > item_start
+        {
+            let child_column = body.as_ptr() as usize - line.as_ptr() as usize;
+            parents.push((child_column, item_start..items.len()));
         }
     }
     Ok(items)
@@ -127,6 +155,37 @@ fn list_body(text: &str) -> Option<&str> {
     };
     tail.starts_with([' ', '\t'])
         .then(|| tail.trim_start_matches([' ', '\t']))
+}
+
+fn direct_link(text: &str) -> Option<&str> {
+    let text = text.trim_end();
+    if let Some(link) = text
+        .strip_prefix("[[")
+        .and_then(|text| text.strip_suffix("]]"))
+    {
+        let target = link.split('|').next()?;
+        return (!target.is_empty() && !target.contains(['[', ']'])).then_some(target);
+    }
+    let (label, rest) = text.strip_prefix('[')?.split_once("](")?;
+    if label.is_empty() || label.contains(['[', ']']) {
+        return None;
+    }
+    let link = rest.strip_suffix(')')?;
+    let target = if let Some(target) = link
+        .strip_prefix('<')
+        .and_then(|text| text.strip_suffix('>'))
+    {
+        if target.contains(['<', '>']) {
+            return None;
+        }
+        target
+    } else {
+        if link.contains(['(', ')', '<', '>']) || link.contains(char::is_whitespace) {
+            return None;
+        }
+        link
+    };
+    (!target.is_empty()).then_some(target)
 }
 
 fn checkbox(text: &str) -> Option<(char, &str)> {
