@@ -295,8 +295,8 @@ impl Evaluator<'_, '_> {
                 return Ok(self
                     .context
                     .now
-                    .filter(|value| dates::time(value).is_some())
-                    .map_or(Value::Empty, |time| Value::Time(time.into())));
+                    .and_then(dates::clock_seconds)
+                    .map_or(Value::Empty, Value::Time));
             }
             _ => {}
         }
@@ -520,5 +520,25 @@ fn round_places(value: Value, site: Site) -> Result<u32, Diagnostic> {
             .filter(|n| *n <= 18)
             .ok_or_else(|| site.error("Round to between 0 and 18 decimal places")),
         _ => Err(site.error("The number of decimal places must be a whole number")),
+    }
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+
+    #[test]
+    fn now_normalizes_host_clock_to_whole_seconds() {
+        let expression = crate::parse_expression("now()").unwrap();
+        let fields = Fields::new();
+        let row = Row { fields: &fields, metadata: &fields };
+        for (clock, want) in [
+            ("2026-11-27T12:30:00.123Z", Value::Time("2026-11-27T12:30:00Z".into())),
+            ("2026-11-27T12:30:00.123+05:30", Value::Time("2026-11-27T12:30:00+05:30".into())),
+            ("2026-11-27T12:30:00.Z", Value::Empty),
+        ] {
+            let context = EvalContext { now: Some(clock), ..EvalContext::default() };
+            assert_eq!(evaluate(&expression, row, &context).unwrap(), want);
+        }
     }
 }
