@@ -418,7 +418,13 @@ impl Host {
         key: Option<String>,
         installation: Option<crate::Session>,
     ) -> Result<Value> {
-        let input: SendInput = decode(input)?;
+        let (input, digest) = tokio::task::spawn_blocking(move || {
+            let input: SendInput = decode(input)?;
+            let digest = blake3::hash(&encode_run_input(&input.input)?);
+            Ok::<_, Error>((input, digest))
+        })
+        .await
+        .map_err(internal)??;
         let run = self
             .find_run(actor.clone(), space, input.id)
             .await
@@ -435,7 +441,6 @@ impl Host {
             ));
         }
         let mut sends = run.sends.lock().await;
-        let digest = blake3::hash(&serde_json::to_vec(&input.input).map_err(internal)?);
         if let Some(previous) = key.as_ref().and_then(|key| sends.get(key)) {
             return if previous == &digest {
                 Ok(json!({"status":"queued"}))
@@ -448,14 +453,13 @@ impl Host {
             return Err(Error::unavailable("This run has too many input receipts."));
         }
         let value = output::resolve_prompt(&self, &run, input.input).await?;
-        let mut bytes = serde_json::to_vec(&value).map_err(internal)?;
-        bytes.push(b'\n');
-        if bytes.len() > MAX_FRAME_BYTES + 1 {
-            return Err(Error::new(
-                ErrorCode::TooLarge,
-                "Run input exceeds the frame limit.",
-            ));
-        }
+        let bytes = tokio::task::spawn_blocking(move || {
+            let mut bytes = encode_run_input(&value)?;
+            bytes.push(b'\n');
+            Ok::<_, Error>(bytes)
+        })
+        .await
+        .map_err(internal)??;
         let _admission = self.admit_session(installation.as_ref()).await?;
         run.admit_callback()?;
         self.run_service()?
@@ -553,6 +557,11 @@ impl Host {
             .await
             .map_err(internal)?
     }
+}
+
+fn encode_run_input(value: &Value) -> Result<Vec<u8>> {
+    calternal_plugin_host::bounded_json(value, MAX_FRAME_BYTES)
+        .map_err(|_| run_error(RunError::InputTooLarge))
 }
 
 fn save_start(storage: &mut crate::space::Space, receipt: &Receipt, result: &Value) -> Result<()> {

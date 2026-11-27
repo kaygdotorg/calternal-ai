@@ -39,25 +39,11 @@ pub(super) async fn resolve_prompt(host: &Arc<Host>, run: &Run, mut input: Value
         .run_storage(actor.clone(), run.grant.space, move |storage| {
             let row = storage.row(item)?;
             storage.permits(&actor, &row.head.kind, false)?;
-            let records = storage.records(item)?;
-            let (position, _) = records
-                .iter()
-                .enumerate()
-                .find(|(_, record)| record.anchor == anchor)
-                .ok_or_else(|| {
-                    Error::forbidden("The prompt record is outside this run's session.")
-                })?;
-            let bytes = storage.read_verified(&row.head, &records)?;
             let kind = storage.kind(&row.head.kind)?;
-            let views = storage.record_views(&row.head, &bytes, &records, &kind)?;
-            views
-                .get(position)
-                .and_then(|view| view["body"].as_str())
-                .map(str::to_owned)
-                .ok_or_else(|| Error::forbidden("The prompt record is unavailable."))
+            storage.linked_record_body(&row.head, &kind, &anchor)
         })
         .await?;
-    command.insert("prompt".into(), json!(body));
+    command.insert("prompt".into(), Value::String(body));
     Ok(input)
 }
 

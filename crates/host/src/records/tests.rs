@@ -354,3 +354,34 @@ fn durable_append_preparation_repairs_partial_bytes_and_preserves_outside_edits(
         }
     }
 }
+
+#[test]
+fn linked_prompt_reads_and_verifies_only_its_record() {
+    use std::os::unix::fs::FileExt;
+    let mut f = Fixture::new();
+    let item = f.add("Prompt");
+    for text in ["selected body", "sibling body"] {
+        f.space.call(&f.actor, Call {
+            call: "s.write".into(),
+            input: json!({"changes":[{"op":"append record","item":item.id,"record":{"body":text}}]}),
+            idempotency_key: None,
+            slot_selection: None,
+        }).unwrap();
+    }
+    let head = &f.space.row(item.id).unwrap().head;
+    let records = f.space.records(item.id).unwrap();
+    let sibling = &records[1];
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(f.path(head))
+        .unwrap();
+    file.write_all_at(b"X", sibling.offset + sibling.length - 3)
+        .unwrap();
+    let kind = f.space.kind(&head.kind).unwrap();
+    let read = |anchor| f.space.linked_record_body(head, &kind, anchor);
+    assert_eq!(read(&records[0].anchor).unwrap(), "selected body");
+    assert_eq!(
+        read(&sibling.anchor).unwrap_err().code,
+        calternal_types::ErrorCode::Conflict
+    );
+}
