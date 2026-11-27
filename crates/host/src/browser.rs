@@ -347,13 +347,22 @@ async fn signed_in(
     codes: Vec<String>,
 ) -> Reply {
     let (name, space) = personal_space(&browser.host, account).await?;
+    let mut payload = json!({"session":{"account":account,"name":name,"space":space}});
     if !browser.host.development_plugins.is_empty() {
         let host = browser.host.clone();
-        tokio::task::spawn_blocking(move || host.ensure_development_plugins(account, space))
-            .await
-            .map_err(internal)??;
+        let seeded =
+            tokio::task::spawn_blocking(move || host.ensure_development_plugins(account, space))
+                .await;
+        if !matches!(seeded, Ok(Ok(()))) {
+            eprintln!(
+                "calternal-host: development bundles could not be installed; retry on sign-in"
+            );
+            payload["initialization"] = json!({
+                "status":"pending",
+                "retry":"Sign in again to retry preview initialization."
+            });
+        }
     }
-    let mut payload = json!({"session":{"account":account,"name":name,"space":space}});
     if !codes.is_empty() {
         payload["recovery_codes"] = json!(codes);
     }
@@ -573,6 +582,68 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[tokio::test]
+    async fn committed_enrollment_survives_retryable_seed_failure() {
+        use calternal_auth::Auth;
+
+        let data = tempfile::tempdir().unwrap();
+        let root = data.path().to_owned();
+        let config = AuthConfig::new("http://localhost").unwrap();
+        let auth_path = root.join("auth");
+        let auth_config = config.clone();
+        let auth = tokio::task::spawn_blocking(move || Auth::open(&auth_path, auth_config))
+            .await
+            .unwrap()
+            .unwrap();
+        let account = auth.create("Dev owner").await.unwrap().id;
+        let bundle = root.join("delayed-bundle");
+        let browser = Browser {
+            host: Arc::new(
+                Host::new(root, auth, 7)
+                    .unwrap()
+                    .with_development_plugins([("delayed-bundle".into(), bundle.clone())]),
+            ),
+            config: Arc::new(config),
+        };
+        let response = signed_in(
+            &browser,
+            account,
+            "synthetic-fixture-session".into(),
+            vec!["synthetic-recovery".into()],
+        )
+        .await
+        .ok()
+        .expect("seed failure must preserve the committed sign-in response");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.headers().contains_key(header::SET_COOKIE));
+        let body = to_bytes(response.into_body(), AUTH_BYTES).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["recovery_codes"], json!(["synthetic-recovery"]));
+        assert_eq!(body["initialization"]["status"], "pending");
+
+        tokio::fs::create_dir(&bundle).await.unwrap();
+        tokio::fs::write(
+            bundle.join("plugin.md"),
+            "---\nplugin: delayed-bundle\nname: Delayed Bundle\nversion: 1.0.0\nformat: 1\n---\n",
+        )
+        .await
+        .unwrap();
+        let response = signed_in(
+            &browser,
+            account,
+            "synthetic-fixture-session".into(),
+            Vec::new(),
+        )
+        .await
+        .ok()
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), AUTH_BYTES).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert!(body.get("initialization").is_none());
+        assert!(body.get("recovery_codes").is_none());
     }
 
     #[tokio::test]
