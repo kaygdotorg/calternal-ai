@@ -1,0 +1,35 @@
+import { on, type ItemId, type RecordLink, type ItemLink } from "@calternal/plugin-sdk";
+
+/** The chat to rename and its new title. */
+export interface RenameInput {
+  chat: ItemId;
+  title: string;
+}
+
+/** A message and optional references, with its author stamped by the host. */
+export interface SendInput {
+  chat: ItemId;
+  text: string;
+  quote?: RecordLink;
+  mentions?: string[];
+  attachments?: ItemLink[];
+}
+
+/** Writes only the title and lets the host maintain the item's path and links. */
+export const rename = on.call("chats.rename", async ({ chat, title }: RenameInput, s) =>
+  s.write([{ change: { item: chat, fields: { title } } }]),
+);
+
+/** Appends one complete message. The same operation accepts a fenced harness reply. */
+export const send = on.call("chats.send", async ({ chat, text, quote, mentions, attachments }: SendInput, s) => {
+  if (!text.trim() && !attachments?.length) {
+    throw { code: "invalid", message: "Write a message or attach a file.", next: "Edit the message." };
+  }
+
+  return s.write([{
+    "append record": {
+      item: chat,
+      record: { text, quote, mentions, attachments },
+    },
+  }]);
+});
