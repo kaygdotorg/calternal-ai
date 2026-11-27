@@ -115,8 +115,9 @@ Podman container with `--network=none`. The plugin bundle and per-run socket
 directory are read-only mounts. Run input is accepted only from the starting
 actor; Stop asks the host authorizer whether the caller may read every fixed
 target. Output events have an ordered per-run sequence, and Exit is terminal.
-Podman termination kills the container's process family before workspace cleanup,
-with a 1.5-second kill-command bound and a two-second Stop budget.
+Stop signals the pinned Linux init process of the private PID namespace and
+waits for the process family to exit within its two-second budget. Podman
+workspace and container cleanup follows asynchronously.
 
 The only outbound path is a per-run host CONNECT proxy. A loopback bridge forwards
 through a Unix socket to the host. The proxy admits only exact manifest `sends out`
