@@ -552,3 +552,56 @@ async fn coded_gesture_binds_slot_selection_before_delivery() {
 
 #[path = "coded/runs.rs"]
 mod runs;
+
+#[tokio::test]
+async fn foreign_kind_viewer_state_is_absent_from_reads_queries_and_matching() {
+    let f = Fixture::new().await;
+    f.install(checkout().join("plugins-v2/calternal-chat"))
+        .await
+        .unwrap();
+    let bundle = tempfile::tempdir().unwrap();
+    observer(bundle.path());
+    f.install(bundle.path().to_owned()).await.unwrap();
+    let item = f.chat().await;
+    for (key, value) in [("pinned", json!(true)), ("draft", json!("Private draft"))] {
+        f.call(
+            f.owner.into(),
+            "s.state",
+            json!({"op":"set","item":item,"key":key,"value":value}),
+            None,
+        )
+        .await
+        .unwrap();
+    }
+    let owner = f
+        .call(f.owner.into(), "s.read", json!({"item":item}), None)
+        .await
+        .unwrap();
+    assert_eq!(owner["state"]["draft"], "Private draft");
+    let plugin = Actor::plugin(f.owner, "observer");
+    let read = f
+        .call(plugin.clone(), "s.read", json!({"item":item}), None)
+        .await
+        .unwrap();
+    assert_eq!(read["state"], json!({}));
+    let query = f
+        .call(
+            plugin.clone(),
+            "s.query",
+            json!({"from":"calternal-chat.chats"}),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(query["rows"][0]["state"], json!({}));
+    let pinned = f
+        .call(
+            plugin,
+            "s.query",
+            json!({"collection":"calternal-chat.pinned"}),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(pinned["rows"], json!([]));
+}

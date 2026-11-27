@@ -255,11 +255,17 @@ impl Space {
         if listener.kind != row.head.kind {
             return false;
         }
+        let viewer = match &actor.via {
+            Some(calternal_types::Via::Run { id, .. }) => {
+                Actor::run(actor.account, &listener.plugin, *id)
+            }
+            _ => Actor::plugin(actor.account, &listener.plugin),
+        };
         match &listener.collection {
             None => true,
             Some(id) => self
                 .collection(id)
-                .and_then(|collection| crate::query::contains(self, actor, collection, row))
+                .and_then(|collection| crate::query::contains(self, &viewer, collection, row))
                 .unwrap_or_else(|error| {
                     let _ = internal(error);
                     false

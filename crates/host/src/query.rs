@@ -4,7 +4,7 @@ use crate::internal;
 use crate::records::Record;
 use crate::space::{Row, Space};
 use calternal_format as format;
-use calternal_types::{Actor, Error, ErrorCode, Result};
+use calternal_types::{Actor, Error, ErrorCode, Result, Via};
 use rusqlite::{OptionalExtension, params};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -234,7 +234,7 @@ fn ad_hoc(filter: Option<&str>, sorts: &[String]) -> Result<Collection> {
 struct QueryInput {
     fields: format::Fields,
     metadata: format::Fields,
-    state: format::Fields,
+    state: Option<format::Fields>,
     records: Vec<format::Fields>,
     record_positions: BTreeMap<String, usize>,
 }
@@ -247,9 +247,16 @@ fn query_input(
     records: &[Record],
 ) -> Result<QueryInput> {
     let owner = kind.id.split_once('.').expect("qualified kind").0;
-    let mut state = format::Fields::new();
+    let state_allowed = match &actor.via {
+        None => true,
+        Some(Via::Plugin { plugin }) => plugin == owner,
+        _ => false,
+    };
+    let mut state = state_allowed.then(format::Fields::new);
     let mut record_positions = BTreeMap::new();
-    if !kind.state.is_empty() {
+    if let Some(state) = &mut state
+        && !kind.state.is_empty()
+    {
         let mut stmt = space
             .db
             .prepare_cached(
@@ -392,9 +399,9 @@ fn execute(
             (
                 id.clone(),
                 format::QueryRowContext {
-                    state: Some(&input.state),
+                    state: input.state.as_ref(),
                     records,
-                    record_positions: Some(&input.record_positions),
+                    record_positions: input.state.as_ref().map(|_| &input.record_positions),
                     ..format::QueryRowContext::default()
                 },
             )
@@ -433,9 +440,9 @@ fn render_row(
         today: Some(today),
         now: Some(now),
         offset_seconds: Some(0),
-        state: Some(&input.state),
+        state: input.state.as_ref(),
         records: &records,
-        record_positions: Some(&input.record_positions),
+        record_positions: input.state.as_ref().map(|_| &input.record_positions),
         ..format::EvalContext::default()
     };
     let when = format::operation_conditions(
@@ -449,23 +456,23 @@ fn render_row(
     )
     .map_err(declarations::invalid)?;
     let computed = declarations::as_json(&format::Value::Map(computed.clone()));
-    let state = kind
-        .state
-        .keys()
-        .map(|key| {
-            (
-                key.clone(),
-                input
-                    .state
-                    .get(key)
-                    .map(declarations::as_json)
-                    .unwrap_or_default(),
-            )
-        })
-        .collect::<serde_json::Map<_, _>>();
+    let state = input.state.as_ref().map(|state| {
+        kind.state
+            .keys()
+            .map(|key| {
+                (
+                    key.clone(),
+                    state
+                        .get(key)
+                        .map(declarations::as_json)
+                        .unwrap_or_default(),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>()
+    });
     Ok(
         json!({"id":row.head.id,"kind":row.head.kind,"fields":row.fields,"computed":computed,
-        "state":state,"when":when,"version":row.head.version,"edited":row.head.edited}),
+        "state":state.unwrap_or_default(),"when":when,"version":row.head.version,"edited":row.head.edited}),
     )
 }
 
