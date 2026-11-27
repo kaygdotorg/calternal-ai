@@ -23,6 +23,7 @@ pub(crate) type Slot = Arc<SpaceSlot>;
 pub(crate) struct SpaceSlot {
     pub(crate) resident: Mutex<Resident>,
     pub(crate) observing: Mutex<std::collections::BTreeSet<[u8; 32]>>,
+    pub(crate) http_work: Arc<tokio::sync::Semaphore>,
 }
 
 pub(crate) struct Resident {
@@ -70,6 +71,7 @@ impl Host {
                 visited: Instant::now(),
             }),
             observing: Mutex::default(),
+            http_work: Arc::new(tokio::sync::Semaphore::new(8)),
         });
         registry.insert(id, slot.clone());
         Ok(slot)

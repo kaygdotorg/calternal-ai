@@ -275,3 +275,34 @@ async fn committed_enrollment_survives_retryable_seed_failure() {
     let installed = catalog(browser.host.clone()).await.unwrap();
     assert_eq!(installed["plugins"].as_array().unwrap().len(), 3);
 }
+
+#[tokio::test]
+async fn call_admission_in_one_space_cannot_exhaust_another_space() {
+    use calternal_auth::Auth;
+
+    let data = tempfile::tempdir().unwrap();
+    let root = data.path().to_owned();
+    let auth_path = root.join("auth");
+    let auth = tokio::task::spawn_blocking(move || {
+        Auth::open(&auth_path, AuthConfig::new("http://localhost").unwrap())
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    let one = auth.create("First").await.unwrap().id;
+    let two = auth.create("Second").await.unwrap().id;
+    let host = Arc::new(Host::new(root, auth, 7).unwrap());
+    let (_, first) = personal_space(&host, one).await.ok().unwrap();
+    let (_, second) = personal_space(&host, two).await.ok().unwrap();
+    let mut held = Vec::new();
+    for _ in 0..8 {
+        held.push(admit_http_call(&host, one, first).await.ok().unwrap());
+    }
+    let excess = admit_http_call(&host, one, first).await.err().unwrap();
+    assert_eq!(excess.0.code, ErrorCode::RetryAfter);
+    assert!(admit_http_call(&host, two, second).await.is_ok());
+    let wrong = admit_http_call(&host, one, second).await.err().unwrap();
+    assert_eq!(wrong.0.code, ErrorCode::NotFound);
+    drop(held);
+    assert!(admit_http_call(&host, one, first).await.is_ok());
+}

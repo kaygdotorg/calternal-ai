@@ -11,7 +11,7 @@ use axum::{
     routing::{get, post},
 };
 use calternal_auth::AuthConfig;
-use calternal_types::{AccountId, Error, ErrorCode};
+use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
@@ -119,15 +119,45 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
 }
 
 const BODY_DEADLINE: Duration = Duration::from_secs(10);
-const MAX_HTTP_WORK: usize = 8;
+const MAX_LOGIN_WORK: usize = 8;
 
-fn admit_http_work() -> Result<OwnedSemaphorePermit, Failure> {
+fn admit_login_work() -> Result<OwnedSemaphorePermit, Failure> {
     static ADMISSION: std::sync::LazyLock<Arc<Semaphore>> =
-        std::sync::LazyLock::new(|| Arc::new(Semaphore::new(MAX_HTTP_WORK)));
+        std::sync::LazyLock::new(|| Arc::new(Semaphore::new(MAX_LOGIN_WORK)));
     ADMISSION.clone().try_acquire_owned().map_err(|_| {
         Error::new(
             ErrorCode::RetryAfter,
             "The host is processing too many requests.",
+        )
+        .into()
+    })
+}
+
+async fn admit_http_call(
+    host: &Arc<Host>,
+    account: AccountId,
+    space: SpaceId,
+) -> Result<OwnedSemaphorePermit, Failure> {
+    let host = host.clone();
+    let slot = tokio::task::spawn_blocking(move || {
+        // An authenticated caller can reserve work only for its personal space.
+        // Avoid opening storage or occupying a slot for arbitrary path input.
+        if !host
+            .auth
+            .spaces()
+            .is_personal_space(account, space)
+            .map_err(internal)?
+        {
+            return Err(Error::not_found("Personal space was not found."));
+        }
+        host.space_slot(space)
+    })
+    .await
+    .map_err(internal)??;
+    slot.http_work.clone().try_acquire_owned().map_err(|_| {
+        Error::new(
+            ErrorCode::RetryAfter,
+            "This space is processing too many requests.",
         )
         .into()
     })
@@ -143,7 +173,7 @@ async fn call(State(host): State<Arc<Host>>, Path(space): Path<String>, req: Req
     .ok_or_else(|| Error::unauthorized("Sign in to use this space."))?;
     let session = host.authenticate(credential).await?;
     let space = space.parse()?;
-    let permit = admit_http_work()?;
+    let permit = admit_http_call(&host, session.account, space).await?;
     let (call, permit) = {
         if !is_json(&req) {
             return Err(Error::invalid_input("Expected a JSON call envelope.").into());
@@ -297,7 +327,7 @@ async fn login_start(
     req: Request,
 ) -> Reply {
     let source = source(&browser.config, peer, req.headers());
-    let permit = admit_http_work()?;
+    let permit = admit_login_work()?;
     let auth = browser.host.auth.clone();
     let (auth, source, permit) = tokio::task::spawn_blocking(move || {
         auth.admit_http_login(&source).map_err(auth_error)?;
