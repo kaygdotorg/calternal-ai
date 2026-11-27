@@ -1,7 +1,7 @@
 use crate::{
     Decimal, Diagnostic, Expression, Value, dates,
     expr::{functions, parse},
-    lines::{self, Site},
+    lines::{self, Line, Site},
 };
 use std::collections::BTreeMap;
 
@@ -28,11 +28,17 @@ pub struct Field {
     pub sidecar: Option<String>,
     /// Whether this setting has a per-person value.
     pub per_person: bool,
+    pub(crate) badge: Option<Site>,
     pub(crate) viewer_dependent: bool,
     pub(crate) site: Site,
 }
 
 impl Field {
+    /// Whether a numeric field is marked for badge presentation in rows.
+    pub fn is_badge(&self) -> bool {
+        self.badge.is_some()
+    }
+
     /// Whether a compiled value must be evaluated in the viewer's context.
     /// Such a value must not be published in a shared index.
     pub fn is_per_viewer(&self) -> bool {
@@ -87,13 +93,29 @@ pub enum FieldType {
     Anchor,
 }
 
-pub(crate) fn declaration(value: &str, site: Site) -> Result<Field, Diagnostic> {
-    let parts = lines::parts(value, site)?;
+pub(crate) fn declaration(value: &str, site: Site, line: &Line) -> Result<Field, Diagnostic> {
+    let parts = line.parts(value)?;
+    declaration_parts(&parts, site, |formula, _| {
+        let start = formula.as_ptr() as usize - line.text.as_ptr() as usize;
+        parse::parse_at(formula, |offset| line.site_at(start + offset))
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn test_declaration(value: &str, site: Site) -> Result<Field, Diagnostic> {
+    declaration_parts(&lines::parts(value, site)?, site, parse::parse)
+}
+
+fn declaration_parts(
+    parts: &[(&str, Site)],
+    site: Site,
+    parse_formula: impl FnOnce(&str, Site) -> Result<Expression, Diagnostic>,
+) -> Result<Field, Diagnostic> {
     let Some(&(first, first_site)) = parts.first() else {
         return Err(site.error("Declare a field type or formula"));
     };
     let (field_type, expression) = if let Some(formula) = first.strip_prefix("= ") {
-        (None, Some(parse::parse(formula, first_site.after("= "))?))
+        (None, Some(parse_formula(formula, first_site.after("= "))?))
     } else {
         (Some(field_type(first, first_site)?), None)
     };
@@ -104,6 +126,7 @@ pub(crate) fn declaration(value: &str, site: Site) -> Result<Field, Diagnostic> 
         default: None,
         heading: false,
         mark: false,
+        badge: None,
         previous_names: Vec::new(),
         from_metadata: false,
         sidecar: None,
@@ -113,7 +136,10 @@ pub(crate) fn declaration(value: &str, site: Site) -> Result<Field, Diagnostic> 
     };
     for &(flag, site) in &parts[1..] {
         match (flag, &field.field_type) {
-            ("mark", None) if !field.mark => field.mark = true,
+            ("mark", None) if !field.mark && !field.is_badge() => field.mark = true,
+            ("badge", None | Some(FieldType::Number(_))) if !field.mark && !field.is_badge() => {
+                field.badge = Some(site);
+            }
             ("required", Some(_)) if !field.required => field.required = true,
             ("heading", Some(FieldType::Text)) if !field.heading => field.heading = true,
             ("from metadata", Some(_)) if !field.from_metadata => field.from_metadata = true,

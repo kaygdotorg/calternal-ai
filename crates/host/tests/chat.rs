@@ -339,6 +339,23 @@ fn declares_chat_surfaces_and_evaluates_viewer_state_before_delivery() {
         "calternal-chat.pinned"
     );
     assert_eq!(chat["slots"]["composer"]["fillers"][0]["target"], "send");
+    assert_eq!(chat["kinds"]["chats"]["fields"]["unread"]["badge"], true);
+    assert_eq!(
+        chat["collections"]["pinned"]["views"][0],
+        json!({"type":"strip","columns":["title","people","unread"]})
+    );
+    assert_eq!(chat["collections"]["archived"]["icon"], "archive");
+    assert!(chat["sidebars"]["chat"]["entries"][4]["icon"].is_null());
+    let composer = &chat["slots"]["composer"];
+    assert_eq!(composer["label"], "Message");
+    assert_eq!(composer["inputOperation"], "chats.send");
+    assert_eq!(
+        composer["composer"],
+        json!({"text":"text","draft":"draft","quote":"quote"})
+    );
+    assert_eq!(composer["fillers"][0]["label"], "Chat");
+    assert_eq!(chat["fills"]["calternal-chat:composer"]["label"], "Chat");
+    assert_eq!(chat["slots"]["harness"]["label"], "Ask an agent");
     let id = f.add();
     let read =
         || f.shell("s.query", json!({"collection":"calternal-chat.chats"}))["rows"][0].clone();

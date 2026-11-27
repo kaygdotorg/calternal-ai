@@ -6,8 +6,8 @@ version: 2.0.0
 format: 1
 sends out: nothing
 slots:
-  composer: single, gives "the draft and the open chat", picked by person, recommended calternal-chat
-  harness: single, gives "the open chat for the requested run", picked by person, recommended calternal-chat-claude-code
+  composer: single, gives text text, draft state.draft, quote quote, picked by person, recommended calternal-chat, inputs chats.send, label "Message"
+  harness: single, gives "the open chat for the requested run", picked by person, recommended calternal-chat-claude-code, label "Ask an agent"
 fills:
   calternal-chat:composer: operation send
 ---

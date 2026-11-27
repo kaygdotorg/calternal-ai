@@ -44,6 +44,19 @@ pub struct Rights {
     pub read: Vec<String>,
 }
 
+/// One checked component in a kind page.
+#[derive(Clone, Debug)]
+pub enum PageEntry {
+    /// The Markdown body.
+    Body,
+    /// The kind's property panel.
+    Properties,
+    /// The record list, optionally with named fields.
+    Records(Option<Vec<String>>),
+    /// One field placed on the page.
+    Field(String),
+}
+
 /// The compiled definition of one kind.
 #[derive(Clone, Debug)]
 pub struct Kind {
@@ -89,6 +102,8 @@ pub struct Kind {
     pub row: Vec<String>,
     /// Ordered fields and components drawn on a page.
     pub page: Vec<String>,
+    /// Checked page components in the same order as page.
+    pub compiled_page: Vec<PageEntry>,
     /// Ordered search fields.
     pub search: Vec<String>,
     /// Fields that stay visible when a page is extended.
@@ -143,6 +158,7 @@ pub(super) fn parse(
         template: None,
         row: Vec::new(),
         page: Vec::new(),
+        compiled_page: Vec::new(),
         search: Vec::new(),
         protected: Vec::new(),
         progress: None,
@@ -282,7 +298,27 @@ pub(super) fn parse(
                 kind.template = Some(value.into());
             }
             "row" => kind.row = list(value, site)?,
-            "page" => kind.page = list(value, site)?,
+            "page" => {
+                for (part, position) in entry.line.parts(value)? {
+                    let part = lines::unquote(part, position)?;
+                    let component = match part.as_str() {
+                        "body" => PageEntry::Body,
+                        "properties" => PageEntry::Properties,
+                        "records" => PageEntry::Records(None),
+                        value => match value
+                            .strip_prefix("records(")
+                            .and_then(|x| x.strip_suffix(')'))
+                        {
+                            Some(fields) => {
+                                PageEntry::Records(Some(list(fields, position.after("records("))?))
+                            }
+                            None => PageEntry::Field(part.clone()),
+                        },
+                    };
+                    kind.page.push(part);
+                    kind.compiled_page.push(component);
+                }
+            }
             "search" => kind.search = list(value, site)?,
             "protected" => kind.protected = list(value, site)?,
             "progress" => kind.progress = Some(value.into()),
@@ -403,12 +439,11 @@ pub(super) fn fields(
     for entry in sections(lines, depth)? {
         entry.alone()?;
         crate::lines::field_name(entry.key, entry.line.site)?;
-        let mut field = field::declaration(entry.value, entry.site)?;
-        if let Some(formula) = entry.value.strip_prefix("= ") {
-            let formula_len = lines::parts(formula, entry.site)?
-                .first()
-                .map_or(0, |(formula, _)| formula.len());
-            field.expression = Some(entry.expression(&formula[..formula_len])?);
+        let field = field::declaration(entry.value, entry.site, entry.line)?;
+        if let Some(site) = field.badge
+            && scope != "fields"
+        {
+            return Err(site.error("A badge is a row field flag"));
         }
         if (scope != "settings" && field.per_person)
             || (field.field_type == Some(FieldType::Anchor) && scope != "state")
@@ -532,6 +567,15 @@ fn verify_fields(
     }
     kind.computed = computed_order(&kind.fields)?;
     kind.record_computed = computed_order(&kind.records)?;
+    super::formulas::check_badges(&kind.fields, &kind.computed, |scope, name| {
+        match scope {
+            "state" => kind.state.get(name),
+            "settings" => settings.get(name),
+            "records" => kind.records.get(name),
+            _ => None,
+        }
+        .and_then(|field| field.field_type.as_ref())
+    })?;
     super::formulas::mark_viewer_fields(&mut kind.fields, &kind.computed, settings);
     super::formulas::mark_viewer_fields(&mut kind.records, &kind.record_computed, settings);
     if let Some(field) = kind

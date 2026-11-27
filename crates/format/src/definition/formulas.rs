@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    Diagnostic, Field,
+    Diagnostic, Field, FieldType,
     expr::{Node, NodeKind, Op},
 };
 
@@ -203,5 +203,103 @@ fn viewer_dependent(
         }
         NodeKind::List(values) => values.iter().any(depends),
         NodeKind::Value(_) => false,
+    }
+}
+
+/// Check the output of badge formulas using declared types in dependency order.
+pub(super) fn check_badges<'a>(
+    fields: &BTreeMap<String, Field>,
+    order: &[String],
+    scoped_type: impl Fn(&str, &str) -> Option<&'a crate::FieldType>,
+) -> Result<(), Diagnostic> {
+    if !fields
+        .values()
+        .any(|field| field.badge.is_some() && field.expression.is_some())
+    {
+        return Ok(());
+    }
+    let mut numbers = BTreeSet::new();
+    for name in order {
+        let field = &fields[name];
+        let expression = field.expression.as_ref().expect("computed field");
+        let proof = NumericProof {
+            fields,
+            computed: &numbers,
+            scoped_type: &scoped_type,
+        };
+        if proof.scalar(&expression.root) {
+            numbers.insert(name.as_str());
+        } else if let Some(site) = field.badge {
+            return Err(site.error("A badge formula must have a numeric result"));
+        }
+    }
+    Ok(())
+}
+
+struct NumericProof<'a, F> {
+    fields: &'a BTreeMap<String, Field>,
+    computed: &'a BTreeSet<&'a str>,
+    scoped_type: &'a F,
+}
+
+impl<'a, F: Fn(&str, &str) -> Option<&'a FieldType>> NumericProof<'_, F> {
+    fn stored(&self, name: &str) -> Option<&FieldType> {
+        self.fields
+            .get(name)
+            .and_then(|field| field.field_type.as_ref())
+    }
+
+    fn local(&self, name: &str) -> bool {
+        self.computed.contains(name) || matches!(self.stored(name), Some(FieldType::Number(_)))
+    }
+
+    fn scalar(&self, node: &Node) -> bool {
+        match &node.kind {
+            NodeKind::Value(crate::Value::Number(_)) => true,
+            NodeKind::Name(name) => self.local(name),
+            NodeKind::Member(base, field) => match &base.kind {
+                NodeKind::Name(scope) if scope == "this" => self.local(field),
+                NodeKind::Name(scope) if scope != "records" => {
+                    matches!((self.scoped_type)(scope, field), Some(FieldType::Number(_)))
+                }
+                _ => false,
+            },
+            NodeKind::Unary(Op::Sub, value) => self.scalar(value),
+            NodeKind::Binary(Op::Add | Op::Sub | Op::Mul | Op::Div, left, right) => {
+                self.scalar(left) && self.scalar(right)
+            }
+            NodeKind::Call(name, args) => match name.as_str() {
+                "count" | "streak" => true,
+                "round" => self.scalar(&args[0]),
+                "if" => self.number_or_empty(&args[1]) && self.number_or_empty(&args[2]),
+                "sum" | "average" | "last" => self.list(&args[0]),
+                "min" | "max" | "first" => {
+                    self.list(&args[0]) || args.iter().all(|arg| self.number_or_empty(arg))
+                }
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    fn number_or_empty(&self, node: &Node) -> bool {
+        self.scalar(node) || matches!(node.kind, NodeKind::Value(crate::Value::Empty))
+    }
+
+    fn list(&self, node: &Node) -> bool {
+        let numeric_list = |kind: Option<&FieldType>| matches!(kind, Some(FieldType::List(inner)) if matches!(inner.as_ref(), FieldType::Number(_)));
+        match &node.kind {
+            NodeKind::List(values) => values.iter().all(|node| self.number_or_empty(node)),
+            NodeKind::Name(name) => numeric_list(self.stored(name)),
+            NodeKind::Member(base, name) => match &base.kind {
+                NodeKind::Name(scope) if scope == "this" => numeric_list(self.stored(name)),
+                NodeKind::Name(scope) if scope == "records" => {
+                    matches!((self.scoped_type)(scope, name), Some(FieldType::Number(_)))
+                }
+                NodeKind::Name(scope) => numeric_list((self.scoped_type)(scope, name)),
+                _ => false,
+            },
+            _ => false,
+        }
     }
 }

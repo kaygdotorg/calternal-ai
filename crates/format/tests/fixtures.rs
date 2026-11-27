@@ -188,6 +188,21 @@ fn claude_code_reads_its_fixture_and_needs_a_bound_program() {
     };
     let harness = parse_plugin(HARNESS, &options).unwrap();
     assert!(harness.kinds["runs"].hidden);
+    let inputs = &harness.kinds["runs"].operations["start"].inputs;
+    assert_eq!(
+        inputs.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["chat", "prompt"]
+    );
+    for (key, target) in [
+        ("chat", "calternal-chat.chats"),
+        ("prompt", "calternal-chat.chats records"),
+    ] {
+        assert!(inputs[key].required);
+        assert_eq!(
+            inputs[key].field_type,
+            Some(calternal_format::FieldType::Link(target.into()))
+        );
+    }
     assert!(
         harness.manifest.programs["calternal-provider-claude-code"]
             .path
@@ -454,6 +469,11 @@ fn revision_nine_rights_sources_and_typed_inputs() {
     let changed = changed.replace("read through: time", "read through: record anchor");
     let mut files = CHAT.to_vec();
     files[1].text = Some(&changed);
+    let manifest = CHAT[0]
+        .text
+        .unwrap()
+        .replace("gives text text", "gives text body");
+    files[0].text = Some(&manifest);
     let collection = files[2]
         .text
         .unwrap()
@@ -563,10 +583,11 @@ fn refusal_uses_only_the_installed_operation_schema() {
     );
     let mut chat_files = CHAT.to_vec();
     chat_files[1].text = Some(&changed);
-    let manifest = CHAT[0].text.unwrap().replace(
-        "picked by person, recommended calternal-chat\n",
-        "picked by person, recommended calternal-chat, inputs send\n",
-    );
+    let manifest = CHAT[0]
+        .text
+        .unwrap()
+        .replace("gives text text", "gives text body")
+        .replace("inputs chats.send", "inputs send");
     chat_files[0].text = Some(&manifest);
     let chat = parse_plugin(
         &chat_files,

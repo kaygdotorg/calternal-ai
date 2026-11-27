@@ -11,11 +11,13 @@ mod formulas;
 mod install;
 mod kind;
 mod manifest;
+mod places;
 mod secondary;
 
-pub use collection::{Collection, ShareSource, Sort, Source, Total};
-pub use kind::{Editability, ItemForm, Kind, Rights};
-pub use manifest::{Manifest, Program, Refusal, Slot};
+pub use collection::{Collection, CollectionView, ShareSource, Sort, Source, Total};
+pub use kind::{Editability, ItemForm, Kind, PageEntry, Rights};
+pub use manifest::{Manifest, Program, Refusal};
+pub use places::{ComposerBindings, Fill, FillBinding, Slot};
 pub use secondary::{AgentRule, AgentRules, Sidebar, SidebarEntry, parse_agent_rules};
 
 /// One supplied entry in a plugin folder.
@@ -65,6 +67,7 @@ pub struct Directive {
     /// Nested declaration lines in source order.
     pub children: Vec<Directive>,
     pub(crate) site: Site,
+    pub(crate) fill: Option<Box<Fill>>,
 }
 
 /// Parse a plugin's definition files and check relationships within the folder.
@@ -224,6 +227,11 @@ pub(super) fn text(
     Ok(value)
 }
 
+fn icon(value: &str, site: Site) -> Result<String, Diagnostic> {
+    lines::id(value, site)?;
+    Ok(value.into())
+}
+
 pub(super) fn name(value: &str, site: Site) -> Result<String, Diagnostic> {
     let value = text(value, site, 40, false)?;
     #[cfg(feature = "unicode")]
@@ -283,6 +291,7 @@ impl Section<'_> {
             value: self.value.into(),
             children: directives(self.children)?,
             site: self.line.site,
+            fill: None,
         })
     }
 }
@@ -347,6 +356,7 @@ pub(super) fn directives(lines: &[Line]) -> Result<Vec<Directive>, Diagnostic> {
             value: value.into(),
             children: directives(&lines[at + 1..end])?,
             site: line.site,
+            fill: None,
         });
         at = end;
     }
