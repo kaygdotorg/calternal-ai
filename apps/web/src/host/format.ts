@@ -3,7 +3,16 @@
  * slot filler resolution, and form/action derivation from `s.declarations`.
  * Contains zero hardcoded knowledge of any specific plugin or kind.
  */
-import type { FieldDecl, KindDecl, OperationDecl, PluginDecl, RowData, SlotDecl } from "./types";
+import type {
+  CollectionDecl,
+  FieldDecl,
+  KindDecl,
+  OperationDecl,
+  PluginDecl,
+  QueryWindowResult,
+  RowData,
+  SlotDecl,
+} from "./types";
 
 /** Convert a declaration identifier (`mark read`, `read through`) into a sentence-case label. */
 export function humanize(name: string): string {
@@ -272,6 +281,145 @@ export function resolveReadPositionStateKey(kind: KindDecl): string | null {
     }
   }
   return keys.size === 1 ? [...keys][0]! : null;
+}
+
+/** Return whether `kind` declares records (so its item window mounts the records view). */
+export function kindHasRecords(kind: KindDecl): boolean {
+  return Object.keys(kind.records ?? {}).length > 0 || kind.page.some((p) => p.kind === "records");
+}
+
+/** Format any declared field or computed value into a concise human string. */
+export function formatFieldValue(val: unknown, decl?: FieldDecl): string {
+  if (val === null || val === undefined || val === "") return "";
+  if (typeof val === "boolean") return val ? "Yes" : "No";
+  if (Array.isArray(val)) return val.map((v) => formatFieldValue(v)).filter(Boolean).join(", ");
+  if (typeof val === "number") return val.toLocaleString();
+  if (typeof val === "string") {
+    if (decl?.type === "date" || decl?.type === "when") {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+        const d = new Date(`${val}T12:00:00Z`);
+        if (!Number.isNaN(d.getTime())) {
+          return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", timeZone: "UTC" }).format(d);
+        }
+      }
+      if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(val)) {
+        const d = new Date(val.includes("T") ? val : val.replace(" ", "T"));
+        if (!Number.isNaN(d.getTime())) {
+          return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(d);
+        }
+      }
+    }
+    if (decl?.type === "time") {
+      const d = new Date(val);
+      if (!Number.isNaN(d.getTime())) {
+        return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(d);
+      }
+    }
+    if (decl?.choices?.length) return humanize(val);
+    return val;
+  }
+  return String(val);
+}
+
+/** True when a `set` operation targets viewer `state.*` keys only (sent via `s.state`). */
+export function isStateSetOperation(op: OperationDecl): boolean {
+  if (op.form !== "set") return false;
+  const assigns = op.assignments ?? (op.target ? [{ target: op.target, value: op.value }] : []);
+  return assigns.length > 0 && assigns.every((a) => a.target.startsWith("state."));
+}
+
+/** Return the inline primary/swipe actions permitted on `row` according to `row.when` and `placement`. */
+export function itemPrimaryActions(row: RowData, kind: KindDecl): DerivedAction[] {
+  const out: DerivedAction[] = [];
+  for (const op of Object.values(kind.operations)) {
+    if (op.form !== "set" && op.form !== "code") continue;
+    if (!op.placement.includes("primary") && !op.placement.includes("swipe")) continue;
+    if (!isOperationAllowed(op.name, row)) continue;
+    out.push({
+      id: op.name,
+      label: humanize(op.name),
+      operation: op,
+      kind,
+    });
+  }
+  return out;
+}
+
+/** One board lane derived strictly from a `yes/no` or `choice` field schema. */
+export interface BoardLane {
+  id: string;
+  label: string;
+  value: string | boolean;
+}
+
+/** Derive board lanes and their order strictly from `kind.fields[fieldName]`. */
+export function boardLanes(kind: KindDecl, fieldName: string): BoardLane[] {
+  const decl = kind.fields[fieldName];
+  if (!decl) return [];
+  if (decl.type === "yes/no") {
+    return [
+      { id: "false", label: "No", value: false },
+      { id: "true", label: "Yes", value: true },
+    ];
+  }
+  if (decl.choices?.length) {
+    return decl.choices.map((c) => ({ id: c, label: humanize(c), value: c }));
+  }
+  return [];
+}
+
+/** Format declared collection totals from `QueryWindowResult` in declaration order. */
+export function formatCollectionTotals(collection: CollectionDecl, result: QueryWindowResult): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = [];
+  const totalsArr = Array.isArray(result.totals) ? result.totals : [];
+  if (collection.totals?.length && totalsArr.length) {
+    collection.totals.forEach((t, i) => {
+      const v = totalsArr[i];
+      if (v === undefined || v === null) return;
+      const label = t.field ? `${humanize(t.function)} ${humanize(t.field)}` : humanize(t.function);
+      out.push({ label, value: formatFieldValue(v) });
+    });
+  }
+  for (const name of collection.namedTotals ?? []) {
+    const v = result.namedTotals?.[name];
+    if (v !== undefined && v !== null) {
+      out.push({ label: humanize(name), value: formatFieldValue(v) });
+    }
+  }
+  return out;
+}
+
+/** Validate an RFC 5545 RRULE string (`FREQ=...` plus optional standard parameters). */
+export function validateRrule(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(";").filter(Boolean);
+  let hasFreq = false;
+  for (const part of parts) {
+    const eq = part.indexOf("=");
+    if (eq <= 0) return "Use KEY=VALUE pairs separated by semicolons (for example FREQ=WEEKLY;INTERVAL=1).";
+    const key = part.slice(0, eq).toUpperCase();
+    const val = part.slice(eq + 1).toUpperCase();
+    if (key === "FREQ") {
+      if (!["DAILY", "WEEKLY", "MONTHLY", "YEARLY"].includes(val)) {
+        return "FREQ must be DAILY, WEEKLY, MONTHLY, or YEARLY.";
+      }
+      hasFreq = true;
+    } else if (key === "INTERVAL" || key === "COUNT") {
+      if (!/^[1-9]\d*$/.test(val)) return `${key} must be a positive whole number.`;
+    } else if (key === "BYDAY") {
+      if (!/^([+-]?\d?(MO|TU|WE|TH|FR|SA|SU))(,[+-]?\d?(MO|TU|WE|TH|FR|SA|SU))*$/.test(val)) {
+        return "BYDAY must list weekday codes such as MO,WE,FR.";
+      }
+    } else if (key === "BYMONTHDAY") {
+      if (!/^([+-]?([1-9]|[12]\d|3[01]))(,[+-]?([1-9]|[12]\d|3[01]))*$/.test(val)) {
+        return "BYMONTHDAY must list day numbers between 1 and 31.";
+      }
+    } else if (key === "UNTIL") {
+      if (!/^\d{8}(T\d{6}Z?)?$/.test(val)) return "UNTIL must use YYYYMMDD or YYYYMMDDTHHMMSSZ.";
+    }
+  }
+  return hasFreq ? null : "Repeat rule must include FREQ=DAILY, WEEKLY, MONTHLY, or YEARLY.";
 }
 
 /** Return the initials (1–2 characters) for a person's display name. */

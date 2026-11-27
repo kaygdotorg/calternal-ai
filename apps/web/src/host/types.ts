@@ -24,6 +24,10 @@ export interface FieldDecl {
   default?: unknown;
   computed?: boolean;
   formula?: string;
+  /** Validated choice values when `type` is `choice(...)`. */
+  choices?: string[];
+  /** Element type when `type` is `list(...)` or `tags`. */
+  itemType?: string;
   /** Whether a row can present this numeric field as a badge. */
   badge?: boolean;
 }
@@ -82,6 +86,10 @@ export interface KindDecl {
   state: Record<string, FieldDecl>;
   row: string[];
   page: PageEntryDecl[];
+  /** Declared searchable field names (and `"body"`). */
+  search?: string[];
+  /** Field groups whose updates require submitting the row's current version. */
+  together?: string[][];
   operations: Record<string, OperationDecl>;
 }
 
@@ -104,6 +112,12 @@ export interface CollectionDecl {
   where?: string;
   sort: string[];
   views: CollectionViewDecl[];
+  /** Whether the collection groups rows. */
+  grouped?: boolean;
+  /** Declared collection totals in declaration order. */
+  totals?: { function: string; field: string | null }[];
+  /** Declared named total keys. */
+  namedTotals?: string[];
 }
 
 /** One entry in a sidebar file (`sidebars/<id>.md`). */
@@ -188,6 +202,23 @@ export interface RowData {
   when?: Record<string, boolean>;
   version: number;
   edited?: number;
+  /** Group key(s) for this row when returned by a grouped collection query. */
+  groups?: unknown[];
+}
+
+/** One aggregate group entry returned by a grouped query. */
+export interface QueryGroup {
+  key: unknown;
+  matched: number;
+  totals: unknown[];
+}
+
+/** Full query window result pushed over `rows` frames and `s.query`. */
+export interface QueryWindowResult {
+  rows: RowData[];
+  groups: QueryGroup[];
+  totals: unknown[] | Record<string, unknown>;
+  namedTotals: Record<string, unknown>;
 }
 
 /** One record inside an item returned by `s.read` or pushed over the live socket. */
@@ -234,6 +265,7 @@ export interface QuerySpec {
   where?: string;
   sort?: string[];
   limit?: number;
+  search?: string;
 }
 
 /** Viewer-aware metadata sent on records snapshots and item changes. */
@@ -263,7 +295,15 @@ export interface RunLogFrame {
 /** Server-to-client frame on `GET /v1/spaces/{space}/live`. */
 export type LiveServerFrame =
   | { type: "ready"; account: string; space: string }
-  | { type: "rows"; sub: string; rows: RowData[]; totals: Record<string, unknown>; cursor: string | null }
+  | {
+      type: "rows";
+      sub: string;
+      rows: RowData[];
+      groups?: QueryGroup[];
+      totals: unknown[] | Record<string, unknown>;
+      namedTotals?: Record<string, unknown>;
+      cursor: string | null;
+    }
   | (LiveItemMetadata & {
       type: "records";
       sub: string;
