@@ -16,11 +16,12 @@ mod repeat;
 mod value;
 
 pub use definition::{
-    AgentRule, AgentRules, CheckboxMapping, Collection, CollectionView, ComposerBindings,
-    DavComponent, DavMapping, DavProperty, Directive, Editability, Fill, FillBinding,
-    InstallOptions, ItemForm, Kind, LineClaim, LineForm, Manifest, PageEntry, Plugin, PluginFile,
-    Program, Refusal, Rights, ShareSource, Sidebar, SidebarEntry, Slot, Sort, Source, Total,
-    parse_agent_rules, parse_plugin,
+    AgentRule, AgentRules, ChangeRight, CheckboxMapping, Collection, CollectionView,
+    ComposerBindings, DavComponent, DavMapping, DavProperty, Directive, Editability, Fill,
+    FillBinding, InstallOptions, ItemForm, Kind, LineClaim, LineForm, Manifest, PageEntry, Plugin,
+    PluginFile, Program, ReadAudience, Refusal, RefusalCall, RefusalMatch, Rights, ShareSource,
+    Sidebar, SidebarEntry, Slot, Sort, Source, Total, evaluate_refusals, parse_agent_rules,
+    parse_plugin,
 };
 pub use expr::{EvalContext, Expression, QueryRowContext, Row, evaluate, parse_expression};
 pub use field::{Field, FieldType};

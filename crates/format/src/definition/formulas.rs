@@ -113,11 +113,12 @@ pub(super) fn refusal_condition(
     match &node.kind {
         NodeKind::Value(_) => {}
         NodeKind::Name(name) => {
-            if !op.inputs.contains_key(name)
-                && kind
-                    .fields
-                    .get(name)
-                    .is_none_or(|field| field.field_type.is_none())
+            if op.refusal_input(kind, name).is_none()
+                && (op.name == "add"
+                    || kind
+                        .fields
+                        .get(name)
+                        .is_none_or(|field| field.field_type.is_none()))
             {
                 return Err(node.site.error(format!("The refusal cannot read {name} from the authorized inputs or stored target fields")));
             }
@@ -130,7 +131,7 @@ pub(super) fn refusal_condition(
         NodeKind::Call(name, args) => {
             if matches!(
                 name.as_str(),
-                "from" | "all" | "previous" | "links to" | "records after"
+                "from" | "all" | "previous" | "today" | "now" | "links to" | "records after"
             ) {
                 return Err(node
                     .site

@@ -121,6 +121,36 @@ impl Operation {
         matches!(self.form, OperationForm::Code)
     }
 
+    pub(crate) fn refusal_input<'a>(&'a self, kind: &'a Kind, name: &str) -> Option<&'a FieldType> {
+        let schema = match &self.form {
+            OperationForm::Code => return self.inputs.get(name)?.field_type.as_ref(),
+            OperationForm::Add { .. } => &kind.fields,
+            OperationForm::Change(only)
+                if only
+                    .as_ref()
+                    .is_none_or(|fields| fields.iter().any(|field| field == name)) =>
+            {
+                &kind.fields
+            }
+            OperationForm::AppendRecord(fields) | OperationForm::ChangeRecord { fields, .. }
+                if fields.iter().any(|field| field == name) =>
+            {
+                &kind.records
+            }
+            OperationForm::Set(assignments)
+                if assignments.iter().any(|assignment| {
+                    assignment.target == name && assignment.value.is_none() && !assignment.state
+                }) =>
+            {
+                &kind.fields
+            }
+            _ => return None,
+        };
+        target_field(schema, name, self.site)
+            .ok()
+            .map(|ty| ty.unwrap_or(&FieldType::LongText))
+    }
+
     pub(crate) fn verify(
         &self,
         fields: &BTreeMap<String, Field>,
@@ -156,6 +186,13 @@ impl Operation {
         }
         Ok(())
     }
+}
+
+pub(crate) fn implicit_operation(kind: &Kind, name: &str) -> Option<Operation> {
+    if kind.editable == crate::Editability::Outside && matches!(name, "add" | "change" | "remove") {
+        return parse_operation(name, "", kind.site).ok();
+    }
+    None
 }
 
 fn target_field<'a>(
@@ -338,16 +375,12 @@ pub fn apply_operation(
     let fallback;
     let declared = match kind.operations.get(operation) {
         Some(operation) => operation,
-        None if kind.editable == crate::Editability::Outside
-            && matches!(operation, "add" | "change" | "remove") =>
-        {
-            fallback = parse_operation(operation, "", kind.site)?;
-            &fallback
-        }
         None => {
-            return Err(kind
-                .site
-                .error(format!("The kind does not declare {operation}")));
+            fallback = implicit_operation(kind, operation).ok_or_else(|| {
+                kind.site
+                    .error(format!("The kind does not declare {operation}"))
+            })?;
+            &fallback
         }
     };
     let site = declared.site;

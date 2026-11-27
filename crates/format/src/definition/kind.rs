@@ -1,3 +1,4 @@
+use super::Rights;
 use std::collections::BTreeMap;
 
 pub(super) use super::formulas::computed_order;
@@ -31,15 +32,6 @@ pub enum ItemForm {
         /// Whether related originals form a single item.
         paired: bool,
     },
-}
-
-/// The restrictions declared for the host's authorization check.
-#[derive(Clone, Debug, Default)]
-pub struct Rights {
-    /// The minimum role to change the kind, when narrower than the default.
-    pub change: Option<String>,
-    /// An allow-list of minimum roles and group IDs for reading.
-    pub read: Vec<String>,
 }
 
 /// One checked component in a kind page.
@@ -232,7 +224,7 @@ pub(super) fn parse(
                 }
             }
             "editable" => return Err(site.error("A hidden kind is always operations only")),
-            "rights" => rights(entry, &mut kind.rights)?,
+            "rights" => super::rights::parse(entry, &mut kind.rights)?,
             "fields" | "records" | "state" => {
                 entry.block()?;
                 let parsed = fields(children, entry.line.depth + 1, key)?;
@@ -397,41 +389,6 @@ fn item_form(value: &str, site: Site) -> Result<ItemForm, Diagnostic> {
         }
     }
     Err(site.error("Use file, folder with <main file>, or file(<media types>)"))
-}
-
-fn rights(entry: &Section<'_>, rights: &mut Rights) -> Result<(), Diagnostic> {
-    if entry.children.is_empty() {
-        return right(entry.value, entry.site, rights);
-    }
-    entry.block()?;
-    for line in entry.children {
-        flat(line, entry)?;
-        right(line.content()?, line.site, rights)?;
-    }
-    Ok(())
-}
-
-fn right(text: &str, site: Site, rights: &mut Rights) -> Result<(), Diagnostic> {
-    if let Some(role) = text
-        .strip_prefix("change ")
-        .filter(|role| matches!(*role, "manager" | "owner"))
-        && rights.change.replace(role.into()).is_none()
-    {
-        return Ok(());
-    }
-    if let Some(read) = text
-        .strip_prefix("read ")
-        .filter(|_| rights.read.is_empty())
-    {
-        rights.read = list(read, site)?;
-        if !rights.read.is_empty() {
-            for audience in &rights.read {
-                lines::id(audience, site)?
-            }
-            return Ok(());
-        }
-    }
-    Err(site.error("Declare each right once as change manager, change owner, or read followed by roles or groups"))
 }
 
 pub(super) fn fields(

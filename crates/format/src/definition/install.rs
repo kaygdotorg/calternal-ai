@@ -207,7 +207,10 @@ pub(super) fn verify(
     Ok(())
 }
 
-fn operation<'a>(plugin: &'a Plugin, target: &str) -> Option<(&'a Kind, &'a crate::Operation)> {
+pub(super) fn operation<'a>(
+    plugin: &'a Plugin,
+    target: &str,
+) -> Option<(&'a Kind, &'a crate::Operation)> {
     if let Some((kind, operation)) = target.split_once('.') {
         let kind = plugin.kinds.get(kind)?;
         return kind.operations.get(operation).map(|op| (kind, op));
@@ -285,34 +288,6 @@ fn verify_bindings(
             }
             _ => {}
         }
-    }
-    for refusal in &plugin.manifest.refusals {
-        let (owner, target) = refusal.target.split_once('.').unwrap();
-        let Some(target_plugin) = options
-            .installed
-            .iter()
-            .find(|target| target.manifest.id == owner && owner != plugin.manifest.id)
-        else {
-            return Err(refusal
-                .site
-                .error("Refuse only an installed operation belonging to another plugin"));
-        };
-        let (kind, operation) = operation(target_plugin, target).ok_or_else(|| {
-            refusal
-                .site
-                .error("The refusal target must name one installed operation")
-        })?;
-        if kind.hidden {
-            return Err(refusal
-                .site
-                .error("A refusal cannot inspect an operation on another plugin's hidden kind"));
-        }
-        if operation.is_coded() && operation.inputs.is_empty() {
-            return Err(refusal
-                .site
-                .error("The refusal target has no typed operation inputs"));
-        }
-        crate::definition::formulas::refusal_condition(&refusal.condition.root, kind, operation)?;
     }
     Ok(())
 }
