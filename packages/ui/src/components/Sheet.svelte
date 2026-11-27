@@ -3,8 +3,12 @@
   // trapped, Escape and the scrim close it, and focus returns to where it came from. The scrim dims the page; the sheet is glass.
   import type { Snippet } from "svelte";
   import Panel from "./Panel.svelte";
+  import { tokenMs } from "../lib/motion";
   let { open, label, onclose, side = "bottom", wide = false, children }: { open: boolean; label: string; onclose: () => void; side?: "bottom" | "right" | "top" | "center"; /** A top sheet as wide as the two-column palette (up to 1120 px), set lower on the screen. */ wide?: boolean; children: Snippet } = $props();
   let box = $state<HTMLElement>();
+  // The sheet stays mounted for its leave (the dim and the surface fade together over `--dur-leave`); opening again during the leave takes it back, so every change is interruptible.
+  let live = $state(open), leave = 0;
+  $effect(() => { if (open) { clearTimeout(leave); live = true; } else if (live) { clearTimeout(leave); leave = window.setTimeout(() => (live = false), tokenMs("--dur-leave", 200)); } });
   // Drawn at the end of <body>, outside every stacking context of the app (a card with a transform would otherwise trap the sheet beneath the bottom bar).
   const portal = (node: HTMLElement) => {
     document.body.append(node);
@@ -22,7 +26,8 @@
   $effect(() => {
     if (!open || !box) return;
     from = outside ?? (document.activeElement as HTMLElement | null);
-    if (!box.contains(document.activeElement)) box.focus(); // (a field inside that took focus keeps it) the dialog itself: announced by name, and no focus ring until the person presses Tab
+    // A field inside that already has focus keeps it; else the first text field takes it (a search or a name is typed at once, whichever way the sheet was opened: shortcut, click or a button); a sheet with no field focuses the dialog itself (announced by name, no ring until Tab).
+    if (!box.contains(document.activeElement)) (box.querySelector<HTMLElement>('input:not([type=checkbox]):not([type=radio]):not([type=hidden]), textarea') ?? box).focus();
     return () => from?.focus?.();
   });
   // Drag the grabber (bottom sheets) down to dismiss: the sheet follows the finger with a transform, and goes when pulled past 80 px or flicked.
@@ -51,10 +56,10 @@
   }
 </script>
 
-{#if open}
+{#if live}
   <div class="layer" use:portal>
-    <div class="scrim" role="presentation" onclick={onclose}></div>
-    <Panel bind:el={box} floating dense radius="pane" class="sheet {side}" data-wide={wide || undefined} role="dialog" aria-modal="true" aria-label={label} tabindex={-1} onkeydown={onkey}>
+    <div class="scrim" class:out={!open} role="presentation" onclick={onclose}></div>
+    <Panel bind:el={box} floating dense radius="pane" class="sheet {side}" data-wide={wide || undefined} role="dialog" aria-modal="true" aria-label={label} tabindex={-1} onkeydown={onkey} data-leaving={!open || undefined}>
       {#if side === "bottom"}<div class="grab" role="presentation" onpointerdown={gdown} onpointermove={gmove} onpointerup={gup} onpointercancel={gup}><i></i></div>{/if}
       {@render children()}
     </Panel>
@@ -66,7 +71,9 @@
   .grab { display: none; touch-action: none; height: var(--s-8); place-items: center; }
   .grab i { width: var(--s-10); height: var(--s-2); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.25); }
   @media (hover: none) { .grab { display: grid; } }
-  .scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); }
+  /* the dim (`--scrim`: 20 % black light, 40 % dark; measured 20 % on a Mac sheet over a white window, native-ui-study.md) fades in with the surface and out over the leave */
+  .scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); animation: scrim-in var(--dur-sheet) var(--ease-sheet) both; transition: opacity var(--dur-leave) var(--ease-out); } .scrim.out { opacity: 0; }
+  @keyframes scrim-in { from { opacity: 0; } }
   :global(.sheet:focus) { outline: none; }
   :global(.sheet) { position: fixed; z-index: 41; isolation: isolate; overflow: auto; max-height: 88dvh; color: var(--ink); overscroll-behavior: contain; }
   /* A bottom sheet is inset like an iPhone's: 8 in from the sides and the bottom, the bottom corners concentric with the display's (its radius less the inset) and smaller ones on top (lib/sheet-radius.ts; the pane radius all round elsewhere). */

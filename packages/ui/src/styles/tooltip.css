@@ -14,7 +14,7 @@
   opacity: 0;
   scale: 0.94;
   transition-property: opacity, scale;
-  transition-duration: 160ms;
+  transition-duration: var(--dur-fast);
   transition-timing-function: var(--ease-out);
 }
 .wt-surface {
@@ -65,7 +65,7 @@
 /* Travelling between warm neighbours: the tooltip glides on a spring and resizes to the new words. */
 .warm-tip[data-motion="travel"] {
   transition-property: opacity, scale, translate, width, height;
-  transition-duration: 160ms, 160ms, var(--dur-slow), var(--dur-slow), var(--dur-slow);
+  transition-duration: var(--dur-fast), var(--dur-fast), var(--dur-slow), var(--dur-slow), var(--dur-slow);
   transition-timing-function: var(--ease-out), var(--ease-out), var(--spring), var(--spring), var(--spring);
 }
 .warm-tip[data-motion="instant"] {

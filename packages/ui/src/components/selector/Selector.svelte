@@ -265,7 +265,7 @@
     background: var(--selector-capsule, var(--paper));
     box-shadow: var(--selector-capsule-shadow, 0 0 0 1px rgb(var(--ink-rgb) / 0.1), 0 1px 2px rgb(0 0 0 / 0.06));
     opacity: 0;
-    transition: opacity 120ms ease-out;
+    transition: opacity var(--dur-fast) var(--ease-out);
     pointer-events: none;
   }
   .capsule.shown {
@@ -274,9 +274,9 @@
   /* Reduced motion: a short, plain change instead of a spring. */
   .capsule.reduced {
     transition:
-      opacity 120ms ease-out,
-      translate 140ms ease-out,
-      width 140ms ease-out;
+      opacity var(--dur-fast) var(--ease-out),
+      translate var(--dur-fast) var(--ease-out),
+      width var(--dur-fast) var(--ease-out);
   }
   .opt {
     position: relative;
@@ -285,13 +285,13 @@
     min-height: var(--h);
     /* Tight on a narrow phone (320): less air and a hair smaller words, so every label fits
        without the group scrolling sideways. Wider, it's the usual size. */
-    padding: 0 clamp(5px, 1.5vw, calc(var(--h) / 3));
+    padding: 0 var(--s-5); /* on the spacing scale: 12 px; a small selector takes 8 (below) */
     border: 0;
     border-radius: var(--r-pill);
     background: none;
     font: inherit;
     font-size: min(var(--selector-font-size, var(--text-ui)), max(var(--text-label), 3.45vw));
-    font-weight: 500;
+    font-weight: var(--ui-weight);
     color: var(--ink-2);
     display: inline-flex;
     align-items: center;
@@ -303,8 +303,11 @@
     outline: none;
     -webkit-tap-highlight-color: transparent;
     transition:
-      color 250ms ease-out,
-      scale 150ms ease-out;
+      color var(--dur-base) var(--ease-out),
+      scale var(--dur-fast) var(--ease-out);
+  }
+  .selector.sm .opt:not(.icon-only) {
+    padding: 0 var(--s-4);
   }
   .fill .opt {
     flex: 1 1 0;
@@ -351,7 +354,7 @@
   }
   .opt[aria-selected="true"] {
     color: var(--ink);
-    font-weight: 600;
+    font-weight: var(--strong-weight);
   }
   @media (hover: hover) and (pointer: fine) {
     .opt:not([aria-selected="true"]):not([aria-disabled="true"]):hover {
@@ -380,7 +383,7 @@
   }
   .lbl::after {
     content: attr(data-text);
-    font-weight: 600;
+    font-weight: var(--strong-weight);
     visibility: hidden;
     height: 0;
     overflow: hidden;

@@ -1,18 +1,25 @@
 <script lang="ts">
   /**
-   * Declaration-driven browser shell for the real `calternal-host` (slices 4 & 5).
+   * Declaration-driven host entry in `apps/web`, mounted on the shared mockup shell
+   * (`@calternal/canvas-shell`: `Canvas`, `Sidebar`, `AppStrip`, `Grip`, `Windows`,
+   * `layout`, `watchNewWindow`, and `rows.css`).
    *
-   * Look and feel follows `origin/lane/threads-ui` (`apps/mockup`) and
-   * `docs/native-ui-study.md` / `docs/ui-craft-and-settings-study.md`:
-   * - Bare wallpaper canvas (`Backdrop`), no top bands.
-   * - Floating glass left sidebar drawn from `sidebars/*.md`.
-   * - Rounded window cards (`--r-pane`) with floating top-left title pill
-   *   and floating top-right operations pill.
-   * - Floating bottom-centre app strip (hidden on phone while an item page is open).
-   * - Zero hardcoded plugin or kind names anywhere in this directory.
+   * Zero custom shell markup or CSS; zero hardcoded plugin or kind names.
    */
   import { onDestroy, onMount } from "svelte";
-  import { applyScheme, currentScheme, Icon, ICONS, Menu, type IconName, type MenuItem } from "@calternal/ui";
+  import { applyScheme, currentScheme, Grip, Toasts, type MenuItem } from "@calternal/ui";
+  import {
+    AppStrip,
+    Canvas,
+    createWindows,
+    layout,
+    Sidebar,
+    watchNewWindow,
+    WIDTHS,
+    type StripItem,
+    type Win,
+  } from "@calternal/canvas-shell";
+  import "@calternal/canvas-shell/rows.css";
   import Backdrop from "../shell/Backdrop.svelte";
   import {
     fetchDeclarations,
@@ -59,20 +66,24 @@
   let liveState = $state<ConnectionState>("closed");
   let scheme = $state<"light" | "dark">(currentScheme());
 
-  let activePluginId = $state<string | null>(null);
-  let activeCollectionId = $state<string | null>(null);
-  let openItem = $state<RowData | null>(null);
-  let openRecords = $state<RecordData[]>([]);
-  let collectionRows = $state<Record<string, RowData[]>>({});
-  let sidebarOpen = $state(true);
-  let narrow = $state(typeof matchMedia !== "undefined" && matchMedia("(max-width: 759px)").matches);
+  let width = $state(typeof innerWidth !== "undefined" ? innerWidth : 1280);
+  const narrow = $derived(width < 720);
+  let pushed = $state(false);
+  const hidden = $derived(!narrow && !layout.leftOpen);
 
-  // Local fixture state for the growing streamed reply + Stop control surface (until slice 6 wires live runs).
+  let activePluginId = $state<string | null>(null);
+  let customSidebars = $state<{ id: string; name: string }[]>([]);
+  let stripOrder = $state<string[]>([]);
+  let collectionRows = $state<Record<string, RowData[]>>({});
+  let itemsById = $state<Record<string, RowData>>({});
+  let recordsByItem = $state<Record<string, RecordData[]>>({});
   let activeRun = $state<ActiveStreamRun | null>(null);
   let streamTimer: ReturnType<typeof setInterval> | null = null;
 
-  let headerMenuEl = $state<HTMLElement | null>(null);
-  let headerMenuOpen = $state(false);
+  const wins = createWindows((itemId) => {
+    const row = itemsById[itemId];
+    return row ? row.kind.split(".")[0] : undefined;
+  });
 
   interface SheetConfig {
     title: string;
@@ -86,74 +97,122 @@
 
   let live: LiveClient | null = null;
   let unsubQueries: (() => void)[] = [];
-  let unsubRecords: (() => void) | null = null;
+  const itemSubs = new Map<string, () => void>();
   let unsubAuthChannel: (() => void) | null = null;
 
   const plugins = $derived<PluginDecl[]>(declarations?.plugins ?? []);
+  const appPlugins = $derived(plugins.filter((p) => Object.keys(p.sidebars).length > 0));
   const activePlugin = $derived<PluginDecl | null>(
-    plugins.find((p) => p.id === activePluginId) ?? plugins[0] ?? null,
+    appPlugins.find((p) => p.id === activePluginId) ?? appPlugins[0] ?? null,
   );
   const activeSidebar = $derived<SidebarDecl | null>(
     activePlugin ? Object.values(activePlugin.sidebars)[0] ?? null : null,
   );
-  const showStrip = $derived(!(narrow && !!openItem));
 
-  function findCollection(qualified: string | null): CollectionDecl | null {
-    if (!qualified) return null;
-    const [pid, cid] = qualified.split(".");
-    const p = plugins.find((x) => x.id === pid);
-    return p?.collections[cid!] ?? null;
-  }
-
-  function findKind(qualified: string | null): KindDecl | null {
-    if (!qualified) return null;
-    const [pid, kid] = qualified.split(".");
-    const p = plugins.find((x) => x.id === pid);
-    return p?.kinds[kid!] ?? null;
-  }
-
-  const activeCollection = $derived<CollectionDecl | null>(findCollection(activeCollectionId));
-  const activeCollectionKind = $derived<KindDecl | null>(
-    activeCollection ? findKind(activeCollection.from) : null,
-  );
-  const openItemKind = $derived<KindDecl | null>(openItem ? findKind(openItem.kind) : null);
-
-  const composer = $derived(
-    activePlugin && openItemKind ? resolveComposerSlot(activePlugin, openItemKind) : null,
-  );
-  const pickerSlot = $derived(
-    activePlugin ? resolvePickerSlot(activePlugin, plugins, composer?.slot.name) : null,
-  );
-
-  const collectionCounts = $derived.by<Record<string, number>>(() => {
-    const out: Record<string, number> = {};
-    for (const [k, rows] of Object.entries(collectionRows)) {
-      out[k] = rows.length;
+  const stripItems = $derived.by<StripItem[]>(() => {
+    const base: StripItem[] = [
+      ...appPlugins.map((p) => ({ id: p.id, name: p.name, icon: p.icon || "apps" })),
+      ...customSidebars.map((c) => ({ id: c.id, name: c.name, icon: "sidebar" })),
+    ];
+    if (!stripOrder.length) return base;
+    const byId = new Map(base.map((x) => [x.id, x]));
+    const ordered: StripItem[] = [];
+    for (const id of stripOrder) {
+      const it = byId.get(id);
+      if (it) { ordered.push(it); byId.delete(id); }
     }
-    return out;
+    return [...ordered, ...byId.values()];
   });
 
-  const activeRows = $derived<RowData[]>(
-    activeCollectionId ? collectionRows[activeCollectionId] ?? [] : [],
+  const sidebarTitle = $derived(
+    activePluginId
+      ? (stripItems.find((x) => x.id === activePluginId)?.name ?? "calternal")
+      : "calternal",
   );
 
-  const itemActions = $derived<DerivedAction[]>(
-    openItem && openItemKind ? itemMenuActions(openItem, openItemKind) : [],
-  );
-  const itemMenuItems = $derived<MenuItem[]>(
-    itemActions.map((a) => ({ id: a.id, label: a.label, danger: a.danger })),
-  );
+  function findCollection(qualified: string): CollectionDecl | null {
+    const [pid, cid] = qualified.split(".");
+    return plugins.find((p) => p.id === pid)?.collections[cid!] ?? null;
+  }
+
+  function findKind(qualified: string): KindDecl | null {
+    const [pid, kid] = qualified.split(".");
+    return plugins.find((p) => p.id === pid)?.kinds[kid!] ?? null;
+  }
+
+  function defaultCollectionFor(plugin: PluginDecl): CollectionDecl | null {
+    const sb = Object.values(plugin.sidebars)[0];
+    const entry =
+      sb?.entries.find(
+        (e) => e.type === "collection" && e.collection && plugin.collections[e.collection.split(".")[1]!]?.views[0]?.type === "list",
+      ) ?? sb?.entries.find((e) => e.type === "collection");
+    return entry?.collection ? findCollection(entry.collection) : Object.values(plugin.collections)[0] ?? null;
+  }
+
+  function ensureItemSubscribed(itemId: string) {
+    if (!live || itemSubs.has(itemId)) return;
+    const unsub = live.subscribeRecords(itemId, {
+      onSnapshot: (recs, meta) => {
+        recordsByItem = { ...recordsByItem, [itemId]: recs };
+        applyLiveMeta(itemId, meta);
+      },
+      onDelta: (recs, meta) => {
+        const cur = recordsByItem[itemId] ?? [];
+        if (recs.length) {
+          const seen = new Set(cur.map((r) => r.anchor));
+          const fresh = recs.filter((r) => !seen.has(r.anchor));
+          if (fresh.length) recordsByItem = { ...recordsByItem, [itemId]: [...cur, ...fresh] };
+        }
+        applyLiveMeta(itemId, meta);
+      },
+      onAppend: (rec, version) => {
+        const cur = recordsByItem[itemId] ?? [];
+        if (!cur.some((r) => r.anchor === rec.anchor)) {
+          recordsByItem = { ...recordsByItem, [itemId]: [...cur, rec] };
+        }
+        const existing = itemsById[itemId];
+        if (existing) itemsById = { ...itemsById, [itemId]: { ...existing, version } };
+      },
+      onItemChange: (meta) => applyLiveMeta(itemId, meta),
+    });
+    itemSubs.set(itemId, unsub);
+  }
+
+  function applyLiveMeta(itemId: string, meta: LiveItemMetadata) {
+    const existing = itemsById[itemId];
+    if (existing) {
+      itemsById = {
+        ...itemsById,
+        [itemId]: {
+          ...existing,
+          version: meta.version,
+          fields: meta.fields,
+          computed: meta.computed,
+          state: meta.state,
+          when: meta.when,
+        },
+      };
+    }
+  }
+
+  // Keep open item windows subscribed to live records automatically.
+  $effect(() => {
+    const openIds = new Set<string>();
+    for (const w of wins.list) {
+      if (w.kind === "item") openIds.add(w.ref);
+      else if (w.kind === "app" && w.sel) openIds.add(w.sel);
+    }
+    for (const id of openIds) ensureItemSubscribed(id);
+    for (const [id, unsub] of itemSubs) {
+      if (!openIds.has(id)) { unsub(); itemSubs.delete(id); }
+    }
+  });
 
   function stopStreamFixture() {
-    if (streamTimer) {
-      clearInterval(streamTimer);
-      streamTimer = null;
-    }
+    if (streamTimer) { clearInterval(streamTimer); streamTimer = null; }
     if (activeRun) {
       activeRun = { ...activeRun, status: "stopping" };
-      setTimeout(() => {
-        activeRun = null;
-      }, 150);
+      setTimeout(() => (activeRun = null), 150);
     }
   }
 
@@ -174,30 +233,14 @@
   }
 
   function cleanupLive() {
-    if (streamTimer) {
-      clearInterval(streamTimer);
-      streamTimer = null;
-    }
+    if (streamTimer) { clearInterval(streamTimer); streamTimer = null; }
     activeRun = null;
-    unsubRecords?.();
-    unsubRecords = null;
+    for (const unsub of itemSubs.values()) unsub();
+    itemSubs.clear();
     for (const u of unsubQueries) u();
     unsubQueries = [];
     live?.close();
     live = null;
-  }
-
-  function applyLiveMeta(itemId: string, meta: LiveItemMetadata) {
-    if (openItem && openItem.id === itemId) {
-      openItem = {
-        ...openItem,
-        version: meta.version,
-        fields: meta.fields,
-        computed: meta.computed,
-        state: meta.state,
-        when: meta.when,
-      };
-    }
   }
 
   async function bootSession(s: SessionInfo) {
@@ -206,16 +249,8 @@
     try {
       const decl = await fetchDeclarations(s);
       declarations = decl;
-      const firstPlugin = decl.plugins[0] ?? null;
+      const firstPlugin = decl.plugins.find((p) => Object.keys(p.sidebars).length > 0) ?? decl.plugins[0] ?? null;
       activePluginId = firstPlugin?.id ?? null;
-      const firstSidebar = firstPlugin ? Object.values(firstPlugin.sidebars)[0] ?? null : null;
-      const defaultCol =
-        firstSidebar?.entries.find(
-          (e) => e.type === "collection" && e.collection && firstPlugin?.collections[e.collection.split(".")[1]!]?.views[0]?.type === "list",
-        )?.collection ??
-        firstSidebar?.entries.find((e) => e.type === "collection")?.collection ??
-        null;
-      activeCollectionId = defaultCol;
 
       live = new LiveClient(s, (st) => (liveState = st));
       (window as unknown as Record<string, unknown>).__hostLive = {
@@ -224,77 +259,71 @@
         startStreamDemo: (label: string, text: string) => startStreamFixture(label, text),
       };
 
-      if (firstPlugin) {
-        for (const col of Object.values(firstPlugin.collections)) {
+      for (const p of decl.plugins) {
+        for (const col of Object.values(p.collections)) {
           const cid = col.qualified;
           const unsub = live.subscribeQuery({ collection: cid }, (rows) => {
             collectionRows = { ...collectionRows, [cid]: rows };
-            if (openItem) {
-              const updated = rows.find((r) => r.id === openItem!.id);
-              if (updated) openItem = updated;
-            }
+            const nextItems = { ...itemsById };
+            for (const r of rows) nextItems[r.id] = r;
+            itemsById = nextItems;
           });
           unsubQueries.push(unsub);
         }
+      }
+
+      if (firstPlugin) {
+        const defCol = defaultCollectionFor(firstPlugin);
+        if (defCol) wins.navigate("collection", defCol.qualified);
       }
     } catch (err) {
       loadError = err instanceof Error ? err.message : "Could not connect to host.";
     }
   }
 
-  function subscribeOpenItem(item: RowData | null) {
-    unsubRecords?.();
-    unsubRecords = null;
-    openRecords = [];
-    if (streamTimer) {
-      clearInterval(streamTimer);
-      streamTimer = null;
-    }
-    activeRun = null;
-    if (!item || !live) return;
-    unsubRecords = live.subscribeRecords(item.id, {
-      onSnapshot: (recs, meta) => {
-        openRecords = recs;
-        applyLiveMeta(item.id, meta);
-      },
-      onDelta: (recs, meta) => {
-        if (recs.length) {
-          const seen = new Set(openRecords.map((r) => r.anchor));
-          const fresh = recs.filter((r) => !seen.has(r.anchor));
-          if (fresh.length) openRecords = [...openRecords, ...fresh];
-        }
-        applyLiveMeta(item.id, meta);
-      },
-      onAppend: (rec, version) => {
-        if (!openRecords.some((r) => r.anchor === rec.anchor)) {
-          openRecords = [...openRecords, rec];
-        }
-        if (openItem && openItem.id === item.id) {
-          openItem = { ...openItem, version };
-        }
-      },
-      onItemChange: (meta) => applyLiveMeta(item.id, meta),
-    });
+  function openItem(row: RowData) {
+    itemsById = { ...itemsById, [row.id]: row };
+    wins.openItemById(row.id);
+    pushed = true;
   }
 
-  function selectCollection(cid: string) {
-    activeCollectionId = cid;
-    if (narrow) {
-      sidebarOpen = false;
-      openItem = null;
-      subscribeOpenItem(null);
+  function openCollection(cid: string) {
+    wins.navigate("collection", cid);
+    pushed = true;
+  }
+
+  function selectStrip(id: string | null) {
+    activePluginId = id;
+    if (!id) {
+      if (wins.focused?.kind === "app") wins.close(wins.focused.id);
+      return;
+    }
+    const p = appPlugins.find((x) => x.id === id);
+    if (p) {
+      const defCol = defaultCollectionFor(p);
+      if (defCol) wins.navigate("collection", defCol.qualified);
+      else wins.navigate("app", p.id);
     }
   }
 
-  function selectItem(row: RowData) {
-    openItem = row;
-    subscribeOpenItem(row);
-    if (narrow) sidebarOpen = false;
+  function placeStrip(id: string, index: number) {
+    const ids = stripItems.map((x) => x.id);
+    const from = ids.indexOf(id);
+    if (from < 0) return;
+    ids.splice(from, 1);
+    ids.splice(Math.max(0, Math.min(ids.length, index)), 0, id);
+    stripOrder = ids;
   }
 
-  function closeItem() {
-    openItem = null;
-    subscribeOpenItem(null);
+  function moveStrip(id: string, by: number) {
+    const ids = stripItems.map((x) => x.id);
+    placeStrip(id, ids.indexOf(id) + by);
+  }
+
+  function addCustomSidebar(name: string): string {
+    const id = `sb-${Date.now().toString(36)}`;
+    customSidebars = [...customSidebars, { id, name }];
+    return id;
   }
 
   function openAddSheet(kind: KindDecl) {
@@ -328,7 +357,7 @@
             computed: {},
             version: res.changes[0]?.version ?? 0,
           };
-          selectItem(created);
+          openItem(created);
         }
       },
     };
@@ -367,35 +396,26 @@
         fields,
         onsubmit: async (vals) => {
           if (!session) return;
-          await hostCall(
-            session,
-            qualifiedOp,
-            { item: row.id, ...vals },
-            `op-${crypto.randomUUID()}`,
-          );
+          await hostCall(session, qualifiedOp, { item: row.id, ...vals }, `op-${crypto.randomUUID()}`);
         },
       };
     }
   }
 
-  async function sendRecord(body: string, quoteAnchor?: string, selectedFiller?: string | null) {
-    if (!session || !openItem || !openItemKind || !composer) return;
-    const qualifiedOp = `${openItemKind.plugin}.${openItemKind.id}.${composer.operation.name}`;
-    const input: Record<string, unknown> = {
-      item: openItem.id,
-      [composer.textInput]: body,
-    };
-    if (quoteAnchor && composer.quoteInput) {
-      input[composer.quoteInput] = quoteAnchor;
-    }
-    const slotSelection =
-      selectedFiller && pickerSlot ? { slot: pickerSlot.slot.name, filler: selectedFiller } : undefined;
+  async function sendRecord(item: RowData, kind: KindDecl, body: string, quoteAnchor?: string, selectedFiller?: string | null) {
+    const plugin = plugins.find((p) => p.id === kind.plugin);
+    const comp = plugin ? resolveComposerSlot(plugin, kind) : null;
+    const picker = plugin ? resolvePickerSlot(plugin, plugins, comp?.slot.name) : null;
+    if (!session || !comp) return;
+    const qualifiedOp = `${kind.plugin}.${kind.id}.${comp.operation.name}`;
+    const input: Record<string, unknown> = { item: item.id, [comp.textInput]: body };
+    if (quoteAnchor && comp.quoteInput) input[comp.quoteInput] = quoteAnchor;
+    const slotSelection = selectedFiller && picker ? { slot: picker.slot.name, filler: selectedFiller } : undefined;
     await hostCall(session, qualifiedOp, input, `send-${crypto.randomUUID()}`, slotSelection);
   }
 
-  function openEditRecord(rec: RecordData) {
-    if (!session || !openItem) return;
-    const itemId = openItem.id;
+  function openEditRecord(itemId: string, rec: RecordData) {
+    if (!session) return;
     sheet = {
       title: "Edit record",
       submitLabel: "Save",
@@ -409,9 +429,8 @@
     };
   }
 
-  function openRemoveRecord(rec: RecordData) {
-    if (!session || !openItem) return;
-    const itemId = openItem.id;
+  function openRemoveRecord(itemId: string, rec: RecordData) {
+    if (!session) return;
     sheet = {
       title: "Remove record",
       submitLabel: "Remove",
@@ -426,6 +445,32 @@
     };
   }
 
+  function windowTitle(w: Win): string {
+    if (w.kind === "collection") return findCollection(w.ref)?.title ?? "";
+    if (w.kind === "item") {
+      const row = itemsById[w.ref];
+      return row ? rowTitle(row, findKind(row.kind) ?? undefined) : "";
+    }
+    return plugins.find((p) => p.id === w.ref)?.name ?? "";
+  }
+
+  function windowExtraMenu(w: Win): MenuItem[] {
+    if (w.kind !== "item") return [];
+    const row = itemsById[w.ref];
+    const kind = row ? findKind(row.kind) : null;
+    if (!row || !kind) return [];
+    return itemMenuActions(row, kind).map((a) => ({ id: `op:${a.id}`, label: a.label, danger: a.danger }));
+  }
+
+  function windowMenuPick(w: Win, id: string) {
+    if (!id.startsWith("op:") || w.kind !== "item") return;
+    const row = itemsById[w.ref];
+    const kind = row ? findKind(row.kind) : null;
+    if (!row || !kind) return;
+    const act = itemMenuActions(row, kind).find((a) => `op:${a.id}` === id);
+    if (act) void runAction(row, act);
+  }
+
   function toggleScheme() {
     scheme = scheme === "dark" ? "light" : "dark";
     applyScheme(scheme);
@@ -433,12 +478,14 @@
 
   function resetToSignedOut() {
     cleanupLive();
+    wins.clear();
     session = null;
     declarations = null;
-    openItem = null;
-    openRecords = [];
     collectionRows = {};
+    itemsById = {};
+    recordsByItem = {};
     needsSetup = false;
+    pushed = false;
   }
 
   async function handleSignOut() {
@@ -448,14 +495,30 @@
     resetToSignedOut();
   }
 
+  const accountItems = $derived<MenuItem[]>([
+    { id: "scheme", label: scheme === "dark" ? "Light appearance" : "Dark appearance", icon: scheme === "dark" ? "sun" : "moon" },
+    { id: "out", label: "Sign out", icon: "signout", danger: true },
+  ]);
+  const spaceItems = $derived<MenuItem[]>([
+    { id: "personal", label: "Personal", sub: "Only you", icon: "folder", checked: true },
+  ]);
+
   onMount(() => {
-    const mq = matchMedia("(max-width: 759px)");
-    const syncNarrow = () => {
-      narrow = mq.matches;
-      if (narrow) sidebarOpen = false;
+    const onResize = () => (width = innerWidth);
+    addEventListener("resize", onResize);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey && e.ctrlKey && e.code === "KeyS") {
+        e.preventDefault();
+        layout.leftOpen = !layout.leftOpen;
+      }
     };
-    mq.addEventListener("change", syncNarrow);
-    if (narrow) sidebarOpen = false;
+    addEventListener("keydown", onKey);
+    const stopIntent = watchNewWindow(
+      wins,
+      (id) => (activePluginId = id),
+      () => !narrow && !!session,
+      (id) => id in itemsById,
+    );
 
     const qScheme = new URLSearchParams(location.search).get("scheme");
     if (qScheme === "dark" || qScheme === "light") {
@@ -463,9 +526,7 @@
       applyScheme(qScheme);
     }
 
-    unsubAuthChannel = subscribeAuthChannel(() => {
-      resetToSignedOut();
-    });
+    unsubAuthChannel = subscribeAuthChannel(() => resetToSignedOut());
 
     void sessionStatus()
       .then((status) => {
@@ -484,7 +545,9 @@
       });
 
     return () => {
-      mq.removeEventListener("change", syncNarrow);
+      removeEventListener("resize", onResize);
+      removeEventListener("keydown", onKey);
+      stopIntent();
       unsubAuthChannel?.();
     };
   });
@@ -493,10 +556,11 @@
 </script>
 
 <Backdrop />
+<Toasts bottom={24} />
 
 {#if checkingSession}
   <main class="boot-wait" aria-busy="true" aria-label="Loading">
-    <p class="mark">Calternal</p>
+    <p class="mark">calternal</p>
   </main>
 {:else if !session}
   <HostSignIn
@@ -510,180 +574,149 @@
     }}
   />
 {:else}
-  <div class="host-shell" class:narrow data-live={liveState}>
-    {#if sidebarOpen && activeSidebar}
-      <aside class="side-slot" aria-label="Navigation">
-        <HostSidebar
-          sidebar={activeSidebar}
-          activeCollection={activeCollectionId}
-          counts={collectionCounts}
-          addKind={activeCollectionKind}
-          onselect={selectCollection}
-          onadd={openAddSheet}
-          onsignout={handleSignOut}
-          accountName={session.name}
-        />
-      </aside>
+  <div
+    class="shell"
+    class:narrow
+    class:closed={hidden}
+    data-shell
+    data-pushed={pushed}
+    data-live={liveState}
+    style:--sw={hidden ? undefined : `${layout.left}px`}
+  >
+    <aside class="side" inert={hidden}>
+      <Sidebar
+        title={sidebarTitle}
+        home={sidebarTitle === "calternal"}
+        onhome={() => { activePluginId = null; wins.clear(); }}
+        {narrow}
+        cursive={sidebarTitle === "calternal"}
+        accountName={session.name}
+        {accountItems}
+        onAccountPick={(id) => { if (id === "scheme") toggleScheme(); else if (id === "out") void handleSignOut(); }}
+        spaceName="Personal"
+        {spaceItems}
+        onsearch={() => {}}
+      >
+        {#snippet body()}
+          {#if activeSidebar && activePlugin}
+            <HostSidebar
+              sidebar={activeSidebar}
+              collections={activePlugin.collections}
+              kinds={activePlugin.kinds}
+              rowsByCollection={collectionRows}
+              selectedItemId={wins.selected}
+              {narrow}
+              onopenItem={openItem}
+              onopenCollection={openCollection}
+              onadd={openAddSheet}
+            />
+          {/if}
+        {/snippet}
+      </Sidebar>
+    </aside>
+
+    {#if !narrow && !hidden}
+      <Grip
+        label="Resize the sidebar"
+        min={WIDTHS.left.min}
+        max={WIDTHS.left.max}
+        now={layout.left}
+        style="left: calc(var(--sw) - var(--s-7) / 2 - 2px)"
+        onmove={(e) => layout.setWidth("left", e.clientX - 4)}
+        onkey={(e) => {
+          const d = e.shiftKey ? 64 : 16;
+          let w = layout.left;
+          if (e.key === "ArrowRight") w += d;
+          else if (e.key === "ArrowLeft") w -= d;
+          else if (e.key === "Home") w = WIDTHS.left.min;
+          else if (e.key === "End") w = WIDTHS.left.max;
+          else if (e.key === "Enter") { layout.setWidth("left", null); e.preventDefault(); return; }
+          else return;
+          e.preventDefault();
+          layout.setWidth("left", w);
+        }}
+        onreset={() => layout.setWidth("left", null)}
+      />
     {/if}
 
-    <main class="canvas" aria-label="Workspace">
+    <main class="mid" data-dock="show">
       {#if loadError}
-        <div class="card err-card" role="alert">
-          <p>{loadError}</p>
-        </div>
+        <p class="err" role="alert">{loadError}</p>
       {:else}
-        <div
-          class="windows"
-          class:split={!narrow && !!openItem && !!activeCollection}
-          class:no-strip={!showStrip}
+        <Canvas
+          {wins}
+          titleOf={windowTitle}
+          extraMenu={windowExtraMenu}
+          onMenuPick={windowMenuPick}
+          {narrow}
+          sidebarHidden={hidden}
+          onsidebar={() => (layout.leftOpen = true)}
+          onback={() => (pushed = false)}
         >
-          {#if activeCollection && (!narrow || !openItem)}
-            <section class="card win" aria-label={activeCollection.title}>
-              <div class="float-bar">
-                <span class="title-pill">
-                  {#if narrow}
-                    <button
-                      type="button"
-                      class="pill-btn"
-                      aria-label="Toggle sidebar"
-                      onclick={() => (sidebarOpen = !sidebarOpen)}
-                    >
-                      <Icon name="sidebar" inline />
-                    </button>
-                  {/if}
-                  <span class="pill-title">{activeCollection.title}</span>
-                </span>
-                {#if activeCollectionKind?.operations.add}
-                  <div class="act-pill">
-                    <button
-                      type="button"
-                      class="pill-btn"
-                      aria-label={`New ${activeCollectionKind.name}`}
-                      onclick={() => openAddSheet(activeCollectionKind!)}
-                    >
-                      <Icon name="plus" inline />
-                    </button>
-                  </div>
-                {/if}
-              </div>
-              <HostCollection
-                collection={activeCollection}
-                kind={activeCollectionKind}
-                rows={activeRows}
-                selectedId={openItem?.id ?? null}
-                onopen={selectItem}
-                onadd={openAddSheet}
-                onaction={runAction}
-              />
-            </section>
-          {/if}
-
-          {#if openItem && openItemKind}
-            <section class="card win detail" aria-label={rowTitle(openItem, openItemKind)}>
-              <div class="float-bar">
-                <span class="title-pill">
-                  <button
-                    type="button"
-                    class="pill-btn"
-                    aria-label="Back"
-                    onclick={closeItem}
-                  >
-                    <Icon name="back" inline />
-                  </button>
-                  <span class="pill-title" data-open-title>{rowTitle(openItem, openItemKind)}</span>
-                </span>
-                <div class="act-pill">
-                  {#if itemMenuItems.length}
-                    <button
-                      type="button"
-                      class="pill-btn"
-                      bind:this={headerMenuEl}
-                      aria-label="Item actions"
-                      onclick={() => (headerMenuOpen = !headerMenuOpen)}
-                    >
-                      <Icon name="more" inline />
-                    </button>
-                  {/if}
-                  {#if !narrow}
-                    <button
-                      type="button"
-                      class="pill-btn"
-                      aria-label="Close window"
-                      onclick={closeItem}
-                    >
-                      <Icon name="close" inline />
-                    </button>
-                  {/if}
-                </div>
-              </div>
-              <HostRecords
-                row={openItem}
-                kind={openItemKind}
-                records={openRecords}
-                viewerId={session.account}
-                {composer}
-                {pickerSlot}
-                {activeRun}
-                onsend={sendRecord}
-                onstoprun={stopStreamFixture}
-                oneditrecord={openEditRecord}
-                onremoverecord={openRemoveRecord}
-              />
-            </section>
-          {/if}
-        </div>
+          {#snippet renderBody(w)}
+            {#if w.kind === "collection"}
+              {@const col = findCollection(w.ref)}
+              {@const kind = col ? findKind(col.from) : null}
+              {#if col}
+                <HostCollection
+                  collection={col}
+                  {kind}
+                  rows={collectionRows[w.ref] ?? []}
+                  selectedId={wins.selected}
+                  onopen={openItem}
+                  onadd={openAddSheet}
+                  onaction={runAction}
+                />
+              {/if}
+            {:else if w.kind === "item"}
+              {@const row = itemsById[w.ref]}
+              {@const kind = row ? findKind(row.kind) : null}
+              {@const plugin = kind ? plugins.find((p) => p.id === kind.plugin) ?? null : null}
+              {@const comp = plugin && kind ? resolveComposerSlot(plugin, kind) : null}
+              {@const picker = plugin ? resolvePickerSlot(plugin, plugins, comp?.slot.name) : null}
+              {#if row && kind}
+                <HostRecords
+                  {row}
+                  {kind}
+                  records={recordsByItem[row.id] ?? []}
+                  viewerId={session.account}
+                  composer={comp}
+                  pickerSlot={picker}
+                  {activeRun}
+                  onsend={(body, quote, filler) => sendRecord(row, kind, body, quote, filler)}
+                  onstoprun={stopStreamFixture}
+                  oneditrecord={(rec) => openEditRecord(row.id, rec)}
+                  onremoverecord={(rec) => openRemoveRecord(row.id, rec)}
+                />
+              {/if}
+            {/if}
+          {/snippet}
+        </Canvas>
       {/if}
-
-      <!-- Bottom-centre floating glass strip (hidden on phone when an item page is open, per owner decision) -->
-      {#if showStrip}
-        <nav class="strip" aria-label="Workspace controls">
-          <button
-            type="button"
-            class="strip-btn"
-            aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-            aria-pressed={sidebarOpen}
-            onclick={() => (sidebarOpen = !sidebarOpen)}
-          >
-            <Icon name="sidebar" inline />
-          </button>
-          {#each plugins.filter((p) => Object.keys(p.sidebars).length > 0) as p (p.id)}
-            <button
-              type="button"
-              class="strip-btn app-btn"
-              class:cur={activePlugin?.id === p.id}
-              aria-label={p.name}
-              aria-current={activePlugin?.id === p.id ? "page" : undefined}
-              onclick={() => (activePluginId = p.id)}
-            >
-              <Icon name={(p.icon in ICONS ? p.icon : "apps") as IconName} inline />
-              <span class="strip-lbl">{p.name}</span>
-            </button>
-          {/each}
-          <button
-            type="button"
-            class="strip-btn"
-            aria-label={scheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            onclick={toggleScheme}
-          >
-            <Icon name={scheme === "dark" ? "sun" : "moon"} inline />
-          </button>
-        </nav>
+      {#if !narrow}
+        <AppStrip
+          items={stripItems}
+          current={activePluginId}
+          onselect={selectStrip}
+          onplace={placeStrip}
+          onmove={moveStrip}
+          onadd={addCustomSidebar}
+        />
       {/if}
     </main>
-  </div>
 
-  <Menu
-    open={headerMenuOpen}
-    items={itemMenuItems}
-    label="Item actions"
-    onpick={(id) => {
-      headerMenuOpen = false;
-      const act = itemActions.find((a) => a.id === id);
-      if (act && openItem) void runAction(openItem, act);
-    }}
-    onclose={() => (headerMenuOpen = false)}
-    trigger={headerMenuEl}
-  />
+    {#if narrow && !pushed}
+      <AppStrip
+        items={stripItems}
+        current={activePluginId}
+        onselect={selectStrip}
+        onplace={placeStrip}
+        onmove={moveStrip}
+        onadd={addCustomSidebar}
+        narrow
+      />
+    {/if}
+  </div>
 
   {#if sheet}
     <HostFormSheet
@@ -699,185 +732,20 @@
 {/if}
 
 <style>
-  .boot-wait {
-    min-height: 100dvh;
-    display: grid;
-    place-content: center;
-    position: relative;
-    z-index: 1;
-  }
-  .mark {
-    font-family: var(--font-brand, var(--font-ui));
-    font-size: var(--text-title);
-    font-weight: var(--strong-weight);
-    color: var(--ink);
-    margin: 0;
-  }
-  .host-shell {
-    position: fixed;
-    inset: 0;
-    z-index: 1;
-    display: flex;
-    gap: var(--inset, 8px);
-    padding: var(--inset, 8px);
-    box-sizing: border-box;
-    color: var(--ink);
-  }
-  .side-slot {
-    width: var(--side-w, 240px);
-    flex: none;
-    min-height: 0;
-    animation: slideIn var(--dur-base) var(--ease-out);
-  }
-  @keyframes slideIn {
-    from { opacity: 0; translate: -10px 0; }
-  }
-  .canvas {
-    flex: 1;
-    min-width: 0;
-    min-height: 0;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-  }
-  .windows {
-    flex: 1;
-    min-height: 0;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--inset, 8px);
-    padding-bottom: calc(var(--tier-cap, 48px) + var(--s-4));
-  }
-  .windows.no-strip {
-    padding-bottom: 0;
-  }
-  .windows.split {
-    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
-  }
-  .card {
-    position: relative;
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    border-radius: var(--r-pane, 28px);
-    background: var(--paper);
-    box-shadow: var(--shadow-card);
-    overflow: hidden;
-    animation: cardIn var(--dur-base) var(--ease-out);
-  }
-  @keyframes cardIn {
-    from { opacity: 0; scale: var(--enter-scale); }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .side-slot, .card { animation: none; }
-  }
-  .err-card {
-    margin: auto;
-    padding: var(--s-6);
-    color: var(--danger);
-  }
+  .boot-wait { min-height: 100dvh; display: grid; place-content: center; position: relative; z-index: 1; }
+  .mark { font-family: var(--wm-font, var(--font-ui)); font-size: var(--text-title); font-weight: var(--strong-weight); color: var(--ink); margin: 0; }
+  .err { margin: auto; padding: var(--s-6); color: var(--danger); }
 
-  /* Floating pills over content — no top bands (mockup & native-ui-study §2.1) */
-  .float-bar {
-    position: absolute;
-    top: var(--s-3);
-    left: var(--s-4);
-    right: var(--s-4);
-    z-index: 5;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--s-3);
-    pointer-events: none;
-  }
-  .title-pill,
-  .act-pill {
-    pointer-events: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-2);
-    min-height: 38px;
-    padding: 0 var(--s-3);
-    border-radius: var(--r-pill);
-    background: rgb(var(--tint) / 0.78);
-    backdrop-filter: blur(var(--glass-blur, 16px)) saturate(var(--glass-sat, 180%));
-    -webkit-backdrop-filter: blur(var(--glass-blur, 16px)) saturate(var(--glass-sat, 180%));
-    box-shadow: var(--glass-edge), var(--shadow-float);
-    max-width: min(75%, 24rem);
-  }
-  .pill-title {
-    padding: 0 var(--s-3);
-    font-size: var(--text-ui);
-    font-weight: var(--strong-weight);
-    color: var(--ink);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .pill-btn {
-    width: 32px;
-    height: 32px;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--ink);
-    display: grid;
-    place-items: center;
-    cursor: pointer;
-    transition: background-color var(--dur-fast) var(--ease-out), scale var(--dur-fast) var(--ease-out);
-  }
-  .pill-btn:hover { background: var(--hover); }
-  .pill-btn:active { scale: var(--press-scale); }
-  .pill-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-  /* Bottom-centre floating strip (mockup AppStrip) */
-  .strip {
-    position: absolute;
-    left: 50%;
-    bottom: var(--s-2);
-    translate: -50% 0;
-    z-index: 10;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-2);
-    height: var(--tier-cap, 48px);
-    padding: 0 var(--s-3);
-    border-radius: var(--r-pill);
-    background: rgb(var(--tint) / 0.78);
-    backdrop-filter: blur(var(--glass-blur, 16px)) saturate(var(--glass-sat, 180%));
-    -webkit-backdrop-filter: blur(var(--glass-blur, 16px)) saturate(var(--glass-sat, 180%));
-    box-shadow: var(--glass-edge), var(--shadow-float);
-  }
-  .strip-btn {
-    height: 36px;
-    min-width: 36px;
-    padding: 0 var(--s-3);
-    border: 0;
-    border-radius: var(--r-pill);
-    background: transparent;
-    color: var(--ink-2);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--s-2);
-    font: inherit;
-    font-size: var(--text-label);
-    font-weight: var(--strong-weight);
-    cursor: pointer;
-    transition: background-color var(--dur-fast) var(--ease-out), scale var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-  }
-  .strip-btn:hover { background: var(--hover); color: var(--ink); }
-  .strip-btn:active { scale: var(--press-scale); }
-  .strip-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .strip-btn.cur { background: var(--accent-soft); color: var(--accent); }
-
-  .host-shell.narrow .side-slot {
-    position: fixed;
-    inset: var(--inset, 8px) auto calc(var(--tier-cap, 48px) + var(--s-5)) var(--inset, 8px);
-    width: min(82vw, 300px);
-    z-index: 20;
-  }
-  .host-shell.narrow .pill-btn { width: 38px; height: 38px; }
-  .host-shell.narrow .strip-btn { height: 40px; min-width: 40px; }
+  /* Exact shell grid from apps/mockup/src/App.svelte */
+  .shell { position: fixed; inset: 0; z-index: 1; display: grid; grid-template-columns: var(--sw, 19rem) minmax(0, 1fr); gap: var(--s-3); padding: var(--s-3) 0 var(--s-3) 0; box-sizing: border-box; transition: grid-template-columns var(--dur-slow) var(--ease-out); }
+  .shell.closed { grid-template-columns: 0 minmax(0, 1fr); padding-left: var(--s-3); }
+  .shell.closed .side { opacity: 0; translate: -2rem 0; }
+  .side { --ink-2: var(--l-ink2, currentcolor); --ink-3: var(--l-ink3, currentcolor); min-width: 0; min-height: 0; overflow: hidden; transition: opacity var(--dur-base) var(--ease-out), translate var(--dur-slow) var(--ease-out); }
+  .mid { --ink-2: var(--c-ink2, currentcolor); --ink-3: var(--c-ink3, currentcolor); position: relative; min-width: 0; min-height: 0; display: block; --dock-space: calc(var(--tb-h) + var(--s-5) + var(--s-5) - var(--s-3)); box-sizing: border-box; }
+  .shell:not(.narrow) .mid { margin-block: calc(var(--s-3) * -1); padding-bottom: var(--dock-space); transition: padding-bottom var(--dur-morph) var(--ease-morph); }
+  .narrow { display: block; padding: 0; }
+  .narrow .side, .narrow .mid { position: absolute; inset: 0; transition: translate var(--dur-slow) var(--ease-out); }
+  .narrow .mid { padding: var(--s-3); box-sizing: border-box; translate: 100% 0; }
+  .narrow[data-pushed="true"] .mid { translate: 0 0; }
+  .narrow[data-pushed="true"] .side { translate: -20% 0; opacity: 0; visibility: hidden; transition: translate var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out), visibility 0s linear var(--dur-slow); }
 </style>

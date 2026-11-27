@@ -117,7 +117,7 @@
   .btn.held { cursor: grabbing; }
   /* A bigger target than the track (44 px on touch comes from the row). */
   .btn::after { content: ""; position: absolute; inset: calc(var(--s-2) * -1); }
-  .track { position: relative; display: block; width: var(--tw); height: var(--th); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.18); transition: background-color var(--dur-base) ease; }
+  .track { position: relative; display: block; width: var(--tw); height: var(--th); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.18); transition: background-color var(--dur-base) var(--ease-out); }
   .btn[aria-checked="true"] .track { background: var(--accent-base); }
   .knob { position: absolute; left: var(--ti); top: var(--ti); width: var(--tk); height: var(--tk); border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); transform-origin: center; transition: scale var(--dur-base) var(--spring); }
   /* At rest the position is CSS alone (the spring only runs while it moves). */

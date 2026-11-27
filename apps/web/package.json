@@ -8,7 +8,7 @@
   "scripts": {
     "prepare:assets": "node scripts/fonts.mjs && node scripts/wallpapers.mjs && npm run tokens --workspace @calternal/ui && npm run build --workspace @calternal/genui",
     "dev": "npm run prepare:assets && vite --host 0.0.0.0",
-    "build": "npm run prepare:assets && svelte-check --tsconfig ./tsconfig.json && vite build",
+    "build": "node ../../packages/canvas-shell/scripts/check-chrome.mjs && npm run prepare:assets && svelte-check --tsconfig ./tsconfig.json && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "check": "npm run prepare:assets && svelte-check --tsconfig ./tsconfig.json",
     "test": "npm run prepare:assets && vitest run",
@@ -17,6 +17,7 @@
     "e2e:quiet": "node e2e/quiet.mjs"
   },
   "dependencies": {
+    "@calternal/canvas-shell": "*",
     "@calternal/genui": "*",
     "@calternal/ui": "*"
   },

@@ -1,0 +1,79 @@
+/* The one title edge of a sidebar row: a fixed-width lead slot (the mark: an icon, an avatar, a check, a thumbnail, a day), then a gap, then the title. Row padding 12 + lead 22 + gap 8 = the title at 42 px from the sidebar's edge in every app. */
+:root { --lead: 28px; --lead-gap: var(--s-4); /* the fill behind white text (counts, send, a ticked box): the accent darkened until the white passes 4.5:1 */ --badge-bg: color-mix(in oklab, var(--accent-base) 58%, black); }
+
+/* Safari: keep the page's own text size on rotation, and no grey tap flash (every control has its own pressed state). */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+
+/* Touch: every control is at least 44 pt in both directions (the phone's minimum hit area); a visible mark may stay smaller inside it. */
+@media (hover: none) {
+  [data-sidebar-body] .sh .ab, [data-sidebar-body] .sh .grip { width: 44px; height: 44px; }
+  [data-sidebar-body] .fb, .wm .wmb, .irow .rm { min-width: 44px !important; min-height: 44px !important; }
+  [data-sidebar-body] .irow .ib, .sc-card .r .main, .tr, .row { min-height: 44px; }
+  .jb, .ask-b, .send { min-width: 44px !important; min-height: 44px !important; }
+  .ck { width: 44px !important; margin-inline: calc((var(--lead) - 44px) / 2) !important; } /* a 44 pt target around the 28 px slot: the box keeps the slot's centre */
+  [role=tablist] .opt, .fl .fc, .sf input, [data-win-body] .selector .opt { min-height: 44px !important; }
+  .opt.icon-only { min-width: 44px !important; }
+  .cv-wn .card.short { min-height: 44px; }
+  /* item pages: every button, link and field in a window and its bar is 44 pt (the grid cells of the calendar's views are drawn, not buttons in a flow, and keep their own size) */
+  [data-win-body] button:not(.ev):not(.day):not(.dn):not([role=gridcell]), [data-win-body] a[href], [data-win-body] summary, [data-win-body] [role=button], [data-win-body] input:not([type=checkbox]):not([type=radio]), [data-win-body] textarea, [data-chat-page] textarea, [data-win] .wh button { min-height: 44px; }
+  [data-win] .wh button, [data-win-body] button, [data-chat-page] textarea { min-width: 44px; }
+  [data-chat-page] textarea { min-height: 44px !important; }
+  /* a link inside running text keeps its line, and its hit area grows around it */
+  [data-win-body] a[href] { padding-block: 12px; margin-block: -12px; }
+  .pf .pc, .add input { min-height: 44px !important; } .fl .fc, .pf .pc { min-width: 44px !important; }
+}
+
+/* TASTE options, switched from the tweak panel (data attributes on the root): T5 a neutral selected-row tint, T7 centred gallery captions, T4 denser popover glass. */
+html[data-sel="neutral"] .side, html[data-sel="neutral"] .sc-card, html[data-sel="neutral"] .right { --accent-soft: rgb(var(--ink-rgb) / 0.1); }
+html[data-caps="center"] .cp { text-align: center; justify-items: center; }
+html[data-pop="dense"] [role="menu"] { background: color-mix(in srgb, var(--paper, #fff) 88%, transparent); backdrop-filter: blur(28px) saturate(1.4); }
+
+/* Reduced motion (the system setting): every transition and animation of the shell and of the apps is as good as instant, the press scale excepted (it is feedback, not motion). Script-driven motion asks `reduced()` in motion.ts; the wordmark's morph and the windows' split and close become 1 ms fades. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; transition-delay: 0s !important; scroll-behavior: auto !important; }
+}
+/* Code is on the type scale wherever it appears (a browser's own monospace size is 13 px at 0.9). */
+code, pre, kbd, samp { font-size: var(--text-label); }
+
+/* Contrast: a selected row's secondary text steps up to the next ink (it sits on a tint); the active filter chip is ink on its tint, not accent on accent. */
+.irow.sel, .sc-card .r.cur, .row.sel, .tr.sel, [aria-current="true"] { --ink-3: var(--ink-2); }
+.fc.on, .pc.on, .chip.on { color: var(--ink) !important; }
+
+/* a code block that scrolls sideways fades on the side where there is more (lib/cue.ts) */
+pre.mr { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--s-8)), transparent); mask-image: linear-gradient(to right, #000 calc(100% - var(--s-8)), transparent); }
+pre.ml { -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--s-8)); mask-image: linear-gradient(to right, transparent, #000 var(--s-8)); }
+pre.ml.mr { -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--s-8), #000 calc(100% - var(--s-8)), transparent); mask-image: linear-gradient(to right, transparent, #000 var(--s-8), #000 calc(100% - var(--s-8)), transparent); }
+
+/* the calendar's day strip: seven cells always fit a phone's width (the cell narrows, its height stays a tap), and the table scrolls sideways when its window is narrower than its columns */
+[data-win-body] .dd { min-width: 0; }
+[data-table-wrap].mr { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--s-8)), transparent); mask-image: linear-gradient(to right, #000 calc(100% - var(--s-8)), transparent); }
+[data-table-wrap].ml { -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--s-8)); mask-image: linear-gradient(to right, transparent, #000 var(--s-8)); }
+[data-table-wrap].ml.mr { -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--s-8), #000 calc(100% - var(--s-8)), transparent); mask-image: linear-gradient(to right, transparent, #000 var(--s-8), #000 calc(100% - var(--s-8)), transparent); }
+
+/* One fixed leading slot (28 px, --lead) holds the mark of every row, whatever it is (avatar, app icon, checkbox, date tile, file tile, dot), centred, so every title starts at one edge and the gap to it is equal. */
+.irow .lead, .act .lead { width: var(--lead) !important; height: var(--lead); } .irow .lead > *, .act .lead > * { max-width: var(--lead); max-height: var(--lead); }
+/* A count on a row whose highlight is already accent-coloured is neutral (not accent on accent). */
+.irow.sel .cn, .irow.sel .badge, .sc-card .r.cur .cn { background: rgb(var(--ink-rgb) / 0.2) !important; color: var(--ink) !important; }
+
+
+/* One visual size per kind of leading mark, centred in the 28 px slot: round marks (avatar, provider) 28, tiles (date, file) 26, outline glyphs 20, the task circle 20. */
+.irow .dchip { box-sizing: border-box; width: 26px; min-width: 0; height: 26px; padding: 0; display: grid; place-items: center; }
+
+/* Vertical scrollers only scroll vertically: a window's page, a note, the sidebar body and a chat's list never move sideways (overflow-x hidden, touch gestures limited to the vertical pan; a row of chips, a table or a code block that scrolls sideways is its own scroller and keeps its own axis). */
+[data-win] .scroll, .np, [data-sidebar-body], [data-chat-page] .tr { overflow-x: hidden !important; touch-action: pan-y !important; }
+/* (on a desktop-sized touch screen a sideways swipe over a window passes to the canvas of windows, which snaps; the page itself never moves sideways) */
+.shell:not(.narrow) [data-win] .scroll, .shell:not(.narrow) .np, .shell:not(.narrow) [data-chat-page] .tr { touch-action: pan-x pan-y !important; }
+/* (a sideways wheel or trackpad swipe over a window still passes on to the canvas of windows, which is the one thing that scrolls sideways) */
+
+/* TOOLBAR PILLS, from OUR measurements (docs/native-ui-study.md 2.1 and 5), not a guideline's generic number: macOS 26's toolbar band is 52 pt (`--bar-h`) and its glass capsules and circles are 38 pt high inside it (7 pt inset), glyph 16 to 18; buttons that belong together share one capsule with 1 pt dividers; a toolbar search field is 36 to 38. Touch: 44 pt minimum visible control, glyph about 22, the bottom search capsule 48. All in the shared size tokens (`--tb-h`, `--tb-glyph`, `--tb-search-h`). */
+.tbp { --ib: var(--tb-h); --glyph: var(--tb-glyph); --tb-pair-gap: calc(var(--tb-h) * 0.2); --tb-end: 0.5px; } /* multi-glyph capsules (measured in Apple Notes' toolbar, native-ui-study.md 2.1): each glyph sits in an H x H circle; the glyph centre is H/2 (+0.5) in from the capsule's end; two glyphs are 1.2 H apart centre to centre (H + 0.2 H), a group of five is 1.0 H (cells touch) */
+.roundP { width: var(--tb-h) !important; height: var(--tb-h) !important; }
+
+/* SPACING: one gap between a section's heading and its first item, one before the next heading, used by the sidebar's sections, every in-window section, the side panels and the sheets (they were 0 to 8 px; the "About this" gap was 4). */
+:root { --gap-head-items: var(--s-5); --gap-before-head: var(--s-8); }
+
+/* POLISH (audit 2026-11-24): the controls that answered neither hover nor press now do. Tint on hover (pointer only), the press scale on press, the accent ring on keyboard focus. */
+[data-sidebar-body] .fb, [data-sidebar-body] .all, .jb, .ask-b { transition: background-color var(--dur-fast) var(--ease-out), scale var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+[data-sidebar-body] .fb:active, [data-sidebar-body] .all:active, .jb:active, .ask-b:active { scale: var(--press-scale); }
+@media (hover: hover) and (pointer: fine) { [data-sidebar-body] .fb:hover, [data-sidebar-body] .all:hover { background: var(--hover); color: var(--ink-2); } .ask-b:hover { background: rgb(var(--ink-rgb) / 0.12); } .jb:hover { box-shadow: 0 1px 2px rgb(0 0 0 / 0.18), 0 6px 18px rgb(0 0 0 / 0.16); } }
+[data-sidebar-body] .fb:focus-visible, [data-sidebar-body] .all:focus-visible, .jb:focus-visible, .ask-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

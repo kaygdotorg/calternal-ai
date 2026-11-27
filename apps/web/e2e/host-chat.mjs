@@ -208,13 +208,10 @@ async function fixture(directory, origin, setupCode) {
     await a.page.fill('input[name="name"]', "Ada");
     await a.page.click('button:has-text("Create passkey")');
 
-    // Recovery codes step (shown once)
+    // Recovery codes step (shown once) — install plugins before entering the space so `calternal-host serve` has not opened the space lock yet.
     await a.page.waitForSelector('h1:has-text("Save your recovery codes")');
     const codeCount = await a.page.locator('ul[aria-label="Recovery codes"] li').count();
     assert.ok(codeCount >= 8, `expected recovery codes, got ${codeCount}`);
-    await a.page.check('input[type="checkbox"]');
-    await a.page.click('button:has-text("Continue")');
-    await a.page.waitForSelector(".host-shell");
 
     // Cookie & origin checks
     const cookie = (await a.context.cookies()).find(({ name }) => name === "__Host-calternal_session");
@@ -240,7 +237,7 @@ async function fixture(directory, origin, setupCode) {
     assert.equal(await upgradeStatus(liveUrl, "http://foreign.invalid", "same-site"), 403);
     assert.equal(await upgradeStatus(liveUrl, origin, "same-origin"), 401);
 
-    // Install Chat + Test Harness filler on the real host
+    // Install Chat + Test Harness filler on the real host before the browser opens the space
     await run(
       bin,
       ["install", directory, origin, session.account, session.space, path.join(ROOT, "plugins-v2/calternal-chat"), "--official"],
@@ -252,18 +249,23 @@ async function fixture(directory, origin, setupCode) {
       { env },
     );
 
-    // Reload to see installed declarations, then test sign-out and passkey sign-in UI
-    await a.page.reload();
-    await a.page.waitForSelector('nav[aria-label="Chat"]');
-    await a.page.click('button[aria-label="Sign out"]');
+    // Confirm recovery codes and enter workspace
+    await a.page.check('input[type="checkbox"]');
+    await a.page.click('button:has-text("Continue")');
+    await a.page.waitForSelector('[data-sidebar]');
+    await a.page.waitForSelector('[data-sidebar-body] [data-cid="calternal-chat.chats"]');
+
+    // Test sign-out (via bottom-left profile pill Account menu) and passkey sign-in UI
+    await a.page.click('[data-profile]');
+    await a.page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
     await a.page.waitForSelector('h1:has-text("Sign in")');
     assert.equal(await a.page.locator('input[name="name"]').count(), 0, "sign-in screen must not ask for a name");
     await a.page.click('button:has-text("Sign in with a passkey")');
-    await a.page.waitForSelector('nav[aria-label="Chat"]');
+    await a.page.waitForSelector('[data-sidebar-body] [data-cid="calternal-chat.chats"]');
     console.log("PASS 1: passkey setup, recovery codes, sign-out, passkey sign-in, and cookie/origin checks");
 
     // --- 2. Create chat, send with harness chosen, rename via operation.inputs, `when` menu filtering ---
-    await a.page.click('button[aria-label="New Chat"] >> nth=0');
+    await a.page.click('[data-canvas] button:has-text("New Chat")');
     await a.page.fill('input[name="title"]', "Release prep");
     await a.page.click('button:has-text("Create Chat")');
     await a.page.waitForSelector('[data-open-title]:has-text("Release prep")');
@@ -271,7 +273,7 @@ async function fixture(directory, origin, setupCode) {
     // Choose harness filler from the composer slot picker (populated from s.declarations)
     await a.page.waitForSelector('[data-slot-picker="harness"]');
     await a.page.click('[data-slot-picker="harness"]');
-    await a.page.click('button:has-text("Test Harness")');
+    await a.page.getByRole("menuitem", { name: "Test Harness", exact: true }).click();
     assert.equal(
       await a.page.getAttribute('[data-slot-picker="harness"]', "data-selected-filler"),
       "test-harness",
@@ -294,24 +296,32 @@ async function fixture(directory, origin, setupCode) {
 
     // Clear harness selection for plain messages
     await a.page.click('[data-slot-picker="harness"]');
-    await a.page.click('button:has-text("None")');
+    await a.page.getByRole("menuitem", { name: "None", exact: true }).click();
 
     // Verify `when` hides `Unpin` while unpinned, then test Rename via operation.inputs
-    await a.page.click('button[aria-label="Item actions"]');
-    await a.page.waitForSelector('button:has-text("Pin")');
-    assert.equal(await a.page.locator('button:has-text("Unpin")').count(), 0, "Unpin must be hidden by row.when");
-    await a.page.click('button:has-text("Rename")');
+    await a.page.click('button[aria-label="Window menu"]');
+    await a.page.getByRole("menuitem", { name: "Pin", exact: true }).waitFor();
+    assert.equal(
+      await a.page.getByRole("menuitem", { name: "Unpin", exact: true }).count(),
+      0,
+      "Unpin must be hidden by row.when",
+    );
+    await a.page.getByRole("menuitem", { name: "Rename", exact: true }).click();
     await a.page.fill('input[name="title"]', "Release prep v2");
     await a.page.click('button[type="submit"]:has-text("Rename")');
     await a.page.waitForSelector('[data-open-title]:has-text("Release prep v2")');
 
     // Toggle Pin and verify `row.when` flips: Pin hidden, Unpin shown
-    await a.page.click('button[aria-label="Item actions"]');
-    await a.page.click('button:has-text("Pin")');
-    await a.page.waitForTimeout(200);
-    await a.page.click('button[aria-label="Item actions"]');
-    await a.page.waitForSelector('button:has-text("Unpin")');
-    assert.equal(await a.page.locator('button:has-text("Pin")').count(), 0, "Pin must be hidden by row.when after pinning");
+    await a.page.click('button[aria-label="Window menu"]');
+    await a.page.getByRole("menuitem", { name: "Pin", exact: true }).click();
+    await a.page.waitForTimeout(250);
+    await a.page.click('button[aria-label="Window menu"]');
+    await a.page.getByRole("menuitem", { name: "Unpin", exact: true }).waitFor();
+    assert.equal(
+      await a.page.getByRole("menuitem", { name: "Pin", exact: true }).count(),
+      0,
+      "Pin must be hidden by row.when after pinning",
+    );
     await a.page.keyboard.press("Escape");
     console.log("PASS 2: create, send with harness slot selection, rename via operation.inputs, and row.when menu filtering");
 
@@ -352,7 +362,7 @@ async function fixture(directory, origin, setupCode) {
     // Offline reconnect from last anchor
     await b.context.setOffline(true);
     await b.page.evaluate(() => window.__hostLive.forceReconnect());
-    await b.page.waitForSelector('.host-shell[data-live="reconnecting"]');
+    await b.page.waitForSelector('[data-shell][data-live="reconnecting"]');
 
     await a.page.fill('textarea[aria-label="Write"]', "Third after drop");
     await a.page.click('button[aria-label="Send"]');
@@ -373,15 +383,16 @@ async function fixture(directory, origin, setupCode) {
     ]);
 
     // Sign out B -> returns to sign-in; A stays signed in
-    await b.page.click('button[aria-label="Sign out"]');
+    await b.page.click('[data-profile]');
+    await b.page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
     await b.page.waitForSelector('h1:has-text("Sign in")');
     const statusA = await a.page.evaluate(() => fetch("/v1/auth/status").then((r) => r.json()));
     assert.equal(statusA.session.account, session.account);
     console.log("PASS 4: two-context live append, anchored reconnect ordering, and sign-out revocation");
 
-    // --- 5. Screenshots (1280 and 390, light and dark, list and open chat) ---
-    // Add one more personal chat so the list has two clean personal rows
-    await a.page.click('button[aria-label="New Chat"] >> nth=0');
+    // --- 5. Screenshots (pair-<size>-<scheme>-real.png + pair-<size>-<scheme>-mockup.png + list shots) ---
+    await a.page.click('[data-sidebar-body] [data-cid="calternal-chat.chats"] .tog');
+    await a.page.click('[data-canvas] button:has-text("New Chat")');
     await a.page.fill('input[name="title"]', "Weekly planning");
     await a.page.click('button:has-text("Create Chat")');
     await a.page.waitForSelector('[data-open-title]:has-text("Weekly planning")');
@@ -389,61 +400,82 @@ async function fixture(directory, origin, setupCode) {
     await a.page.click('button[aria-label="Send"]');
     await a.page.waitForSelector('[data-record-anchor]:has-text("Outline goals")');
 
-    // Desktop 1280 light — open chat
-    await a.page.click('button:has-text("Release prep v2")');
+    // Desktop 1280 light — open chat (real)
+    await a.page.click('[data-sidebar-body] button:has-text("Release prep v2") >> nth=0');
     await a.page.waitForSelector('[data-open-title]:has-text("Release prep v2")');
     await a.page.waitForTimeout(350);
-    await a.page.screenshot({ path: path.join(SHOT_DIR, "desktop-1280-light-chat.png") });
+    await a.page.screenshot({ path: path.join(SHOT_DIR, "pair-1280-light-real.png") });
 
-    // Desktop 1280 light — list only
-    await a.page.click('button[aria-label="Close window"]');
+    // Desktop 1280 light — list
+    await a.page.click('[data-sidebar-body] [data-cid="calternal-chat.chats"] .tog');
+    await a.page.waitForSelector('[data-open-title]:has-text("Chats")');
     await a.page.waitForTimeout(350);
     await a.page.screenshot({ path: path.join(SHOT_DIR, "desktop-1280-light-list.png") });
 
-    // Desktop 1280 dark — list only & open chat
-    await a.page.click('button[aria-label="Switch to dark mode"]');
+    // Desktop 1280 dark — list & open chat (real)
+    await a.page.click('[data-profile]');
+    await a.page.getByRole("menuitem", { name: "Dark appearance", exact: true }).click();
     await a.page.waitForTimeout(350);
     await a.page.screenshot({ path: path.join(SHOT_DIR, "desktop-1280-dark-list.png") });
 
-    await a.page.click('button:has-text("Release prep v2")');
+    await a.page.click('[data-sidebar-body] button:has-text("Release prep v2") >> nth=0');
     await a.page.waitForSelector('[data-open-title]:has-text("Release prep v2")');
     await a.page.waitForTimeout(350);
-    await a.page.screenshot({ path: path.join(SHOT_DIR, "desktop-1280-dark-chat.png") });
+    await a.page.screenshot({ path: path.join(SHOT_DIR, "pair-1280-dark-real.png") });
 
-    // Phone 390 light & dark — list (strip visible) and open chat (strip hidden!)
+    // Phone 390 light & dark — sidebar/list (strip visible) and open chat (strip hidden!)
     const phone = await openContext(browser, { width: 390, height: 844 });
     await phone.cdp.send("WebAuthn.addCredential", { authenticatorId: phone.authenticatorId, credential: credentials[0] });
     await phone.page.goto(`${origin}/host?scheme=light`);
     await phone.page.waitForSelector('h1:has-text("Sign in")');
     await phone.page.click('button:has-text("Sign in with a passkey")');
-    await phone.page.waitForSelector('button:has-text("Release prep v2")');
+    await phone.page.waitForSelector('[data-sidebar-body] button:has-text("Release prep v2")');
     await phone.page.waitForTimeout(350);
-    assert.equal(await phone.page.locator('nav[aria-label="Workspace controls"]').count(), 1, "strip visible on phone list");
+    assert.equal(await phone.page.locator('[data-switcher]').count(), 1, "strip visible on phone sidebar/list");
     await phone.page.screenshot({ path: path.join(SHOT_DIR, "phone-390-light-list.png") });
 
-    await phone.page.click('button:has-text("Release prep v2")');
+    await phone.page.click('[data-sidebar-body] button:has-text("Release prep v2") >> nth=0');
     await phone.page.waitForSelector('[data-open-title]:has-text("Release prep v2")');
-    await phone.page.waitForTimeout(350);
+    await phone.page.waitForTimeout(400);
     assert.equal(
-      await phone.page.locator('nav[aria-label="Workspace controls"]').count(),
+      await phone.page.locator('[data-switcher]').count(),
       0,
       "bottom strip must be hidden on phone while a chat is open",
     );
-    await phone.page.screenshot({ path: path.join(SHOT_DIR, "phone-390-light-chat.png") });
+    await phone.page.screenshot({ path: path.join(SHOT_DIR, "pair-390-light-real.png") });
 
     // Phone 390 dark — list & open chat
     await phone.page.goto(`${origin}/host?scheme=dark`);
-    await phone.page.waitForSelector('button:has-text("Release prep v2")');
+    await phone.page.waitForSelector('[data-sidebar-body] button:has-text("Release prep v2")');
     await phone.page.waitForTimeout(350);
     await phone.page.screenshot({ path: path.join(SHOT_DIR, "phone-390-dark-list.png") });
 
-    await phone.page.click('button:has-text("Release prep v2")');
+    await phone.page.click('[data-sidebar-body] button:has-text("Release prep v2") >> nth=0');
     await phone.page.waitForSelector('[data-open-title]:has-text("Release prep v2")');
-    await phone.page.waitForTimeout(350);
-    assert.equal(await phone.page.locator('nav[aria-label="Workspace controls"]').count(), 0);
-    await phone.page.screenshot({ path: path.join(SHOT_DIR, "phone-390-dark-chat.png") });
+    await phone.page.waitForTimeout(400);
+    assert.equal(await phone.page.locator('[data-switcher]').count(), 0);
+    await phone.page.screenshot({ path: path.join(SHOT_DIR, "pair-390-dark-real.png") });
 
-    console.log(`PASS 5: all 8 desktop & phone (light/dark, list/chat) screenshots written to ${SHOT_DIR}`);
+    // Capture matching mockup pairs from http://10.69.69.237:4313/ (Chat app, one chat open)
+    const mockupUrl = process.env.MOCKUP_URL || "http://10.69.69.237:4313";
+    for (const [label, vp, qs] of [
+      ["1280-light", { width: 1280, height: 800 }, "/?app=chat&scheme=light"],
+      ["1280-dark", { width: 1280, height: 800 }, "/?app=chat&scheme=dark"],
+      ["390-light", { width: 390, height: 844 }, "/?app=chat&pushed=1&scheme=light"],
+      ["390-dark", { width: 390, height: 844 }, "/?app=chat&pushed=1&scheme=dark"],
+    ]) {
+      const mctx = await browser.newContext({ viewport: vp });
+      const mp = await mctx.newPage();
+      try {
+        await mp.goto(`${mockupUrl}${qs}`, { waitUntil: "networkidle", timeout: 15_000 });
+        await mp.waitForTimeout(400);
+        await mp.screenshot({ path: path.join(SHOT_DIR, `pair-${label}-mockup.png`) });
+      } finally {
+        await mctx.close();
+      }
+    }
+
+    console.log(`PASS 5: all real + mockup side-by-side screenshots written to ${SHOT_DIR}`);
   } finally {
     process.removeListener("exit", stop);
     await browser?.close();

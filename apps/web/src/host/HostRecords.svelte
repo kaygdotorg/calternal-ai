@@ -436,7 +436,7 @@
     overflow-x: hidden;
     display: flex;
     flex-direction: column;
-    padding: calc(var(--bar-h, 52px) + var(--s-2)) var(--s-6) var(--s-4);
+    padding: var(--s-2) var(--s-6) var(--s-4);
   }
   .empty {
     margin: auto;

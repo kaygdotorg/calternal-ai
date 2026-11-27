@@ -75,17 +75,17 @@ export function rowTitle(row: RowData, kind?: KindDecl): string {
   return "Untitled";
 }
 
-/** Extract a numeric badge count from computed fields listed in `row:` using `FieldDecl.computed`. */
-export function rowCount(row: RowData, kind?: KindDecl): number {
-  if (!kind) return 0;
+/** Extract a numeric badge from computed fields listed in `row:` using `FieldDecl.computed` and its declared field name. */
+export function rowBadge(row: RowData, kind?: KindDecl): { value: number; name: string } | null {
+  if (!kind) return null;
   for (const col of kind.row) {
     const decl = kind.fields[col];
     if (decl?.computed || decl?.formula || decl?.type === "number") {
       const v = readRowValue(row, col);
-      if (typeof v === "number" && v > 0) return v;
+      if (typeof v === "number" && v > 0) return { value: v, name: col };
     }
   }
-  return 0;
+  return null;
 }
 
 /** Derived UI action ready to be rendered in a menu or toolbar. */
