@@ -15,7 +15,12 @@ use std::path::Path;
 use std::sync::OnceLock;
 use uuid::Uuid;
 
+mod maintenance;
+pub(crate) use maintenance::{Receipt, receipt_capacity};
+
 pub(crate) const TRASH_MS: i64 = 30 * 86_400_000;
+/// Maximum indexed items and retained Trash entries in one space.
+pub(crate) const SPACE_ITEMS: usize = 10_000;
 pub(crate) const ITEM_BYTES: usize = 32 * 1024 * 1024;
 
 const VIEWER_STATE_SCHEMA: &str = "
@@ -62,6 +67,20 @@ CREATE TABLE IF NOT EXISTS recovered_appends (
 );
 CREATE INDEX IF NOT EXISTS recovered_lookup ON recovered_appends(actor,at);
 CREATE INDEX IF NOT EXISTS recovered_expiry ON recovered_appends(at);
+CREATE TABLE IF NOT EXISTS receipt_usage (
+  id INTEGER PRIMARY KEY CHECK(id=1), total INTEGER NOT NULL
+);
+INSERT INTO receipt_usage SELECT 1,
+  (SELECT count(*) FROM receipts) + (SELECT count(*) FROM recovered_appends)
+  WHERE NOT EXISTS (SELECT 1 FROM receipt_usage WHERE id=1);
+CREATE TRIGGER IF NOT EXISTS receipt_added AFTER INSERT ON receipts
+  BEGIN UPDATE receipt_usage SET total=total+1 WHERE id=1; END;
+CREATE TRIGGER IF NOT EXISTS receipt_removed AFTER DELETE ON receipts
+  BEGIN UPDATE receipt_usage SET total=total-1 WHERE id=1; END;
+CREATE TRIGGER IF NOT EXISTS recovered_added AFTER INSERT ON recovered_appends
+  BEGIN UPDATE receipt_usage SET total=total+1 WHERE id=1; END;
+CREATE TRIGGER IF NOT EXISTS recovered_removed AFTER DELETE ON recovered_appends
+  BEGIN UPDATE receipt_usage SET total=total-1 WHERE id=1; END;
 CREATE TABLE IF NOT EXISTS pending_append (
   id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL, bytes BLOB NOT NULL
 );
@@ -122,7 +141,9 @@ impl Space {
         calternal_fsio::create_dir_all_durable(root).map_err(internal)?;
         let metadata = std::fs::symlink_metadata(root).map_err(internal)?;
         if !metadata.is_dir() || metadata.mode() & 0o022 != 0 {
-            return Err(Error::forbidden("The host storage base must be a real directory writable only by its owner."));
+            return Err(Error::forbidden(
+                "The host storage base must be a real directory writable only by its owner.",
+            ));
         }
         // Only the operator path starts with a pathname lookup. Every space
         // component is opened relative to that pinned directory, without links.
@@ -230,54 +251,6 @@ impl Space {
         self.load_plugins()?;
         self.rebuild()?;
         self.recovery_needed = false;
-        Ok(())
-    }
-
-    pub(crate) fn expire_trash(&mut self) -> Result<()> {
-        let now = calternal_types::now_ms();
-        if now < self.next_trash_check {
-            return Ok(());
-        }
-        let tx = self.db.transaction().map_err(internal)?;
-        tx.execute(
-            "DELETE FROM recovered_appends WHERE at<?1",
-            [now - self.retention_ms],
-        )
-        .map_err(internal)?;
-
-        let entries = {
-            let mut stmt = tx
-                .prepare_cached("SELECT item FROM trash WHERE until<=?1 ORDER BY until LIMIT 64")
-                .map_err(internal)?;
-            stmt.query_map([now], |row| row.get::<_, String>(0))
-                .map_err(internal)?
-                .collect::<std::result::Result<Vec<_>, _>>()
-                .map_err(internal)?
-        };
-        if !entries.is_empty() {
-            let folder = self
-                .files
-                .child(".calternal", false)
-                .and_then(|folder| folder.child("trash", false))
-                .map_err(internal)?;
-            for item in &entries {
-                let path = format!("{item}.md");
-                match folder.remove(&path) {
-                    Ok(()) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(error) => return Err(internal(error)),
-                }
-                tx.execute("DELETE FROM trash WHERE item=?1", [item])
-                    .map_err(internal)?;
-            }
-            folder.sync().map_err(internal)?;
-        }
-        tx.commit().map_err(internal)?;
-        self.next_trash_check = if entries.len() == 64 {
-            now
-        } else {
-            now + 60_000
-        };
         Ok(())
     }
 
@@ -524,79 +497,6 @@ impl Space {
         Ok(())
     }
 
-    pub(crate) fn receipt(
-        &self,
-        actor: &str,
-        key: Option<&str>,
-        input: &[u8],
-    ) -> Result<Option<Receipt>> {
-        let Some(key) = key else {
-            return Ok(None);
-        };
-        if key.is_empty() || key.len() > 128 || key.chars().any(char::is_control) {
-            return Err(Error::invalid_input("Invalid idempotency key."));
-        }
-        let proof = ReceiptProof {
-            gesture: self.hash(key.as_bytes()),
-            fingerprint: self.hash(input),
-        };
-        let cutoff = calternal_types::now_ms() - self.retention_ms;
-        let existing: Option<(Vec<u8>, String)> = self
-            .db
-            .query_row(
-                "SELECT fingerprint,result FROM receipts WHERE actor=?1 AND gesture=?2 AND at>=?3",
-                params![actor, &proof.gesture[..], cutoff],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
-            .map_err(internal)?;
-        let replay = match existing {
-            Some((existing, _)) if existing != proof.fingerprint => {
-                return Err(Error::request_reused());
-            }
-            Some((_, result)) => Some(serde_json::from_str(&result).map_err(internal)?),
-            None => None,
-        };
-        Ok(Some(Receipt {
-            actor: actor.to_owned(),
-            proof,
-            cutoff,
-            replay,
-        }))
-    }
-}
-
-#[derive(Deserialize, Serialize)]
-pub(crate) struct Receipt {
-    actor: String,
-    pub(crate) proof: ReceiptProof,
-    cutoff: i64,
-    pub(crate) replay: Option<Value>,
-}
-
-#[derive(Clone, Copy, Deserialize, Serialize)]
-pub(crate) struct ReceiptProof {
-    pub(crate) gesture: [u8; 32],
-    pub(crate) fingerprint: [u8; 32],
-}
-
-impl Receipt {
-    pub(crate) fn store(&self, tx: &Connection, value: &Value, now: i64) -> Result<()> {
-        tx.execute("DELETE FROM receipts WHERE at<?1", [self.cutoff])
-            .map_err(internal)?;
-        tx.execute(
-            "INSERT INTO receipts VALUES(?1,?2,?3,?4,?5)",
-            params![
-                self.actor,
-                &self.proof.gesture[..],
-                &self.proof.fingerprint[..],
-                value.to_string(),
-                now
-            ],
-        )
-        .map_err(internal)?;
-        Ok(())
-    }
 }
 
 fn storage_child(parent: &Folder, path: &Path, name: &str, owner: u32) -> Result<Folder> {

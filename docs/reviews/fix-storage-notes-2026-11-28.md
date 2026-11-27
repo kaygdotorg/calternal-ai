@@ -47,3 +47,29 @@ operator-owned base and runs with exclusive write access to its storage.
 Other processes using the host Unix identity are trusted to stay outside the
 tree while it is open. The private SQLite ledger requires a stable pathname.
 The operator must keep the protected path's ancestors stable during service.
+
+## Per-space retention and residency
+
+S4 maintains receipts, recovered receipts and Trash by their time indexes,
+in batches of 64 per class, on the existing storage maintenance path. It
+also uses a ledger counter for a combined 16,384-receipt maximum. New writes
+can allocate at most 10,000 item and Trash entries combined. The installer
+caps loaded bundles at 32 per space. Existing per-item and per-bundle byte
+limits continue to bound the size of each entry. The caps reject new entries
+and allow operators to remove or expire existing entries.
+
+Integration needs a host-owned timer and slot lifecycle in
+`crates/host/src/lib.rs`. That file is outside this lane's allowlist. The
+timer should call `Space::expire_trash` on its blocking maintenance path, even
+for spaces without new calls. It should sweep dormant ledgers by UUID in
+bounded rounds (without loading plugin catalogs or rebuilding heads). For
+open spaces, retain active holders and WebSocket subscribers, then remove
+idle slots once both have drained. Coordinate the subscriber check through
+the live lane's `Hub`. A registry slot must stay discoverable until the same
+critical section proves that only the registry holds its Arc, to avoid a
+second space lock while a request still holds the old one.
+
+Morning question: are 10,000 item/Trash entries, 32 installs and 16,384
+receipts acceptable for the preview? For example, bulk importing a larger
+library would require higher aggregate limits and a storage budget. Keep
+these ceilings until the operator reviews observed disk and memory use.

@@ -52,6 +52,9 @@ pub(crate) fn append(
             return Err(Error::conflict("The record stream has outside changes."));
         }
     }
+    if let Some(receipt) = receipt {
+        receipt.check_capacity(&space.db)?;
+    }
     let file = writable(&read, initial)?;
     let end = head.length;
     let (next, record, bytes) = make_append(space, &head, actor, input, now, receipt)?;
@@ -266,6 +269,10 @@ pub(crate) fn recover_tail(
     }) {
         return Ok(());
     }
+    let fresh = claim.at >= calternal_types::now_ms() - space.retention_ms;
+    if fresh && !crate::space::receipt_capacity(&space.db)? {
+        return Ok(());
+    }
     let record = Record {
         anchor: claim.anchor,
         offset: head.length,
@@ -299,7 +306,7 @@ pub(crate) fn recover_tail(
         None,
         &output,
     )?;
-    if record.at >= calternal_types::now_ms() - space.retention_ms {
+    if fresh {
         tx.execute(
             "INSERT INTO recovered_appends VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
             params![
@@ -386,12 +393,12 @@ pub(crate) fn replay_recovered(
     }
     let result = serde_json::from_str(&recovered.result).map_err(internal)?;
     let tx = space.db.transaction().map_err(internal)?;
-    receipt.store(&tx, &result, recovered.at)?;
     tx.execute(
         "DELETE FROM recovered_appends WHERE tag=?1",
         [recovered.tag],
     )
     .map_err(internal)?;
+    receipt.store(&tx, &result, recovered.at)?;
     tx.commit().map_err(internal)?;
     Ok(result)
 }

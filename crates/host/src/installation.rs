@@ -13,6 +13,7 @@ use std::path::Path;
 
 const PLUGIN_BYTES: usize = 16 * 1024 * 1024;
 const PLUGIN_FILES: usize = 256;
+const SPACE_INSTALLATIONS: usize = 32;
 
 impl Space {
     pub(crate) fn load_plugins(&mut self) -> Result<()> {
@@ -83,6 +84,10 @@ impl Space {
         official: bool,
         registration: Option<Registrations>,
     ) -> Result<()> {
+        if self.plugins.len() >= SPACE_INSTALLATIONS {
+            return Err(Error::new(calternal_types::ErrorCode::TooLarge,
+                "The space has reached its installed plugin limit."));
+        }
         let installed = self.plugins.values().cloned().collect::<Vec<_>>();
         let declaration = declarations::parse_plugin(&files, official, None, &installed)?;
         check_save_context(&declaration)?;
