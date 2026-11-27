@@ -75,7 +75,7 @@ function context(invoke: Invoke, send: Send): OperationsContext {
       const { id, status } = await request<{ id: string; status: string }>(operationMethods.run, { program, scope: options.scope ?? "session", targets: options.targets });
       return {
         id, status,
-        async send(input) { await send(operationMethods.runSend, { id, input: input ?? null }); },
+        send(input) { return request(operationMethods.runSend, { id, input: input ?? null }); },
         async stop() { await send(operationMethods.runStop, { id }); },
       };
     },

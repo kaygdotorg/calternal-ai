@@ -412,7 +412,9 @@ impl RunService {
         })
     }
 
-    /// Send one bounded frame from the exact actor that started the run.
+    /// Enqueue one bounded frame from the exact actor that started the run.
+    /// Successful admission means the channel accepted it. Adapter processing
+    /// can still fail if the process exits before it reads the frame.
     pub async fn send_input(
         &self,
         run_id: Uuid,
@@ -432,6 +434,9 @@ impl RunService {
             .ok_or(RunError::NotActive)?;
         if &state.actor != actor {
             return Err(RunError::InputActor);
+        }
+        if *state.stopping.borrow() {
+            return Err(RunError::NotActive);
         }
         state
             .input

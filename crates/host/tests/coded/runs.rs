@@ -102,9 +102,29 @@ async fn selected_harness_replies_once_and_enforces_actor_scope_and_egress() {
     assert_eq!(records[1]["body"], "Echo: hello from host");
     assert_eq!(records[1]["run"], run);
 
-    send_input(caller.clone(), 3, json!("egress-denied"))
-        .await
-        .unwrap();
+    let queued = json!({"id":run,"input":{"version":1,"seq":3,
+        "command":{"type":"send","prompt":"egress-denied","context":[]}}});
+    for _ in 0..2 {
+        let receipt = f
+            .call(
+                caller.clone(),
+                "s.run.send",
+                queued.clone(),
+                Some("queued-input"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(receipt, json!({"status":"queued"}));
+    }
+    let mut changed = queued;
+    changed["input"]["command"]["prompt"] = json!("different input");
+    assert_eq!(
+        f.call(caller.clone(), "s.run.send", changed, Some("queued-input"))
+            .await
+            .unwrap_err()
+            .code,
+        ErrorCode::Conflict,
+    );
     let records = wait_for(3).await;
     assert_eq!(records[2]["body"], "Egress: refused");
     assert_eq!(records[2]["run"], run);

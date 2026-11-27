@@ -438,7 +438,7 @@ impl Host {
         let digest = blake3::hash(&serde_json::to_vec(&input.input).map_err(internal)?);
         if let Some(previous) = key.as_ref().and_then(|key| sends.get(key)) {
             return if previous == &digest {
-                Ok(Value::Null)
+                Ok(json!({"status":"queued"}))
             } else {
                 Err(Error::request_reused())
             };
@@ -465,7 +465,7 @@ impl Host {
         if let Some(key) = key {
             sends.insert(key, digest);
         }
-        Ok(Value::Null)
+        Ok(json!({"status":"queued"}))
     }
 
     pub(crate) async fn run_stop(
