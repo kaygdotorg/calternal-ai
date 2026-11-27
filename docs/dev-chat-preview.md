@@ -120,3 +120,38 @@ export __EGL_VENDOR_LIBRARY_DIRS="$mesa/share/glvnd/egl_vendor.d"
 export LIBGL_DRIVERS_PATH="$mesa/lib/dri" LIBGL_ALWAYS_SOFTWARE=1
 ~/bin/lock-shared nix develop -c node apps/web/e2e/host-preview-auth.mjs
 ```
+
+### Smoke the deployed release with Chromium
+
+Run from a separate source checkout on the dev VM after installing the
+workspace dependencies with `npm ci` under the same Nix shell.
+
+```sh
+export CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
+~/bin/lock-shared nix develop -c scripts/smoke-dev-chat-preview.sh
+```
+
+The smoke uses the deployed release at
+`~/Developer/lanes/chat-preview/current` and its local fake image. It starts
+a disposable systemd user service on port 24318 with separate data and
+passkeys. Set `PREVIEW_SMOKE_PORT` to a different unused port if needed.
+The script stops the disposable service and removes its data when it exits.
+
+On November 27, 2026, both Chromium suites passed against the deployed
+release (host SHA-256 beginning `c3526512b2bd`). Passkey enrollment, sign-in,
+chat creation, Claude Code selection, and receipt of the stored fake echo
+worked. The renamed chat and its echo survived a service restart and a fresh
+passkey sign-in. The run suite also verified ordered live output, Stop via
+`s.run.stop`, and the stopped receipt after restart. The worker's bounded
+Bubblewrap scope and rootless Podman both worked under the user service.
+
+## Known not to work
+
+- The shipped Chat browser does not show **Stop** for a real Claude Code
+  run. A held fake-provider run produced live output with no **Stop** button
+  in the open chat. The browser's existing Stop control is wired to its
+  local stream demo. The real run still stops through `s.run.stop`; the
+  missing browser wiring is independent of systemd or Podman.
+- The Linux Playwright WebKit build refuses the Secure session cookie on
+  HTTP localhost and lacks a native WebAuthn API. Native Safari passkeys
+  remain unverified.
