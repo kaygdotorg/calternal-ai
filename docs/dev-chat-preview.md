@@ -57,19 +57,25 @@ base. To select it, open an operator drop-in on the VM.
 systemctl --user edit calternal-chat-preview
 ```
 
-Set both values in the drop-in and restart the service.
+Set the full local image ID, the account and space UUIDs, the qualified
+program ID and the absolute single-file path in the drop-in.
 
 ```ini
 [Service]
-Environment="CALTERNAL_REAL_RUN_IMAGE=localhost/calternal-claude-code-real:preview"
-Environment="CALTERNAL_RUN_SIGN_IN_DIR=/absolute/operator-managed/path"
+Environment="CALTERNAL_REAL_RUN_IMAGE=<full-local-image-id>"
+Environment="CALTERNAL_RUN_SIGN_IN_ACCOUNT=<account-uuid>"
+Environment="CALTERNAL_RUN_SIGN_IN_SPACE=<space-uuid>"
+Environment="CALTERNAL_RUN_SIGN_IN_PROGRAM=calternal-chat-claude-code.calternal-provider-claude-code"
+Environment="CALTERNAL_RUN_SIGN_IN_FILE=/absolute/operator-managed/path/.credentials.json"
 ```
 
-The path names the operator's existing provider login directory, which has
-the `.credentials.json` layout expected by the adapter. RunService binds
-it read-only into the isolated run and gives the adapter a separate writable
-home for transient files. Remove both settings and restart to switch back
-to the fake. The image must be present locally before a run starts.
+Use a dedicated private credential file of at most 1 MiB containing only what
+the trusted adapter needs. The operator controls the file and its ancestor
+directories. Install the trusted program through the host's local operator
+command. The sandbox mounts the file read-only at its original basename and
+uses bounded temporary filesystems for writable run state. A mismatched
+account, space or program fails admission. Remove all five settings and
+restart to switch back to the fake. The image must already be present locally.
 
 Egress stays at the exact plugin-declared name `api.anthropic.com` on port
 443 through the host CONNECT proxy. Valid undeclared hostnames and names
@@ -84,10 +90,9 @@ outside the sandbox and retry with the same read-only mount and egress
 policy. Credential refresh inside the run can fail if it needs a write or
 an undeclared host.
 
-The single-turn Playwright script is `apps/web/e2e/host-real-provider.mjs`.
-It skips unless both real provider settings are present, starts its own
-disposable host, and sends one short prompt per invocation. Set `HOST_BIN`
-if the host binary is outside `target/debug/calternal-host`.
+The disposable real-provider smoke predates account and space binding.
+The current mount boundary is exercised with a synthetic credential file
+and the fake image in the machine run suite.
 
 ## Browser verification
 

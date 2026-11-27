@@ -310,10 +310,14 @@ impl RunService {
             legacy_profile: false,
             guest_image_digest: None,
         };
+        let program = format!(
+            "{}.{}",
+            request.program.plugin_id, request.program.program_id
+        );
         let sandbox = match self
             .inner
             .backend
-            .start_harness_run(&spec, &harness, &plugin_root, directory.path())
+            .start_harness_run(&spec, &harness, &plugin_root, directory.path(), &program)
             .await
         {
             Ok(sandbox) => sandbox,

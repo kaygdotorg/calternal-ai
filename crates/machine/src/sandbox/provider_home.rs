@@ -57,7 +57,6 @@ pub(super) async fn prepare_harness(
     work: &Path,
     spec: &SandboxSpec,
     harness: &crate::protocol::HarnessSandbox,
-    run_sign_in: Option<&Path>,
 ) -> SandboxResult<(PathBuf, PathBuf)> {
     let provider = &harness.provider_id;
     if spec.worker.is_some()
@@ -93,18 +92,6 @@ pub(super) async fn prepare_harness(
             ));
         }
     };
-    if let Some(login) = run_sign_in {
-        if provider != "calternal-chat-claude-code" || spec.provider_login {
-            return Err(SandboxError(
-                "Operator sign-in is limited to Claude Code runs".into(),
-            ));
-        }
-        let home = work.join("run-home");
-        tokio::fs::create_dir_all(&home)
-            .await
-            .map_err(SandboxError::new)?;
-        return Ok((home, login.to_owned()));
-    }
     if harness.legacy_profile && !harness.disposable_profile {
         return prepare(account, work, spec).await;
     }

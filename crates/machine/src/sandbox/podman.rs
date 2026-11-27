@@ -29,6 +29,9 @@ use crate::protocol::{Limits, SandboxSpec};
 #[cfg(target_os = "linux")]
 mod family;
 mod ownership;
+mod run_sign_in;
+
+use run_sign_in::RunSignIn;
 
 /// Default memory ceiling when the spec gives none.
 pub const DEFAULT_MEMORY_BYTES: u64 = 1 << 30;
@@ -43,7 +46,7 @@ pub struct PodmanBackend {
     guest: bool,
     kvm_fallback: bool,
     guest_network: bool,
-    run_sign_in: Option<PathBuf>,
+    run_sign_in: Option<RunSignIn>,
 }
 
 impl PodmanBackend {
@@ -65,21 +68,17 @@ impl PodmanBackend {
         }
     }
 
-    /// Configure the operator's Claude Code sign-in directory for isolated
-    /// runs. Validates mount syntax without opening or resolving the path.
-    pub fn with_run_sign_in(mut self, path: PathBuf) -> SandboxResult<Self> {
-        if !path.is_absolute()
-            || path.parent().is_none()
-            || path
-                .components()
-                .any(|part| part == std::path::Component::ParentDir)
-            || !path
-                .to_str()
-                .is_some_and(|value| !value.contains(':') && !value.chars().any(char::is_control))
-        {
-            return Err(SandboxError("Invalid operator sign-in mount path".into()));
-        }
-        self.run_sign_in = Some(path);
+    /// Authorize one account, space and qualified program to mount an
+    /// operator-owned credential file. Configuration validates syntax only.
+    /// The operator must control the private file and its ancestor directories.
+    pub fn with_run_sign_in(
+        mut self,
+        account: calternal_types::AccountId,
+        space: calternal_types::SpaceId,
+        program: String,
+        credential_file: PathBuf,
+    ) -> SandboxResult<Self> {
+        self.run_sign_in = Some(RunSignIn::new(account, space, program, credential_file)?);
         Ok(self)
     }
 
@@ -215,7 +214,7 @@ impl Backend for PodmanBackend {
         &'a self,
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        self.start_container(spec, None, None, None)
+        self.start_container(spec, None, None, None, None)
     }
 
     fn start_harness<'a>(
@@ -223,7 +222,7 @@ impl Backend for PodmanBackend {
         spec: &'a SandboxSpec,
         harness: &'a crate::protocol::HarnessSandbox,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        self.start_container(spec, Some(harness), None, None)
+        self.start_container(spec, Some(harness), None, None, None)
     }
 }
 
@@ -238,6 +237,7 @@ impl PodmanBackend {
         harness: &'a crate::protocol::HarnessSandbox,
         plugin_root: &'a Path,
         egress_directory: &'a Path,
+        program: &'a str,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
             if !cfg!(target_os = "linux") || self.guest || self.kvm_fallback {
@@ -245,11 +245,16 @@ impl PodmanBackend {
                     "mediated harness egress requires rootless Podman".into(),
                 ));
             }
+            let credential = match &self.run_sign_in {
+                Some(sign_in) => Some(sign_in.credential(spec, program).await?),
+                None => None,
+            };
             self.start_container(
                 spec,
                 Some(harness),
                 Some(plugin_root),
                 Some(egress_directory),
+                credential,
             )
             .await
         })
@@ -263,6 +268,7 @@ impl PodmanBackend {
         harness: Option<&'a crate::protocol::HarnessSandbox>,
         plugin_root: Option<&'a Path>,
         egress_directory: Option<&'a Path>,
+        credential: Option<&'a Path>,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
             let root = self.canonical_root().await?;
@@ -287,12 +293,11 @@ impl PodmanBackend {
                 {
                     return Err(SandboxError("shared tools require a dedicated Podman harness".into()));
                 }
-                let run_sign_in = egress_directory.and(self.run_sign_in.as_deref());
-                let (home, login) = if spec.shared_tools.is_some() {
+                let (home, login) = if spec.shared_tools.is_some() || credential.is_some() {
                     (PathBuf::new(), PathBuf::new())
                 } else { match harness {
                     Some(harness) => super::provider_home::prepare_harness(
-                        account, &dir, spec, harness, run_sign_in,
+                        account, &dir, spec, harness,
                     ).await?,
                     None => super::provider_home::prepare(account, &dir, spec).await?,
                 }};
@@ -362,9 +367,19 @@ impl PodmanBackend {
                     Some(broker)
                 } else {
                     args.extend([
-                        "--volume".into(), mount, "--volume".into(), home_mount,
-                        "--workdir".into(), "/work".into(), "--env".into(), "HOME=/home/agent".into(),
+                        "--volume".into(), mount, "--workdir".into(), "/work".into(),
+                        "--env".into(), "HOME=/home/agent".into(),
                     ]);
+                    if credential.is_some() {
+                        args.extend([
+                            "--read-only".into(), "--read-only-tmpfs=false".into(),
+                            "--tmpfs".into(), "/home/agent:mode=0700,size=64m,nosuid,nodev".into(),
+                            "--tmpfs".into(), "/tmp:mode=1777,size=16m,nosuid,nodev".into(),
+                            "--tmpfs".into(), "/run:mode=0755,size=4m,nosuid,nodev".into(),
+                        ]);
+                    } else {
+                        args.extend(["--volume".into(), home_mount]);
+                    }
                     None
                 };
                 if spec.worker.is_none() && broker.is_none() {
@@ -373,13 +388,14 @@ impl PodmanBackend {
                     } else {
                         "CALTERNAL_CLAUDE_LOGIN_DIR=/run/calternal-provider-login"
                     };
-                    let mode = if run_sign_in.is_none() && (harness.is_some_and(|harness| !harness.legacy_profile) || spec.provider_login) { "rw" } else { "ro" };
-                    args.extend([
-                        "--volume".into(),
-                        format!("{}:/run/calternal-provider-login:{mode}", login.display()),
-                        "--env".into(),
-                        login_env.into(),
-                    ]);
+                    let login_mount = if let Some(credential) = credential {
+                        let name = credential.file_name().expect("validated credential name");
+                        format!("{}:/run/calternal-provider-login/{}:ro", credential.display(), name.to_string_lossy())
+                    } else {
+                        let mode = if harness.is_some_and(|harness| !harness.legacy_profile) || spec.provider_login { "rw" } else { "ro" };
+                        format!("{}:/run/calternal-provider-login:{mode}", login.display())
+                    };
+                    args.extend(["--volume".into(), login_mount, "--env".into(), login_env.into()]);
                     if harness.is_some() && !self.guest {
                         args.extend([
                             "--network=none".into(),

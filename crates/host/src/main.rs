@@ -121,26 +121,55 @@ impl RunningEngine {
 async fn attach_runs(host: Host, root: &Path) -> CliResult<(Arc<Host>, Option<RunningEngine>)> {
     let host = Arc::new(host);
     host.start_maintenance();
-    let sign_in = std::env::var_os("CALTERNAL_RUN_SIGN_IN_DIR").map(PathBuf::from);
-    let real_image = std::env::var_os("CALTERNAL_REAL_RUN_IMAGE");
-    let image = match (real_image, &sign_in) {
-        (Some(image), Some(_)) => image
-            .into_string()
-            .map_err(|_| "Invalid real run image name.")?,
-        (None, None) => match std::env::var("CALTERNAL_RUN_IMAGE") {
-            Ok(image) => image,
+    let [real_image, account, space, program, credential] = [
+        "CALTERNAL_REAL_RUN_IMAGE",
+        "CALTERNAL_RUN_SIGN_IN_ACCOUNT",
+        "CALTERNAL_RUN_SIGN_IN_SPACE",
+        "CALTERNAL_RUN_SIGN_IN_PROGRAM",
+        "CALTERNAL_RUN_SIGN_IN_FILE",
+    ]
+    .map(std::env::var_os);
+    let (image, sign_in) = match (real_image, account, space, program, credential) {
+        (Some(image), Some(account), Some(space), Some(program), Some(credential)) => {
+            let image = image
+                .into_string()
+                .map_err(|_| "Invalid real run image ID.")?;
+            let hex = image.strip_prefix("sha256:").unwrap_or(&image);
+            if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err("Real run images must use a full local image ID.".into());
+            }
+            let account = account
+                .to_str()
+                .ok_or("Invalid run sign-in account.")?
+                .parse()?;
+            let space = space
+                .to_str()
+                .ok_or("Invalid run sign-in space.")?
+                .parse()?;
+            let program = program
+                .into_string()
+                .map_err(|_| "Invalid run sign-in program.")?;
+            (
+                image,
+                Some((account, space, program, PathBuf::from(credential))),
+            )
+        }
+        (None, None, None, None, None) => match std::env::var("CALTERNAL_RUN_IMAGE") {
+            Ok(image) => (image, None),
             Err(std::env::VarError::NotPresent) => return Ok((host, None)),
             Err(error) => return Err(error.into()),
         },
-        _ => return Err("Set both CALTERNAL_REAL_RUN_IMAGE and CALTERNAL_RUN_SIGN_IN_DIR.".into()),
+        _ => {
+            return Err("Configure the real run image ID and all four run sign-in settings.".into());
+        }
     };
     let root = root.join("runs");
     let lock_root = root.clone();
     let lock = tokio::task::spawn_blocking(move || calternal_fsio::DataLock::acquire(&lock_root))
         .await??;
     let mut backend = PodmanBackend::new("podman", root, &image);
-    if let Some(sign_in) = sign_in {
-        backend = backend.with_run_sign_in(sign_in)?;
+    if let Some((account, space, program, credential)) = sign_in {
+        backend = backend.with_run_sign_in(account, space, program, credential)?;
     }
     let backend = Arc::new(backend);
     backend.initialize().await?;
