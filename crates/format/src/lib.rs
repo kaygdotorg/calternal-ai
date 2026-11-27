@@ -3,11 +3,27 @@
 #![forbid(unsafe_code)]
 
 mod dates;
+mod definition;
 mod expr;
+mod field;
+mod item;
 mod lines;
+mod operation;
+mod query;
 mod value;
 
-pub use expr::{EvalContext, Expression, Row, evaluate, parse_expression};
+pub use definition::{
+    AgentRule, AgentRules, Collection, Directive, Editability, InstallOptions, ItemForm, Kind,
+    Manifest, Plugin, PluginFile, Program, Rights, ShareSource, Sidebar, Sort, Source, Total,
+    parse_agent_rules, parse_plugin,
+};
+pub use expr::{EvalContext, Expression, QueryRowContext, Row, evaluate, parse_expression};
+pub use field::{Field, FieldType};
+pub use item::{Item, parse_item, write_item};
+pub use operation::{
+    Assignment, Change, Operation, OperationForm, OperationInput, apply_operation, check_item,
+};
+pub use query::{Page, QueryGroup, QueryResult, QueryRow, evaluate_query};
 pub use value::{Decimal, Fields, InvalidDecimal, Value};
 
 /// A plain-language refusal with a position in the source text.

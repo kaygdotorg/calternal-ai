@@ -661,6 +661,7 @@ dependencies = [
 name = "calternal-format"
 version = "0.1.0"
 dependencies = [
+ "semver",
  "unicode-normalization",
  "unicode-security",
 ]

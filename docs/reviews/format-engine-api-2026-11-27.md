@@ -61,3 +61,39 @@ pub fn write_item(item: &Item<'_>, fields: &Fields) -> Result<String, Diagnostic
 
 Signature changes will be recorded here so dependent lanes can update their
 stubs and callers.
+
+## Revision 9 implementation
+
+The four lane B function signatures above are unchanged. The published
+field and row shapes use these Rust types.
+
+```rust
+pub struct InstallOptions<'a> {
+    pub expected_id: Option<&'a str>,
+    pub official: &'a [(&'a str, &'a str)],
+    pub installed: &'a [Plugin],
+}
+pub struct Row<'a> {
+    pub fields: &'a Fields,
+    pub metadata: &'a Fields,
+}
+pub struct OperationInput<'a> {
+    pub item: Option<Row<'a>>,
+    pub fields: &'a Fields,
+    pub record: Option<&'a str>,
+}
+```
+
+- `InstallOptions::official` contains operator-approved plugin ID and display
+  name pairs. The caller provides this list from source authentication.
+- Use `Item::fields()`, `Item::body()` and `Item::source()` for the decoded
+  fields and byte slices. The host passes stamps through `Row::metadata`.
+- `EvalContext::rows` keys `QueryRowContext` by the authoritative item ID.
+  Supply each row's state, authorized reverse candidates and records in ledger
+  order. `count(records after state.<key>)` reads the host's anchor metadata.
+- A program's `path: None` describes the current harness fixture's unbound ID.
+  A runnable declaration binds the ID under `programs:` to a plugin-relative
+  `executable <path>` or `image <path>`.
+- A coded operation may nest one `inputs:` section with typed fields beneath
+  its `code` line. Its `Operation::inputs` is the same schema used to prepare
+  a dispatch and identify a slot's typed payload.

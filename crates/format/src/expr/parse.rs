@@ -151,6 +151,9 @@ fn word(text: &str) -> (Token, usize) {
             .find(|(_, ch)| !ch.is_alphanumeric())
             .map_or(text.len(), |(at, _)| at)
     };
+    if text.starts_with("records after ") {
+        return (Token::Word("records after".into()), "records after".len());
+    }
     let mut end = single(text);
     let first = &text[..end];
     let keyword = match first {
@@ -236,6 +239,20 @@ impl Parser {
                 },
                 1,
             ),
+            Token::Word(name) if name == "records after" => {
+                let (position, depth) = self.expression(8, nesting + 1)?;
+                if !matches!(&position.kind, NodeKind::Member(scope, _) if matches!(&scope.kind, NodeKind::Name(name) if name == "state"))
+                {
+                    return Err(site.error("Count records after a state anchor"));
+                }
+                (
+                    Node {
+                        kind: NodeKind::Call(name, vec![position]),
+                        site,
+                    },
+                    depth + 1,
+                )
+            }
             Token::Word(name) => (
                 Node {
                     kind: NodeKind::Name(name),

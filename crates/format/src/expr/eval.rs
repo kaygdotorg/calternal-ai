@@ -62,7 +62,20 @@ pub struct EvalContext<'a> {
     pub open_item: Option<Row<'a>>,
     /// Link targets indexed by reference string. Unavailable targets are omitted.
     pub links: Option<&'a BTreeMap<String, Row<'a>>>,
+    /// Per-item context indexed by authoritative item ID for in-memory queries.
+    pub rows: Option<&'a BTreeMap<String, QueryRowContext<'a>>>,
     /// Indexed reverse candidates keyed by kind and link field, for this row.
+    pub reverse: Option<&'a BTreeMap<String, Vec<Row<'a>>>>,
+}
+
+/// Viewer data to use when a query evaluates one item.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct QueryRowContext<'a> {
+    /// State fields for this person and item.
+    pub state: Option<&'a Fields>,
+    /// Authoritative records in ledger order.
+    pub records: &'a [Row<'a>],
+    /// Already-authorized reverse lookup candidates.
     pub reverse: Option<&'a BTreeMap<String, Vec<Row<'a>>>>,
 }
 
@@ -261,6 +274,27 @@ impl Evaluator<'_, '_> {
             _ => {}
         }
 
+        if name == "count" {
+            if let NodeKind::Call(after, position) = &args[0].kind {
+                if after == "records after" {
+                    let anchor = self.eval(&position[0], element)?;
+                    let mut start = 0;
+                    if let Value::Text(anchor) = &anchor {
+                        if let Some(index) = self.context.records.iter().position(|row| {
+                            row.metadata
+                                .get("anchor")
+                                .is_some_and(|value| value == &Value::Text(anchor.clone()))
+                        }) {
+                            start = index + 1;
+                        }
+                    }
+                    self.charge(self.context.records.len(), site)?;
+                    return Ok(Value::Number(Decimal::integer(
+                        (self.context.records.len() - start) as i128,
+                    )));
+                }
+            }
+        }
         let first = self.eval(&args[0], element)?;
         if matches!(
             name,

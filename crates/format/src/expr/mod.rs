@@ -4,7 +4,7 @@ pub(crate) mod eval;
 pub(crate) mod functions;
 pub(crate) mod parse;
 
-pub use eval::{EvalContext, Row, evaluate};
+pub use eval::{EvalContext, QueryRowContext, Row, evaluate};
 pub use parse::parse_expression;
 
 use crate::{Value, lines::Site};
