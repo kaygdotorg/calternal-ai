@@ -291,8 +291,8 @@ impl Host {
                 "s.write" if self.workers.is_some() && call.slot_selection.is_none() => {
                     self.write_and_notify(actor, space, call, chain).await
                 }
-                "s.query" | "s.read" | "s.write" | "s.state" | "s.me" | "s.space"
-                | "index.rebuild" => {
+                "s.declarations" | "s.query" | "s.read" | "s.write" | "s.state" | "s.me"
+                | "s.space" | "index.rebuild" => {
                     tokio::task::spawn_blocking(move || self.call(actor, space, call))
                         .await
                         .map_err(internal)?

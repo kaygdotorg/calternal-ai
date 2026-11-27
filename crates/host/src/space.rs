@@ -316,6 +316,7 @@ impl Space {
         match call.call.as_str() {
             "s.me" => Ok(json!({"id":actor.account,"role":"owner"})),
             "s.space" => Ok(json!({"id":self.id})),
+            "s.declarations" => Ok(declarations::browser::describe(self, actor)),
             "s.query" => crate::query::query(self, actor, decode(call.input)?),
             "s.read" => crate::query::read(self, actor, decode(call.input)?),
             "s.write" => {

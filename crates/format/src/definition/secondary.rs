@@ -21,6 +21,8 @@ pub struct Sidebar {
 pub struct SidebarEntry {
     /// The original directive including the Markdown list prefix.
     pub source: String,
+    /// Validated title of a section or collection link, if written.
+    pub title: Option<String>,
     /// Referenced collection, when this entry opens one.
     pub collection: Option<String>,
     pub(crate) site: Site,
@@ -46,14 +48,14 @@ pub(super) fn sidebar(source: &str, id: &str) -> Result<Sidebar, Diagnostic> {
     }
     for (source, site) in body_lines(document.body, document.body_site)? {
         let line = &source[2..];
-        let collection = if let Some(title) = line.strip_prefix("section: ") {
+        let (collection, title) = if let Some(title) = line.strip_prefix("section: ") {
             super::text(title, site, 40, false)?;
-            None
+            (None, Some(title.to_owned()))
         } else if let Some(folders) = line.strip_prefix("folders: ") {
             for folder in list(folders, site)? {
                 path(&folder, site)?
             }
-            None
+            (None, None)
         } else if let Some(each) = line.strip_prefix("each: ") {
             let (source, target) = each
                 .rsplit_once(" -> ")
@@ -67,7 +69,7 @@ pub(super) fn sidebar(source: &str, id: &str) -> Result<Sidebar, Diagnostic> {
                     parse::parse(where_clause, site)?;
                 }
             }
-            Some(target.into())
+            (Some(target.into()), None)
         } else {
             let (title, target) = line
                 .strip_prefix('[')
@@ -88,14 +90,15 @@ pub(super) fn sidebar(source: &str, id: &str) -> Result<Sidebar, Diagnostic> {
                 .and_then(|path| path.strip_suffix(".md"))
             {
                 lines::id(local, site)?;
-                Some(local.into())
+                (Some(local.into()), Some(title.to_owned()))
             } else {
                 collection_ref(target, site)?;
-                Some(target.into())
+                (Some(target.into()), Some(title.to_owned()))
             }
         };
         result.entries.push(SidebarEntry {
             source: source.into(),
+            title,
             collection,
             site,
         });
