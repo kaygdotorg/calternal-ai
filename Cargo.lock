@@ -658,6 +658,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "calternal-format"
+version = "0.1.0"
+dependencies = [
+ "semver",
+ "unicode-general-category 0.6.0",
+ "unicode-normalization",
+ "unicode-security",
+]
+
+[[package]]
 name = "calternal-fsio"
 version = "0.1.0"
 dependencies = [
@@ -673,6 +683,28 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "calternal-host"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "blake3",
+ "calternal-auth",
+ "calternal-format",
+ "calternal-fsio",
+ "calternal-types",
+ "getrandom 0.4.3",
+ "percent-encoding",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "time",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

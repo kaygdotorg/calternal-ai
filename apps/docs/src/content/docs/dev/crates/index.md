@@ -2,7 +2,7 @@
 title: "Rust crates"
 ---
 
-<!-- Generated from: Cargo.toml, crates/auth/src/lib.rs, crates/bindings/src/lib.rs, crates/cli/src/lib.rs, crates/client/src/lib.rs, crates/content/src/lib.rs, crates/core/src/lib.rs, crates/fsio/src/lib.rs, crates/genui/src/lib.rs, crates/machine/src/lib.rs, crates/plugin-host/src/lib.rs, crates/recovery/src/lib.rs, crates/roots/src/lib.rs, crates/secrets/src/lib.rs, crates/server/src/lib.rs, crates/store/src/lib.rs, crates/types/src/lib.rs. Rebuild: npm run docs:site -->
+<!-- Generated from: Cargo.toml, crates/auth/src/lib.rs, crates/bindings/src/lib.rs, crates/cli/src/lib.rs, crates/client/src/lib.rs, crates/content/src/lib.rs, crates/core/src/lib.rs, crates/format/src/lib.rs, crates/fsio/src/lib.rs, crates/genui/src/lib.rs, crates/host/src/lib.rs, crates/machine/src/lib.rs, crates/plugin-host/src/lib.rs, crates/recovery/src/lib.rs, crates/roots/src/lib.rs, crates/secrets/src/lib.rs, crates/server/src/lib.rs, crates/store/src/lib.rs, crates/types/src/lib.rs. Rebuild: npm run docs:site -->
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
@@ -12,8 +12,10 @@ title: "Rust crates"
 - [calternal-client](/docs/dev/crates/calternal-client/)
 - [calternal-content](/docs/dev/crates/calternal-content/)
 - [calternal-core](/docs/dev/crates/calternal-core/)
+- [calternal-format](/docs/dev/crates/calternal-format/)
 - [calternal-fsio](/docs/dev/crates/calternal-fsio/)
 - [calternal-genui](/docs/dev/crates/calternal-genui/)
+- [calternal-host](/docs/dev/crates/calternal-host/)
 - [calternal-machine](/docs/dev/crates/calternal-machine/)
 - [calternal-plugin-host](/docs/dev/crates/calternal-plugin-host/)
 - [calternal-recovery](/docs/dev/crates/calternal-recovery/)
