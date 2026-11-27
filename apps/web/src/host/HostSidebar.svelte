@@ -5,7 +5,7 @@
    * its live rows directly on the wallpaper. Zero guessed icons or hardcoded field labels.
    */
   import { Icon } from "@calternal/ui";
-  import { Av } from "@calternal/canvas-shell";
+  import { AppIcon, Av } from "@calternal/canvas-shell";
   import { formatRelativeTime, rowBadge, rowTitle } from "./format";
   import type { CollectionDecl, KindDecl, RowData, SidebarDecl } from "./types";
 
@@ -77,6 +77,7 @@
     {:else if entry.collection}
       {@const cid = entry.collection}
       {@const col = collectionFor(cid)}
+      {@const icon = entry.icon ?? col?.icon ?? null}
       {@const isStrip = col?.views.some((v) => v.type === "strip") ?? false}
       {@const allRows = rowsByCollection[cid] ?? []}
       {@const shown = isStrip ? allRows : allRows.slice(0, LIMIT)}
@@ -89,6 +90,7 @@
             class="tog"
             onclick={() => onopenCollection(cid)}
           >
+            {#if icon}<span class="sic" aria-hidden="true" data-icon={icon}><AppIcon name={icon} inline /></span>{/if}
             <span class="nm" title={entry.title}>{entry.title}</span>
           </button>
           <button

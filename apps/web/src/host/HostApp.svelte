@@ -44,6 +44,15 @@
   import HostFormSheet, { type FormFieldSpec } from "./HostFormSheet.svelte";
   import HostRecords, { type ActiveStreamRun } from "./HostRecords.svelte";
   import HostSidebar from "./HostSidebar.svelte";
+  import {
+    clearPersistedRun,
+    loadLastOpenItem,
+    loadPersistedRun,
+    RunLogParser,
+    saveLastOpenItem,
+    savePersistedRun,
+    type PersistedRun,
+  } from "./runs";
   import HostSignIn from "./HostSignIn.svelte";
   import type {
     CollectionDecl,
@@ -71,6 +80,17 @@
   let pushed = $state(false);
   const hidden = $derived(!narrow && !layout.leftOpen);
 
+  interface ItemRunState extends ActiveStreamRun {
+    itemId: string;
+    slot: string;
+    filler: string;
+    fillerOp: string;
+    offset: number;
+    turnDone: boolean;
+    promptLink?: string;
+    lastAnchorBefore?: string | null;
+  }
+
   let activePluginId = $state<string | null>(null);
   let selectedCollectionId = $state<string | null>(null);
   let customSidebars = $state<{ id: string; name: string }[]>([]);
@@ -78,8 +98,7 @@
   let collectionRows = $state<Record<string, RowData[]>>({});
   let itemsById = $state<Record<string, RowData>>({});
   let recordsByItem = $state<Record<string, RecordData[]>>({});
-  let activeRun = $state<ActiveStreamRun | null>(null);
-  let streamTimer: ReturnType<typeof setInterval> | null = null;
+  let runsByItem = $state<Record<string, ItemRunState>>({});
 
   const wins = createWindows((itemId) => {
     const row = itemsById[itemId];
@@ -99,6 +118,7 @@
   let live: LiveClient | null = null;
   let unsubQueries: (() => void)[] = [];
   const itemSubs = new Map<string, () => void>();
+  const runSubs = new Map<string, () => void>();
   let unsubAuthChannel: (() => void) | null = null;
 
   const plugins = $derived<PluginDecl[]>(declarations?.plugins ?? []);
@@ -156,23 +176,29 @@
       onSnapshot: (recs, meta) => {
         recordsByItem = { ...recordsByItem, [itemId]: recs };
         applyLiveMeta(itemId, meta);
+        maybeClearCompletedRun(itemId, recs);
       },
       onDelta: (recs, meta) => {
         const cur = recordsByItem[itemId] ?? [];
+        let next = cur;
         if (recs.length) {
           const seen = new Set(cur.map((r) => r.anchor));
           const fresh = recs.filter((r) => !seen.has(r.anchor));
-          if (fresh.length) recordsByItem = { ...recordsByItem, [itemId]: [...cur, ...fresh] };
+          if (fresh.length) {
+            next = [...cur, ...fresh];
+            recordsByItem = { ...recordsByItem, [itemId]: next };
+          }
         }
         applyLiveMeta(itemId, meta);
+        maybeClearCompletedRun(itemId, next);
       },
       onAppend: (rec, version) => {
         const cur = recordsByItem[itemId] ?? [];
-        if (!cur.some((r) => r.anchor === rec.anchor)) {
-          recordsByItem = { ...recordsByItem, [itemId]: [...cur, rec] };
-        }
+        const next = cur.some((r) => r.anchor === rec.anchor) ? cur : [...cur, rec];
+        if (next !== cur) recordsByItem = { ...recordsByItem, [itemId]: next };
         const existing = itemsById[itemId];
         if (existing) itemsById = { ...itemsById, [itemId]: { ...existing, version } };
+        maybeClearCompletedRun(itemId, next);
       },
       onItemChange: (meta) => applyLiveMeta(itemId, meta),
     });
@@ -209,33 +235,207 @@
     }
   });
 
-  function stopStreamFixture() {
-    if (streamTimer) { clearInterval(streamTimer); streamTimer = null; }
-    if (activeRun) {
-      activeRun = { ...activeRun, status: "stopping" };
-      setTimeout(() => (activeRun = null), 150);
+  function detachRunSub(itemId: string) {
+    const unsub = runSubs.get(itemId);
+    if (unsub) {
+      unsub();
+      runSubs.delete(itemId);
     }
   }
 
-  function startStreamFixture(label: string, fullText: string) {
-    if (streamTimer) clearInterval(streamTimer);
-    const words = fullText.split(" ");
-    let idx = 0;
-    activeRun = { id: `demo-${Date.now()}`, label, text: "", status: "streaming" };
-    streamTimer = setInterval(() => {
-      idx += 1;
-      if (!activeRun || idx > words.length) {
-        if (streamTimer) clearInterval(streamTimer);
-        streamTimer = null;
-        return;
+  function clearItemRun(itemId: string) {
+    detachRunSub(itemId);
+    if (session) clearPersistedRun(session.space, itemId);
+    if (itemId in runsByItem) {
+      const next = { ...runsByItem };
+      delete next[itemId];
+      runsByItem = next;
+    }
+  }
+
+  function persistRunState(run: ItemRunState) {
+    if (!session) return;
+    if (run.status === "starting" || run.status === "streaming" || run.status === "stopping") {
+      const payload: PersistedRun = {
+        id: run.id,
+        itemId: run.itemId,
+        label: run.label,
+        slot: run.slot,
+        filler: run.filler,
+        fillerOp: run.fillerOp,
+        offset: run.offset,
+        text: run.text,
+        status: run.status,
+        promptLink: run.promptLink,
+        lastAnchorBefore: run.lastAnchorBefore,
+      };
+      savePersistedRun(session.space, payload);
+    } else {
+      clearPersistedRun(session.space, run.itemId);
+    }
+  }
+
+  /** Replace the streaming bubble once the host's stored reply record arrives on `records`. */
+  function maybeClearCompletedRun(itemId: string, recs: RecordData[]) {
+    const run = runsByItem[itemId];
+    if (!run || !session) return;
+    if (run.status !== "streaming" && run.status !== "starting") return;
+    const prevIdx = run.lastAnchorBefore ? recs.findIndex((r) => r.anchor === run.lastAnchorBefore) : -1;
+    const afterPrompt = prevIdx >= 0 ? recs.slice(prevIdx + 1) : recs;
+    const hasReplyRecord = afterPrompt.some((r) => r.author !== session!.account);
+    if (hasReplyRecord) {
+      clearItemRun(itemId);
+    }
+  }
+
+  function attachRunLog(itemId: string, initial: ItemRunState) {
+    if (!live || !initial.id) return;
+    detachRunSub(itemId);
+    const parser = new RunLogParser();
+    runsByItem = { ...runsByItem, [itemId]: initial };
+    persistRunState(initial);
+
+    const unsub = live.subscribeRunLog(
+      initial.id,
+      {
+        onBatch: (chunks, offset, stopped) => {
+          const cur = runsByItem[itemId];
+          if (!cur || cur.id !== initial.id) return;
+          const parsed = parser.feed(chunks);
+          const nextText = parsed.textDelta ? cur.text + parsed.textDelta : cur.text;
+          const turnDone = cur.turnDone || parsed.turnDone;
+          let nextStatus = cur.status;
+          if (parsed.textDelta && cur.status === "starting") {
+            nextStatus = "streaming";
+          }
+          if (stopped || parsed.exited) {
+            detachRunSub(itemId);
+            if (cur.status === "stopping") {
+              nextStatus = "stopped";
+            } else if (turnDone) {
+              // The reply turn completed; if the stored record is already here, replace immediately.
+              const recs = recordsByItem[itemId] ?? [];
+              const prevIdx = cur.lastAnchorBefore ? recs.findIndex((r) => r.anchor === cur.lastAnchorBefore) : -1;
+              const afterPrompt = prevIdx >= 0 ? recs.slice(prevIdx + 1) : recs;
+              if (session && afterPrompt.some((r) => r.author !== session!.account)) {
+                clearItemRun(itemId);
+                return;
+              }
+              nextStatus = "streaming";
+            } else {
+              nextStatus = "lost";
+            }
+          }
+          const updated: ItemRunState = {
+            ...cur,
+            text: nextText,
+            offset,
+            turnDone,
+            status: nextStatus,
+          };
+          runsByItem = { ...runsByItem, [itemId]: updated };
+          persistRunState(updated);
+        },
+        onError: (code, message) => {
+          const cur = runsByItem[itemId];
+          if (!cur || cur.id !== initial.id) return;
+          detachRunSub(itemId);
+          const updated: ItemRunState = {
+            ...cur,
+            status: code === "not-found" || code === "conflict" ? "lost" : "failed",
+            error: message,
+            canRetry: false,
+          };
+          runsByItem = { ...runsByItem, [itemId]: updated };
+          persistRunState(updated);
+        },
+      },
+      initial.offset,
+    );
+    runSubs.set(itemId, unsub);
+  }
+
+  async function stopActiveRun(itemId: string) {
+    const cur = runsByItem[itemId];
+    if (!session || !cur || !cur.id || cur.status === "stopping") return;
+    const updated: ItemRunState = { ...cur, status: "stopping" };
+    runsByItem = { ...runsByItem, [itemId]: updated };
+    persistRunState(updated);
+    try {
+      await LiveClient.stopRun(session, cur.id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not stop run.";
+      const latest = runsByItem[itemId];
+      if (latest && latest.id === cur.id && latest.status === "stopping") {
+        runsByItem = { ...runsByItem, [itemId]: { ...latest, status: "failed", error: msg, canRetry: false } };
       }
-      activeRun = { ...activeRun, text: words.slice(0, idx).join(" ") };
-    }, 60);
+    }
+  }
+
+  async function retryRunStart(itemId: string) {
+    const cur = runsByItem[itemId];
+    if (!session || !cur || !cur.fillerOp || !cur.promptLink) return;
+    const starting: ItemRunState = {
+      ...cur,
+      id: "",
+      text: "",
+      offset: 0,
+      turnDone: false,
+      status: "starting",
+      error: undefined,
+      canRetry: false,
+    };
+    runsByItem = { ...runsByItem, [itemId]: starting };
+    const [fillerPid, fillerKid, fillerOpName] = cur.fillerOp.split(".");
+    const fillerOpDecl = plugins.find((p) => p.id === fillerPid)?.kinds[fillerKid!]?.operations[fillerOpName!];
+    const opInputs = Object.values(fillerOpDecl?.inputs ?? {});
+    const itemKey =
+      opInputs.find((f) => f.type.startsWith("link(") && !f.type.includes("records"))?.name ?? "item";
+    const promptKey =
+      opInputs.find((f) => f.type.startsWith("link(") && f.type.includes("records"))?.name ?? "prompt";
+    try {
+      const run = await hostCall<{ id: string; status: string }>(
+        session,
+        cur.fillerOp,
+        { [itemKey]: itemId, [promptKey]: cur.promptLink },
+        `retry-${crypto.randomUUID()}`,
+      );
+      if (run?.id) {
+        attachRunLog(itemId, { ...starting, id: run.id, status: run.status === "stopped" ? "lost" : "starting" });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not start the run.";
+      runsByItem = {
+        ...runsByItem,
+        [itemId]: { ...starting, status: "failed", error: msg, canRetry: true },
+      };
+    }
+  }
+
+  function restorePersistedRunForItem(itemId: string) {
+    if (!session || !live || runSubs.has(itemId) || runsByItem[itemId]) return;
+    const saved = loadPersistedRun(session.space, itemId);
+    if (!saved || !saved.id) return;
+    attachRunLog(itemId, {
+      id: saved.id,
+      itemId: saved.itemId,
+      label: saved.label,
+      slot: saved.slot,
+      filler: saved.filler,
+      fillerOp: saved.fillerOp,
+      offset: saved.offset,
+      text: saved.text,
+      status: saved.text ? "streaming" : "starting",
+      turnDone: false,
+      promptLink: saved.promptLink,
+      lastAnchorBefore: saved.lastAnchorBefore,
+    });
   }
 
   function cleanupLive() {
-    if (streamTimer) { clearInterval(streamTimer); streamTimer = null; }
-    activeRun = null;
+    for (const unsub of runSubs.values()) unsub();
+    runSubs.clear();
+    runsByItem = {};
     for (const unsub of itemSubs.values()) unsub();
     itemSubs.clear();
     for (const u of unsubQueries) u();
@@ -257,8 +457,10 @@
       (window as unknown as Record<string, unknown>).__hostLive = {
         forceReconnect: () => live?.forceReconnect(),
         state: () => liveState,
-        startStreamDemo: (label: string, text: string) => startStreamFixture(label, text),
       };
+
+      const savedOpen = loadLastOpenItem(s.space);
+      let restoredOpen = false;
 
       for (const p of decl.plugins) {
         for (const col of Object.values(p.collections)) {
@@ -268,12 +470,18 @@
             const nextItems = { ...itemsById };
             for (const r of rows) nextItems[r.id] = r;
             itemsById = nextItems;
+            if (savedOpen && !restoredOpen && nextItems[savedOpen]) {
+              restoredOpen = true;
+              wins.navigate("item", savedOpen);
+              pushed = true;
+              restorePersistedRunForItem(savedOpen);
+            }
           });
           unsubQueries.push(unsub);
         }
       }
 
-      if (firstPlugin) {
+      if (firstPlugin && !savedOpen) {
         const defCol = defaultCollectionFor(firstPlugin);
         if (defCol) wins.navigate("collection", defCol.qualified);
       }
@@ -285,15 +493,18 @@
   function openItem(row: RowData, collectionId?: string) {
     itemsById = { ...itemsById, [row.id]: row };
     selectedCollectionId = collectionId ?? null;
+    if (session) saveLastOpenItem(session.space, row.id);
     if (wins.focused?.kind === "collection") {
       wins.navigate("item", row.id);
     } else {
       wins.openItemById(row.id);
     }
     pushed = true;
+    restorePersistedRunForItem(row.id);
   }
 
   function openCollection(cid: string) {
+    if (session) saveLastOpenItem(session.space, null);
     wins.navigate("collection", cid);
     pushed = true;
   }
@@ -411,13 +622,111 @@
   async function sendRecord(item: RowData, kind: KindDecl, body: string, quoteAnchor?: string, selectedFiller?: string | null) {
     const plugin = plugins.find((p) => p.id === kind.plugin);
     const comp = plugin ? resolveComposerSlot(plugin, kind) : null;
-    const picker = plugin ? resolvePickerSlot(plugin, plugins, comp?.slot.name) : null;
+    const picker = plugin ? resolvePickerSlot(plugin, comp?.slot.name) : null;
     if (!session || !comp) return;
     const qualifiedOp = `${kind.plugin}.${kind.id}.${comp.operation.name}`;
     const input: Record<string, unknown> = { item: item.id, [comp.textInput]: body };
     if (quoteAnchor && comp.quoteInput) input[comp.quoteInput] = quoteAnchor;
-    const slotSelection = selectedFiller && picker ? { slot: picker.slot.name, filler: selectedFiller } : undefined;
-    await hostCall(session, qualifiedOp, input, `send-${crypto.randomUUID()}`, slotSelection);
+    const fillerObj = selectedFiller && picker ? picker.fillers.find((f) => f.plugin === selectedFiller) ?? null : null;
+    const slotSelection = fillerObj && picker ? { slot: picker.slot.name, filler: fillerObj.plugin } : undefined;
+    const fillerOp = fillerObj ? `${fillerObj.plugin}.${fillerObj.target}` : "";
+    const curRecs = recordsByItem[item.id] ?? [];
+    const lastAnchorBefore = curRecs.length ? curRecs[curRecs.length - 1]!.anchor : null;
+
+    if (fillerObj && picker) {
+      runsByItem = {
+        ...runsByItem,
+        [item.id]: {
+          id: "",
+          itemId: item.id,
+          label: fillerObj.label,
+          slot: picker.slot.name,
+          filler: fillerObj.plugin,
+          fillerOp,
+          offset: 0,
+          text: "",
+          status: "starting",
+          turnDone: false,
+          lastAnchorBefore,
+        },
+      };
+    }
+
+    try {
+      const res = await hostCall<{ changes?: { link?: string; anchor?: string }[]; run?: { id: string; status: string } }>(
+        session,
+        qualifiedOp,
+        input,
+        `send-${crypto.randomUUID()}`,
+        slotSelection,
+      );
+      if (fillerObj && picker && res?.run?.id) {
+        const promptLink = res.changes?.[0]?.link;
+        const promptAnchor = res.changes?.[0]?.anchor ?? lastAnchorBefore;
+        if (res.run.status === "stopped") {
+          runsByItem = {
+            ...runsByItem,
+            [item.id]: {
+              id: res.run.id,
+              itemId: item.id,
+              label: fillerObj.label,
+              slot: picker.slot.name,
+              filler: fillerObj.plugin,
+              fillerOp,
+              offset: 0,
+              text: "",
+              status: "lost",
+              turnDone: false,
+              promptLink,
+              lastAnchorBefore: promptAnchor,
+            },
+          };
+        } else {
+          attachRunLog(item.id, {
+            id: res.run.id,
+            itemId: item.id,
+            label: fillerObj.label,
+            slot: picker.slot.name,
+            filler: fillerObj.plugin,
+            fillerOp,
+            offset: 0,
+            text: "",
+            status: "starting",
+            turnDone: false,
+            promptLink,
+            lastAnchorBefore: promptAnchor,
+          });
+        }
+      }
+    } catch (err) {
+      if (fillerObj && picker) {
+        const msg = err instanceof Error ? err.message : "Could not start the run.";
+        const latestRecs = recordsByItem[item.id] ?? [];
+        const latestAnchor = latestRecs.length ? latestRecs[latestRecs.length - 1]!.anchor : null;
+        const messageWasAppended = latestAnchor !== null && latestAnchor !== lastAnchorBefore;
+        runsByItem = {
+          ...runsByItem,
+          [item.id]: {
+            id: "",
+            itemId: item.id,
+            label: fillerObj.label,
+            slot: picker.slot.name,
+            filler: fillerObj.plugin,
+            fillerOp,
+            offset: 0,
+            text: "",
+            status: "failed",
+            turnDone: false,
+            error: msg,
+            canRetry: messageWasAppended,
+            promptLink: messageWasAppended ? `[Record](<#^${latestAnchor}>)` : undefined,
+            lastAnchorBefore: latestAnchor,
+          },
+        };
+        if (messageWasAppended) return;
+      }
+      throw err;
+    }
   }
 
   function openEditRecord(itemId: string, rec: RecordData) {
@@ -681,7 +990,7 @@
               {@const kind = row ? findKind(row.kind) : null}
               {@const plugin = kind ? plugins.find((p) => p.id === kind.plugin) ?? null : null}
               {@const comp = plugin && kind ? resolveComposerSlot(plugin, kind) : null}
-              {@const picker = plugin ? resolvePickerSlot(plugin, plugins, comp?.slot.name) : null}
+              {@const picker = plugin ? resolvePickerSlot(plugin, comp?.slot.name) : null}
               {#if row && kind}
                 <HostRecords
                   {row}
@@ -690,9 +999,11 @@
                   viewerId={session?.account ?? ""}
                   composer={comp}
                   pickerSlot={picker}
-                  {activeRun}
+                  activeRun={runsByItem[row.id] ?? null}
                   onsend={(body, quote, filler) => sendRecord(row, kind, body, quote, filler)}
-                  onstoprun={stopStreamFixture}
+                  onstoprun={() => stopActiveRun(row.id)}
+                  onretryrun={() => retryRunStart(row.id)}
+                  ondismissrun={() => clearItemRun(row.id)}
                   oneditrecord={(rec) => openEditRecord(row.id, rec)}
                   onremoverecord={(rec) => openRemoveRecord(row.id, rec)}
                 />

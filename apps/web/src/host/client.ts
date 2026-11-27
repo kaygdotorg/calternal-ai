@@ -14,6 +14,7 @@ import type {
   QuerySpec,
   RecordData,
   RowData,
+  RunLogChunk,
   SessionInfo,
   SpaceDeclarations,
 } from "./types";
@@ -350,7 +351,15 @@ interface RecordsListener {
   onItemChange: (meta: LiveItemMetadata) => void;
 }
 
-type Listener = QueryListener | RecordsListener;
+interface RunLogListener {
+  kind: "run_log";
+  run: string;
+  offset: number;
+  onBatch: (chunks: RunLogChunk[], offset: number, stopped: boolean) => void;
+  onError: (code: string, message: string) => void;
+}
+
+type Listener = QueryListener | RecordsListener | RunLogListener;
 
 /**
  * Single WebSocket per browser session carrying all active query and record
@@ -433,6 +442,21 @@ export class LiveClient {
           const { version, fields, computed, state, when } = frame;
           sub.onItemChange({ version, fields, computed, state, when });
         }
+        return;
+      }
+      if (frame.type === "run_log") {
+        const sub = this.subs.get(frame.sub);
+        if (sub?.kind === "run_log") {
+          sub.offset = frame.offset;
+          sub.onBatch(frame.chunks, frame.offset, frame.stopped);
+        }
+        return;
+      }
+      if (frame.type === "error" && frame.sub) {
+        const sub = this.subs.get(frame.sub);
+        if (sub?.kind === "run_log") {
+          sub.onError(frame.code, frame.message);
+        }
       }
     });
 
@@ -459,6 +483,8 @@ export class LiveClient {
   private sendSubscribe(id: string, listener: Listener): void {
     if (listener.kind === "query") {
       this.send({ type: "subscribe", sub: id, query: listener.spec });
+    } else if (listener.kind === "run_log") {
+      this.send({ type: "subscribe", sub: id, run_log: { run: listener.run, after: listener.offset } });
     } else {
       const records: Record<string, unknown> = { item: listener.item };
       if (listener.lastAnchor) records.after = listener.lastAnchor;
@@ -492,6 +518,27 @@ export class LiveClient {
       this.subs.delete(id);
       this.send({ type: "unsubscribe", sub: id });
     };
+  }
+
+  /** Subscribe to one run's live log stream from an exclusive chunk offset; resumes automatically on reconnect. */
+  subscribeRunLog(
+    run: string,
+    handlers: Omit<RunLogListener, "kind" | "run" | "offset">,
+    initialOffset = 0,
+  ): () => void {
+    const id = `l${this.nextId++}`;
+    const listener: RunLogListener = { kind: "run_log", run, offset: initialOffset, ...handlers };
+    this.subs.set(id, listener);
+    this.sendSubscribe(id, listener);
+    return () => {
+      this.subs.delete(id);
+      this.send({ type: "unsubscribe", sub: id });
+    };
+  }
+
+  /** Stop an active run through `s.run.stop`. */
+  static stopRun(session: SessionInfo, runId: string): Promise<unknown> {
+    return hostCall(session, "s.run.stop", { id: runId });
   }
 
   /** Force-drop the underlying WebSocket (for reconnect tests) and let it auto-reconnect from `lastAnchor`. */
