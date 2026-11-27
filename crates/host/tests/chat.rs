@@ -1,0 +1,308 @@
+//! Exercise slices 1 and 2 through the same dispatcher as the HTTP transport.
+use calternal_auth::{Auth, AuthConfig};
+use calternal_host::{Call, Host};
+use calternal_types::{AccountId, Actor, ErrorCode, SpaceId};
+use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
+
+const KIND: &str = "calternal-chat.chats";
+
+struct Fixture {
+    root: tempfile::TempDir,
+    auth: Auth,
+    host: Host,
+    owner: AccountId,
+    second: AccountId,
+    space: SpaceId,
+}
+
+impl Fixture {
+    fn new() -> Self {
+        Self::with_anchor_fixture(false)
+    }
+
+    fn with_anchor_fixture(use_anchor: bool) -> Self {
+        let root = tempfile::tempdir().unwrap();
+        let auth = Auth::open(
+            &root.path().join("auth"),
+            AuthConfig::new("http://localhost").unwrap(),
+        )
+        .unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let owner = rt.block_on(auth.create("Ada")).unwrap().id;
+        let second = rt.block_on(auth.create("Lin")).unwrap().id;
+        let space = auth
+            .spaces()
+            .list(owner)
+            .unwrap()
+            .into_iter()
+            .find(|s| s.personal)
+            .unwrap()
+            .id;
+        let host = Host::new(root.path().into(), auth.clone(), 7).unwrap();
+        let plugin =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins-v2/calternal-chat");
+        let plugin = if use_anchor {
+            let target = root.path().join("fixture");
+            copy_bundle(&plugin, &target);
+            let kind = target.join("kinds/chats.md");
+            let text = std::fs::read_to_string(&kind).unwrap();
+            std::fs::write(
+                &kind,
+                text.lines()
+                    .map(|line| {
+                        if line.starts_with("  unread:") {
+                            "  unread: = count(records after state.read through)"
+                        } else if line.starts_with("  read through:") {
+                            "  read through: record anchor"
+                        } else {
+                            line
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    + "\n",
+            )
+            .unwrap();
+            target
+        } else {
+            plugin
+        };
+        host.install_local(owner, space, &plugin, true).unwrap();
+        Self {
+            root,
+            auth,
+            owner,
+            second,
+            space,
+            host,
+        }
+    }
+
+    fn call(
+        &self,
+        actor: Actor,
+        call: &str,
+        input: Value,
+        key: Option<&str>,
+    ) -> calternal_types::Result<Value> {
+        self.host.call(
+            actor,
+            self.space,
+            Call {
+                call: call.into(),
+                input,
+                idempotency_key: key.map(str::to_owned),
+            },
+        )
+    }
+
+    fn shell(&self, name: &str, input: Value) -> Value {
+        self.call(self.owner.into(), name, input, None).unwrap()
+    }
+
+    fn plugin(&self, input: Value, key: Option<&str>) -> Value {
+        self.call(
+            Actor::plugin(self.owner, "calternal-chat"),
+            "s.write",
+            input,
+            key,
+        )
+        .unwrap()
+    }
+
+    fn add(&self) -> Value {
+        self.shell(
+            "s.write",
+            json!({"changes":[{"add":{"kind":KIND,"fields":{"title":"A small chat"}}}]}),
+        )["changes"][0]["id"]
+            .clone()
+    }
+
+    fn space_path(&self) -> PathBuf {
+        self.root.path().join("spaces").join(self.space.to_string())
+    }
+}
+
+#[test]
+fn installs_chat_adds_markdown_and_rebuilds_query() {
+    let f = Fixture::new();
+    let id = f.add();
+    let collection = json!({"collection":"calternal-chat.chats"});
+    let before = f.shell("s.query", collection.clone());
+    assert_eq!(before["rows"][0]["id"], id);
+    assert_eq!(before["rows"][0]["computed"]["unread"], 0);
+    assert_eq!(
+        std::fs::read_to_string(f.space_path().join("Chats/A small chat/chat.md")).unwrap(),
+        "---\narchived: false\ntitle: A small chat\n---\n"
+    );
+    let installed = f
+        .space_path()
+        .join(".calternal/plugins/calternal-chat/operations.ts");
+    assert!(Path::new(&installed).is_file());
+    f.shell("index.rebuild", json!({}));
+    assert_eq!(f.shell("s.query", collection.clone()), before);
+    let outsider = f
+        .call(f.second.into(), "s.query", collection, None)
+        .unwrap_err();
+    assert_eq!(outsider.code, ErrorCode::NotFound);
+    let invalid = f
+        .call(
+            f.owner.into(),
+            "s.write",
+            json!({"changes":[
+                {"change":{"item":id,"fields":{"archived":true}}},
+                {"change":{"item":id,"fields":{"title":"refused"}}}
+            ]}),
+            None,
+        )
+        .unwrap_err();
+    assert_eq!(invalid.code, ErrorCode::Forbidden);
+    assert_eq!(
+        f.shell("s.read", json!({"item":id}))["fields"]["archived"],
+        false
+    );
+}
+
+#[test]
+fn records_are_attributed_and_replays_do_not_append() {
+    use std::io::Write;
+
+    let f = Fixture::new();
+    let id = f.add();
+    let append = json!({"changes":[{"append record":{"item":id,"record":{"body":"A message"}}}]});
+    let first = f.plugin(append.clone(), Some("first"));
+    assert_eq!(f.plugin(append, Some("first")), first);
+    let data = f.shell("s.read", json!({"item":id}));
+    assert_eq!(data["records"].as_array().unwrap().len(), 1);
+    assert_eq!(data["records"][0]["author"], f.owner.to_string());
+    assert_eq!(data["computed"]["unread"], 1);
+
+    let refusal = f
+        .call(
+            f.second.into(),
+            "s.write",
+            json!({"changes":[
+                {"remove record":{"item":id,"anchor":first["changes"][0]["anchor"]}}
+            ]}),
+            None,
+        )
+        .unwrap_err();
+    assert_eq!(refusal.code, ErrorCode::NotFound);
+
+    let path = f.space_path().join("Chats/A small chat/chat.md");
+    let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+    write!(
+        file,
+        "**{}** · 2026-11-27 14:03 ^0123456789abcdef\n\nPrivate?\n\n",
+        f.owner
+    )
+    .unwrap();
+    assert_eq!(
+        f.shell("s.read", json!({"item":id}))["records"][1]["author"],
+        "outside"
+    );
+    let error = f
+        .call(
+            Actor::plugin(f.owner, "calternal-chat"),
+            "s.write",
+            json!({"changes":[
+                {"append record":{"item":id,"record":{"body":"Later"}}}
+            ]}),
+            None,
+        )
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Conflict);
+}
+
+#[test]
+fn restart_keeps_item_and_receipt() {
+    let f = Fixture::new();
+    let id = f.add();
+    let append = json!({"changes":[{"append record":{"item":id,"record":{"body":"Persist"}}}]});
+    let first = f.plugin(append.clone(), Some("persist"));
+    let Fixture {
+        root,
+        auth,
+        host,
+        owner,
+        space,
+        ..
+    } = f;
+    drop(host);
+    let host = Host::new(root.path().into(), auth, 7).unwrap();
+    let response = host
+        .call(
+            Actor::plugin(owner, "calternal-chat"),
+            space,
+            Call {
+                call: "s.write".into(),
+                input: append,
+                idempotency_key: Some("persist".into()),
+            },
+        )
+        .unwrap();
+    assert_eq!(response, first);
+}
+
+#[test]
+fn thousand_appends() {
+    let f = Fixture::new();
+    let id = f.add();
+    let one = |n| json!({"changes":[{"append record":{"item":id,"record":{"body":format!("Message {n}")}}}]});
+    f.plugin(one(0), Some("warmup"));
+    eprintln!("HOST_APPEND_BEGIN");
+    for n in 1..=1_000 {
+        f.plugin(one(n), Some(&format!("append-{n}")));
+    }
+    eprintln!("HOST_APPEND_END");
+    assert_eq!(
+        f.shell("s.read", json!({"item":id}))["records"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1_001
+    );
+}
+
+fn copy_bundle(source: &Path, target: &Path) {
+    std::fs::create_dir(target).unwrap();
+    for entry in std::fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let target = target.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_bundle(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+#[test]
+fn unread_position_survives_deleting_the_marked_record() {
+    let f = Fixture::with_anchor_fixture(true);
+    let id = f.add();
+    let append = |body| json!({"changes":[{"append record":{"item":id,"record":{"body":body}}}]});
+    let first = f.plugin(append("First"), None)["changes"][0]["anchor"].clone();
+    let second = f.plugin(append("Second"), None)["changes"][0]["anchor"].clone();
+    let unread = || f.shell("s.read", json!({"item":id}))["computed"]["unread"].clone();
+    assert_eq!(unread(), 2);
+    f.shell(
+        "s.state",
+        json!({"op":"set","item":id,"key":"read through","value":first}),
+    );
+    assert_eq!(unread(), 1);
+    f.shell(
+        "s.write",
+        json!({"changes":[{"remove record":{"item":id,"anchor":first}}]}),
+    );
+    assert_eq!(unread(), 1);
+    f.shell(
+        "s.state",
+        json!({"op":"set","item":id,"key":"read through","value":second}),
+    );
+    assert_eq!(unread(), 0);
+}
