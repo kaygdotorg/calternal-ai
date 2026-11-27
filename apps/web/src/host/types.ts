@@ -31,6 +31,14 @@ export interface FieldDecl {
 /** Placement hints on a kind operation (`swipe`, `menu`, `primary`). */
 export type OpPlacement = "swipe" | "menu" | "primary";
 
+/** One assignment entry on a `set` operation declaration. */
+export interface OperationAssignmentDecl {
+  target: string;
+  value?: unknown;
+  computed?: boolean;
+  ask?: boolean;
+}
+
 /** One operation declaration from a kind's `operations:` block. */
 export interface OperationDecl {
   name: string;
@@ -38,10 +46,12 @@ export interface OperationDecl {
   form: "add" | "change" | "remove" | "change_record" | "remove_record" | "set" | "code" | "duplicate" | "open" | "timer" | "append_record";
   /** Fields accepted by `add`, `change`, or `change record`. */
   fields: string[];
-  /** For `set` operations: target field or `state.<key>`. */
+  /** For single-assignment `set` operations: target field or `state.<key>`. */
   target?: string;
-  /** For `set` operations: literal value or `"ask"`. */
+  /** For single-assignment `set` operations: literal value or `"ask"`. */
   value?: unknown;
+  /** Full assignment list for single- or multi-field `set` operations. */
+  assignments?: OperationAssignmentDecl[];
   /** Declared coded arguments, keyed by the exact input name. */
   inputs: Record<string, FieldDecl>;
   /** Visibility on a particular row is supplied by its server-evaluated `when` map. */

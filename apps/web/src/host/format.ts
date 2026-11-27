@@ -253,6 +253,27 @@ export function resolvePickerSlot(
   return null;
 }
 
+/**
+ * Find the unambiguous viewer-state read-position binding on `kind`: a `set` operation with a
+ * single `ask` assignment targeting `state.<key>` whose declared type is `"record anchor"`.
+ * Returns `null` if none or more than one exists (never matches on operation or field names).
+ */
+export function resolveReadPositionStateKey(kind: KindDecl): string | null {
+  const keys = new Set<string>();
+  for (const op of Object.values(kind.operations)) {
+    if (op.form !== "set") continue;
+    const assigns = op.assignments ?? (op.target ? [{ target: op.target, value: op.value, ask: op.value === "ask" }] : []);
+    if (assigns.length !== 1) continue;
+    const a = assigns[0]!;
+    if (!a.ask || !a.target.startsWith("state.")) continue;
+    const key = a.target.slice("state.".length);
+    if (kind.state[key]?.type === "record anchor") {
+      keys.add(key);
+    }
+  }
+  return keys.size === 1 ? [...keys][0]! : null;
+}
+
 /** Return the initials (1–2 characters) for a person's display name. */
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);

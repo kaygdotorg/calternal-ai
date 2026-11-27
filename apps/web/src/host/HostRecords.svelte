@@ -42,6 +42,7 @@
     onstoprun,
     onretryrun,
     ondismissrun,
+    onmarkread,
     oneditrecord,
     onremoverecord,
   }: {
@@ -56,6 +57,7 @@
     onstoprun?: () => void;
     onretryrun?: () => void;
     ondismissrun?: () => void;
+    onmarkread?: (anchor: string) => void;
     oneditrecord: (rec: RecordData) => void;
     onremoverecord: (rec: RecordData) => void;
   } = $props();
@@ -88,7 +90,7 @@
   });
 
   const own = (r: RecordData) => !r.run && r.author === viewerId;
-  const displayName = (r: RecordData) => r.author_name || r.author;
+  const displayName = (r: RecordData) => r.author_name || (r.run ? "Agent" : r.author);
 
   type Line =
     | { t: "day"; key: string; text: string }
@@ -234,11 +236,47 @@
     prevStreamLen = sLen;
   });
 
+  // Debounced read-position acknowledgement when scrolled to the bottom and the page is visible.
+  let lastMarkedAnchor = "";
+  let markTimer: ReturnType<typeof setTimeout> | null = null;
+  $effect(() => {
+    void row.id;
+    lastMarkedAnchor = "";
+  });
+  $effect(() => {
+    if (!onmarkread || !atEnd) return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    const shown = records.filter((r) => !r.redacted);
+    const tail = shown.length ? shown[shown.length - 1]!.anchor : "";
+    if (!tail || tail === lastMarkedAnchor) return;
+    if (markTimer) clearTimeout(markTimer);
+    markTimer = setTimeout(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      lastMarkedAnchor = tail;
+      onmarkread(tail);
+    }, 350);
+    return () => {
+      if (markTimer) { clearTimeout(markTimer); markTimer = null; }
+    };
+  });
+
   onMount(() => {
     void tick().then(() => {
       scrollToEnd(true);
       updateAtEnd();
     });
+    const onVis = () => {
+      if (document.visibilityState === "visible" && atEnd && onmarkread) {
+        const shown = records.filter((r) => !r.redacted);
+        const tail = shown.length ? shown[shown.length - 1]!.anchor : "";
+        if (tail && tail !== lastMarkedAnchor) {
+          lastMarkedAnchor = tail;
+          onmarkread(tail);
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   });
 
   async function submitComposer(e: Event) {
@@ -364,7 +402,7 @@
           {/if}
           {#if !runIsActive}
             <div class="run-actions">
-              {#if activeRun.status === "failed" && activeRun.canRetry && onretryrun}
+              {#if (activeRun.status === "failed" || activeRun.status === "stopped") && activeRun.canRetry && onretryrun}
                 <button type="button" class="run-act primary" onclick={onretryrun}>Retry</button>
               {/if}
               {#if ondismissrun}

@@ -37,6 +37,7 @@
     operationFormFields,
     resolveComposerSlot,
     resolvePickerSlot,
+    resolveReadPositionStateKey,
     rowTitle,
     type DerivedAction,
   } from "./format";
@@ -346,6 +347,7 @@
             offset: parsed.safeOffset,
             turnDone,
             status: nextStatus,
+            canRetry: nextStatus === "stopped" ? Boolean(cur.fillerOp && cur.promptLink) : cur.canRetry,
           };
           runsByItem = { ...runsByItem, [itemId]: updated };
           persistRunState(updated);
@@ -1023,6 +1025,7 @@
               {@const plugin = kind ? plugins.find((p) => p.id === kind.plugin) ?? null : null}
               {@const comp = plugin && kind ? resolveComposerSlot(plugin, kind) : null}
               {@const picker = plugin ? resolvePickerSlot(plugin, comp?.slot.name) : null}
+              {@const readStateKey = kind ? resolveReadPositionStateKey(kind) : null}
               {#if itemErrors[w.ref]}
                 <p class="err" role="alert">{itemErrors[w.ref]}</p>
               {:else if row && kind}
@@ -1038,6 +1041,12 @@
                   onstoprun={() => stopActiveRun(row.id)}
                   onretryrun={() => retryRunStart(row.id)}
                   ondismissrun={() => clearItemRun(row.id)}
+                  onmarkread={readStateKey
+                    ? (anchor) => {
+                        if (!session || row.state?.[readStateKey] === anchor) return;
+                        void hostCall(session, "s.state", { item: row.id, [readStateKey]: anchor }).catch(() => {});
+                      }
+                    : undefined}
                   oneditrecord={(rec) => openEditRecord(row.id, rec)}
                   onremoverecord={(rec) => openRemoveRecord(row.id, rec)}
                 />
