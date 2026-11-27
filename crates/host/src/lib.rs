@@ -2,6 +2,7 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod browser;
 mod declarations;
 mod installation;
 pub mod live;

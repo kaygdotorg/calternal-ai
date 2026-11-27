@@ -1,11 +1,7 @@
 //! Local operator commands and the session-authenticated HTTP transport.
-use axum::extract::{DefaultBodyLimit, Path, State, rejection::JsonRejection};
-use axum::http::{HeaderMap, StatusCode};
-use axum::{Json, Router, routing::{get, post}};
 use calternal_auth::{Auth, AuthConfig};
-use calternal_host::{Call, Host, WRITE_BYTES, WorkerRuntime};
-use calternal_types::{Error, ErrorCode};
-use serde_json::{Value, json};
+use calternal_host::{Host, WorkerRuntime};
+use calternal_types::Error;
 use std::{path::PathBuf, sync::Arc};
 
 #[tokio::main]
@@ -17,7 +13,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = PathBuf::from(root);
     let auth_dir = root.join("auth");
     let config = AuthConfig::new(origin)?;
-    let auth = tokio::task::spawn_blocking(move || Auth::open(&auth_dir, config)).await??;
+    let auth_config = config.clone();
+    let auth = tokio::task::spawn_blocking(move || Auth::open(&auth_dir, auth_config)).await??;
     let retention =
         std::env::var("CALTERNAL_RECEIPT_RETENTION_DAYS").map_or(Ok(7), |raw| raw.parse())?;
     let host = Host::new(root, auth, retention)?;
@@ -42,12 +39,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     match (command.as_str(), rest) {
         ("serve", [address]) => {
-            let app = Router::new()
-                .route("/v1/spaces/{space}/call", post(route))
-                .route("/v1/spaces/{space}/live", get(calternal_host::live::ws_route))
-                .layer(DefaultBodyLimit::max(WRITE_BYTES))
-                .with_state(host);
-            axum::serve(tokio::net::TcpListener::bind(address).await?, app).await?;
+            let app = calternal_host::browser::router(host, config);
+            axum::serve(
+                tokio::net::TcpListener::bind(address).await?,
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await?;
         }
         ("install", [owner, space, directory, flags @ ..])
             if flags.is_empty() || flags == ["--official"] =>
@@ -67,65 +64,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => return Err("invalid command or arguments".into()),
     }
     Ok(())
-}
-
-async fn route(
-    State(host): State<Arc<Host>>,
-    Path(space): Path<String>,
-    headers: HeaderMap,
-    body: Result<Json<Call>, JsonRejection>,
-) -> (StatusCode, Json<Value>) {
-    let result = async {
-        let bearer = headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .ok_or_else(|| Error::unauthorized("Sign in to use this space."))?;
-        let Json(call) = body.map_err(|e| {
-            if e.status() == StatusCode::PAYLOAD_TOO_LARGE {
-                Error::new(ErrorCode::TooLarge, "The call exceeds 16 MiB.")
-            } else {
-                Error::invalid_input("Expected a JSON call envelope.")
-            }
-        })?;
-        host.session_call(bearer, space.parse()?, call).await
-    }
-    .await;
-    match result {
-        Ok(value) => (StatusCode::OK, Json(json!({"result":value}))),
-        Err(error) => {
-            let (code, next) = match error.code {
-                ErrorCode::Unauthorized => ("needs-sign-in", "Sign in and try again."),
-                ErrorCode::Forbidden | ErrorCode::PasskeyReverificationRequired => {
-                    ("not-allowed", "Check your access.")
-                }
-                ErrorCode::NotFound => ("not-found", "Check the requested ID."),
-                ErrorCode::Conflict => ("conflict", "Refresh before retrying."),
-                ErrorCode::InvalidInput => ("invalid", "Check the call arguments."),
-                ErrorCode::TooLarge => ("too-large", "Reduce the request size."),
-                ErrorCode::EffectiveScopeLimitExceeded | ErrorCode::RetryAfter => {
-                    ("limit", "Reduce the work or retry later.")
-                }
-                ErrorCode::Internal | ErrorCode::Unavailable => ("unreachable", "Try again later."),
-            };
-            let status =
-                StatusCode::from_u16(error.code.http_status()).expect("shared HTTP status");
-            let code = error
-                .details
-                .as_ref()
-                .and_then(|details| details.get("operation_code"))
-                .and_then(Value::as_str)
-                .unwrap_or(code);
-            let next = error
-                .details
-                .as_ref()
-                .and_then(|details| details.get("next"))
-                .and_then(Value::as_str)
-                .unwrap_or(next);
-            (
-                status,
-                Json(json!({"error":{"code":code,"message":error.message,"next":next}})),
-            )
-        }
-    }
 }

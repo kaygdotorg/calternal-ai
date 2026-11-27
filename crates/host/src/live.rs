@@ -75,34 +75,47 @@ impl Hub {
     }
 }
 
-/// Axum upgrade handler for `GET /v1/spaces/{space}/live`.
-///
-/// Accepts an optional `Authorization: Bearer <token>` header; browser clients
-/// without custom WebSocket headers authenticate in their first `auth` frame.
-pub async fn ws_route(
+pub(crate) async fn ws_route(
     State(host): State<Arc<Host>>,
     Path(space): Path<String>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    let Ok(space_id) = space.parse::<SpaceId>() else {
+    let Ok(space) = space.parse::<SpaceId>() else {
         return StatusCode::BAD_REQUEST.into_response();
     };
-    let bearer = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_owned);
+    let Some(token) = crate::browser::cookie(&headers).map(str::to_owned) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let Some(account) = host.identify_session(&token).await else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let actor = Actor::account(account);
+    let check = host
+        .clone()
+        .trusted_call(
+            actor.clone(),
+            space,
+            Call {
+                call: "s.space".into(),
+                input: json!({}),
+                idempotency_key: None,
+                slot_selection: None,
+            },
+        )
+        .await;
+    if let Err(error) = check {
+        return StatusCode::from_u16(error.code.http_status())
+            .expect("shared HTTP status")
+            .into_response();
+    }
     ws.max_message_size(MAX_CLIENT_FRAME_BYTES)
-        .on_upgrade(move |socket| serve_socket(host, space_id, bearer, socket))
+        .on_upgrade(move |socket| serve_socket(host, space, actor, token, socket))
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ClientFrame {
-    Auth {
-        token: String,
-    },
     Subscribe {
         sub: String,
         query: Option<Value>,
@@ -184,13 +197,12 @@ enum Subscription {
 async fn serve_socket(
     host: Arc<Host>,
     space: SpaceId,
-    header_bearer: Option<String>,
+    actor: Actor,
+    token: String,
     mut socket: WebSocket,
 ) {
-    let actor = match authenticate(&host, space, header_bearer, &mut socket).await {
-        Some(actor) => actor,
-        None => return,
-    };
+    let mut authority = host.auth.spaces().changes();
+    let mut expiry = tokio::time::interval(std::time::Duration::from_secs(60));
     if send_frame(
         &mut socket,
         &ServerFrame::Ready {
@@ -209,8 +221,21 @@ async fn serve_socket(
 
     loop {
         tokio::select! {
+            _ = authority.changed() => {
+                if host.identify_session(&token).await != Some(actor.account) {
+                    break;
+                }
+            }
+            _ = expiry.tick() => {
+                if host.identify_session(&token).await != Some(actor.account) {
+                    break;
+                }
+            }
             incoming = socket.recv() => {
                 let Some(Ok(message)) = incoming else { break };
+                if host.identify_session(&token).await != Some(actor.account) {
+                    break;
+                }
                 match message {
                     Message::Text(text) => {
                         if text.len() > MAX_CLIENT_FRAME_BYTES {
@@ -238,6 +263,9 @@ async fn serve_socket(
                 }
             }
             event = rx.recv() => {
+                if host.identify_session(&token).await != Some(actor.account) {
+                    break;
+                }
                 match event {
                     Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {
                         if refresh_all(&host, &actor, space, &mut subs, &mut socket).await.is_err() {
@@ -251,62 +279,6 @@ async fn serve_socket(
     }
 }
 
-async fn authenticate(
-    host: &Arc<Host>,
-    space: SpaceId,
-    header_bearer: Option<String>,
-    socket: &mut WebSocket,
-) -> Option<Actor> {
-    let token = match header_bearer {
-        Some(token) => token,
-        None => match socket.recv().await {
-            Some(Ok(Message::Text(text))) if text.len() <= MAX_CLIENT_FRAME_BYTES => {
-                match serde_json::from_str::<ClientFrame>(&text) {
-                    Ok(ClientFrame::Auth { token }) => token,
-                    _ => {
-                        let _ = send_error(
-                            socket,
-                            None,
-                            &Error::unauthorized("Send an auth frame first."),
-                        )
-                        .await;
-                        return None;
-                    }
-                }
-            }
-            _ => return None,
-        },
-    };
-    let Some(account) = host.identify_session(&token).await else {
-        let _ = send_error(
-            socket,
-            None,
-            &Error::unauthorized("Sign in to use this space."),
-        )
-        .await;
-        return None;
-    };
-    let actor = Actor::account(account);
-    let check = host
-        .clone()
-        .trusted_call(
-            actor.clone(),
-            space,
-            Call {
-                call: "s.space".into(),
-                input: json!({}),
-                idempotency_key: None,
-                slot_selection: None,
-            },
-        )
-        .await;
-    if let Err(error) = check {
-        let _ = send_error(socket, None, &error).await;
-        return None;
-    }
-    Some(actor)
-}
-
 async fn handle_client_frame(
     host: &Arc<Host>,
     actor: &Actor,
@@ -316,14 +288,6 @@ async fn handle_client_frame(
     socket: &mut WebSocket,
 ) -> std::result::Result<(), ()> {
     match frame {
-        ClientFrame::Auth { .. } => {
-            send_error(
-                socket,
-                None,
-                &Error::invalid_input("Session is already authenticated."),
-            )
-            .await
-        }
         ClientFrame::Ping => send_frame(socket, &ServerFrame::Pong).await,
         ClientFrame::Unsubscribe { sub } => {
             subs.remove(&sub);
@@ -419,8 +383,7 @@ async fn refresh_all(
     let keys: Vec<String> = subs.keys().cloned().collect();
     for key in keys {
         if let Some(sub) = subs.get_mut(&key)
-            && let Err(error) =
-                eval_subscription(host, actor, space, &key, sub, None, socket).await
+            && let Err(error) = eval_subscription(host, actor, space, &key, sub, None, socket).await
         {
             send_error(socket, Some(key), &error).await?;
         }
@@ -530,11 +493,13 @@ async fn eval_subscription(
             let pure_append = records.len() > *last_count
                 && match last_anchor.as_deref() {
                     None => *last_count == 0,
-                    Some(prev) => records
-                        .get(last_count.saturating_sub(1))
-                        .and_then(|r| r.get("anchor"))
-                        .and_then(Value::as_str)
-                        == Some(prev),
+                    Some(prev) => {
+                        records
+                            .get(last_count.saturating_sub(1))
+                            .and_then(|r| r.get("anchor"))
+                            .and_then(Value::as_str)
+                            == Some(prev)
+                    }
                 };
 
             if pure_append {
@@ -636,7 +601,10 @@ async fn send_frame(socket: &mut WebSocket, frame: &ServerFrame) -> std::result:
     let Ok(text) = serde_json::to_string(frame) else {
         return Err(());
     };
-    socket.send(Message::Text(text.into())).await.map_err(|_| ())
+    socket
+        .send(Message::Text(text.into()))
+        .await
+        .map_err(|_| ())
 }
 
 async fn send_error(
