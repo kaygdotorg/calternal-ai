@@ -7,14 +7,16 @@ use crate::{
 };
 
 mod collection;
+mod formulas;
+mod install;
 mod kind;
 mod manifest;
 mod secondary;
 
 pub use collection::{Collection, ShareSource, Sort, Source, Total};
 pub use kind::{Editability, ItemForm, Kind, Rights};
-pub use manifest::{Manifest, Program};
-pub use secondary::{AgentRule, AgentRules, Sidebar, parse_agent_rules};
+pub use manifest::{Manifest, Program, Refusal, Slot};
+pub use secondary::{AgentRule, AgentRules, Sidebar, SidebarEntry, parse_agent_rules};
 
 /// One supplied entry in a plugin folder.
 #[derive(Clone, Copy, Debug)]
@@ -62,6 +64,7 @@ pub struct Directive {
     pub value: String,
     /// Nested declaration lines in source order.
     pub children: Vec<Directive>,
+    pub(crate) site: Site,
 }
 
 /// Parse a plugin's definition files and check relationships within the folder.
@@ -149,7 +152,7 @@ pub fn parse_plugin(
         let mut parse = parse;
         parse().map_err(|error| located(error, file.path))?;
     }
-    verify(&plugin, &paths, options)?;
+    install::verify(&plugin, &paths, options)?;
     Ok(plugin)
 }
 
@@ -168,132 +171,6 @@ fn html(text: &str) -> bool {
     })
 }
 
-fn verify(
-    plugin: &Plugin,
-    paths: &BTreeSet<&str>,
-    options: &InstallOptions<'_>,
-) -> Result<(), Diagnostic> {
-    let mut folders: Vec<&str> = options
-        .installed
-        .iter()
-        .filter(|other| other.manifest.id != plugin.manifest.id)
-        .flat_map(|plugin| {
-            plugin
-                .kinds
-                .values()
-                .filter_map(|kind| kind.folder.as_deref())
-        })
-        .collect();
-    for kind in plugin.kinds.values() {
-        let issue =
-            |message: String| located(kind.site.error(message), &format!("kinds/{}.md", kind.id));
-        if kind.hidden && plugin.description_only {
-            return Err(issue(
-                "A description-only plugin cannot declare a hidden kind".into(),
-            ));
-        }
-        if kind.operations.values().any(crate::Operation::is_coded)
-            && !paths.contains("operations.ts")
-        {
-            return Err(issue(
-                "Supply operations.ts for the declared coded operations".into(),
-            ));
-        }
-        if let Some(folder) = kind.folder.as_deref() {
-            if folders.iter().any(|other| folder_overlap(other, folder)) {
-                return Err(issue(format!(
-                    "The folder {folder} overlaps another kind's folder"
-                )));
-            }
-            folders.push(folder);
-        }
-        if let Some(template) = &kind.template {
-            if template != "none" && !plugin.templates.contains_key(template) {
-                return Err(issue(format!(
-                    "Include the template templates/{template}.md"
-                )));
-            }
-        }
-    }
-    for collection in plugin.collections.values() {
-        for source in &collection.sources {
-            if let Source::Kind(kind) | Source::Records(kind) = source {
-                if let Some((plugin_id, kind_id)) = kind.split_once('.') {
-                    let source_plugin = if plugin_id == plugin.manifest.id {
-                        Some(plugin)
-                    } else {
-                        options
-                            .installed
-                            .iter()
-                            .find(|other| other.manifest.id == plugin_id)
-                    };
-                    if let Some(source_plugin) = source_plugin {
-                        if source_plugin
-                            .kinds
-                            .get(kind_id)
-                            .is_none_or(|kind| kind.hidden)
-                        {
-                            return Err(located(
-                                collection
-                                    .site
-                                    .error(format!("The source kind {kind} is unavailable")),
-                                &format!("collections/{}.md", collection.id),
-                            ));
-                        }
-                    }
-                } else if !plugin.kinds.contains_key(kind) {
-                    return Err(located(
-                        collection
-                            .site
-                            .error(format!("The source kind {kind} is missing")),
-                        &format!("collections/{}.md", collection.id),
-                    ));
-                }
-            }
-        }
-    }
-    for sidebar in plugin.sidebars.values() {
-        for entry in &sidebar.entries {
-            if let Some(collection) = &entry.collection {
-                if !collection.contains(':') && !plugin.collections.contains_key(collection) {
-                    return Err(located(
-                        entry
-                            .site
-                            .error(format!("The collection {collection} is missing")),
-                        &format!("sidebars/{}.md", sidebar.id),
-                    ));
-                }
-            }
-        }
-    }
-    for program in plugin.manifest.programs.values() {
-        if let Some(binding) = &program.path {
-            if !paths.contains(binding.as_str()) {
-                return Err(located(
-                    program
-                        .site
-                        .error(format!("Include the program file {binding}")),
-                    "plugin.md",
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn folder_overlap(a: &str, b: &str) -> bool {
-    let mut a = a.split('/');
-    let mut b = b.split('/');
-    loop {
-        let (Some(a), Some(b)) = (a.next(), b.next()) else {
-            return true;
-        };
-        if !a.eq_ignore_ascii_case(b) && !a.starts_with('{') && !b.starts_with('{') {
-            return false;
-        }
-    }
-}
-
 pub(super) fn located(mut error: Diagnostic, path: &str) -> Diagnostic {
     error.path = Some(path.into());
     error
@@ -308,7 +185,7 @@ pub(super) fn path(value: &str, site: Site) -> Result<(), Diagnostic> {
         || value.starts_with(['~', '/'])
         || value.get(..2).is_some_and(|text| text.ends_with(':'))
         || !lines::is_nfc(value)
-        || value.chars().any(forbidden)
+        || value.chars().any(lines::forbidden)
     {
         return Err(site.error("Use a normalized relative path without . or .. components"));
     }
@@ -335,20 +212,13 @@ pub(super) fn text(
         || !lines::is_nfc(&value)
         || value
             .chars()
-            .any(|ch| forbidden(ch) && !(multiline && matches!(ch, '\n' | '\r')))
+            .any(|ch| lines::forbidden(ch) && !(multiline && matches!(ch, '\n' | '\r')))
     {
         return Err(site.error(format!(
             "Use normalized text of at most {limit} characters without controls"
         )));
     }
     Ok(value)
-}
-
-fn forbidden(ch: char) -> bool {
-    ch.is_control()
-        || matches!(ch, '\u{00ad}' | '\u{061c}' | '\u{06dd}' | '\u{070f}' | '\u{08e2}'
-        | '\u{180e}' | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}'
-        | '\u{2060}'..='\u{206f}' | '\u{feff}' | '\u{fff9}'..='\u{fffb}' | '\u{e0001}'..='\u{e007f}')
 }
 
 pub(super) fn name(value: &str, site: Site) -> Result<String, Diagnostic> {
@@ -409,6 +279,7 @@ impl Section<'_> {
             key: self.key.into(),
             value: self.value.into(),
             children: directives(self.children)?,
+            site: self.line.site,
         })
     }
 }
@@ -472,6 +343,7 @@ pub(super) fn directives(lines: &[Line]) -> Result<Vec<Directive>, Diagnostic> {
             key: key.into(),
             value: value.into(),
             children: directives(&lines[at + 1..end])?,
+            site: line.site,
         });
         at = end;
     }

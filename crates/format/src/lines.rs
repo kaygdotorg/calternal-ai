@@ -98,6 +98,14 @@ pub(crate) fn document(source: &str) -> Result<Document<'_>, Diagnostic> {
                 .after(&text[..tab])
                 .error("Use spaces instead of a tab"));
         }
+        if let Some((offset, _)) = text.char_indices().find(|(_, ch)| forbidden(*ch)) {
+            return Err(site
+                .after(&text[..offset])
+                .error("Use text without control or format characters"));
+        }
+        if !is_nfc(text) {
+            return Err(site.error("Use Unicode text normalized to NFC"));
+        }
         let content = text.trim_start_matches(' ');
         let indent = text.len() - content.len();
         let site = site.after(&text[..indent]);
@@ -383,6 +391,21 @@ pub(crate) fn is_nfc(text: &str) -> bool {
     #[cfg(not(feature = "unicode"))]
     {
         text.is_ascii()
+    }
+}
+
+pub(crate) fn forbidden(ch: char) -> bool {
+    if ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}') {
+        return true;
+    }
+    #[cfg(feature = "unicode")]
+    {
+        use unicode_general_category::{GeneralCategory, get_general_category};
+        get_general_category(ch) == GeneralCategory::Format
+    }
+    #[cfg(not(feature = "unicode"))]
+    {
+        !ch.is_ascii()
     }
 }
 

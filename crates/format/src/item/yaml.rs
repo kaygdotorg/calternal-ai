@@ -592,3 +592,9 @@ fn render(
     }
     Ok(())
 }
+
+pub(super) fn record_field(text: &str, site: Site) -> Result<Value, Diagnostic> {
+    let (_, value, colon) = key_value(text, site)?;
+    let (value, _) = without_comment(value);
+    scalar(value.trim_end(), site.after(&text[..colon + 1]), 0)
+}

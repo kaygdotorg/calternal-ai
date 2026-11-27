@@ -38,6 +38,7 @@ pub(crate) fn parse_at(
     if parser.peek() != &Token::End {
         return Err(parser.site().error("Unexpected text after the formula"));
     }
+    paths(&root, false, false)?;
     Ok(Expression { root })
 }
 
@@ -94,10 +95,15 @@ fn lex(source: &str, position: &impl Fn(usize) -> Site) -> Result<Vec<(Token, Si
 }
 
 fn number(text: &str, site: Site) -> Result<(Token, usize), Diagnostic> {
-    if let Some(candidate) = text
-        .get(..10)
-        .filter(|date| date.as_bytes()[4] == b'-' && date.as_bytes()[7] == b'-')
-    {
+    if let Some(candidate) = text.get(..10).filter(|date| {
+        date.bytes().enumerate().all(|(offset, byte)| {
+            if matches!(offset, 4 | 7) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_digit()
+            }
+        })
+    }) {
         dates::day(candidate)
             .ok_or_else(|| site.error("Use a valid date from 1900 through 2200"))?;
         return Ok((Token::Value(Value::Date(candidate.into())), 10));
@@ -151,6 +157,9 @@ fn word(text: &str) -> (Token, usize) {
             .find(|(_, ch)| !ch.is_alphanumeric())
             .map_or(text.len(), |(at, _)| at)
     };
+    if text.starts_with("links to ") {
+        return (Token::Word("links to".into()), "links to".len());
+    }
     if text.starts_with("records after ") {
         return (Token::Word("records after".into()), "records after".len());
     }
@@ -239,6 +248,16 @@ impl Parser {
                 },
                 1,
             ),
+            Token::Word(name) if name == "links to" => {
+                let (target, depth) = self.expression(8, nesting + 1)?;
+                (
+                    Node {
+                        kind: NodeKind::Call(name, vec![target]),
+                        site,
+                    },
+                    depth + 1,
+                )
+            }
             Token::Word(name) if name == "records after" => {
                 let (position, depth) = self.expression(8, nesting + 1)?;
                 if !matches!(&position.kind, NodeKind::Member(scope, _) if matches!(&scope.kind, NodeKind::Name(name) if name == "state"))
@@ -391,6 +410,51 @@ impl Parser {
             Err(site.error("Close the expression with )"))
         }
     }
+}
+
+fn paths(node: &Node, from_target: bool, after_target: bool) -> Result<(), Diagnostic> {
+    match &node.kind {
+        NodeKind::Member(base, _) => {
+            if let NodeKind::Member(root, _) = &base.kind {
+                let scope = matches!(&root.kind, NodeKind::Name(name) if matches!(name.as_str(), "this" | "item" | "open item"));
+                if !scope && !from_target {
+                    return Err(node
+                        .site
+                        .error("Follow at most one link or read one data field"));
+                }
+            }
+            paths(base, from_target, false)?;
+        }
+        NodeKind::Unary(_, value) => paths(value, false, false)?,
+        NodeKind::Binary(_, a, b) => {
+            paths(a, false, false)?;
+            paths(b, false, false)?;
+        }
+        NodeKind::Call(name, args) => {
+            if name == "from" && !matches!(&args[0].kind, NodeKind::Member(..)) {
+                return Err(node.site.error("Name the kind and its link field in from"));
+            }
+            if name == "records after" && !after_target {
+                return Err(node
+                    .site
+                    .error("Use records after as the only argument to count"));
+            }
+            for (index, arg) in args.iter().enumerate() {
+                paths(
+                    arg,
+                    name == "from" && index == 0,
+                    name == "count" && args.len() == 1,
+                )?;
+            }
+        }
+        NodeKind::List(items) => {
+            for item in items {
+                paths(item, false, false)?
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn arity(function: &str) -> Option<(usize, usize)> {

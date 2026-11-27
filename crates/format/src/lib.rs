@@ -14,12 +14,12 @@ mod value;
 
 pub use definition::{
     AgentRule, AgentRules, Collection, Directive, Editability, InstallOptions, ItemForm, Kind,
-    Manifest, Plugin, PluginFile, Program, Rights, ShareSource, Sidebar, Sort, Source, Total,
-    parse_agent_rules, parse_plugin,
+    Manifest, Plugin, PluginFile, Program, Refusal, Rights, ShareSource, Sidebar, SidebarEntry,
+    Slot, Sort, Source, Total, parse_agent_rules, parse_plugin,
 };
 pub use expr::{EvalContext, Expression, QueryRowContext, Row, evaluate, parse_expression};
 pub use field::{Field, FieldType};
-pub use item::{Item, parse_item, write_item};
+pub use item::{Item, Record, parse_item, parse_records, write_item};
 pub use operation::{
     Assignment, Change, Operation, OperationForm, OperationInput, apply_operation, check_item,
 };

@@ -97,3 +97,17 @@ pub struct OperationInput<'a> {
 - A coded operation may nest one `inputs:` section with typed fields beneath
   its `code` line. Its `Operation::inputs` is the same schema used to prepare
   a dispatch and identify a slot's typed payload.
+
+`parse_records(kind, &item)` returns provisional record candidates with their
+original byte ranges, declared fields and Markdown bodies. Verify every
+candidate against the host ledger before presenting it as authored work.
+
+The common context and each `QueryRowContext` may supply authorized
+`outgoing_links` for the `links to open item` predicate. Slot declarations are
+available under `Manifest::slots`. A suffix `inputs <operation>` references
+the slot owner's operation schema, and installed fillers must match its
+names, types and required fields. `Manifest::refusals` holds the compiled
+conditions for a checked operation. The host applies enabled rules in plugin
+ID and file order after the ordinary check, excluding protected operations.
+It overlays already-authorized inputs on already-authorized stored fields
+and evaluates with no linked sources.

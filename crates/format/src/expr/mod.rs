@@ -2,6 +2,7 @@
 
 pub(crate) mod eval;
 pub(crate) mod functions;
+pub(crate) mod math;
 pub(crate) mod parse;
 
 pub use eval::{EvalContext, QueryRowContext, Row, evaluate};

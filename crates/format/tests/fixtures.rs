@@ -392,3 +392,178 @@ fn agent_rules_need_qualified_collections_or_folder_suffixes() {
     let error = parse_agent_rules(&source.replace("Notes/Work/", "today")).unwrap_err();
     assert_eq!(error.line, 6);
 }
+
+#[test]
+fn record_body_starts_at_the_first_undeclared_field() {
+    let plugin = chat();
+    let kind = &plugin.kinds["chats"];
+    let source = "---\ntitle: Example\n---\nBefore records.\n**Lee** · 2026-11-20 17:02 ^k2m8q1w4zre7k3f9\nmentions: [user]\nNote: felt heavy\nmentions: body text\n---\n**Ari** · 2026-11-20 17:05 ^k2m8q1w4zre7k3fa\nSecond.\n";
+    let item = parse_item(source).unwrap();
+    let records = calternal_format::parse_records(kind, &item).unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].body, "Note: felt heavy\nmentions: body text\n");
+    assert_eq!(
+        records[0].fields["mentions"],
+        Value::List(vec![Value::Text("user".into())])
+    );
+    assert!(source[records[0].range.clone()].starts_with("**Lee**"));
+    assert_eq!(records[1].body, "Second.\n");
+}
+
+#[test]
+fn revision_nine_rights_sources_and_typed_inputs() {
+    let original = CHAT[1].text.unwrap();
+    let changed = original
+        .replace(
+            "editable: operations",
+            "editable: operations\nrights:\n  change manager\n  read editor, bicycle-club",
+        )
+        .replace(
+            "  send: code",
+            "  send: code\n    inputs:\n      body: long text, required\n      harness: text",
+        );
+    let mut files = CHAT.to_vec();
+    files[1].text = Some(&changed);
+    let collection = files[2]
+        .text
+        .unwrap()
+        .replace("from: chats", "from: chats, shared with me");
+    files[2].text = Some(&collection);
+    let plugin = parse_plugin(
+        &files,
+        &InstallOptions {
+            official: OFFICIAL,
+            ..InstallOptions::default()
+        },
+    )
+    .unwrap();
+    let kind = &plugin.kinds["chats"];
+    assert_eq!(kind.rights.change.as_deref(), Some("manager"));
+    assert_eq!(kind.rights.read, ["editor", "bicycle-club"]);
+    assert_eq!(
+        plugin.collections["chats"].share_source,
+        calternal_format::ShareSource::Shared
+    );
+    let fields = Fields::from([("body".into(), Value::Text("First\nmessage".into()))]);
+    let empty = Fields::new();
+    let row = Row {
+        fields: &empty,
+        metadata: &empty,
+    };
+    let changes = apply_operation(
+        kind,
+        "send",
+        &OperationInput {
+            item: Some(row),
+            fields: &fields,
+            record: None,
+        },
+        &EvalContext::default(),
+    )
+    .unwrap();
+    assert!(
+        matches!(&changes[..], [Change::Dispatch { operation, fields: output }] if operation == "send" && *output == fields)
+    );
+    let refused = changed.replace("harness: text", "password: text");
+    files[1].text = Some(&refused);
+    let error = parse_plugin(
+        &files,
+        &InstallOptions {
+            official: OFFICIAL,
+            ..InstallOptions::default()
+        },
+    )
+    .unwrap_err();
+    assert_eq!(error.path.as_deref(), Some("kinds/chats.md"));
+    assert!(error.message.contains("reserved"));
+}
+
+#[test]
+fn appendix_item_and_link_comparisons() {
+    let item =
+        parse_item("---\ncalternal-reading-list: yes\ncalternal-reading-list.saved: true\n---\n")
+            .unwrap();
+    assert_eq!(
+        item.fields()["calternal-reading-list.saved"],
+        Value::Bool(true)
+    );
+    assert_eq!(
+        item.fields()["calternal-reading-list"],
+        Value::Text("yes".into())
+    );
+    let fields = Fields::new();
+    let metadata = Fields::from([("id".into(), Value::Text("project".into()))]);
+    let row = Row {
+        fields: &fields,
+        metadata: &metadata,
+    };
+    let context = EvalContext {
+        open_item: Some(row),
+        outgoing_links: &["project"],
+        ..EvalContext::default()
+    };
+    assert_eq!(
+        evaluate(
+            &parse_expression("links to open item").unwrap(),
+            row,
+            &context
+        )
+        .unwrap(),
+        Value::Bool(true)
+    );
+    assert!(parse_expression("project.owner.name").is_err());
+}
+
+#[test]
+fn refusal_uses_only_the_installed_operation_schema() {
+    let original = CHAT[1].text.unwrap();
+    let changed = original.replace(
+        "  send: code",
+        "  send: code\n    inputs:\n      body: long text, required",
+    );
+    let mut chat_files = CHAT.to_vec();
+    chat_files[1].text = Some(&changed);
+    let manifest = CHAT[0].text.unwrap().replace(
+        "picked by person, recommended calternal-chat\n",
+        "picked by person, recommended calternal-chat, inputs send\n",
+    );
+    chat_files[0].text = Some(&manifest);
+    let chat = parse_plugin(
+        &chat_files,
+        &InstallOptions {
+            official: OFFICIAL,
+            ..InstallOptions::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        chat.manifest.slots["composer"].input_operation.as_deref(),
+        Some("send")
+    );
+    let installed = [chat];
+    let options = InstallOptions {
+        installed: &installed,
+        ..InstallOptions::default()
+    };
+    let manifest = "---\nplugin: filters\nname: Filters\nformat: 1\nversion: 1.0.0\nrefuses:\n  [calternal-chat.send]:\n    contains(body, \"test\"), \"Please choose a different message\"\n---\nProvides a message rule.\n";
+    let parsed = parse_plugin(
+        &[PluginFile {
+            path: "plugin.md",
+            text: Some(manifest),
+        }],
+        &options,
+    )
+    .unwrap();
+    assert_eq!(parsed.manifest.refusals.len(), 1);
+    assert!(!parsed.description_only);
+    let bad = manifest.replace("contains(body", "contains(state.draft");
+    let error = parse_plugin(
+        &[PluginFile {
+            path: "plugin.md",
+            text: Some(&bad),
+        }],
+        &options,
+    )
+    .unwrap_err();
+    assert_eq!((error.path.as_deref(), error.line), (Some("plugin.md"), 8));
+}

@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::BTreeMap};
 
 use crate::{
     Collection, Diagnostic, EvalContext, Field, Fields, Kind, Row, Value,
-    expr::eval::{aggregate, compare, evaluate_in},
+    expr::{eval::evaluate_in, math::aggregate},
     operation::typed_fields,
 };
 
@@ -72,100 +72,31 @@ pub fn evaluate_query(
         steps = steps
             .checked_sub(1)
             .ok_or_else(|| collection.site.error("The collection query is too costly"))?;
-        let mut row_context = *context;
-        if let Some(per_row) = context.rows.and_then(|rows| match row.metadata.get("id") {
-            Some(Value::Text(id)) => rows.get(id),
-            _ => None,
-        }) {
-            row_context.state = per_row.state;
-            row_context.records = per_row.records;
-            row_context.reverse = per_row.reverse;
+        let allowed = steps.min(50_000);
+        let mut item_steps = allowed;
+        if let Some(row) = prepare_row(collection, kind, *row, index, context, &mut item_steps)? {
+            matches.push(row);
         }
-        let stored = typed_fields(&kind.fields, row.fields, |_| kind.site, true)?;
-        let fields = computed_values(
-            stored,
-            row.metadata,
-            &kind.fields,
-            &kind.computed,
-            &row_context,
-            &mut steps,
-        )?;
-        let fields = computed_values(
-            fields,
-            row.metadata,
-            &collection.fields,
-            &collection.computed,
-            &row_context,
-            &mut steps,
-        )?;
-        let row = Row {
-            fields: &fields,
-            metadata: row.metadata,
-        };
-        if !collection.ignoring_default {
-            if let Some(condition) = &kind.default_where {
-                if !evaluate_in(condition, row, &row_context, &mut steps)?.truth() {
-                    continue;
-                }
-            }
-        }
-        if let Some(condition) = &collection.condition {
-            if !evaluate_in(condition, row, &row_context, &mut steps)?.truth() {
-                continue;
-            }
-        }
-        let group = collection
-            .group
-            .as_ref()
-            .map(|group| evaluate_in(group, row, &row_context, &mut steps))
-            .transpose()?;
-        matches.push(Matched {
-            index,
-            sort: collection
-                .sort
-                .iter()
-                .map(|sort| row.value(&sort.field))
-                .collect(),
-            totals: collection
-                .totals
-                .iter()
-                .map(|total| {
-                    total
-                        .field
-                        .as_ref()
-                        .map_or(Value::Bool(true), |field| row.value(field))
-                })
-                .collect(),
-            group,
-            computed: kind
-                .computed
-                .iter()
-                .chain(&collection.computed)
-                .filter_map(|field| {
-                    fields
-                        .get(field)
-                        .map(|value| (field.clone(), value.clone()))
-                })
-                .collect(),
-        });
+        steps -= allowed - item_steps;
     }
-    let mut error = None;
+    let sort_steps = matches
+        .len()
+        .saturating_mul(matches.len().checked_ilog2().unwrap_or(0) as usize)
+        .saturating_mul(collection.sort.len());
+    let total_steps = matches.len().saturating_mul(collection.totals.len());
+    steps = steps
+        .checked_sub(sort_steps.saturating_add(total_steps))
+        .ok_or_else(|| collection.site.error("The collection query is too costly"))?;
     matches.sort_by(|a, b| {
         for (at, column) in collection.sort.iter().enumerate() {
             if column.field == "manual" {
-                continue;
+                return a.index.cmp(&b.index);
             }
             let order = match (&a.sort[at], &b.sort[at]) {
                 (Value::Empty, Value::Empty) => Ordering::Equal,
                 (Value::Empty, _) => return Ordering::Greater,
                 (_, Value::Empty) => return Ordering::Less,
-                (a, b) => match compare(a, b, collection.site) {
-                    Ok(order) => order.unwrap_or(Ordering::Equal),
-                    Err(diagnostic) => {
-                        error = Some(diagnostic);
-                        Ordering::Equal
-                    }
-                },
+                (a, b) => sort_values(a, b),
             };
             if !order.is_eq() {
                 return if column.descending {
@@ -177,9 +108,6 @@ pub fn evaluate_query(
         }
         a.index.cmp(&b.index)
     });
-    if let Some(error) = error {
-        return Err(error);
-    }
     let aggregate_rows = |items: &[&Matched]| -> Result<Vec<Value>, Diagnostic> {
         collection
             .totals
@@ -210,7 +138,12 @@ pub fn evaluate_query(
             }
             seen.push(key);
             steps = steps
-                .checked_sub(groups.len() + 1)
+                .checked_sub(
+                    groups
+                        .len()
+                        .saturating_add(collection.totals.len())
+                        .saturating_add(1),
+                )
                 .ok_or_else(|| collection.site.error("The collection has too many groups"))?;
             if let Some((_, members)) = groups.iter_mut().find(|(group_key, _)| group_key == key) {
                 members.push(row);
@@ -245,6 +178,143 @@ pub fn evaluate_query(
         groups,
         totals,
     })
+}
+
+fn prepare_row(
+    collection: &Collection,
+    kind: &Kind,
+    row: Row<'_>,
+    index: usize,
+    context: &EvalContext<'_>,
+    steps: &mut usize,
+) -> Result<Option<Matched>, Diagnostic> {
+    let mut row_context = *context;
+    if let Some(per_row) = context.rows.and_then(|rows| match row.metadata.get("id") {
+        Some(Value::Text(id)) => rows.get(id),
+        _ => None,
+    }) {
+        row_context.state = per_row.state;
+        row_context.records = per_row.records;
+        row_context.reverse = per_row.reverse;
+        row_context.outgoing_links = per_row.outgoing_links;
+    }
+    let stored = typed_fields(&kind.fields, row.fields, |_| kind.site, true)?;
+    let fields = computed_values(
+        stored,
+        row.metadata,
+        &kind.fields,
+        &kind.computed,
+        &row_context,
+        steps,
+    )?;
+    let fields = computed_values(
+        fields,
+        row.metadata,
+        &collection.fields,
+        &collection.computed,
+        &row_context,
+        steps,
+    )?;
+    let row = Row {
+        fields: &fields,
+        metadata: row.metadata,
+    };
+    if !collection.ignoring_default {
+        if let Some(condition) = &kind.default_where {
+            if !evaluate_in(condition, row, &row_context, steps)?.truth() {
+                return Ok(None);
+            }
+        }
+    }
+    if let Some(condition) = &collection.condition {
+        if !evaluate_in(condition, row, &row_context, steps)?.truth() {
+            return Ok(None);
+        }
+    }
+    let group = collection
+        .group
+        .as_ref()
+        .map(|group| evaluate_in(group, row, &row_context, steps))
+        .transpose()?;
+    Ok(Some(Matched {
+        index,
+        sort: collection
+            .sort
+            .iter()
+            .map(|sort| row.value(&sort.field))
+            .collect(),
+        totals: collection
+            .totals
+            .iter()
+            .map(|total| {
+                total
+                    .field
+                    .as_ref()
+                    .map_or(Value::Bool(true), |field| row.value(field))
+            })
+            .collect(),
+        group,
+        computed: kind
+            .computed
+            .iter()
+            .chain(&collection.computed)
+            .filter_map(|field| {
+                fields
+                    .get(field)
+                    .map(|value| (field.clone(), value.clone()))
+            })
+            .collect(),
+    }))
+}
+
+fn sort_values(a: &Value, b: &Value) -> Ordering {
+    use Value::*;
+    let rank = |value: &Value| match value {
+        Empty => 0,
+        Bool(_) => 1,
+        Number(_) => 2,
+        Money { .. } => 3,
+        Date(_) | Time(_) => 4,
+        Duration { .. } => 5,
+        Text(_) => 6,
+        List(_) => 7,
+        Map(_) => 8,
+    };
+    if rank(a) != rank(b) {
+        return rank(a).cmp(&rank(b));
+    }
+    let instant = |value: &Value| match value {
+        Date(date) => crate::dates::day(date).map(|day| day * 86400),
+        Time(time) => crate::dates::time(time).map(|(seconds, offset)| seconds - i64::from(offset)),
+        _ => None,
+    };
+    match (a, b) {
+        (Bool(a), Bool(b)) => a.cmp(b),
+        (Number(a), Number(b)) => a.cmp(b),
+        (
+            Money {
+                amount: a,
+                currency: ac,
+            },
+            Money {
+                amount: b,
+                currency: bc,
+            },
+        ) => ac.cmp(bc).then_with(|| a.cmp(b)),
+        (Date(_) | Time(_), Date(_) | Time(_)) => instant(a).cmp(&instant(b)),
+        (
+            Duration {
+                months: a,
+                seconds: x,
+            },
+            Duration {
+                months: b,
+                seconds: y,
+            },
+        ) => (a, x).cmp(&(b, y)),
+        (Text(a), Text(b)) => a.cmp(b),
+        _ => Ordering::Equal,
+    }
 }
 
 struct Matched {

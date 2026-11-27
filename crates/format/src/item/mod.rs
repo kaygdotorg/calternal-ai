@@ -1,5 +1,7 @@
 //! Source-preserving item frontmatter, with structured value decoding.
 
+mod records;
+pub use records::{Record, parse_records};
 mod yaml;
 
 use std::{collections::BTreeMap, ops::Range};
@@ -132,7 +134,7 @@ pub fn write_item(item: &Item<'_>, fields: &Fields) -> Result<String, Diagnostic
                 .error(format!("The host supplies the field {key}")));
         }
         let entry = item.entries.get(key);
-        if item.fields.get(key) == Some(value) {
+        if value != &Value::Empty && item.fields.get(key) == Some(value) {
             continue;
         }
         match (entry, value) {

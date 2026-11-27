@@ -3,7 +3,7 @@
 The lane targets revision 9 from `dev` at `3b15b606` and the coordinator's
 eleventh set. The public interface is in [the API sketch](format-engine-api-2026-11-27.md).
 [Forgejo issue #113](https://git.kayg.org/kayg/calternal-ai/issues/113) was already
-open for this branch. Forgejo returned HTTP 401 on the API update without credentials.
+open for this branch. Issue updates now use the signed-in Forgejo CLI on hd01.
 
 ## Decisions and fixture changes
 
@@ -40,6 +40,44 @@ open for this branch. Forgejo returned HTTP 401 on the API update without creden
   classification inspect beyond textual files? The host must attest paths
   and file identity and provide content for inspection or classify opaque
   files conservatively. A path list alone cannot prove a file is data-only.
+
+
+## Scope checks and remaining boundaries
+
+- **§1.2, §2.10, §2.18, §4.6, §5.4 and §§11–12.** The active grammar
+  rejects definition features deferred by the build plan. Appendix B's
+  Calendar and Tasks are exercised twice, first with the expected refusal
+  on their `lines:` declaration, then with line and DAV mappings stripped
+  from the test input. Workouts and Reading List compile directly.
+- **§3.2.** The item parser handles the single-document map, nested block
+  maps and sequences, flow sequences, single and double quoted strings,
+  exact scalars and literal and folded blocks. Unknown and untouched values
+  and standalone comments preserve their source ranges. Multiline quoted
+  and plain YAML scalars, explicit keys and complex keys are outside the
+  currently accepted subset. An empty map has no representation when both
+  flow mappings and tags are prohibited.
+- **§4.4 and §5.5.** The implementation uses 50,000 formula steps per item
+  and 1,000,000 steps per query. The host supplies per-space indexing quotas,
+  manual order, authorized sources and lookup candidates. Time or repeat
+  invalidation and the host's index accounting are outside the pure calls.
+- **§4.3 and §4.5.** The repeat reader currently supports daily, weekly,
+  monthly and yearly frequencies, intervals, day lists, month days and an
+  until date. The example weekly rule works. Calendar-window expansion,
+  full iCalendar clauses and the start date for interval phase need more
+  vectors. The engine searches at most ten years for `next()`.
+- **§2.8, thirteenth set.** The candidate record reader uses the revision 9
+  header. Lane B owns the exact syntax and verification of its added keyed
+  tag. A header alone cannot stamp a record or admit a recovered append.
+- **§7.3, §7.5 and §7.6.** Sign-ins, outbound secrets, outside addresses and
+  after-operation listeners are refused at install in this Chat-first path.
+  The fixture uses only declared destination hosts. The host owns resolved
+  address checks and authority.
+- **§7.4, §7.9 and the eleventh set.** Inputs live under a coded operation's
+  `inputs:` block. A slot's `inputs <operation>` suffix references this
+  schema. The compiler validates available filler references and refusal
+  scopes. A refusal may use checked target fields and typed inputs, with
+  no linked data or viewer state. The coordinator should confirm if typed
+  receivers need optional extra inputs or versioned schema negotiation.
 
 ## Verification and review gate
 

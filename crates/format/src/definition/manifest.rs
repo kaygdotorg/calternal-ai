@@ -3,7 +3,7 @@ use super::{
     sections, text,
 };
 use crate::{
-    Diagnostic, Field,
+    Diagnostic, Expression, Field,
     expr::parse,
     lines::{self, Site},
 };
@@ -17,6 +17,34 @@ pub struct Program {
     pub path: Option<String>,
     /// True when the bind names an image instead of an executable.
     pub image: bool,
+    pub(crate) site: Site,
+}
+
+/// A place declared by a plugin, with its typed input schema reference.
+#[derive(Clone, Debug)]
+pub struct Slot {
+    /// Whether the person or space can choose several fillers.
+    pub multiple: bool,
+    /// Human-facing explanation of the data a filler receives.
+    pub gives: String,
+    /// Whether the space chooses the filler.
+    pub picked_by_space: bool,
+    /// A suggested filler plugin.
+    pub recommended: Option<String>,
+    /// An operation in this plugin declaring the input schema for the slot.
+    pub input_operation: Option<String>,
+    pub(crate) site: Site,
+}
+
+/// A compiled before-operation refusal over checked target fields and inputs.
+#[derive(Clone, Debug)]
+pub struct Refusal {
+    /// Qualified operation in another installed plugin.
+    pub target: String,
+    /// Pure condition over the authorized fields and input values.
+    pub condition: Expression,
+    /// Message shown with the declaring plugin's name when the condition holds.
+    pub message: String,
     pub(crate) site: Site,
 }
 
@@ -41,6 +69,10 @@ pub struct Manifest {
     pub programs: BTreeMap<String, Program>,
     /// Typed settings keyed by declaration name.
     pub settings: BTreeMap<String, Field>,
+    /// Declared places keyed by their plugin-local slot ID.
+    pub slots: BTreeMap<String, Slot>,
+    /// Qualified refusal rules in source order.
+    pub refusals: Vec<Refusal>,
     /// Other declaration lines in file order, used by host install and clients.
     pub directives: Vec<Directive>,
     /// Description text shown at install.
@@ -53,6 +85,7 @@ impl Manifest {
             && self.calls.is_empty()
             && self.destinations.is_empty()
             && self.programs.is_empty()
+            && self.refusals.is_empty()
             && self.directives.iter().all(|entry| {
                 !matches!(
                     entry.key.as_str(),
@@ -83,6 +116,8 @@ pub(super) fn parse(
         destinations: Vec::new(),
         programs: BTreeMap::new(),
         settings: BTreeMap::new(),
+        slots: BTreeMap::new(),
+        refusals: Vec::new(),
         directives: Vec::new(),
         body,
     };
@@ -216,13 +251,37 @@ pub(super) fn parse(
                                 "Declare slot cardinality, what it gives, and who picks it",
                             ));
                         }
-                        text(&parts[1][6..], place.site, 120, false)?;
+                        let mut slot = Slot {
+                            multiple: parts[0] == "many",
+                            gives: text(&parts[1][6..], place.site, 120, false)?,
+                            picked_by_space: parts[2] == "picked by space",
+                            recommended: None,
+                            input_operation: None,
+                            site: place.site,
+                        };
                         for part in &parts[3..] {
-                            let Some(id) = part.strip_prefix("recommended ") else {
-                                return Err(place.site.error("Unknown slot modifier"));
-                            };
-                            lines::id(id, place.site)?;
+                            if let Some(id) = part
+                                .strip_prefix("recommended ")
+                                .filter(|_| slot.recommended.is_none())
+                            {
+                                lines::id(id, place.site)?;
+                                slot.recommended = Some(id.into());
+                            } else if let Some(operation) = part
+                                .strip_prefix("inputs ")
+                                .filter(|_| slot.input_operation.is_none())
+                            {
+                                let name = operation
+                                    .split_once('.')
+                                    .map_or(operation, |(_, name)| name);
+                                lines::operation_name(name, place.site)?;
+                                slot.input_operation = Some(operation.into());
+                            } else {
+                                return Err(place.site.error(
+                                    "Use one recommended plugin and one inputs operation per slot",
+                                ));
+                            }
                         }
+                        result.slots.insert(place.key.into(), slot);
                     } else if let Some(frame) = place.value.strip_prefix("frame ") {
                         let binding = lines::parts(frame, place.site)?
                             .first()
@@ -306,11 +365,14 @@ pub(super) fn parse(
                                 .site
                                 .error("Write one refusal condition and its message"));
                         };
-                        parse::parse(condition, *position)?;
-                        text(message, *message_site, 120, false)?;
+                        result.refusals.push(Refusal {
+                            target: key.into(),
+                            condition: parse::parse(condition, *position)?,
+                            message: text(message, *message_site, 120, false)?,
+                            site: refusal.site,
+                        });
                     }
                 }
-                return Err(site.error("Refusals need authorized target operation input schemas before they can be installed"));
             }
             "sign-ins" | "outside" | "listens" | "secrets" => {
                 return Err(site.error(format!(
