@@ -15,7 +15,7 @@ The baseline was `c59c9858`.
   lines, all-day values, EXDATE, moved slots and both expanding view forms.
   Tasks checks its four-way checkbox mapping and the state mirrored by
   uppercase X.
-- The scanner passes all 68 inherited line vectors from the old app's
+- The scanner passes all 70 inherited line vectors from the old app's
   `docs/plans/0067-vectors/lines.json`, plus the Gym example's standalone
   child links and ordered nesting.
 - The §5.4 Money formula covers a carry-forward value, filtered whole-kind
