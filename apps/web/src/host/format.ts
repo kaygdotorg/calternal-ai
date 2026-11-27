@@ -12,11 +12,33 @@ export function humanize(name: string): string {
   return clean[0]!.toUpperCase() + clean.slice(1);
 }
 
-/** Format an ISO timestamp or epoch milliseconds into `HH:MM`. */
+/** Format an ISO timestamp or epoch milliseconds into a locale-aware clock time (12h or 24h per browser locale). */
 export function formatClock(at: string | number): string {
   const d = typeof at === "number" ? new Date(at) : new Date(at);
   if (Number.isNaN(d.getTime())) return "";
-  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(d);
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(d);
+}
+
+/**
+ * Format an ISO timestamp or epoch milliseconds into a compact relative label for sidebar/list rows
+ * (`"now"`, `"5m"`, `"11h"`, `"Yesterday"`, `"3d"`, or a short locale date like `"23 Oct"`).
+ */
+export function formatRelativeTime(at: string | number): string {
+  const d = typeof at === "number" ? new Date(at) : new Date(at);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  const diffMs = Math.max(0, now.getTime() - d.getTime());
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 1) return "now";
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffHr = Math.floor(diffMin / 60);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((today - target) / 86_400_000);
+  if (diffHr < 24 && diffDays === 0) return `${diffHr}h`;
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays > 1 && diffDays < 7) return `${diffDays}d`;
+  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(d);
 }
 
 /** Calendar day key (`YYYY-MM-DD`) in the viewer's local timezone for grouping records. */

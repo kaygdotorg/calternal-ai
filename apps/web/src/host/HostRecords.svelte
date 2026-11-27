@@ -357,6 +357,7 @@
           }}
         ></textarea>
         {#if pickerSlot}
+          {@const slotLabel = pickerSlot.slot.label?.trim() || humanize(pickerSlot.slot.name)}
           <button
             type="button"
             class="slot-btn"
@@ -365,14 +366,14 @@
             data-slot-picker={pickerSlot.slot.name}
             data-selected-filler={selectedFillerObj?.plugin ?? ""}
             aria-label={selectedFillerObj
-              ? `${humanize(pickerSlot.slot.name)}: ${selectedFillerObj.label}`
-              : `Choose ${pickerSlot.slot.name}`}
+              ? `${slotLabel}: ${selectedFillerObj.label}`
+              : `Choose ${slotLabel.toLowerCase()}`}
             aria-expanded={pickerOpen}
             onclick={() => (pickerOpen = !pickerOpen)}
           >
             <Icon name="spark" inline />
             <span class="slot-lbl">
-              {selectedFillerObj ? selectedFillerObj.label : humanize(pickerSlot.slot.name)}
+              {selectedFillerObj ? selectedFillerObj.label : slotLabel}
             </span>
           </button>
         {/if}

@@ -72,6 +72,7 @@
   const hidden = $derived(!narrow && !layout.leftOpen);
 
   let activePluginId = $state<string | null>(null);
+  let selectedCollectionId = $state<string | null>(null);
   let customSidebars = $state<{ id: string; name: string }[]>([]);
   let stripOrder = $state<string[]>([]);
   let collectionRows = $state<Record<string, RowData[]>>({});
@@ -281,8 +282,9 @@
     }
   }
 
-  function openItem(row: RowData) {
+  function openItem(row: RowData, collectionId?: string) {
     itemsById = { ...itemsById, [row.id]: row };
+    selectedCollectionId = collectionId ?? null;
     if (wins.focused?.kind === "collection") {
       wins.navigate("item", row.id);
     } else {
@@ -609,6 +611,7 @@
               kinds={activePlugin.kinds}
               rowsByCollection={collectionRows}
               selectedItemId={wins.selected}
+              {selectedCollectionId}
               {narrow}
               onopenItem={openItem}
               onopenCollection={openCollection}
@@ -656,6 +659,7 @@
           sidebarHidden={hidden}
           onsidebar={() => (layout.leftOpen = true)}
           onback={() => (pushed = false)}
+          loneWidth="100%"
         >
           {#snippet renderBody(w)}
             {#if w.kind === "collection"}
@@ -741,7 +745,7 @@
   .err { margin: auto; padding: var(--s-6); color: var(--danger); }
 
   /* Exact shell grid from apps/mockup/src/App.svelte */
-  .shell { position: fixed; inset: 0; z-index: 1; display: grid; grid-template-columns: var(--sw, 19rem) minmax(0, 1fr); gap: var(--s-3); padding: var(--s-3) 0 var(--s-3) 0; box-sizing: border-box; transition: grid-template-columns var(--dur-slow) var(--ease-out); }
+  .shell { position: fixed; inset: 0; z-index: 1; display: grid; grid-template-columns: var(--sw, 19rem) minmax(0, 1fr); gap: var(--s-3); padding: var(--s-3) var(--s-3) var(--s-3) 0; box-sizing: border-box; transition: grid-template-columns var(--dur-slow) var(--ease-out); }
   .shell.closed { grid-template-columns: 0 minmax(0, 1fr); padding-left: var(--s-3); }
   .shell.closed .side { opacity: 0; translate: -2rem 0; }
   .side { --ink-2: var(--l-ink2, currentcolor); --ink-3: var(--l-ink3, currentcolor); min-width: 0; min-height: 0; overflow: hidden; transition: opacity var(--dur-base) var(--ease-out), translate var(--dur-slow) var(--ease-out); }

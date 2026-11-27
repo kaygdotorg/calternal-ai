@@ -7,7 +7,7 @@
   import { Icon, Menu, type MenuItem } from "@calternal/ui";
   import { Av } from "@calternal/canvas-shell";
   import {
-    formatClock,
+    formatRelativeTime,
     itemMenuActions,
     rowBadge,
     rowTitle,
@@ -80,7 +80,7 @@
         {@const title = rowTitle(row, kind ?? undefined)}
         {@const badge = rowBadge(row, kind ?? undefined)}
         {@const sel = selectedId === row.id}
-        {@const edited = row.edited ? formatClock(row.edited) : ""}
+        {@const edited = row.edited ? formatRelativeTime(row.edited) : ""}
         <div
           class="item-wrap"
           role="listitem"

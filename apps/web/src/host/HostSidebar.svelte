@@ -6,7 +6,7 @@
    */
   import { Icon } from "@calternal/ui";
   import { Av } from "@calternal/canvas-shell";
-  import { formatClock, rowBadge, rowTitle } from "./format";
+  import { formatRelativeTime, rowBadge, rowTitle } from "./format";
   import type { CollectionDecl, KindDecl, RowData, SidebarDecl } from "./types";
 
   let {
@@ -15,6 +15,7 @@
     kinds,
     rowsByCollection,
     selectedItemId,
+    selectedCollectionId = null,
     narrow = false,
     onopenItem,
     onopenCollection,
@@ -25,8 +26,9 @@
     kinds: Record<string, KindDecl>;
     rowsByCollection: Record<string, RowData[]>;
     selectedItemId: string | null;
+    selectedCollectionId?: string | null;
     narrow?: boolean;
-    onopenItem: (row: RowData) => void;
+    onopenItem: (row: RowData, collectionId: string) => void;
     onopenCollection: (collectionId: string) => void;
     onadd: (kind: KindDecl) => void;
   } = $props();
@@ -34,16 +36,37 @@
   let collapsed = $state<Record<string, boolean>>({});
   const LIMIT = 6;
 
-  function kindFor(colId: string): KindDecl | null {
+  function collectionFor(colId: string): CollectionDecl | null {
     const cid = colId.includes(".") ? colId.split(".")[1]! : colId;
-    const col = collections[cid];
+    return collections[cid] ?? null;
+  }
+
+  function kindFor(colId: string): KindDecl | null {
+    const col = collectionFor(colId);
     if (!col) return null;
     const kid = col.from.includes(".") ? col.from.split(".")[1]! : col.from;
     return kinds[kid] ?? null;
   }
 
-  function toggleSection(key: string) {
-    collapsed = { ...collapsed, [key]: !collapsed[key] };
+  function toggleSection(key: string, currentlyShut: boolean) {
+    collapsed = { ...collapsed, [key]: !currentlyShut };
+  }
+
+  /** First sidebar section that contains the selected item (fallback when opened outside the sidebar). */
+  const firstSectionWithSelected = $derived.by(() => {
+    if (!selectedItemId) return null;
+    for (const entry of sidebar.entries) {
+      if (entry.collection && (rowsByCollection[entry.collection] ?? []).some((r) => r.id === selectedItemId)) {
+        return entry.collection;
+      }
+    }
+    return null;
+  });
+
+  function isSelectedRow(cid: string, rowId: string): boolean {
+    if (selectedItemId !== rowId) return false;
+    if (selectedCollectionId) return selectedCollectionId === cid;
+    return firstSectionWithSelected === cid;
   }
 </script>
 
@@ -53,10 +76,12 @@
       <h2 class="sec-div">{entry.title}</h2>
     {:else if entry.collection}
       {@const cid = entry.collection}
+      {@const col = collectionFor(cid)}
+      {@const isStrip = col?.views.some((v) => v.type === "strip") ?? false}
       {@const allRows = rowsByCollection[cid] ?? []}
-      {@const shown = allRows.slice(0, LIMIT)}
+      {@const shown = isStrip ? allRows : allRows.slice(0, LIMIT)}
       {@const kind = kindFor(cid)}
-      {@const shut = Boolean(collapsed[cid])}
+      {@const shut = collapsed[cid] ?? (allRows.length === 0)}
       <section class="sec" data-sec data-cid={cid}>
         <header class="sh">
           <button
@@ -71,7 +96,7 @@
             class="chev-b"
             aria-expanded={!shut}
             aria-label={shut ? `Unfold ${entry.title}` : `Fold ${entry.title}`}
-            onclick={() => toggleSection(cid)}
+            onclick={() => toggleSection(cid, shut)}
           >
             <span class="chev" class:shut><Icon name="chevron-down" inline /></span>
           </button>
@@ -89,36 +114,61 @@
           {/if}
         </header>
 
-        {#if !shut}
-          <div class="rows">
-            {#each shown as row (row.id)}
-              {@const title = rowTitle(row, kind ?? undefined)}
-              {@const badge = rowBadge(row, kind ?? undefined)}
-              {@const edited = row.edited ? formatClock(row.edited) : ""}
-              <div class="rw" data-row={row.id}>
-                <button
-                  type="button"
-                  class="irow"
-                  class:sel={selectedItemId === row.id}
-                  aria-current={selectedItemId === row.id ? "true" : undefined}
-                  onclick={() => onopenItem(row)}
-                >
-                  <span class="lead" aria-hidden="true"><Av name={title} size="28px" /></span>
-                  <span class="rt">{title}</span>
-                  {#if edited}<span class="tm">{edited}</span>{/if}
-                  {#if badge}<span class="cn" aria-label={`${badge.value} ${badge.name}`}>{badge.value}</span>{/if}
+        {#if !shut && allRows.length > 0}
+          {#if isStrip}
+            <div class="strip" role="list" aria-label={entry.title}>
+              {#each shown as row (row.id)}
+                {@const title = rowTitle(row, kind ?? undefined)}
+                {@const badge = rowBadge(row, kind ?? undefined)}
+                {@const sel = isSelectedRow(cid, row.id)}
+                <div role="listitem" class="sl" data-row={row.id}>
+                  <button
+                    type="button"
+                    class="tile"
+                    class:sel
+                    aria-label={title}
+                    aria-current={sel ? "true" : undefined}
+                    onclick={() => onopenItem(row, cid)}
+                  >
+                    <span class="av">
+                      <Av name={title} size="var(--pin-size, 44px)" />
+                      {#if badge}
+                        <span class="badge" aria-label={`${badge.value} ${badge.name}`}>{badge.value}</span>
+                      {/if}
+                    </span>
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <div class="rows">
+              {#each shown as row (row.id)}
+                {@const title = rowTitle(row, kind ?? undefined)}
+                {@const badge = rowBadge(row, kind ?? undefined)}
+                {@const edited = row.edited ? formatRelativeTime(row.edited) : ""}
+                {@const sel = isSelectedRow(cid, row.id)}
+                <div class="rw" data-row={row.id}>
+                  <button
+                    type="button"
+                    class="irow"
+                    class:sel
+                    aria-current={sel ? "true" : undefined}
+                    onclick={() => onopenItem(row, cid)}
+                  >
+                    <span class="lead" aria-hidden="true"><Av name={title} size="28px" /></span>
+                    <span class="rt">{title}</span>
+                    {#if edited}<span class="tm">{edited}</span>{/if}
+                    {#if badge}<span class="cn" aria-label={`${badge.value} ${badge.name}`}>{badge.value}</span>{/if}
+                  </button>
+                </div>
+              {/each}
+              {#if allRows.length > LIMIT}
+                <button type="button" class="all" onclick={() => onopenCollection(cid)}>
+                  Show all {allRows.length}
                 </button>
-              </div>
-            {/each}
-            {#if !allRows.length}
-              <p class="em">Nothing here yet.</p>
-            {/if}
-            {#if allRows.length > LIMIT}
-              <button type="button" class="all" onclick={() => onopenCollection(cid)}>
-                Show all {allRows.length}
-              </button>
-            {/if}
-          </div>
+              {/if}
+            </div>
+          {/if}
         {/if}
       </section>
     {/if}
@@ -255,7 +305,45 @@
     font-size: var(--text-label);
     font-variant-numeric: tabular-nums;
   }
-  .em { margin: 0; padding: var(--s-2) var(--s-5); font-size: var(--text-label); color: var(--ink-3); }
+  .strip {
+    display: flex;
+    gap: var(--s-4);
+    overflow-x: auto;
+    padding: var(--s-2) var(--s-3);
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+  .sl { flex: none; }
+  .tile {
+    flex: none;
+    display: grid;
+    justify-items: center;
+    align-content: start;
+    gap: var(--s-2);
+    width: 56px;
+    border-radius: var(--r-menu);
+    transition: scale var(--dur-fast) var(--ease-out);
+  }
+  .tile:active { scale: var(--press-scale); }
+  .tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tile.sel .av { box-shadow: 0 0 0 2px var(--accent); border-radius: 50%; }
+  .av { position: relative; display: inline-grid; padding: 2px; border-radius: 50%; }
+  .badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 var(--s-3);
+    box-sizing: border-box;
+    border-radius: var(--r-pill);
+    background: var(--badge-bg, var(--accent-base));
+    color: #fff;
+    font-size: var(--text-label);
+    font-weight: var(--strong-weight);
+    display: grid;
+    place-items: center;
+  }
   .all {
     margin: var(--s-2) var(--s-5);
     padding: var(--s-2) var(--s-4);

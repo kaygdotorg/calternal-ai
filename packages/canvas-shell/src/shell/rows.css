@@ -1,5 +1,5 @@
 /* The one title edge of a sidebar row: a fixed-width lead slot (the mark: an icon, an avatar, a check, a thumbnail, a day), then a gap, then the title. Row padding 12 + lead 22 + gap 8 = the title at 42 px from the sidebar's edge in every app. */
-:root { --lead: 28px; --lead-gap: var(--s-4); /* the fill behind white text (counts, send, a ticked box): the accent darkened until the white passes 4.5:1 */ --badge-bg: color-mix(in oklab, var(--accent-base) 58%, black); }
+:root { --wm-font: var(--font-brand); --lead: 28px; --lead-gap: var(--s-4); /* the fill behind white text (counts, send, a ticked box): the accent darkened until the white passes 4.5:1 */ --badge-bg: color-mix(in oklab, var(--accent-base) 58%, black); }
 
 /* Safari: keep the page's own text size on rotation, and no grey tap flash (every control has its own pressed state). */
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
