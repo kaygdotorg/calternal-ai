@@ -26,3 +26,13 @@ For an already emitted package, import `verifyPackage` from
 `@calternal/plugin-sdk/verify-package` and pass the output directory. It
 checks the manifest, template and worker pins, and descriptions without
 loading the plugin source.
+
+## Primitives-only operations
+
+Use `on.call` and `on.change` to export coded handlers from
+`operations.ts`. The worker launches with Node's
+`--conditions=calternal-operations` so the package root exposes the
+primitives-only API. For TypeScript checking, use the same
+`calternal-operations` value in `customConditions`. The
+[frame contract](../../docs/reviews/plugin-frames-2026-11-27.md) describes
+the host calls and worker launch.

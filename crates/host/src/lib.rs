@@ -5,9 +5,14 @@
 mod declarations;
 mod installation;
 mod query;
+mod reactions;
 mod records;
 mod space;
+mod worker_calls;
+mod worker_runtime;
 mod write;
+
+pub use worker_runtime::WorkerRuntime;
 
 use calternal_auth::Auth;
 use calternal_types::{AccountId, Actor, Error, Result, SpaceId, Via};
@@ -22,7 +27,8 @@ use std::sync::{Arc, Mutex};
 pub const WRITE_BYTES: usize = 16 * 1024 * 1024;
 
 /// A request from a session or a trusted in-process adapter. The envelope
-/// carries only operation data. The adapter supplies identity separately.
+/// carries operation data and a person’s optional slot selection. The
+/// adapter supplies identity separately.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Call {
@@ -33,6 +39,19 @@ pub struct Call {
     pub input: Value,
     /// Optional per-gesture or per-handler-write retry key.
     pub idempotency_key: Option<String>,
+    /// A person-picked slot and filler to check before dispatching coded work.
+    pub slot_selection: Option<SlotSelection>,
+}
+
+/// An untrusted selection resolved against installed declarations by the
+/// host before it can authorize a worker callback.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SlotSelection {
+    /// Slot ID local to the plugin owning the coded operation.
+    pub slot: String,
+    /// Installed filler plugin ID selected for this slot.
+    pub filler: String,
 }
 
 type Slot = Arc<Mutex<Option<Space>>>;
@@ -44,6 +63,7 @@ pub struct Host {
     auth: Auth,
     retention_ms: i64,
     spaces: Mutex<HashMap<SpaceId, Slot>>,
+    workers: Option<WorkerRuntime>,
 }
 
 impl Host {
@@ -58,7 +78,15 @@ impl Host {
             auth,
             retention_ms: i64::from(retention_days) * 86_400_000,
             spaces: Mutex::default(),
+            workers: None,
         })
+    }
+
+    /// Enable an operator-controlled launcher for new coded installations.
+    /// Configuration alone starts no process. Spaces without code stay data-only.
+    pub fn with_worker_runtime(mut self, runtime: WorkerRuntime) -> Self {
+        self.workers = Some(runtime);
+        self
     }
 
     /// Authenticate a bearer session and dispatch a shell call. Storage I/O
@@ -87,9 +115,8 @@ impl Host {
         space: SpaceId,
         call: Call,
     ) -> Result<Value> {
-        tokio::task::spawn_blocking(move || self.call(actor, space, call))
+        self.dispatch(actor, space, call, worker_calls::Chain::default())
             .await
-            .map_err(internal)?
     }
 
     /// Install a trusted local plugin bundle for the space's owner. The
@@ -103,8 +130,18 @@ impl Host {
         directory: &Path,
         official: bool,
     ) -> Result<()> {
-        self.with_space(&Actor::account(owner), id, |space| {
-            space.install(directory, official)
+        let actor = Actor::account(owner);
+        self.with_space(&actor, id, |_| Ok(()))?;
+        let files = installation::bundle(directory)?;
+        let registration = match (self.workers.as_ref(), files.get("operations.ts")) {
+            (Some(runtime), Some(source)) => {
+                let snapshot = WorkerRuntime::snapshot(source)?;
+                Some(block_on(runtime.probe(snapshot.path()))??)
+            }
+            _ => None,
+        };
+        self.with_space(&actor, id, |space| {
+            space.install(files, official, registration)
         })
     }
 
@@ -112,21 +149,18 @@ impl Host {
     /// plugin via the shared actor type. A run needs a scope-aware adapter
     /// before it can call the host. This method blocks on space storage.
     pub fn call(&self, actor: Actor, id: SpaceId, call: Call) -> Result<Value> {
+        if call.slot_selection.is_some() {
+            return Err(Error::forbidden(
+                "A slot selection requires a person’s coded operation.",
+            ));
+        }
         self.with_space(&actor, id, |space| space.call(&actor, call))
     }
 
     fn owner_display(&self, account: AccountId) -> Result<String> {
         let key = account.to_string();
         let lookup = self.auth.find(&key);
-        let (_, name) = match tokio::runtime::Handle::try_current() {
-            Ok(handle) => handle.block_on(lookup),
-            Err(_) => tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(internal)?
-                .block_on(lookup),
-        }
-        .map_err(internal)?;
+        let (_, name) = block_on(lookup)?.map_err(internal)?;
         Ok(name)
     }
 
@@ -167,6 +201,17 @@ impl Host {
         space.recover()?;
         space.expire_trash()?;
         f(space)
+    }
+}
+
+fn block_on<F: std::future::Future>(future: F) -> Result<F::Output> {
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => Ok(handle.block_on(future)),
+        Err(_) => Ok(tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(internal)?
+            .block_on(future)),
     }
 }
 

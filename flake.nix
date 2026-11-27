@@ -41,7 +41,7 @@
               pkgs.git
               pkgs.cacert
               pkgs.python3 # contract/verify-cli.py
-            ] ++ lib.optionals stdenv.isLinux [ pkgs.clang pkgs.mold ]
+            ] ++ lib.optionals stdenv.isLinux [ pkgs.clang pkgs.mold pkgs.bubblewrap ]
               ++ lib.optionals stdenv.isDarwin [ pkgs.libiconv ];
 
             # Chromium for the browser suites (`npm run e2e:gate -w apps/web`), from this pinned nixpkgs so every Linux dev VM has the same build and its libraries.
