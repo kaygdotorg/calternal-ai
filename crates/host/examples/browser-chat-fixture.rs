@@ -14,6 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fixture = match args.next().as_deref() {
         None => "apps/web/e2e/host-chat.mjs",
         Some("runs") => "apps/web/e2e/host-runs.mjs",
+        Some("preview-auth") => "apps/web/e2e/host-preview-auth.mjs",
         Some(_) => return Err("expected the Chat or runs fixture".into()),
     };
     let config = AuthConfig::new(&origin)?;

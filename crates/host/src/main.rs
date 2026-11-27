@@ -16,6 +16,18 @@ type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
 #[tokio::main]
 async fn main() -> CliResult<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let [command, root, web, chat, harness, port] = args.as_slice()
+        && command == "preview-serve"
+    {
+        return dev::serve(
+            Path::new(root),
+            Path::new(web),
+            Path::new(chat),
+            Path::new(harness),
+            Some(port.parse()?),
+        )
+        .await;
+    }
     if let [command, root, web, chat, harness] = args.as_slice()
         && command == "dev-serve"
     {
@@ -24,6 +36,7 @@ async fn main() -> CliResult<()> {
             Path::new(web),
             Path::new(chat),
             Path::new(harness),
+            None,
         )
         .await;
     }
@@ -107,16 +120,28 @@ impl RunningEngine {
 
 async fn attach_runs(host: Host, root: &Path) -> CliResult<(Arc<Host>, Option<RunningEngine>)> {
     let host = Arc::new(host);
-    let image = match std::env::var("CALTERNAL_RUN_IMAGE") {
-        Ok(image) => image,
-        Err(std::env::VarError::NotPresent) => return Ok((host, None)),
-        Err(error) => return Err(error.into()),
+    let sign_in = std::env::var_os("CALTERNAL_RUN_SIGN_IN_DIR").map(PathBuf::from);
+    let real_image = std::env::var_os("CALTERNAL_REAL_RUN_IMAGE");
+    let image = match (real_image, &sign_in) {
+        (Some(image), Some(_)) => image
+            .into_string()
+            .map_err(|_| "Invalid real run image name.")?,
+        (None, None) => match std::env::var("CALTERNAL_RUN_IMAGE") {
+            Ok(image) => image,
+            Err(std::env::VarError::NotPresent) => return Ok((host, None)),
+            Err(error) => return Err(error.into()),
+        },
+        _ => return Err("Set both CALTERNAL_REAL_RUN_IMAGE and CALTERNAL_RUN_SIGN_IN_DIR.".into()),
     };
     let root = root.join("runs");
     let lock_root = root.clone();
     let lock = tokio::task::spawn_blocking(move || calternal_fsio::DataLock::acquire(&lock_root))
         .await??;
-    let backend = Arc::new(PodmanBackend::new("podman", root, &image));
+    let mut backend = PodmanBackend::new("podman", root, &image);
+    if let Some(sign_in) = sign_in {
+        backend = backend.with_run_sign_in(sign_in)?;
+    }
+    let backend = Arc::new(backend);
     backend.initialize().await?;
     let host = host.with_podman_runs(backend.clone(), image);
     Ok((
