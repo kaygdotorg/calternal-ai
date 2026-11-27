@@ -7,9 +7,13 @@ use crate::{
 };
 
 mod collection;
+mod dav;
 mod formulas;
 mod install;
 mod kind;
+mod line_claims;
+pub use dav::{DavComponent, DavMapping, DavProperty};
+pub use line_claims::{CheckboxMapping, LineClaim, LineForm};
 mod manifest;
 mod places;
 mod secondary;

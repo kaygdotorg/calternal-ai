@@ -379,32 +379,23 @@ fn reading_list_and_appendix_b() {
                 text: Some(document),
             },
         ];
-        let result = parse_plugin(&files, &InstallOptions::default());
-        if matches!(id, "events" | "tasks") {
-            let error = result.unwrap_err();
-            assert!(error.message.contains("lines is deferred"), "{id}: {error}");
-            let narrowed = document
-                .lines()
-                .filter(|line| {
-                    !line.starts_with("lines: ")
-                        && !line.starts_with("ical: ")
-                        && !line.starts_with("  title: SUMMARY")
-                        && !line.starts_with("  start: DTSTART")
-                        && !line.starts_with("  end: DTEND")
-                        && !line.starts_with("  location: LOCATION")
-                        && !line.starts_with("  repeat: RRULE")
-                        && !line.starts_with("  exceptions: EXDATE")
-                        && !line.starts_with("  alert: VALARM")
-                        && !line.starts_with("  body: DESCRIPTION")
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            let mut narrowed_files = files;
-            narrowed_files[2].text = Some(&narrowed);
-            parse_plugin(&narrowed_files, &InstallOptions::default())
-                .unwrap_or_else(|error| panic!("{id}: {error}"));
-        } else {
-            result.unwrap_or_else(|error| panic!("{id}: {error}"));
+        let compiled = parse_plugin(&files, &InstallOptions::default())
+            .unwrap_or_else(|error| panic!("{id}: {error}"));
+        let kind = &compiled.kinds[id];
+        if id == "events" {
+            assert_eq!(kind.line_claim.as_ref().unwrap().targets, ["days"]);
+            assert_eq!(kind.dav[0].properties.len(), 8);
+        }
+        if id == "tasks" {
+            let claim = kind.line_claim.as_ref().unwrap();
+            assert_eq!(
+                claim.targets,
+                ["calternal-notes.notes", "calternal-calendar.days"]
+            );
+            assert_eq!(
+                claim.checkbox.as_ref().unwrap().value('X'),
+                Some(&Value::Text("done".into()))
+            );
         }
         count += 1;
     }

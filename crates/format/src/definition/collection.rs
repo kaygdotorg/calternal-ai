@@ -15,6 +15,8 @@ pub enum Source {
     Records(String),
     /// Authorized files and folders.
     Files,
+    /// Plain checkbox rows from authorized notes.
+    CheckboxLines,
 }
 
 /// Controls which space contributes the collection's authorized source rows.
@@ -282,11 +284,7 @@ fn sources(value: &str, site: Site, collection: &mut Collection) -> Result<(), D
                 };
             }
             "files" => collection.sources.push(Source::Files),
-            "lines(checkbox)" => {
-                return Err(
-                    site.error("Line item sources are deferred beyond the Chat-first format slice")
-                );
-            }
+            "lines(checkbox)" => collection.sources.push(Source::CheckboxLines),
             _ => {
                 let (name, is_record) = match part.strip_suffix(".records") {
                     Some(name) => (name, true),

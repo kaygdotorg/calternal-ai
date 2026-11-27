@@ -166,7 +166,7 @@ pub(super) fn mark_viewer_fields(
     }
 }
 
-fn viewer_dependent(
+pub(super) fn viewer_dependent(
     node: &Node,
     fields: &BTreeMap<String, Field>,
     settings: &BTreeMap<String, Field>,

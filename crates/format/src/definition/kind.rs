@@ -2,9 +2,7 @@ use std::collections::BTreeMap;
 
 pub(super) use super::formulas::computed_order;
 
-use super::{
-    Directive, Section, definition, format, list, matching_id, name, path, required, sections, text,
-};
+use super::{Section, definition, format, list, matching_id, name, path, required, sections, text};
 use crate::{
     Diagnostic, Expression, Field, FieldType, Operation, dates, field,
     lines::{self, Line, Site},
@@ -108,6 +106,10 @@ pub struct Kind {
     pub search: Vec<String>,
     /// Fields that stay visible when a page is extended.
     pub protected: Vec<String>,
+    /// Note line notation and source kinds claimed by this kind.
+    pub line_claim: Option<super::LineClaim>,
+    /// Checked calendar or contact mappings for host adapters.
+    pub dav: Vec<super::DavMapping>,
     /// The numeric field surfaced as operation progress.
     pub progress: Option<String>,
     /// The Markdown copied into the host-authored folder description.
@@ -162,6 +164,8 @@ pub(super) fn parse(
         search: Vec::new(),
         protected: Vec::new(),
         progress: None,
+        line_claim: None,
+        dav: Vec::new(),
         body,
         computed: Vec::new(),
         record_computed: Vec::new(),
@@ -185,6 +189,7 @@ pub(super) fn parse(
                 | "operations"
                 | "rights"
                 | "vcard"
+                | "ical"
         ) {
             entry.alone()?
         }
@@ -322,15 +327,7 @@ pub(super) fn parse(
             "search" => kind.search = list(value, site)?,
             "protected" => kind.protected = list(value, site)?,
             "progress" => kind.progress = Some(value.into()),
-            "lines" | "ical" => {
-                return Err(site.error(format!(
-                    "{key} is deferred beyond the Chat-first format slice"
-                )));
-            }
-            "vcard" => {
-                let _: Directive = entry.directive()?;
-                return Err(site.error("vcard mapping is deferred with ical"));
-            }
+            "lines" | "ical" | "vcard" => {}
             _ => return Err(entry.line.site.error(format!("Unknown kind key {key}"))),
         }
     }
@@ -363,6 +360,13 @@ pub(super) fn parse(
             .error("List the operations for an operations-only kind"));
     }
     verify_fields(&mut kind, &entries, settings)?;
+    for entry in &entries {
+        match entry.key {
+            "lines" => kind.line_claim = Some(super::line_claims::parse(entry, &kind)?),
+            "ical" | "vcard" => kind.dav.push(super::dav::parse(entry, &kind)?),
+            _ => {}
+        }
+    }
     Ok(kind)
 }
 

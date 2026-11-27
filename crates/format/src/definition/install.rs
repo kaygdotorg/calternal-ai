@@ -8,6 +8,41 @@ pub(super) fn verify(
     paths: &BTreeSet<&str>,
     options: &InstallOptions<'_>,
 ) -> Result<(), Diagnostic> {
+    let mut claims = BTreeSet::new();
+    for claimant in options
+        .installed
+        .iter()
+        .filter(|other| other.manifest.id != plugin.manifest.id)
+        .chain(std::iter::once(plugin))
+    {
+        for kind in claimant.kinds.values() {
+            if let Some(claim) = &kind.line_claim {
+                for target in &claim.targets {
+                    let (owner, target) = target
+                        .split_once('.')
+                        .unwrap_or((&claimant.manifest.id, target));
+                    if !claims.insert((claim.form, owner, target)) {
+                        return Err(located(
+                            kind.site.error(format!(
+                                "More than one kind claims the same line form in {owner}.{target}"
+                            )),
+                            &format!("kinds/{}.md", kind.id),
+                        ));
+                    }
+                    let target_kind = std::iter::once(plugin)
+                        .chain(options.installed.iter())
+                        .find(|candidate| candidate.manifest.id == owner)
+                        .and_then(|candidate| candidate.kinds.get(target));
+                    if target_kind.is_some_and(|kind| kind.hidden) {
+                        return Err(located(
+                            kind.site.error("A line source must be visible"),
+                            "plugin.md",
+                        ));
+                    }
+                }
+            }
+        }
+    }
     let mut folders: Vec<&str> = options
         .installed
         .iter()
