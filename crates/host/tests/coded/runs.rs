@@ -1,6 +1,8 @@
 //! Test the real harness with the fake provider image.
 use super::*;
 
+static PODMAN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[tokio::test]
 async fn selected_harness_replies_once_and_enforces_actor_scope_and_egress() {
     use calternal_machine::sandbox::podman::PodmanBackend;
@@ -10,6 +12,7 @@ async fn selected_harness_replies_once_and_enforces_actor_scope_and_egress() {
         eprintln!("SKIPPED: set CALTERNAL_TEST_PROVIDER_IMAGE to run the fake provider");
         return;
     };
+    let _serial = PODMAN.lock().await;
     let f = Fixture::new().await;
     let root = f._root.path().join("runs");
     let _containers = podman_guard::PodmanGuard::new(&root);
@@ -105,26 +108,32 @@ async fn selected_harness_replies_once_and_enforces_actor_scope_and_egress() {
     let records = wait_for(3).await;
     assert_eq!(records[2]["body"], "Egress: refused");
     assert_eq!(records[2]["run"], run);
+    // The fake provider signals only after its SIGINT-ignoring grandchild
+    // has started sleep. Use the already-mounted, disposable account home.
+    use std::os::fd::AsRawFd;
+    use tokio::io::AsyncReadExt;
+    let home = root
+        .join("accounts")
+        .join(f.owner.to_string())
+        .join("spaces")
+        .join(f.space.to_string())
+        .join("provider-homes/calternal-chat-claude-code");
+    let dir = tokio::fs::File::open(&home).await.unwrap();
+    let endpoint = format!("/proc/self/fd/{}/hold-ready.sock", dir.as_raw_fd());
+    let readiness = tokio::net::UnixListener::bind(endpoint).unwrap();
     send_input(caller.clone(), 4, json!("hold: stop family"))
         .await
         .unwrap();
-    let container =
-        PodmanBackend::container_name(f.owner.as_uuid(), run.as_str().unwrap().parse().unwrap());
-    tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            let top = tokio::process::Command::new("podman")
-                .args(["top", &container, "args"])
-                .output()
-                .await
-                .unwrap();
-            if String::from_utf8_lossy(&top.stdout).contains("sleep 60") {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(30)).await;
-        }
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let (mut stream, _) = readiness.accept().await.unwrap();
+        let mut signal = [0; 6];
+        stream.read_exact(&mut signal).await.unwrap();
+        assert_eq!(&signal, b"READY\n");
     })
     .await
-    .expect("the fake provider process family never started");
+    .expect("the fake provider did not signal process-family readiness");
+    let container =
+        PodmanBackend::container_name(f.owner.as_uuid(), run.as_str().unwrap().parse().unwrap());
     let started = std::time::Instant::now();
     f.call(caller.clone(), "s.run.stop", json!({"id":run}), None)
         .await
@@ -153,6 +162,7 @@ async fn sandbox_callbacks_keep_the_original_chat_scope() {
         eprintln!("SKIPPED: set CALTERNAL_TEST_PROVIDER_IMAGE to exercise sandbox callbacks");
         return;
     };
+    let _serial = PODMAN.lock().await;
     let f = Fixture::new().await;
     let root = f._root.path().join("runs");
     let _containers = podman_guard::PodmanGuard::new(&root);

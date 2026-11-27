@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import net from "node:net";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 const args = process.argv.slice(2);
 if (args[0] === "auth" && args[1] === "status") process.exit(1);
@@ -87,14 +90,31 @@ if (prompt === "egress-check" || prompt === "egress-denied") {
 let heldChild = null;
 if (prompt.startsWith("hold:")) {
   process.on("SIGINT", () => {});
-  heldChild = spawn(
-    process.execPath,
-    [
-      "-e",
-      "process.on('SIGINT',()=>{});const {spawn}=require('node:child_process');spawn('sh',['-c','trap \"\" INT; sleep 60'],{stdio:'ignore'});setInterval(()=>{},60000)",
-    ],
-    { stdio: "ignore" },
-  );
+  heldChild = spawn(process.execPath, ["-e", `
+    process.on("SIGINT", () => {});
+    const { spawn } = require("node:child_process");
+    spawn("sh", ["-c", \`
+      trap "" INT
+      sleep 60 & sleeper=$!
+      while read -r command <"/proc/$sleeper/comm" && [ "$command" != sleep ]; do
+        sleep 0.01
+      done
+      [ "$command" = sleep ] || exit 1
+      printf "READY\\n"
+      wait "$sleeper"
+    \`], { stdio: ["ignore", "inherit", "ignore"] });
+    setInterval(() => {}, 60_000);
+  `], { stdio: ["ignore", "pipe", "ignore"] });
+  const [ready] = await once(heldChild.stdout, "data");
+  if (ready.toString().trim() !== "READY") throw new Error("process family did not start");
+  if (prompt === "hold: stop family") {
+    const address = join(process.env.HOME, "hold-ready.sock");
+    if (!existsSync(address)) throw new Error("missing readiness receiver");
+    const socket = net.createConnection(address);
+    await once(socket, "connect");
+    socket.end("READY\n");
+    await once(socket, "close");
+  }
 }
 
 const emit = value => process.stdout.write(JSON.stringify(value) + "\n");
