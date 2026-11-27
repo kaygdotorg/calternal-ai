@@ -192,3 +192,62 @@ fn extensions_cannot_replace_protected_fields_or_write_owner_state() {
         );
     }
 }
+
+#[test]
+fn overlapping_extension_fields_and_operations_are_rejected() {
+    let base = mail();
+    for (named, dynamic, expected) in [
+        (
+            "    fields:\n      flag: yes/no",
+            "    fields:\n      flag: text",
+            "field",
+        ),
+        (
+            "    operations:\n      flag: code",
+            "    operations:\n      flag: code",
+            "operation",
+        ),
+    ] {
+        let manifest = format!(
+            "---\nplugin: reading-list\nname: Reading List\nformat: 1\nversion: 1.0.0\nextends:\n  [mail.messages]:\n{named}\n  any kind with url:\n{dynamic}\n---\nTest.\n"
+        );
+        let error = reading(&manifest, &base).unwrap_err();
+        assert!(
+            error
+                .message
+                .contains(&format!("same {expected} reading-list.flag"))
+        );
+    }
+}
+
+#[test]
+fn newly_available_kinds_cannot_bind_colliding_dynamic_extensions() {
+    let contributor = "---\nplugin: flags\nname: Flags\nformat: 1\nversion: 1.0.0\nextends:\n  any kind with url:\n    fields:\n      flag: text\n  any kind with date:\n    fields:\n      flag: yes/no\n---\nTest.\n";
+    let contributor = parse_plugin(
+        &[PluginFile {
+            path: "plugin.md",
+            text: Some(contributor),
+        }],
+        &InstallOptions::default(),
+    )
+    .unwrap();
+    let kind = MESSAGES.replace("  url: url", "  url: url\n  added: date");
+    let error = parse_plugin(
+        &[
+            PluginFile {
+                path: "plugin.md",
+                text: Some(MAIL),
+            },
+            PluginFile {
+                path: "kinds/messages.md",
+                text: Some(&kind),
+            },
+        ],
+        &InstallOptions {
+            installed: &[contributor],
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+    assert!(error.message.contains("same field flags.flag"));
+}

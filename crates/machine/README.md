@@ -113,7 +113,9 @@ The run service binds an installed plugin executable to a session target and
 starting actor. It starts a rootless network-isolated Podman container with a
 read-only image, plugin bundle and workspace. Bounded temporary mounts contain
 writable run state. Run input checks the starting actor and returns queue
-acceptance. Output events have a monotonic run sequence and a terminal exit.
+acceptance. Output events have a monotonic run sequence. A full output
+channel at Stop can omit the terminal event. The exit watch carries the
+result independently, so the host can publish it after draining the stream.
 
 The host authorizes Stop against the run's original scope. Target removal or
 failed publication can terminate a known run by ID after the target disappears.
@@ -131,7 +133,9 @@ resolver and dialer exercise this path.
 
 Real sign-in is an opt-in development mode for one account, space and trusted
 installed program. The operator supplies one private credential file and a full
-local image ID. The fake image tests use a synthetic credential file.
+local image ID. The machine copies the checked file into private run storage,
+mounts the copy read-only and removes it with the run. The fake image tests
+use a synthetic credential file.
 Executable program bindings are supported. Image bindings return an explicit
 unsupported error.
 

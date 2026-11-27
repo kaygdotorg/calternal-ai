@@ -307,16 +307,10 @@ pub(crate) fn write_item(
     body: Option<&str>,
     kind: &Kind<'_>,
 ) -> Result<String> {
-    let original = format::parse_item(source).map_err(invalid)?;
-    let mut markdown = format::write_item(&original, &as_fields(patch)?).map_err(invalid)?;
-    if let Some(body) = body {
-        markdown.truncate(markdown.len() - original.body().len());
-        markdown.push_str(body);
-    }
-    if !markdown.ends_with('\n') {
-        markdown.push('\n');
-    }
+    let markdown = render_item(source, &as_fields(patch)?, body)?;
     let updated = format::parse_item(&markdown).map_err(invalid)?;
+    #[cfg(test)]
+    ITEM_SAVE_CHECKS.with(|count| count.set(count.get() + 1));
     let (today, now) = clock()?;
     format::check_item(
         kind.compiled,
@@ -330,6 +324,28 @@ pub(crate) fn write_item(
     )
     .map_err(invalid)?;
     Ok(markdown)
+}
+
+pub(crate) fn render_item(
+    source: &str,
+    patch: &format::Fields,
+    body: Option<&str>,
+) -> Result<String> {
+    let original = format::parse_item(source).map_err(invalid)?;
+    let mut markdown = format::write_item(&original, patch).map_err(invalid)?;
+    if let Some(body) = body {
+        markdown.truncate(markdown.len() - original.body().len());
+        markdown.push_str(body);
+    }
+    if !markdown.ends_with('\n') {
+        markdown.push('\n');
+    }
+    Ok(markdown)
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static ITEM_SAVE_CHECKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]

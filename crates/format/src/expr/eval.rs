@@ -168,7 +168,7 @@ pub(crate) fn evaluate_field(
 }
 
 struct Evaluator<'a, 'b> {
-    context: &'b EvalContext<'a>,
+    context: EvalContext<'a>,
     row: Row<'a>,
     steps: &'b mut usize,
     hops: usize,
@@ -180,9 +180,9 @@ struct Evaluator<'a, 'b> {
 }
 
 impl<'a, 'b> Evaluator<'a, 'b> {
-    fn new(row: Row<'a>, context: &'b EvalContext<'a>, steps: &'b mut usize) -> Self {
+    fn new(row: Row<'a>, context: &EvalContext<'a>, steps: &'b mut usize) -> Self {
         Self {
-            context,
+            context: *context,
             row,
             steps,
             hops: 0,
@@ -199,9 +199,10 @@ impl<'a, 'b> Evaluator<'a, 'b> {
             return Some(self.row);
         }
         let fields = self.snapshot?.fields?;
+        static NO_METADATA: Fields = Fields::new();
         Some(Row {
             fields,
-            metadata: self.row.metadata,
+            metadata: &NO_METADATA,
         })
     }
 
@@ -303,12 +304,33 @@ impl<'a, 'b> Evaluator<'a, 'b> {
         }
     }
 
+    fn historical_input(&self, site: Site) -> Diagnostic {
+        site.error("This input is unavailable in a previous period")
+    }
+
+    fn historical_metadata(field: &str) -> bool {
+        matches!(
+            field,
+            "id" | "kind" | "created" | "edited" | "author" | "at" | "anchor"
+        )
+    }
+
     fn name(
         &mut self,
         name: &str,
         element: Option<&Value>,
         site: Site,
     ) -> Result<Value, Diagnostic> {
+        if self.historical
+            && (matches!(
+                name,
+                "item" | "open item" | "records" | "state" | "settings"
+            ) || element.is_none()
+                && self.candidate.is_none()
+                && Self::historical_metadata(name))
+        {
+            return Err(self.historical_input(site));
+        }
         match name {
             "this" => self.clone_row(self.active_row(), site),
             "period" if self.period.is_some() => {
@@ -353,6 +375,12 @@ impl<'a, 'b> Evaluator<'a, 'b> {
         site: Site,
     ) -> Result<Value, Diagnostic> {
         if let NodeKind::Name(name) = &base.kind {
+            if self.historical
+                && (matches!(name.as_str(), "item" | "open item" | "state" | "settings")
+                    || name == "this" && Self::historical_metadata(field))
+            {
+                return Err(self.historical_input(site));
+            }
             let row = match name.as_str() {
                 "this" => Some(self.active_row()),
                 "item" => Some(self.context.item),
@@ -400,6 +428,9 @@ impl<'a, 'b> Evaluator<'a, 'b> {
     }
 
     fn link(&self, key: &str, site: Site) -> Result<Option<Row<'a>>, Diagnostic> {
+        if self.historical {
+            return Err(self.historical_input(site));
+        }
         if self.hops >= 1 {
             return Err(site.error("A formula follows at most one link"));
         }
@@ -413,6 +444,17 @@ impl<'a, 'b> Evaluator<'a, 'b> {
         element: Option<&Value>,
         site: Site,
     ) -> Result<Value, Diagnostic> {
+        if self.historical
+            && (matches!(name, "links to" | "now" | "next" | "records after")
+                || name == "count"
+                    && matches!(&args[0].kind,
+                        NodeKind::Name(name) if name == "records")
+                || name == "count"
+                    && matches!(&args[0].kind,
+                        NodeKind::Call(name, _) if name == "records after"))
+        {
+            return Err(self.historical_input(site));
+        }
         match name {
             "if" => {
                 let test = self.eval(&args[0], element)?;

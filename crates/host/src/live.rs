@@ -159,6 +159,8 @@ enum ServerFrame {
         groups: Value,
         #[serde(rename = "namedTotals", skip_serializing_if = "Value::is_null")]
         named_totals: Value,
+        #[serde(rename = "namedTotalErrors", skip_serializing_if = "Value::is_null")]
+        named_total_errors: Value,
         cursor: Value,
     },
     Records {
@@ -395,6 +397,10 @@ async fn eval_subscription(
                 totals: std::mem::take(&mut value["totals"]),
                 groups: std::mem::take(&mut value["groups"]),
                 named_totals: std::mem::take(&mut value["namedTotals"]),
+                named_total_errors: value
+                    .as_object_mut()
+                    .and_then(|value| value.remove("namedTotalErrors"))
+                    .unwrap_or_default(),
                 cursor: std::mem::take(&mut value["cursor"]),
             };
             wire::send_distinct(socket, frame, last_payload).await

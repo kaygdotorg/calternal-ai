@@ -150,12 +150,16 @@ pub(crate) fn expand_series(
     let site = Site::START;
     let seed = parse_stamp(start)?;
     let Window { lower, upper } = window;
+    let exceptions = exclusions.len().saturating_add(overrides.len());
+    if exceptions > 10_000 {
+        return Err(site.error("A repeat may supply at most 10,000 exceptions"));
+    }
+    *steps = steps
+        .checked_sub(exceptions)
+        .ok_or_else(|| site.error("The recurrence is too costly"))?;
     let mut excluded_days = BTreeSet::new();
     let mut excluded_times = BTreeSet::new();
     let mut changed = BTreeMap::new();
-    if exclusions.len().saturating_add(overrides.len()) > 10_000 {
-        return Err(site.error("A repeat may supply at most 10,000 exceptions"));
-    }
     for text in exclusions {
         let exclusion = parse_stamp(text)?;
         if exclusion.timed {
@@ -181,36 +185,44 @@ pub(crate) fn expand_series(
             return Err(site.error("A recurrence slot may have only one override"));
         }
     }
+    const MAX_VISIBLE: usize = 1_000;
+    let overflow = || site.error("The calendar window contains more than 1,000 occurrences");
     let in_window = lower..upper;
     let mut found = Vec::new();
     for (&original, moved) in &changed {
-        if in_window.contains(&moved.at)
-            && let (Some(original), Some(start)) = (seed.value(original), moved.value(moved.at))
-        {
-            found.push((moved.at, Occurrence { original, start }));
+        if in_window.contains(&moved.at) {
+            if found.len() == MAX_VISIBLE {
+                return Err(overflow());
+            }
+            if let (Some(original), Some(start)) = (seed.value(original), moved.value(moved.at)) {
+                found.push((moved.at, Occurrence { original, start }));
+            }
         }
     }
-    *steps = steps
-        .checked_sub(exclusions.len().saturating_add(overrides.len()))
-        .ok_or_else(|| site.error("The recurrence is too costly"))?;
+    let mut full = false;
     rule.search(&seed, lower, upper, steps, site, |at| {
         if !changed.contains_key(&at)
             && !excluded_days.contains(&at.div_euclid(86400))
             && !excluded_times.contains(&at)
-            && let Some(start) = seed.value(at)
         {
-            found.push((
-                at,
-                Occurrence {
-                    original: start.clone(),
-                    start,
-                },
-            ));
+            if found.len() == MAX_VISIBLE {
+                full = true;
+                return false;
+            }
+            if let Some(start) = seed.value(at) {
+                found.push((
+                    at,
+                    Occurrence {
+                        original: start.clone(),
+                        start,
+                    },
+                ));
+            }
         }
-        found.len() <= 1_000
+        true
     })?;
-    if found.len() > 1_000 {
-        return Err(site.error("The calendar window contains more than 1,000 occurrences"));
+    if full {
+        return Err(overflow());
     }
     found.sort_by_key(|(at, _)| *at);
     Ok(found.into_iter().map(|(_, item)| item).collect())

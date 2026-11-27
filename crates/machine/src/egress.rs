@@ -28,7 +28,7 @@ use tokio::{
 use tunnel::Limits;
 
 const MAX_CONNECT_HEADERS: usize = 16 * 1024;
-const MAX_SYSTEM_DNS_JOBS: usize = 16;
+const MAX_SYSTEM_DNS_JOBS_PER_RUN: usize = 4;
 
 /// Resolves a declared hostname on the host for each CONNECT request.
 pub trait EgressResolver: Send + Sync + 'static {
@@ -39,6 +39,7 @@ pub trait EgressResolver: Send + Sync + 'static {
 }
 
 /// Resolves names with the host operating system's configured resolver.
+/// A run owns one resolver, with up to four jobs outstanding until libc returns.
 pub struct SystemResolver {
     jobs: Arc<Semaphore>,
 }
@@ -46,7 +47,7 @@ pub struct SystemResolver {
 impl Default for SystemResolver {
     fn default() -> Self {
         Self {
-            jobs: Arc::new(Semaphore::new(MAX_SYSTEM_DNS_JOBS)),
+            jobs: Arc::new(Semaphore::new(MAX_SYSTEM_DNS_JOBS_PER_RUN)),
         }
     }
 }
@@ -259,18 +260,10 @@ async fn serve_connection(
     limits: Limits,
 ) {
     let connect = handshake(&mut client, policy, resolver, dialer);
-    if let Ok(Some((host, upstream, request, header_end))) =
+    if let Ok(Some((upstream, request, header_end))) =
         tokio::time::timeout(limits.handshake, connect).await
     {
-        tunnel::relay(
-            client,
-            upstream,
-            &request[header_end..],
-            &host,
-            budget,
-            limits,
-        )
-        .await;
+        tunnel::relay(client, upstream, &request[header_end..], budget, limits).await;
     }
 }
 
@@ -279,7 +272,7 @@ async fn handshake(
     policy: &EgressPolicy,
     resolver: &dyn EgressResolver,
     dialer: &dyn EgressDialer,
-) -> Option<(String, TcpStream, Vec<u8>, usize)> {
+) -> Option<(TcpStream, Vec<u8>, usize)> {
     let mut request = Vec::with_capacity(1024);
     let mut buffer = [0_u8; 2048];
     let mut checked = 0;
@@ -338,7 +331,7 @@ async fn handshake(
         .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         .await
         .ok()?;
-    Some((host, upstream, request, header_end))
+    Some((upstream, request, header_end))
 }
 
 async fn refuse(client: &mut UnixStream, status: &str) {

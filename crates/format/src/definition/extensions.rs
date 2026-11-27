@@ -554,5 +554,58 @@ pub(super) fn verify(
             }
         }
     }
+    for target in options
+        .installed
+        .iter()
+        .filter(|target| target.manifest.id != plugin.manifest.id)
+    {
+        for kind in target.kinds.values() {
+            verify_matching_names(plugin, &target.manifest.id, kind)?;
+        }
+    }
+    for kind in plugin.kinds.values() {
+        let owner = &plugin.manifest.id;
+        verify_matching_names(plugin, owner, kind)?;
+        for contributor in options
+            .installed
+            .iter()
+            .filter(|other| other.manifest.id != *owner)
+        {
+            verify_matching_names(contributor, owner, kind)?;
+        }
+    }
+    Ok(())
+}
+
+fn verify_matching_names(contributor: &Plugin, owner: &str, kind: &Kind) -> Result<(), Diagnostic> {
+    let mut fields = BTreeSet::new();
+    let mut operations = BTreeSet::new();
+    for extension in &contributor.manifest.extensions {
+        let Extension::Kind(extension) = extension else {
+            continue;
+        };
+        if !extension.target.matches(owner, kind) {
+            continue;
+        }
+        let duplicate = extension
+            .fields
+            .keys()
+            .find(|name| !fields.insert(*name))
+            .map(|name| ("field", name))
+            .or_else(|| {
+                extension
+                    .operations
+                    .keys()
+                    .find(|name| !operations.insert(*name))
+                    .map(|name| ("operation", name))
+            });
+        if let Some((category, name)) = duplicate {
+            let plugin = &contributor.manifest.id;
+            return Err(extension.site.error(format!(
+                "Extensions add the same {category} {plugin}.{name} to {owner}.{}",
+                kind.id
+            )));
+        }
+    }
     Ok(())
 }

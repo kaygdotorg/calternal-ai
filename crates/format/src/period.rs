@@ -106,6 +106,8 @@ impl Period {
 pub type KindRows<'a> = BTreeMap<String, Vec<Row<'a>>>;
 
 /// One civil period's authorized data for an item or collection header.
+/// Formulas evaluated through `previous()` use only this date, fields and
+/// authorized candidate rows. Other ambient inputs are unavailable.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PeriodSnapshot<'a> {
     /// Any civil date in the selected period.

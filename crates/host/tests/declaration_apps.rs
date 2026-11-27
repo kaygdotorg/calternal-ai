@@ -296,3 +296,35 @@ fn installing_a_line_claim_explains_why_it_cannot_run() {
     assert_eq!(error.code, ErrorCode::Forbidden, "{error:?}");
     assert!(error.message.contains("lines in other notes"), "{error:?}");
 }
+
+#[test]
+fn named_total_failure_is_distinct_from_empty() {
+    let f = Fixture::new();
+    let directory = f.root.path().join("calculations");
+    std::fs::create_dir_all(directory.join("kinds")).unwrap();
+    std::fs::create_dir_all(directory.join("collections")).unwrap();
+    for (path, source) in [
+        (
+            "plugin.md",
+            "---\nplugin: calculations\nname: Calculations\nversion: 1.0.0\nformat: 1\n---\n",
+        ),
+        (
+            "kinds/entries.md",
+            "---\nkind: entries\nname: Entry\nformat: 1\nfolder: Entries\neditable: outside\nfields:\n  title: text, required\n---\nEntry.\n",
+        ),
+        (
+            "collections/totals.md",
+            "---\ncollection: totals\ntitle: Totals\nformat: 1\nfrom: entries\ntotals:\n  broken: = 1 / 0\n  quiet: = empty\nviews:\n  list: title\n---\n",
+        ),
+    ] {
+        std::fs::write(directory.join(path), source).unwrap();
+    }
+    f.host
+        .install_local(f.owner, f.space, &directory, false)
+        .unwrap();
+    let page = f.query(json!({"collection": "calculations.totals"}));
+    assert_eq!(page["namedTotals"], json!({"broken": null, "quiet": null}));
+    let errors = page["namedTotalErrors"].as_object().unwrap();
+    assert_eq!(errors.len(), 1);
+    assert!(errors["broken"].is_string());
+}

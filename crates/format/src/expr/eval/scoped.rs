@@ -49,7 +49,15 @@ impl<'a> Evaluator<'a, '_> {
         let old_snapshot = self.snapshot.replace(previous);
         let old_historical = std::mem::replace(&mut self.historical, true);
         let old_candidate = self.candidate.take();
+        let old_context = std::mem::replace(
+            &mut self.context,
+            super::EvalContext {
+                today: Some(previous.date),
+                ..super::EvalContext::default()
+            },
+        );
         let result = self.eval(node, None);
+        self.context = old_context;
         self.snapshot = old_snapshot;
         self.historical = old_historical;
         self.candidate = old_candidate;
@@ -74,7 +82,11 @@ impl<'a> Evaluator<'a, '_> {
             |node| !matches!(&node.kind, NodeKind::Name(name) if name == "ignoring default"),
         );
         let reverse = if self.historical {
-            self.snapshot.and_then(|snapshot| snapshot.reverse)
+            Some(
+                self.snapshot
+                    .and_then(|snapshot| snapshot.reverse)
+                    .ok_or_else(|| self.historical_input(site))?,
+            )
         } else {
             self.context.reverse
         };
