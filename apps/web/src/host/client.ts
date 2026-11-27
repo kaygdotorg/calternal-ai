@@ -1,5 +1,7 @@
 /**
- * HTTP call route client and single-WebSocket live window manager for the new host.
+ * HTTP call route client, passkey auth + ADR 0030 logout lifecycle, and
+ * single-WebSocket live window manager for the real `calternal-host`.
+ *
  * Speaks `POST /v1/spaces/{space}/call` (docs/reviews/host-call-route-2026-11-27.md)
  * and `GET /v1/spaces/{space}/live` (docs/reviews/live-window-protocol-2026-11-27.md).
  */
@@ -7,8 +9,8 @@ import type {
   HostError,
   HostSessionStatus,
   ItemDetail,
-  LiveServerFrame,
   LiveItemMetadata,
+  LiveServerFrame,
   QuerySpec,
   RecordData,
   RowData,
@@ -17,8 +19,11 @@ import type {
 } from "./types";
 
 const SESSION_KEY = "calternal.host.session-info";
+const PENDING_LOGOUT_COOKIE = "calternal_pending_logout";
+const AUTH_CHANNEL_NAME = "calternal-auth";
+const REFUSED_AT_ONCE_MS = 400;
 
-/** Read a saved session from `sessionStorage` (isolated per browser context/tab). */
+/** Read a saved session display summary from `sessionStorage` (isolated per tab/context). */
 export function loadSession(): SessionInfo | null {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
@@ -28,7 +33,7 @@ export function loadSession(): SessionInfo | null {
   }
 }
 
-/** Save or clear the active session in `sessionStorage`. */
+/** Save or clear the active session display summary in `sessionStorage`. */
 export function saveSession(session: SessionInfo | null): void {
   try {
     if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -36,6 +41,72 @@ export function saveSession(session: SessionInfo | null): void {
   } catch {
     // ignore storage errors in restricted environments
   }
+}
+
+/** Delete all account-scoped browser storage (ADR 0030). */
+export function clearAccountStorage(): void {
+  saveSession(null);
+  try {
+    const toRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("calternal.host.")) toRemove.push(k);
+    }
+    for (const k of toRemove) localStorage.removeItem(k);
+  } catch {
+    // ignore storage errors in restricted environments
+  }
+}
+
+/** Whether a previous offline sign-out is still waiting to revoke its installation (ADR 0030). */
+export function hasPendingLogout(): boolean {
+  try {
+    return document.cookie.split(";").some((c) => c.trim().startsWith(`${PENDING_LOGOUT_COOKIE}=1`));
+  } catch {
+    return false;
+  }
+}
+
+function setPendingLogout(pending: boolean): void {
+  try {
+    if (pending) {
+      document.cookie = `${PENDING_LOGOUT_COOKIE}=1; path=/; SameSite=Strict`;
+    } else {
+      document.cookie = `${PENDING_LOGOUT_COOKIE}=; path=/; max-age=0; SameSite=Strict`;
+    }
+  } catch {
+    // ignore cookie errors
+  }
+}
+
+/** Notify other open tabs on the same origin that this browser signed out (ADR 0030). */
+export function broadcastSignOut(): void {
+  try {
+    if (typeof BroadcastChannel !== "undefined") {
+      const ch = new BroadcastChannel(AUTH_CHANNEL_NAME);
+      ch.postMessage({ type: "logout" });
+      ch.close();
+    }
+  } catch {
+    // ignore BroadcastChannel errors
+  }
+}
+
+/** Listen for sign-out broadcasts from other tabs on the same origin (ADR 0030). */
+export function subscribeAuthChannel(onLogout: () => void): () => void {
+  if (typeof BroadcastChannel === "undefined") return () => {};
+  const ch = new BroadcastChannel(AUTH_CHANNEL_NAME);
+  const handler = (ev: MessageEvent) => {
+    if (ev.data && typeof ev.data === "object" && (ev.data as { type?: string }).type === "logout") {
+      clearAccountStorage();
+      onLogout();
+    }
+  };
+  ch.addEventListener("message", handler);
+  return () => {
+    ch.removeEventListener("message", handler);
+    ch.close();
+  };
 }
 
 /** Typed caller-safe error thrown when a host route returns an error payload. */
@@ -54,46 +125,145 @@ interface Ceremony {
   options: { publicKey: unknown };
 }
 
-interface SessionReply {
+/** Result returned by `setupHost`, including one-time recovery codes to display once. */
+export interface SessionReply {
   session: SessionInfo;
   recovery_codes?: string[];
 }
 
+/** Slot filler selection passed at the envelope level of `POST /v1/spaces/{space}/call`. */
+export interface SlotSelection {
+  slot: string;
+  filler: string;
+}
+
 async function hostJson<T>(path: string, body?: Record<string, unknown>): Promise<T> {
-  const res = await fetch(path, body === undefined ? {} : {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const res = await fetch(
+    path,
+    body === undefined
+      ? {}
+      : {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+  );
   const data = res.status === 204 ? undefined : await res.json().catch(() => undefined);
   if (!res.ok) {
-    throw new HostCallError(data?.error ?? {
-      code: "unreachable", message: "The host could not complete the call.", next: "Try again.",
-    });
+    throw new HostCallError(
+      data?.error ?? {
+        code: "unreachable",
+        message: "The host could not complete the call.",
+        next: "Try again.",
+      },
+    );
   }
   return data as T;
 }
 
+/** Retry any pending offline logout before checking session status (ADR 0030). */
+export async function retryPendingLogout(): Promise<boolean> {
+  if (!hasPendingLogout()) return true;
+  try {
+    await hostJson<void>("/v1/auth/logout", {});
+    setPendingLogout(false);
+    clearAccountStorage();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Check the cookie-backed session and whether first-owner enrollment is available. */
 export async function sessionStatus(): Promise<HostSessionStatus> {
+  if (hasPendingLogout()) {
+    const cleared = await retryPendingLogout();
+    if (!cleared) {
+      saveSession(null);
+      return { setup: false, session: null };
+    }
+  }
   const status = await hostJson<HostSessionStatus>("/v1/auth/status");
   saveSession(status.session);
   return status;
 }
 
+function mapPasskeyError(err: unknown, elapsedMs: number): HostCallError {
+  if (err instanceof HostCallError) return err;
+  const name = err instanceof Error ? err.name : "";
+  if (name === "InvalidStateError") {
+    return new HostCallError({
+      code: "conflict",
+      message: "This device already has a passkey here. Sign in instead.",
+      next: "Use Sign in with a passkey.",
+    });
+  }
+  if (name === "SecurityError") {
+    return new HostCallError({
+      code: "not-allowed",
+      message: "This page's address cannot be used for passkeys.",
+      next: "Open the configured origin.",
+    });
+  }
+  if (name === "NotSupportedError") {
+    return new HostCallError({
+      code: "invalid",
+      message: "This device or browser does not support passkeys.",
+      next: "Use a browser with passkey support.",
+    });
+  }
+  if (name === "NotAllowedError" && elapsedMs < REFUSED_AT_ONCE_MS) {
+    return new HostCallError({
+      code: "not-allowed",
+      message: "Passkeys are not available in this browser.",
+      next: "Check your browser settings.",
+    });
+  }
+  if (name === "NotAllowedError" || name === "AbortError") {
+    return new HostCallError({
+      code: "needs-sign-in",
+      message: "The passkey prompt was closed or timed out.",
+      next: "Try again.",
+    });
+  }
+  return new HostCallError({
+    code: "needs-sign-in",
+    message: "This browser could not use a passkey.",
+    next: "Try again.",
+  });
+}
+
 async function passkey(kind: "setup" | "login", args: Record<string, unknown>): Promise<SessionReply> {
+  if (hasPendingLogout()) {
+    const cleared = await retryPendingLogout();
+    if (!cleared) {
+      throw new HostCallError({
+        code: "unreachable",
+        message: "Still finishing your previous sign-out.",
+        next: "Reconnect and try again.",
+      });
+    }
+  }
   const start = await hostJson<Ceremony>(`/v1/auth/${kind}/start`, args);
-  const credential = (kind === "setup"
-    ? await navigator.credentials.create({
-        publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(
-          start.options.publicKey as Parameters<typeof PublicKeyCredential.parseCreationOptionsFromJSON>[0],
-        ),
-      })
-    : await navigator.credentials.get({
-        publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(
-          start.options.publicKey as Parameters<typeof PublicKeyCredential.parseRequestOptionsFromJSON>[0],
-        ),
-      })) as PublicKeyCredential | null;
+  const t0 = performance.now();
+  let credential: PublicKeyCredential | null;
+  try {
+    credential = (
+      kind === "setup"
+        ? await navigator.credentials.create({
+            publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(
+              start.options.publicKey as Parameters<typeof PublicKeyCredential.parseCreationOptionsFromJSON>[0],
+            ),
+          })
+        : await navigator.credentials.get({
+            publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(
+              start.options.publicKey as Parameters<typeof PublicKeyCredential.parseRequestOptionsFromJSON>[0],
+            ),
+          })
+    ) as PublicKeyCredential | null;
+  } catch (err) {
+    throw mapPasskeyError(err, performance.now() - t0);
+  }
   if (!credential) {
     throw new HostCallError({ code: "needs-sign-in", message: "No passkey was chosen.", next: "Try again." });
   }
@@ -105,22 +275,35 @@ async function passkey(kind: "setup" | "login", args: Record<string, unknown>): 
   return result;
 }
 
-/** Sign in with a discoverable passkey. The browser owns the session cookie.
- *  The preview form's name argument is display-only until its passkey UX lands.
- */
-export async function signInHost(_displayName?: string): Promise<SessionInfo> {
+/** Sign in with a discoverable passkey. The host sets the strict HttpOnly cookie. */
+export async function signInHost(): Promise<SessionInfo> {
   return (await passkey("login", {})).session;
 }
 
-/** Enroll the first owner's passkey. The caller presents recovery codes once. */
+/** Enroll the first owner's passkey. The caller displays returned recovery codes once. */
 export async function setupHost(token: string, name: string): Promise<SessionReply> {
   return passkey("setup", { token: token.trim(), name: name.trim() });
 }
 
-/** Revoke the current installation and clear the cached session display details. */
-export async function signOutHost(_session?: SessionInfo): Promise<void> {
-  await hostJson<void>("/v1/auth/logout", {});
-  saveSession(null);
+/** Revoke the current installation and clear account-scoped storage (ADR 0030). */
+export async function signOutHost(flushPending?: () => Promise<void>): Promise<{ offline: boolean }> {
+  if (flushPending) {
+    await Promise.race([
+      flushPending().catch(() => {}),
+      new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+    ]);
+  }
+  let offline = false;
+  try {
+    await hostJson<void>("/v1/auth/logout", {});
+    setPendingLogout(false);
+  } catch {
+    offline = true;
+    setPendingLogout(true);
+  }
+  clearAccountStorage();
+  broadcastSignOut();
+  return { offline };
 }
 
 /** Get the installed declarations reachable by the signed-in person. */
@@ -134,9 +317,11 @@ export async function hostCall<T = unknown>(
   call: string,
   input: Record<string, unknown> = {},
   idempotencyKey?: string,
+  slotSelection?: SlotSelection,
 ): Promise<T> {
   const body: Record<string, unknown> = { call, input };
   if (idempotencyKey) body.idempotency_key = idempotencyKey;
+  if (slotSelection) body.slot_selection = slotSelection;
   const { result } = await hostJson<{ result: T }>(`/v1/spaces/${session.space}/call`, body);
   return result;
 }

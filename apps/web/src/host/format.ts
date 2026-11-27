@@ -1,8 +1,9 @@
 /**
- * Generic formatting, predicate evaluation, and action derivation from kind declarations.
- * Contains no hardcoded knowledge of any specific plugin or kind.
+ * Generic formatting, server-evaluated `when` filtering, computed field lookup,
+ * slot filler resolution, and form/action derivation from `s.declarations`.
+ * Contains zero hardcoded knowledge of any specific plugin or kind.
  */
-import type { KindDecl, OperationDecl, RowData } from "./types";
+import type { FieldDecl, KindDecl, OperationDecl, PluginDecl, RowData, SlotDecl } from "./types";
 
 /** Convert a declaration identifier (`mark read`, `read through`) into a sentence-case label. */
 export function humanize(name: string): string {
@@ -11,11 +12,33 @@ export function humanize(name: string): string {
   return clean[0]!.toUpperCase() + clean.slice(1);
 }
 
-/** Format an ISO timestamp or epoch milliseconds into `HH:MM`. */
+/** Format an ISO timestamp or epoch milliseconds into a locale-aware clock time (12h or 24h per browser locale). */
 export function formatClock(at: string | number): string {
   const d = typeof at === "number" ? new Date(at) : new Date(at);
   if (Number.isNaN(d.getTime())) return "";
-  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(d);
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(d);
+}
+
+/**
+ * Format an ISO timestamp or epoch milliseconds into a compact relative label for sidebar/list rows
+ * (`"now"`, `"5m"`, `"11h"`, `"Yesterday"`, `"3d"`, or a short locale date like `"23 Oct"`).
+ */
+export function formatRelativeTime(at: string | number): string {
+  const d = typeof at === "number" ? new Date(at) : new Date(at);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  const diffMs = Math.max(0, now.getTime() - d.getTime());
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 1) return "now";
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffHr = Math.floor(diffMin / 60);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((today - target) / 86_400_000);
+  if (diffHr < 24 && diffDays === 0) return `${diffHr}h`;
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays > 1 && diffDays < 7) return `${diffDays}d`;
+  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(d);
 }
 
 /** Calendar day key (`YYYY-MM-DD`) in the viewer's local timezone for grouping records. */
@@ -50,17 +73,14 @@ export function readRowValue(row: RowData, key: string): unknown {
 }
 
 /**
- * Evaluate a simple `when` predicate from a kind operation declaration
- * (e.g. `state.pinned`, `not state.pinned`, `archived`, `not archived`).
+ * Check whether `operationName` is currently permitted on `row` according to the
+ * host's server-evaluated `row.when` map.
  */
-export function evalWhen(when: string | undefined, row: RowData): boolean {
-  if (!when) return true;
-  const trimmed = when.trim();
-  const neg = trimmed.startsWith("not ");
-  const expr = neg ? trimmed.slice(4).trim() : trimmed;
-  const val = readRowValue(row, expr);
-  const truthy = Boolean(val) && val !== "no" && val !== "false";
-  return neg ? !truthy : truthy;
+export function isOperationAllowed(operationName: string, row: RowData): boolean {
+  if (row.when && operationName in row.when) {
+    return Boolean(row.when[operationName]);
+  }
+  return true;
 }
 
 /** Pick the primary display title of a row using the kind's `row:` list (first text field, fallback `title` or ID). */
@@ -77,31 +97,17 @@ export function rowTitle(row: RowData, kind?: KindDecl): string {
   return "Untitled";
 }
 
-/** Extract a list of people names from a row if the kind declares a `people` field in `row:`. */
-export function rowPeople(row: RowData, kind?: KindDecl): string[] {
-  if (!kind) return [];
-  for (const col of kind.row) {
-    if (kind.fields[col]?.type === "people") {
-      const v = readRowValue(row, col);
-      if (Array.isArray(v)) {
-        return v.map((p) => (typeof p === "string" ? p : String((p as { name?: string })?.name ?? ""))).filter(Boolean);
-      }
-    }
-  }
-  return [];
-}
-
-/** Extract a numeric badge count (e.g. unread) from computed numeric fields listed in `row:`. */
-export function rowCount(row: RowData, kind?: KindDecl): number {
-  if (!kind) return 0;
+/** Extract a numeric badge from computed fields listed in `row:` using `FieldDecl.computed` and its declared field name. */
+export function rowBadge(row: RowData, kind?: KindDecl): { value: number; name: string } | null {
+  if (!kind) return null;
   for (const col of kind.row) {
     const decl = kind.fields[col];
-    if (decl?.formula || decl?.type === "number") {
+    if (decl?.computed || decl?.formula || decl?.type === "number") {
       const v = readRowValue(row, col);
-      if (typeof v === "number" && v > 0) return v;
+      if (typeof v === "number" && v > 0) return { value: v, name: col };
     }
   }
-  return 0;
+  return null;
 }
 
 /** Derived UI action ready to be rendered in a menu or toolbar. */
@@ -113,14 +119,16 @@ export interface DerivedAction {
   danger?: boolean;
 }
 
-/** Return the menu/item operations applicable to `row` according to its kind declaration. */
+/** Return the menu/item operations applicable to `row` according to `kind.operations` and `row.when`. */
 export function itemMenuActions(row: RowData, kind: KindDecl): DerivedAction[] {
   const out: DerivedAction[] = [];
   for (const op of Object.values(kind.operations)) {
-    if (op.form === "add" || op.form === "change_record" || op.form === "remove_record") continue;
+    if (op.form === "add" || op.form === "change_record" || op.form === "remove_record" || op.form === "append_record") {
+      continue;
+    }
     if (op.form === "code" && !op.placement.includes("menu") && !op.placement.includes("primary")) continue;
     if (op.form === "set" && !op.placement.includes("menu") && !op.placement.includes("primary")) continue;
-    if (!evalWhen(op.when, row)) continue;
+    if (!isOperationAllowed(op.name, row)) continue;
     if (op.form === "change") {
       for (const field of op.fields) {
         const fdecl = kind.fields[field];
@@ -145,6 +153,107 @@ export function itemMenuActions(row: RowData, kind: KindDecl): DerivedAction[] {
     });
   }
   return out;
+}
+
+/** One form field derived strictly from `OperationDecl.inputs` (excluding the `item` link target). */
+export interface DerivedFormField {
+  name: string;
+  label: string;
+  type: string;
+  required: boolean;
+  value: string;
+}
+
+/**
+ * Derive user-facing form fields from a coded operation's `inputs` declaration.
+ * Automatically omits the `item` target link (which is always supplied as `{ item: row.id }`).
+ */
+export function operationFormFields(op: OperationDecl, row?: RowData): DerivedFormField[] {
+  const out: DerivedFormField[] = [];
+  for (const [name, decl] of Object.entries<FieldDecl>(op.inputs ?? {})) {
+    if (name === "item") continue;
+    const raw = row?.fields[name];
+    out.push({
+      name,
+      label: humanize(name),
+      type: decl.type || "text",
+      required: Boolean(decl.required),
+      value: typeof raw === "string" ? raw : "",
+    });
+  }
+  return out;
+}
+
+/** Resolved composer slot metadata from `s.declarations`. */
+export interface ResolvedComposer {
+  slot: SlotDecl;
+  operation: OperationDecl;
+  textInput: string;
+  quoteInput: string | null;
+}
+
+/** Resolved person-picked secondary slot (e.g. a runner/harness slot) and its installed fillers. */
+export interface ResolvedPickerSlot {
+  slot: SlotDecl;
+  fillers: { plugin: string; label: string; target: string }[];
+}
+
+/**
+ * Find the composer operation for `kind` from `plugin.slots` (any single slot whose installed
+ * operation filler targets an operation declared on `kind`). Zero hardcoded slot or plugin names.
+ */
+export function resolveComposerSlot(plugin: PluginDecl, kind: KindDecl): ResolvedComposer | null {
+  for (const slot of Object.values(plugin.slots)) {
+    if (slot.cardinality !== "single") continue;
+    const filler =
+      slot.fillers.find((f) => f.plugin === slot.recommended && f.kind === "operation") ??
+      slot.fillers.find((f) => f.kind === "operation");
+    if (!filler) continue;
+    const opName = filler.target.includes(".") ? filler.target.split(".").pop()! : filler.target;
+    const op = kind.operations[opName];
+    if (!op) continue;
+    const inputs = Object.values(op.inputs ?? {});
+    const textField =
+      inputs.find((f) => f.name !== "item" && (f.type === "long text" || f.type === "text") && f.required) ??
+      inputs.find((f) => f.name !== "item" && (f.type === "long text" || f.type === "text"));
+    const quoteField = inputs.find((f) => f.type.startsWith("link(") && f.type.includes("records"));
+    return {
+      slot,
+      operation: op,
+      textInput: textField?.name ?? "text",
+      quoteInput: quoteField?.name ?? null,
+    };
+  }
+  return null;
+}
+
+/**
+ * Find any other person-picked single slot on `plugin` that has installed operation fillers
+ * (e.g. an optional agent runner slot) and resolve each filler's display name from `allPlugins`.
+ */
+export function resolvePickerSlot(
+  plugin: PluginDecl,
+  allPlugins: PluginDecl[],
+  excludeSlotName?: string,
+): ResolvedPickerSlot | null {
+  for (const slot of Object.values(plugin.slots)) {
+    if (slot.name === excludeSlotName) continue;
+    if (slot.cardinality !== "single" || slot.pickedBy !== "person") continue;
+    const opFillers = slot.fillers.filter((f) => f.kind === "operation");
+    if (!opFillers.length) continue;
+    return {
+      slot,
+      fillers: opFillers.map((f) => {
+        const owner = allPlugins.find((p) => p.id === f.plugin);
+        return {
+          plugin: f.plugin,
+          label: owner?.name || humanize(f.plugin),
+          target: f.target,
+        };
+      }),
+    };
+  }
+  return null;
 }
 
 /** Return the initials (1–2 characters) for a person's display name. */

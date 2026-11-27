@@ -7,7 +7,8 @@
     "packages/*",
     "plugins/*",
     "tests/plugins/composer-settings",
-    "apps/web"
+    "apps/web",
+    "apps/mockup"
   ],
   "engines": {
     "node": ">=22.13.0"
