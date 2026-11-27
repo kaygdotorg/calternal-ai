@@ -515,7 +515,12 @@ impl Host {
         let runtime = self.workers.as_ref().ok_or_else(unavailable)?;
         let code = storage.code.get_mut(plugin).ok_or_else(unavailable)?;
         if code.endpoint.is_none() {
-            code.endpoint = Some(runtime.endpoint(storage.id, &code.source, &code.registration)?);
+            code.endpoint = Some(runtime.endpoint(
+                storage.id,
+                &code.source,
+                &code.registration,
+                storage.worker_processes.clone(),
+            )?);
         }
         Ok(code
             .endpoint

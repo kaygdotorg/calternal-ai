@@ -56,6 +56,7 @@ fn endpoint(
         },
         idle,
         Duration::from_secs(6),
+        std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
     )
 }
 

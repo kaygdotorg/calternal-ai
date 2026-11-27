@@ -44,6 +44,13 @@ mount point and bounded scratch locations.
   mounts disallow direct execution. The limits trade support for large
   temporary data and automatic executable updates for bounded storage.
 
+- Can the preview keep four simultaneous worker processes per space?
+  Installation probes and idle workers share this admission. With default
+  per-process limits, a space can use up to 1.5 GiB, four cores and 128
+  tasks across workers. A fifth installation may need to retry after a
+  worker's idle period. A larger cap would increase capacity and the
+  possible aggregate resource use.
+
 ## Simplification opportunities
 
 - Collapse provider run lifetime and host publication cancellation into one

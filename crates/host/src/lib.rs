@@ -193,12 +193,12 @@ impl Host {
         official: bool,
     ) -> Result<()> {
         let actor = Actor::account(owner);
-        self.with_space(&actor, id, |_| Ok(()))?;
+        let processes = self.with_space(&actor, id, |space| Ok(space.worker_processes.clone()))?;
         let files = installation::bundle(directory)?;
         let registration = match (self.workers.as_ref(), files.get("operations.ts")) {
             (Some(runtime), Some(source)) => {
                 let snapshot = WorkerRuntime::snapshot(source)?;
-                Some(block_on(runtime.probe(snapshot.path()))??)
+                Some(block_on(runtime.probe(snapshot.path(), processes))??)
             }
             _ => None,
         };

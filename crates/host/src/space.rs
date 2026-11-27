@@ -134,6 +134,7 @@ pub(crate) struct Space {
     pub(crate) live: crate::live::Hub,
     pub(crate) runs: crate::runs::Runs,
     pub(crate) code: BTreeMap<String, InstalledCode>,
+    pub(crate) worker_processes: std::sync::Arc<tokio::sync::Semaphore>,
     pub(crate) retention_ms: i64,
     pub(crate) key: [u8; 32],
     pub(crate) storage_owner: u32,
@@ -204,6 +205,9 @@ impl Space {
             live: crate::live::Hub::default(),
             runs: crate::runs::Runs::default(),
             code: BTreeMap::new(),
+            worker_processes: std::sync::Arc::new(tokio::sync::Semaphore::new(
+                crate::worker_runtime::SPACE_WORKER_PROCESSES,
+            )),
             retention_ms,
             key,
             storage_owner: owner,
