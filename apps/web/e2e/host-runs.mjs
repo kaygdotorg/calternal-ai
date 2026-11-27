@@ -118,6 +118,7 @@ async function verifyRecordWriters(page, item) {
       const [live, run] = await Promise.all([frames, request]);
       const read = await client.hostCall(session, "s.read", { item });
       const query = await client.hostCall(session, "s.query", { from: "calternal-chat.chats", records: true });
+      await client.hostCall(session, "s.run.stop", { id: run });
       return { live, run, account: session.account, read: read.records, query: query.rows.find((row) => row.id === item).records };
     } finally {
       clearTimeout(timer);

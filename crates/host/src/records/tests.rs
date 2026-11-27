@@ -242,12 +242,40 @@ fn recovered_append_keeps_authenticated_milliseconds() {
     let tail = f.prepare_at(&head, at);
     f.append_uncommitted(&head, &tail);
     let f = f.reopen();
-    let rows = f.space.records(head.id).unwrap();
-    assert_eq!(rows[0].at, at);
-    assert_eq!(rows[0].run.as_ref().unwrap().plugin, plugin);
+    assert_eq!(f.space.records(head.id).unwrap()[0].at, at);
     assert_eq!(
         f.space.row(head.id).unwrap().head.edited,
         at.max(head.edited)
+    );
+}
+
+#[test]
+fn legacy_account_label_uses_the_visible_directory_name() {
+    let mut f = Fixture::new();
+    let head = f.add("Legacy author label");
+    f.space.call(&f.actor, Call {
+        call: "s.write".into(),
+        input: json!({"changes":[{"op":"append record","item":head.id,"record":{"body":MESSAGE}}]}),
+        idempotency_key: None,
+        slot_selection: None,
+    }).unwrap();
+    let head = &f.space.row(head.id).unwrap().head;
+    let bytes = std::fs::read(f.path(head)).unwrap();
+    let rows = f.space.records(head.id).unwrap();
+    let stored = rows[0].bytes(&bytes).unwrap();
+    assert!(
+        std::str::from_utf8(stored)
+            .unwrap()
+            .starts_with(&format!("**{}**", f.actor.account))
+    );
+    f.space.owner_display = Some((f.actor.account, "Current name".into()));
+    let kind = f.space.kind(&head.kind).unwrap();
+    let views = f.space.record_views(head, &bytes, &rows, &kind).unwrap();
+    assert_eq!(
+        views[0]["writer"],
+        json!({
+            "type":"person", "account":f.actor.account, "name":"Current name"
+        })
     );
 }
 

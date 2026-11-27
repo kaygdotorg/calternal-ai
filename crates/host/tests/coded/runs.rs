@@ -101,6 +101,33 @@ async fn selected_harness_replies_once_and_enforces_actor_scope_and_egress() {
     assert_eq!(records.len(), 2);
     assert_eq!(records[1]["body"], "Echo: hello from host");
     assert_eq!(records[1]["run"], run);
+    assert_eq!(
+        records[0]["writer"],
+        json!({"type":"person","account":f.owner,"name":"Ada"})
+    );
+    assert_eq!(
+        records[1]["writer"],
+        json!({
+            "type":"run", "id":run, "plugin":"calternal-chat-claude-code",
+            "starter":{"account":f.owner,"name":"Ada"}
+        })
+    );
+    let page = f
+        .call(
+            caller.clone(),
+            "s.query",
+            json!({"from":"calternal-chat.chats","records":true}),
+            None,
+        )
+        .await
+        .unwrap();
+    let queried = page["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == item)
+        .unwrap();
+    assert_eq!(queried["records"], json!(records));
 
     let queued = json!({"id":run,"input":{"version":1,"seq":3,
         "command":{"type":"send","prompt":"egress-denied","context":[]}}});
