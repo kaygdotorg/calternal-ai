@@ -436,7 +436,7 @@ fn harness_bundle(root: &Path, plugin: &str, title: &str, fills_chat_slot: bool)
 }
 
 #[tokio::test]
-async fn chat_can_call_only_the_operation_of_the_selected_slot_filler() {
+async fn coded_gesture_binds_slot_selection_before_delivery() {
     let f = Fixture::new().await;
     f.install(checkout().join("plugins-v2/calternal-chat"))
         .await
@@ -502,6 +502,10 @@ async fn chat_can_call_only_the_operation_of_the_selected_slot_filler() {
             .await
             .unwrap(),
         receipt
+    );
+    assert_eq!(
+        send("selected", None, None).await.unwrap_err().code,
+        ErrorCode::Conflict
     );
     for (key, filler, hint) in [
         ("non-filler", Some("neighbor"), Some("neighbor.runs.start")),

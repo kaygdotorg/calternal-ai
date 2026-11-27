@@ -45,6 +45,7 @@ pub(crate) struct Chain {
 struct SlotGrant {
     owner: String,
     operation: String,
+    slot: String,
 }
 
 struct Invocation {
@@ -111,6 +112,7 @@ impl Space {
         let target = self.target(&format!("{}.{operation}", selection.filler))?;
         Ok(SlotGrant {
             owner: owner.into(),
+            slot: selection.slot.clone(),
             operation: format!(
                 "{}.{}.{}",
                 target.plugin, target.kind, target.operation.name
@@ -345,6 +347,7 @@ impl Host {
         let who = actor.clone();
         let caller_grant = chain.selection.take();
         let scope = chain.run.map(|grant| grant.item);
+        let ancestry = chain.plugins.clone();
         let (invocation, endpoint, key, input, selection) =
             tokio::task::spawn_blocking(move || {
                 host.with_space(&who, space, |storage| {
@@ -385,6 +388,12 @@ impl Host {
                             storage.select_filler(&invocation.plugin, selection)
                         })
                         .transpose()?;
+                    if ancestry.len() >= 8 || ancestry.contains(&invocation.plugin) {
+                        return Err(Error::forbidden(
+                            "The coded operation would repeat or exceed call depth.",
+                        ));
+                    }
+                    let keyed = call.idempotency_key.is_some();
                     let original = call
                         .idempotency_key
                         .take()
@@ -409,16 +418,29 @@ impl Host {
                     .to_hex()
                     .to_string();
                     let endpoint = host.endpoint(storage, &invocation.plugin)?;
+                    if keyed {
+                        let actor_key = format!("coded-gesture:{}", who.account);
+                        let selected = selection
+                            .as_ref()
+                            .map(|grant| (&grant.slot, &grant.operation));
+                        let fingerprint =
+                            serde_json::to_vec(&(&call.input, selected)).map_err(internal)?;
+                        let receipt = storage
+                            .receipt(&actor_key, Some(&key), &fingerprint)?
+                            .expect("coded gesture key");
+                        if receipt.replay.is_none() {
+                            let tx = storage.db.transaction().map_err(internal)?;
+                            // Bind before delivery. Matching retries may still need to finish
+                            // effects whose own receipts are independent of this binding.
+                            receipt.store(&tx, &Value::Null, calternal_types::now_ms())?;
+                            tx.commit().map_err(internal)?;
+                        }
+                    }
                     Ok((invocation, endpoint, key, call.input, selection))
                 })
             })
             .await
             .map_err(internal)??;
-        if chain.plugins.len() >= 8 || chain.plugins.contains(&invocation.plugin) {
-            return Err(Error::forbidden(
-                "The coded operation would repeat or exceed call depth.",
-            ));
-        }
         let selected_operation = selection.as_ref().map(|grant| grant.operation.clone());
         if chain.session_item.is_none() {
             chain.session_item = invocation.item;
