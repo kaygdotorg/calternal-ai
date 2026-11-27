@@ -15,7 +15,7 @@ mod seal;
 
 #[cfg(target_os = "linux")]
 pub(crate) use append::append;
-pub(crate) use append::{recover_tail, recovered, replay_recovered};
+pub(crate) use append::{recover_pending, recover_tail, recovered, replay_recovered};
 
 const CROCKFORD: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
@@ -36,7 +36,7 @@ impl From<&Metadata> for Signature {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct Record {
     pub(crate) anchor: String,
     pub(crate) offset: u64,
@@ -358,7 +358,7 @@ pub(crate) fn encode(
             display_name.push(letter);
         }
     }
-    let when = time::OffsetDateTime::from_unix_timestamp(at / 1000)
+    let when = time::OffsetDateTime::from_unix_timestamp(at.div_euclid(1000))
         .map_err(internal)?
         .format(time::macros::format_description!(
             "[year]-[month]-[day] [hour]:[minute]"

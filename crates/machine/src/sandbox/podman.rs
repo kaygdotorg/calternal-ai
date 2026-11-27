@@ -43,6 +43,7 @@ pub struct PodmanBackend {
     guest: bool,
     kvm_fallback: bool,
     guest_network: bool,
+    run_sign_in: Option<PathBuf>,
 }
 
 impl PodmanBackend {
@@ -60,7 +61,26 @@ impl PodmanBackend {
             guest: false,
             kvm_fallback: false,
             guest_network: false,
+            run_sign_in: None,
         }
+    }
+
+    /// Configure the operator's Claude Code sign-in directory for isolated
+    /// runs. Validates mount syntax without opening or resolving the path.
+    pub fn with_run_sign_in(mut self, path: PathBuf) -> SandboxResult<Self> {
+        if !path.is_absolute()
+            || path.parent().is_none()
+            || path
+                .components()
+                .any(|part| part == std::path::Component::ParentDir)
+            || !path
+                .to_str()
+                .is_some_and(|value| !value.contains(':') && !value.chars().any(char::is_control))
+        {
+            return Err(SandboxError("Invalid operator sign-in mount path".into()));
+        }
+        self.run_sign_in = Some(path);
+        Ok(self)
     }
 
     pub(crate) fn kvm_fallback(mut self) -> Self {
@@ -267,11 +287,12 @@ impl PodmanBackend {
                 {
                     return Err(SandboxError("shared tools require a dedicated Podman harness".into()));
                 }
+                let run_sign_in = egress_directory.and(self.run_sign_in.as_deref());
                 let (home, login) = if spec.shared_tools.is_some() {
                     (PathBuf::new(), PathBuf::new())
                 } else { match harness {
                     Some(harness) => super::provider_home::prepare_harness(
-                        account, &dir, spec, harness,
+                        account, &dir, spec, harness, run_sign_in,
                     ).await?,
                     None => super::provider_home::prepare(account, &dir, spec).await?,
                 }};
@@ -352,7 +373,7 @@ impl PodmanBackend {
                     } else {
                         "CALTERNAL_CLAUDE_LOGIN_DIR=/run/calternal-provider-login"
                     };
-                    let mode = if harness.is_some_and(|harness| !harness.legacy_profile) || spec.provider_login { "rw" } else { "ro" };
+                    let mode = if run_sign_in.is_none() && (harness.is_some_and(|harness| !harness.legacy_profile) || spec.provider_login) { "rw" } else { "ro" };
                     args.extend([
                         "--volume".into(),
                         format!("{}:/run/calternal-provider-login:{mode}", login.display()),

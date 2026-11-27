@@ -1,6 +1,7 @@
 # Build on a dev machine from the repository root after npm run build:plugins.
 # The person installs the official unmodified claude in their persistent home.
-FROM docker.io/library/node:22-bookworm-slim
+ARG BASE_IMAGE=docker.io/library/node:22-bookworm-slim
+FROM ${BASE_IMAGE}
 COPY plugins/calternal-claude-code/dist /opt/calternal-provider/dist
 COPY plugins/calternal-claude-code/bin /opt/calternal-provider/bin
 ENV PATH="/home/agent/.local/bin:/opt/calternal-provider/bin:/usr/local/bin:/usr/bin:/bin"

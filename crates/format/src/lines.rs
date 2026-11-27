@@ -70,8 +70,27 @@ pub(crate) struct Document<'a> {
     pub body_site: Site,
 }
 
+const HEADER_BYTES: usize = 256 * 1024;
+const HEADER_PHYSICAL_LINES: usize = 4096;
+const HEADER_LOGICAL_LINES: usize = 2048;
+
+/// Limit the portion visited when searching for a frontmatter delimiter.
+pub(crate) fn header_window(source: &str) -> &str {
+    // Leave room to inspect the closing delimiter and its CRLF.
+    &source[..source.floor_char_boundary(source.len().min(HEADER_BYTES + 5))]
+}
+
+/// Refuse work beyond the frontmatter byte and physical-line budgets.
+pub(crate) fn header_line(site: Site, bytes: usize) -> Result<(), Diagnostic> {
+    if bytes > HEADER_BYTES || site.line > HEADER_PHYSICAL_LINES + 1 {
+        return Err(site.error("Frontmatter exceeds 256 KiB or 4096 physical lines"));
+    }
+    Ok(())
+}
+
 pub(crate) fn document(source: &str) -> Result<Document<'_>, Diagnostic> {
-    let mut physical = source.split_inclusive('\n').enumerate();
+    let window = header_window(source);
+    let mut physical = window.split_inclusive('\n').enumerate();
     if !physical
         .next()
         .is_some_and(|(_, line)| line.ends_with('\n') && newline(line) == "---")
@@ -85,7 +104,7 @@ pub(crate) fn document(source: &str) -> Result<Document<'_>, Diagnostic> {
         let line = index + 1;
         let text = newline(raw);
         let site = Site { line, column: 1 };
-        if text == "---" {
+        if text == "---" && (raw.ends_with('\n') || offset == source.len()) {
             for entry in &header {
                 entry.content()?;
             }
@@ -98,6 +117,7 @@ pub(crate) fn document(source: &str) -> Result<Document<'_>, Diagnostic> {
                 },
             });
         }
+        header_line(site, offset)?;
         if let Some(tab) = text.find('\t') {
             return Err(site
                 .after(&text[..tab])
@@ -131,16 +151,21 @@ pub(crate) fn document(source: &str) -> Result<Document<'_>, Diagnostic> {
             }
             None if depth != 0 => return Err(site.error("Start the first key at the left margin")),
             _ if depth > 64 => return Err(site.error("Definition nesting exceeds 64 levels")),
-            _ => header.push(Line {
-                text: content.to_owned(),
-                site,
-                depth,
-                continuations: Vec::new(),
-            }),
+            _ => {
+                if header.len() == HEADER_LOGICAL_LINES {
+                    return Err(site.error("Definition frontmatter exceeds 2048 entries"));
+                }
+                header.push(Line {
+                    text: content.to_owned(),
+                    site,
+                    depth,
+                    continuations: Vec::new(),
+                });
+            }
         }
     }
     Err(Site {
-        line: source.lines().count() + 1,
+        line: window.lines().count() + 1,
         column: 1,
     }
     .error("Close the definition with a line containing only ---"))
@@ -568,5 +593,17 @@ mod appendix {
         assert_eq!(diagnostic.line, 6);
         assert!(diagnostic.message.contains("2min"));
         assert!(parse_expression("now() + 1mo").is_ok());
+    }
+    #[test]
+    fn definition_frontmatter_limits_count_continuations_and_entries() {
+        let continuation = format!(
+            "---\nfields:\n  title: text\n{}---\n",
+            "      word\n".repeat(4096)
+        );
+        let entries = format!("---\n{}---\n", "name: word\n".repeat(2049));
+        let bytes = format!("---\nname: {}\n---\n", "a".repeat(256 * 1024));
+        for source in [&continuation, &entries, &bytes] {
+            assert!(document(source).is_err());
+        }
     }
 }

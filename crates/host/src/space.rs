@@ -5,7 +5,7 @@ use crate::{Call, decode, identity, internal};
 use calternal_fsio::DataLock;
 use calternal_fsio::beneath::Folder;
 use calternal_types::{AccountId, Actor, Error, ErrorCode, Result, SpaceId};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -15,7 +15,12 @@ use std::path::Path;
 use std::sync::OnceLock;
 use uuid::Uuid;
 
+mod maintenance;
+pub(crate) use maintenance::{Receipt, receipt_capacity};
+
 pub(crate) const TRASH_MS: i64 = 30 * 86_400_000;
+/// Maximum indexed items and retained Trash entries in one space.
+pub(crate) const SPACE_ITEMS: usize = 10_000;
 pub(crate) const ITEM_BYTES: usize = 32 * 1024 * 1024;
 
 const VIEWER_STATE_SCHEMA: &str = "
@@ -31,7 +36,9 @@ PRAGMA synchronous=FULL;
 PRAGMA secure_delete=ON;
 CREATE TABLE IF NOT EXISTS key_material (id INTEGER PRIMARY KEY CHECK(id=1), key BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS head (id TEXT PRIMARY KEY, data TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS installations (plugin TEXT PRIMARY KEY, digest BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS installations (
+  sequence INTEGER PRIMARY KEY, plugin TEXT NOT NULL UNIQUE, digest BLOB NOT NULL
+);
 CREATE TABLE IF NOT EXISTS worker_registrations (plugin TEXT PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS trash (item TEXT PRIMARY KEY, until INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS trash_expiry ON trash(until);
@@ -60,6 +67,23 @@ CREATE TABLE IF NOT EXISTS recovered_appends (
 );
 CREATE INDEX IF NOT EXISTS recovered_lookup ON recovered_appends(actor,at);
 CREATE INDEX IF NOT EXISTS recovered_expiry ON recovered_appends(at);
+CREATE TABLE IF NOT EXISTS receipt_usage (
+  id INTEGER PRIMARY KEY CHECK(id=1), total INTEGER NOT NULL
+);
+INSERT INTO receipt_usage SELECT 1,
+  (SELECT count(*) FROM receipts) + (SELECT count(*) FROM recovered_appends)
+  WHERE NOT EXISTS (SELECT 1 FROM receipt_usage WHERE id=1);
+CREATE TRIGGER IF NOT EXISTS receipt_added AFTER INSERT ON receipts
+  BEGIN UPDATE receipt_usage SET total=total+1 WHERE id=1; END;
+CREATE TRIGGER IF NOT EXISTS receipt_removed AFTER DELETE ON receipts
+  BEGIN UPDATE receipt_usage SET total=total-1 WHERE id=1; END;
+CREATE TRIGGER IF NOT EXISTS recovered_added AFTER INSERT ON recovered_appends
+  BEGIN UPDATE receipt_usage SET total=total+1 WHERE id=1; END;
+CREATE TRIGGER IF NOT EXISTS recovered_removed AFTER DELETE ON recovered_appends
+  BEGIN UPDATE receipt_usage SET total=total-1 WHERE id=1; END;
+CREATE TABLE IF NOT EXISTS pending_append (
+  id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL, bytes BLOB NOT NULL
+);
 CREATE TABLE IF NOT EXISTS publication (
   id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL
 );
@@ -104,6 +128,7 @@ pub(crate) struct Space {
     pub(crate) code: BTreeMap<String, InstalledCode>,
     pub(crate) retention_ms: i64,
     pub(crate) key: [u8; 32],
+    pub(crate) storage_owner: u32,
     pub(crate) seen: BTreeMap<Uuid, crate::records::Signature>,
     pub(crate) id: SpaceId,
     pub(crate) owner_display: Option<(AccountId, String)>,
@@ -114,12 +139,28 @@ pub(crate) struct Space {
 
 impl Space {
     pub(crate) fn open(root: &Path, id: SpaceId, retention_ms: i64) -> Result<Self> {
-        let private = root.join("state").join(id.to_string());
-        let root = root.join("spaces").join(id.to_string());
-        calternal_fsio::create_dir_all_durable(&root).map_err(internal)?;
+        calternal_fsio::create_dir_all_durable(root).map_err(internal)?;
+        let metadata = std::fs::symlink_metadata(root).map_err(internal)?;
+        if !metadata.is_dir() || metadata.mode() & 0o022 != 0 {
+            return Err(Error::forbidden(
+                "The host storage base must be a real directory writable only by its owner.",
+            ));
+        }
+        // Only the operator path starts with a pathname lookup. Every space
+        // component is opened relative to that pinned directory, without links.
+        let base = Folder::open_existing(root).map_err(internal)?;
+        let owner = metadata.uid();
+        let id_text = id.to_string();
+        let spaces = storage_child(&base, root, "spaces", owner)?;
+        let files = storage_child(&spaces, &root.join("spaces"), &id_text, owner)?;
+        let state = storage_child(&base, root, "state", owner)?;
+        let private = root.join("state").join(&id_text);
+        storage_child(&state, &root.join("state"), &id_text, owner)?;
+        calternal_fsio::private::directory(&private).map_err(internal)?;
         let pending = private.join("pending");
         calternal_fsio::private::directory(&pending).map_err(internal)?;
-        let lock = DataLock::acquire_existing(&private).map_err(internal)?;
+        let private_handle = std::fs::File::open(&private).map_err(internal)?;
+        let lock = DataLock::acquire_at(&private_handle, &private).map_err(internal)?;
         let ledger = private.join("ledger.sqlite3");
         calternal_fsio::private::file(&ledger).map_err(internal)?;
         let db = Connection::open(ledger).map_err(internal)?;
@@ -145,7 +186,7 @@ impl Space {
         };
         let mut space = Self {
             db,
-            files: Folder::open_existing(&root).map_err(internal)?,
+            files,
             pending_dir: Folder::open_existing(&pending).map_err(internal)?,
             rows: BTreeMap::new(),
             plugins: BTreeMap::new(),
@@ -155,6 +196,7 @@ impl Space {
             code: BTreeMap::new(),
             retention_ms,
             key,
+            storage_owner: owner,
             seen: BTreeMap::new(),
             id,
             owner_display: None,
@@ -194,6 +236,14 @@ impl Space {
         if !self.recovery_needed {
             return Ok(());
         }
+        // A failed append finalization may have left the connection in
+        // WAL NORMAL. Re-establish FULL before replaying a pending write.
+        self.db
+            .pragma_update(None, "synchronous", "FULL")
+            .map_err(internal)?;
+        self.db
+            .pragma_update(None, "wal_autocheckpoint", 1_000)
+            .map_err(internal)?;
         let pending: Option<String> = self
             .db
             .query_row("SELECT data FROM publication WHERE id=1", [], |row| {
@@ -207,57 +257,10 @@ impl Space {
         for name in self.pending_dir.entry_names(3_100).map_err(internal)? {
             self.pending_dir.remove(&name).map_err(internal)?;
         }
+        crate::records::recover_pending(self)?;
         self.load_plugins()?;
         self.rebuild()?;
         self.recovery_needed = false;
-        Ok(())
-    }
-
-    pub(crate) fn expire_trash(&mut self) -> Result<()> {
-        let now = calternal_types::now_ms();
-        if now < self.next_trash_check {
-            return Ok(());
-        }
-        let tx = self.db.transaction().map_err(internal)?;
-        tx.execute(
-            "DELETE FROM recovered_appends WHERE at<?1",
-            [now - self.retention_ms],
-        )
-        .map_err(internal)?;
-
-        let entries = {
-            let mut stmt = tx
-                .prepare_cached("SELECT item FROM trash WHERE until<=?1 ORDER BY until LIMIT 64")
-                .map_err(internal)?;
-            stmt.query_map([now], |row| row.get::<_, String>(0))
-                .map_err(internal)?
-                .collect::<std::result::Result<Vec<_>, _>>()
-                .map_err(internal)?
-        };
-        if !entries.is_empty() {
-            let folder = self
-                .files
-                .child(".calternal", false)
-                .and_then(|folder| folder.child("trash", false))
-                .map_err(internal)?;
-            for item in &entries {
-                let path = format!("{item}.md");
-                match folder.remove(&path) {
-                    Ok(()) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(error) => return Err(internal(error)),
-                }
-                tx.execute("DELETE FROM trash WHERE item=?1", [item])
-                    .map_err(internal)?;
-            }
-            folder.sync().map_err(internal)?;
-        }
-        tx.commit().map_err(internal)?;
-        self.next_trash_check = if entries.len() == 64 {
-            now
-        } else {
-            now + 60_000
-        };
         Ok(())
     }
 
@@ -505,79 +508,19 @@ impl Space {
             .map_err(internal)?;
         Ok(())
     }
+}
 
-    pub(crate) fn receipt(
-        &self,
-        actor: &str,
-        key: Option<&str>,
-        input: &[u8],
-    ) -> Result<Option<Receipt>> {
-        let Some(key) = key else {
-            return Ok(None);
-        };
-        if key.is_empty() || key.len() > 128 || key.chars().any(char::is_control) {
-            return Err(Error::invalid_input("Invalid idempotency key."));
-        }
-        let proof = ReceiptProof {
-            gesture: self.hash(key.as_bytes()),
-            fingerprint: self.hash(input),
-        };
-        let cutoff = calternal_types::now_ms() - self.retention_ms;
-        let existing: Option<(Vec<u8>, String)> = self
-            .db
-            .query_row(
-                "SELECT fingerprint,result FROM receipts WHERE actor=?1 AND gesture=?2 AND at>=?3",
-                params![actor, &proof.gesture[..], cutoff],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
-            .map_err(internal)?;
-        let replay = match existing {
-            Some((existing, _)) if existing != proof.fingerprint => {
-                return Err(Error::request_reused());
-            }
-            Some((_, result)) => Some(serde_json::from_str(&result).map_err(internal)?),
-            None => None,
-        };
-        Ok(Some(Receipt {
-            actor: actor.to_owned(),
-            proof,
-            cutoff,
-            replay,
-        }))
+fn storage_child(parent: &Folder, path: &Path, name: &str, owner: u32) -> Result<Folder> {
+    let child = parent.child(name, true).map_err(internal)?;
+    // Every caller has verified that this parent excludes outside writers
+    // before walking into it, so only the host identity can swap this entry.
+    let metadata = std::fs::symlink_metadata(path.join(name)).map_err(internal)?;
+    if !metadata.is_dir() || metadata.uid() != owner || metadata.mode() & 0o022 != 0 {
+        return Err(Error::forbidden(
+            "The host storage tree must be writable only by its owner.",
+        ));
     }
-}
-
-pub(crate) struct Receipt {
-    actor: String,
-    pub(crate) proof: ReceiptProof,
-    cutoff: i64,
-    pub(crate) replay: Option<Value>,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct ReceiptProof {
-    pub(crate) gesture: [u8; 32],
-    pub(crate) fingerprint: [u8; 32],
-}
-
-impl Receipt {
-    pub(crate) fn store(&self, tx: &Connection, value: &Value, now: i64) -> Result<()> {
-        tx.execute("DELETE FROM receipts WHERE at<?1", [self.cutoff])
-            .map_err(internal)?;
-        tx.execute(
-            "INSERT INTO receipts VALUES(?1,?2,?3,?4,?5)",
-            params![
-                self.actor,
-                &self.proof.gesture[..],
-                &self.proof.fingerprint[..],
-                value.to_string(),
-                now
-            ],
-        )
-        .map_err(internal)?;
-        Ok(())
-    }
+    Ok(child)
 }
 
 pub(crate) fn bounded_read(file: std::fs::File, limit: usize) -> Result<Vec<u8>> {
@@ -592,4 +535,22 @@ pub(crate) fn bounded_read(file: std::fs::File, limit: usize) -> Result<Vec<u8>>
         ));
     }
     Ok(content)
+}
+
+#[cfg(test)]
+mod root_tests {
+    use super::*;
+
+    #[test]
+    fn linked_space_directory_is_refused() {
+        let root = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let id = SpaceId::new();
+        let spaces = root.path().join("spaces");
+        std::fs::create_dir(&spaces).unwrap();
+        std::os::unix::fs::symlink(target.path(), spaces.join(id.to_string())).unwrap();
+        assert!(Space::open(root.path(), id, 86_400_000).is_err());
+        assert!(!root.path().join("state").exists());
+        assert_eq!(std::fs::read_dir(target.path()).unwrap().count(), 0);
+    }
 }

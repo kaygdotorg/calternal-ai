@@ -2,30 +2,41 @@
 use super::{CliResult, attach_runs, open_host};
 use calternal_auth::AuthConfig;
 use std::{
-    io::Write,
     net::SocketAddr,
-    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
 };
 use tokio::net::TcpListener;
 use tower_http::services::{ServeDir, ServeFile};
 
-pub(super) async fn serve(root: &Path, web: &Path, chat: &Path, harness: &Path) -> CliResult<()> {
+pub(super) async fn serve(
+    root: &Path,
+    web: &Path,
+    chat: &Path,
+    harness: &Path,
+    port: Option<u16>,
+) -> CliResult<()> {
     let root = tokio::fs::canonicalize(root).await?;
     let web = tokio::fs::canonicalize(web).await?;
     if root.starts_with(&web)
         || web.starts_with(&root)
-        || tokio::fs::read_dir(&root)
-            .await?
-            .next_entry()
-            .await?
-            .is_some()
+        || (port.is_none()
+            && tokio::fs::read_dir(&root)
+                .await?
+                .next_entry()
+                .await?
+                .is_some())
     {
-        return Err("Use an empty data directory separate from the built web client.".into());
+        return Err(
+            "Use a separate data directory. A disposable preview requires an empty directory."
+                .into(),
+        );
     }
     // Keep the kernel-selected listener open from allocation through serving.
+    if matches!(port, Some(0 | 4313)) {
+        return Err("Choose a fixed preview port other than 4313.".into());
+    }
     let listener = loop {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+        let listener = TcpListener::bind(("127.0.0.1", port.unwrap_or_default())).await?;
         if listener.local_addr()?.port() != 4313 {
             break listener;
         }
@@ -39,12 +50,16 @@ pub(super) async fn serve(root: &Path, web: &Path, chat: &Path, harness: &Path) 
     ]);
     let (host, engine) = attach_runs(host, &root).await?;
     let setup_path = root.join("first-owner-code");
-    let code = auth
-        .first_owner_token()
-        .await?
-        .ok_or("The development root must be new.")?;
-    let private = setup_path.clone();
-    tokio::task::spawn_blocking(move || write_code(private, code)).await??;
+    if let Some(code) = auth.first_owner_token().await? {
+        let private = setup_path.clone();
+        tokio::task::spawn_blocking(move || write_code(private, code)).await??;
+    } else {
+        match tokio::fs::remove_file(&setup_path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
 
     let app = calternal_host::browser::router(host, config)
         .route_service("/host", ServeFile::new(web.join("index.html")))
@@ -69,14 +84,7 @@ pub(super) async fn serve(root: &Path, web: &Path, chat: &Path, harness: &Path) 
 }
 
 fn write_code(path: PathBuf, code: String) -> std::io::Result<()> {
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(path)?;
-    file.write_all(code.as_bytes())?;
-    file.write_all(b"\n")?;
-    file.sync_all()
+    calternal_fsio::write_atomic_mode(&path, code.as_bytes(), 0o600)
 }
 
 async fn shutdown() {

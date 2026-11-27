@@ -104,6 +104,23 @@ pub(crate) fn time(text: &str) -> Option<(i64, i32)> {
     ))
 }
 
+/// Normalize the caller's evaluation clock to the precision of formula Time.
+pub(crate) fn clock_seconds(text: &str) -> Option<String> {
+    if time(text).is_some() {
+        return Some(text.to_owned());
+    }
+    let (whole, fraction) = text.split_once('.')?;
+    if whole.len() != 19 {
+        return None;
+    }
+    let offset = fraction.trim_start_matches(|ch: char| ch.is_ascii_digit());
+    if offset.len() == fraction.len() || offset.is_empty() {
+        return None;
+    }
+    let normalized = format!("{whole}{offset}");
+    time(&normalized).map(|_| normalized)
+}
+
 fn component(text: &str, max: i32) -> Option<i32> {
     if text.len() != 2 || !text.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
