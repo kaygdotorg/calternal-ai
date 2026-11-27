@@ -1,5 +1,13 @@
 # Stress test: the rest of the suite in the format · 2026-11-27
 
+> **Syntax note (2026-11-27):** revision 7 of
+> [the format](kind-and-collection-format-2026-11-24.md) is the authority on
+> syntax. The kinds below use the syntax as it stood when this test was
+> written. Appendix B of revision 7 rewrites Calendar `events`, Tasks `tasks`
+> and Workouts `sessions` in the current syntax. Three mistakes the
+> implementer review found are corrected here: `day()` is now `date()`,
+> `line in today` is removed, and Calendar's events gain `task` and `length`.
+
 Status: **paper prototype**, no code. This repeats
 [the Money, Mail and Chat stress test](format-stress-test-money-mail-chat-2026-11-24.md)
 for the other seven apps: Calendar, Tasks, Workouts, Photos, Files,
@@ -131,6 +139,7 @@ fields:
   location: text
   people: links(contacts)                 # invented: #44
   calendar: link(calendars)               # override; else from tags
+  task: link(calternal-tasks.tasks)          # the task this event is a session of (Tasks' `time spent`)
   tags: tags
   status: choice(did not happen)
   repeat: repeat
@@ -142,6 +151,7 @@ fields:
   remote description: long text           # the connected event's DESCRIPTION, kept apart
   own calendar: = calendar or first(under(tags, "area"))   # invented: #8, #9
   ends: = end or start + if(all day, 1d, 15m)
+  length: = ends - start
   logged: = ends <= now()                 # invented: #43 (re-evaluated at the event's end)
 repeat: repeat
 together:
@@ -251,7 +261,7 @@ views:
 collection: today
 title: Today
 from: events
-where: day(start) <= today() and day(ends) >= today()
+where: date(start) <= today() and date(ends) >= today()
 sort: start
 views:
   list: start, title
@@ -384,7 +394,7 @@ page: status, scheduled, due, priority, tags, repeat, depends on
 search: title 3, tags 2, body
 template: none
 operations:
-  add: title, scheduled, due, priority, tags, line in today, phrases   # invented: #1, #16
+  add: title, scheduled, due, priority, tags, phrases   # invented: #16 (where the new line goes is #1's core behaviour)
   change
   remove: code                            # trash the note and take its lines out of every note
   done: set status = done, set completed = now(), when open, swipe, primary

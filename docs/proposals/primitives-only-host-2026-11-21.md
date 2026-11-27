@@ -1,8 +1,8 @@
 # A primitives-only host · revision 5 · 2026-11-24
 
 Status: **revision 5: the single statement of the design**, with edits on
-2026-11-27 wherever it contradicted revision 6 of the format (marked
-"(format r6)"); for kinds, collections, sidebars, `plugin.md`, places,
+2026-11-27 wherever it contradicted revisions 6 and 7 of the format (marked
+"(format r6)"; revision 7 is the authority); for kinds, collections, sidebars, `plugin.md`, places,
 calls, events, themes and the space profile, the format is the
 authority. Revision 5 was written with the
 owner's answers from rounds one to twenty-five of `docs/morning-2026-11-21.md`
@@ -97,9 +97,9 @@ The inventory and the fate of every revision-14 name are in
    plus the fields it added to other kinds under its own name; other
    plugins' items change through theirs (format r6).
 4. **Its code starts only on events** an operation listens to (a call, a
-   time, a schedule, a file change, an outside HTTP request under its own
+   time, a schedule, a file change, an outside HTTP request on its own web
    address, data on a held connection, or another plugin's committed
-   operation: seven events, format r6 §8). One process per plugin
+   operation: six events, a time including a repeat's occurrence; format r7 §8). One process per plugin
    per space, stopped when idle; none while disabled, none without code.
 5. **What it sends out is declared**, in one of three forms: a fixed list of
    hosts; "a server a member names", which that member confirms on the
@@ -259,7 +259,8 @@ with the SDK steer authors and agents to user-friendly, robust patterns.
 
 - **One way to start plugin code: events.** A call, a time, a schedule, a
   file change, an outside HTTP request, data on a held connection and
-  another plugin's committed operation are the seven events (format r6 §8).
+  another plugin's committed operation are the six events, with a repeat's
+  occurrence counted as a time (format r7 §8).
   One per-space work table with a state column.
 - **The server holds connections that stay open** (an IMAP mailbox) and
   raises an event when something arrives; the plugin's process may stop
@@ -397,7 +398,7 @@ notification respectively.
 | Drawing | One catalogue, web view otherwise; diagrams as the `calternal-pele` component; native features store through plugin operations | 12, 13, 16 |
 | A rows | A1–A20 and A22–A25 agreed; A3 and A4 are one; A11 changed (read both link forms, no automatic conversion); A13 with "a disabled plugin costs nothing"; A18 changed (personal space: only its owner steers); A21 changed (no outside change to a chat at all) | 2, 11–15 |
 | Authoring | Very easy, through server mechanisms and well-written skills | 15 |
-| Events | One way to start plugin code: seven events (a call, a time, a schedule, a file change, an outside HTTP request, a held connection, after another plugin's operation) | 21, 29, 33; format r6 |
+| Events | One way to start plugin code: six events (a call, a time or a repeat's occurrence, a file change, an outside HTTP request, a held connection, after another plugin's operation) | 21, 29, 33; format r6 |
 | Personal state | Read positions, drafts and mutes live in the person's own space; shared spaces keep nothing private | 21 |
 | Sign-ins | The server signs in for HTTP, IMAP and SMTP and gives the plugin the open connection; it holds long-lived connections and raises events | 21, 22 |
 | Destinations | A fixed list; a server a member names, confirmed by that member on the server's sheet; or the public web without sign-ins, worded "Reads public web pages. Never signs in as you." | 21, 22, 23 |
@@ -466,7 +467,7 @@ primitives-only host.
 | 0044 One sync route | One route and one ordered, replayable change journal; resumable 8 MiB chunk uploads; the CLI, API and MCP use the same journal | **Unchanged.** It is the sync behind §5's three surfaces; the journal is filtered per space and per person's rights. "MCP Events" through signed webhooks is the outward half of round 7's events |
 | 0045 Conflicts by kind of data | Text: three-way merge against the last synced version; structured files: merged by record through their format plugin; binaries: both copies kept | **Changes for structured files:** the old format plugins were Rust crates on server and clients (0048); plugins are now TypeScript on the server only. See question S2 |
 | 0047 Sync reliability | Silent pushes, catch-up from the journal cursor; an outbox of operation IDs derived from installation, file, base hash and new hash, kept until the server confirms | **Unchanged** for file edits. For coded operations the ID must come from the operation and its input, which is A22's per-gesture key |
-| 0048 Format plugins on server and clients | One Rust parser and merge per format, used offline on devices; heavy jobs only on the server | **Changes:** plugin code never runs on devices, so a device cannot run a plugin's merge or its coded operations offline (questions S1 to S3). Heavy jobs on the server carry over as background jobs. The shared Rust engine itself runs in the browser as Wasm (round 33); whether plugin pure modules may run on devices is OPEN (format r6 §13) |
+| 0048 Format plugins on server and clients | One Rust parser and merge per format, used offline on devices; heavy jobs only on the server | **Changes:** plugin code never runs on devices, so a device cannot run a plugin's merge or its coded operations offline (questions S1 to S3). Heavy jobs on the server carry over as background jobs. The shared Rust engine itself runs in the browser as Wasm (round 33); whether plugin pure modules may run on devices is OPEN (format r7 §17) |
 | 0056 Stable block IDs | IDs only for linked blocks, 16 Crockford characters, unique across the library, the server as the authority; delete wins over an offline edit | **Unchanged**, with "the space" in place of the old "Home". Links between spaces are not decided (question S4) |
 | 0066 Tasks: time zones and repeats | Repeating task times float; repeating events keep their zone; one-off times keep their offset; Today is asked with the device's date and zone; a server timer at the person's midnight | **Unchanged**, and the format's `time` and `repeat` types follow it. Round 22's "re-run at the person's midnight" is this timer |
 
@@ -551,8 +552,8 @@ copies.
 
 | Item | Why it is still open |
 | --- | --- |
-| O1–O4 of the suite stress test | Partner sharing across spaces, native Apple surfaces, Workouts' first version, reading rights inside a space (format r6 §13) |
-| `refuses:`, plugin pure modules on devices, a binding space-wide look | Format r6 §13 |
+| O1–O4 of the suite stress test | Partner sharing across spaces, native Apple surfaces, Workouts' first version, reading rights inside a space (format r7 §17) |
+| `refuses:`, plugin pure modules on devices, a binding space-wide look | Format r7 §17 |
 | The word for a collection | Not chosen (round 19) |
 | Native rendering of `calternal-pele` | The component is decided; drawing Pele's output natively is unchecked |
 | Totals across currencies | The format refuses to add different currencies; no exchange-rate rule |
