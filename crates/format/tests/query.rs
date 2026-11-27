@@ -1,0 +1,56 @@
+//! Collection grouping vectors.
+
+#[test]
+fn group_memberships_are_distinct_and_match_the_row() {
+    use calternal_format::{
+        EvalContext, Fields, InstallOptions, Page, PluginFile, Row, Value, evaluate_query,
+        parse_plugin,
+    };
+    let files = [
+        PluginFile {
+            path: "plugin.md",
+            text: Some("---\nplugin: grouping\nname: Grouping\nformat: 1\nversion: 1.0.0\n---\n"),
+        },
+        PluginFile {
+            path: "kinds/entries.md",
+            text: Some(
+                "---\nkind: entries\nname: Entry\nformat: 1\nfolder: Entries\neditable: outside\nfields:\n  title: text, required\n  tags: tags\n---\nEntry.\n",
+            ),
+        },
+        PluginFile {
+            path: "collections/tags.md",
+            text: Some(
+                "---\ncollection: tags\ntitle: Tags\nformat: 1\nfrom: entries\ngroup: tags\nviews:\n  list: title\n---\n",
+            ),
+        },
+    ];
+    let plugin = parse_plugin(&files, &InstallOptions::default()).unwrap();
+    let one = Value::Text("one".into());
+    let two = Value::Text("two".into());
+    let fields = Fields::from([(
+        "tags".into(),
+        Value::List(vec![one.clone(), two.clone(), one.clone()]),
+    )]);
+    let metadata = Fields::new();
+    let rows = [Row {
+        fields: &fields,
+        metadata: &metadata,
+    }];
+    let result = evaluate_query(
+        &plugin.collections["tags"],
+        &plugin.kinds["entries"],
+        &rows,
+        Page::default(),
+        &EvalContext::default(),
+    )
+    .unwrap();
+    assert_eq!(result.rows[0].groups, [one.clone(), two.clone()]);
+    assert_eq!(
+        result
+            .groups
+            .iter()
+            .map(|group| (&group.key, group.matched))
+            .collect::<Vec<_>>(),
+        [(&one, 1), (&two, 1)]
+    );
+}
