@@ -34,6 +34,15 @@ pub(crate) struct Runs {
     pub(crate) logs: broadcast::Sender<()>,
 }
 
+impl Runs {
+    pub(crate) fn is_active(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|run| !run.stopped.load(Ordering::Acquire))
+            || Arc::strong_count(&self.start) > 1
+    }
+}
+
 impl Default for Runs {
     fn default() -> Self {
         Self {
@@ -174,9 +183,10 @@ impl Host {
         key: Option<String>,
         gesture: Option<String>,
         session: Option<Uuid>,
+        installation: Option<crate::Session>,
     ) -> Result<Value> {
         // Cancellation of a worker invocation cannot abandon a partially launched sandbox.
-        tokio::spawn(self.start_run(actor, space, input, key, gesture, session))
+        tokio::spawn(self.start_run(actor, space, input, key, gesture, session, installation))
             .await
             .map_err(internal)?
     }
@@ -189,6 +199,7 @@ impl Host {
         key: Option<String>,
         gesture: Option<String>,
         session: Option<Uuid>,
+        installation: Option<crate::Session>,
     ) -> Result<Value> {
         let actor_key = format!("run-start:{}", actor.account);
         let gesture =
@@ -263,16 +274,15 @@ impl Host {
                 )
                 .map_err(run_error)?;
                 let reply = kind == "calternal-chat.chats"
-                    && manifest.calls.iter().any(|name| {
-                        matches!(
-                            name.as_str(),
-                            "calternal-chat.send" | "calternal-chat.chats.send"
-                        )
-                    });
+                    && manifest
+                        .calls
+                        .iter()
+                        .any(|name| matches!(name.as_str(), "calternal-chat.chats.send"));
                 Ok((Some((program, reply)), receipt, storage.runs.logs.clone()))
             })
             .await?;
         let Some((program, reply)) = binding else {
+            drop(self.admit_session(installation.as_ref()).await?);
             let mut result = receipt.replay.expect("replayed start receipt");
             let id: StopInput = decode(json!({"id":result["id"]}))?;
             result["status"] = json!(if self
@@ -287,6 +297,9 @@ impl Host {
             return Ok(result);
         };
         let service = self.run_service()?;
+        // The launched run uses the account and fixed session target only.
+        // A revoked browser cannot publish a run that was still starting.
+        drop(self.admit_session(installation.as_ref()).await?);
         let handle = service
             .start(StartRun {
                 program,
@@ -309,8 +322,10 @@ impl Host {
         let publish = Arc::clone(&run);
         let result = json!({"id":id,"status":"running"});
         let stored = result.clone();
+        let host = self.clone();
         if let Err(error) = self
             .run_storage(actor.clone(), space, move |storage| {
+                let _admission = host.admit_session_blocking(installation.as_ref())?;
                 save_start(storage, &receipt, &stored)?;
                 storage.runs.entries.push_back(publish);
                 Ok(())
@@ -330,6 +345,7 @@ impl Host {
         space: SpaceId,
         input: Value,
         key: Option<String>,
+        installation: Option<crate::Session>,
     ) -> Result<Value> {
         let input: SendInput = decode(input)?;
         let run = self
@@ -371,6 +387,7 @@ impl Host {
                 "Run input exceeds the frame limit.",
             ));
         }
+        let _admission = self.admit_session(installation.as_ref()).await?;
         self.run_service()?
             .send_input(input.id, &run.actor, bytes)
             .await
@@ -386,9 +403,11 @@ impl Host {
         actor: Actor,
         space: SpaceId,
         input: Value,
+        installation: Option<crate::Session>,
     ) -> Result<Value> {
         let input: StopInput = decode(input)?;
         let run = self.find_run(actor.clone(), space, input.id).await?;
+        let _admission = self.admit_session(installation.as_ref()).await?;
         if !run.stopped.load(Ordering::Acquire) {
             match self.run_service()?.stop(input.id, &actor).await {
                 Ok(()) | Err(RunError::NotActive) => run.stopped.store(true, Ordering::Release),

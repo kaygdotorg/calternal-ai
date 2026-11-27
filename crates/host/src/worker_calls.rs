@@ -38,13 +38,24 @@ pub(crate) struct Chain {
     pub(crate) request: Option<String>,
     pub(crate) session_item: Option<Uuid>,
     pub(crate) run: Option<crate::runs::RunScopeGrant>,
+    pub(crate) session: Option<crate::Session>,
     selection: Option<SlotGrant>,
+}
+
+impl Chain {
+    pub(crate) fn for_session(session: crate::Session) -> Self {
+        Self {
+            session: Some(session),
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Clone)]
 struct SlotGrant {
     owner: String,
     operation: String,
+    slot: String,
 }
 
 struct Invocation {
@@ -63,31 +74,14 @@ impl Space {
     fn target(&self, name: &str) -> Result<Target<'_>> {
         let denied = || Error::forbidden("The coded operation is undeclared or unavailable.");
         let (plugin, rest) = name.split_once('.').ok_or_else(denied)?;
+        let (kind, name) = rest.split_once('.').ok_or_else(denied)?;
         let installed = self.plugins.get(plugin).ok_or_else(denied)?;
-        if let Some((kind, name)) = rest.split_once('.') {
-            let (kind, definition) = installed.kinds.get_key_value(kind).ok_or_else(denied)?;
-            let operation = definition
-                .operations
-                .get(name)
-                .filter(|op| op.is_coded())
-                .ok_or_else(denied)?;
-            let plugin = &installed.manifest.id;
-            return Ok(Target {
-                plugin,
-                kind,
-                operation,
-            });
-        }
-        let mut declarations = installed.kinds.iter().filter_map(|(kind, definition)| {
-            Some((
-                kind,
-                definition.operations.get(rest).filter(|op| op.is_coded())?,
-            ))
-        });
-        let (kind, operation) = declarations.next().ok_or_else(denied)?;
-        if declarations.next().is_some() {
-            return Err(denied());
-        }
+        let (kind, definition) = installed.kinds.get_key_value(kind).ok_or_else(denied)?;
+        let operation = definition
+            .operations
+            .get(name)
+            .filter(|op| op.is_coded())
+            .ok_or_else(denied)?;
         Ok(Target {
             plugin: &installed.manifest.id,
             kind,
@@ -108,9 +102,34 @@ impl Space {
             .get(&selection.filler)
             .and_then(|plugin| plugin.manifest.operation_fill(owner, &selection.slot))
             .ok_or_else(denied)?;
+        // Fills use local declaration references, which may omit the kind.
+        // Resolve against the installed registrations before entering the
+        // route's exclusively qualified operation lookup.
+        let operation = if operation.contains('.') {
+            operation
+        } else {
+            let mut matches = self
+                .code
+                .get(&selection.filler)
+                .ok_or_else(denied)?
+                .registration
+                .calls
+                .iter()
+                .filter(|selector| {
+                    selector
+                        .rsplit_once('.')
+                        .is_some_and(|(_, name)| name == operation)
+                });
+            let qualified = matches.next().ok_or_else(denied)?;
+            if matches.next().is_some() {
+                return Err(denied());
+            }
+            qualified
+        };
         let target = self.target(&format!("{}.{operation}", selection.filler))?;
         Ok(SlotGrant {
             owner: owner.into(),
+            slot: selection.slot.clone(),
             operation: format!(
                 "{}.{}.{}",
                 target.plugin, target.kind, target.operation.name
@@ -311,21 +330,27 @@ impl Host {
             match call.call.as_str() {
                 "s.run.send" | "s.run.stop" if call.slot_selection.is_none() => {
                     if call.call == "s.run.send" {
-                        self.run_send(actor, space, call.input, call.idempotency_key)
-                            .await
+                        self.run_send(
+                            actor,
+                            space,
+                            call.input,
+                            call.idempotency_key,
+                            chain.session,
+                        )
+                        .await
                     } else {
-                        self.run_stop(actor, space, call.input).await
+                        self.run_stop(actor, space, call.input, chain.session).await
                     }
                 }
                 "s.write" if self.workers.is_some() && call.slot_selection.is_none() => {
                     self.write_and_notify(actor, space, call, chain).await
                 }
                 "s.declarations" | "s.query" | "s.read" | "s.write" | "s.state" | "s.me"
-                | "s.space" | "index.rebuild" => {
-                    tokio::task::spawn_blocking(move || self.call_scoped(actor, space, call))
-                        .await
-                        .map_err(internal)?
-                }
+                | "s.space" | "index.rebuild" => tokio::task::spawn_blocking(move || {
+                    self.call_scoped(actor, space, call, chain.session.as_ref())
+                })
+                .await
+                .map_err(internal)?,
                 _ => self.dispatch_code(actor, space, call, chain).await,
             }
         })
@@ -345,9 +370,12 @@ impl Host {
         let who = actor.clone();
         let caller_grant = chain.selection.take();
         let scope = chain.run.map(|grant| grant.item);
+        let ancestry = chain.plugins.clone();
+        let session = chain.session.clone();
         let (invocation, endpoint, key, input, selection) =
             tokio::task::spawn_blocking(move || {
                 host.with_space(&who, space, |storage| {
+                    let _admission = host.admit_session_blocking(session.as_ref())?;
                     let invocation = storage.invocation(&who, &call.call, &call.input)?;
                     if scope.is_some() && scope != invocation.item {
                         return Err(Error::forbidden(
@@ -361,7 +389,7 @@ impl Host {
                                 .manifest
                                 .calls
                                 .iter()
-                                .any(|name| name == &call.call || name == &canonical)
+                                .any(|name| name == &canonical)
                         });
                         let selected = caller_grant.as_ref().is_some_and(|grant| {
                             grant.owner == *plugin && grant.operation == canonical
@@ -385,6 +413,12 @@ impl Host {
                             storage.select_filler(&invocation.plugin, selection)
                         })
                         .transpose()?;
+                    if ancestry.len() >= 8 || ancestry.contains(&invocation.plugin) {
+                        return Err(Error::forbidden(
+                            "The coded operation would repeat or exceed call depth.",
+                        ));
+                    }
+                    let keyed = call.idempotency_key.is_some();
                     let original = call
                         .idempotency_key
                         .take()
@@ -409,16 +443,29 @@ impl Host {
                     .to_hex()
                     .to_string();
                     let endpoint = host.endpoint(storage, &invocation.plugin)?;
+                    if keyed {
+                        let actor_key = format!("coded-gesture:{}", who.account);
+                        let selected = selection
+                            .as_ref()
+                            .map(|grant| (&grant.slot, &grant.operation));
+                        let fingerprint =
+                            serde_json::to_vec(&(&call.input, selected)).map_err(internal)?;
+                        let receipt = storage
+                            .receipt(&actor_key, Some(&key), &fingerprint)?
+                            .expect("coded gesture key");
+                        if receipt.replay.is_none() {
+                            let tx = storage.db.transaction().map_err(internal)?;
+                            // Bind before delivery. Matching retries may still need to finish
+                            // effects whose own receipts are independent of this binding.
+                            receipt.store(&tx, &Value::Null, calternal_types::now_ms())?;
+                            tx.commit().map_err(internal)?;
+                        }
+                    }
                     Ok((invocation, endpoint, key, call.input, selection))
                 })
             })
             .await
             .map_err(internal)??;
-        if chain.plugins.len() >= 8 || chain.plugins.contains(&invocation.plugin) {
-            return Err(Error::forbidden(
-                "The coded operation would repeat or exceed call depth.",
-            ));
-        }
         let selected_operation = selection.as_ref().map(|grant| grant.operation.clone());
         if chain.session_item.is_none() {
             chain.session_item = invocation.item;
@@ -510,16 +557,25 @@ impl Host {
                                     callback.idempotency_key,
                                     chain.request.clone(),
                                     chain.session_item,
+                                    chain.session,
                                 )
                                 .await;
                         }
                         Method::RunSend => {
                             return host
-                                .run_send(actor, space, callback.input, callback.idempotency_key)
+                                .run_send(
+                                    actor,
+                                    space,
+                                    callback.input,
+                                    callback.idempotency_key,
+                                    chain.session,
+                                )
                                 .await;
                         }
                         Method::RunStop => {
-                            return host.run_stop(actor, space, callback.input).await;
+                            return host
+                                .run_stop(actor, space, callback.input, chain.session)
+                                .await;
                         }
                     };
                     chain.selection = None;

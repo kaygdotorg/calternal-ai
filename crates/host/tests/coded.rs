@@ -436,7 +436,7 @@ fn harness_bundle(root: &Path, plugin: &str, title: &str, fills_chat_slot: bool)
 }
 
 #[tokio::test]
-async fn chat_can_call_only_the_operation_of_the_selected_slot_filler() {
+async fn coded_gesture_binds_slot_selection_before_delivery() {
     let f = Fixture::new().await;
     f.install(checkout().join("plugins-v2/calternal-chat"))
         .await
@@ -503,6 +503,10 @@ async fn chat_can_call_only_the_operation_of_the_selected_slot_filler() {
             .unwrap(),
         receipt
     );
+    assert_eq!(
+        send("selected", None, None).await.unwrap_err().code,
+        ErrorCode::Conflict
+    );
     for (key, filler, hint) in [
         ("non-filler", Some("neighbor"), Some("neighbor.runs.start")),
         (
@@ -548,3 +552,279 @@ async fn chat_can_call_only_the_operation_of_the_selected_slot_filler() {
 
 #[path = "coded/runs.rs"]
 mod runs;
+
+#[tokio::test]
+async fn foreign_kind_viewer_state_is_absent_from_reads_queries_and_matching() {
+    let f = Fixture::new().await;
+    f.install(checkout().join("plugins-v2/calternal-chat"))
+        .await
+        .unwrap();
+    let bundle = tempfile::tempdir().unwrap();
+    observer(bundle.path());
+    f.install(bundle.path().to_owned()).await.unwrap();
+    let item = f.chat().await;
+    for (key, value) in [("pinned", json!(true)), ("draft", json!("Private draft"))] {
+        f.call(
+            f.owner.into(),
+            "s.state",
+            json!({"op":"set","item":item,"key":key,"value":value}),
+            None,
+        )
+        .await
+        .unwrap();
+    }
+    let owner = f
+        .call(f.owner.into(), "s.read", json!({"item":item}), None)
+        .await
+        .unwrap();
+    assert_eq!(owner["state"]["draft"], "Private draft");
+    let plugin = Actor::plugin(f.owner, "observer");
+    let read = f
+        .call(plugin.clone(), "s.read", json!({"item":item}), None)
+        .await
+        .unwrap();
+    assert_eq!(read["state"], json!({}));
+    let query = f
+        .call(
+            plugin.clone(),
+            "s.query",
+            json!({"from":"calternal-chat.chats"}),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(query["rows"][0]["state"], json!({}));
+    let pinned = f
+        .call(
+            plugin,
+            "s.query",
+            json!({"collection":"calternal-chat.pinned"}),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(pinned["rows"], json!([]));
+}
+
+#[tokio::test]
+async fn revoked_installation_cannot_commit_the_next_worker_callback() {
+    use calternal_auth::token::{hash, new_session_token};
+    use calternal_types::InstallationId;
+
+    let f = Fixture::new().await;
+    f.install(checkout().join("plugins-v2/calternal-chat"))
+        .await
+        .unwrap();
+    let bundle = tempfile::tempdir().unwrap();
+    observer(bundle.path());
+    let kind_path = bundle.path().join("kinds/observations.md");
+    let kind = std::fs::read_to_string(&kind_path).unwrap();
+    std::fs::write(
+        &kind_path,
+        kind.replace("  relay: code", "  pause: code\n  relay: code"),
+    )
+    .unwrap();
+    use std::io::Write;
+    std::fs::OpenOptions::new().append(true).open(bundle.path().join("operations.ts")).unwrap()
+        .write_all(br#"
+            export const pause = on.call("observations.pause", async (_, s) => {
+                const add = title => s.write([{ add: { kind: "observer.observations", fields: { title } } }]);
+                await add("before");
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                await add("after");
+            });
+        "#).unwrap();
+    f.install(bundle.path().to_owned()).await.unwrap();
+    let installation = InstallationId::new();
+    let credential = new_session_token().unwrap();
+    // A disposable auth database supplies the normal session lookup path.
+    let db_path = f._root.path().join("auth/system/auth.db");
+    let account = f.owner.to_string();
+    let digest = hash(&credential);
+    tokio::task::spawn_blocking(move || {
+        let now = calternal_types::now_ms();
+        let db = rusqlite::Connection::open(db_path).unwrap();
+        db.execute(
+            "INSERT INTO installations(id,user_id,kind,name,token_hash,created_at,last_seen_at,expires_at)
+             VALUES (?1,?2,'browser','Test browser',?3,?4,?4,?5)",
+            rusqlite::params![installation.to_string(), account, digest, now, now + 60_000],
+        ).unwrap();
+    }).await.unwrap();
+    let (host, space) = (f.host.clone(), f.space);
+    let pending = tokio::spawn(async move {
+        host.session_call(
+            &credential,
+            space,
+            Call {
+                call: "observer.observations.pause".into(),
+                input: json!({}),
+                idempotency_key: None,
+                slot_selection: None,
+            },
+        )
+        .await
+    });
+    let observation = || {
+        f.call(
+            f.owner.into(),
+            "s.query",
+            json!({"from":"observer.observations"}),
+            None,
+        )
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(6), async {
+        loop {
+            if observation().await.unwrap()["rows"][0]["fields"]["title"] == "before" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    f.auth.revoke(f.owner, installation).await.unwrap();
+    assert_eq!(
+        pending.await.unwrap().unwrap_err().code,
+        ErrorCode::Unauthorized
+    );
+    let rows = observation().await.unwrap();
+    assert_eq!(rows["rows"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn ad_hoc_query_rejects_excess_sort_columns() {
+    let f = Fixture::new().await;
+    f.install(checkout().join("plugins-v2/calternal-chat"))
+        .await
+        .unwrap();
+    let call = f
+        .call(
+            f.owner.into(),
+            "s.query",
+            json!({
+                "from": "calternal-chat.chats",
+                "sort": vec!["edited desc"; 9],
+            }),
+            None,
+        )
+        .await;
+    assert_eq!(call.unwrap_err().code, ErrorCode::InvalidInput);
+}
+
+#[tokio::test]
+async fn replay_retries_a_busy_observation_once() {
+    let f = Fixture::new().await;
+    f.install(checkout().join("plugins-v2/calternal-chat"))
+        .await
+        .unwrap();
+    let item = f.chat().await;
+    let bundle = tempfile::tempdir().unwrap();
+    observer(bundle.path());
+    std::fs::write(
+        bundle.path().join("operations.ts"),
+        r#"
+        import { on } from "@calternal/plugin-sdk";
+        export const observe = on.change("collection:calternal-chat.chats", async (_, s) => {
+            const item = await s.read(s.event.item);
+            const receipt = await s.write([{ add: { kind: "observer.observations", fields: {
+                title: String(item.records.length)
+            } } }]);
+            if (item.records.length === 1) {
+                while (await s.state.get(receipt.changes[0].id, "seen") !== true) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            }
+        });
+        export const relay = on.call("observations.relay", async () => null);
+    "#,
+    )
+    .unwrap();
+    f.install(bundle.path().to_owned()).await.unwrap();
+
+    let append = |body: &str| Call {
+        call: "s.write".into(),
+        input: json!({"changes":[{"op":"append record","item":item,"record":{"body":body}}]}),
+        idempotency_key: Some(body.to_owned()),
+        slot_selection: None,
+    };
+    let writer = Actor::plugin(f.owner, "calternal-chat");
+    let first = f
+        .host
+        .clone()
+        .trusted_call(writer.clone(), f.space, append("First"));
+    let first = tokio::spawn(first);
+    let observations = || {
+        f.call(
+            f.owner.into(),
+            "s.query",
+            json!({"from":"observer.observations"}),
+            None,
+        )
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(6), async {
+        loop {
+            if observations().await.unwrap()["rows"][0]["fields"]["title"] == "1" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    let retry = || {
+        f.host
+            .clone()
+            .trusted_call(writer.clone(), f.space, append("Second"))
+    };
+    let written = retry().await.unwrap();
+    let marker = observations().await.unwrap()["rows"][0]["id"].clone();
+    f.call(
+        f.owner.into(),
+        "s.state",
+        json!({
+            "op":"set", "item":marker, "key":"seen", "value":true,
+        }),
+        None,
+    )
+    .await
+    .unwrap();
+    first.await.unwrap().unwrap();
+    assert_eq!(
+        observations().await.unwrap()["rows"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    for _ in 0..2 {
+        assert_eq!(retry().await.unwrap(), written);
+        assert_eq!(
+            observations().await.unwrap()["rows"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+}
+
+#[tokio::test]
+async fn coded_route_rejects_two_part_alias() {
+    let f = Fixture::new().await;
+    f.install(checkout().join("plugins-v2/calternal-chat"))
+        .await
+        .unwrap();
+    let item = f.chat().await;
+    let alias = f
+        .call(
+            f.owner.into(),
+            "calternal-chat.rename",
+            json!({
+                "item":item, "title":"Alias",
+            }),
+            None,
+        )
+        .await;
+    assert_eq!(alias.unwrap_err().code, ErrorCode::Forbidden);
+}

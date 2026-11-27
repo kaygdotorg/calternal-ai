@@ -3,12 +3,15 @@ import { Console } from "node:console";
 import { isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { newlineFrames } from "./newline-frames.js";
-import { operationCodes, type Change, type Operation, type OperationFailure, type OperationsContext } from "./operation-api.js";
+import {
+  operationChanges, operationCodes, operationMethods,
+  type Change, type Operation, type OperationFailure, type OperationMethod, type OperationsContext,
+} from "./operation-api.js";
 
 const maximum = 64 * 1024 * 1024;
 type Input = Record<string, unknown>;
 type Write = (line: string) => Promise<void>;
-type Send = (call: string, input: Input) => Promise<unknown>;
+type Send = (call: OperationMethod, input: Input) => Promise<unknown>;
 
 interface Invoke {
   v: 1;
@@ -46,13 +49,13 @@ function frame(value: unknown): string {
 }
 
 function context(invoke: Invoke, send: Send): OperationsContext {
-  function request<T>(call: string, input: Input): Promise<T> {
+  function request<T>(call: OperationMethod, input: Input): Promise<T> {
     return send(call, input) as Promise<T>;
   }
   function changeInput(change: Change): Input {
     const entries = Object.entries(change);
     const entry = entries[0];
-    if (entries.length !== 1 || !object(entry[1]) || Object.hasOwn(entry[1], "op")) {
+    if (entries.length !== 1 || !operationChanges.some(op => op === entry[0]) || !object(entry[1]) || Object.hasOwn(entry[1], "op")) {
       throw { code: "invalid", message: "A write entry must contain one change.", next: "Fix the change list." };
     }
     const [op, data] = entry;
@@ -60,20 +63,20 @@ function context(invoke: Invoke, send: Send): OperationsContext {
   }
 
   return {
-    query: query => request("s.query", query),
-    read: item => request("s.read", { item }),
-    write: async (changes, options) => request("s.write", { changes: changes.map(changeInput), preview: options?.preview }),
+    query: query => request(operationMethods.query, query),
+    read: item => request(operationMethods.read, { item }),
+    write: async (changes, options) => request(operationMethods.write, { changes: changes.map(changeInput), preview: options?.preview }),
     state: {
-      get: async (item, key) => (await request<{ value: unknown }>("s.state", { op: "get", item, key })).value,
-      set: async (item, key, value) => (await request<{ value: unknown }>("s.state", { op: "set", item, key, value })).value,
+      get: async (item, key) => (await request<{ value: unknown }>(operationMethods.state, { op: "get", item, key })).value,
+      set: async (item, key, value) => (await request<{ value: unknown }>(operationMethods.state, { op: "set", item, key, value })).value,
     },
-    call: (operation, input) => request("s.call", { operation, input: input ?? null }),
+    call: (operation, input) => request(operationMethods.call, { operation, input: input ?? null }),
     run: async (program, options) => {
-      const { id, status } = await request<{ id: string; status: string }>("s.run", { program, scope: options.scope ?? "session", targets: options.targets });
+      const { id, status } = await request<{ id: string; status: string }>(operationMethods.run, { program, scope: options.scope ?? "session", targets: options.targets });
       return {
         id, status,
-        async send(input) { await send("s.run.send", { id, input: input ?? null }); },
-        async stop() { await send("s.run.stop", { id }); },
+        async send(input) { await send(operationMethods.runSend, { id, input: input ?? null }); },
+        async stop() { await send(operationMethods.runStop, { id }); },
       };
     },
     me: Object.freeze(invoke.me),

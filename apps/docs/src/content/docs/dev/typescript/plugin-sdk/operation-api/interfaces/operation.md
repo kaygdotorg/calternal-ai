@@ -27,5 +27,5 @@ Exported association between a host event selector and an author handler.
 | Property | Modifier | Type | Description |
 | ------ | ------ | ------ | ------ |
 | <a id="handler"></a> `handler` | `readonly` | (`input`, `s`) => `unknown` | Author code invoked with the event input and its scoped host API. |
-| <a id="kind"></a> `kind` | `readonly` | `"call"` \| `"change"` | Whether this handler receives a call or a committed change. |
+| <a id="kind"></a> `kind` | `readonly` | `"change"` \| `"call"` | Whether this handler receives a call or a committed change. |
 | <a id="selector"></a> `selector` | `readonly` | `string` | Declared operation or subscribed kind or collection. |

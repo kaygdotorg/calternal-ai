@@ -6,10 +6,12 @@ pub mod browser;
 mod declarations;
 mod installation;
 pub mod live;
+mod maintenance;
 mod query;
 mod reactions;
 mod records;
 mod runs;
+mod session;
 mod space;
 mod worker_calls;
 mod worker_runtime;
@@ -19,8 +21,10 @@ pub use worker_runtime::WorkerRuntime;
 
 use calternal_auth::Auth;
 use calternal_types::{AccountId, Actor, Error, Result, SpaceId, Via};
+use maintenance::Slot;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use session::Session;
 use space::Space;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -57,8 +61,6 @@ pub struct SlotSelection {
     pub filler: String,
 }
 
-type Slot = Arc<Mutex<Option<Space>>>;
-
 /// The one call dispatcher. It opens space storage on demand and serializes
 /// publication only within the affected space.
 pub struct Host {
@@ -69,6 +71,8 @@ pub struct Host {
     workers: Option<WorkerRuntime>,
     development_plugins: Vec<(String, PathBuf)>,
     runs: Mutex<Option<Arc<calternal_machine::run_service::RunService>>>,
+    sessions: session::Registry,
+    live_accounts: live::Accounts,
 }
 
 impl Host {
@@ -86,6 +90,8 @@ impl Host {
             workers: None,
             development_plugins: Vec::new(),
             runs: Mutex::default(),
+            sessions: session::Registry::default(),
+            live_accounts: live::Accounts::default(),
         })
     }
 
@@ -126,21 +132,27 @@ impl Host {
         Ok(())
     }
 
-    /// Authenticate a bearer session and dispatch a shell call. Storage I/O
-    /// and the per-space lock run on a blocking thread.
+    /// Authenticate and bind the issuing installation to a shell call.
+    /// Storage I/O and the per-space lock run on a blocking thread.
     pub async fn session_call(
         self: Arc<Self>,
         bearer: &str,
         space: SpaceId,
         call: Call,
     ) -> Result<Value> {
-        let (account, _) = self
-            .auth
-            .identify(bearer)
-            .await
-            .ok_or_else(|| Error::unauthorized("Sign in to use this space."))?;
-        self.trusted_call(Actor::account(account), space, call)
-            .await
+        let session = self.authenticate(bearer).await?;
+        self.authorized_call(session, space, call).await
+    }
+
+    async fn authorized_call(
+        self: Arc<Self>,
+        session: Session,
+        space: SpaceId,
+        call: Call,
+    ) -> Result<Value> {
+        let actor = Actor::account(session.account);
+        let chain = worker_calls::Chain::for_session(session);
+        self.dispatch(actor, space, call, chain).await
     }
 
     /// Dispatch from a trusted asynchronous adapter on a blocking thread.
@@ -196,10 +208,16 @@ impl Host {
                 "A run requires a host-owned session scope.",
             ));
         }
-        self.call_scoped(actor, id, call)
+        self.call_scoped(actor, id, call, None)
     }
 
-    fn call_scoped(&self, actor: Actor, id: SpaceId, call: Call) -> Result<Value> {
+    fn call_scoped(
+        &self,
+        actor: Actor,
+        id: SpaceId,
+        call: Call,
+        session: Option<&Session>,
+    ) -> Result<Value> {
         if call.slot_selection.is_some() {
             return Err(Error::forbidden(
                 "A slot selection requires a person’s coded operation.",
@@ -213,6 +231,7 @@ impl Host {
             _ => None,
         };
         self.with_space(&actor, id, |space| {
+            let _admission = self.admit_session_blocking(session)?;
             let output = space.call(&actor, call)?;
             if let Some(recipient) = recipient {
                 space.live.notify(recipient);
@@ -234,6 +253,15 @@ impl Host {
         id: SpaceId,
         f: impl FnOnce(&mut Space) -> Result<T>,
     ) -> Result<T> {
+        self.with_space_slot(actor, id, |space, _| f(space))
+    }
+
+    fn with_space_slot<T>(
+        &self,
+        actor: &Actor,
+        id: SpaceId,
+        f: impl FnOnce(&mut Space, &Slot) -> Result<T>,
+    ) -> Result<T> {
         if matches!(actor.via, Some(Via::Agent { .. })) {
             return Err(Error::forbidden("Run scope is required for this call."));
         }
@@ -248,24 +276,22 @@ impl Host {
         {
             return Err(Error::not_found("Personal space was not found."));
         }
-        let slot = {
-            let mut slots = self.spaces.lock().map_err(internal)?;
-            slots.entry(id).or_default().clone()
-        };
+        let slot = self.space_slot(id)?;
         // Keep the space lock across persistence so publication, recovery and
         // receipt lookup see the same version of the filesystem and ledger.
-        let mut opened = slot.lock().map_err(internal)?;
-        if opened.is_none() {
+        let mut opened = slot.resident.lock().map_err(internal)?;
+        opened.visited = std::time::Instant::now();
+        if opened.space.is_none() {
             let display = self.owner_display(actor.account)?;
             let mut space = Space::open(&self.root, id, self.retention_ms)?;
             space.scope_existing_viewer_state(actor.account)?;
             space.owner_display = Some((actor.account, display));
-            *opened = Some(space);
+            opened.space = Some(space);
         }
-        let space = opened.as_mut().expect("space initialized");
+        let space = opened.space.as_mut().expect("space initialized");
         space.recover()?;
         space.expire_trash()?;
-        f(space)
+        f(space, &slot)
     }
 }
 
