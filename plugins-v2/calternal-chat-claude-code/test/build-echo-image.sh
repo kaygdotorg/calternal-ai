@@ -15,17 +15,13 @@ context=$(mktemp -d)
 trap 'rm -rf "$context"' EXIT
 trap 'exit 1' HUP INT TERM
 
-mkdir -p "$context/plugins/calternal-claude-code" "$context/programs"
+mkdir -p "$context/plugins/calternal-claude-code"
 cp -R "$adapter/dist" "$adapter/bin" "$context/plugins/calternal-claude-code/"
 cp "$adapter/Containerfile" "$context/Containerfile"
-cp "$harness/programs/calternal-provider-claude-code" "$context/programs/"
 cp "$harness/test/fake-claude-echo.mjs" "$context/fake-claude-echo.mjs"
 
 cat >> "$context/Containerfile" <<'EOF'
 
-RUN mkdir -p /opt/calternal-chat-claude-code/programs
-COPY programs/calternal-provider-claude-code /opt/calternal-chat-claude-code/programs/calternal-provider-claude-code
-RUN chmod 0755 /opt/calternal-chat-claude-code/programs/calternal-provider-claude-code
 COPY fake-claude-echo.mjs /usr/local/bin/claude
 RUN chmod 0755 /usr/local/bin/claude
 EOF

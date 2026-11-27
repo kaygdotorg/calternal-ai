@@ -182,8 +182,7 @@ struct RunState {
     scope: RunScope,
     targets: Vec<Uuid>,
     input: mpsc::Sender<Vec<u8>>,
-    exit: watch::Receiver<Option<ExitInfo>>,
-    control: Arc<RunControl>,
+    resources: Arc<RunResources>,
     stopping: watch::Sender<bool>,
 }
 
@@ -192,7 +191,7 @@ struct RunResources {
     proxy: Mutex<Option<ConnectProxy>>,
     directory: RunDirectory,
     _permit: tokio::sync::OwnedSemaphorePermit,
-    _control: Arc<RunControl>,
+    _control: RunControl,
 }
 
 impl RunResources {
@@ -200,7 +199,7 @@ impl RunResources {
         if let Some(proxy) = self.proxy.lock().await.take() {
             let _ = proxy.shutdown().await;
         }
-        let _ = self.sandbox.release().await;
+        let _ = self.sandbox.stop().await;
         self.directory.cleanup().await;
     }
 }
@@ -307,7 +306,7 @@ impl RunService {
             provider_id: request.program.plugin_id.clone(),
             login_scope: ProviderLoginScope::Account(request.actor.account),
             workspace_read_only: true,
-            disposable_profile: false,
+            disposable_profile: true,
             legacy_profile: false,
             guest_image_digest: None,
         };
@@ -360,13 +359,12 @@ impl RunService {
             let _ = proxy.shutdown().await;
             return Err(RunError::Egress(error));
         }
-        let control = Arc::new(control);
         let resources = Arc::new(RunResources {
             sandbox: Arc::clone(&sandbox),
             proxy: Mutex::new(Some(proxy)),
             directory,
             _permit: permit,
-            _control: Arc::clone(&control),
+            _control: control,
         });
         let (log_tx, log_rx) = mpsc::channel(OUTPUT_CHANNEL);
         let (exit_tx, exit_rx) = watch::channel(None);
@@ -377,8 +375,7 @@ impl RunService {
             scope: request.scope,
             targets: request.targets,
             input,
-            exit: exit_rx.clone(),
-            control,
+            resources: Arc::clone(&resources),
             stopping: stopping_tx,
         });
         {
@@ -453,21 +450,9 @@ impl RunService {
         {
             return Err(RunError::StopNotAllowed);
         }
-        if state.exit.borrow().is_some() {
-            return Ok(());
-        }
         state.stopping.send_replace(true);
-        let stop = async {
-            state.control.stop().await?;
-            state.control.wait_closed(TERMINATE_LIMIT).await?;
-            let mut exit = state.exit.clone();
-            while exit.borrow().is_none() {
-                exit.changed().await.map_err(|_| RunError::Task)?;
-            }
-            Ok::<(), RunError>(())
-        };
-        match tokio::time::timeout(TERMINATE_LIMIT, stop).await {
-            Ok(result) => result,
+        match tokio::time::timeout(TERMINATE_LIMIT, state.resources.sandbox.terminate()).await {
+            Ok(result) => result.map_err(RunError::Sandbox),
             Err(_) => Err(RunError::StopTimeout),
         }
     }
@@ -484,48 +469,41 @@ async fn monitor_run(
 ) {
     let mut sequence = 0_u64;
     let mut log_open = true;
-    while let Some(event) = events.recv().await {
-        sequence = sequence.saturating_add(1);
-        let terminal = match &event {
-            OutputEvent::Exit(info) => Some(info.clone()),
-            OutputEvent::Data(..) => None,
-        };
-        let event = match event {
-            OutputEvent::Data(stream, bytes) => RunEventKind::Data { stream, bytes },
-            OutputEvent::Exit(info) => RunEventKind::Exit(info),
-        };
-        if let Some(info) = &terminal {
-            exit.send_replace(Some(info.clone()));
-            if let Some(service) = service.upgrade() {
-                service.runs.write().await.remove(&run_id);
+    let info = loop {
+        match events.recv().await {
+            Some(OutputEvent::Exit(info)) => break info,
+            Some(OutputEvent::Data(stream, bytes)) if log_open => {
+                let event = RunEvent {
+                    sequence: sequence + 1,
+                    event: RunEventKind::Data { stream, bytes },
+                };
+                log_open = send_run_event(&log, &mut stopping, event).await;
+                if log_open {
+                    sequence += 1;
+                }
+            }
+            Some(OutputEvent::Data(..)) => {}
+            None => {
+                break ExitInfo {
+                    error: Some("sandbox output ended without an exit event".into()),
+                    ..ExitInfo::default()
+                };
             }
         }
-        if log_open {
-            log_open = send_run_event(&log, &mut stopping, RunEvent { sequence, event }).await;
-        }
-        if terminal.is_some() {
-            resources.cleanup().await;
-            return;
-        }
-    }
-    let info = ExitInfo {
-        error: Some("sandbox output ended without an exit event".into()),
-        ..ExitInfo::default()
     };
+    let _ = resources.sandbox.terminate().await;
     exit.send_replace(Some(info.clone()));
     if let Some(service) = service.upgrade() {
         service.runs.write().await.remove(&run_id);
     }
-    if log_open {
-        let _ = send_run_event(
-            &log,
-            &mut stopping,
-            RunEvent {
-                sequence: sequence.saturating_add(1),
-                event: RunEventKind::Exit(info),
-            },
-        )
-        .await;
+    let terminal = RunEvent {
+        sequence: sequence + 1,
+        event: RunEventKind::Exit(info),
+    };
+    if *stopping.borrow() {
+        let _ = log.try_send(terminal);
+    } else if log_open {
+        let _ = send_run_event(&log, &mut stopping, terminal).await;
     }
     resources.cleanup().await;
 }

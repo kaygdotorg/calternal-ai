@@ -231,6 +231,11 @@ pub trait Sandbox: Send + Sync {
     fn resume(&self) -> BoxFuture<'_, SandboxResult<()>>;
     /// Kill everything and delete the sandbox, its writable layer and work directory.
     fn stop(&self) -> BoxFuture<'_, SandboxResult<()>>;
+    /// Terminate the sandbox process family and wait for its exit. Backends
+    /// with a kernel process handle may defer slow runtime artifact cleanup.
+    fn terminate(&self) -> BoxFuture<'_, SandboxResult<()>> {
+        self.release()
+    }
     /// End running execs and remove the runtime sandbox, preserving mounted workspace
     /// files and the account home. Costs one engine removal or process-group signal.
     fn release(&self) -> BoxFuture<'_, SandboxResult<()>>;

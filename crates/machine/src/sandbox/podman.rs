@@ -26,6 +26,8 @@ use super::shared_broker::{Broker, ToolSandbox};
 use super::{Backend, BoxFuture, Exec, ExecRequest, Sandbox, SandboxError, SandboxResult};
 use crate::protocol::{Limits, SandboxSpec};
 
+#[cfg(target_os = "linux")]
+mod family;
 mod ownership;
 
 /// Default memory ceiling when the spec gives none.
@@ -218,7 +220,7 @@ impl PodmanBackend {
         egress_directory: &'a Path,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
-            if self.guest || self.kvm_fallback {
+            if !cfg!(target_os = "linux") || self.guest || self.kvm_fallback {
                 return Err(SandboxError(
                     "mediated harness egress requires rootless Podman".into(),
                 ));
@@ -371,6 +373,12 @@ impl PodmanBackend {
                         }
                         if let Some(egress_directory) = egress_directory {
                             args.extend([
+                                "--pid=private".into(),
+                                "--ipc=private".into(),
+                                "--cap-drop=all".into(),
+                                "--security-opt=no-new-privileges".into(),
+                                "--log-driver=none".into(),
+                                "--image-volume=ignore".into(),
                                 "--volume".into(),
                                 format!("{}:/run/calternal-egress:ro", egress_directory.display()),
                             ]);
@@ -441,6 +449,7 @@ impl PodmanBackend {
                 if !self.guest
                     && spec.worker.is_none()
                     && broker.is_none()
+                    && egress_directory.is_none()
                     && let Some(exe) = super::cli_program().await
                 {
                     args.extend([
@@ -474,6 +483,12 @@ impl PodmanBackend {
                         "PATH=/home/agent/.local/bin:/opt/calternal-provider/bin:/usr/local/bin:/usr/bin:/bin".into(),
                     ]);
                 }
+                #[cfg(target_os = "linux")]
+                let pid_file = egress_directory.map(|_| dir.join("container.pid"));
+                #[cfg(target_os = "linux")]
+                if let Some(pid_file) = &pid_file {
+                    args.extend(["--pidfile".into(), pid_file.display().to_string()]);
+                }
                 args.extend([image.to_owned(), "sleep".into(), "2147483647".into()]);
                 let refs: Vec<&str> = args.iter().map(String::as_str).collect();
                 let created = podman(&self.podman, &refs).await;
@@ -484,7 +499,21 @@ impl PodmanBackend {
                 }
                 let _ = tokio::fs::remove_file(&cidfile).await;
                 let container = created?;
+                #[cfg(target_os = "linux")]
+                let family = if let Some(pid_file) = &pid_file {
+                    match family::Family::open(pid_file).await {
+                        Ok(family) => Some(family),
+                        Err(error) => {
+                            ownership::remove(&self.podman, &[&container]).await?;
+                            return Err(error);
+                        }
+                    }
+                } else {
+                    None
+                };
                 Ok(Arc::new(PodmanSandbox {
+                    #[cfg(target_os = "linux")]
+                    family,
                     podman: self.podman.clone(),
                     container,
                     dir,
@@ -504,6 +533,8 @@ impl PodmanBackend {
 
 /// One thread's container.
 pub struct PodmanSandbox {
+    #[cfg(target_os = "linux")]
+    family: Option<family::Family>,
     podman: PathBuf,
     container: String,
     dir: PathBuf,
@@ -594,6 +625,16 @@ impl Sandbox for PodmanSandbox {
         })
     }
 
+    fn terminate(&self) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async move {
+            #[cfg(target_os = "linux")]
+            if let Some(family) = &self.family {
+                return family.terminate().await;
+            }
+            self.release().await
+        })
+    }
+
     fn release(&self) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
             if let Some(broker) = &self.broker {
@@ -627,6 +668,8 @@ mod argv_tests {
             .await
             .unwrap();
         let sandbox = PodmanSandbox {
+            #[cfg(target_os = "linux")]
+            family: None,
             podman: engine,
             container: "fixture".into(),
             dir: dir.path().join("work"),

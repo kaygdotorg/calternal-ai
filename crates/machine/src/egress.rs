@@ -16,7 +16,7 @@ use std::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional},
     net::{TcpStream, UnixListener, UnixStream},
-    sync::{mpsc, oneshot, watch},
+    sync::oneshot,
     task::{JoinHandle, JoinSet},
 };
 
@@ -418,11 +418,9 @@ mod policy_tests {
     }
 }
 
-/// Host-side stop channel for one harness wrapper in a network-isolated container.
+/// Host-lifetime socket for one harness wrapper in a network-isolated container.
 pub struct RunControl {
-    stop: mpsc::Sender<()>,
     ready: Option<oneshot::Receiver<Result<(), EgressError>>>,
-    closed: watch::Receiver<bool>,
     task: Option<JoinHandle<()>>,
 }
 
@@ -431,9 +429,7 @@ impl RunControl {
     /// wrapper. The container connects once and announces readiness.
     pub async fn start(socket: &Path) -> Result<Self, EgressError> {
         let listener = UnixListener::bind(socket)?;
-        let (stop, mut stop_rx) = mpsc::channel(1);
         let (ready_tx, ready) = oneshot::channel();
-        let (closed_tx, closed) = watch::channel(false);
         let task = tokio::spawn(async move {
             let accepted = tokio::time::timeout(Duration::from_secs(5), listener.accept()).await;
             let (mut stream, _) = match accepted {
@@ -453,20 +449,12 @@ impl RunControl {
                 return;
             }
             let _ = ready_tx.send(Ok(()));
-            if stop_rx.recv().await.is_some() {
-                if stream.write_all(b"STOP\n").await.is_err() || stream.flush().await.is_err() {
-                    closed_tx.send_replace(true);
-                    return;
-                }
-                let mut buffer = [0_u8; 128];
-                while stream.read(&mut buffer).await.is_ok_and(|count| count > 0) {}
-            }
-            closed_tx.send_replace(true);
+            // Hold the connection until the wrapper exits or the host dies.
+            let mut buffer = [0_u8; 128];
+            while stream.read(&mut buffer).await.is_ok_and(|count| count > 0) {}
         });
         Ok(Self {
-            stop,
             ready: Some(ready),
-            closed,
             task: Some(task),
         })
     }
@@ -479,27 +467,6 @@ impl RunControl {
             .map_err(|_| EgressError::ControlTimeout)?
             .map_err(|_| EgressError::Task)??;
         Ok(())
-    }
-
-    /// Ask the wrapper to kill every process in its private container.
-    pub async fn stop(&self) -> Result<(), EgressError> {
-        self.stop.send(()).await.map_err(|_| EgressError::Task)
-    }
-
-    /// Wait for the wrapper's control connection to close after Stop or exit.
-    pub async fn wait_closed(&self, limit: Duration) -> Result<(), EgressError> {
-        let mut closed = self.closed.clone();
-        if *closed.borrow() {
-            return Ok(());
-        }
-        tokio::time::timeout(limit, async move {
-            while !*closed.borrow() {
-                closed.changed().await.map_err(|_| EgressError::Task)?;
-            }
-            Ok(())
-        })
-        .await
-        .map_err(|_| EgressError::ControlTimeout)?
     }
 }
 
