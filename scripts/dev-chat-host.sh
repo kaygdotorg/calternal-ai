@@ -5,7 +5,7 @@ set -eu
 checkout=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 cd "$checkout"
 image_key=$(printf '%s\n' "$checkout" | cksum)
-image="localhost/calternal-dev-chat-fake:${image_key%% *}"
+image=${CALTERNAL_DEV_FAKE_IMAGE:-"localhost/calternal-dev-chat-fake:${image_key%% *}"}
 export CALTERNAL_RUN_IMAGE="$image"
 
 case "${1:-}" in

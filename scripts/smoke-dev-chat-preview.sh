@@ -22,14 +22,20 @@ cleanup() {
 trap cleanup EXIT
 
 # Only the known release settings enter the disposable unit. Refuse any image
-# outside the deployment script's fake-image namespace or missing locally.
+# that lacks a release-specific fake tag or differs from the recorded ID.
 awk -F= '
     /^CALTERNAL_WORKER_(BWRAP|NODE)=\/nix\/store\/[A-Za-z0-9_./+-]+$/ { print; workers++ }
-    /^CALTERNAL_RUN_IMAGE=localhost\/calternal-dev-chat-fake:[0-9]+$/ { print; images++ }
+    /^CALTERNAL_RUN_IMAGE=(sha256:)?[0-9a-f]+$/ { print; images++ }
     END { if (workers != 2 || images != 1) exit 1 }
 ' "$release/runtime.env" >"$scratch/runtime.env"
 image=$(sed -n 's/^CALTERNAL_RUN_IMAGE=//p' "$scratch/runtime.env")
-podman image exists "$image"
+read -r tag <"$release/image.tag"
+if [[ ! $image =~ ^(sha256:)?[0-9a-f]{64}$ ||
+      ! $tag =~ ^localhost/calternal-dev-chat-fake:release\.[A-Za-z0-9]{8}$ ||
+      $(podman image inspect --format '{{.Id}}' "$tag") != "$image" ]]; then
+    printf 'Preview release does not have its recorded local fake image.\n' >&2
+    exit 2
+fi
 
 export HOST_PREVIEW_RELEASE="$release"
 export HOST_BIN="$release/calternal-host" HOST_PREVIEW_UNIT="$unit"
@@ -39,7 +45,8 @@ CALTERNAL_WORKER_BWRAP=$(sed -n 's/^CALTERNAL_WORKER_BWRAP=//p' "$scratch/runtim
 CALTERNAL_WORKER_NODE=$(sed -n 's/^CALTERNAL_WORKER_NODE=//p' "$scratch/runtime.env")
 export CALTERNAL_WORKER_BWRAP CALTERNAL_WORKER_NODE
 export CALTERNAL_TEST_PROVIDER_IMAGE="$image"
-unset CALTERNAL_REAL_RUN_IMAGE CALTERNAL_RUN_SIGN_IN_DIR DEBUG PWDEBUG
+unset CALTERNAL_REAL_RUN_IMAGE CALTERNAL_RUN_SIGN_IN_ACCOUNT CALTERNAL_RUN_SIGN_IN_SPACE
+unset CALTERNAL_RUN_SIGN_IN_PROGRAM CALTERNAL_RUN_SIGN_IN_FILE DEBUG PWDEBUG
 origin="http://localhost:$port"
 
 if (( $# == 0 )); then
