@@ -710,3 +710,101 @@ async fn ad_hoc_query_rejects_excess_sort_columns() {
         .await;
     assert_eq!(call.unwrap_err().code, ErrorCode::InvalidInput);
 }
+
+#[tokio::test]
+async fn replay_retries_a_busy_observation_once() {
+    let f = Fixture::new().await;
+    f.install(checkout().join("plugins-v2/calternal-chat"))
+        .await
+        .unwrap();
+    let item = f.chat().await;
+    let bundle = tempfile::tempdir().unwrap();
+    observer(bundle.path());
+    std::fs::write(
+        bundle.path().join("operations.ts"),
+        r#"
+        import { on } from "@calternal/plugin-sdk";
+        export const observe = on.change("collection:calternal-chat.chats", async (_, s) => {
+            const item = await s.read(s.event.item);
+            const receipt = await s.write([{ add: { kind: "observer.observations", fields: {
+                title: String(item.records.length)
+            } } }]);
+            if (item.records.length === 1) {
+                while (await s.state.get(receipt.changes[0].id, "seen") !== true) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            }
+        });
+        export const relay = on.call("observations.relay", async () => null);
+    "#,
+    )
+    .unwrap();
+    f.install(bundle.path().to_owned()).await.unwrap();
+
+    let append = |body: &str| Call {
+        call: "s.write".into(),
+        input: json!({"changes":[{"op":"append record","item":item,"record":{"body":body}}]}),
+        idempotency_key: Some(body.to_owned()),
+        slot_selection: None,
+    };
+    let writer = Actor::plugin(f.owner, "calternal-chat");
+    let first = f
+        .host
+        .clone()
+        .trusted_call(writer.clone(), f.space, append("First"));
+    let first = tokio::spawn(first);
+    let observations = || {
+        f.call(
+            f.owner.into(),
+            "s.query",
+            json!({"from":"observer.observations"}),
+            None,
+        )
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(6), async {
+        loop {
+            if observations().await.unwrap()["rows"][0]["fields"]["title"] == "1" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    let retry = || {
+        f.host
+            .clone()
+            .trusted_call(writer.clone(), f.space, append("Second"))
+    };
+    let written = retry().await.unwrap();
+    let marker = observations().await.unwrap()["rows"][0]["id"].clone();
+    f.call(
+        f.owner.into(),
+        "s.state",
+        json!({
+            "op":"set", "item":marker, "key":"seen", "value":true,
+        }),
+        None,
+    )
+    .await
+    .unwrap();
+    first.await.unwrap().unwrap();
+    assert_eq!(
+        observations().await.unwrap()["rows"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    for _ in 0..2 {
+        assert_eq!(retry().await.unwrap(), written);
+        assert_eq!(
+            observations().await.unwrap()["rows"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+}

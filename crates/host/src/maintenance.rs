@@ -22,6 +22,7 @@ pub(crate) type Slot = Arc<SpaceSlot>;
 
 pub(crate) struct SpaceSlot {
     pub(crate) resident: Mutex<Resident>,
+    pub(crate) observing: Mutex<std::collections::BTreeSet<[u8; 32]>>,
 }
 
 pub(crate) struct Resident {
@@ -68,6 +69,7 @@ impl Host {
                 space: None,
                 visited: Instant::now(),
             }),
+            observing: Mutex::default(),
         });
         registry.insert(id, slot.clone());
         Ok(slot)
@@ -132,6 +134,12 @@ impl Host {
             .is_some_and(|space| space.live.has_subscribers() || space.runs.is_active());
         if let Some(space) = &mut entry.space {
             if let Err(error) = space.expire_trash() {
+                internal(error);
+            }
+            if let Err(error) = crate::reactions::expire_pending(
+                &space.db,
+                calternal_types::now_ms() - self.retention_ms,
+            ) {
                 internal(error);
             }
         }
@@ -212,6 +220,7 @@ impl Host {
             [cutoff],
         )
         .map_err(internal)?;
+        crate::reactions::expire_pending(&tx, cutoff)?;
         let expired = {
             let mut query = tx
                 .prepare_cached(

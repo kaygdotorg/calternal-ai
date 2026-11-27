@@ -253,6 +253,15 @@ impl Host {
         id: SpaceId,
         f: impl FnOnce(&mut Space) -> Result<T>,
     ) -> Result<T> {
+        self.with_space_slot(actor, id, |space, _| f(space))
+    }
+
+    fn with_space_slot<T>(
+        &self,
+        actor: &Actor,
+        id: SpaceId,
+        f: impl FnOnce(&mut Space, &Slot) -> Result<T>,
+    ) -> Result<T> {
         if matches!(actor.via, Some(Via::Agent { .. })) {
             return Err(Error::forbidden("Run scope is required for this call."));
         }
@@ -282,7 +291,7 @@ impl Host {
         let space = opened.space.as_mut().expect("space initialized");
         space.recover()?;
         space.expire_trash()?;
-        f(space)
+        f(space, &slot)
     }
 }
 
