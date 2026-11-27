@@ -126,14 +126,13 @@ export interface ComposerBindingsDecl {
 /** Slot declaration from `plugin.md`. */
 export interface SlotDecl {
   name: string;
-  label?: string;
+  /** Display label declared by the slot owner. */
+  label?: string | null;
   cardinality: "single" | "many";
   gives: string;
   recommended: string | null;
   pickedBy: "space" | "person";
   inputOperation: string | null;
-  /** Display label declared by the slot owner. */
-  label?: string | null;
   /** Checked bindings used to compose text and optional draft and quote values. */
   composer?: ComposerBindingsDecl | null;
   fillers: (Omit<FillDecl, "slot"> & { plugin: string })[];
