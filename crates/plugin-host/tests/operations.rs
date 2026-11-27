@@ -304,6 +304,13 @@ async fn upstream_chat_send_replay_rename_and_error() {
         path.is_file(),
         "Provision the upstream Chat vectors in this disposable test checkout"
     );
+    let kind = std::fs::read_to_string(
+        repo.join("plugins-v2/calternal-chat/kinds/chats.md"),
+    ).unwrap();
+    for operation in ["    inputs:\n      item: link(chats), required\n      text:",
+                      "    inputs:\n      item: link(chats), required\n      title:"] {
+        assert!(kind.contains(operation), "Chat input declaration changed");
+    }
     let space = SpaceId::new();
     let actor = AccountId::new();
     let item = Uuid::new_v4();
@@ -324,7 +331,7 @@ async fn upstream_chat_send_replay_rename_and_error() {
             },
         )
     };
-    let send = json!({"chat":item,"text":"First message"});
+    let send = json!({"item":item,"text":"First message"});
     let first = invoke("chats.send", "send-event", send.clone())
         .await
         .unwrap();
@@ -336,7 +343,7 @@ async fn upstream_chat_send_replay_rename_and_error() {
     let conflict = invoke(
         "chats.send",
         "send-event",
-        json!({"chat":item,"text":"Different"}),
+        json!({"item":item,"text":"Different"}),
     )
     .await
     .unwrap_err();
@@ -344,11 +351,11 @@ async fn upstream_chat_send_replay_rename_and_error() {
     invoke(
         "chats.rename",
         "rename-event",
-        json!({"chat":item,"title":"New title"}),
+        json!({"item":item,"title":"New title"}),
     )
     .await
     .unwrap();
-    let invalid = invoke("chats.send", "empty-event", json!({"chat":item,"text":" "}))
+    let invalid = invoke("chats.send", "empty-event", json!({"item":item,"text":" "}))
         .await
         .unwrap_err();
     assert_eq!(Code::from_error(&invalid), Code::Invalid);
