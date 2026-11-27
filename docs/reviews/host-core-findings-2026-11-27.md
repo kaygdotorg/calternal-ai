@@ -112,7 +112,10 @@ All commands ran on `claude@calternal-dev-01-compute02`, in
 - After merging the workspace format engine, `cargo test --locked -p
   calternal-format -p calternal-host -j3` passed 22 format tests and
   16 host tests. Workspace formatting, strict crate Clippy and crate
-  Rustdoc passed as well.
+  Rustdoc passed as well. `scripts/check-docs.sh` passed under
+  `lock-full`. The generated host reference and index are committed,
+  and all 439 documentation source and reference files matched the
+  VM's generated tree.
 - For 1,000 warmed, idempotent appends, `crates/host/count-flushes.sh`
   reported **0 item-content reads, 759 ledger read syscalls, 0
   authority read syscalls, 1,000 item data flushes and 1,033 ledger
