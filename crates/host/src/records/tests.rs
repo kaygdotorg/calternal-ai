@@ -242,7 +242,9 @@ fn recovered_append_keeps_authenticated_milliseconds() {
     let tail = f.prepare_at(&head, at);
     f.append_uncommitted(&head, &tail);
     let f = f.reopen();
-    assert_eq!(f.space.records(head.id).unwrap()[0].at, at);
+    let rows = f.space.records(head.id).unwrap();
+    assert_eq!(rows[0].at, at);
+    assert_eq!(rows[0].run.as_ref().unwrap().plugin, plugin);
     assert_eq!(
         f.space.row(head.id).unwrap().head.edited,
         at.max(head.edited)
@@ -250,16 +252,47 @@ fn recovered_append_keeps_authenticated_milliseconds() {
 }
 
 #[test]
-fn recovered_run_append_authenticates_run_id_and_milliseconds() {
+fn recovered_run_append_authenticates_run_id_plugin_and_milliseconds() {
     let mut f = Fixture::new();
     let head = f.add("Run recovery");
     let id = Uuid::new_v4();
     f.actor = Actor::run(f.actor.account, "calternal-chat", id);
+    let plugin = "calternal-chat-claude-code";
+    // The recovery fixture has no worker runtime. Give it the harness manifest
+    // through the same parsed declaration cache used on the normal write path.
+    let mut harness = f.space.plugins["calternal-chat"].clone();
+    harness.manifest.name = "Fixture harness".into();
+    f.space.plugins.insert(plugin.into(), harness);
+    f.space.runs.insert_test_run(
+        id,
+        f.id,
+        head.id,
+        Actor::plugin(f.actor.account, plugin),
+        head.kind.clone(),
+    );
     let at = calternal_types::now_ms().div_euclid(60_000) * 60_000 + 23_456;
     let tail = f.prepare_at(&head, at);
     let claim = seal::verify(&f.space, &head, &tail).unwrap().unwrap();
     assert_eq!((claim.actor, claim.at), (f.actor.clone(), at));
     let text = std::str::from_utf8(&tail).unwrap();
+    assert!(text.starts_with("**Fixture harness**"));
+    assert_eq!(
+        claim.run,
+        Some(RunWriter {
+            id,
+            plugin: plugin.into()
+        })
+    );
+    let header = text.lines().next().unwrap();
+    let (_, Some(encoded_plugin)) = seal::run_stamp(header).unwrap() else {
+        panic!("expected the starting harness in the seal");
+    };
+    let altered = text.replacen(encoded_plugin, "b3RoZXI", 1);
+    assert!(
+        seal::verify(&f.space, &head, altered.as_bytes())
+            .unwrap()
+            .is_none()
+    );
     let altered = text.replacen(&id.to_string(), &Uuid::new_v4().to_string(), 1);
     assert!(
         seal::verify(&f.space, &head, altered.as_bytes())
@@ -268,7 +301,9 @@ fn recovered_run_append_authenticates_run_id_and_milliseconds() {
     );
     f.append_uncommitted(&head, &tail);
     let f = f.reopen();
-    assert_eq!(f.space.records(head.id).unwrap()[0].at, at);
+    let rows = f.space.records(head.id).unwrap();
+    assert_eq!(rows[0].at, at);
+    assert_eq!(rows[0].run.as_ref().unwrap().plugin, plugin);
 }
 
 #[test]

@@ -1,7 +1,8 @@
 //! Serialize authorized query rows, pagination and aggregate evidence.
 use super::{Budget, QueryInput};
 use crate::declarations::{self, Kind};
-use crate::space::Row;
+use crate::records::Record;
+use crate::space::{Row, Space};
 use calternal_format as format;
 use calternal_types::{Error, Result};
 use serde_json::{Value, json};
@@ -11,6 +12,7 @@ pub(super) fn page(
     kind: &Kind<'_>,
     rows: &[&Row],
     inputs: &[QueryInput],
+    record_rows: Option<(&Space, &[Vec<Record>])>,
     result: format::QueryResult,
     cursor: Option<Uuid>,
     limit: usize,
@@ -62,14 +64,31 @@ pub(super) fn page(
         .rows
         .into_iter()
         .map(|selected| {
+            let source = rows[selected.index];
             let mut row = row(
                 kind,
-                rows[selected.index],
+                source,
                 &inputs[selected.index],
                 &selected.computed,
                 clock,
                 budget,
             )?;
+            if let Some((space, records)) = record_rows {
+                let record_views = if kind.records.is_empty() {
+                    Vec::new()
+                } else {
+                    let bytes = super::load_record_file(space, source, budget)?;
+                    super::record_views(
+                        space,
+                        source,
+                        &bytes,
+                        &records[selected.index],
+                        kind,
+                        budget,
+                    )?
+                };
+                row["records"] = Value::Array(record_views);
+            }
             if !selected.groups.is_empty() {
                 row["groups"] = list(selected.groups, budget)?;
             }

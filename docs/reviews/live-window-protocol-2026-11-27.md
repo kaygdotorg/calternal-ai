@@ -25,7 +25,7 @@ hold at most 64 concurrent subscriptions.
 
 | `type` | Shape | Purpose |
 | --- | --- | --- |
-| `subscribe` | `{"type":"subscribe","sub":"<id>","query":{...}}` | Subscribe to a collection (`{"collection":"plugin.id","limit?":200}`) or ad-hoc query (`{"from":"plugin.kind","where?":"...","sort?":[...],"limit?":200}`). |
+| `subscribe` | `{"type":"subscribe","sub":"<id>","query":{...}}` | Subscribe to a collection (`{"collection":"plugin.id","limit?":200}`) or ad-hoc query (`{"from":"plugin.kind","where?":"...","sort?":[...],"limit?":200}`). Either accepts `records: true` for records in each row. |
 | `subscribe` | `{"type":"subscribe","sub":"<id>","records":{"item":"<uuid>","after?":"<anchor>"}}` | Subscribe to one item's records and metadata. When `after` is present and found in the item's ledger, the host sends only records with a strictly higher ordinal in ascending order; otherwise it sends the full live snapshot. |
 | `unsubscribe` | `{"type":"unsubscribe","sub":"<id>"}` | Remove an active subscription. |
 | `ping` | `{"type":"ping"}` | Keepalive check; host replies `{"type":"pong"}`. |
@@ -43,6 +43,13 @@ Reusing an existing `sub` ID replaces that subscription.
 | `item_change` | `{"type":"item_change","sub":"<id>","item":"<uuid>","version":N,"fields":{...},"computed":{...},"state":{...},"when":{...}}` | Pushed to a `records` subscriber when the item's fields or computed values change (e.g. a rename or unread count change) without record edits. |
 | `error` | `{"type":"error","sub":"<id>"\|null,"code":"...","message":"...","next":"..."}` | Caller-safe error using the ten revision 9 codes. |
 | `pong` | `{"type":"pong"}` | Reply to `ping`. |
+
+Records in `records`, `record_append` and opt-in `rows` frames use the
+[same `writer` object as `s.read`](host-call-route-2026-11-27.md). Read
+`writer.name` for a person, or resolve `writer.plugin` in `s.declarations`
+for a run. `writer.starter` identifies the starting person. Older run stamps
+may have `writer.plugin: null`. Unverified outside records carry
+`writer.type: "outside"`.
 
 ## Ordering, reconnects and bounds
 

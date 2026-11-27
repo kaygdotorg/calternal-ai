@@ -48,7 +48,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS outside_stamp ON history(item,anchor) WHERE ac
 CREATE TABLE IF NOT EXISTS records (
   item TEXT NOT NULL, anchor TEXT NOT NULL, offset INTEGER NOT NULL, length INTEGER NOT NULL,
   author TEXT NOT NULL, at INTEGER NOT NULL, hash BLOB NOT NULL, ordinal INTEGER NOT NULL,
-  PRIMARY KEY (item,anchor)
+  run_writer TEXT, PRIMARY KEY (item,anchor)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS record_anchor ON records(anchor);
 CREATE INDEX IF NOT EXISTS records_ordinal ON records(item, ordinal);
@@ -174,6 +174,17 @@ impl Space {
         db.execute_batch(SCHEMA).map_err(internal)?;
         crate::installation::ensure_sequence(&mut db)?;
         retire_seal_receipts(&mut db)?;
+        let has_writer = db
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info('records') WHERE name='run_writer')",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(internal)?;
+        if !has_writer {
+            db.execute("ALTER TABLE records ADD COLUMN run_writer TEXT", [])
+                .map_err(internal)?;
+        }
         db.execute_batch(VIEWER_STATE_SCHEMA).map_err(internal)?;
         let key: Option<Vec<u8>> = db
             .query_row("SELECT key FROM key_material WHERE id=1", [], |row| {

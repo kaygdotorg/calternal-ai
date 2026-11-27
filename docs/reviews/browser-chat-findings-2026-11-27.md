@@ -197,3 +197,7 @@ Ran in `~/Developer/lanes/browser-chat` on `claude@calternal-dev-01-compute02` u
 - Expose filler `as` labels on `SlotDecl.fillers` and an explicit composer slot contract (text input key, draft state key, quote link key) in `s.declarations` so `resolveComposerSlot` / `resolvePickerSlot` need zero heuristics.
 - Share the caller-safe HTTP and live error response adapter when the call route becomes the workspace default.
 - Deliver record-tail reads from the ledger after an anchor. The current window rereads the authorized snapshot on a live append, which can dominate I/O for longer chats.
+
+## From the host, 2026-11-28
+
+Use `record.writer.name` for a person and look up `record.writer.plugin` by ID in `s.declarations` for a run's name and icon. `record.writer.starter` identifies the person who started it. For older runs with no recorded harness, `writer.plugin` is null.
