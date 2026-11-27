@@ -109,24 +109,31 @@ lease tears down that placement. [Protocol and verification](../../docs/reviews/
 
 ## Harness runs
 
-The run service accepts an executable binding resolved inside an installed plugin
-bundle, fixes a session's target list and starting actor, and starts a rootless
-Podman container with `--network=none`. The plugin bundle and per-run socket
-directory are read-only mounts. Run input is accepted only from the starting
-actor; Stop asks the host authorizer whether the caller may read every fixed
-target. Output events have an ordered per-run sequence, and Exit is terminal.
-Stop signals the pinned Linux init process of the private PID namespace and
-waits for the process family to exit within its two-second budget. Podman
-workspace and container cleanup follows asynchronously.
+The run service binds an installed plugin executable to a session target and
+starting actor. It starts a rootless network-isolated Podman container with a
+read-only image, plugin bundle and workspace. Bounded temporary mounts contain
+writable run state. Run input checks the starting actor and returns queue
+acceptance. Output events have a monotonic run sequence and a terminal exit.
 
-The only outbound path is a per-run host CONNECT proxy. A loopback bridge forwards
-through a Unix socket to the host. The proxy admits only exact manifest `sends out`
-hostnames on port 443, resolves each request on the host, rejects unsafe addresses,
-and connects to the checked numeric address. Its tunnel log contains the hostname
-and byte counts only. Direct container networking stays disabled. This mechanism
-is exercised with a fake provider and an injected resolver/dialer; no real Claude
-program or provider sign-in is used. Executable program bindings are supported;
-image bindings currently return an explicit unsupported error.
+The host authorizes Stop against the run's original scope. Target removal or
+failed publication can terminate a known run by ID after the target disappears.
+Termination signals the pinned init process of the private PID namespace and
+waits up to 1.8 seconds. Failed sandbox cleanup is reported and retried.
+Startup sweeps stale containers and private run artifacts for the owned root.
+
+The CONNECT proxy admits the plugin's exact declared hostnames on port 443.
+It resolves absolute DNS names and rejects any answer containing an address
+outside the global-unicast policy or inside operator-supplied exclusions.
+It dials the checked numeric address. Four simultaneous tunnels share a
+64 MiB transfer budget. Each tunnel has a five-second handshake, thirty-second
+idle and three-minute lifetime limit. The fake provider and an injected
+resolver and dialer exercise this path.
+
+Real sign-in is an opt-in development mode for one account, space and trusted
+installed program. The operator supplies one private credential file and a full
+local image ID. The fake image tests use a synthetic credential file.
+Executable program bindings are supported. Image bindings return an explicit
+unsupported error.
 
 On the dev VM, the service tests are `cargo test -p calternal-machine --test
 run_service`; CONNECT policy tests are `cargo test -p calternal-machine --test

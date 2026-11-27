@@ -88,6 +88,9 @@ harness. A fresh developer VM checkout can use the
 
 Start, input and Stop use the [host call route](../../docs/reviews/host-call-route-2026-11-27.md).
 Run output uses the [live window socket](../../docs/reviews/live-window-protocol-2026-11-27.md).
+Input receipts report `queued` when the adapter channel accepts them. Stop
+fences host callbacks before terminating the process family. Removing the
+target also fences and terminates its runs.
 After a host restart, a repeated start request returns the original run ID
 with status `stopped`. The live log starts empty with the new host process.
 
@@ -101,3 +104,10 @@ that same port over SSH. Complete passkey enrollment with the code from the
 file. The host installs Chat, its harness, Reading List and Tasks into
 the owner's space at sign-in or on an authenticated session-status check.
 Existing bundles are left in place. Stop the preview with Ctrl+C.
+
+The [persistent development preview](../../docs/dev-chat-preview.md) uses a
+loopback user service and immutable release image IDs. A temporary failure to
+install a bundle leaves the committed sign-in result and first enrollment's
+recovery codes available. An authenticated status check or later sign-in
+retries missing bundles. The fake image is the default. Real sign-in requires
+explicit account, space, program, image ID and credential-file settings.

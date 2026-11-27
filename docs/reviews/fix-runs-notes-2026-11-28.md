@@ -51,6 +51,24 @@ mount point and bounded scratch locations.
   worker's idle period. A larger cap would increase capacity and the
   possible aggregate resource use.
 
+## Storage and transport work
+
+- A new run reads its start receipt once and commits it once after the final
+  scope check. The per-space start lock spans launch and commit to prevent
+  duplicate process families for a retried gesture.
+- A linked prompt uses one indexed record lookup and one item open. It reads
+  the authenticated prefix and the selected record once each and performs no
+  flush. A normal item read uses one bounded record query and one item open.
+  It computes its projection once. A read of outside edits can record one
+  audited transaction for those edits.
+- Run-log replay takes a snapshot of bounded event references, then encodes
+  after releasing the log mutex. It reads no item content and performs no
+  flush. Socket sends remain fenced by the browser installation.
+- Run Stop and persistent writes share the per-space storage lock for their
+  authority check and publication. Process teardown runs outside that lock.
+  The host reuses the machine's pinned process-family termination, SQLite
+  receipts, and the bounded worker codecs.
+
 ## Simplification opportunities
 
 - Collapse provider run lifetime and host publication cancellation into one

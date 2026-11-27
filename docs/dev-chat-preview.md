@@ -22,7 +22,7 @@ first account exists. A code lasts 24 hours. If it expires before enrollment,
 restart the user service. Once enrolled, use **Sign in with a passkey**.
 The code file is removed on the next service start after enrollment.
 
-The first completed sign-in installs the Chat and Claude Code harness plugins
+The first completed sign-in installs Chat, its Claude Code harness, Reading List and Tasks
 in the owner's personal space. Create a chat, choose **Claude Code** under
 **Ask an agent**, and send a message. The default provider echoes the message.
 Reload or restart the user service and sign in again to check that the chat
