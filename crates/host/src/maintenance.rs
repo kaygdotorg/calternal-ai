@@ -133,6 +133,11 @@ impl Host {
             .as_ref()
             .is_some_and(|space| space.live.has_subscribers() || space.runs.is_active());
         if let Some(space) = &mut entry.space {
+            let day = time::OffsetDateTime::now_utc().date();
+            if space.projection_day != day {
+                space.projection_day = day;
+                space.live.notify(None);
+            }
             if let Err(error) = space.expire_trash() {
                 internal(error);
             }
@@ -293,7 +298,7 @@ mod tests {
         let host = Host::new(root.path().into(), auth, 1).unwrap();
         tokio::task::spawn_blocking(move || {
             let space = host.auth.spaces().list(owner).unwrap().remove(0).id;
-            let observer = host
+            let mut observer = host
                 .with_space(&Actor::account(owner), space, |storage| {
                     let receipt = storage
                         .receipt("fixture", Some("old"), b"payload")?
@@ -303,12 +308,19 @@ mod tests {
                         &Value::Null,
                         calternal_types::now_ms() - 86_400_100,
                     )?;
+                    storage.projection_day = time::OffsetDateTime::now_utc()
+                        .date()
+                        .previous_day()
+                        .unwrap();
                     Ok(storage.live.subscribe(owner))
                 })
                 .unwrap();
             let slot = host.space_slot(space).unwrap();
             slot.resident.lock().unwrap().visited = Instant::now() - IDLE;
             host.sweep_open(space, slot.clone()).unwrap();
+            observer
+                .try_recv()
+                .expect("the new UTC day refreshes subscribers");
             assert!(Arc::ptr_eq(&slot, &host.space_slot(space).unwrap()));
             drop(slot);
             host.sweep(&mut None).unwrap();

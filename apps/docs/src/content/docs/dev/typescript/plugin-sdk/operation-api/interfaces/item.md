@@ -27,6 +27,7 @@ A visible item and its Markdown and records.
 | <a id="body"></a> `body` | `string` | Markdown outside the item frontmatter. | - |
 | <a id="computed"></a> `computed` | [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/) | Computed fields evaluated for the acting person. | [`Row`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/row/).[`computed`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/row/#computed) |
 | <a id="fields"></a> `fields` | [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/) | Stored fields visible to the acting person. | [`Row`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/row/).[`fields`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/row/#fields) |
+| <a id="groups"></a> `groups?` | `unknown`[] | Group keys for this row in a grouped collection. | [`Row`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/row/).[`groups`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/row/#groups) |
 | <a id="id"></a> `id` | `string` | Item UUID. | [`Row`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/row/).[`id`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/row/#id) |
 | <a id="kind"></a> `kind` | `string` | Qualified kind name. | [`Row`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/row/).[`kind`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/row/#kind) |
 | <a id="records"></a> `records` | `unknown`[] | Records returned by the host, with ledger stamps. | - |

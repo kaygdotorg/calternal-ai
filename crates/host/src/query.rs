@@ -1,5 +1,7 @@
 //! Select authorized rows and supply viewer context to the pure format engine.
 mod budget;
+mod projection;
+mod search;
 
 use crate::declarations::{self, Collection, FieldType, Kind};
 use crate::internal;
@@ -25,6 +27,7 @@ pub(crate) struct Query {
     filter: Option<String>,
     #[serde(default)]
     sort: Vec<String>,
+    search: Option<String>,
     cursor: Option<String>,
     limit: Option<usize>,
 }
@@ -98,6 +101,7 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
         .transpose()
         .map_err(|_| Error::invalid_input("Invalid query cursor."))?;
     let mut budget = Budget::default();
+    let mut search = search::Search::new(input.search.as_deref(), &kind.search)?;
     let mut rows = Vec::new();
     let mut inputs = Vec::new();
     for row in space.rows.values().filter(|row| row.head.kind == from) {
@@ -115,8 +119,10 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
             &records,
             &mut budget,
         )?);
+        search.index_body(space, row)?;
         rows.push(row);
     }
+    let clock = declarations::clock()?;
     let result = execute(
         &collection,
         &kind,
@@ -125,51 +131,10 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
             offset: 0,
             limit: rows.len(),
         },
+        &clock,
+        &|index, row| search.matches(index, row),
     )?;
-    let start = cursor
-        .map(|cursor| {
-            result
-                .rows
-                .iter()
-                .position(|selected| rows[selected.index].head.id == cursor)
-                .map(|position| position + 1)
-                .ok_or_else(|| Error::conflict("The query cursor is no longer present."))
-        })
-        .transpose()?
-        .unwrap_or(0);
-    let page = calternal_types::Page::from_lookahead(
-        result
-            .rows
-            .into_iter()
-            .skip(start)
-            .take(limit + 1)
-            .collect(),
-        limit,
-        |selected| rows[selected.index].head.id,
-    );
-    let totals = result
-        .totals
-        .iter()
-        .map(declarations::as_json)
-        .collect::<Vec<_>>();
-    let (today, now) = declarations::clock()?;
-    let rows = page
-        .rows
-        .into_iter()
-        .map(|selected| {
-            render_row(
-                &kind,
-                rows[selected.index],
-                &inputs[selected.index],
-                &selected.computed,
-                &today,
-                &now,
-            )
-        })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(
-        json!({"rows":rows,"totals":if totals.is_empty() {json!({})} else {json!(totals)}, "cursor":page.next}),
-    )
+    projection::page(&kind, &rows, &inputs, result, cursor, limit, &clock)
 }
 
 pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
@@ -196,6 +161,7 @@ pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
     let mut collection = ad_hoc(None, &[])?;
     collection.ignoring_default = true;
     let input = query_input(space, actor, &kind, row, &records, &mut budget)?;
+    let clock = declarations::clock()?;
     let result = execute(
         &collection,
         &kind,
@@ -204,9 +170,17 @@ pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
             offset: 0,
             limit: 1,
         },
+        &clock,
+        &|_, _| true,
     )?;
-    let (today, now) = declarations::clock()?;
-    let mut result = render_row(&kind, row, &input, &result.rows[0].computed, &today, &now)?;
+    let mut result = projection::row(
+        &kind,
+        row,
+        &input,
+        &result.rows[0].computed,
+        &clock.0,
+        &clock.1,
+    )?;
     result["body"] = json!(body);
     result["records"] = json!(views);
     if matches!(actor.via, Some(calternal_types::Via::Run { .. })) {
@@ -394,7 +368,16 @@ pub(crate) fn contains(
         offset: 0,
         limit: 1,
     };
-    Ok(!execute(collection, &kind, &[input], page)?.rows.is_empty())
+    Ok(!execute(
+        collection,
+        &kind,
+        &[input],
+        page,
+        &declarations::clock()?,
+        &|_, _| true,
+    )?
+    .rows
+    .is_empty())
 }
 
 fn execute(
@@ -402,6 +385,8 @@ fn execute(
     kind: &Kind<'_>,
     inputs: &[QueryInput],
     page: format::Page,
+    clock: &(String, String),
+    matches_row: &dyn Fn(usize, format::Row<'_>) -> bool,
 ) -> Result<format::QueryResult> {
     let empty = format::Fields::new();
     let rows = inputs
@@ -442,73 +427,22 @@ fn execute(
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let (today, now) = declarations::clock()?;
     let context = format::EvalContext {
-        today: Some(&today),
-        now: Some(&now),
+        today: Some(&clock.0),
+        now: Some(&clock.1),
         offset_seconds: Some(0),
         rows: Some(&contexts),
         ..format::EvalContext::default()
     };
-    format::evaluate_query(collection, kind.compiled, &rows, page, &context)
-        .map_err(declarations::invalid)
-}
-
-fn render_row(
-    kind: &Kind<'_>,
-    row: &Row,
-    input: &QueryInput,
-    computed: &format::Fields,
-    today: &str,
-    now: &str,
-) -> Result<Value> {
-    let empty = format::Fields::new();
-    let records = input
-        .records
-        .iter()
-        .map(|metadata| format::Row {
-            fields: &empty,
-            metadata,
-        })
-        .collect::<Vec<_>>();
-    let context = format::EvalContext {
-        today: Some(today),
-        now: Some(now),
-        offset_seconds: Some(0),
-        state: input.state.as_ref(),
-        records: &records,
-        record_positions: input.state.as_ref().map(|_| &input.record_positions),
-        ..format::EvalContext::default()
-    };
-    let when = format::operation_conditions(
+    format::evaluate_query_matching(
+        collection,
         kind.compiled,
-        format::Row {
-            fields: &input.fields,
-            metadata: &input.metadata,
-        },
-        computed,
+        &rows,
+        page,
         &context,
+        matches_row,
     )
-    .map_err(declarations::invalid)?;
-    let computed = declarations::as_json(&format::Value::Map(computed.clone()));
-    let state = input.state.as_ref().map(|state| {
-        kind.state
-            .keys()
-            .map(|key| {
-                (
-                    key.clone(),
-                    state
-                        .get(key)
-                        .map(declarations::as_json)
-                        .unwrap_or_default(),
-                )
-            })
-            .collect::<serde_json::Map<_, _>>()
-    });
-    Ok(
-        json!({"id":row.head.id,"kind":row.head.kind,"fields":row.fields,"computed":computed,
-        "state":state.unwrap_or_default(),"when":when,"version":row.head.version,"edited":row.head.edited}),
-    )
+    .map_err(declarations::invalid)
 }
 
 pub(crate) fn state(

@@ -24,7 +24,8 @@ case "${1:-}" in
         export CALTERNAL_WORKER_SDK="$checkout/packages/plugin-sdk"
         exec "${CARGO_TARGET_DIR:-$checkout/target}/debug/calternal-host" dev-serve \
             "$data" "$checkout/apps/web/dist" \
-            "$checkout/plugins-v2/calternal-chat" "$checkout/plugins-v2/calternal-chat-claude-code"
+            "$checkout/plugins-v2/calternal-chat" "$checkout/plugins-v2/calternal-chat-claude-code" \
+            "$checkout/plugins-v2/calternal-reading-list" "$checkout/plugins-v2/calternal-tasks"
         ;;
     "")
         "$HOME/bin/lock-shared" nix develop -c "$checkout/scripts/dev-chat-host.sh" --build

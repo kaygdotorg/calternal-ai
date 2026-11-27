@@ -16,29 +16,16 @@ type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
 #[tokio::main]
 async fn main() -> CliResult<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if let [command, root, web, chat, harness, port] = args.as_slice()
-        && command == "preview-serve"
+    if let [command, root, web, sources @ ..] = args.as_slice()
+        && matches!(command.as_str(), "dev-serve" | "preview-serve")
     {
-        return dev::serve(
-            Path::new(root),
-            Path::new(web),
-            Path::new(chat),
-            Path::new(harness),
-            Some(port.parse()?),
-        )
-        .await;
-    }
-    if let [command, root, web, chat, harness] = args.as_slice()
-        && command == "dev-serve"
-    {
-        return dev::serve(
-            Path::new(root),
-            Path::new(web),
-            Path::new(chat),
-            Path::new(harness),
-            None,
-        )
-        .await;
+        let (sources, port) = if command == "preview-serve" {
+            let (port, sources) = sources.split_last().ok_or("Supply a preview port.")?;
+            (sources, Some(port.parse()?))
+        } else {
+            (sources, None)
+        };
+        return dev::serve(Path::new(root), Path::new(web), sources, port).await;
     }
     let [command, root, origin, rest @ ..] = args.as_slice() else {
         return Err("usage: calternal-host serve ROOT ORIGIN ADDRESS | install ROOT ORIGIN OWNER SPACE DIRECTORY [--official]".into());

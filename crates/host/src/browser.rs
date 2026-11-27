@@ -174,8 +174,14 @@ async fn call(State(host): State<Arc<Host>>, Path(space): Path<String>, req: Req
     Ok(([(header::CONTENT_TYPE, "application/json")], encoded).into_response())
 }
 
-async fn session_info(host: &Host, account: AccountId) -> Result<Value, Failure> {
+async fn session_info(host: &Arc<Host>, account: AccountId) -> Result<Value, Failure> {
     let (name, space) = personal_space(host, account).await?;
+    if !host.development_plugins.is_empty() {
+        let host = host.clone();
+        tokio::task::spawn_blocking(move || host.ensure_development_plugins(account, space))
+            .await
+            .map_err(internal)??;
+    }
     Ok(json!({"account":account,"name":name,"space":space}))
 }
 
@@ -346,14 +352,7 @@ async fn signed_in(
     token: String,
     codes: Vec<String>,
 ) -> Reply {
-    let (name, space) = personal_space(&browser.host, account).await?;
-    if !browser.host.development_plugins.is_empty() {
-        let host = browser.host.clone();
-        tokio::task::spawn_blocking(move || host.ensure_development_plugins(account, space))
-            .await
-            .map_err(internal)??;
-    }
-    let mut payload = json!({"session":{"account":account,"name":name,"space":space}});
+    let mut payload = json!({"session":session_info(&browser.host, account).await?});
     if !codes.is_empty() {
         payload["recovery_codes"] = json!(codes);
     }
@@ -495,7 +494,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn development_sign_in_seeds_both_bundles_once() {
+    async fn development_status_backfills_missing_bundles_and_preserves_existing_items() {
         use crate::WorkerRuntime;
         use calternal_auth::Auth;
         use std::path::PathBuf;
@@ -529,50 +528,74 @@ mod tests {
             repo.join("packages/plugin-sdk"),
         )
         .unwrap();
-        let host = Host::new(root, auth, 7)
+        let original = ["calternal-chat", "calternal-chat-claude-code"];
+        let added = ["calternal-reading-list", "calternal-tasks"];
+        let bundle = |id: &str| (id.to_owned(), repo.join("plugins-v2").join(id));
+        let host = Host::new(root.clone(), auth.clone(), 7)
             .unwrap()
-            .with_worker_runtime(runtime)
-            .with_development_plugins(
-                ["calternal-chat", "calternal-chat-claude-code"]
-                    .map(|id| (id.to_owned(), repo.join("plugins-v2").join(id))),
-            );
+            .with_worker_runtime(runtime.clone())
+            .with_development_plugins(original.map(bundle));
         let browser = Browser {
             host: Arc::new(host),
             config: Arc::new(config),
         };
         let (_, space) = personal_space(&browser.host, account).await.ok().unwrap();
-        for _ in 0..2 {
-            let result = signed_in(
-                &browser,
-                account,
-                "synthetic-fixture-session".into(),
-                Vec::new(),
-            )
-            .await;
-            assert_eq!(result.ok().unwrap().status(), StatusCode::OK);
-        }
-        let result = browser
-            .host
-            .clone()
-            .trusted_call(
+        let signed_in = signed_in(
+            &browser,
+            account,
+            "synthetic-fixture-session".into(),
+            Vec::new(),
+        )
+        .await;
+        assert_eq!(signed_in.ok().unwrap().status(), StatusCode::OK);
+        let call = |host: Arc<Host>, name: &str, input| {
+            host.trusted_call(
                 account.into(),
                 space,
                 Call {
-                    call: "s.declarations".into(),
-                    input: json!({}),
+                    call: name.into(),
+                    input,
                     idempotency_key: None,
                     slot_selection: None,
                 },
             )
+        };
+        let created = call(
+            browser.host.clone(),
+            "s.write",
+            json!({"changes":[
+                {"op":"add","kind":"calternal-chat.chats","fields":{"title":"Existing item"}}
+            ]}),
+        )
+        .await
+        .unwrap();
+        let item = created["changes"][0]["id"].clone();
+        drop(browser);
+
+        let host = Arc::new(
+            Host::new(root, auth, 7)
+                .unwrap()
+                .with_worker_runtime(runtime)
+                .with_development_plugins(original.into_iter().chain(added).map(bundle)),
+        );
+        for _ in 0..2 {
+            let session = session_info(&host, account).await.ok().unwrap();
+            assert_eq!(session["space"], json!(space));
+        }
+        let catalog = call(host.clone(), "s.declarations", json!({}))
             .await
             .unwrap();
-        let plugins = result["plugins"].as_array().unwrap();
-        for id in ["calternal-chat", "calternal-chat-claude-code"] {
+        let plugins = catalog["plugins"].as_array().unwrap();
+        assert_eq!(plugins.len(), 4);
+        for id in original.into_iter().chain(added) {
             assert_eq!(
                 plugins.iter().filter(|plugin| plugin["id"] == id).count(),
                 1
             );
         }
+        let item = call(host, "s.read", json!({"item":item})).await.unwrap();
+        assert_eq!(item["fields"]["title"], "Existing item");
+        assert_eq!(item["version"], 1);
     }
 
     #[tokio::test]

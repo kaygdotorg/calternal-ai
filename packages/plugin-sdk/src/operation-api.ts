@@ -10,6 +10,8 @@ export type Query =
       "where"?: string;
       /** Ordered sort expressions, up to eight for an ad hoc query. */
       "sort"?: readonly string[];
+      /** Case-insensitive substring in the kind’s declared search fields. */
+      "search"?: string;
       /** Opaque cursor from the previous page. */
       "cursor"?: string;
       /** Page size up to 200. */
@@ -18,6 +20,8 @@ export type Query =
   | {
       /** Qualified collection name. */
       "collection": string;
+      /** Case-insensitive substring in the kind’s declared search fields. */
+      "search"?: string;
       /** Opaque cursor from the previous page. */
       "cursor"?: string;
       /** Page size up to 200. */
@@ -46,6 +50,19 @@ export type Change =
         "fields"?: Fields;
         /** Markdown body to store. */
         "body"?: string;
+        /** Required current version for a conditional change. */
+        "base"?: number;
+      };
+    }
+  | {
+      /** Evaluate a declared item assignment and commit its changes atomically. */
+      "perform": {
+        /** UUID of the item addressed by the change. */
+        "item": ItemId;
+        /** Name of the declared operation to evaluate on the current item. */
+        "operation": string;
+        /** Declared field values to store. */
+        "fields"?: Fields;
         /** Required current version for a conditional change. */
         "base"?: number;
       };
@@ -88,7 +105,7 @@ export type Change =
     };
 
 /** Change discriminants accepted by the host. */
-export const operationChanges = ["add","change","remove","append record","change record","remove record"] as const;
+export const operationChanges = ["add","change","perform","remove","append record","change record","remove record"] as const;
 
 /** Callback wire names accepted by the host. */
 export const operationMethods = {
@@ -151,6 +168,8 @@ export interface Row {
   fields: Fields;
   /** Computed fields evaluated for the acting person. */
   computed: Fields;
+  /** Group keys for this row in a grouped collection. */
+  groups?: unknown[];
   /** Host version for a conditional write. */
   version: number;
 }
@@ -159,8 +178,19 @@ export interface Row {
 export interface Page {
   /** Rows in the requested order. */
   rows: Row[];
-  /** Computed aggregate results. */
-  totals: Fields;
+  /** Overall aggregates in declaration order, or an empty object without aggregates. */
+  totals: unknown[] | Record<string, never>;
+  /** Group key, matched row count and pre-page aggregates for each visible group. */
+  groups: {
+    /** Value used by the collection to identify this group. */
+    key: unknown;
+    /** Number of matching items in this group before pagination. */
+    matched: number;
+    /** Group aggregates in the collection's declaration order. */
+    totals: unknown[];
+  }[];
+  /** Computed collection header totals keyed by declared name. */
+  namedTotals: Fields;
   /** Opaque next-page cursor, or null on the last page. */
   cursor: string | null;
 }
