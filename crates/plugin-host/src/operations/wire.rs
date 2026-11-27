@@ -1,6 +1,8 @@
 //! Bounded newline JSON frames for the owned child pipes.
 use std::io;
 use std::str::FromStr;
+use std::sync::LazyLock;
+use tokio::sync::Semaphore;
 
 use calternal_types::{Error, ErrorCode};
 use serde::{Deserialize, Serialize};
@@ -229,6 +231,25 @@ pub(super) async fn receive(
             break;
         }
     }
+    codec(move || decode(bytes, invocation, next_id)).await
+}
+
+pub(super) async fn codec<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
+    static ADMISSION: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(8));
+    let permit = ADMISSION
+        .try_acquire()
+        .map_err(|_| Code::Limit.error("The plugin codec is busy.", "Retry the operation."))?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
+    .map_err(|_| disconnected())?
+}
+
+fn decode(bytes: Vec<u8>, invocation: Uuid, next_id: u32) -> Result<Message, Error> {
     match crate::strict_json::parse(&bytes).map_err(|_| invalid())? {
         Incoming::Call(frame)
             if frame.v == VERSION && frame.invocation == invocation && frame.id == next_id =>

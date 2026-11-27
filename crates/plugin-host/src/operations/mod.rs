@@ -136,12 +136,15 @@ pub async fn probe(command: Command, deadline: Duration) -> Result<Registrations
         if !status.success() || !bytes.ends_with(b"\n") {
             return Err(wire::disconnected());
         }
-        crate::strict_json::parse(&bytes).map_err(|_| {
-            Code::Invalid.error(
-                "The operation registrations are invalid.",
-                "Check operations.ts.",
-            )
+        wire::codec(move || {
+            crate::strict_json::parse(&bytes).map_err(|_| {
+                Code::Invalid.error(
+                    "The operation registrations are invalid.",
+                    "Check operations.ts.",
+                )
+            })
         })
+        .await
     })
     .await;
     outcome.unwrap_or_else(|_| {
@@ -269,7 +272,9 @@ async fn serve(
             continue;
         }
         let invocation = Uuid::new_v4();
-        let first = match wire::invoke(invocation, &delivery) {
+        let encoded =
+            wire::codec(move || Ok((wire::invoke(invocation, &delivery)?, delivery.event))).await;
+        let (first, event) = match encoded {
             Ok(first) => first,
             Err(error) => {
                 drop(_permit);
@@ -295,7 +300,7 @@ async fn serve(
             &mut running.output,
             invocation,
             &first,
-            &delivery.event,
+            &event,
             &mut route,
         );
         let outcome = tokio::select! {
@@ -403,10 +408,11 @@ async fn exchange(
             })
             .await
         };
-        let reply = match wire::reply(invocation, received, &result) {
-            Ok(frame) => frame,
-            Err(error) => wire::reply(invocation, received, &Err(error))?,
-        };
+        let reply = wire::codec(move || {
+            wire::reply(invocation, received, &result)
+                .or_else(|error| wire::reply(invocation, received, &Err(error)))
+        })
+        .await?;
         wire::send(input, &reply).await?;
         id = id.checked_add(1).ok_or_else(wire::oversized)?;
     }
