@@ -126,6 +126,7 @@ export interface ComposerBindingsDecl {
 /** Slot declaration from `plugin.md`. */
 export interface SlotDecl {
   name: string;
+  label?: string;
   cardinality: "single" | "many";
   gives: string;
   recommended: string | null;

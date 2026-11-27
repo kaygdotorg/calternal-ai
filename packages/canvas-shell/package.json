@@ -1,0 +1,15 @@
+{
+  "name": "@calternal/canvas-shell",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared canvas shell (snapping windows, sidebar chrome, bottom-centre app strip, motion) imported by both apps/mockup and apps/web.",
+  "license": "AGPL-3.0-only",
+  "exports": {
+    ".": "./src/index.ts",
+    "./rows.css": "./src/shell/rows.css"
+  },
+  "dependencies": {
+    "@calternal/ui": "*"
+  }
+}

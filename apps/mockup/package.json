@@ -1,0 +1,19 @@
+{
+  "name": "@calternal/mockup",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The mockup lane: a fixture-only, server-less app for judging and refining the look and motion of apps before they are built. It reuses packages/ui and copies what it needs; it depends on no plugin package.",
+  "scripts": {
+    "assets": "node scripts/assets.mjs",
+    "tokens": "node ../../packages/ui/scripts/build-tokens.mjs",
+    "check:chrome": "node ../../packages/canvas-shell/scripts/check-chrome.mjs",
+    "build": "npm run check:chrome && npm run tokens && npm run assets && vite build",
+    "dev": "npm run tokens && npm run assets && vite",
+    "serve": "node serve.mjs"
+  },
+  "dependencies": {
+    "@calternal/canvas-shell": "*",
+    "torph": "0.1.4"
+  }
+}
