@@ -10,11 +10,13 @@ use std::{
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     path::{Path, PathBuf},
+    pin::Pin,
     sync::Arc,
+    task::{Context, Poll},
     time::Duration,
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf, copy_bidirectional},
     net::{TcpStream, UnixListener, UnixStream},
     sync::oneshot,
     task::{JoinHandle, JoinSet},
@@ -227,7 +229,7 @@ async fn serve_connection(
         refuse(&mut client, "403 Forbidden").await;
         return;
     }
-    let mut upstream = match dialer.connect(SocketAddr::new(addresses[0], 443)).await {
+    let upstream = match dialer.connect(SocketAddr::new(addresses[0], 443)).await {
         Ok(stream) => stream,
         Err(_) => {
             refuse(&mut client, "502 Bad Gateway").await;
@@ -241,19 +243,73 @@ async fn serve_connection(
     {
         return;
     }
+    let mut client = Metered::new(client, &host, "to_run");
+    let mut upstream = Metered::new(upstream, &host, "to_upstream");
     let early = &request[header_end..];
     if !early.is_empty() && upstream.write_all(early).await.is_err() {
         return;
     }
-    let (client_to_upstream, upstream_to_client) = copy_bidirectional(&mut client, &mut upstream)
-        .await
-        .unwrap_or_default();
-    tracing::info!(
-        host = %host,
-        client_to_upstream_bytes = client_to_upstream.saturating_add(early.len() as u64),
-        upstream_to_client_bytes = upstream_to_client,
-        "harness egress tunnel closed"
-    );
+    let _ = copy_bidirectional(&mut client, &mut upstream).await;
+}
+
+// Count successful writes, including traffic sent before a tunnel is cancelled.
+struct Metered<'a, S> {
+    stream: S,
+    host: &'a str,
+    direction: &'static str,
+    bytes: u64,
+}
+
+impl<'a, S> Metered<'a, S> {
+    fn new(stream: S, host: &'a str, direction: &'static str) -> Self {
+        Self {
+            stream,
+            host,
+            direction,
+            bytes: 0,
+        }
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for Metered<'_, S> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.stream).poll_read(cx, buf)
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for Metered<'_, S> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let result = Pin::new(&mut self.stream).poll_write(cx, buf);
+        if let Poll::Ready(Ok(written)) = result {
+            self.bytes = self.bytes.saturating_add(written as u64);
+        }
+        result
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.stream).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.stream).poll_shutdown(cx)
+    }
+}
+
+impl<S> Drop for Metered<'_, S> {
+    fn drop(&mut self) {
+        eprintln!(
+            "harness egress bytes {} {} {}",
+            self.host, self.direction, self.bytes
+        );
+    }
 }
 
 async fn refuse(client: &mut UnixStream, status: &str) {
