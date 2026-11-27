@@ -87,6 +87,7 @@ export const ICONS = {
   reply: "M9.5 6L4 11.5 9.5 17M4 11.5h9a7 7 0 0 1 7 7V19",
   replyall: "M7 6L2.5 10.5 7 15M12 6l-4.5 4.5L12 15M7.5 10.5H14a6 6 0 0 1 6 6V18",
   forward: "M14.5 6L20 11.5 14.5 17M20 11.5h-9a7 7 0 0 0-7 7V19",
+  book: "M4 5.5A2.5 2.5 0 0 1 6.5 3H12v17H6.5A2.5 2.5 0 0 0 4 21.5V5.5zM20 5.5A2.5 2.5 0 0 0 17.5 3H12v17h5.5a2.5 2.5 0 0 1 2.5 1.5V5.5z",
 } as const;
 
 /** The name of an icon in the set. */
