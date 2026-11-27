@@ -98,13 +98,77 @@ export interface RecordBody {
 
 /** One write in the atomic change list. Each entry names exactly one change. */
 export type Change =
-  | { /** Create one item with initial fields. */ add: { kind: string; fields: Fields; body?: string } }
-  | { /** Change fields or Markdown, optionally at a given version. */ change: { item: ItemId; fields?: Fields; body?: string; base?: string } }
-  | { /** Remove an item. */ remove: { item: ItemId } }
-  | { /** Move an item within its kind. */ move: { item: ItemId; folder?: string; file?: string } }
-  | { /** Append one record and let the host stamp it. */ "append record": { item: ItemId; record: RecordBody } }
-  | { /** Change the record identified by its anchor. */ "change record": { item: ItemId; anchor: string; record: RecordBody } }
-  | { /** Remove the record identified by its anchor. */ "remove record": { item: ItemId; anchor: string } };
+  | {
+      /** Create an item with initial values. */
+      add: {
+        /** Kind in which the item belongs. */
+        kind: string;
+        /** Initial declared field values. */
+        fields: Fields;
+        /** Initial Markdown body. */
+        body?: string;
+      };
+    }
+  | {
+      /** Update fields or Markdown. */
+      change: {
+        /** Item to update. */
+        item: ItemId;
+        /** New values for the named fields. */
+        fields?: Fields;
+        /** Replacement Markdown body. */
+        body?: string;
+        /** Required current version for a conditional update. */
+        base?: string;
+      };
+    }
+  | {
+      /** Remove an item. */
+      remove: {
+        /** Item to remove. */
+        item: ItemId;
+      };
+    }
+  | {
+      /** Move an item within its kind. */
+      move: {
+        /** Item to move. */
+        item: ItemId;
+        /** Destination subfolder within the kind. */
+        folder?: string;
+        /** Destination filename within the kind. */
+        file?: string;
+      };
+    }
+  | {
+      /** Append one record and let the host stamp it. */
+      "append record": {
+        /** Item whose record stream receives the append. */
+        item: ItemId;
+        /** Unstamped record fields and body. */
+        record: RecordBody;
+      };
+    }
+  | {
+      /** Change the record identified by its anchor. */
+      "change record": {
+        /** Item holding the record. */
+        item: ItemId;
+        /** Anchor in the item's record stream. */
+        anchor: string;
+        /** Updated declared fields and body. */
+        record: RecordBody;
+      };
+    }
+  | {
+      /** Remove the record identified by its anchor. */
+      "remove record": {
+        /** Item holding the record. */
+        item: ItemId;
+        /** Anchor in the item's record stream. */
+        anchor: string;
+      };
+    };
 
 /** Receipts in change-list order. */
 export interface WriteResult {
@@ -167,9 +231,17 @@ export interface OperationsContext {
   /** Start a declared program with a host-checked scope and targets. */
   run(program: string, options: { scope?: "session"; targets: readonly ItemId[] }): Promise<RunHandle>;
   /** Verified actor and current role for this delivery. */
-  readonly me: Readonly<{ id: PersonId; role: string }>;
+  readonly me: Readonly<{
+    /** Verified identity of the person directing this event. */
+    id: PersonId;
+    /** Current role in this space. */
+    role: string;
+  }>;
   /** Space in which the plugin is installed. */
-  readonly space: Readonly<{ id: string }>;
+  readonly space: Readonly<{
+    /** UUID of the space where this operation is installed. */
+    id: string;
+  }>;
   /** Metadata scoped to this delivery. */
   readonly event: Readonly<OperationEvent>;
 }

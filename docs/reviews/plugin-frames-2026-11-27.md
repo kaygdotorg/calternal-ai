@@ -42,7 +42,8 @@ atomically. The transport supplies host-side keys as
 `<event-key>:write:<ordinal>`, `<event-key>:call:<ordinal>` and
 `<event-key>:run:<ordinal>`, with separate zero-based sequences. For
 `s.call`, use its derived key as the callee event key and carry the
-original request and ancestry through the trusted route. A run started
+original request, reaction provenance, and ancestry through the trusted
+route. A run started
 by that callee inherits the stable key path. The run service must reuse
 a successful start receipt. Workers cannot supply keys or ancestry in a
 callback frame.

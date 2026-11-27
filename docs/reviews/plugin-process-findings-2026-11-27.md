@@ -1,6 +1,7 @@
 # Coded operation process findings · 2026-11-27
 
-Lane C, slice 3. [Frame contract](plugin-frames-2026-11-27.md) ·
+Lane C, slice 3. [Forgejo #116](https://git.kayg.org/kayg/calternal-ai/issues/116) ·
+[Frame contract](plugin-frames-2026-11-27.md) ·
 [Build plan](../proposals/chat-first-build-plan-2026-11-27.md) ·
 [Format revision 9](../proposals/kind-and-collection-format-2026-11-24.md).
 
@@ -10,7 +11,7 @@ Lane C, slice 3. [Frame contract](plugin-frames-2026-11-27.md) ·
 | --- | --- |
 | §8.1 and lane B’s route | The SDK uses the revision 9 fixtures' one-key change entries and translates their operation names to the route's `op` tag. A record goes through as `{fields?,body?}` so the Markdown stays in the body. `s.me`, `s.space` and `s.event` use the trusted invocation metadata locally. Session is the only run scope exposed by this slice and the SDK supplies the default. |
 | §8.1 errors | `calternal_types::Error` uses older code spellings and a `details` field. The wire has the ten revision 9 codes and `next`. A pipe-specific code conversion retains the shared Rust error value and serializes the format reply only at the boundary. |
-| §8.2 events | The registry provides admission for declared calls and registered change selectors. A busy endpoint returns `limit`, allowing the trusted scheduler to retry outside a call chain. This also avoids workers waiting on each other. Lane B needs registration metadata from the install path for `on.change` because the Markdown manifests do not enumerate handler exports. A launcher can discover registrations once in its isolated install probe and store only selector names. Actor rechecks, candidate filtering, coalescing, ancestry, self-suppression and at-least-once delivery belong to lane B. |
+| §8.2 events | The registry provides admission for declared calls and registered change selectors. The SDK accepts one exported handler per event kind and selector, so every replay picks the same handler. A busy endpoint returns `limit`, allowing the trusted scheduler to retry outside a call chain. This also avoids workers waiting on each other. Lane B needs registration metadata from the install path for `on.change` because the Markdown manifests do not enumerate handler exports. A launcher can discover registrations once in its isolated install probe and store only selector names. Actor rechecks, candidate filtering, coalescing, ancestry, reaction provenance, self-suppression and at-least-once delivery belong to lane B. |
 | §8.2 replay and eleventh set | The transport derives stable receipt keys from the event key and the ordinal within each effect type. Nested calls preserve the original gesture context and get their own stable event keys. The harness service must reuse the nested `s.run` receipt. A killed worker before commit leaves no write in the mock. A kill after commit can withhold the reply, and the stable key lets a retry obtain the earlier receipt. |
 | §8.1 and §7.4, eleventh set | The send-and-start mock requires the exact appended record link. `anchor` alone from lane B’s draft cannot form a path-correct Markdown link. The SDK accepts a host-issued `link` on the write receipt. Lane B needs to confirm and supply it or agree on another canonical link representation. The transport carries the typed payload through unchanged and leaves validation to the shared route. |
 | §2.9, §4.3 and §7.4, eleventh set | Append receipts expose anchors and state accepts an authorized JSON value. Ledger-order counting and the shared typed input declaration belong to the format and call route lanes. The generic SDK handler signature can describe the input for author tooling and leaves runtime validation to that declaration. |
@@ -81,6 +82,26 @@ Lane C, slice 3. [Frame contract](plugin-frames-2026-11-27.md) ·
   and input-conflict behavior. Malformed or stale pipe data kills the
   current worker. Known operation failures can leave a healthy worker
   available.
+
+## Verification
+
+The focused gate ran in `~/Developer/lanes/plugin-process-slice3` on
+`claude@calternal-dev-01-compute02` under `~/bin/lock-shared nix develop -c`.
+It ran Cargo formatting and plugin-host tests with the `operations`
+feature, SDK tests and strict TypeScript checking of both untouched
+revision 9 fixtures. The process tests cover actual worker reuse and
+restart, stale and malformed frames, Chat send and rename, receipt
+replay and conflict, a crash before mock commit, and both undeclared
+operation and reaction-run refusal. The send-and-start test uses a
+synthetic Chat handler and the upstream harness.
+
+The workspace gate ran under `~/bin/lock-full nix develop -c`. It checked
+all workspace targets and features and the standalone conformance
+manifest, built the bundled plugins and generated Rust and TypeScript
+references. The checked-in public site needs 85 regenerated pages
+under `apps/docs` (84 SDK pages and one crate page). Regeneration was
+verified in the disposable VM checkout. Those files belong to the
+integration path and are required for the clean-checkout docs gate.
 
 ## Simplification opportunities
 

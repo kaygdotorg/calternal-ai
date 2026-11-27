@@ -34,8 +34,13 @@ fn endpoint(
         worker.is_file(),
         "Build @calternal/plugin-sdk before running this integration test"
     );
-    let node = std::env::var_os("PLUGIN_TEST_NODE")
-        .expect("Set PLUGIN_TEST_NODE to the absolute Node path");
+    let path = std::env::var_os("PATH").expect("The dev shell supplies a PATH");
+    let node = std::env::split_paths(&path)
+        .map(|directory| directory.join("node"))
+        .find(|candidate| candidate.is_file())
+        .expect("Use nix develop to supply Node 24")
+        .canonicalize()
+        .unwrap();
     Operations::new(
         space,
         declared,

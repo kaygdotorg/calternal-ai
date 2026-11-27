@@ -126,6 +126,6 @@ on the dev VM under the shared gate:
   set -e
   npm ci --ignore-scripts --no-audit --no-fund
   npm run build --workspace @calternal/plugin-sdk
-  PLUGIN_TEST_NODE="$(command -v node)" cargo test --locked -p calternal-plugin-host --features operations
+  cargo test --locked -p calternal-plugin-host --features operations
 '
 ```

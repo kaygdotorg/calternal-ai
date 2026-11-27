@@ -173,22 +173,6 @@ pub enum Method {
     RunStop,
 }
 
-impl Method {
-    /// Host route name. Cost is one match.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Query => "s.query",
-            Self::Read => "s.read",
-            Self::Write => "s.write",
-            Self::State => "s.state",
-            Self::Call => "s.call",
-            Self::Run => "s.run",
-            Self::RunSend => "s.run.send",
-            Self::RunStop => "s.run.stop",
-        }
-    }
-}
-
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Incoming {
