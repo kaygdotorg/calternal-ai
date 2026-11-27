@@ -193,6 +193,7 @@ fn prepare_row(
         Some(Value::Text(id)) => rows.get(id),
         _ => None,
     }) {
+        row_context.repeat_start = per_row.repeat_start.or(context.repeat_start);
         row_context.state = per_row.state;
         row_context.records = per_row.records;
         row_context.record_positions = per_row.record_positions;

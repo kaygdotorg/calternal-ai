@@ -26,7 +26,7 @@ fn date_parts(text: &str) -> Option<(i64, i64, i64)> {
         .then_some((year, month, date))
 }
 
-fn days_in_month(year: i64, month: i64) -> i64 {
+pub(crate) fn days_in_month(year: i64, month: i64) -> i64 {
     match month {
         4 | 6 | 9 | 11 => 30,
         2 => 28 + i64::from(year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)),
@@ -35,7 +35,7 @@ fn days_in_month(year: i64, month: i64) -> i64 {
     }
 }
 
-fn day_number(year: i64, month: i64, date: i64) -> i64 {
+pub(crate) fn day_number(year: i64, month: i64, date: i64) -> i64 {
     let year = year - i64::from(month <= 2);
     let era = year.div_euclid(400);
     let year_in_era = year.rem_euclid(400);
@@ -44,7 +44,7 @@ fn day_number(year: i64, month: i64, date: i64) -> i64 {
     era * 146097 + year_in_era * 365 + year_in_era / 4 - year_in_era / 100 + date_in_year - 719468
 }
 
-fn civil(days: i64) -> (i64, i64, i64) {
+pub(crate) fn civil(days: i64) -> (i64, i64, i64) {
     let days = days + 719468;
     let era = days.div_euclid(146097);
     let date_in_era = days.rem_euclid(146097);

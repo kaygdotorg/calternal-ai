@@ -11,6 +11,7 @@ mod lines;
 mod note_lines;
 mod operation;
 mod query;
+mod repeat;
 mod value;
 
 pub use definition::{
@@ -29,6 +30,9 @@ pub use operation::{
     operation_conditions,
 };
 pub use query::{Page, QueryGroup, QueryResult, QueryRow, evaluate_query};
+pub use repeat::{
+    Occurrence, OccurrenceOverride, RepeatRule, expand_repeat, next_occurrence, parse_repeat,
+};
 pub use value::{Decimal, Fields, InvalidDecimal, Value};
 
 /// A plain-language refusal with a position in the source text.

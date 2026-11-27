@@ -52,6 +52,8 @@ pub struct EvalContext<'a> {
     pub now: Option<&'a str>,
     /// Offset supplied by the host for civil-date conversion of offset times.
     pub offset_seconds: Option<i32>,
+    /// Original recurrence seed in the row's civil calendar, when known.
+    pub repeat_start: Option<&'a str>,
     /// Per-viewer state of the current item.
     pub state: Option<&'a Fields>,
     /// Resolved per-viewer and per-space setting values.
@@ -78,6 +80,8 @@ pub struct EvalContext<'a> {
 /// Viewer data to use when a query evaluates one item.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct QueryRowContext<'a> {
+    /// Original recurrence seed in the row's civil calendar, when known.
+    pub repeat_start: Option<&'a str>,
     /// State fields for this person and item.
     pub state: Option<&'a Fields>,
     /// Authoritative records in ledger order.
@@ -475,11 +479,30 @@ impl<'a> Evaluator<'a, '_> {
                 super::functions::format(value, &pattern, site)?
             }
             ("next", Value::Text(rule), after) => {
-                let start = day_value(&after, self.context.offset_seconds)
-                    .or_else(|| self.context.today.and_then(dates::day));
-                match start {
-                    Some(start) => super::functions::next(&rule, start, self.steps, site)?,
-                    None => Value::Empty,
+                let civil = |value: &Value| match value {
+                    Value::Date(value) | Value::Time(value) | Value::Text(value) => {
+                        Some(value.clone())
+                    }
+                    _ => None,
+                };
+                let seed = self
+                    .context
+                    .repeat_start
+                    .map(str::to_owned)
+                    .or_else(|| civil(&self.row.value("start")))
+                    .or_else(|| civil(&self.row.value("scheduled")));
+                let after = civil(&after).or_else(|| self.context.today.map(str::to_owned));
+                if let Some(after) = after {
+                    let seed = if self.row.value("repeat from") == Value::Text("completion".into())
+                    {
+                        &after
+                    } else {
+                        seed.as_ref().unwrap_or(&after)
+                    };
+                    crate::repeat::next_in(&rule, seed, &after, self.steps, site)?
+                        .unwrap_or_default()
+                } else {
+                    Value::Empty
                 }
             }
             ("streak", Value::List(records), _) => super::functions::streak(records),

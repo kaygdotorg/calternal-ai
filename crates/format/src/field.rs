@@ -399,7 +399,7 @@ pub(crate) fn coerce(kind: &FieldType, value: &Value, site: Site) -> Result<Valu
         }
         T::File | T::Person if text.is_some_and(|text| !text.is_empty()) => value.clone(),
         T::Anchor if text.is_some_and(anchor) => value.clone(),
-        T::Repeat if text.is_some_and(|text| functions::repeat(text).is_some()) => value.clone(),
+        T::Repeat if text.is_some_and(|text| crate::parse_repeat(text).is_ok()) => value.clone(),
         T::Colour
             if text.is_some_and(|text| {
                 text.len() == 7
