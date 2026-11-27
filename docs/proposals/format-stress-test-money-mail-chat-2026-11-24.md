@@ -394,9 +394,10 @@ views:
 ---
 ```
 
-The Inbox needed a second hop (thread → messages → mailbox role), which the
-one-hop limit forbids. Written within the limit, Inbox lists messages, not
-threads:
+The Inbox needed a second hop (thread → messages → mailbox role). **Corrected
+2026-11-27:** that fits the one-hop limit with an intermediate field (row 8 in
+§4; formulas research §8), so the Inbox can list threads. The version below,
+written before that was noticed, lists messages instead:
 
 ```markdown
 <!-- collections/inbox.md (as allowed) -->
@@ -690,12 +691,12 @@ views:
 | --- | --- | --- | --- |
 | 1 | A field whose value a coded operation computes and the cache holds (`available` with month-to-month carryover) | Money categories | `field: code`: computed by an operation into the rebuildable cache, shown like a formula; formulas cannot express a running total over time |
 | 2 | A formula as a view column without declaring a field (`next(repeat)`) | Money scheduled | Allow any formula in a view line |
-| 3 | A total over all items of a kind, not linked ("Ready to Assign") | Money | Not expressed: needs `sum(all(kind).field)` or a budget-level item; I left it to the `available` cache |
+| 3 | A total over all items of a kind, not linked ("Ready to Assign") | Money | **Corrected 2026-11-27:** a `totals:` section in the categories kind with `all(categories)`, computed per month with `previous()`; categories are a small kind, so it fits the 1,000 cap (formulas research §7, questions F1 and F2) |
 | 4 | A secret per item, owned by the person who added it | Mail accounts | `secrets: name, per <kind>` in `plugin.md` |
 | 5 | A change limited to listed fields | Mail messages, Chat | `change: only a, b` in the operations list |
 | 6 | A page drawing an HTML body in a web view | Mail messages | `page: web(field)` |
 | 7 | A records view over items of another kind (a mail thread) | Mail threads | `page: records(from(kind.field))`, the drawing spike's records component over several files |
-| 8 | A condition across two hops (thread → message → mailbox role) | Mail Inbox | Not expressed within one hop; Inbox lists messages grouped by thread instead |
+| 8 | A condition across two hops (thread → message → mailbox role) | Mail Inbox | **Corrected 2026-11-27:** expressible today with one computed field per hop: on messages `in inbox: = mailbox.role = "Inbox"`, on threads `in inbox: = count(from(messages.thread, in inbox)) > 0`, and the Inbox lists threads `where: in inbox` (formulas research §8, question F3) |
 | 9 | A link to a record of a kind | Chat quotes | `link(<kind> records)` |
 | 10 | Declared per-person state keys | Chat | `state:` section in a kind; `set state.x = …` in the operations list |
 | 11 | Formulas over records and state (`count(records after state.read)`) | Chat unread | Allow `records` and `state.` in kind formulas |
