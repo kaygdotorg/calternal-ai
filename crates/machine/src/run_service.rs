@@ -450,6 +450,24 @@ impl RunService {
         {
             return Err(RunError::StopNotAllowed);
         }
+        Self::terminate_state(&state).await
+    }
+
+    /// Terminate a known run by UUID after trusted host authorization or target
+    /// retirement. No target lookup is needed. Bounds the process kill to 1.8 seconds.
+    pub async fn terminate(&self, run_id: Uuid) -> Result<(), RunError> {
+        let state = self
+            .inner
+            .runs
+            .read()
+            .await
+            .get(&run_id)
+            .cloned()
+            .ok_or(RunError::NotActive)?;
+        Self::terminate_state(&state).await
+    }
+
+    async fn terminate_state(state: &RunState) -> Result<(), RunError> {
         state.stopping.send_replace(true);
         match tokio::time::timeout(TERMINATE_LIMIT, state.resources.sandbox.terminate()).await {
             Ok(result) => result.map_err(RunError::Sandbox),

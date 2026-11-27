@@ -387,6 +387,11 @@ pub(crate) fn write(
     )
     .map_err(internal)?;
     tx.commit().map_err(internal)?;
+    for (id, current) in &working {
+        if current.retired {
+            space.runs.cancel_target(*id);
+        }
+    }
     space.finish(&placements)?;
     for (id, current) in working {
         space.seen.remove(&id);

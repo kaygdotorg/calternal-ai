@@ -20,7 +20,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tokio::sync::{Mutex as AsyncMutex, broadcast};
+use tokio::sync::{Mutex as AsyncMutex, Notify, broadcast};
 use uuid::Uuid;
 
 const MAX_RUNS_PER_SPACE: usize = 32;
@@ -35,6 +35,21 @@ pub(crate) struct Runs {
 }
 
 impl Runs {
+    fn find(&self, id: Uuid) -> Result<&Arc<Run>> {
+        self.entries
+            .iter()
+            .find(|run| run.grant.id == id)
+            .ok_or_else(|| Error::not_found("Run was not found."))
+    }
+
+    pub(crate) fn cancel_target(&self, item: Uuid) {
+        for run in &self.entries {
+            if run.grant.item == item && !run.stopped.load(Ordering::Acquire) {
+                run.cancel.notify_one();
+            }
+        }
+    }
+
     pub(crate) fn is_active(&self) -> bool {
         self.entries
             .iter()
@@ -56,6 +71,8 @@ impl Default for Runs {
 struct Run {
     grant: RunScopeGrant,
     actor: Actor,
+    target_kind: String,
+    cancel: Arc<Notify>,
     log: Log,
     notify: broadcast::Sender<()>,
     stopped: AtomicBool,
@@ -278,10 +295,14 @@ impl Host {
                         .calls
                         .iter()
                         .any(|name| matches!(name.as_str(), "calternal-chat.chats.send"));
-                Ok((Some((program, reply)), receipt, storage.runs.logs.clone()))
+                Ok((
+                    Some((program, reply, kind)),
+                    receipt,
+                    storage.runs.logs.clone(),
+                ))
             })
             .await?;
-        let Some((program, reply)) = binding else {
+        let Some((program, reply, target_kind)) = binding else {
             drop(self.admit_session(installation.as_ref()).await?);
             let mut result = receipt.replay.expect("replayed start receipt");
             let id: StopInput = decode(json!({"id":result["id"]}))?;
@@ -314,6 +335,8 @@ impl Host {
         let run = Arc::new(Run {
             grant: RunScopeGrant { id, space, item },
             actor: actor.clone(),
+            target_kind,
+            cancel: Arc::default(),
             log: Log::default(),
             notify,
             stopped: AtomicBool::new(false),
@@ -326,15 +349,40 @@ impl Host {
         if let Err(error) = self
             .run_storage(actor.clone(), space, move |storage| {
                 let _admission = host.admit_session_blocking(installation.as_ref())?;
+                let kind = &storage.row(item)?.head.kind;
+                if *kind != publish.target_kind {
+                    return Err(Error::conflict(
+                        "The run target changed kind during launch.",
+                    ));
+                }
+                storage.permits(&publish.actor, kind, false)?;
                 save_start(storage, &receipt, &stored)?;
                 storage.runs.entries.push_back(publish);
                 Ok(())
             })
             .await
         {
-            let _ = service.stop(id, &actor).await;
+            if let Err(error) = service.terminate(id).await
+                && !matches!(error, RunError::NotActive)
+            {
+                eprintln!("calternal-host: provisional run {id} termination: {error}");
+            }
             return Err(error);
         }
+        let mut exit = handle.exit.clone();
+        let cancel = Arc::clone(&run.cancel);
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = exit.changed() => {}
+                _ = cancel.notified() => {
+                    if let Err(error) = service.terminate(id).await
+                        && !matches!(error, RunError::NotActive)
+                    {
+                        eprintln!("calternal-host: retired target run {id} termination: {error}");
+                    }
+                }
+            }
+        });
         tokio::spawn(output::monitor(Arc::downgrade(&self), run, handle, reply));
         Ok(result)
     }
@@ -406,10 +454,16 @@ impl Host {
         installation: Option<crate::Session>,
     ) -> Result<Value> {
         let input: StopInput = decode(input)?;
-        let run = self.find_run(actor.clone(), space, input.id).await?;
+        let run = self
+            .run_storage(actor.clone(), space, move |storage| {
+                let run = storage.runs.find(input.id)?;
+                storage.permits(&actor, &run.target_kind, false)?;
+                Ok(Arc::clone(run))
+            })
+            .await?;
         let _admission = self.admit_session(installation.as_ref()).await?;
         if !run.stopped.load(Ordering::Acquire) {
-            match self.run_service()?.stop(input.id, &actor).await {
+            match self.run_service()?.terminate(run.grant.id).await {
                 Ok(()) | Err(RunError::NotActive) => run.stopped.store(true, Ordering::Release),
                 Err(error) => return Err(run_error(error)),
             }
@@ -454,12 +508,7 @@ impl Host {
         id: Uuid,
     ) -> Result<Arc<Run>> {
         self.run_storage(actor.clone(), space, move |storage| {
-            let run = storage
-                .runs
-                .entries
-                .iter()
-                .find(|run| run.grant.id == id)
-                .ok_or_else(|| Error::not_found("Run was not found."))?;
+            let run = storage.runs.find(id)?;
             storage.permits(&actor, &storage.row(run.grant.item)?.head.kind, false)?;
             Ok(Arc::clone(run))
         })

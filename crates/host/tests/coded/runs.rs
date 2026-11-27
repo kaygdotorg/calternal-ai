@@ -154,7 +154,7 @@ async fn selected_harness_replies_once_and_enforces_actor_scope_and_egress() {
 mod podman_guard;
 
 #[tokio::test]
-async fn sandbox_callbacks_keep_the_original_chat_scope() {
+async fn sandbox_callbacks_keep_scope_and_target_removal_stops_the_run() {
     use calternal_machine::sandbox::podman::PodmanBackend;
     use std::time::Duration;
 
@@ -324,6 +324,31 @@ await input.next();
         .await
         .unwrap();
     assert!(read["records"].as_array().unwrap().is_empty());
+    let run = id.as_str().unwrap().parse().unwrap();
+    let container = PodmanBackend::container_name(f.owner.as_uuid(), run);
+    f.call(
+        actor.clone(),
+        "s.write",
+        json!({"changes":[{"op":"remove","item":item}]}),
+        Some("remove-target"),
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            let status = tokio::process::Command::new("podman")
+                .args(["top", &container])
+                .output()
+                .await
+                .unwrap();
+            if !status.status.success() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+    })
+    .await
+    .expect("removing the target did not terminate the sandbox");
     f.call(actor, "s.run.stop", json!({"id":id}), None)
         .await
         .unwrap();
