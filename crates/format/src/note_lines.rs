@@ -42,6 +42,7 @@ pub enum LineItem<'a> {
 
 const MAX_ITEMS: usize = 1_000;
 const MAX_NOTE_LINES: usize = 65_536;
+const MAX_INLINE_RUNS: usize = 65_536;
 const MAX_NOTE_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -54,7 +55,8 @@ enum Region {
 /// Scan a full note, including any frontmatter, for checkbox and time entries.
 ///
 /// Emits both entries when a list item contains a checkbox followed by a time.
-/// Rejects notes exceeding 32 MiB, 65,536 physical lines or 1,000 entries.
+/// Rejects notes exceeding 32 MiB, 65,536 physical lines, 65,536 inline
+/// backtick runs or 1,000 entries.
 pub fn scan_note_lines(source: &str) -> Result<Vec<NoteLine<'_>>, Diagnostic> {
     if source.len() > MAX_NOTE_BYTES {
         return Err(Site::START.error("A note with line items may be at most 32 MiB"));
@@ -63,7 +65,7 @@ pub fn scan_note_lines(source: &str) -> Result<Vec<NoteLine<'_>>, Diagnostic> {
     if lines.len() > MAX_NOTE_LINES {
         return Err(Site::START.error("A note with line items may contain at most 65,536 lines"));
     }
-    let regions = regions(&lines);
+    let regions = regions(&lines)?;
     let mut items: Vec<NoteLine<'_>> = Vec::new();
     let mut parents: Vec<(usize, Range<usize>)> = Vec::new();
     for (index, (&line, region)) in lines.iter().zip(regions).enumerate() {
@@ -250,7 +252,7 @@ fn fence(text: &str) -> Option<(u8, usize, &str)> {
     (length >= 3).then(|| (leader, length, &text[length..]))
 }
 
-fn regions(lines: &[&str]) -> Vec<Region> {
+fn regions(lines: &[&str]) -> Result<Vec<Region>, Diagnostic> {
     let mut regions = vec![Region::Body; lines.len()];
     let mut frontmatter = lines.first() == Some(&"---");
     let mut fenced = None;
@@ -327,21 +329,36 @@ fn regions(lines: &[&str]) -> Vec<Region> {
             regions[index] = Region::Excluded;
             continue;
         }
-        if text
-            .match_indices('<')
-            .any(|(at, _)| html_tag(&text[at..]).is_some())
-        {
+        if contains_html_tag(text) {
             regions[index] = Region::Excluded;
             continue;
         }
-        backticks(text, index, &mut token_runs);
+        backticks(text, index, &mut token_runs)?;
     }
     exclude_inline_code(&mut regions, &token_runs, lines);
-    regions
+    Ok(regions)
 }
 
 fn html_tag(text: &str) -> Option<()> {
-    let text = text.strip_prefix('<')?.trim_start_matches('/');
+    let tail = tag_tail(text.strip_prefix('<')?)?;
+    tail.contains('>').then_some(())
+}
+
+fn contains_html_tag(text: &str) -> bool {
+    let mut candidates = text.split('<');
+    candidates.next();
+    for candidate in candidates.by_ref() {
+        if let Some(tail) = tag_tail(candidate) {
+            // Preserve the scanner's existing treatment of text between a
+            // plausible opening and its closing angle bracket.
+            return tail.contains('>') || candidates.any(|rest| rest.contains('>'));
+        }
+    }
+    false
+}
+
+fn tag_tail(text: &str) -> Option<&str> {
+    let text = text.trim_start_matches('/');
     let length = text
         .bytes()
         .take_while(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
@@ -350,10 +367,10 @@ fn html_tag(text: &str) -> Option<()> {
         return None;
     }
     let tail = &text[length..];
-    (tail.starts_with([' ', '\t', '>', '/']) && tail.contains('>')).then_some(())
+    tail.starts_with([' ', '\t', '>', '/']).then_some(tail)
 }
 
-fn backticks(text: &str, line: usize, runs: &mut Vec<(usize, usize)>) {
+fn backticks(text: &str, line: usize, runs: &mut Vec<(usize, usize)>) -> Result<(), Diagnostic> {
     let mut bytes = text.bytes().peekable();
     while let Some(byte) = bytes.next() {
         if byte == b'\\' && bytes.peek() == Some(&b'`') {
@@ -363,9 +380,17 @@ fn backticks(text: &str, line: usize, runs: &mut Vec<(usize, usize)>) {
             while bytes.next_if_eq(&b'`').is_some() {
                 count += 1;
             }
+            if runs.len() == MAX_INLINE_RUNS {
+                return Err(Site {
+                    line: line + 1,
+                    column: 1,
+                }
+                .error("A note may contain at most 65,536 inline backtick runs"));
+            }
             runs.push((line, count));
         }
     }
+    Ok(())
 }
 
 fn exclude_inline_code(regions: &mut [Region], runs: &[(usize, usize)], lines: &[&str]) {

@@ -367,6 +367,13 @@ async fn setup_finish(State(browser): State<Browser>, req: Request) -> Reply {
         .finish_http_setup(&ceremony, credential, &device)
         .await
         .map_err(auth_error)?;
+    if !browser.host.development_plugins.is_empty()
+        && let Err(error) = tokio::fs::remove_file(browser.host.root.join("first-owner-code")).await
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        // Enrollment has already committed. Preserve the one-time recovery response.
+        let _ = internal(error);
+    }
     signed_in(&browser, account, token, codes).await
 }
 

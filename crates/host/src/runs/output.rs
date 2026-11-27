@@ -50,13 +50,23 @@ pub(super) async fn resolve_prompt(host: &Arc<Host>, run: &Run, mut input: Value
 pub(super) async fn monitor(
     host: Weak<Host>,
     run: Arc<Run>,
-    mut handle: RunHandle,
+    handle: RunHandle,
+    reply_call: Option<String>,
+) {
+    let exit = handle.wait_exit();
+    monitor_stream(host, run, handle.events, exit, reply_call).await;
+}
+
+async fn monitor_stream(
+    host: Weak<Host>,
+    run: Arc<Run>,
+    mut events: tokio::sync::mpsc::Receiver<RunEvent>,
+    exit: impl Future<Output = ExitInfo>,
     reply_call: Option<String>,
 ) {
     let mut decoder = Decoder::new(reply_call.is_some());
     let mut sequence = 0;
-    while let Some(event) = handle.events.recv().await {
-        sequence = event.sequence;
+    while let Some(event) = events.recv().await {
         if let RunEventKind::Exit(_) = event.event {
             run.finish(event);
             return;
@@ -108,15 +118,13 @@ pub(super) async fn monitor(
                 }
             }
         }
+        sequence = event.sequence;
         run.publish(event);
     }
+    drop(events);
     run.finish(RunEvent {
         sequence: sequence + 1,
-        event: RunEventKind::Exit(ExitInfo {
-            code: None,
-            signal: None,
-            error: None,
-        }),
+        event: RunEventKind::Exit(exit.await),
     });
 }
 
@@ -210,5 +218,67 @@ async fn dispatch(
         biased;
         _ = run.wait_cancelled() => Err(Error::not_found("Run has stopped.")),
         result = dispatch => result,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use calternal_types::{AccountId, SpaceId};
+    use tokio::sync::{broadcast, mpsc, watch};
+    use uuid::Uuid;
+
+    #[tokio::test]
+    async fn full_output_channel_preserves_the_watched_exit() {
+        let grant = RunScopeGrant {
+            id: Uuid::now_v7(),
+            space: SpaceId::new(),
+            item: Uuid::now_v7(),
+        };
+        let run = Arc::new(Run {
+            grant,
+            actor: Actor::account(AccountId::new()),
+            target_kind: "test.kind".into(),
+            cancelled: watch::channel(true).0,
+            log: Default::default(),
+            notify: broadcast::channel(1).0,
+            stopped: Default::default(),
+            sends: Default::default(),
+        });
+        let (sender, events) = mpsc::channel(1);
+        sender
+            .try_send(RunEvent {
+                sequence: 1,
+                event: RunEventKind::Data {
+                    stream: Stream::Stdout,
+                    bytes: vec![b'x'],
+                },
+            })
+            .unwrap();
+        let exit = ExitInfo {
+            signal: Some(9),
+            ..ExitInfo::default()
+        };
+        assert!(
+            sender
+                .try_send(RunEvent {
+                    sequence: 2,
+                    event: RunEventKind::Exit(exit.clone())
+                })
+                .is_err()
+        );
+        drop(sender);
+        monitor_stream(
+            Weak::new(),
+            run.clone(),
+            events,
+            std::future::ready(exit),
+            None,
+        )
+        .await;
+        let batch = serde_json::to_value(run.log.after(grant.id, Some(0)).unwrap()).unwrap();
+        assert_eq!(batch["offset"], 2);
+        assert_eq!(batch["stopped"], true);
+        assert_eq!(batch["chunks"][1]["signal"], 9);
     }
 }

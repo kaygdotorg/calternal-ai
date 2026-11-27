@@ -315,6 +315,10 @@ mod tests {
                 .unwrap();
             let slot = host.space_slot(space).unwrap();
             slot.resident.lock().unwrap().visited = Instant::now() - IDLE;
+            let resident = slot.resident.lock().unwrap();
+            host.sweep_open(space, slot.clone()).unwrap();
+            assert!(observer.try_recv().is_err(), "busy space defers refresh");
+            drop(resident);
             host.sweep_open(space, slot.clone()).unwrap();
             observer
                 .try_recv()

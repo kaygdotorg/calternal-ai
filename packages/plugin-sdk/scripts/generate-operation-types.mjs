@@ -18,7 +18,7 @@ function body(source, signature) {
 const fieldTypes = new Map([
   ["Fields", "Fields"], ["String", "string"], ["Uuid", "ItemId"],
   ["records::Input", "RecordBody"], ["u64", "number"], ["usize", "number"],
-  ["Vec<String>", "readonly string[]"],
+  ["Vec<String>", "readonly string[]"], ["bool", "boolean"],
 ]);
 const property = (name, rustType, attrs) => {
   const option = /^Option<(.+)>$/.exec(rustType);
@@ -52,6 +52,7 @@ const fieldDocs = {
   operation: "Name of the declared operation to evaluate on the current item.",
   cursor: "Opaque cursor from the previous page.",
   limit: "Page size up to 200.",
+  records: "Include the host-stamped records of each returned item.",
   kind: "Qualified kind in which to create the item.",
   item: "UUID of the item addressed by the change.",
   fields: "Declared field values to store.",

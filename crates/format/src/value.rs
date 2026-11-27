@@ -3,7 +3,7 @@
 use std::{cmp::Ordering, collections::BTreeMap, fmt, str::FromStr};
 
 /// A deterministic base-ten number. The coefficient and scale are normalized.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Decimal {
     coefficient: i128,
     scale: u32,
@@ -229,7 +229,7 @@ impl PartialOrd for Decimal {
 pub type Fields = BTreeMap<String, Value>;
 
 /// A value read from an item or produced by an expression.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub enum Value {
     /// An absent or explicitly null value.
     #[default]

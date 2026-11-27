@@ -272,7 +272,15 @@ impl PodmanBackend {
                 ));
             }
             let credential = match &self.run_sign_in {
-                Some(sign_in) => Some(sign_in.credential(spec, program).await?),
+                Some(sign_in) => Some(
+                    sign_in
+                        .credential(
+                            spec,
+                            program,
+                            egress_directory.parent().expect("private run root"),
+                        )
+                        .await?,
+                ),
                 None => None,
             };
             self.start_container(
@@ -280,7 +288,7 @@ impl PodmanBackend {
                 Some(harness),
                 Some(plugin_root),
                 Some(egress_directory),
-                credential,
+                credential.as_deref(),
             )
             .await
         })

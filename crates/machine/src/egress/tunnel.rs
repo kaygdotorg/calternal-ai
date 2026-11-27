@@ -39,13 +39,12 @@ pub(super) async fn relay(
     client: UnixStream,
     upstream: TcpStream,
     early: &[u8],
-    host: &str,
     budget: &AtomicU64,
     limits: Limits,
 ) {
     let (progress, mut last) = watch::channel(Instant::now());
-    let mut client = Metered::new(client, host, "to_run", budget, &progress);
-    let mut upstream = Metered::new(upstream, host, "to_upstream", budget, &progress);
+    let mut client = Metered::new(client, budget, &progress);
+    let mut upstream = Metered::new(upstream, budget, &progress);
     let transfer = async {
         upstream.write_all(early).await?;
         copy_bidirectional(&mut client, &mut upstream).await
@@ -71,28 +70,16 @@ pub(super) async fn relay(
 // Return unused capacity immediately, including after a pending write.
 struct Metered<'a, S> {
     stream: S,
-    host: &'a str,
-    direction: &'static str,
     budget: &'a AtomicU64,
     progress: &'a watch::Sender<Instant>,
-    bytes: u64,
 }
 
 impl<'a, S> Metered<'a, S> {
-    fn new(
-        stream: S,
-        host: &'a str,
-        direction: &'static str,
-        budget: &'a AtomicU64,
-        progress: &'a watch::Sender<Instant>,
-    ) -> Self {
+    fn new(stream: S, budget: &'a AtomicU64, progress: &'a watch::Sender<Instant>) -> Self {
         Self {
             stream,
-            host,
-            direction,
             budget,
             progress,
-            bytes: 0,
         }
     }
 }
@@ -133,7 +120,6 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for Metered<'_, S> {
         };
         self.budget.fetch_add(reserved - written, Ordering::Relaxed);
         if written > 0 {
-            self.bytes += written;
             self.progress.send_replace(Instant::now());
         }
         result
@@ -148,19 +134,15 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for Metered<'_, S> {
     }
 }
 
-impl<S> Drop for Metered<'_, S> {
-    fn drop(&mut self) {
-        eprintln!(
-            "harness egress bytes {} {} {}",
-            self.host, self.direction, self.bytes
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use tokio::{io::AsyncReadExt, net::TcpListener};
+
+    #[test]
+    fn cancelling_metered_stream_does_not_run_a_log_destructor() {
+        assert!(!std::mem::needs_drop::<Metered<'_, ()>>());
+    }
 
     async fn connections() -> (UnixStream, UnixStream, TcpStream, TcpStream) {
         let (client, proxy) = UnixStream::pair().unwrap();
@@ -188,10 +170,7 @@ mod tests {
             drop(client);
             drop(server);
         };
-        tokio::join!(
-            relay(proxy, upstream, b"abc", "example.com", &budget, limits),
-            first
-        );
+        tokio::join!(relay(proxy, upstream, b"abc", &budget, limits), first);
         assert_eq!(budget.load(Ordering::Relaxed), 3);
 
         let (_client, proxy, upstream, mut server) = connections().await;
@@ -200,10 +179,7 @@ mod tests {
             server.read_to_end(&mut data).await.unwrap();
             assert_eq!(data, b"123");
         };
-        tokio::join!(
-            relay(proxy, upstream, b"123456", "example.com", &budget, limits),
-            second
-        );
+        tokio::join!(relay(proxy, upstream, b"123456", &budget, limits), second);
         assert_eq!(budget.load(Ordering::Relaxed), 0);
     }
 
@@ -225,7 +201,7 @@ mod tests {
             let started = Instant::now();
             timeout(
                 Duration::from_secs(1),
-                relay(proxy, upstream, &[], "example.com", &budget, limits),
+                relay(proxy, upstream, &[], &budget, limits),
             )
             .await
             .expect("inactive peer should lose its tunnel");

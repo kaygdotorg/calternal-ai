@@ -1215,6 +1215,7 @@
                   <HostRecords
                     {row}
                     {kind}
+                    {plugins}
                     records={recordsByItem[row.id] ?? []}
                     viewerId={session?.account ?? ""}
                     composer={comp}

@@ -279,18 +279,34 @@
           {@const title = rowTitle(row, kind ?? undefined)}
           {@const sub = secondaryText(row)}
           {@const primaries = kind ? itemPrimaryActions(row, kind) : []}
+          {@const firstPrimary = primaries[0] ?? null}
+          {@const restPrimaries = primaries.slice(1)}
           <div class="bcard" data-row={row.id}>
-            <button
-              type="button"
-              class="bcard-main"
-              onclick={() => { if (!quiet) onopen(row); }}
-            >
-              <strong class="btitle">{title}</strong>
-              {#if sub}<span class="bsub">{sub}</span>{/if}
-            </button>
-            {#if primaries.length}
+            <div class="bcard-head">
+              {#if firstPrimary}
+                <button
+                  type="button"
+                  class="chk-btn"
+                  aria-label={firstPrimary.label}
+                  title={firstPrimary.label}
+                  data-primary-op={firstPrimary.operation.name}
+                  onclick={(e) => { e.stopPropagation(); onaction(row, firstPrimary); }}
+                >
+                  <span class="chk-glyph" aria-hidden="true"><Icon name="check" inline /></span>
+                </button>
+              {/if}
+              <button
+                type="button"
+                class="bcard-main"
+                onclick={() => { if (!quiet) onopen(row); }}
+              >
+                <strong class="btitle">{title}</strong>
+                {#if sub}<span class="bsub">{sub}</span>{/if}
+              </button>
+            </div>
+            {#if restPrimaries.length}
               <div class="bacts">
-                {#each primaries as act (act.id)}
+                {#each restPrimaries as act (act.id)}
                   <button
                     type="button"
                     class="prim-btn"
@@ -587,7 +603,34 @@
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
   }
   :global(html[data-scheme="dark"]) .bcard { background: rgb(var(--tint) / 0.9); }
+  .bcard-head {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s-3);
+  }
+  .chk-btn {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+    padding: 0;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 2px solid var(--ink-3);
+    background: transparent;
+    color: transparent;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), scale var(--dur-fast) var(--ease-out);
+  }
+  .chk-btn .chk-glyph { display: grid; place-items: center; transform: scale(0.72); }
+  .chk-btn:hover, .chk-btn:focus-visible { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .chk-btn:active { scale: var(--press-scale); }
+  .chk-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .bcard-main {
+    flex: 1;
+    min-width: 0;
     display: grid;
     gap: var(--s-1);
     text-align: start;

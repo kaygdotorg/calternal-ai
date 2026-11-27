@@ -157,3 +157,48 @@ fn timed_rules_keep_wall_time_and_check_utc_until() {
         assert!(parse_repeat(bad).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn recurrence_charges_exceptions_before_parsing_and_deduplicates_weekdays() {
+    let rule = parse_repeat("FREQ=DAILY;BYDAY=MO,MO,TU,MO").unwrap();
+    assert_eq!(rule.weekdays.len(), 2);
+    let window = Window::parse("2026-11-27", "2026-11-28").unwrap();
+    let error = expand_series(&rule, "2026-11-27", window, &["bad date"], &[], &mut 0).unwrap_err();
+    assert_eq!(error.message, "The recurrence is too costly");
+}
+
+#[test]
+fn moved_occurrences_hit_the_visible_limit_before_scanning_the_window() {
+    let rule = parse_repeat("FREQ=DAILY").unwrap();
+    let seed = dates::day("2020-01-01").unwrap();
+    let originals = (0..1_001)
+        .map(|day| dates::render_day(seed + day).unwrap())
+        .collect::<Vec<_>>();
+    let overrides = originals
+        .iter()
+        .map(|date| OccurrenceOverride {
+            original: date,
+            start: "2026-11-27",
+        })
+        .collect::<Vec<_>>();
+    let site = Site::START;
+    let seed = parse_stamp("2020-01-01").unwrap();
+    let mut validation_steps = 100_000;
+    for original in &originals {
+        let original = parse_stamp(original).unwrap().at;
+        rule.search(
+            &seed,
+            original,
+            original + 1,
+            &mut validation_steps,
+            site,
+            |_| false,
+        )
+        .unwrap();
+    }
+    let mut steps = 100_000 - validation_steps + overrides.len();
+    let window = Window::parse("2026-11-27", "2026-11-28").unwrap();
+    let error =
+        expand_series(&rule, "2020-01-01", window, &[], &overrides, &mut steps).unwrap_err();
+    assert!(error.message.contains("more than 1,000 occurrences"));
+}

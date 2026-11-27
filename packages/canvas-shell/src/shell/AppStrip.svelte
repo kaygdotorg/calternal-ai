@@ -188,7 +188,7 @@
         <input bind:value={nameText} placeholder="Name the sidebar" aria-label="Sidebar name" onblur={create} onkeydown={(e) => e.key === "Escape" && ((nameText = ""), (naming = false))} />
       </form>
     {:else}
-      <div class="track" class:ml={more.l} class:mr={more.r} class:sorting={!!drag} class:commit bind:this={track} onscroll={edges} style:--w="{ITEM}px" style:--n={count} role="list">
+      <div class="track" class:fit={mode !== "icons" && totalSlots <= count} class:text-mode={mode !== "icons"} class:ml={more.l} class:mr={more.r} class:sorting={!!drag} class:commit bind:this={track} onscroll={edges} style:--w="{ITEM}px" style:--n={count} role="list">
         {#each items as it, i (it.id)}
           <div role="listitem" class="sl" class:held={drag?.id === it.id} class:settling={drag?.settling && drag.id === it.id} style:translate="{shift(i)}px 0">
             <button type="button" class="it" data-app={it.id} aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight" class:on={current === it.id} class:ic={mode === "icons"} aria-current={current === it.id ? "true" : undefined} aria-label={it.name} onclick={() => choose(it.id)} onpointerdown={(e) => pdown(e, it.id)} use:nameTip={narrow ? "" : mode === "icons" ? it.name : "Ctrl or ⌘ click: new window"}>
@@ -217,10 +217,12 @@
   .dock[data-shown="false"] :global(.sw-pill) { translate: 0 calc(100% + var(--s-6)); opacity: 0; pointer-events: none; }
   .dock[data-shown="true"] :global(.sw-pill) { transition: translate var(--dur-base) var(--ease-out) 70ms, opacity var(--dur-base) var(--ease-out) 70ms; }
   .track { margin-block: -3px; padding-block: 3px; display: flex; width: calc(var(--n) * var(--w)); max-width: 100%; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; touch-action: pan-x; border-radius: var(--r-pill); }
+  .track.fit { width: max-content; }
   .track.mr { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--s-7)), transparent); mask-image: linear-gradient(to right, #000 calc(100% - var(--s-7)), transparent); }
   .track.ml { -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--s-7)); mask-image: linear-gradient(to right, transparent, #000 var(--s-7)); }
   .track.ml.mr { -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--s-7), #000 calc(100% - var(--s-7)), transparent); mask-image: linear-gradient(to right, transparent, #000 var(--s-7), #000 calc(100% - var(--s-7)), transparent); }
   .track > [role=listitem] { flex: none; width: var(--w); scroll-snap-align: start; }
+  .track.text-mode > [role=listitem]:has(.it:not(.ic)) { min-width: var(--w); width: auto; }
   .it { width: 100%; height: calc(var(--tb-h) - 6px); display: inline-flex; align-items: center; justify-content: center; gap: var(--s-3); padding: 0 var(--s-4); border-radius: var(--r-pill); color: var(--ink-2); font-size: var(--text-ui); font-weight: var(--ui-weight); white-space: nowrap; transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), scale var(--dur-fast) var(--ease-out); }
   .it .lb { overflow: hidden; text-overflow: ellipsis; } .it:active { scale: var(--press-scale); }
   .it.on { background: var(--accent-soft); color: var(--ink); font-weight: var(--strong-weight); } .it.on :global(svg) { color: var(--accent); }

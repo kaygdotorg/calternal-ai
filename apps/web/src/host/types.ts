@@ -204,6 +204,8 @@ export interface RowData {
   edited?: number;
   /** Group key(s) for this row when returned by a grouped collection query. */
   groups?: unknown[];
+  /** Returned when the query requests records. */
+  records?: RecordData[];
 }
 
 /** One aggregate group entry returned by a grouped query. */
@@ -221,10 +223,24 @@ export interface QueryWindowResult {
   namedTotals: Record<string, unknown>;
 }
 
-/** One record inside an item returned by `s.read` or pushed over the live socket. */
+/** A person visible to the viewer, identified by their account UUID. */
+export interface RecordPerson {
+  account: string;
+  /** Display name from the host's account directory, when visible. */
+  name: string | null;
+}
+
+/** Authoritative attribution for a record or an unverified outside change. */
+export type RecordWriter =
+  | ({ type: "person" } & RecordPerson)
+  | { type: "run"; id: string; plugin: string | null; starter: RecordPerson }
+  | { type: "outside" };
+
+/** One record returned by `s.read`, an opt-in query, or the live socket. */
 export interface RecordData {
   anchor: string;
   author: string;
+  writer: RecordWriter;
   author_name?: string;
   at: string;
   body: string;
@@ -266,6 +282,7 @@ export interface QuerySpec {
   sort?: string[];
   limit?: number;
   search?: string;
+  records?: boolean;
 }
 
 /** Viewer-aware metadata sent on records snapshots and item changes. */

@@ -1,7 +1,10 @@
 mod calendar;
 pub use calendar::{CalendarOccurrence, CalendarSeries, expand_calendar_window};
 
-use std::{cmp::Ordering, collections::BTreeMap};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, HashMap, HashSet},
+};
 
 use crate::{
     Collection, Diagnostic, EvalContext, Field, Fields, Kind, Row, Value,
@@ -54,7 +57,7 @@ pub struct QueryRow {
     pub index: usize,
     /// Computed columns for this row.
     pub computed: Fields,
-    /// Group keys for this row, in the order returned by its group formula.
+    /// Distinct group keys for this row, in first occurrence order.
     pub groups: Vec<Value>,
 }
 
@@ -181,40 +184,29 @@ pub fn evaluate_query_bounded(
                 .collect()
         };
     let totals = aggregate_rows(&matches.iter().collect::<Vec<_>>(), steps)?;
-    let mut groups: Vec<(Value, Vec<&Matched>)> = Vec::new();
+    let mut groups: Vec<(&Value, Vec<&Matched>)> = Vec::new();
+    let mut group_indices = HashMap::new();
     for row in &matches {
-        let keys = match &row.group {
-            Some(Value::List(keys)) => keys.as_slice(),
-            Some(key) => std::slice::from_ref(key),
-            None => continue,
-        };
-        let mut seen = Vec::new();
-        for key in keys {
-            if seen.contains(&key) {
-                continue;
-            }
-            seen.push(key);
-            *steps = steps
-                .checked_sub(
-                    groups
-                        .len()
-                        .saturating_add(collection.totals.len())
-                        .saturating_add(1),
-                )
-                .ok_or_else(|| collection.site.error("The collection has too many groups"))?;
-            if let Some((_, members)) = groups.iter_mut().find(|(group_key, _)| group_key == key) {
-                members.push(row);
-            } else {
-                let key = charged_copy(Some(key), steps, collection.site)?;
-                groups.push((key, vec![row]));
-            }
+        for key in &row.groups {
+            charge_copy(
+                key.copy_bytes()
+                    .saturating_add(64 * (1 + collection.totals.len())),
+                steps,
+                collection.site,
+            )?;
+            let index = *group_indices.entry(key).or_insert_with(|| {
+                let index = groups.len();
+                groups.push((key, Vec::new()));
+                index
+            });
+            groups[index].1.push(row);
         }
     }
     let groups = groups
         .into_iter()
         .map(|(key, members)| {
             Ok(QueryGroup {
-                key,
+                key: charged_copy(Some(key), steps, collection.site)?,
                 matched: members.len(),
                 totals: aggregate_rows(&members, steps)?,
             })
@@ -228,11 +220,7 @@ pub fn evaluate_query_bounded(
         .map(|row| QueryRow {
             index: row.index,
             computed: row.computed,
-            groups: match row.group {
-                Some(Value::List(keys)) => keys,
-                Some(key) => vec![key],
-                None => Vec::new(),
-            },
+            groups: row.groups,
         })
         .collect();
     let mut named_totals = Fields::new();
@@ -336,6 +324,11 @@ fn prepare_row(
         .as_ref()
         .map(|group| evaluate_in(group, row, &row_context, steps))
         .transpose()?;
+    let groups = match group {
+        Some(Value::List(keys)) => distinct_group_keys(keys, steps, collection.site)?,
+        Some(key) => vec![key],
+        None => Vec::new(),
+    };
     let sort = collection
         .sort
         .iter()
@@ -365,9 +358,25 @@ fn prepare_row(
         index,
         sort,
         totals,
-        group,
+        groups,
         computed,
     }))
+}
+
+fn distinct_group_keys(
+    mut keys: Vec<Value>,
+    steps: &mut usize,
+    site: crate::lines::Site,
+) -> Result<Vec<Value>, Diagnostic> {
+    let mut seen = HashSet::new();
+    let mut keep = Vec::new();
+    for key in &keys {
+        charge_copy(key.copy_bytes().saturating_add(64), steps, site)?;
+        keep.push(seen.insert(key));
+    }
+    let mut keep = keep.into_iter();
+    keys.retain(|_| keep.next().expect("one decision per group key"));
+    Ok(keys)
 }
 
 fn charge_copy(
@@ -446,7 +455,7 @@ struct Matched {
     index: usize,
     sort: Vec<Value>,
     totals: Vec<Value>,
-    group: Option<Value>,
+    groups: Vec<Value>,
     computed: Fields,
 }
 

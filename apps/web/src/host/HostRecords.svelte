@@ -6,6 +6,7 @@
    */
   import { onMount, tick } from "svelte";
   import { Icon, Menu, type MenuItem } from "@calternal/ui";
+  import { AppIcon } from "@calternal/canvas-shell";
   import {
     dayKey,
     dayLabel,
@@ -15,7 +16,7 @@
     type ResolvedComposer,
     type ResolvedPickerSlot,
   } from "./format";
-  import type { KindDecl, RecordData, RowData } from "./types";
+  import type { KindDecl, PluginDecl, RecordData, RowData } from "./types";
 
   /** Real agent run lifecycle states rendered with motion in the transcript. */
   export type RunUiState = "starting" | "streaming" | "stopping" | "stopped" | "failed" | "lost";
@@ -33,6 +34,7 @@
   let {
     row,
     kind,
+    plugins = [],
     records,
     viewerId,
     composer,
@@ -48,6 +50,7 @@
   }: {
     row: RowData;
     kind: KindDecl;
+    plugins?: PluginDecl[];
     records: RecordData[];
     viewerId: string;
     composer: ResolvedComposer | null;
@@ -89,8 +92,38 @@
     }
   });
 
-  const own = (r: RecordData) => !r.run && r.author === viewerId;
-  const displayName = (r: RecordData) => r.author_name || (r.run ? "Agent" : r.author);
+  const pluginById = $derived(new Map(plugins.map((p) => [p.id, p])));
+
+  const own = (r: RecordData) =>
+    r.writer
+      ? r.writer.type === "person" && r.writer.account === viewerId
+      : !r.run && r.author === viewerId;
+
+  function writerInfo(r: RecordData): { name: string; icon: string | null } {
+    if (r.writer) {
+      if (r.writer.type === "person") {
+        return { name: r.writer.name || r.author_name || r.writer.account, icon: null };
+      }
+      if (r.writer.type === "run") {
+        const p = r.writer.plugin ? pluginById.get(r.writer.plugin) : undefined;
+        if (p) return { name: p.name, icon: p.icon || null };
+        return { name: "Agent", icon: null };
+      }
+      return { name: "Outside", icon: null };
+    }
+    return { name: r.author_name || (r.run ? "Agent" : r.author), icon: null };
+  }
+
+  const displayName = (r: RecordData) => writerInfo(r).name;
+
+  function writerKey(r: RecordData): string {
+    if (r.writer) {
+      if (r.writer.type === "person") return `person:${r.writer.account}`;
+      if (r.writer.type === "run") return `run:${r.writer.plugin ?? r.writer.id}`;
+      return "outside";
+    }
+    return r.run ? `run:${r.run}` : `author:${r.author}`;
+  }
 
   type Line =
     | { t: "day"; key: string; text: string }
@@ -111,7 +144,7 @@
       const near = (a?: RecordData, b?: RecordData) =>
         !!a &&
         !!b &&
-        a.author === b.author &&
+        writerKey(a) === writerKey(b) &&
         dayKey(a.at) === dayKey(b.at) &&
         Math.abs(Date.parse(b.at) - Date.parse(a.at)) < 300_000;
       out.push({
@@ -333,9 +366,16 @@
           }}
         >
           {#if l.first && !own(r)}
+            {@const w = writerInfo(r)}
             <header class="eh">
-              <span class="av" aria-hidden="true">{initials(displayName(r))}</span>
-              <span class="nm">{displayName(r)}</span>
+              <span class="av" aria-hidden="true">
+                {#if w.icon}
+                  <AppIcon name={w.icon} inline />
+                {:else}
+                  {initials(w.name)}
+                {/if}
+              </span>
+              <span class="nm">{w.name}</span>
             </header>
           {/if}
           <div class="bub">

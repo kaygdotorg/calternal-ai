@@ -328,7 +328,7 @@ async fn stop_kills_the_ignoring_fake_process_family_within_two_seconds() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn operator_sign_in_mounts_one_file_for_one_account_space_and_program() {
+async fn operator_sign_in_mounts_the_checked_file_even_if_the_source_rotates() {
     let _serial = CONTAINER_TEST.lock().await;
     let root = tempfile::tempdir().unwrap();
     if backend(root.path()).await.is_none() {
@@ -341,9 +341,26 @@ async fn operator_sign_in_mounts_one_file_for_one_account_space_and_program() {
     std::fs::write(&credential, "test fixture").unwrap();
     std::fs::set_permissions(&credential, std::fs::Permissions::from_mode(0o600)).unwrap();
     std::fs::write(profile.path().join("unrelated"), "unrelated file").unwrap();
+    let replacement = profile.path().join("replacement");
+    std::fs::write(&replacement, "rotated synthetic fixture").unwrap();
+    std::fs::set_permissions(&replacement, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let engine = profile.path().join("podman-with-rotation");
+    std::fs::write(
+        &engine,
+        r#"#!/bin/sh
+set -eu
+if [ "$1" = run ]; then
+    profile=$(dirname -- "$0")
+    mv -- "$profile/replacement" "$profile/.credentials.json"
+fi
+exec podman "$@"
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&engine, std::fs::Permissions::from_mode(0o700)).unwrap();
     let (request, actor) = request();
     let qualified = "calternal-chat-claude-code.calternal-provider-claude-code";
-    let backend = PodmanBackend::new("podman", root.path(), image())
+    let backend = PodmanBackend::new(&engine, root.path(), image())
         .with_run_sign_in(actor.account, request.space, qualified.into(), credential)
         .unwrap();
     let service = make_service(Arc::new(backend), "127.0.0.1:9".parse().unwrap());
@@ -402,7 +419,7 @@ async fn operator_sign_in_mounts_one_file_for_one_account_space_and_program() {
     );
     assert_eq!(
         std::fs::read_to_string(profile.path().join(".credentials.json")).unwrap(),
-        "test fixture"
+        "rotated synthetic fixture"
     );
     send_start(&service, run.id, &actor).await;
     send(&service, run.id, &actor, 2, send_prompt("egress-denied")).await;

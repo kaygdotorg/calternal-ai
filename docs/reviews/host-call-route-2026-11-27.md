@@ -18,7 +18,7 @@ Success is `{"result": ...}`. The error body is `{"error":{"code": "...",
 | Call | Input | Result |
 | --- | --- | --- |
 | `s.declarations` | `{}` | `{space, plugins}` with the reachable installed kinds, fields, operations and inputs, collections, sidebars, slots and fillers. |
-| `s.query` | `{from, where?, sort?, cursor?, limit?}` or `{collection, cursor?, limit?}`. Collection names are qualified plugin and collection IDs. | `{rows, totals, cursor}`. Rows contain `id`, `kind`, `fields`, `computed`, viewer `state`, server-evaluated `when`, `edited` and `version`. `cursor` is opaque and null on the last page. |
+| `s.query` | `{from, where?, sort?, cursor?, limit?, records?}` or `{collection, cursor?, limit?, records?}`. Collection names are qualified plugin and collection IDs. | `{rows, totals, cursor}`. Rows contain `id`, `kind`, `fields`, `computed`, viewer `state`, server-evaluated `when`, `edited` and `version`. `cursor` is opaque and null on the last page. With `records: true`, each row includes its records in ledger order. |
 | `s.read` | `{item}` | The same row metadata plus `body` and `records`. |
 | `s.write` | `{changes, preview?}`. Each change carries its operation in `op`. | `{changes:[{id, version, anchor?, link?}]}` in input order. Preview performs validation and returns the planned changes. |
 | `s.state` | `{op:"get",item,key}` or `{op:"set",item,key,value}` | `{value}` |
@@ -43,8 +43,20 @@ the anchor within the authorized space if the path has changed. The SDK
 translates a plugin author's single-key change object into the wire's
 `op`-tagged object before sending the callback.
 
-Output records add the host's
-`anchor`, `author` and `at` fields. An adapter may pass
+Every output record carries `anchor`, `author` (account UUID or `"outside"`),
+`at`, and a `writer` object. The same shape applies to `s.read`, queries with
+`records: true`, and live record delivery.
+
+- `{type:"person", account, name}` identifies the person. The name comes
+  from the auth directory and is visible for the owner in a personal space.
+- `{type:"run", id, plugin, starter:{account,name}}` identifies the run and
+  the person who started it. Resolve `plugin` against `s.declarations` for its
+  name and icon. Older seals that authenticated only a run UUID and a callback
+  plugin return `plugin: null`. The top-level `run` also carries the run UUID.
+- `{type:"outside"}` marks a record the ledger could not authenticate.
+  A person's `name` is null when it is unavailable to the viewer.
+
+An adapter may pass
 `idempotency_key` at the envelope level. The host scopes receipts to
 the verified person, space and plugin. Reusing a live key with different
 input yields `conflict`.
@@ -136,5 +148,7 @@ operator-configured Podman boundary with a disposable provider profile.
   process; the host derives retry keys itself.
 - A successful adapter completion sends the buffered reply through
   `calternal-chat.chats.send` under the run context. The host stamps the
-  run UUID into the authenticated record header and returns it as `run`
-  on that record.
+  run UUID and the starting harness plugin ID into the authenticated
+  record header. The ledger retains the run attribution independently of
+  run and request-receipt lifetimes. Markdown displays the harness's name
+  for a run and the person's display name for a person.

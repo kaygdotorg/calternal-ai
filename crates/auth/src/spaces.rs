@@ -512,6 +512,25 @@ impl Spaces {
                 .map_err(sql)
         })
     }
+    /// Return the current display name of the active owner of their own personal
+    /// space. Other spaces and accounts return `None`. This costs one cached
+    /// query on the directory worker and conveys no capability grant.
+    pub fn personal_space_owner_name(
+        &self,
+        actor: AccountId,
+        id: SpaceId,
+    ) -> Result<Option<String>> {
+        self.db.read_blocking(move |c| {
+            c.prepare_cached(
+                "SELECT u.name FROM spaces s JOIN users u ON u.id=s.owner_account
+                 WHERE s.id=?1 AND s.personal_for=?2 AND u.id=?2 AND u.disabled_at IS NULL",
+            )
+            .map_err(sql)?
+            .query_row(params![id.to_string(), actor.to_string()], |row| row.get(0))
+            .optional()
+            .map_err(sql)
+        })
+    }
     /// The actor's current capabilities, derived from all live grants. A missing
     /// or disabled account and a missing membership all return `None`.
     /// Cost: one worker round trip and one indexed query on a cached statement.

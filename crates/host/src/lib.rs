@@ -256,13 +256,6 @@ impl Host {
         })
     }
 
-    fn owner_display(&self, account: AccountId) -> Result<String> {
-        let key = account.to_string();
-        let lookup = self.auth.find(&key);
-        let (_, name) = block_on(lookup)?.map_err(internal)?;
-        Ok(name)
-    }
-
     fn with_space<T>(
         &self,
         actor: &Actor,
@@ -282,15 +275,17 @@ impl Host {
             return Err(Error::forbidden("Run scope is required for this call."));
         }
         let directory = self.auth.spaces();
-        if !directory
-            .is_personal_space(actor.account, id)
+        let not_found = || Error::not_found("Personal space was not found.");
+        let display = directory
+            .personal_space_owner_name(actor.account, id)
             .map_err(internal)?
-            || directory
-                .capabilities(actor.account, id)
-                .map_err(internal)?
-                .is_none()
+            .ok_or_else(not_found)?;
+        if directory
+            .capabilities(actor.account, id)
+            .map_err(internal)?
+            .is_none()
         {
-            return Err(Error::not_found("Personal space was not found."));
+            return Err(not_found());
         }
         let slot = self.space_slot(id)?;
         // Keep the space lock across persistence so publication, recovery and
@@ -298,13 +293,12 @@ impl Host {
         let mut opened = slot.resident.lock().map_err(internal)?;
         opened.visited = std::time::Instant::now();
         if opened.space.is_none() {
-            let display = self.owner_display(actor.account)?;
             let mut space = Space::open(&self.root, id, self.retention_ms)?;
             space.scope_existing_viewer_state(actor.account)?;
-            space.owner_display = Some((actor.account, display));
             opened.space = Some(space);
         }
         let space = opened.space.as_mut().expect("space initialized");
+        space.owner_display = Some((actor.account, display));
         space.recover()?;
         space.expire_trash()?;
         f(space, &slot)

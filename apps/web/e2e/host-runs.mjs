@@ -56,7 +56,7 @@ async function sendPreviewEcho(page) {
   await picker.click();
   await page.getByRole("menuitem", { name: "Claude Code", exact: true }).click();
   assert.equal(await picker.getAttribute("data-selected-filler"), slot.filler);
-  await page.fill('textarea[aria-label="Write"]', prompt);
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill(prompt);
   await page.click('button[aria-label="Send"]');
   await page.waitForSelector(storedEcho);
   await page.click('button[aria-label="Window menu"]');
@@ -77,6 +77,60 @@ async function verifyPreviewSignIn(page) {
   await page.waitForSelector(`[data-open-title]:text-is("${renamedSmokeTitle}")`);
   await page.waitForSelector(storedEcho);
   console.log("PASS after service restart, passkey sign-in reopened the renamed chat and its stored echo");
+}
+
+async function verifyRecordWriters(page, item) {
+  const proof = await page.evaluate(async ({ item, slot }) => {
+    const { client, session } = window.host;
+    const socket = new WebSocket(`ws://${location.host}/v1/spaces/${session.space}/live`);
+    let timer;
+    try {
+      let send;
+      const sent = new Promise((resolve) => { send = resolve; });
+      const frames = new Promise((resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("record writer frames timed out")), 20_000);
+        socket.addEventListener("error", () => reject(new Error("record writer socket failed")));
+        socket.addEventListener("message", ({ data }) => {
+          const frame = JSON.parse(data);
+          if (frame.type === "ready") {
+            socket.send(JSON.stringify({ type: "subscribe", sub: "writer", records: { item } }));
+          } else if (frame.type === "error") {
+            reject(new Error(`record writer socket: ${frame.code}`));
+          } else if (frame.type === "records" && frame.records.length === 0) {
+            send();
+          } else if (frame.type === "record_append" && frame.record.writer?.type === "run") {
+            resolve(frame.record);
+          }
+        });
+      });
+      const request = sent.then(async () => {
+        const response = await fetch(`/v1/spaces/${session.space}/call`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            call: "calternal-chat.chats.send", input: { item, text: "record attribution" },
+            idempotency_key: "record-writer", slot_selection: slot,
+          }),
+        });
+        if (!response.ok) throw new Error(`record attribution HTTP ${response.status}`);
+        return (await response.json()).result.run.id;
+      });
+      const [live, run] = await Promise.all([frames, request]);
+      const read = await client.hostCall(session, "s.read", { item });
+      const query = await client.hostCall(session, "s.query", { from: "calternal-chat.chats", records: true });
+      await client.hostCall(session, "s.run.stop", { id: run });
+      return { live, run, account: session.account, read: read.records, query: query.rows.find((row) => row.id === item).records };
+    } finally {
+      clearTimeout(timer);
+      socket.close();
+    }
+  }, { item, slot });
+  const person = { account: proof.account, name: "Run owner" };
+  const writer = { type: "run", id: proof.run, plugin: slot.filler, starter: person };
+  assert.deepEqual(proof.read.map((record) => record.writer), [{ type: "person", ...person }, writer]);
+  assert.deepEqual(proof.query, proof.read);
+  assert.deepEqual(proof.live, proof.read[1]);
+  console.log("PASS person and starting harness attribution in read, query and live record frames");
 }
 
 async function fixture(directory, origin, code) {
@@ -184,6 +238,7 @@ async function fixture(directory, origin, code) {
       });
       return result.changes[0].id;
     });
+    if (!previewUnit) await verifyRecordWriters(page, item);
     const runId = await verifyRunLog(page, item);
     console.log("PASS real harness log ordering, Stop, and offset replay after reconnect");
 

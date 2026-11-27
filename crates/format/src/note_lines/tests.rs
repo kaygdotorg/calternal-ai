@@ -178,7 +178,7 @@ fn existing_app_line_vectors() {
     ];
     for (id, source, expected) in vectors {
         let lines: Vec<_> = source.lines().collect();
-        let regions = regions(&lines);
+        let regions = regions(&lines).unwrap();
         let items = scan_note_lines(source).unwrap();
         let mut found: Vec<_> = regions
             .iter()
@@ -226,4 +226,15 @@ fn gym_week_direct_links_follow_the_parent_list_marker() {
             ..
         }
     ));
+}
+
+#[test]
+fn incomplete_tags_and_inline_runs_are_bounded() {
+    let note = format!("10:00 {}visible", "<tag ".repeat(100_000));
+    assert_eq!(scan_note_lines(&note).unwrap().len(), 1);
+    assert!(scan_note_lines(&format!("{note}>")).unwrap().is_empty());
+
+    let note = format!("prefix {}", "` ".repeat(65_537));
+    let error = scan_note_lines(&note).unwrap_err();
+    assert!(error.message.contains("65,536 inline backtick runs"));
 }
