@@ -284,15 +284,21 @@ async function fixture(directory, origin, setupCode) {
     await a.page.waitForSelector('[data-record-anchor]:has-text("First message with harness")');
 
     // Verify the real host invoked test-harness.runs.start via slot_selection
-    const runsQuery = await a.page.evaluate(async (space) => {
-      const res = await fetch(`/v1/spaces/${space}/call`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ call: "s.query", input: { from: "test-harness.runs" } }),
-      });
-      return res.json();
-    }, session.space);
-    assert.equal(runsQuery.result.rows.length, 1, "expected slot-selected harness run record");
+    let runRows = [];
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const runsQuery = await a.page.evaluate(async (space) => {
+        const res = await fetch(`/v1/spaces/${space}/call`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ call: "s.query", input: { from: "test-harness.runs" } }),
+        });
+        return res.json();
+      }, session.space);
+      runRows = runsQuery.result?.rows ?? [];
+      if (runRows.length >= 1) break;
+      await a.page.waitForTimeout(100);
+    }
+    assert.equal(runRows.length, 1, "expected slot-selected harness run record");
 
     // Clear harness selection for plain messages
     await a.page.click('[data-slot-picker="harness"]');
