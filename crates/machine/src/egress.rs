@@ -28,7 +28,7 @@ use tokio::{
 use tunnel::Limits;
 
 const MAX_CONNECT_HEADERS: usize = 16 * 1024;
-const MAX_SYSTEM_DNS_JOBS: usize = 16;
+const MAX_SYSTEM_DNS_JOBS_PER_RUN: usize = 4;
 
 /// Resolves a declared hostname on the host for each CONNECT request.
 pub trait EgressResolver: Send + Sync + 'static {
@@ -39,6 +39,7 @@ pub trait EgressResolver: Send + Sync + 'static {
 }
 
 /// Resolves names with the host operating system's configured resolver.
+/// A run owns one resolver, with up to four jobs outstanding until libc returns.
 pub struct SystemResolver {
     jobs: Arc<Semaphore>,
 }
@@ -46,7 +47,7 @@ pub struct SystemResolver {
 impl Default for SystemResolver {
     fn default() -> Self {
         Self {
-            jobs: Arc::new(Semaphore::new(MAX_SYSTEM_DNS_JOBS)),
+            jobs: Arc::new(Semaphore::new(MAX_SYSTEM_DNS_JOBS_PER_RUN)),
         }
     }
 }

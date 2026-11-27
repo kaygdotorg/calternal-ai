@@ -178,7 +178,7 @@ struct RunServiceInner {
     backend: Arc<PodmanBackend>,
     image: String,
     authorizer: Arc<dyn RunAuthorizer>,
-    resolver: Arc<dyn EgressResolver>,
+    resolver: Option<Arc<dyn EgressResolver>>,
     dialer: Arc<dyn EgressDialer>,
     runs: RwLock<std::collections::HashMap<Uuid, Arc<RunState>>>,
     permits: Arc<tokio::sync::Semaphore>,
@@ -242,13 +242,7 @@ impl RunService {
         image: impl Into<String>,
         authorizer: Arc<dyn RunAuthorizer>,
     ) -> Self {
-        Self::with_egress(
-            backend,
-            image,
-            authorizer,
-            Arc::new(SystemResolver::default()),
-            Arc::new(TcpDialer),
-        )
+        Self::with_resolver(backend, image.into(), authorizer, None, Arc::new(TcpDialer))
     }
 
     /// Construct a runner with injectable host DNS and dialing for isolated tests.
@@ -259,10 +253,20 @@ impl RunService {
         resolver: Arc<dyn EgressResolver>,
         dialer: Arc<dyn EgressDialer>,
     ) -> Self {
+        Self::with_resolver(backend, image.into(), authorizer, Some(resolver), dialer)
+    }
+
+    fn with_resolver(
+        backend: Arc<PodmanBackend>,
+        image: String,
+        authorizer: Arc<dyn RunAuthorizer>,
+        resolver: Option<Arc<dyn EgressResolver>>,
+        dialer: Arc<dyn EgressDialer>,
+    ) -> Self {
         Self {
             inner: Arc::new(RunServiceInner {
                 backend,
-                image: image.into(),
+                image,
                 authorizer,
                 resolver,
                 dialer,
@@ -270,6 +274,13 @@ impl RunService {
                 permits: Arc::new(tokio::sync::Semaphore::new(MAX_RUNS)),
             }),
         }
+    }
+
+    fn resolver_for_run(&self) -> Arc<dyn EgressResolver> {
+        self.inner
+            .resolver
+            .clone()
+            .unwrap_or_else(|| Arc::new(SystemResolver::default()))
     }
 
     /// Start the declared executable for fixed session targets and one actor.
@@ -313,7 +324,7 @@ impl RunService {
                 .policy
                 .clone()
                 .excluding(self.inner.backend.run_egress_exclusions()),
-            Arc::clone(&self.inner.resolver),
+            self.resolver_for_run(),
             Arc::clone(&self.inner.dialer),
         )
         .await?;
