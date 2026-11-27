@@ -1,190 +1,281 @@
 #!/usr/bin/env node
 /**
- * End-to-end Playwright test for slices 4 and 5 (declaration-driven host client + live window).
- *
- * Tests:
- * 1. Sign in, create a chat, send a message, rename the chat (all from declarations).
- * 2. Two independent browser contexts on one chat:
- *    - An append in context A appears live in context B.
- *    - Context B drops its WebSocket, context A appends two more messages, and
- *      context B reconnects from its last anchor with exact order and zero duplicates.
- * 3. Captures desktop (1280x800) and phone (390x844) screenshots in light and dark
- *    mode into `HOST_SHOT_DIR` (outside the repository, for uploading to the Forgejo issue).
+ * Exercise the real host with the browser data client on a same-origin proxy.
+ * The disposable fixture supplies its one-time setup code over a private pipe.
  */
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import fs from "node:fs";
+import { spawn, execFileSync } from "node:child_process";
+import { once } from "node:events";
+import { get } from "node:http";
+import { createServer as tcpServer } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { createServer } from "vite";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const WEB_DIR = path.resolve(__dirname, "..");
-const MOCK_PORT = Number(process.env.HOST_MOCK_PORT || 4391);
-const WEB_PORT = Number(process.env.HOST_WEB_PORT || 4392);
-const SHOT_DIR = process.env.HOST_SHOT_DIR || "/tmp/browser-chat-shots";
+const WEB = fileURLToPath(new URL("../", import.meta.url));
+const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+const KIND = "calternal-chat.chats";
 
-function waitForLine(proc, regex, label) {
+async function port() {
+  const probe = tcpServer().listen(0, "127.0.0.1");
+  await once(probe, "listening");
+  const result = probe.address().port;
+  await new Promise((resolve) => probe.close(resolve));
+  return result;
+}
+
+async function run(file, args, options) {
+  const child = spawn(file, args, { stdio: "inherit", ...options });
+  const [code, signal] = await once(child, "exit");
+  assert.equal(code, 0, `${file} exited with ${signal ?? code}`);
+}
+
+async function waitForHost(api, host) {
+  for (let attempt = 0; attempt < 80; attempt++) {
+    assert.equal(host.exitCode, null, "host exited before serving");
+    try {
+      if ((await fetch(`${api}/v1/auth/status`)).ok) return;
+    } catch {
+      // The listener starts after auth, runtime, and storage initialization.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("timed out waiting for calternal-host");
+}
+
+function upgradeStatus(url, origin, fetchSite) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${label}`)), 30_000);
-    const onData = (buf) => {
-      const s = buf.toString();
-      if (regex.test(s)) {
-        clearTimeout(timer);
-        resolve(s);
-      }
-    };
-    proc.stdout.on("data", onData);
-    proc.stderr.on("data", onData);
-    proc.on("exit", (code) => {
-      clearTimeout(timer);
-      reject(new Error(`${label} exited early with code ${code}`));
+    const request = get(url, {
+      headers: {
+        connection: "upgrade", upgrade: "websocket", "sec-websocket-version": "13",
+        "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", origin, "sec-fetch-site": fetchSite,
+      },
+    }, (response) => {
+      response.resume();
+      resolve(response.statusCode);
     });
+    request.on("upgrade", (response, socket) => {
+      socket.destroy();
+      resolve(response.statusCode);
+    });
+    request.on("error", reject);
   });
 }
 
-async function main() {
-  fs.mkdirSync(SHOT_DIR, { recursive: true });
-
-  const mock = spawn("node", [path.join(WEB_DIR, "scripts/host-mock.mjs")], {
-    cwd: WEB_DIR,
-    env: { ...process.env, HOST_MOCK_PORT: String(MOCK_PORT), HOST_MOCK_SEED: "1" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-
-  const web = spawn(
-    "npx",
-    ["vite", "preview", "--host", "127.0.0.1", "--port", String(WEB_PORT), "--strictPort"],
-    {
-      cwd: WEB_DIR,
-      stdio: ["ignore", "pipe", "pipe"],
+async function browserClient(browser, origin) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
     },
-  );
+  });
+  await page.goto(`${origin}/browser-chat-fixture`);
+  await page.evaluate(async () => {
+    const client = await import("/src/host/client.ts");
+    window.host = {
+      client,
+      session: null,
+      live: null,
+      records: [],
+      messages: [],
+      connections: [],
+      query: null,
+      async call(name, input = {}, key) {
+        return client.hostCall(this.session, name, input, key);
+      },
+      subscribe(item) {
+        this.live = new client.LiveClient(this.session, (state) => this.connections.push(state));
+        this.live.subscribeQuery({ collection: "calternal-chat.chats" }, (rows) => { this.query = rows; });
+        this.live.subscribeRecords(item, {
+          onSnapshot: (records) => {
+            this.messages.push(["snapshot", records.map((record) => record.body)]);
+            this.records = records;
+          },
+          onDelta: (records) => {
+            this.messages.push(["delta", records.map((record) => record.body)]);
+            this.records.push(...records);
+          },
+          onAppend: (record) => {
+            this.messages.push(["append", [record.body]]);
+            this.records.push(record);
+          },
+          onItemChange: () => {},
+        });
+      },
+    };
+  });
+  return { context, page, cdp, authenticatorId };
+}
 
+async function fixture(directory, origin, setupCode) {
+  const backend = await port();
+  const api = `http://127.0.0.1:${backend}`;
+  const address = `127.0.0.1:${backend}`;
+  const bin = process.env.HOST_BIN ?? path.join(ROOT, "target/debug/calternal-host");
+  const env = {
+    ...process.env,
+    CALTERNAL_WORKER_BWRAP: execFileSync("sh", ["-c", "command -v bwrap"], { encoding: "utf8" }).trim(),
+    CALTERNAL_WORKER_NODE: process.execPath,
+    CALTERNAL_WORKER_SDK: path.join(ROOT, "packages/plugin-sdk"),
+  };
+  const hostArgs = ["serve", directory, origin, address];
+  const host = spawn(bin, hostArgs, { env, stdio: ["ignore", "ignore", "inherit"] });
+  const stop = () => host.kill("SIGTERM");
+  process.once("exit", stop);
+  let vite;
   let browser;
   try {
-    await waitForLine(mock, /host-mock listening/, "host-mock");
-    await waitForLine(web, new RegExp(`:${WEB_PORT}`), "vite preview");
-
-    const api = `http://127.0.0.1:${MOCK_PORT}`;
-    const baseUrl = `http://127.0.0.1:${WEB_PORT}/host?api=${encodeURIComponent(api)}`;
-
+    await waitForHost(api, host);
+    vite = await createServer({
+      configFile: false,
+      root: WEB,
+      logLevel: "error",
+      optimizeDeps: { noDiscovery: true, include: [] },
+      server: {
+        host: "127.0.0.1",
+        port: Number(new URL(origin).port),
+        strictPort: true,
+        hmr: false,
+        proxy: { "/v1": { target: api, ws: true } },
+      },
+      plugins: [{
+        name: "host-chat-fixture",
+        configureServer(server) {
+          server.middlewares.use("/browser-chat-fixture", (_req, res) => {
+            res.setHeader("content-type", "text/html; charset=utf-8");
+            res.end("<!doctype html><title>Browser Chat data client</title>");
+          });
+        },
+      }],
+    });
+    await vite.listen();
     browser = await chromium.launch({ headless: true });
+    const a = await browserClient(browser, origin);
+    const session = await a.page.evaluate(async (code) => {
+      const { client } = window.host;
+      const status = await client.sessionStatus();
+      if (!status.setup || status.session) throw new Error("expected fresh host");
+      await client.setupHost(code, "Ada");
+      await client.signOutHost();
+      const signedOut = await client.sessionStatus();
+      if (signedOut.setup || signedOut.session) throw new Error("expected revoked session");
+      window.host.session = await client.signInHost();
+      return window.host.session;
+    }, setupCode);
+    assert.deepEqual(await a.page.evaluate(() => window.host.client.sessionStatus()), {
+      setup: false, session,
+    });
+    assert.equal(Object.hasOwn(session, "token"), false);
+    const cookie = (await a.context.cookies()).find(({ name }) => name === "__Host-calternal_session");
+    assert.ok(cookie?.httpOnly && cookie.secure && cookie.sameSite === "Strict" && cookie.path === "/",
+      "expected strict host-only browser cookie");
+    assert.equal(await a.page.evaluate(() => document.cookie.includes("__Host-calternal_session")), false);
 
-    // --- Test 1: Sign in, make a chat, send a message, rename the chat ---
-    const ctxA = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-    const pageA = await ctxA.newPage();
-    await pageA.goto(baseUrl);
+    const hostile = await a.context.request.post(`${origin}/v1/auth/logout`, {
+      headers: { origin: "http://foreign.invalid", "sec-fetch-site": "same-site" },
+      data: {},
+    });
+    assert.equal(hostile.status(), 403);
+    const missingOrigin = await a.context.request.post(`${origin}/v1/auth/logout`, { data: {} });
+    assert.equal(missingOrigin.status(), 403);
+    const liveUrl = `${api}/v1/spaces/${session.space}/live`;
+    assert.equal(await upgradeStatus(liveUrl, "http://foreign.invalid", "same-site"), 403);
+    assert.equal(await upgradeStatus(liveUrl, origin, "same-origin"), 401);
 
-    await pageA.fill('input[name="name"]', "Ada");
-    await pageA.click('button[type="submit"]');
+    await run(bin, ["install", directory, origin, session.account, session.space,
+      path.join(ROOT, "plugins-v2/calternal-chat"), "--official"], { env });
 
-    // Sidebar drawn from sidebars/chat.md
-    await pageA.waitForSelector('nav[aria-label="Chat"]');
-    await pageA.waitForSelector('button:has-text("Pinned")');
-    await pageA.waitForSelector('button:has-text("Chats")');
-    await pageA.waitForSelector('button:has-text("Archived")');
+    const item = await a.page.evaluate(async (kind) => {
+      const h = window.host;
+      const { plugins } = await h.client.fetchDeclarations(h.session);
+      const chat = plugins.find((plugin) => plugin.id === "calternal-chat");
+      if (chat.kinds.chats.operations.send.inputs.item.type !== "link(chats)"
+        || chat.slots.composer.fillers[0].target !== "send") {
+        throw new Error("expected installed Chat declarations");
+      }
+      const created = await h.call("s.write", { changes: [{ op: "add", kind, fields: { title: "Release prep" } }] });
+      const item = created.changes[0].id;
+      await h.call(`${kind}.send`, { item, text: "First message" }, "send-initial");
+      await h.call(`${kind}.rename`, { item, title: "Release prep v2" }, "rename");
+      return item;
+    }, KIND);
+    console.log("PASS passkey enrollment, logout, sign-in, session status, and cookie/origin checks");
+    console.log("PASS compiled declarations, create chat, send, and rename");
 
-    // Create a new chat via the "+" button derived from `add: title`
-    await pageA.click('button[aria-label="New Chat"] >> nth=0');
-    await pageA.fill('input[name="title"]', "Release prep");
-    await pageA.click('button:has-text("Create Chat")');
+    // Simulate access to the same synced passkey in an independent context.
+    const b = await browserClient(browser, origin);
+    const { credentials } = await a.cdp.send("WebAuthn.getCredentials", { authenticatorId: a.authenticatorId });
+    assert.equal(credentials.length, 1);
+    await b.cdp.send("WebAuthn.addCredential", { authenticatorId: b.authenticatorId, credential: credentials[0] });
+    await b.page.evaluate(async (item) => {
+      const h = window.host;
+      h.session = await h.client.signInHost();
+      h.subscribe(item);
+    }, item);
+    await b.page.waitForFunction(() => window.host.records.length === 1 && window.host.query?.length === 1);
+    assert.equal(await b.page.evaluate(() => window.host.query[0].fields.title), "Release prep v2");
+    assert.equal(await b.page.evaluate(() => window.host.query[0].when.pin), true);
+    assert.equal(await b.page.evaluate(() => window.host.query[0].state.pinned), false);
 
-    await pageA.waitForSelector('[data-open-title]:has-text("Release prep")');
+    const send = (text) => a.page.evaluate(({ kind, item, text }) =>
+      window.host.call(`${kind}.send`, { item, text }, text), { kind: KIND, item, text });
+    await send("Second message");
+    await b.page.waitForFunction(() => window.host.messages.some(([mode]) => mode === "append"));
+    const anchor = await b.page.evaluate(() => window.host.records.at(-1).anchor);
+    assert.ok(anchor);
 
-    // Send a message via the composer slot
-    await pageA.fill('textarea[aria-label="Write"]', "First message from Ada");
-    await pageA.click('button[aria-label="Send"]');
-    await pageA.waitForSelector('[data-record-anchor]:has-text("First message from Ada")');
-
-    // Rename the chat via the item actions menu generated from `rename: code, menu`
-    await pageA.click('button[aria-label="Item actions"]');
-    await pageA.click('button:has-text("Rename")');
-    await pageA.fill('input[name="title"]', "Release prep v2");
-    await pageA.click('button[type="submit"]:has-text("Rename")');
-    await pageA.waitForSelector('[data-open-title]:has-text("Release prep v2")');
-    console.log("PASS test 1: sign in, create, send, rename");
-
-    // --- Test 2: Two contexts live sync + reconnect from last anchor ---
-    const ctxB = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-    const pageB = await ctxB.newPage();
-    await pageB.goto(baseUrl);
-    await pageB.fill('input[name="name"]', "Ada");
-    await pageB.click('button[type="submit"]');
-    await pageB.waitForSelector('nav[aria-label="Chat"]');
-    await pageB.click('nav[aria-label="Chat"] button:has-text("Chats")');
-    await pageB.waitForSelector('button:has-text("Release prep v2")');
-    await pageB.click('button:has-text("Release prep v2")');
-    await pageB.waitForSelector('[data-record-anchor]:has-text("First message from Ada")');
-
-    // Append in A -> appears live in B
-    await pageA.fill('textarea[aria-label="Write"]', "Second live message");
-    await pageA.click('button[aria-label="Send"]');
-    await pageB.waitForSelector('[data-record-anchor]:has-text("Second live message")');
-
-    // Force-drop B's WebSocket, send two ordered messages from A, verify B catches up in order
-    await pageB.evaluate(() => window.__hostLive.forceReconnect());
-    await pageA.fill('textarea[aria-label="Write"]', "Third after drop");
-    await pageA.click('button[aria-label="Send"]');
-    await pageA.waitForSelector('[data-record-anchor]:has-text("Third after drop")');
-
-    await pageA.fill('textarea[aria-label="Write"]', "Fourth after drop");
-    await pageA.click('button[aria-label="Send"]');
-    await pageA.waitForSelector('[data-record-anchor]:has-text("Fourth after drop")');
-
-    await pageB.waitForSelector('[data-record-anchor]:has-text("Fourth after drop")');
-    const textsB = await pageB.locator("[data-record-anchor] .body").allInnerTexts();
-    assert.deepEqual(textsB, [
-      "First message from Ada",
-      "Second live message",
-      "Third after drop",
-      "Fourth after drop",
+    // Hold the second context offline until both appends have committed.
+    await b.context.setOffline(true);
+    await b.page.evaluate(() => window.host.live.forceReconnect());
+    await b.page.waitForFunction(() => window.host.connections.at(-1) === "reconnecting");
+    await send("Third message");
+    await send("Fourth message");
+    await b.context.setOffline(false);
+    await b.page.waitForFunction(() => window.host.messages.some(([mode]) => mode === "delta"));
+    const seen = await b.page.evaluate(() => window.host.records.map(({ body, anchor }) => ({ body, anchor })));
+    assert.deepEqual(seen.map(({ body }) => body), ["First message", "Second message", "Third message", "Fourth message"]);
+    assert.equal(new Set(seen.map((record) => record.anchor)).size, 4);
+    assert.equal(seen[1].anchor, anchor);
+    const frames = await b.page.evaluate(() => window.host.messages);
+    assert.deepEqual(frames, [
+      ["snapshot", ["First message"]],
+      ["append", ["Second message"]],
+      ["delta", ["Third message", "Fourth message"]],
     ]);
-    console.log("PASS test 2: two-context live append and reconnect-from-anchor ordering");
-
-    // --- Screenshots (desktop 1280 & phone 390, light & dark) ---
-    await pageA.click('nav[aria-label="Chat"] button:has-text("Chats")');
-    await pageA.click('button:has-text("Dependency audit")');
-    await pageA.waitForSelector('[data-record-anchor]:has-text("Morning!")');
-    await pageA.fill('textarea[aria-label="Write"]', "On it — summary ready for the release notes.");
-    await pageA.click('button[aria-label="Send"]');
-    await pageA.waitForSelector('[data-record-anchor]:has-text("On it — summary ready")');
-    await pageA.waitForTimeout(350);
-    await pageA.screenshot({ path: path.join(SHOT_DIR, "desktop-1280-light.png") });
-
-    await pageA.click('button[aria-label="Switch to dark mode"]');
-    await pageA.waitForTimeout(350);
-    await pageA.screenshot({ path: path.join(SHOT_DIR, "desktop-1280-dark.png") });
-
-    const ctxPhone = await browser.newContext({ viewport: { width: 390, height: 844 } });
-    const pagePhone = await ctxPhone.newPage();
-    await pagePhone.goto(`${baseUrl}&scheme=light`);
-    await pagePhone.fill('input[name="name"]', "Ada");
-    await pagePhone.click('button[type="submit"]');
-    await pagePhone.click('button[aria-label="Show sidebar"]');
-    await pagePhone.click('nav[aria-label="Chat"] button:has-text("Chats")');
-    await pagePhone.waitForSelector('button:has-text("Dependency audit")');
-    await pagePhone.click('button:has-text("Dependency audit")');
-    await pagePhone.waitForSelector('[data-record-anchor]:has-text("On it — summary ready")');
-    await pagePhone.waitForTimeout(350);
-    await pagePhone.screenshot({ path: path.join(SHOT_DIR, "phone-390-light.png") });
-
-    await pagePhone.click('button[aria-label="Switch to dark mode"]');
-    await pagePhone.waitForTimeout(350);
-    await pagePhone.screenshot({ path: path.join(SHOT_DIR, "phone-390-dark.png") });
-
-    await ctxA.close();
-    await ctxB.close();
-    await ctxPhone.close();
-    console.log(`PASS screenshots written to ${SHOT_DIR}`);
+    await b.page.evaluate(() => window.host.client.signOutHost());
+    await b.page.waitForFunction(() => window.host.connections.at(-1) === "reconnecting");
+    assert.equal((await b.page.evaluate(() => window.host.client.sessionStatus())).session, null);
+    assert.equal((await a.page.evaluate(() => window.host.client.sessionStatus())).session.account, session.account);
+    console.log("PASS two isolated contexts, live append, anchored reconnect, and socket revocation");
   } finally {
+    process.removeListener("exit", stop);
     await browser?.close();
-    mock.kill("SIGTERM");
-    web.kill("SIGTERM");
+    await vite?.close();
+    if (host.exitCode === null && host.signalCode === null) {
+      const exited = once(host, "exit");
+      host.kill("SIGTERM");
+      await exited;
+    }
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[2] === "--fixture") {
+  const setupCode = await new Promise((resolve, reject) => {
+    let value = "";
+    process.stdin.setEncoding("utf8").on("data", (chunk) => { value += chunk; })
+      .on("end", () => resolve(value)).on("error", reject);
+  });
+  await fixture(process.argv[3], process.argv[4], setupCode);
+} else {
+  const origin = `http://localhost:${await port()}`;
+  await run("cargo", ["run", "--quiet", "-p", "calternal-host", "--example", "browser-chat-fixture", "--", origin], { cwd: ROOT });
+}

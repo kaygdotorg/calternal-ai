@@ -5,8 +5,10 @@
  */
 import type {
   HostError,
+  HostSessionStatus,
   ItemDetail,
   LiveServerFrame,
+  LiveItemMetadata,
   QuerySpec,
   RecordData,
   RowData,
@@ -14,7 +16,7 @@ import type {
   SpaceDeclarations,
 } from "./types";
 
-const SESSION_KEY = "calternal.host.session";
+const SESSION_KEY = "calternal.host.session-info";
 
 /** Read a saved session from `sessionStorage` (isolated per browser context/tab). */
 export function loadSession(): SessionInfo | null {
@@ -36,12 +38,6 @@ export function saveSession(session: SessionInfo | null): void {
   }
 }
 
-/** Resolve the host API base URL (supports `?api=http://...` override for tests, defaults to same origin). */
-export function apiBase(): string {
-  const q = new URLSearchParams(location.search).get("api");
-  return q ? q.replace(/\/$/, "") : "";
-}
-
 /** Typed caller-safe error thrown when a host route returns an error payload. */
 export class HostCallError extends Error {
   readonly code: string;
@@ -53,43 +49,83 @@ export class HostCallError extends Error {
   }
 }
 
-/** Sign in with a display name and return a bearer session + personal space UUID. */
-export async function signInHost(name: string): Promise<SessionInfo> {
-  const res = await fetch(`${apiBase()}/v1/auth/session`, {
+interface Ceremony {
+  ceremony: string;
+  options: { publicKey: unknown };
+}
+
+interface SessionReply {
+  session: SessionInfo;
+  recovery_codes?: string[];
+}
+
+async function hostJson<T>(path: string, body?: Record<string, unknown>): Promise<T> {
+  const res = await fetch(path, body === undefined ? {} : {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: name.trim() }),
+    body: JSON.stringify(body),
   });
-  const data = await res.json();
-  if (!res.ok || data.error) {
-    throw new HostCallError(data.error ?? { code: "needs-sign-in", message: "Sign-in failed.", next: "Try again." });
-  }
-  saveSession(data.session as SessionInfo);
-  return data.session as SessionInfo;
-}
-
-/** Sign out and clear the local session. */
-export async function signOutHost(session: SessionInfo): Promise<void> {
-  try {
-    await fetch(`${apiBase()}/v1/auth/session`, {
-      method: "DELETE",
-      headers: { authorization: `Bearer ${session.token}` },
+  const data = res.status === 204 ? undefined : await res.json().catch(() => undefined);
+  if (!res.ok) {
+    throw new HostCallError(data?.error ?? {
+      code: "unreachable", message: "The host could not complete the call.", next: "Try again.",
     });
-  } finally {
-    saveSession(null);
   }
+  return data as T;
 }
 
-/** Fetch the installed plugin declarations for the active space. */
-export async function fetchDeclarations(session: SessionInfo): Promise<SpaceDeclarations> {
-  const res = await fetch(`${apiBase()}/v1/spaces/${session.space}/declarations`, {
-    headers: { authorization: `Bearer ${session.token}` },
-  });
-  const data = await res.json();
-  if (!res.ok || data.error) {
-    throw new HostCallError(data.error ?? { code: "unreachable", message: "Could not load declarations.", next: "Reload." });
+/** Check the cookie-backed session and whether first-owner enrollment is available. */
+export async function sessionStatus(): Promise<HostSessionStatus> {
+  const status = await hostJson<HostSessionStatus>("/v1/auth/status");
+  saveSession(status.session);
+  return status;
+}
+
+async function passkey(kind: "setup" | "login", args: Record<string, unknown>): Promise<SessionReply> {
+  const start = await hostJson<Ceremony>(`/v1/auth/${kind}/start`, args);
+  const credential = (kind === "setup"
+    ? await navigator.credentials.create({
+        publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(
+          start.options.publicKey as Parameters<typeof PublicKeyCredential.parseCreationOptionsFromJSON>[0],
+        ),
+      })
+    : await navigator.credentials.get({
+        publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(
+          start.options.publicKey as Parameters<typeof PublicKeyCredential.parseRequestOptionsFromJSON>[0],
+        ),
+      })) as PublicKeyCredential | null;
+  if (!credential) {
+    throw new HostCallError({ code: "needs-sign-in", message: "No passkey was chosen.", next: "Try again." });
   }
-  return data as SpaceDeclarations;
+  const result = await hostJson<SessionReply>(`/v1/auth/${kind}/finish`, {
+    ceremony: start.ceremony,
+    credential: credential.toJSON(),
+  });
+  saveSession(result.session);
+  return result;
+}
+
+/** Sign in with a discoverable passkey. The browser owns the session cookie.
+ *  The preview form's name argument is display-only until its passkey UX lands.
+ */
+export async function signInHost(_displayName?: string): Promise<SessionInfo> {
+  return (await passkey("login", {})).session;
+}
+
+/** Enroll the first owner's passkey. The caller presents recovery codes once. */
+export async function setupHost(token: string, name: string): Promise<SessionReply> {
+  return passkey("setup", { token: token.trim(), name: name.trim() });
+}
+
+/** Revoke the current installation and clear the cached session display details. */
+export async function signOutHost(_session?: SessionInfo): Promise<void> {
+  await hostJson<void>("/v1/auth/logout", {});
+  saveSession(null);
+}
+
+/** Get the installed declarations reachable by the signed-in person. */
+export function fetchDeclarations(session: SessionInfo): Promise<SpaceDeclarations> {
+  return hostCall(session, "s.declarations");
 }
 
 /** Invoke the single host call route: `POST /v1/spaces/{space}/call`. */
@@ -101,19 +137,8 @@ export async function hostCall<T = unknown>(
 ): Promise<T> {
   const body: Record<string, unknown> = { call, input };
   if (idempotencyKey) body.idempotency_key = idempotencyKey;
-  const res = await fetch(`${apiBase()}/v1/spaces/${session.space}/call`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${session.token}`,
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok || data.error) {
-    throw new HostCallError(data.error ?? { code: "unreachable", message: "The host could not complete the call.", next: "Try again." });
-  }
-  return data.result as T;
+  const { result } = await hostJson<{ result: T }>(`/v1/spaces/${session.space}/call`, body);
+  return result;
 }
 
 /** Convenience wrapper for `s.read`. */
@@ -134,10 +159,10 @@ interface RecordsListener {
   kind: "records";
   item: string;
   lastAnchor: string | null;
-  onSnapshot: (records: RecordData[], meta: { version: number; fields: Record<string, unknown>; computed: Record<string, unknown> }) => void;
-  onDelta: (records: RecordData[], meta: { version: number; fields: Record<string, unknown>; computed: Record<string, unknown> }) => void;
+  onSnapshot: (records: RecordData[], meta: LiveItemMetadata) => void;
+  onDelta: (records: RecordData[], meta: LiveItemMetadata) => void;
   onAppend: (record: RecordData, version: number) => void;
-  onItemChange: (meta: { version: number; fields: Record<string, unknown>; computed: Record<string, unknown> }) => void;
+  onItemChange: (meta: LiveItemMetadata) => void;
 }
 
 type Listener = QueryListener | RecordsListener;
@@ -165,10 +190,6 @@ export class LiveClient {
   }
 
   private wsUrl(): string {
-    const base = apiBase();
-    if (base) {
-      return `${base.replace(/^http/, "ws")}/v1/spaces/${this.session.space}/live`;
-    }
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     return `${proto}//${location.host}/v1/spaces/${this.session.space}/live`;
   }
@@ -180,11 +201,8 @@ export class LiveClient {
     this.ws = ws;
     this.ready = false;
 
-    ws.addEventListener("open", () => {
-      ws.send(JSON.stringify({ type: "auth", token: this.session.token }));
-    });
-
     ws.addEventListener("message", (ev) => {
+      if (this.ws !== ws || this.closed) return;
       let frame: LiveServerFrame;
       try {
         frame = JSON.parse(String(ev.data)) as LiveServerFrame;
@@ -208,8 +226,9 @@ export class LiveClient {
       if (frame.type === "records") {
         const sub = this.subs.get(frame.sub);
         if (sub?.kind === "records") {
-          if (frame.last_anchor) sub.lastAnchor = frame.last_anchor;
-          const meta = { version: frame.version, fields: frame.fields, computed: frame.computed };
+          sub.lastAnchor = frame.last_anchor;
+          const { version, fields, computed, state, when } = frame;
+          const meta = { version, fields, computed, state, when };
           if (frame.mode === "delta") sub.onDelta(frame.records, meta);
           else sub.onSnapshot(frame.records, meta);
         }
@@ -226,7 +245,8 @@ export class LiveClient {
       if (frame.type === "item_change") {
         const sub = this.subs.get(frame.sub);
         if (sub?.kind === "records") {
-          sub.onItemChange({ version: frame.version, fields: frame.fields, computed: frame.computed });
+          const { version, fields, computed, state, when } = frame;
+          sub.onItemChange({ version, fields, computed, state, when });
         }
       }
     });

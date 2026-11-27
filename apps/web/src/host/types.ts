@@ -5,10 +5,15 @@
 
 /** Authenticated browser session returned by the host sign-in route. */
 export interface SessionInfo {
-  token: string;
   account: string;
   name: string;
   space: string;
+}
+
+/** The host's answer for the current browser cookie. */
+export interface HostSessionStatus {
+  setup: boolean;
+  session: SessionInfo | null;
 }
 
 /** One field declaration from a kind's `fields:`, `records:`, or `state:` block. */
@@ -17,6 +22,7 @@ export interface FieldDecl {
   type: string;
   required?: boolean;
   default?: unknown;
+  computed?: boolean;
   formula?: string;
 }
 
@@ -27,17 +33,19 @@ export type OpPlacement = "swipe" | "menu" | "primary";
 export interface OperationDecl {
   name: string;
   /** Form: built-in (`add`, `change`, `remove`, `change record`, `remove record`), `set`, or `code`. */
-  form: "add" | "change" | "remove" | "change_record" | "remove_record" | "set" | "code";
+  form: "add" | "change" | "remove" | "change_record" | "remove_record" | "set" | "code" | "duplicate" | "open" | "timer" | "append_record";
   /** Fields accepted by `add`, `change`, or `change record`. */
   fields: string[];
   /** For `set` operations: target field or `state.<key>`. */
   target?: string;
   /** For `set` operations: literal value or `"ask"`. */
   value?: unknown;
-  /** Optional visibility predicate, e.g. `"not state.pinned"` or `"state.pinned"`. */
+  /** Declared coded arguments, keyed by the exact input name. */
+  inputs: Record<string, FieldDecl>;
+  /** Visibility on a particular row is supplied by its server-evaluated `when` map. */
   when?: string;
-  /** Optional edit window, e.g. `"48h"`. */
-  within?: string;
+  /** Optional compiled edit window. */
+  within?: { months: number; seconds: number };
   /** Where the operation appears in UI surfaces. */
   placement: OpPlacement[];
 }
@@ -97,7 +105,10 @@ export interface SlotDecl {
   name: string;
   cardinality: "single" | "many";
   gives: string;
-  recommended?: string;
+  recommended: string | null;
+  pickedBy: "space" | "person";
+  inputOperation: string | null;
+  fillers: (Omit<FillDecl, "slot"> & { plugin: string })[];
 }
 
 /** Fill declaration from `plugin.md`. */
@@ -134,6 +145,8 @@ export interface RowData {
   fields: Record<string, unknown>;
   computed: Record<string, unknown>;
   state?: Record<string, unknown>;
+  /** The host has evaluated each named operation precondition for this row. */
+  when?: Record<string, boolean>;
   version: number;
   edited?: number;
 }
@@ -159,6 +172,8 @@ export interface ItemDetail {
   fields: Record<string, unknown>;
   computed: Record<string, unknown>;
   state?: Record<string, unknown>;
+  /** The host has evaluated each named operation precondition for this row. */
+  when?: Record<string, boolean>;
   body: string;
   records: RecordData[];
   version: number;
@@ -180,23 +195,29 @@ export interface QuerySpec {
   limit?: number;
 }
 
+/** Viewer-aware metadata sent on records snapshots and item changes. */
+export interface LiveItemMetadata {
+  version: number;
+  fields: Record<string, unknown>;
+  computed: Record<string, unknown>;
+  state: Record<string, unknown>;
+  when: Record<string, boolean>;
+}
+
 /** Server-to-client frame on `GET /v1/spaces/{space}/live`. */
 export type LiveServerFrame =
   | { type: "ready"; account: string; space: string }
   | { type: "rows"; sub: string; rows: RowData[]; totals: Record<string, unknown>; cursor: string | null }
-  | {
+  | (LiveItemMetadata & {
       type: "records";
       sub: string;
       item: string;
-      version: number;
-      fields: Record<string, unknown>;
-      computed: Record<string, unknown>;
       mode: "snapshot" | "delta";
       after: string | null;
       records: RecordData[];
       last_anchor: string | null;
-    }
+    })
   | { type: "record_append"; sub: string; item: string; version: number; record: RecordData }
-  | { type: "item_change"; sub: string; item: string; version: number; fields: Record<string, unknown>; computed: Record<string, unknown> }
+  | (LiveItemMetadata & { type: "item_change"; sub: string; item: string })
   | { type: "error"; sub: string | null; code: string; message: string; next: string }
   | { type: "pong" };
