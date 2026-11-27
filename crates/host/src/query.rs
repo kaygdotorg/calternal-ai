@@ -313,6 +313,21 @@ fn query_input(
     })
 }
 
+pub(crate) fn contains(space: &Space, collection: &Collection, row: &Row) -> Result<bool> {
+    let kind = space.kind(&row.head.kind)?;
+    let records = if kind.records.is_empty() {
+        Vec::new()
+    } else {
+        space.records(row.head.id)?
+    };
+    let input = query_input(space, &kind, row, &records)?;
+    let page = format::Page {
+        offset: 0,
+        limit: 1,
+    };
+    Ok(!execute(collection, &kind, &[input], page)?.rows.is_empty())
+}
+
 fn execute(
     collection: &Collection,
     kind: &Kind<'_>,

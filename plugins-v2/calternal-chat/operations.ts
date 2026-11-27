@@ -13,6 +13,8 @@ export interface SendInput {
   quote?: RecordLink;
   mentions?: PersonId[];
   attachments?: ItemLink[];
+  /** Qualified start operation chosen at the harness slot. */
+  harness?: string;
 }
 
 /** Writes only the title and lets the host maintain the item's path and links. */
@@ -21,15 +23,23 @@ export const rename = on.call("chats.rename", async ({ chat, title }: RenameInpu
 );
 
 /** Appends one complete message. The same operation accepts a fenced harness reply. */
-export const send = on.call("chats.send", async ({ chat, text, quote, mentions, attachments }: SendInput, s) => {
+export const send = on.call("chats.send", async ({ chat, text, quote, mentions, attachments, harness }: SendInput, s) => {
   if (!text.trim() && !attachments?.length) {
     throw { code: "invalid", message: "Write a message or attach a file.", next: "Edit the message." };
   }
 
-  return s.write([{
+  const receipt = await s.write([{
     "append record": {
       item: chat,
       record: { fields: { quote, mentions, attachments }, body: text },
     },
   }]);
+  if (harness) {
+    const prompt = receipt.changes[0].link;
+    if (!prompt) {
+      throw { code: "unreachable", message: "The record link is unavailable.", next: "Retry the message." };
+    }
+    await s.call(harness, { chat, prompt });
+  }
+  return receipt;
 });

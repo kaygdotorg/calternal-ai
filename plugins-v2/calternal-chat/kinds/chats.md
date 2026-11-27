@@ -10,13 +10,13 @@ fields:
   title: text, required
   people: people
   archived: yes/no, default no
-  unread: = if(state.read through = empty, count(records), count(records, at > state.read through))
+  unread: = count(records after state.read through)
 records:
   quote: link(chats records)
   mentions: people
   attachments: links(any)
 state:
-  read through: time
+  read through: record anchor
   pinned: yes/no, default no
   muted: yes/no, default no
   draft: long text

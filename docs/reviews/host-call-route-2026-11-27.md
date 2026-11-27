@@ -51,3 +51,24 @@ This is the adapter contract for slices 1 and 2. The plugin process lane
 supplies operation dispatch and event context. The runs lane supplies the
 trusted run context. Run calls require a scope binding before they can use
 this route.
+
+## Coded operations
+
+The session and trusted asynchronous adapters also dispatch installed
+coded operations. Name the plugin, kind and operation, as in
+`calternal-chat.chats.send`. The two-part name is accepted when it names
+one unambiguous coded operation in the plugin. The worker pipe gets the
+kind-qualified selector, current acting person, space and stable event
+key from the host. Worker effects return through the same checked route.
+
+The isolated install probe discovers `on.change` selectors. A selector
+names a kind or collection visible to the installing plugin's code.
+Use `collection:` to disambiguate a collection sharing a kind name.
+After a successful write the host sends an item observation to matching
+registered plugins, excluding plugins already in the write's ancestry.
+The worker callback is outside the space lock.
+
+The append path already supplies the record link consumed by Chat's
+optional harness call. The selected harness operation must be listed
+in the calling manifest. The run adapter and durable delivery of
+reactions across a host restart remain separate integration work.

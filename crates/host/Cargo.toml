@@ -12,6 +12,7 @@ blake3.workspace = true
 percent-encoding.workspace = true
 getrandom.workspace = true
 calternal-auth.workspace = true
+calternal-plugin-host = { workspace = true, features = ["operations"] }
 calternal-format = { path = "../format" }
 calternal-fsio.workspace = true
 calternal-types.workspace = true
@@ -23,5 +24,4 @@ tokio.workspace = true
 uuid = { workspace = true, features = ["v7"] }
 
 
-[dev-dependencies]
 tempfile.workspace = true

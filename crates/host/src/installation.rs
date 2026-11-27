@@ -2,7 +2,9 @@
 use crate::declarations;
 use crate::internal;
 use crate::space::{Space, bounded_read};
+use crate::worker_calls::{InstalledCode, validate_registrations};
 use calternal_fsio::beneath::Folder;
+use calternal_plugin_host::operations::Registrations;
 use calternal_types::{Error, Result};
 use rusqlite::params;
 use std::collections::BTreeMap;
@@ -15,17 +17,22 @@ const PLUGIN_FILES: usize = 256;
 impl Space {
     pub(crate) fn load_plugins(&mut self) -> Result<()> {
         let mut plugins = BTreeMap::new();
+        let mut code = BTreeMap::new();
         let mut stmt = self
             .db
-            .prepare_cached("SELECT plugin,digest FROM installations")
+            .prepare_cached("SELECT i.plugin,i.digest,r.data FROM installations AS i LEFT JOIN worker_registrations AS r ON r.plugin=i.plugin")
             .map_err(internal)?;
         let trusted = stmt
             .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
             })
             .map_err(internal)?;
         for row in trusted {
-            let (name, digest) = row.map_err(internal)?;
+            let (name, digest, registration) = row.map_err(internal)?;
             let installed = self
                 .open_folder(&format!(".calternal/plugins/{name}"), false)
                 .map_err(internal)?;
@@ -35,9 +42,22 @@ impl Space {
             }
             let installed = plugins.values().cloned().collect::<Vec<_>>();
             let plugin = declarations::parse_plugin(&files, true, Some(&name), &installed)?;
+            if let Some(registration) = registration {
+                let registration = serde_json::from_str(&registration).map_err(internal)?;
+                let source = files
+                    .get("operations.ts")
+                    .ok_or_else(|| internal("registered source missing"))?;
+                let mut installed = InstalledCode::new(source.clone(), registration);
+                installed.endpoint = self
+                    .code
+                    .get(&name)
+                    .and_then(|existing| existing.endpoint.clone());
+                code.insert(name.clone(), installed);
+            }
             plugins.insert(name, plugin);
         }
         self.plugins = plugins;
+        self.code = code;
         Ok(())
     }
 
@@ -52,8 +72,12 @@ impl Space {
         *digest.finalize().as_bytes()
     }
 
-    pub(crate) fn install(&mut self, source: &Path, official: bool) -> Result<()> {
-        let files = bundle(source)?;
+    pub(crate) fn install(
+        &mut self,
+        files: BTreeMap<String, Vec<u8>>,
+        official: bool,
+        registration: Option<Registrations>,
+    ) -> Result<()> {
         let installed = self.plugins.values().cloned().collect::<Vec<_>>();
         let declaration = declarations::parse_plugin(&files, official, None, &installed)?;
         if self.plugins.contains_key(&declaration.manifest.id) {
@@ -71,6 +95,15 @@ impl Space {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(internal(error)),
         }
+        let code = registration
+            .map(|registration| {
+                validate_registrations(&declaration, &self.plugins, &registration)?;
+                let source = files
+                    .get("operations.ts")
+                    .ok_or_else(|| internal("probed source missing"))?;
+                Ok::<_, Error>(InstalledCode::new(source.clone(), registration))
+            })
+            .transpose()?;
         self.recovery_needed = true;
         let digest = self.bundle_digest(&files);
         let placements = files
@@ -83,6 +116,16 @@ impl Space {
             params![declaration.manifest.id, &digest[..]],
         )
         .map_err(internal)?;
+        if let Some(code) = &code {
+            tx.execute(
+                "INSERT INTO worker_registrations VALUES(?1,?2)",
+                params![
+                    declaration.manifest.id,
+                    serde_json::to_string(&code.registration).map_err(internal)?
+                ],
+            )
+            .map_err(internal)?;
+        }
         tx.execute(
             "INSERT INTO publication VALUES(1,?1)",
             [serde_json::to_string(&placements).map_err(internal)?],
@@ -90,6 +133,9 @@ impl Space {
         .map_err(internal)?;
         tx.commit().map_err(internal)?;
         self.finish(&placements)?;
+        if let Some(code) = code {
+            self.code.insert(declaration.manifest.id.clone(), code);
+        }
         self.plugins
             .insert(declaration.manifest.id.clone(), declaration);
         Ok(())
@@ -144,7 +190,7 @@ fn visit(
     }
     Ok(())
 }
-fn bundle(path: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
+pub(crate) fn bundle(path: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
     bundle_from(&Folder::open_existing(path).map_err(internal)?)
 }
 
