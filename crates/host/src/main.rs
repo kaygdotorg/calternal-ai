@@ -1,7 +1,7 @@
 //! Local operator commands and the session-authenticated HTTP transport.
 use axum::extract::{DefaultBodyLimit, Path, State, rejection::JsonRejection};
 use axum::http::{HeaderMap, StatusCode};
-use axum::{Json, Router, routing::post};
+use axum::{Json, Router, routing::{get, post}};
 use calternal_auth::{Auth, AuthConfig};
 use calternal_host::{Call, Host, WRITE_BYTES, WorkerRuntime};
 use calternal_types::{Error, ErrorCode};
@@ -44,6 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ("serve", [address]) => {
             let app = Router::new()
                 .route("/v1/spaces/{space}/call", post(route))
+                .route("/v1/spaces/{space}/live", get(calternal_host::live::ws_route))
                 .layer(DefaultBodyLimit::max(WRITE_BYTES))
                 .with_state(host);
             axum::serve(tokio::net::TcpListener::bind(address).await?, app).await?;

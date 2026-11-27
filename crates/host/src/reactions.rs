@@ -83,6 +83,7 @@ impl Host {
         })
         .await
         .map_err(internal)??;
+        self.live.notify(space);
         for event in events {
             let host = self.clone();
             let watcher = Actor::plugin(actor.account, &event.plugin);

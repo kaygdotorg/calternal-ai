@@ -4,6 +4,7 @@
 
 mod declarations;
 mod installation;
+pub mod live;
 mod query;
 mod reactions;
 mod records;
@@ -50,6 +51,7 @@ pub struct Host {
     retention_ms: i64,
     spaces: Mutex<HashMap<SpaceId, Slot>>,
     workers: Option<WorkerRuntime>,
+    live: live::Hub,
 }
 
 impl Host {
@@ -65,7 +67,18 @@ impl Host {
             retention_ms: i64::from(retention_days) * 86_400_000,
             spaces: Mutex::default(),
             workers: None,
+            live: live::Hub::default(),
         })
+    }
+
+    /// Return the per-space live window notification hub.
+    pub fn live(&self) -> &live::Hub {
+        &self.live
+    }
+
+    /// Resolve a bearer session token to its account ID and display name.
+    pub async fn identify_session(&self, bearer: &str) -> Option<(AccountId, String)> {
+        self.auth.identify(bearer).await
     }
 
     /// Enable an operator-controlled launcher for new coded installations.
@@ -135,7 +148,12 @@ impl Host {
     /// plugin via the shared actor type. A run needs a scope-aware adapter
     /// before it can call the host. This method blocks on space storage.
     pub fn call(&self, actor: Actor, id: SpaceId, call: Call) -> Result<Value> {
-        self.with_space(&actor, id, |space| space.call(&actor, call))
+        let mutates = matches!(call.call.as_str(), "s.write" | "s.state");
+        let output = self.with_space(&actor, id, |space| space.call(&actor, call))?;
+        if mutates {
+            self.live.notify(id);
+        }
+        Ok(output)
     }
 
     fn owner_display(&self, account: AccountId) -> Result<String> {
