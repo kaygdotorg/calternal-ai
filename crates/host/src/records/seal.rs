@@ -5,7 +5,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use calternal_types::{AccountId, Actor, Result, Via};
 
-pub(super) const PREFIX: &str = " <!--ca2 ";
+pub(super) const PREFIX: &str = " <!--ca1 ";
 pub(super) const SUFFIX: &str = "-->";
 const TAG_BYTES: usize = 16;
 const CLAIM_CHARS: usize = 24;

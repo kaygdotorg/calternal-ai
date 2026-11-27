@@ -40,3 +40,10 @@ owners can change `declarations::parse_plugin` and
 `format::InstallOptions::installed` to accept a slice of borrowed definitions
 or a borrowed keyed catalog. New SQLite ledgers use an integer primary key
 for order. Existing add-only ledgers keep their recorded SQLite row order.
+
+S1 pins the operator-selected base for opening a space and walks both space
+roots through no-follow directory descriptors. The host configures an
+operator-owned base and runs with exclusive write access to its storage.
+Other processes using the host Unix identity are trusted to stay outside the
+tree while it is open. The private SQLite ledger requires a stable pathname.
+The operator must keep the protected path's ancestors stable during service.

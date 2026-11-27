@@ -108,6 +108,7 @@ pub(crate) struct Space {
     pub(crate) code: BTreeMap<String, InstalledCode>,
     pub(crate) retention_ms: i64,
     pub(crate) key: [u8; 32],
+    pub(crate) storage_owner: u32,
     pub(crate) seen: BTreeMap<Uuid, crate::records::Signature>,
     pub(crate) id: SpaceId,
     pub(crate) owner_display: Option<(AccountId, String)>,
@@ -118,12 +119,26 @@ pub(crate) struct Space {
 
 impl Space {
     pub(crate) fn open(root: &Path, id: SpaceId, retention_ms: i64) -> Result<Self> {
-        let private = root.join("state").join(id.to_string());
-        let root = root.join("spaces").join(id.to_string());
-        calternal_fsio::create_dir_all_durable(&root).map_err(internal)?;
+        calternal_fsio::create_dir_all_durable(root).map_err(internal)?;
+        let metadata = std::fs::symlink_metadata(root).map_err(internal)?;
+        if !metadata.is_dir() || metadata.mode() & 0o022 != 0 {
+            return Err(Error::forbidden("The host storage base must be a real directory writable only by its owner."));
+        }
+        // Only the operator path starts with a pathname lookup. Every space
+        // component is opened relative to that pinned directory, without links.
+        let base = Folder::open_existing(root).map_err(internal)?;
+        let owner = metadata.uid();
+        let id_text = id.to_string();
+        let spaces = storage_child(&base, root, "spaces", owner)?;
+        let files = storage_child(&spaces, &root.join("spaces"), &id_text, owner)?;
+        let state = storage_child(&base, root, "state", owner)?;
+        let private = root.join("state").join(&id_text);
+        storage_child(&state, &root.join("state"), &id_text, owner)?;
+        calternal_fsio::private::directory(&private).map_err(internal)?;
         let pending = private.join("pending");
         calternal_fsio::private::directory(&pending).map_err(internal)?;
-        let lock = DataLock::acquire_existing(&private).map_err(internal)?;
+        let private_handle = std::fs::File::open(&private).map_err(internal)?;
+        let lock = DataLock::acquire_at(&private_handle, &private).map_err(internal)?;
         let ledger = private.join("ledger.sqlite3");
         calternal_fsio::private::file(&ledger).map_err(internal)?;
         let db = Connection::open(ledger).map_err(internal)?;
@@ -149,7 +164,7 @@ impl Space {
         };
         let mut space = Self {
             db,
-            files: Folder::open_existing(&root).map_err(internal)?,
+            files,
             pending_dir: Folder::open_existing(&pending).map_err(internal)?,
             rows: BTreeMap::new(),
             plugins: BTreeMap::new(),
@@ -158,6 +173,7 @@ impl Space {
             code: BTreeMap::new(),
             retention_ms,
             key,
+            storage_owner: owner,
             seen: BTreeMap::new(),
             id,
             owner_display: None,
@@ -583,6 +599,19 @@ impl Receipt {
     }
 }
 
+fn storage_child(parent: &Folder, path: &Path, name: &str, owner: u32) -> Result<Folder> {
+    let child = parent.child(name, true).map_err(internal)?;
+    // Every caller has verified that this parent excludes outside writers
+    // before walking into it, so only the host identity can swap this entry.
+    let metadata = std::fs::symlink_metadata(path.join(name)).map_err(internal)?;
+    if !metadata.is_dir() || metadata.uid() != owner || metadata.mode() & 0o022 != 0 {
+        return Err(Error::forbidden(
+            "The host storage tree must be writable only by its owner.",
+        ));
+    }
+    Ok(child)
+}
+
 pub(crate) fn bounded_read(file: std::fs::File, limit: usize) -> Result<Vec<u8>> {
     let mut content = Vec::new();
     file.take((limit + 1) as u64)
@@ -595,4 +624,22 @@ pub(crate) fn bounded_read(file: std::fs::File, limit: usize) -> Result<Vec<u8>>
         ));
     }
     Ok(content)
+}
+
+#[cfg(test)]
+mod root_tests {
+    use super::*;
+
+    #[test]
+    fn linked_space_directory_is_refused() {
+        let root = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let id = SpaceId::new();
+        let spaces = root.path().join("spaces");
+        std::fs::create_dir(&spaces).unwrap();
+        std::os::unix::fs::symlink(target.path(), spaces.join(id.to_string())).unwrap();
+        assert!(Space::open(root.path(), id, 86_400_000).is_err());
+        assert!(!root.path().join("state").exists());
+        assert_eq!(std::fs::read_dir(target.path()).unwrap().count(), 0);
+    }
 }

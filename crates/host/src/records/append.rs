@@ -10,6 +10,8 @@ use uuid::Uuid;
 
 /// Fast path adapted from the host spike. The checked directory descriptor
 /// pins the read handle and procfs reopens the same inode with write access.
+/// The operator keeps the storage tree exclusive to the host user during
+/// the call. The inode must also exclude writes by its group and other users.
 #[cfg(target_os = "linux")]
 pub(crate) fn append(
     space: &mut Space,
@@ -25,6 +27,9 @@ pub(crate) fn append(
     let mut read = space.open_regular(&head.path).map_err(internal)?;
     let metadata = read.metadata().map_err(internal)?;
     let initial = Signature::from(&metadata);
+    if metadata.uid() != space.storage_owner || metadata.mode() & 0o022 != 0 {
+        return Err(Error::forbidden("The host must have exclusive write access to the record file."));
+    }
     if metadata.nlink() != 1 || metadata.len() != head.length {
         return Err(Error::conflict("The record stream has outside changes."));
     }
@@ -146,7 +151,12 @@ pub(crate) fn recover_pending(space: &mut Space) -> Result<()> {
         return Err(internal("Pending append has a different ledger head"));
     }
     let file = space.open_regular(&prior.path).map_err(internal)?;
-    let signature = Signature::from(&file.metadata().map_err(internal)?);
+    use std::os::unix::fs::MetadataExt;
+    let metadata = file.metadata().map_err(internal)?;
+    if metadata.uid() != space.storage_owner || metadata.mode() & 0o022 != 0 {
+        return Err(Error::forbidden("The host must have exclusive write access to the record file."));
+    }
+    let signature = Signature::from(&metadata);
     let bytes = crate::space::bounded_read(file.try_clone().map_err(internal)?, crate::space::ITEM_BYTES)?;
     let prefix = bytes.get(..prior.prefix as usize);
     let tail = bytes.get(prior.length as usize..);
