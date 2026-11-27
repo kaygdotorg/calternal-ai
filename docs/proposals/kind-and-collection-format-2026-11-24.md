@@ -1,7 +1,7 @@
 # The kind and collection format · revision 10
 
 **Revision 10, 2026-11-28** (Chat-first implementation and coordinator
-sets 11–16). This is the single statement of the on-disk
+sets 11–16 and the browser follow-up). This is the single statement of the on-disk
 format and the plugin call surface; a builder implements from it alone.
 
 It applies, all binding:
@@ -439,8 +439,8 @@ is indeterminate.
 ### 2.7 `fields:`
 
 ```text
-<name>: <type>[, required][, default <value>][, heading][, was <old>[|<older>]…][, from metadata][, in sidecar[ <property>]]
-<name>: [per day|week|month|year ]= <formula>[, mark]
+<name>: <type>[, required][, default <value>][, heading][, was <old>[|<older>]…][, from metadata][, in sidecar[ <property>]][, badge]
+<name>: [per day|week|month|year ]= <formula>[, mark|badge]
 ```
 
 ```markdown
@@ -464,6 +464,7 @@ fields:
 | `from metadata` | Read from the file's embedded metadata; read-only; file items only |
 | `in sidecar [<property>]` | Stored in the XMP sidecar, under that property if named; file items only |
 | `mark` | On a yes/no computed field: shows the field's name as a label on the item when true (fifth set). In an addition, it is drawn with the adding plugin's icon, never in the host's warning style |
+| `badge` | On a numeric field or numeric formula result: marks it for badge presentation when selected in a row. Use the field name as the badge label and include the value in the accessible name, for example “3 unread.” |
 
 - **Computed fields** start with `=`. Their values live only in the
   rebuildable index, never in the item.
@@ -1070,6 +1071,7 @@ where`, `totals`, view columns, chart values and agent-rule conditions.
 | --- | --- | --- |
 | `collection` | ID | `collection: unread` |
 | `title` | Name | `title: Unread` |
+| `icon` | Optional catalogue icon token | `icon: archive` |
 | `format` | `1` | `format: 1` |
 | `from` | Sources (5.3) | `from: tasks, events` |
 | `where` | A condition | `where: not read` |
@@ -1099,6 +1101,7 @@ stays and the new one is offered, as with sidebars (review 17).
 | map | `map: <place field>` | `map: place` |
 | folders | `folders: <column>…` (`from: files` only) | `folders: name, edited, size` |
 | compact | `compact: <column>…`, small: a widget, a carousel or a sidebar preview, laid out by its place | `compact: image` |
+| strip | `strip: <column>…`, a horizontal sequence of compact rows, including in a sidebar | `strip: title, people, unread` |
 
 - **A column** is a field or a formula (fifth set).
 - **Dropping into a board group** sets the field, or makes the group's
@@ -1184,8 +1187,8 @@ removing or reordering lines. Each member's copy lives in their personal
 space; an update keeps a changed copy and offers the new one (G2).
 
 ```text
-- [<title>](<relative link to a collection>)
-- [<title>](<<plugin>:collections/<id>>)
+- [<title>](<relative link to a collection>)[, icon: <token>]
+- [<title>](<<plugin>:collections/<id>>)[, icon: <token>]
 - each: <kind>[, where <condition>][, sort <field>[ asc|desc]][, under "<heading>"] -> <collection> by <link field>
 - each: tags of <kind>[, under "<parent tag>"] -> <collection>
 - section: <heading>
@@ -1212,6 +1215,10 @@ format: 1
 - **`each: tags of <kind>`** makes one entry per top-level tag, or per
   child of `<parent tag>`. Opening it filters `<collection>` to that tag
   and its children.
+- **Entry icons** are optional catalogue tokens, as on a collection.
+  A linked entry uses its explicit token first, then the collection's
+  token. With neither, draw the text label alone. The compiled catalog
+  carries the collection and entry icon values. Icons are decorative.
 - **Links to another plugin's collection** grant nothing.
 - **Lines another plugin adds** (§7.2) are drawn after this file's lines,
   and are removed like any line.
@@ -1373,7 +1380,8 @@ use is stamped with who used it.
 
 ```text
 slots:
-  <slot>: single|many, gives "<what>", picked by person|space[, recommended <plugin>][, inputs <operation>]
+  <slot>: single|many, <gives>, picked by person|space[, recommended <plugin>][, inputs <operation>][, label "<name>"]
+  <gives> = gives "<what>" | gives text <input>[, draft state.<key>][, quote <input>]
 fills:
   <place>: frame <path>|operation <operation>|collection <id>[, as "<label>"]
   receive: url|text|file… -> operation <operation>
@@ -1381,7 +1389,7 @@ fills:
 
 ```markdown
 slots:
-  composer: single, gives "the draft and the chat", picked by person, recommended calternal-chat, inputs chats.send
+  composer: single, gives text text, draft state.draft, quote quote, picked by person, recommended calternal-chat, inputs chats.send, label "Message"
 fills:
   kind [calternal-mail.messages] panel: frame frames/summary.html
   search: operation search archive, as "Mail archive"
@@ -1396,6 +1404,19 @@ fills:
   operation's nonempty typed input block, by unambiguous name or
   `<kind>.<operation>`. Operation fillers use that schema, fixed per
   format version, with no optional extras or negotiation.
+- **Composer binding.** The typed form of `gives` identifies a composer
+  and names the text input in the operation's schema. The draft clause,
+  if present, names a per-person state key of compatible text type on
+  the target kind. The quote clause, if present, names a record-link
+  input in that schema. The selected readable record supplies its
+  host-issued link. The exact wire path for obtaining a link for an
+  existing record still needs implementation. Binding names refer
+  to the schema, which stays the single source of types.
+- **Slot and filler labels.** A slot can declare `label "<name>"`.
+  The compiled catalog carries that label and preserves an optional
+  filler `as "<label>"` as the filler's display label in both the slot
+  picker and the fill projection. A filler without a label uses the
+  supplying plugin's name. IDs remain the values sent in selections.
 - **A place gives only what its row says.** A person can select an
   installed plugin for a person-picked slot in the call envelope,
   `"slot_selection":{"slot":"harness","filler":"my-harness"}`.
@@ -2106,14 +2127,14 @@ export const remind = on.time("reading.remind", async (item, s) =>
 | Line grammar | 10 line rules, 6 name rules and 9 expression rules |
 | Reserved words | 51 in five groups, plus 6 reserved plugin IDs |
 | Kind keys | 28 including body and separate `ical` and `vcard` keys |
-| Field flags | 7 |
+| Field flags | 8 including `badge` |
 | Operation line forms | 12 (3 in `extends:`), with one new nested key, `inputs`, on coded operations |
 | Field types | 25 entries including `record anchor`, plus 4 built-in item fields |
 | Functions | 25, with a new form of `count` |
-| Collection keys | 13 including body |
-| Views | 10 |
-| Sidebar line forms | 6 |
-| `plugin.md` keys | 21 including body; `programs` is an existing key with named child bindings; `inputs <operation>` is a slot clause |
+| Collection keys | 14 including body and `icon` |
+| Views | 11 including `strip` |
+| Sidebar line forms | 6, with an optional `icon` clause on collection entries |
+| `plugin.md` keys | 21 including body; `programs` is an existing key with named child bindings; slot clauses add `inputs <operation>` and `label`, with typed bindings under `gives` |
 | Outside proofs | 2 beyond the mandatory token |
 | Host places | 12 |
 | Theme keys | 11; 6 palette roles |
@@ -2200,6 +2221,9 @@ Revision 7 adds six, all from the sixth set:
   metadata and cookie-authenticated live windows.
 - Local developer installation, retention, private operator setup, live
   revocation and mediated run egress.
+- Browser follow-up decisions add catalogue icons, an explicit numeric
+  badge, a strip view, slot and filler labels, and typed composer
+  bindings. These declarations still need implementation.
 
 ### Revision 9 (round 34)
 
@@ -2728,6 +2752,21 @@ All eight are taken, since each only removes:
 - one `data` rule on every path (§3.1).
 
 
+### Chat fixture follow-up
+
+Line numbers refer to merged `dev` at `32dc5517`. These are the proposed
+fixture edits once the corresponding parser and host changes land.
+
+| File and line | Change |
+| --- | --- |
+| [Chat `kinds/chats.md:13`](../../plugins-v2/calternal-chat/kinds/chats.md#L13) | Use `unread: = count(records after state.read through), badge`. The existing row already lists `unread`. |
+| [Chat `collections/pinned.md:9`](../../plugins-v2/calternal-chat/collections/pinned.md#L9) | Replace `compact: title, people, unread` with `strip: title, people, unread`. |
+| [Chat `collections/archived.md:3`](../../plugins-v2/calternal-chat/collections/archived.md#L3), [Chat `sidebars/chat.md:10`](../../plugins-v2/calternal-chat/sidebars/chat.md#L10) | Add `icon: archive` after the collection title for all uses of the collection. To make it specific to this sidebar instead, append `, icon: archive` to the Archived entry. One declaration suffices. |
+| [Chat `plugin.md:9`](../../plugins-v2/calternal-chat/plugin.md#L9) | Use the composer declaration in §7.4. It references `chats.send` and binds the existing `text`, `state.draft` and `quote`. |
+| [Chat `plugin.md:10`](../../plugins-v2/calternal-chat/plugin.md#L10) | Add `label "Ask an agent"`. Add `inputs <local operation>` when there is a Chat-owned operation declaring the exact `chat` and `prompt` input pair. The current harness slot has no local schema it can reference. |
+| [Claude Code `plugin.md:7`](../../plugins-v2/calternal-chat-claude-code/plugin.md#L7) and [line 11](../../plugins-v2/calternal-chat-claude-code/plugin.md#L11) | Replace the flat program line with a `programs:` block and `calternal-provider-claude-code: executable programs/calternal-provider-claude-code` when the bound file lands. Keep the existing `as "Claude Code"` on the fill and carry it through the host projection. |
+| [Claude Code `kinds/runs.md:10`](../../plugins-v2/calternal-chat-claude-code/kinds/runs.md#L10), [`operations.ts:4`](../../plugins-v2/calternal-chat-claude-code/operations.ts#L4) and [line 9](../../plugins-v2/calternal-chat-claude-code/operations.ts#L9) | Add `inputs:` beneath `start: code`, with `chat: link(calternal-chat.chats), required` and `prompt: link(calternal-chat.chats records), required`. Add `prompt: RecordLink` to the handler schema and use it as the first actor input. `start` remains targetless. |
+
 ## 22. Code and specification disagree
 
 This list compares the coordinator's decisions with `dev` at
@@ -2738,6 +2777,7 @@ This list compares the coordinator's decisions with `dev` at
 | Typed slots and harness start | Slot input schemas come from typed operations. The harness starts from the new message link. | The engine validates `inputs <operation>` when present. Chat's two slots omit it. The bundled harness has no typed `start` block and its handler consumes only `chat`; Chat already sends `prompt` from the receipt. The host call report's send envelope also still shows `chat` where merged code requires `item`. |
 | Send and start replay | One request key covers append and start, with no duplicate effects on retry. | Subkeys and append replay exist. A mock proved one start and the merged host proved append replay after a refused start. The real run start remains unconnected to the merged host, so replay with a real run is unproven. |
 | Program and asset admission | Owner approval for bound plugin-local programs and frame-capable content; recognised assets may stay data. | The parser still accepts a flat program ID list and the merged Claude Code fixture uses it. The host refuses programs, destinations and assets/frames. Lane D binds an executable on its branch, and its runner refuses image bindings. The shared content classifier and in-app install approval flow remain pending. |
+| Browser presentation follow-up | Collection and entry icons, the numeric badge flag, the strip view, slot and filler labels, and composer bindings are explicit. | At `origin/lane/browser-chat` `4d0c500d`, sidebar entry icons are omitted, badges and composer roles are inferred, pinned rows use the list renderer, and fill labels are dropped by the host. The new declaration syntax is specified here for follow-up; it has no parser or client implementation yet. |
 | Compiled declarations | The host ships checked declarations to devices. | The JSON projection is live in the browser. The proposed shared Rust browser engine build without install checks is still unmeasured. The projection splits validated sidebar/collection/page strings and omits some declared presentation details, including fill labels. |
 | Worker isolation and reactions | Isolated code with CPU and memory bounds and process-family cleanup. Committed reactions are replayable. | The merged launcher is opt-in Bubblewrap with namespaces, a six-second deadline and a Node heap limit. A whole-worker CPU and memory quota is unproven. The install probe and actor recycling are implemented. Change delivery is post-commit in memory and can be lost on host stop. |
 | First owner and access loss | Private operator issuance, and an explicit content-revocation frame before non-owner live access. | Passkey enrolment uses inherited auth and a disposable setup code passed by pipe in the browser test. Standalone operator issuance through the private admin flow has no end-to-end proof. The personal-space host admits only the owner and closes sockets on session revocation; it has no per-window permission-loss frame or client purge contract. |
