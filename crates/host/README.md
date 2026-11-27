@@ -14,6 +14,15 @@ and a personal space in the root's auth directory. Set
 `CALTERNAL_RECEIPT_RETENTION_DAYS` to a positive whole number to override
 the seven-day default.
 
+Serve the web bundle and proxy `/v1` (including WebSocket upgrades) from
+the configured public HTTPS origin. The browser uses `GET /v1/auth/status`,
+the passkey ceremonies under `/v1/auth/login` and `/v1/auth/setup`, and
+`POST /v1/auth/logout`. The auth service issues a Strict, Secure, HttpOnly
+host cookie. It is also required by `GET /v1/spaces/{space}/live`.
+First-owner enrollment requires an operator-issued setup code. If the proxy
+sets `X-Forwarded-For`, set `CALTERNAL_TRUSTED_PROXIES` to the actual proxy
+networks in CIDR notation so passkey rate limits use the transport client.
+
 The [call contract](../../docs/reviews/host-call-route-2026-11-27.md)
 describes worker and browser messages. The
 [verification and findings](../../docs/reviews/host-core-findings-2026-11-27.md)
