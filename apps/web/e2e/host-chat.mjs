@@ -29,6 +29,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { preview } from "vite";
+import { enterSetupCode, previewReady, previewUnit, service, startPreview } from "./host-preview-service.mjs";
 
 const WEB = fileURLToPath(new URL("../", import.meta.url));
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -152,18 +153,18 @@ async function openContext(browser, viewport = { width: 1280, height: 800 }) {
 
 async function fixture(directory, origin, setupCode) {
   fs.mkdirSync(SHOT_DIR, { recursive: true });
-  const backend = await port();
+  const backend = previewUnit ? new URL(origin).port : await port();
   const api = `http://127.0.0.1:${backend}`;
   const address = `127.0.0.1:${backend}`;
   const bin = process.env.HOST_BIN ?? path.join(ROOT, "target/debug/calternal-host");
   const env = {
     ...process.env,
-    CALTERNAL_WORKER_BWRAP: execFileSync("sh", ["-c", "command -v bwrap"], { encoding: "utf8" }).trim(),
-    CALTERNAL_WORKER_NODE: process.execPath,
-    CALTERNAL_WORKER_SDK: path.join(ROOT, "packages/plugin-sdk"),
+    CALTERNAL_WORKER_BWRAP: process.env.CALTERNAL_WORKER_BWRAP ?? execFileSync("sh", ["-c", "command -v bwrap"], { encoding: "utf8" }).trim(),
+    CALTERNAL_WORKER_NODE: process.env.CALTERNAL_WORKER_NODE ?? process.execPath,
+    CALTERNAL_WORKER_SDK: process.env.CALTERNAL_WORKER_SDK ?? path.join(ROOT, "packages/plugin-sdk"),
   };
-  const host = spawn(bin, ["serve", directory, origin, address], { env, stdio: ["ignore", "ignore", "inherit"] });
-  const stop = () => host.kill("SIGTERM");
+  const host = previewUnit ? null : spawn(bin, ["serve", directory, origin, address], { env, stdio: ["ignore", "ignore", "inherit"] });
+  const stop = () => host?.kill("SIGTERM");
   process.once("exit", stop);
 
   const harnessDir = fs.mkdtempSync(path.join(os.tmpdir(), "calternal-test-harness-"));
@@ -172,31 +173,37 @@ async function fixture(directory, origin, setupCode) {
   let server;
   let browser;
   try {
-    await waitForHost(api, host);
-    server = await preview({
-      configFile: false,
-      root: WEB,
-      preview: {
-        host: "127.0.0.1",
-        port: Number(new URL(origin).port),
-        strictPort: true,
-        proxy: { "/v1": { target: api, ws: true } },
-      },
-      plugins: [
-        {
-          name: "spa-host-fallback",
-          configurePreviewServer(srv) {
-            srv.middlewares.use((req, _res, next) => {
-              const pathname = (req.url || "/").split("?")[0];
-              if (pathname === "/host" || pathname.startsWith("/host/")) {
-                req.url = "/index.html";
-              }
-              next();
-            });
-          },
+    if (previewUnit) {
+      startPreview(directory, origin);
+      await previewReady(origin);
+    }
+    else {
+      await waitForHost(api, host);
+      server = await preview({
+        configFile: false,
+        root: WEB,
+        preview: {
+          host: "127.0.0.1",
+          port: Number(new URL(origin).port),
+          strictPort: true,
+          proxy: { "/v1": { target: api, ws: true } },
         },
-      ],
-    });
+        plugins: [
+          {
+            name: "spa-host-fallback",
+            configurePreviewServer(srv) {
+              srv.middlewares.use((req, _res, next) => {
+                const pathname = (req.url || "/").split("?")[0];
+                if (pathname === "/host" || pathname.startsWith("/host/")) {
+                  req.url = "/index.html";
+                }
+                next();
+              });
+            },
+          },
+        ],
+      });
+    }
 
     browser = await chromium.launch({ headless: true });
 
@@ -204,7 +211,8 @@ async function fixture(directory, origin, setupCode) {
     const a = await openContext(browser, { width: 1280, height: 800 });
     await a.page.goto(`${origin}/host`);
     await a.page.waitForSelector('h1:has-text("Set up Calternal")');
-    await a.page.fill('input[name="token"]', setupCode);
+    if (previewUnit) await enterSetupCode(a.page, directory);
+    else await a.page.fill('input[name="token"]', setupCode);
     await a.page.fill('input[name="name"]', "Ada");
     await a.page.click('button:has-text("Create passkey")');
 
@@ -238,7 +246,8 @@ async function fixture(directory, origin, setupCode) {
     assert.equal(await upgradeStatus(liveUrl, origin, "same-origin"), 401);
 
     // Install Chat + Test Harness filler on the real host before the browser opens the space
-    await run(
+    if (previewUnit) service("stop");
+    else await run(
       bin,
       ["install", directory, origin, session.account, session.space, path.join(ROOT, "plugins-v2/calternal-chat"), "--official"],
       { env },
@@ -248,6 +257,11 @@ async function fixture(directory, origin, setupCode) {
       ["install", directory, origin, session.account, session.space, harnessDir],
       { env },
     );
+
+    if (previewUnit) {
+      startPreview(directory, origin);
+      await previewReady(origin);
+    }
 
     // Confirm recovery codes and enter workspace
     await a.page.check('input[type="checkbox"]');
@@ -466,6 +480,11 @@ async function fixture(directory, origin, setupCode) {
     assert.equal(await phone.page.locator('[data-switcher]').count(), 0);
     await phone.page.screenshot({ path: path.join(SHOT_DIR, "pair-390-dark-real.png") });
 
+    if (previewUnit) {
+      console.log(`PASS 5: real preview screenshots written to ${SHOT_DIR}`);
+      return;
+    }
+
     // Capture matching mockup pairs from http://10.69.69.237:4313/ (Chat app, one chat open)
     const mockupUrl = process.env.MOCKUP_URL || "http://10.69.69.237:4313";
     for (const [label, vp, qs] of [
@@ -491,7 +510,7 @@ async function fixture(directory, origin, setupCode) {
     await browser?.close();
     server?.httpServer?.close();
     fs.rmSync(harnessDir, { recursive: true, force: true });
-    if (host.exitCode === null && host.signalCode === null) {
+    if (host && host.exitCode === null && host.signalCode === null) {
       const exited = once(host, "exit");
       host.kill("SIGTERM");
       await exited;
@@ -500,7 +519,7 @@ async function fixture(directory, origin, setupCode) {
 }
 
 if (process.argv[2] === "--fixture") {
-  const setupCode = await new Promise((resolve, reject) => {
+  const setupCode = previewUnit ? null : await new Promise((resolve, reject) => {
     let value = "";
     process.stdin
       .setEncoding("utf8")
