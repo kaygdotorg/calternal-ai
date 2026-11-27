@@ -191,3 +191,79 @@ fn whole_kind_cap_counts_matches_and_keeps_other_totals() {
     );
     assert!(install(&collection.replace("group != ", "missing != ")).is_err());
 }
+
+#[test]
+fn previous_reads_only_its_snapshot() {
+    let previous_fields = Fields::from([("spent".into(), number("5"))]);
+    let previous = PeriodSnapshot {
+        date: "2026-11-26",
+        fields: Some(&previous_fields),
+        ..Default::default()
+    };
+    let periods = BTreeMap::from([(
+        Period::Day,
+        PeriodSnapshot {
+            date: "2026-11-27",
+            previous: Some(&previous),
+            ..Default::default()
+        },
+    )]);
+    let fields = Fields::from([("spent".into(), number("99"))]);
+    let metadata = Fields::from([("edited".into(), Value::Date("2026-11-27".into()))]);
+    let row = Row {
+        fields: &fields,
+        metadata: &metadata,
+    };
+    let records = [row];
+    let context = EvalContext {
+        today: Some("2026-11-27"),
+        now: Some("2026-11-27T12:00:00Z"),
+        records: &records,
+        item: Some(row),
+        open_item: Some(row),
+        state: Some(&fields),
+        settings: Some(&fields),
+        periods: Some(&periods),
+        ..Default::default()
+    };
+    for (formula, expected) in [
+        ("count(previous(records))", None),
+        ("previous(count(records))", None),
+        ("previous(this.edited)", None),
+        ("previous(edited)", None),
+        ("previous(now())", None),
+        ("previous(today())", Some(Value::Date("2026-11-26".into()))),
+        ("previous(this.spent) + spent", Some(number("104"))),
+    ] {
+        let kind = KIND.replace(
+            "daily: per day = period",
+            &format!("daily: per day = {formula}"),
+        );
+        let plugin = parse_plugin(
+            &[
+                PluginFile {
+                    path: "plugin.md",
+                    text: Some(MANIFEST),
+                },
+                PluginFile {
+                    path: "kinds/categories.md",
+                    text: Some(&kind),
+                },
+            ],
+            &InstallOptions::default(),
+        )
+        .unwrap();
+        let result =
+            evaluate_period_field(&plugin.kinds["categories"].fields["daily"], row, &context);
+        match expected {
+            Some(value) => assert_eq!(result.unwrap(), value, "{formula}"),
+            None => assert!(
+                result
+                    .unwrap_err()
+                    .message
+                    .contains("unavailable in a previous period"),
+                "{formula}"
+            ),
+        }
+    }
+}
