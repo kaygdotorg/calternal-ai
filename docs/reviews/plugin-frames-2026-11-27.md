@@ -40,12 +40,12 @@ The route scopes receipts by the verified person, space and plugin and
 checks matching retry input. Each `s.write` commits its change list
 atomically. The transport supplies host-side keys as
 `<event-key>:write:<ordinal>`, `<event-key>:state:<ordinal>`,
-`<event-key>:call:<ordinal>` and `<event-key>:run:<ordinal>`, with separate zero-based sequences. For
+`<event-key>:call:<ordinal>` `<event-key>:run:<ordinal>` and `<event-key>:run-send:<ordinal>`, with separate zero-based sequences. For
 `s.call`, use its derived key as the callee event key and carry the
 original request, reaction provenance, and ancestry through the trusted
 route. A run started
 by that callee inherits the stable key path. The run service must reuse
-a successful start receipt. Workers cannot supply keys or ancestry in a
+a successful start receipt and skip replayed input frames. Workers cannot supply keys or ancestry in a
 callback frame.
 
 ## Calls

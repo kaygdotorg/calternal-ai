@@ -90,7 +90,10 @@ impl Host {
         .map_err(internal)??;
         for event in events {
             let host = self.clone();
-            let watcher = Actor::plugin(actor.account, &event.plugin);
+            let watcher = match &chain.run {
+                Some(grant) => Actor::run(actor.account, &event.plugin, grant.id),
+                None => Actor::plugin(actor.account, &event.plugin),
+            };
             let checked = watcher.clone();
             let plugin = event.plugin.clone();
             let endpoint = tokio::task::spawn_blocking(move || {

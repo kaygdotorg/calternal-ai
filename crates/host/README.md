@@ -60,3 +60,16 @@ sandbox tests. For a focused dev VM run:
 
 Bubblewrap and Node come from the pinned dev shell. Set
 `CALTERNAL_TEST_BWRAP` or `CALTERNAL_TEST_NODE` to override their paths.
+
+## Harness runs on Linux
+
+Set `CALTERNAL_RUN_IMAGE` to a local provider image to enable the Podman
+runner. The host locks its runs directory and clears leftover containers
+for that root when serving starts. Install Chat before installing the
+harness. A fresh developer VM checkout can use the
+[fake provider image](../../plugins-v2/calternal-chat-claude-code/README.md).
+
+Start, input and Stop use the [host call route](../../docs/reviews/host-call-route-2026-11-27.md).
+Run output uses the [live window socket](../../docs/reviews/live-window-protocol-2026-11-27.md).
+After a host restart, a repeated start request returns the original run ID
+with status `stopped`. The live log starts empty with the new host process.

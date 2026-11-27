@@ -9,7 +9,7 @@ if (!args.includes("-p")) process.exit(2);
 let prompt = "";
 for await (const chunk of process.stdin) prompt += chunk;
 
-function egressProbe() {
+function egressProbe(host = "api.anthropic.com") {
   return new Promise((resolve, reject) => {
     const socket = net.connect(17853, "127.0.0.1");
     let response = Buffer.alloc(0);
@@ -19,7 +19,7 @@ function egressProbe() {
       reject(new Error("egress timeout"));
     }, 2000);
     socket.once("connect", () => {
-      socket.write("CONNECT api.anthropic.com:443 HTTP/1.1\r\nHost: api.anthropic.com:443\r\n\r\n");
+      socket.write(`CONNECT ${host}:443 HTTP/1.1\r\nHost: ${host}:443\r\n\r\n`);
     });
     socket.on("data", chunk => {
       if (tunneled) {
@@ -74,9 +74,9 @@ function directProbe() {
 }
 
 let text = "Echo: " + prompt;
-if (prompt === "egress-check") {
+if (prompt === "egress-check" || prompt === "egress-denied") {
   try {
-    text = "Egress: " + await egressProbe();
+    text = "Egress: " + await egressProbe(prompt === "egress-check" ? undefined : "undeclared.invalid");
   } catch {
     text = "Egress: refused";
   }

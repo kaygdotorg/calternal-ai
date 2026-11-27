@@ -695,6 +695,7 @@ dependencies = [
  "calternal-auth",
  "calternal-format",
  "calternal-fsio",
+ "calternal-machine",
  "calternal-plugin-host",
  "calternal-types",
  "getrandom 0.4.3",

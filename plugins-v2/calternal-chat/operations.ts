@@ -40,7 +40,8 @@ export const send = on.call("chats.send", async ({ item, text, quote, mentions, 
     if (!prompt) {
       throw { code: "unreachable", message: "The record link is unavailable.", next: "Retry the message." };
     }
-    await s.call(operation, { chat: item, prompt });
+    const run = await s.call(operation, { chat: item, prompt });
+    return { ...receipt, run };
   }
   return receipt;
 });

@@ -14,6 +14,7 @@ getrandom.workspace = true
 calternal-auth.workspace = true
 calternal-plugin-host = { workspace = true, features = ["operations"] }
 calternal-format = { path = "../format" }
+calternal-machine = { path = "../machine" }
 calternal-fsio.workspace = true
 calternal-types.workspace = true
 rusqlite.workspace = true

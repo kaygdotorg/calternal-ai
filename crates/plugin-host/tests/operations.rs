@@ -324,7 +324,7 @@ async fn upstream_chat_send_replay_rename_and_error() {
             },
         )
     };
-    let send = json!({"chat":item,"text":"First message"});
+    let send = json!({"item":item,"text":"First message"});
     let first = invoke("chats.send", "send-event", send.clone())
         .await
         .unwrap();
@@ -336,7 +336,7 @@ async fn upstream_chat_send_replay_rename_and_error() {
     let conflict = invoke(
         "chats.send",
         "send-event",
-        json!({"chat":item,"text":"Different"}),
+        json!({"item":item,"text":"Different"}),
     )
     .await
     .unwrap_err();
@@ -344,11 +344,11 @@ async fn upstream_chat_send_replay_rename_and_error() {
     invoke(
         "chats.rename",
         "rename-event",
-        json!({"chat":item,"title":"New title"}),
+        json!({"item":item,"title":"New title"}),
     )
     .await
     .unwrap();
-    let invalid = invoke("chats.send", "empty-event", json!({"chat":item,"text":" "}))
+    let invalid = invoke("chats.send", "empty-event", json!({"item":item,"text":" "}))
         .await
         .unwrap_err();
     assert_eq!(Code::from_error(&invalid), Code::Invalid);
@@ -383,12 +383,14 @@ async fn send_and_start_replay_reuses_write_and_run_receipts() {
     );
     let mock = Arc::new(Mutex::new(Mock::default()));
     let runs = Arc::new(Mutex::new(std::collections::HashMap::new()));
+    let inputs = Arc::new(Mutex::new(std::collections::HashMap::new()));
     for _ in 0..2 {
-        let (harness, mock, runs) = (harness.clone(), mock.clone(), runs.clone());
+        let (harness, mock, runs, inputs) =
+            (harness.clone(), mock.clone(), runs.clone(), inputs.clone());
         let response = chat.invoke(delivery(space, actor, EventKind::Call, "send-with-harness", "gesture", item, json!({
             "chat":item,"draft":"Start here","harness":"calternal-chat-claude-code.runs.start"
         })), move |call| {
-            let (harness, mock, runs) = (harness.clone(), mock.clone(), runs.clone());
+            let (harness, mock, runs, inputs) = (harness.clone(), mock.clone(), runs.clone(), inputs.clone());
             async move {
                 match call.method {
                     Method::Write => mock.lock().unwrap().route(item, call),
@@ -402,17 +404,34 @@ async fn send_and_start_replay_reuses_write_and_run_receipts() {
                         let mut event = delivery(space, actor, EventKind::Call, "runs.start", &key, item, call.input["input"].clone());
                         event.event.request = Some("gesture".into());
                         harness.invoke(event, move |run| {
-                            let runs = runs.clone();
+                            let (runs, inputs) = (runs.clone(), inputs.clone());
                             async move {
-                                assert_eq!(run.method, Method::Run);
-                                assert_eq!(run.input, json!({
-                                    "program":"calternal-provider-claude-code","scope":"session","targets":[item]
-                                }));
                                 let key = run.idempotency_key.unwrap();
-                                assert_eq!(key, "gesture:call:0:run:0");
-                                let mut runs = runs.lock().unwrap();
-                                let receipt = runs.entry(key).or_insert_with(|| json!({"id":"test-run","status":"running"}));
-                                Ok(receipt.clone())
+                                match run.method {
+                                    Method::Run => {
+                                        assert_eq!(run.input, json!({
+                                            "program":"calternal-provider-claude-code","scope":"session","targets":[item]
+                                        }));
+                                        assert_eq!(key, "gesture:call:0:run:0");
+                                        let mut runs = runs.lock().unwrap();
+                                        let receipt = runs.entry(key).or_insert_with(|| json!({"id":"test-run","status":"running"}));
+                                        Ok(receipt.clone())
+                                    }
+                                    Method::RunSend => {
+                                        let seq = run.input["input"]["seq"].as_u64().unwrap();
+                                        assert!((1..=2).contains(&seq));
+                                        assert_eq!(key, format!("gesture:call:0:run-send:{}", seq - 1));
+                                        assert_eq!(run.input["id"], "test-run");
+                                        if seq == 2 {
+                                            assert_eq!(run.input["input"]["command"]["prompt"],
+                                                "[Message](<Chats/Conversation/chat.md#^first-record>)");
+                                        }
+                                        let mut inputs = inputs.lock().unwrap();
+                                        assert_eq!(inputs.entry(key).or_insert_with(|| run.input.clone()), &run.input);
+                                        Ok(Value::Null)
+                                    }
+                                    _ => panic!("unexpected run callback"),
+                                }
                             }
                         }).await
                     }
@@ -420,10 +439,11 @@ async fn send_and_start_replay_reuses_write_and_run_receipts() {
                 }
             }
         }).await.unwrap();
-        assert_eq!(response, json!({"id":"test-run"}));
+        assert_eq!(response, json!({"id":"test-run","status":"running"}));
     }
     assert_eq!(mock.lock().unwrap().records.len(), 1);
     assert_eq!(runs.lock().unwrap().len(), 1);
+    assert_eq!(inputs.lock().unwrap().len(), 2);
 }
 
 #[tokio::test]

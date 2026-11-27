@@ -9,6 +9,7 @@ pub mod live;
 mod query;
 mod reactions;
 mod records;
+mod runs;
 mod space;
 mod worker_calls;
 mod worker_runtime;
@@ -66,6 +67,7 @@ pub struct Host {
     retention_ms: i64,
     spaces: Mutex<HashMap<SpaceId, Slot>>,
     workers: Option<WorkerRuntime>,
+    runs: Mutex<Option<Arc<calternal_machine::run_service::RunService>>>,
 }
 
 impl Host {
@@ -81,6 +83,7 @@ impl Host {
             retention_ms: i64::from(retention_days) * 86_400_000,
             spaces: Mutex::default(),
             workers: None,
+            runs: Mutex::default(),
         })
     }
 
@@ -122,6 +125,11 @@ impl Host {
         space: SpaceId,
         call: Call,
     ) -> Result<Value> {
+        if matches!(actor.via, Some(Via::Agent { .. } | Via::Run { .. })) {
+            return Err(Error::forbidden(
+                "A run requires a host-owned session scope.",
+            ));
+        }
         self.dispatch(actor, space, call, worker_calls::Chain::default())
             .await
     }
@@ -156,6 +164,15 @@ impl Host {
     /// plugin via the shared actor type. A run needs a scope-aware adapter
     /// before it can call the host. This method blocks on space storage.
     pub fn call(&self, actor: Actor, id: SpaceId, call: Call) -> Result<Value> {
+        if matches!(actor.via, Some(Via::Agent { .. } | Via::Run { .. })) {
+            return Err(Error::forbidden(
+                "A run requires a host-owned session scope.",
+            ));
+        }
+        self.call_scoped(actor, id, call)
+    }
+
+    fn call_scoped(&self, actor: Actor, id: SpaceId, call: Call) -> Result<Value> {
         if call.slot_selection.is_some() {
             return Err(Error::forbidden(
                 "A slot selection requires a person’s coded operation.",
@@ -247,7 +264,7 @@ fn decode<T: serde::de::DeserializeOwned>(input: Value) -> Result<T> {
 
 fn identity(actor: &Actor) -> (&str, AccountId) {
     match &actor.via {
-        Some(Via::Plugin { plugin }) => (plugin, actor.account),
+        Some(Via::Plugin { plugin } | Via::Run { plugin, .. }) => (plugin, actor.account),
         _ => ("host", actor.account),
     }
 }
