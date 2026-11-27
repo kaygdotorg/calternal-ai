@@ -73,6 +73,11 @@ cd "$checkout"
 "$HOME/bin/lock-shared" nix develop --profile "$release/nix-shell" -c "$checkout/scripts/dev-chat-preview.sh" --build-release "$release"
 
 unit_path="$HOME/.config/systemd/user/$unit"
+previous=$(readlink "$root/current" || true)
+previous_unit="$release/previous.service"
+if [[ -e $unit_path || -L $unit_path ]]; then
+    cp -a -- "$unit_path" "$previous_unit"
+fi
 unit_tmp=$(mktemp "$unit_path.XXXXXXXX")
 cat >"$unit_tmp" <<'UNIT'
 [Unit]
@@ -92,22 +97,19 @@ UMask=0077
 [Install]
 WantedBy=default.target
 UNIT
-mv -f "$unit_tmp" "$unit_path"
-systemctl --user daemon-reload
-
-previous=$(readlink "$root/current" || true)
 publish() {
     ln -s "$1" "$root/.current.$$"
     mv -Tf "$root/.current.$$" "$root/current"
 }
 # The worker lazily opens its SDK from current, so stop before moving the link.
 systemctl --user stop "$unit"
-publish "$release"
-if systemctl --user start "$unit"; then
+mv -f "$unit_tmp" "$unit_path"
+if systemctl --user daemon-reload && publish "$release" && systemctl --user start "$unit"; then
     for _ in {1..40}; do
         if systemctl --user is-active --quiet "$unit" &&
             curl -fsS --max-time 1 "http://localhost:$port/v1/auth/status" >/dev/null 2>&1; then
             systemctl --user enable "$unit"
+            rm -f -- "$previous_unit"
             for old in "$root"/build/release.*; do
                 if [[ -d $old && ! -L $old && $old != "$release" && $old != "$previous" ]]; then
                     discard_release "$old"
@@ -122,11 +124,19 @@ if systemctl --user start "$unit"; then
     done
 fi
 systemctl --user stop "$unit"
+if [[ -e $previous_unit || -L $previous_unit ]]; then
+    mv -f -- "$previous_unit" "$unit_path"
+else
+    rm -f -- "$unit_path"
+fi
 if [[ -n $previous ]]; then
     publish "$previous"
-    systemctl --user start "$unit"
-else
+elif [[ -L $root/current ]]; then
     unlink "$root/current"
+fi
+systemctl --user daemon-reload
+if [[ -n $previous && -e $unit_path ]]; then
+    systemctl --user start "$unit"
 fi
 printf 'Preview did not start. Inspect journalctl --user -u %s.\n' "$unit" >&2
 exit 1
