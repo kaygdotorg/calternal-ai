@@ -259,6 +259,12 @@ fn legacy_account_label_uses_the_visible_directory_name() {
         idempotency_key: None,
         slot_selection: None,
     }).unwrap();
+    f.space
+        .db
+        .execute("ALTER TABLE records DROP COLUMN run_writer", [])
+        .unwrap();
+    let mut f = f.reopen();
+    f.space.owner_display = Some((f.actor.account, "Current name".into()));
     let head = &f.space.row(head.id).unwrap().head;
     let bytes = std::fs::read(f.path(head)).unwrap();
     let rows = f.space.records(head.id).unwrap();
@@ -268,7 +274,6 @@ fn legacy_account_label_uses_the_visible_directory_name() {
             .unwrap()
             .starts_with(&format!("**{}**", f.actor.account))
     );
-    f.space.owner_display = Some((f.actor.account, "Current name".into()));
     let kind = f.space.kind(&head.kind).unwrap();
     let views = f.space.record_views(head, &bytes, &rows, &kind).unwrap();
     assert_eq!(
