@@ -1,5 +1,5 @@
 //! Serialize authorized query rows, pagination and aggregate evidence.
-use super::QueryInput;
+use super::{Budget, QueryInput};
 use crate::declarations::{self, Kind};
 use crate::space::Row;
 use calternal_format as format;
@@ -15,6 +15,7 @@ pub(super) fn page(
     cursor: Option<Uuid>,
     limit: usize,
     clock: &(String, String),
+    budget: &mut Budget,
 ) -> Result<Value> {
     let start = cursor
         .map(|cursor| {
@@ -37,22 +38,26 @@ pub(super) fn page(
         limit,
         |selected| rows[selected.index].head.id,
     );
-    let totals = result
-        .totals
-        .iter()
-        .map(declarations::as_json)
-        .collect::<Vec<_>>();
+    let totals = list(result.totals, budget)?;
+    let totals = if totals.as_array().is_some_and(Vec::is_empty) {
+        Value::Object(Default::default())
+    } else {
+        totals
+    };
     let groups = result
         .groups
-        .iter()
+        .into_iter()
         .map(|group| {
-            json!({
-                "key":declarations::as_json(&group.key),
-                "matched":group.matched,
-                "totals":group.totals.iter().map(declarations::as_json).collect::<Vec<_>>()
-            })
+            budget.format("key", &group.key)?;
+            let key = declarations::as_json(&group.key);
+            let totals = list(group.totals, budget)?;
+            Ok(Value::Object(serde_json::Map::from_iter([
+                ("key".into(), key),
+                ("matched".into(), json!(group.matched)),
+                ("totals".into(), totals),
+            ])))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>>>()?;
     let rows = page
         .rows
         .into_iter()
@@ -62,22 +67,43 @@ pub(super) fn page(
                 rows[selected.index],
                 &inputs[selected.index],
                 &selected.computed,
-                &clock.0,
-                &clock.1,
+                clock,
+                budget,
             )?;
             if !selected.groups.is_empty() {
-                row["groups"] = declarations::as_json(&format::Value::List(selected.groups));
+                row["groups"] = list(selected.groups, budget)?;
             }
             Ok(row)
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok(json!({
-        "rows":rows,
-        "totals":if totals.is_empty() {json!({})} else {json!(totals)},
-        "groups":groups,
-        "namedTotals":declarations::as_json(&format::Value::Map(result.named_totals)),
-        "cursor":page.next
-    }))
+    Ok(Value::Object(serde_json::Map::from_iter([
+        ("rows".into(), Value::Array(rows)),
+        ("totals".into(), totals),
+        ("groups".into(), Value::Array(groups)),
+        ("namedTotals".into(), map(&result.named_totals, budget)?),
+        ("cursor".into(), json!(page.next)),
+    ])))
+}
+
+fn list(values: Vec<format::Value>, budget: &mut Budget) -> Result<Value> {
+    for value in &values {
+        budget.format("", value)?;
+    }
+    Ok(Value::Array(
+        values.iter().map(declarations::as_json).collect(),
+    ))
+}
+
+fn map(values: &format::Fields, budget: &mut Budget) -> Result<Value> {
+    for (key, value) in values {
+        budget.format(key, value)?;
+    }
+    Ok(Value::Object(
+        values
+            .iter()
+            .map(|(key, value)| (key.clone(), declarations::as_json(value)))
+            .collect(),
+    ))
 }
 
 pub(super) fn row(
@@ -85,8 +111,8 @@ pub(super) fn row(
     row: &Row,
     input: &QueryInput,
     computed: &format::Fields,
-    today: &str,
-    now: &str,
+    clock: &(String, String),
+    budget: &mut Budget,
 ) -> Result<Value> {
     let empty = format::Fields::new();
     let records = input
@@ -98,41 +124,48 @@ pub(super) fn row(
         })
         .collect::<Vec<_>>();
     let context = format::EvalContext {
-        today: Some(today),
-        now: Some(now),
+        today: Some(&clock.0),
+        now: Some(&clock.1),
         offset_seconds: Some(0),
         state: input.state.as_ref(),
         records: &records,
         record_positions: input.state.as_ref().map(|_| &input.record_positions),
         ..format::EvalContext::default()
     };
-    let when = format::operation_conditions(
-        kind.compiled,
-        format::Row {
-            fields: &input.fields,
-            metadata: &input.metadata,
-        },
-        computed,
-        &context,
-    )
-    .map_err(declarations::invalid)?;
-    let computed = declarations::as_json(&format::Value::Map(computed.clone()));
-    let state = input.state.as_ref().map(|state| {
-        kind.state
-            .keys()
-            .map(|key| {
-                (
-                    key.clone(),
-                    state
-                        .get(key)
-                        .map(declarations::as_json)
-                        .unwrap_or_default(),
-                )
-            })
-            .collect::<serde_json::Map<_, _>>()
-    });
+    let when = budget.work(|steps| {
+        format::operation_conditions_bounded(
+            kind.compiled,
+            format::Row {
+                fields: &input.fields,
+                metadata: &input.metadata,
+            },
+            computed,
+            &context,
+            steps,
+        )
+    })?;
+    let computed = map(computed, budget)?;
+    let mut state = serde_json::Map::new();
+    if let Some(values) = &input.state {
+        for key in kind.state.keys() {
+            let value = values.get(key).unwrap_or(&format::Value::Empty);
+            budget.format(key, value)?;
+            state.insert(key.clone(), declarations::as_json(value));
+        }
+    }
+    let mut result = base(row, budget)?;
+    result["computed"] = computed;
+    result["state"] = Value::Object(state);
+    result["when"] = json!(when);
+    Ok(result)
+}
+
+pub(super) fn base(row: &Row, budget: &mut Budget) -> Result<Value> {
+    for (key, value) in &row.fields {
+        budget.json(key, value)?;
+    }
     Ok(
-        json!({"id":row.head.id,"kind":row.head.kind,"fields":row.fields,"computed":computed,
-        "state":state.unwrap_or_default(),"when":when,"version":row.head.version,"edited":row.head.edited}),
+        json!({"id":row.head.id,"kind":row.head.kind,"fields":row.fields,
+        "version":row.head.version,"edited":row.head.edited}),
     )
 }

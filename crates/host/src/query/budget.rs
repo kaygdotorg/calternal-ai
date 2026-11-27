@@ -44,6 +44,40 @@ impl Budget {
         self.bytes as usize
     }
 
+    pub(super) fn work<T>(
+        &mut self,
+        evaluate: impl FnOnce(&mut usize) -> std::result::Result<T, calternal_format::Diagnostic>,
+    ) -> Result<T> {
+        let initial = self.limit() / 64;
+        let mut steps = initial;
+        let result = evaluate(&mut steps).map_err(|error| {
+            if error.message.contains("too costly") {
+                over_budget()
+            } else {
+                crate::declarations::invalid(error)
+            }
+        });
+        self.bytes(((initial - steps) * 64) as u64)?;
+        result
+    }
+
+    pub(super) fn format(&mut self, key: &str, value: &calternal_format::Value) -> Result<()> {
+        self.bytes(key.len().saturating_add(value.copy_bytes()) as u64)
+    }
+
+    pub(super) fn json(&mut self, key: &str, value: &serde_json::Value) -> Result<()> {
+        use serde_json::Value::*;
+        self.bytes((key.len() + 64) as u64)?;
+        match value {
+            String(text) => self.bytes(text.len() as u64),
+            Array(values) => values.iter().try_for_each(|value| self.json("", value)),
+            Object(values) => values
+                .iter()
+                .try_for_each(|(key, value)| self.json(key, value)),
+            _ => Ok(()),
+        }
+    }
+
     pub(super) fn records(&mut self, space: &Space, item: Uuid) -> Result<Vec<Record>> {
         let count = space
             .db

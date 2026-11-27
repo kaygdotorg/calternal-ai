@@ -3,6 +3,9 @@ mod budget;
 mod projection;
 mod search;
 
+#[cfg(test)]
+mod tests;
+
 use crate::declarations::{self, Collection, FieldType, Kind};
 use crate::internal;
 use crate::records::Record;
@@ -101,6 +104,7 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
         .transpose()
         .map_err(|_| Error::invalid_input("Invalid query cursor."))?;
     let mut budget = Budget::default();
+    let clock = declarations::clock()?;
     let mut search = search::Search::new(input.search.as_deref(), &kind.search)?;
     let mut rows = Vec::new();
     let mut inputs = Vec::new();
@@ -117,12 +121,12 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
             &kind,
             row,
             &records,
+            &clock,
             &mut budget,
         )?);
         search.index_body(space, row)?;
         rows.push(row);
     }
-    let clock = declarations::clock()?;
     let result = execute(
         &collection,
         &kind,
@@ -133,8 +137,18 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
         },
         &clock,
         &|index, row| search.matches(index, row),
+        &mut budget,
     )?;
-    projection::page(&kind, &rows, &inputs, result, cursor, limit, &clock)
+    projection::page(
+        &kind,
+        &rows,
+        &inputs,
+        result,
+        cursor,
+        limit,
+        &clock,
+        &mut budget,
+    )
 }
 
 pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
@@ -151,44 +165,44 @@ pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
         }
     })?;
     let bytes = crate::space::bounded_read(file, budget.limit())?;
-    budget.bytes(bytes.len() as u64)?;
+    // The parser and projected values can each own a copy of the source.
+    budget.bytes(bytes.len().saturating_mul(3) as u64)?;
     let views = space.record_views(&row.head, &bytes, &records, &kind)?;
     let prefix = bytes
         .get(..row.head.prefix as usize)
         .ok_or_else(|| Error::conflict("The item file changed outside the host."))?;
     let prefix = std::str::from_utf8(prefix).map_err(internal)?;
     let body = declarations::item_body(prefix)?;
-    let mut collection = ad_hoc(None, &[])?;
-    collection.ignoring_default = true;
-    let input = query_input(space, actor, &kind, row, &records, &mut budget)?;
-    let clock = declarations::clock()?;
-    let result = execute(
-        &collection,
-        &kind,
-        std::slice::from_ref(&input),
-        format::Page {
-            offset: 0,
-            limit: 1,
-        },
-        &clock,
-        &|_, _| true,
-    )?;
-    let mut result = projection::row(
-        &kind,
-        row,
-        &input,
-        &result.rows[0].computed,
-        &clock.0,
-        &clock.1,
-    )?;
-    result["body"] = json!(body);
-    result["records"] = json!(views);
-    if matches!(actor.via, Some(calternal_types::Via::Run { .. })) {
-        let row = result.as_object_mut().expect("rendered read row");
-        for field in ["state", "when", "computed"] {
-            row.remove(field);
-        }
-    }
+    let mut result = if matches!(actor.via, Some(Via::Run { .. })) {
+        projection::base(row, &mut budget)?
+    } else {
+        let mut collection = ad_hoc(None, &[])?;
+        collection.ignoring_default = true;
+        let clock = declarations::clock()?;
+        let input = query_input(space, actor, &kind, row, &records, &clock, &mut budget)?;
+        let result = execute(
+            &collection,
+            &kind,
+            std::slice::from_ref(&input),
+            format::Page {
+                offset: 0,
+                limit: 1,
+            },
+            &clock,
+            &|_, _| true,
+            &mut budget,
+        )?;
+        projection::row(
+            &kind,
+            row,
+            &input,
+            &result.rows[0].computed,
+            &clock,
+            &mut budget,
+        )?
+    };
+    result["body"] = Value::String(body.to_owned());
+    result["records"] = Value::Array(views);
     Ok(result)
 }
 
@@ -245,6 +259,7 @@ fn query_input(
     kind: &Kind<'_>,
     row: &Row,
     records: &[Record],
+    clock: &(String, String),
     budget: &mut Budget,
 ) -> Result<QueryInput> {
     let owner = kind.id.split_once('.').expect("qualified kind").0;
@@ -283,7 +298,7 @@ fn query_input(
                 .as_str()
                 .map_err(internal)?;
             let position: Option<i64> = entry.get(2).map_err(internal)?;
-            budget.bytes((key.len() + raw.len()) as u64)?;
+            budget.bytes((key.len() + 64 + raw.len().saturating_mul(2)) as u64)?;
             let Some(field) = kind.state.get(key) else {
                 continue;
             };
@@ -309,11 +324,25 @@ fn query_input(
             };
             state.insert(key.to_owned(), value);
         }
+        let empty = format::Fields::new();
+        let row = format::Row {
+            fields: &empty,
+            metadata: &empty,
+        };
+        let context = format::EvalContext {
+            today: Some(&clock.0),
+            now: Some(&clock.1),
+            offset_seconds: Some(0),
+            ..format::EvalContext::default()
+        };
         for (name, field) in &kind.state {
             if !state.contains_key(name)
-                && let Some(default) = declarations::field_default(field)?
+                && let Some(default) = &field.default
             {
-                state.insert(name.clone(), declarations::as_format(&default)?);
+                budget.bytes((name.len() + 64) as u64)?;
+                let value =
+                    budget.work(|steps| format::evaluate_bounded(default, row, &context, steps))?;
+                state.insert(name.clone(), value);
             }
         }
     }
@@ -336,6 +365,9 @@ fn query_input(
             ]))
         })
         .collect::<Result<Vec<_>>>()?;
+    for (key, value) in &row.fields {
+        budget.json(key, value)?;
+    }
     Ok(QueryInput {
         fields: declarations::as_fields(&row.fields)?,
         metadata: format::Fields::from([
@@ -363,7 +395,8 @@ pub(crate) fn contains(
     } else {
         budget.records(space, row.head.id)?
     };
-    let input = query_input(space, actor, &kind, row, &records, &mut budget)?;
+    let clock = declarations::clock()?;
+    let input = query_input(space, actor, &kind, row, &records, &clock, &mut budget)?;
     let page = format::Page {
         offset: 0,
         limit: 1,
@@ -373,8 +406,9 @@ pub(crate) fn contains(
         &kind,
         &[input],
         page,
-        &declarations::clock()?,
+        &clock,
         &|_, _| true,
+        &mut budget,
     )?
     .rows
     .is_empty())
@@ -387,6 +421,7 @@ fn execute(
     page: format::Page,
     clock: &(String, String),
     matches_row: &dyn Fn(usize, format::Row<'_>) -> bool,
+    budget: &mut Budget,
 ) -> Result<format::QueryResult> {
     let empty = format::Fields::new();
     let rows = inputs
@@ -434,15 +469,17 @@ fn execute(
         rows: Some(&contexts),
         ..format::EvalContext::default()
     };
-    format::evaluate_query_matching(
-        collection,
-        kind.compiled,
-        &rows,
-        page,
-        &context,
-        matches_row,
-    )
-    .map_err(declarations::invalid)
+    budget.work(|steps| {
+        format::evaluate_query_bounded(
+            collection,
+            kind.compiled,
+            &rows,
+            page,
+            &context,
+            matches_row,
+            steps,
+        )
+    })
 }
 
 pub(crate) fn state(

@@ -265,6 +265,24 @@ pub enum Value {
 }
 
 impl Value {
+    /// Estimate owned bytes when copying this value. Walks nested values
+    /// without allocating and saturates on arithmetic overflow.
+    pub fn copy_bytes(&self) -> usize {
+        let base = std::mem::size_of::<Self>();
+        let contents = match self {
+            Self::Text(text) | Self::Date(text) | Self::Time(text) => text.len(),
+            Self::Money { currency, .. } => currency.len(),
+            Self::List(values) => values.iter().fold(0, |bytes, value| {
+                usize::saturating_add(bytes, value.copy_bytes())
+            }),
+            Self::Map(fields) => fields.iter().fold(0, |bytes, (key, value)| {
+                usize::saturating_add(bytes, key.len()).saturating_add(value.copy_bytes())
+            }),
+            _ => 0,
+        };
+        base.saturating_add(contents)
+    }
+
     pub(crate) fn truth(&self) -> bool {
         !matches!(self, Self::Empty | Self::Bool(false))
     }

@@ -23,7 +23,7 @@ impl<'a> Row<'a> {
         self.get(name).cloned().unwrap_or_default()
     }
 
-    fn get(self, name: &str) -> Option<&'a Value> {
+    pub(crate) fn get(self, name: &str) -> Option<&'a Value> {
         self.metadata.get(name).or_else(|| {
             (!matches!(
                 name,
@@ -113,6 +113,21 @@ pub fn evaluate(
 ) -> Result<Value, Diagnostic> {
     let mut steps = 50_000;
     evaluate_in(expression, row, context, &mut steps)
+}
+
+/// Evaluate a formula using at most 50,000 steps from the caller's remaining
+/// budget. Charged work includes variable-sized copies before they allocate.
+pub fn evaluate_bounded(
+    expression: &Expression,
+    row: Row<'_>,
+    context: &EvalContext<'_>,
+    steps: &mut usize,
+) -> Result<Value, Diagnostic> {
+    let allowed = (*steps).min(50_000);
+    let mut remaining = allowed;
+    let result = evaluate_in(expression, row, context, &mut remaining);
+    *steps -= allowed - remaining;
+    result
 }
 
 pub(crate) fn evaluate_in(
@@ -250,11 +265,14 @@ impl<'a, 'b> Evaluator<'a, 'b> {
             NodeKind::Value(value) => self.clone_value(Some(value), node.site),
             NodeKind::Name(name) => self.name(name, element, node.site),
             NodeKind::Member(base, field) => self.member(base, field, element, node.site),
-            NodeKind::List(values) => values
-                .iter()
-                .map(|value| self.eval(value, element))
-                .collect::<Result<Vec<_>, _>>()
-                .map(Value::List),
+            NodeKind::List(values) => {
+                self.charge(values.len(), node.site)?;
+                values
+                    .iter()
+                    .map(|value| self.eval(value, element))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(Value::List)
+            }
             NodeKind::Unary(op, operand) => {
                 let value = self.eval(operand, element)?;
                 if *op == Op::Not {

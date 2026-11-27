@@ -82,6 +82,30 @@ pub fn operation_conditions(
     computed: &Fields,
     context: &EvalContext<'_>,
 ) -> Result<BTreeMap<String, bool>, Diagnostic> {
+    operation_conditions_bounded(kind, row, computed, context, &mut 50_000)
+}
+
+/// Evaluate projected operation flags within a caller-supplied work budget.
+/// Copies of the row and computed values are charged before construction.
+pub fn operation_conditions_bounded(
+    kind: &Kind,
+    row: Row<'_>,
+    computed: &Fields,
+    context: &EvalContext<'_>,
+    steps: &mut usize,
+) -> Result<BTreeMap<String, bool>, Diagnostic> {
+    let copied = row
+        .fields
+        .iter()
+        .chain(computed)
+        .fold(0_usize, |bytes, (key, value)| {
+            bytes
+                .saturating_add(key.len())
+                .saturating_add(value.copy_bytes())
+        });
+    *steps = steps
+        .checked_sub(copied.saturating_mul(2).div_ceil(64))
+        .ok_or_else(|| kind.site.error("The operation projection is too costly"))?;
     let mut fields = typed_fields(&kind.fields, row.fields, |_| kind.site, true)?;
     fields.extend(
         computed
@@ -92,13 +116,12 @@ pub fn operation_conditions(
         fields: &fields,
         metadata: row.metadata,
     };
-    let mut steps = 50_000;
     Ok(kind
         .operations
         .iter()
         .map(|(name, operation)| {
             let available = operation.condition.as_ref().is_none_or(|condition| {
-                crate::expr::eval::evaluate_in(condition, row, context, &mut steps)
+                crate::evaluate_bounded(condition, row, context, steps)
                     .is_ok_and(|value| value.truth())
             });
             (name.clone(), available)
