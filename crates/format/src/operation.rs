@@ -191,6 +191,17 @@ impl Operation {
     }
 }
 
+impl Kind {
+    /// Default add, change and remove actions absent from an outside-editable
+    /// kind's explicit operation list. These reuse the format's operation parser.
+    pub fn implicit_operations(&self) -> impl Iterator<Item = Operation> + '_ {
+        ["add", "change", "remove"]
+            .into_iter()
+            .filter(|name| !self.operations.contains_key(*name))
+            .filter_map(|name| implicit_operation(self, name))
+    }
+}
+
 pub(crate) fn implicit_operation(kind: &Kind, name: &str) -> Option<Operation> {
     if kind.editable == crate::Editability::Outside && matches!(name, "add" | "change" | "remove") {
         return parse_operation(name, "", kind.site).ok();

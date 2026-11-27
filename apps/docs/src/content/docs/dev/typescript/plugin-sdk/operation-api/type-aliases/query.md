@@ -14,7 +14,7 @@ title: "plugin-sdk: operation-api/type-aliases/Query"
 
 # Type Alias: Query
 
-> **Query** = \{ `cursor?`: `string`; `from`: `string`; `limit?`: `number`; `sort?`: readonly `string`[]; `where?`: `string`; \} \| \{ `collection`: `string`; `cursor?`: `string`; `limit?`: `number`; \}
+> **Query** = \{ `cursor?`: `string`; `from`: `string`; `limit?`: `number`; `search?`: `string`; `sort?`: readonly `string`[]; `where?`: `string`; \} \| \{ `collection`: `string`; `cursor?`: `string`; `limit?`: `number`; `search?`: `string`; \}
 
 A kind query or a stored collection query accepted by the standalone host.
 
@@ -22,7 +22,7 @@ A kind query or a stored collection query accepted by the standalone host.
 
 ### Type Literal
 
-\{ `cursor?`: `string`; `from`: `string`; `limit?`: `number`; `sort?`: readonly `string`[]; `where?`: `string`; \}
+\{ `cursor?`: `string`; `from`: `string`; `limit?`: `number`; `search?`: `string`; `sort?`: readonly `string`[]; `where?`: `string`; \}
 
 #### cursor?
 
@@ -42,6 +42,12 @@ Qualified kind name.
 
 Page size up to 200.
 
+#### search?
+
+> `optional` **search?**: `string`
+
+Case-insensitive substring in the kind’s declared search fields.
+
 #### sort?
 
 > `optional` **sort?**: readonly `string`[]
@@ -58,7 +64,7 @@ Formula predicate evaluated by the host.
 
 ### Type Literal
 
-\{ `collection`: `string`; `cursor?`: `string`; `limit?`: `number`; \}
+\{ `collection`: `string`; `cursor?`: `string`; `limit?`: `number`; `search?`: `string`; \}
 
 #### collection
 
@@ -77,3 +83,9 @@ Opaque cursor from the previous page.
 > `optional` **limit?**: `number`
 
 Page size up to 200.
+
+#### search?
+
+> `optional` **search?**: `string`
+
+Case-insensitive substring in the kind’s declared search fields.

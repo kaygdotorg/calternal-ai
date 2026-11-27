@@ -49,6 +49,26 @@ impl Expression {
         local(&self.root, &field)
     }
 
+    /// Whether evaluation asks the host for cross-row lookups, historical
+    /// snapshots, settings or a selected item. A local-row host can refuse
+    /// these formulas during installation before they project empty values.
+    pub fn requires_query_lookups(&self) -> bool {
+        fn external(node: &Node) -> bool {
+            match &node.kind {
+                NodeKind::Name(name) => matches!(name.as_str(), "settings" | "open item" | "item"),
+                NodeKind::Call(name, args) => {
+                    matches!(name.as_str(), "from" | "all" | "previous" | "links to")
+                        || args.iter().any(external)
+                }
+                NodeKind::Member(base, _) | NodeKind::Unary(_, base) => external(base),
+                NodeKind::List(values) => values.iter().any(external),
+                NodeKind::Binary(_, left, right) => external(left) || external(right),
+                NodeKind::Value(_) => false,
+            }
+        }
+        external(&self.root)
+    }
+
     /// Borrow the value when the expression is a single literal. No evaluation
     /// or context lookup is performed.
     pub fn literal(&self) -> Option<&Value> {

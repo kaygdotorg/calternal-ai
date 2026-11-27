@@ -108,7 +108,8 @@ impl Host {
     }
 
     /// Supply trusted local plugin bundles to seed the disposable browser
-    /// host's personal space on sign-in. Ordinary hosts have no seed bundles.
+    /// host's personal space on sign-in and authenticated session status.
+    /// Ordinary hosts have no seed bundles.
     pub fn with_development_plugins(
         mut self,
         plugins: impl IntoIterator<Item = (String, PathBuf)>,
@@ -119,17 +120,24 @@ impl Host {
 
     fn ensure_development_plugins(&self, owner: AccountId, id: SpaceId) -> Result<()> {
         let actor = Actor::account(owner);
-        for (plugin, directory) in &self.development_plugins {
-            let installed = |space: &mut Space| Ok(space.plugins.contains_key(plugin));
-            if !self.with_space(&actor, id, installed)?
-                && let Err(error) = self.install_local(owner, id, directory, true)
+        let missing = self.with_space(&actor, id, |space| {
+            Ok(self
+                .development_plugins
+                .iter()
+                .filter(|(plugin, _)| !space.plugins.contains_key(plugin))
+                .collect::<Vec<_>>())
+        })?;
+        let mut result = Ok(());
+        for (plugin, directory) in missing {
+            if let Err(error) = self.install_local(owner, id, directory, true)
                 && (error.code != calternal_types::ErrorCode::Conflict
-                    || !self.with_space(&actor, id, installed)?)
+                    || !self
+                        .with_space(&actor, id, |space| Ok(space.plugins.contains_key(plugin)))?)
             {
-                return Err(error);
+                result = result.and(Err(error));
             }
         }
-        Ok(())
+        result
     }
 
     /// Authenticate and bind the issuing installation to a shell call.

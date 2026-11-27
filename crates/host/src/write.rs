@@ -1,4 +1,6 @@
 //! Batch planning followed by durable publication through the space ledger.
+mod declared;
+
 use crate::declarations::{Fields, Kind, OperationForm, apply_fields, write_item};
 use crate::records::{self, Record};
 use crate::space::{Head, ITEM_BYTES, Row, Space};
@@ -34,6 +36,13 @@ enum Change {
         #[serde(default)]
         fields: Fields,
         body: Option<String>,
+        base: Option<u64>,
+    },
+    Perform {
+        item: Uuid,
+        operation: String,
+        #[serde(default)]
+        fields: Fields,
         base: Option<u64>,
     },
     Remove {
@@ -152,6 +161,7 @@ pub(crate) fn write(
             other => {
                 let id = match &other {
                     Change::Update { item, .. }
+                    | Change::Perform { item, .. }
                     | Change::Remove { item }
                     | Change::Append { item, .. }
                     | Change::Edit { item, .. }
@@ -519,22 +529,18 @@ fn apply(
                     "The built-in operation cannot change the body.",
                 ));
             }
-            if base.is_some_and(|base| base != head.version) {
-                return Err(Error::conflict("The item version changed."));
-            }
-            let before = head.prefix as usize;
-            let original = std::str::from_utf8(&item.bytes[..before]).map_err(internal)?;
-            apply_fields(&kind.fields, &mut item.row.fields, fields.clone(), false)?;
-            let changed = body.as_deref().map(records::escape_body);
-            let mut prefix = write_item(original, &fields, changed.as_deref(), kind)?.into_bytes();
-            head.hash = space.hash(&prefix);
-            head.prefix = prefix.len() as u64;
-            for record in &mut item.records {
-                record.offset = record.offset - before as u64 + head.prefix;
-            }
-            prefix.extend_from_slice(&item.bytes[before..]);
-            item.bytes = prefix;
+            declared::update(space, kind, item, fields, body.as_deref(), base)?;
             Ok(("change", None))
+        }
+        Change::Perform {
+            operation,
+            fields,
+            base,
+            ..
+        } => {
+            let patch = declared::plan(kind, &item.row, &operation, &fields)?;
+            declared::update(space, kind, item, patch, None, base)?;
+            Ok(("perform", None))
         }
         Change::Remove { .. } => {
             if head.author != actor.account.to_string() {

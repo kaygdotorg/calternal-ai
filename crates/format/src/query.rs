@@ -54,6 +54,8 @@ pub struct QueryRow {
     pub index: usize,
     /// Computed columns for this row.
     pub computed: Fields,
+    /// Group keys for this row, in the order returned by its group formula.
+    pub groups: Vec<Value>,
 }
 
 /// One collection group with aggregate totals.
@@ -76,6 +78,20 @@ pub fn evaluate_query(
     page: Page,
     context: &EvalContext<'_>,
 ) -> Result<QueryResult, Diagnostic> {
+    evaluate_query_matching(collection, kind, rows, page, context, &|_, _| true)
+}
+
+/// Evaluate a collection and apply a host-supplied match before grouping,
+/// totals and pagination. The predicate sees the candidate index and its
+/// computed row fields. The host bounds the cost and inputs of the predicate.
+pub fn evaluate_query_matching(
+    collection: &Collection,
+    kind: &Kind,
+    rows: &[Row<'_>],
+    page: Page,
+    context: &EvalContext<'_>,
+    matches_row: &dyn Fn(usize, Row<'_>) -> bool,
+) -> Result<QueryResult, Diagnostic> {
     let mut steps = 1_000_000_usize;
     let mut matches = Vec::new();
     for (index, row) in rows.iter().enumerate() {
@@ -84,7 +100,15 @@ pub fn evaluate_query(
             .ok_or_else(|| collection.site.error("The collection query is too costly"))?;
         let allowed = steps.min(50_000);
         let mut item_steps = allowed;
-        if let Some(row) = prepare_row(collection, kind, *row, index, context, &mut item_steps)? {
+        if let Some(row) = prepare_row(
+            collection,
+            kind,
+            *row,
+            index,
+            context,
+            &mut item_steps,
+            matches_row,
+        )? {
             matches.push(row);
         }
         steps -= allowed - item_steps;
@@ -180,6 +204,11 @@ pub fn evaluate_query(
         .map(|row| QueryRow {
             index: row.index,
             computed: row.computed,
+            groups: match row.group {
+                Some(Value::List(keys)) => keys,
+                Some(key) => vec![key],
+                None => Vec::new(),
+            },
         })
         .collect();
     let mut named_totals = Fields::new();
@@ -218,6 +247,7 @@ fn prepare_row(
     index: usize,
     context: &EvalContext<'_>,
     steps: &mut usize,
+    matches_row: &dyn Fn(usize, Row<'_>) -> bool,
 ) -> Result<Option<Matched>, Diagnostic> {
     let mut row_context = *context;
     row_context.periods = None;
@@ -263,6 +293,9 @@ fn prepare_row(
     if let Some(condition) = &collection.condition
         && !evaluate_in(condition, row, &row_context, steps)?.truth()
     {
+        return Ok(None);
+    }
+    if !matches_row(index, row) {
         return Ok(None);
     }
     let group = collection

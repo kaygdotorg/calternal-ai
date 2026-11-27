@@ -8,6 +8,7 @@ trap 'rm -rf -- "$fixture"' EXIT
 cd "$fixture"
 mkdir -p scripts bin target/debug apps/web/dist packages/plugin-sdk/dist \
     plugins-v2/calternal-chat plugins-v2/calternal-chat-claude-code \
+    plugins-v2/calternal-reading-list plugins-v2/calternal-tasks \
     release.ABCDE123 release.FGHIJ456
 cp "$checkout/scripts/dev-chat-preview.sh" scripts/
 touch target/debug/calternal-host packages/plugin-sdk/package.json

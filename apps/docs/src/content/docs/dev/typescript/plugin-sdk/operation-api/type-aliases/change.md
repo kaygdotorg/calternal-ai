@@ -14,7 +14,7 @@ title: "plugin-sdk: operation-api/type-aliases/Change"
 
 # Type Alias: Change
 
-> **Change** = \{ `add`: \{ `body?`: `string`; `fields?`: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/); `kind`: `string`; \}; \} \| \{ `change`: \{ `base?`: `number`; `body?`: `string`; `fields?`: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/); `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \} \| \{ `remove`: \{ `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \} \| \{ `append record`: \{ `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); `record`: [`RecordBody`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/recordbody/); \}; \} \| \{ `change record`: \{ `anchor`: `string`; `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); `record`: [`RecordBody`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/recordbody/); \}; \} \| \{ `remove record`: \{ `anchor`: `string`; `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \}
+> **Change** = \{ `add`: \{ `body?`: `string`; `fields?`: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/); `kind`: `string`; \}; \} \| \{ `change`: \{ `base?`: `number`; `body?`: `string`; `fields?`: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/); `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \} \| \{ `perform`: \{ `base?`: `number`; `fields?`: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/); `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); `operation`: `string`; \}; \} \| \{ `remove`: \{ `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \} \| \{ `append record`: \{ `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); `record`: [`RecordBody`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/recordbody/); \}; \} \| \{ `change record`: \{ `anchor`: `string`; `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); `record`: [`RecordBody`](/docs/dev/typescript/plugin-sdk/operation-api/interfaces/recordbody/); \}; \} \| \{ `remove record`: \{ `anchor`: `string`; `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); \}; \}
 
 Changes supported by the host's atomic write route.
 
@@ -87,6 +87,44 @@ Declared field values to store.
 > **item**: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/)
 
 UUID of the item addressed by the change.
+
+***
+
+### Type Literal
+
+\{ `perform`: \{ `base?`: `number`; `fields?`: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/); `item`: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/); `operation`: `string`; \}; \}
+
+#### perform
+
+> **perform**: `object`
+
+Evaluate a declared item assignment and commit its changes atomically.
+
+##### Type Declaration
+
+##### perform.base?
+
+> `optional` **base?**: `number`
+
+Required current version for a conditional change.
+
+##### perform.fields?
+
+> `optional` **fields?**: [`Fields`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/)
+
+Declared field values to store.
+
+##### perform.item
+
+> **item**: [`ItemId`](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/)
+
+UUID of the item addressed by the change.
+
+##### perform.operation
+
+> **operation**: `string`
+
+Name of the declared operation to evaluate on the current item.
 
 ***
 
