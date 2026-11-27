@@ -170,6 +170,7 @@ pub(crate) fn create(
 pub(crate) async fn identify(
     inner: &std::sync::Arc<Inner>,
     token: &str,
+    activity: bool,
 ) -> Option<(AccountId, InstallationId)> {
     if !plausible_session_token(token) {
         return None;
@@ -203,7 +204,7 @@ pub(crate) async fn identify(
         cache.remove(&key);
         return None;
     }
-    if now - live.touched_at > TOUCH_EVERY_MS {
+    if activity && now - live.touched_at > TOUCH_EVERY_MS {
         touch(inner, key, live, now);
     }
     Some((live.user, live.installation))

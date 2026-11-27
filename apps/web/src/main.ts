@@ -32,10 +32,17 @@ interceptLinks();
 void appearance.start();
 // The real server's start-up checks (server/boot.ts) begin at once, in parallel with the fonts, so their chunk and their requests are not queued behind the two-second font wait; fixtures never load any of it.
 // A guest link (`/s/<secret>`) is its own page, before and without any sign-in: the start-up checks (and their clean-up of other installations' leftovers) do not run for it, so nothing can reload or wipe the visit.
-const guestPage = /^\/s\//.test(location.pathname.slice(import.meta.env.BASE_URL.replace(/\/$/, "").length));
-const boot = serverMode() && !guestPage ? import("./server/boot").then((m) => ({ m, s: m.start() })) : null;
+const basePath = location.pathname.slice(import.meta.env.BASE_URL.replace(/\/$/, "").length);
+const guestPage = /^\/s\//.test(basePath);
+const hostPage = /^\/host(?:\/|$)/.test(basePath) || new URLSearchParams(location.search).has("host");
+const boot = serverMode() && !guestPage && !hostPage ? import("./server/boot").then((m) => ({ m, s: m.start() })) : null;
 Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => setTimeout(r, 2000))]).then(async () => {
   const target = document.getElementById("app")!;
+  // Declaration-driven browser client for the new primitives-only host (slices 4 & 5).
+  if (hostPage) {
+    const { default: HostApp } = await import("./host/HostApp.svelte");
+    mount(HostApp, { target }); document.documentElement.dataset.ready = ""; return;
+  }
   // A link someone shared (`/s/<secret>`) is the guest page: only that item, read-only, before and without any sign-in.
   if (guestPage) {
     const { default: Guest } = await import("./guest/Guest.svelte");

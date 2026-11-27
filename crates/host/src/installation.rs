@@ -56,6 +56,7 @@ impl Space {
             }
             plugins.insert(name, plugin);
         }
+        self.browser_catalog.take();
         self.plugins = plugins;
         self.code = code;
         Ok(())
@@ -136,6 +137,7 @@ impl Space {
         if let Some(code) = code {
             self.code.insert(declaration.manifest.id.clone(), code);
         }
+        self.browser_catalog.take();
         self.plugins
             .insert(declaration.manifest.id.clone(), declaration);
         Ok(())

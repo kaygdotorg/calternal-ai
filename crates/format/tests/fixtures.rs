@@ -448,8 +448,8 @@ fn revision_nine_rights_sources_and_typed_inputs() {
             "editable: operations\nrights:\n  change manager\n  read editor, bicycle-club",
         )
         .replace(
-            "  send: code",
-            "  send: code\n    inputs:\n      body: long text, required\n      harness: text",
+            "      text: long text, required",
+            "      body: long text, required",
         );
     let changed = changed.replace("read through: time", "read through: record anchor");
     let mut files = CHAT.to_vec();
@@ -478,7 +478,13 @@ fn revision_nine_rights_sources_and_typed_inputs() {
         plugin.collections["chats"].share_source,
         calternal_format::ShareSource::Shared
     );
-    let fields = Fields::from([("body".into(), Value::Text("First\nmessage".into()))]);
+    let fields = Fields::from([
+        ("body".into(), Value::Text("First\nmessage".into())),
+        (
+            "item".into(),
+            Value::Text("019a0000-0000-7000-8000-000000000001".into()),
+        ),
+    ]);
     let empty = Fields::new();
     let row = Row {
         fields: &empty,
@@ -552,8 +558,8 @@ fn appendix_item_and_link_comparisons() {
 fn refusal_uses_only_the_installed_operation_schema() {
     let original = CHAT[1].text.unwrap();
     let changed = original.replace(
-        "  send: code",
-        "  send: code\n    inputs:\n      body: long text, required",
+        "      text: long text, required",
+        "      body: long text, required",
     );
     let mut chat_files = CHAT.to_vec();
     chat_files[1].text = Some(&changed);

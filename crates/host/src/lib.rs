@@ -2,8 +2,10 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod browser;
 mod declarations;
 mod installation;
+pub mod live;
 mod query;
 mod reactions;
 mod records;
@@ -82,6 +84,11 @@ impl Host {
         })
     }
 
+    /// Resolve a bearer session token to its account ID.
+    pub async fn identify_session(&self, bearer: &str) -> Option<AccountId> {
+        self.auth.identify(bearer).await.map(|(account, _)| account)
+    }
+
     /// Enable an operator-controlled launcher for new coded installations.
     /// Configuration alone starts no process. Spaces without code stay data-only.
     pub fn with_worker_runtime(mut self, runtime: WorkerRuntime) -> Self {
@@ -154,7 +161,20 @@ impl Host {
                 "A slot selection requires a person’s coded operation.",
             ));
         }
-        self.with_space(&actor, id, |space| space.call(&actor, call))
+        let recipient = match call.call.as_str() {
+            "s.write" if call.input.get("preview") != Some(&Value::Bool(true)) => Some(None),
+            "s.state" if call.input.get("op").and_then(Value::as_str) == Some("set") => {
+                Some(Some(actor.account))
+            }
+            _ => None,
+        };
+        self.with_space(&actor, id, |space| {
+            let output = space.call(&actor, call)?;
+            if let Some(recipient) = recipient {
+                space.live.notify(recipient);
+            }
+            Ok(output)
+        })
     }
 
     fn owner_display(&self, account: AccountId) -> Result<String> {
@@ -194,6 +214,7 @@ impl Host {
         if opened.is_none() {
             let display = self.owner_display(actor.account)?;
             let mut space = Space::open(&self.root, id, self.retention_ms)?;
+            space.scope_existing_viewer_state(actor.account)?;
             space.owner_display = Some((actor.account, display));
             *opened = Some(space);
         }

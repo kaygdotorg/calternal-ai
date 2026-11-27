@@ -205,19 +205,21 @@ impl Space {
             let mut normalized = serde_json::Map::new();
             apply_fields(&target.operation.inputs, &mut normalized, fields, false)?;
         }
-        let item = input.as_object().and_then(|inputs| {
-            inputs
-                .values()
-                .filter_map(|value| Uuid::parse_str(value.as_str()?).ok())
-                .find(|id| self.rows.get(id).is_some_and(|row| row.head.kind == kind))
-        });
-        if let Some(id) = item {
-            self.permits(
-                &Actor::plugin(actor.account, target.plugin),
-                &self.row(id)?.head.kind,
-                false,
-            )?;
-        }
+        let item = if target.operation.inputs.contains_key("item") {
+            let id = input
+                .get("item")
+                .and_then(Value::as_str)
+                .and_then(|raw| Uuid::parse_str(raw).ok())
+                .ok_or_else(|| Error::invalid_input("Supply the target item UUID under item."))?;
+            let row = self.row(id)?;
+            if row.head.kind != kind {
+                return Err(Error::not_found("Item was not found."));
+            }
+            self.permits(actor, &row.head.kind, false)?;
+            Some(id)
+        } else {
+            None
+        };
         Ok(Invocation {
             plugin: target.plugin.into(),
             selector,
@@ -291,8 +293,8 @@ impl Host {
                 "s.write" if self.workers.is_some() && call.slot_selection.is_none() => {
                     self.write_and_notify(actor, space, call, chain).await
                 }
-                "s.query" | "s.read" | "s.write" | "s.state" | "s.me" | "s.space"
-                | "index.rebuild" => {
+                "s.declarations" | "s.query" | "s.read" | "s.write" | "s.state" | "s.me"
+                | "s.space" | "index.rebuild" => {
                     tokio::task::spawn_blocking(move || self.call(actor, space, call))
                         .await
                         .map_err(internal)?
