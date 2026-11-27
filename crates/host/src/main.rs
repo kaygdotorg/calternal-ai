@@ -1,47 +1,44 @@
 //! Local operator commands and the session-authenticated HTTP transport.
 use calternal_auth::{Auth, AuthConfig};
 use calternal_host::{Host, WorkerRuntime};
+use calternal_machine::sandbox::{Backend, podman::PodmanBackend};
 use calternal_types::Error;
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
+#[path = "main_dev.rs"]
+mod dev;
+
+type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> CliResult<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let [command, root, web, chat, harness] = args.as_slice()
+        && command == "dev-serve"
+    {
+        return dev::serve(
+            Path::new(root),
+            Path::new(web),
+            Path::new(chat),
+            Path::new(harness),
+        )
+        .await;
+    }
     let [command, root, origin, rest @ ..] = args.as_slice() else {
         return Err("usage: calternal-host serve ROOT ORIGIN ADDRESS | install ROOT ORIGIN OWNER SPACE DIRECTORY [--official]".into());
     };
     let root = PathBuf::from(root);
-    let auth_dir = root.join("auth");
     let mut config = AuthConfig::new(origin)?;
     if let Some(proxies) = std::env::var_os("CALTERNAL_TRUSTED_PROXIES") {
         config.set_trusted_proxies(proxies.to_str().ok_or("Invalid trusted proxy setting.")?)?;
     }
-    let auth_config = config.clone();
-    let auth = tokio::task::spawn_blocking(move || Auth::open(&auth_dir, auth_config)).await??;
-    let retention =
-        std::env::var("CALTERNAL_RECEIPT_RETENTION_DAYS").map_or(Ok(7), |raw| raw.parse())?;
-    let host = Host::new(root, auth, retention)?;
-    let configured = [
-        "CALTERNAL_WORKER_BWRAP",
-        "CALTERNAL_WORKER_NODE",
-        "CALTERNAL_WORKER_SDK",
-    ]
-    .map(std::env::var_os);
-    let host = Arc::new(
-        tokio::task::spawn_blocking(move || match configured {
-            [None, None, None] => Ok(host),
-            [Some(sandbox), Some(node), Some(sdk)] => {
-                WorkerRuntime::new(sandbox.into(), node.into(), sdk.into())
-                    .map(|runtime| host.with_worker_runtime(runtime))
-            }
-            _ => Err(Error::invalid_input(
-                "Configure all three worker runtime paths.",
-            )),
-        })
-        .await??,
-    );
+    let (host, _) = open_host(root.clone(), &config).await?;
     match (command.as_str(), rest) {
         ("serve", [address]) => {
+            let (host, _engine) = attach_runs(host, &root).await?;
             let app = calternal_host::browser::router(host, config);
             axum::serve(
                 tokio::net::TcpListener::bind(address).await?,
@@ -67,4 +64,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => return Err("invalid command or arguments".into()),
     }
     Ok(())
+}
+
+async fn open_host(root: PathBuf, config: &AuthConfig) -> CliResult<(Host, Auth)> {
+    let auth_dir = root.join("auth");
+    let config = config.clone();
+    let auth = tokio::task::spawn_blocking(move || Auth::open(&auth_dir, config)).await??;
+    let retention =
+        std::env::var("CALTERNAL_RECEIPT_RETENTION_DAYS").map_or(Ok(7), |raw| raw.parse())?;
+    let host = Host::new(root, auth.clone(), retention)?;
+    let configured = [
+        "CALTERNAL_WORKER_BWRAP",
+        "CALTERNAL_WORKER_NODE",
+        "CALTERNAL_WORKER_SDK",
+    ]
+    .map(std::env::var_os);
+    let host = tokio::task::spawn_blocking(move || match configured {
+        [None, None, None] => Ok(host),
+        [Some(sandbox), Some(node), Some(sdk)] => {
+            WorkerRuntime::new(sandbox.into(), node.into(), sdk.into())
+                .map(|runtime| host.with_worker_runtime(runtime))
+        }
+        _ => Err(Error::invalid_input(
+            "Configure all three worker runtime paths.",
+        )),
+    })
+    .await??;
+    Ok((host, auth))
+}
+
+struct RunningEngine {
+    backend: Arc<PodmanBackend>,
+    _lock: calternal_fsio::DataLock,
+}
+
+impl RunningEngine {
+    async fn cleanup(self) -> CliResult<()> {
+        self.backend.initialize().await?;
+        Ok(())
+    }
+}
+
+async fn attach_runs(host: Host, root: &Path) -> CliResult<(Arc<Host>, Option<RunningEngine>)> {
+    let host = Arc::new(host);
+    let image = match std::env::var("CALTERNAL_RUN_IMAGE") {
+        Ok(image) => image,
+        Err(std::env::VarError::NotPresent) => return Ok((host, None)),
+        Err(error) => return Err(error.into()),
+    };
+    let root = root.join("runs");
+    let lock_root = root.clone();
+    let lock = tokio::task::spawn_blocking(move || calternal_fsio::DataLock::acquire(&lock_root))
+        .await??;
+    let backend = Arc::new(PodmanBackend::new("podman", root, &image));
+    backend.initialize().await?;
+    let host = host.with_podman_runs(backend.clone(), image);
+    Ok((
+        host,
+        Some(RunningEngine {
+            backend,
+            _lock: lock,
+        }),
+    ))
 }

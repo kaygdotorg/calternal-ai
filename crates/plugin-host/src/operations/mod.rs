@@ -80,7 +80,7 @@ pub struct Call {
     pub method: Method,
     /// Method-specific JSON for the route to validate before applying effects.
     pub input: Value,
-    /// Stable per-effect key for a write, nested call or run start. The route
+    /// Stable per-effect key for a write, nested call, run start or run input. The route
     /// scopes receipts and uses a nested call key as the callee event key.
     pub idempotency_key: Option<String>,
 }
@@ -362,6 +362,7 @@ async fn exchange(
     let mut states = 0u32;
     let mut calls = 0u32;
     let mut runs = 0u32;
+    let mut run_inputs = 0u32;
     loop {
         let (received, method, args) = match wire::receive(output, invocation, id).await? {
             wire::Message::Call { id, method, input } => (id, method, input),
@@ -379,6 +380,7 @@ async fn exchange(
             }
             Method::Call => Some(("call", &mut calls)),
             Method::Run => Some(("run", &mut runs)),
+            Method::RunSend => Some(("run-send", &mut run_inputs)),
             _ => None,
         };
         let idempotency_key = ordinal.map(|(effect, count)| {

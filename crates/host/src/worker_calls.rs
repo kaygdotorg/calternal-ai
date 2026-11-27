@@ -36,6 +36,8 @@ impl InstalledCode {
 pub(crate) struct Chain {
     pub(crate) plugins: Vec<String>,
     pub(crate) request: Option<String>,
+    pub(crate) session_item: Option<Uuid>,
+    pub(crate) run: Option<crate::runs::RunScopeGrant>,
     selection: Option<SlotGrant>,
 }
 
@@ -116,21 +118,31 @@ impl Space {
         })
     }
 
-    fn validate_designations(&self, actor: &Actor, value: &Value) -> Result<()> {
+    fn validate_designations(
+        &self,
+        actor: &Actor,
+        value: &Value,
+        scope: Option<Uuid>,
+    ) -> Result<()> {
         match value {
             Value::Object(object) => {
                 for value in object.values() {
-                    self.validate_designations(actor, value)?;
+                    self.validate_designations(actor, value, scope)?;
                 }
             }
             Value::Array(values) => {
                 for value in values {
-                    self.validate_designations(actor, value)?;
+                    self.validate_designations(actor, value, scope)?;
                 }
             }
             Value::String(value) => {
                 if let Ok(id) = Uuid::parse_str(value) {
                     if let Some(row) = self.rows.get(&id) {
+                        if scope.is_some_and(|item| item != id) {
+                            return Err(Error::forbidden(
+                                "The item is outside this run's session.",
+                            ));
+                        }
                         self.permits(actor, &row.head.kind, false)?;
                     }
                 } else if let Some(anchor) = value
@@ -145,15 +157,19 @@ impl Space {
                     let id: Option<String> = self
                         .db
                         .query_row(
-                            "SELECT item FROM records WHERE anchor=?1",
-                            [anchor],
+                            "SELECT item FROM records WHERE anchor=?1 AND (?2 IS NULL OR item=?2)",
+                            rusqlite::params![anchor, scope.map(|item| item.to_string())],
                             |row| row.get(0),
                         )
                         .optional()
                         .map_err(internal)?;
-                    let id = id
-                        .and_then(|id| Uuid::parse_str(&id).ok())
-                        .ok_or_else(|| Error::not_found("Record link was not found."))?;
+                    let id = id.and_then(|id| Uuid::parse_str(&id).ok()).ok_or_else(|| {
+                        if scope.is_some() {
+                            Error::forbidden("The record link is outside this run's session.")
+                        } else {
+                            Error::not_found("Record link was not found.")
+                        }
+                    })?;
                     self.permits(actor, &self.row(id)?.head.kind, false)?;
                 }
             }
@@ -289,13 +305,24 @@ impl Host {
         chain: Chain,
     ) -> Outcome {
         Box::pin(async move {
+            if let Some(grant) = &chain.run {
+                grant.check(&actor, space, &call)?;
+            }
             match call.call.as_str() {
+                "s.run.send" | "s.run.stop" if call.slot_selection.is_none() => {
+                    if call.call == "s.run.send" {
+                        self.run_send(actor, space, call.input, call.idempotency_key)
+                            .await
+                    } else {
+                        self.run_stop(actor, space, call.input).await
+                    }
+                }
                 "s.write" if self.workers.is_some() && call.slot_selection.is_none() => {
                     self.write_and_notify(actor, space, call, chain).await
                 }
                 "s.declarations" | "s.query" | "s.read" | "s.write" | "s.state" | "s.me"
                 | "s.space" | "index.rebuild" => {
-                    tokio::task::spawn_blocking(move || self.call(actor, space, call))
+                    tokio::task::spawn_blocking(move || self.call_scoped(actor, space, call))
                         .await
                         .map_err(internal)?
                 }
@@ -311,14 +338,23 @@ impl Host {
         mut call: Call,
         mut chain: Chain,
     ) -> Result<Value> {
+        if let Some(grant) = &chain.run {
+            grant.check(&actor, space, &call)?;
+        }
         let host = self.clone();
         let who = actor.clone();
         let caller_grant = chain.selection.take();
+        let scope = chain.run.map(|grant| grant.item);
         let (invocation, endpoint, key, input, selection) =
             tokio::task::spawn_blocking(move || {
                 host.with_space(&who, space, |storage| {
                     let invocation = storage.invocation(&who, &call.call, &call.input)?;
-                    if let Some(Via::Plugin { plugin }) = &who.via {
+                    if scope.is_some() && scope != invocation.item {
+                        return Err(Error::forbidden(
+                            "The operation is outside this run's session.",
+                        ));
+                    }
+                    if let Some(Via::Plugin { plugin } | Via::Run { plugin, .. }) = &who.via {
                         let canonical = format!("{}.{}", invocation.plugin, invocation.selector);
                         let declared = storage.plugins.get(plugin).is_some_and(|declaration| {
                             declaration
@@ -335,7 +371,7 @@ impl Host {
                                 "The operation was not declared or selected by the person.",
                             ));
                         }
-                        storage.validate_designations(&who, &call.input)?;
+                        storage.validate_designations(&who, &call.input, scope)?;
                     }
                     let selection = call
                         .slot_selection
@@ -384,12 +420,18 @@ impl Host {
             ));
         }
         let selected_operation = selection.as_ref().map(|grant| grant.operation.clone());
+        if chain.session_item.is_none() {
+            chain.session_item = invocation.item;
+        }
         chain.selection = selection;
         chain.plugins.push(invocation.plugin.clone());
         let request = chain.request.get_or_insert_with(|| key.clone()).clone();
         self.deliver(
             endpoint,
-            Actor::plugin(actor.account, &invocation.plugin),
+            match &chain.run {
+                Some(grant) => Actor::run(actor.account, &invocation.plugin, grant.id),
+                None => Actor::plugin(actor.account, &invocation.plugin),
+            },
             chain,
             Delivery {
                 selector: invocation.selector,
@@ -456,10 +498,28 @@ impl Host {
                                 )
                                 .await;
                         }
-                        Method::Run | Method::RunSend | Method::RunStop => {
-                            return Err(Error::forbidden(
-                                "No scope-aware run adapter is attached.",
-                            ));
+                        Method::Run | Method::RunSend | Method::RunStop if chain.run.is_some() => {
+                            return Err(Error::forbidden("A run cannot manage other runs."));
+                        }
+                        Method::Run => {
+                            return host
+                                .run_start(
+                                    actor,
+                                    space,
+                                    callback.input,
+                                    callback.idempotency_key,
+                                    chain.request.clone(),
+                                    chain.session_item,
+                                )
+                                .await;
+                        }
+                        Method::RunSend => {
+                            return host
+                                .run_send(actor, space, callback.input, callback.idempotency_key)
+                                .await;
+                        }
+                        Method::RunStop => {
+                            return host.run_stop(actor, space, callback.input).await;
                         }
                     };
                     chain.selection = None;

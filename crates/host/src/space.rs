@@ -100,6 +100,7 @@ pub(crate) struct Space {
     pub(crate) plugins: BTreeMap<String, Plugin>,
     pub(crate) browser_catalog: OnceLock<Value>,
     pub(crate) live: crate::live::Hub,
+    pub(crate) runs: crate::runs::Runs,
     pub(crate) code: BTreeMap<String, InstalledCode>,
     pub(crate) retention_ms: i64,
     pub(crate) key: [u8; 32],
@@ -150,6 +151,7 @@ impl Space {
             plugins: BTreeMap::new(),
             browser_catalog: OnceLock::new(),
             live: crate::live::Hub::default(),
+            runs: crate::runs::Runs::default(),
             code: BTreeMap::new(),
             retention_ms,
             key,
@@ -341,7 +343,9 @@ impl Space {
     }
 
     pub(crate) fn call(&mut self, actor: &Actor, call: Call) -> Result<Value> {
-        if let Some(calternal_types::Via::Plugin { plugin }) = &actor.via
+        if let Some(
+            calternal_types::Via::Plugin { plugin } | calternal_types::Via::Run { plugin, .. },
+        ) = &actor.via
             && !self.plugins.contains_key(plugin)
         {
             return Err(Error::forbidden("The calling plugin is unavailable."));

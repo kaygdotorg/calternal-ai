@@ -5,6 +5,8 @@
 //! request path. Subscriptions reuse the host's authorized `s.query` and
 //! `s.read` paths so viewer-scoped formulas and access checks are never
 //! duplicated.
+mod run_logs;
+mod subscribe;
 mod wire;
 
 use crate::{Call, Host};
@@ -79,13 +81,16 @@ pub(crate) async fn ws_route(
     let viewer = actor.clone();
     let access = tokio::task::spawn_blocking(move || {
         storage_host.with_space(&viewer, space, |storage| {
-            Ok(storage.live.subscribe(account))
+            Ok((
+                storage.live.subscribe(account),
+                storage.runs.logs.subscribe(),
+            ))
         })
     })
     .await
     .map_err(crate::internal)
     .and_then(|access| access);
-    let receiver = match access {
+    let (receiver, run_logs) = match access {
         Ok(receiver) => receiver,
         Err(error) => {
             return StatusCode::from_u16(error.code.http_status())
@@ -95,7 +100,9 @@ pub(crate) async fn ws_route(
     };
     ws.max_message_size(MAX_CLIENT_FRAME_BYTES)
         .max_frame_size(MAX_CLIENT_FRAME_BYTES)
-        .on_upgrade(move |socket| serve_socket(host, space, actor, token, receiver, socket))
+        .on_upgrade(move |socket| {
+            serve_socket(host, space, actor, token, receiver, run_logs, socket)
+        })
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,6 +112,7 @@ enum ClientFrame {
         sub: String,
         query: Option<Value>,
         records: Option<RecordsRequest>,
+        run_log: Option<run_logs::Request>,
     },
     Unsubscribe {
         sub: String,
@@ -156,6 +164,11 @@ enum ServerFrame {
         #[serde(flatten)]
         metadata: RowMetadata,
     },
+    RunLog {
+        sub: String,
+        #[serde(flatten)]
+        batch: crate::runs::LogBatch,
+    },
     Error {
         sub: Option<String>,
         code: &'static str,
@@ -174,6 +187,12 @@ struct RowMetadata {
 }
 
 enum Subscription {
+    RunLog {
+        run: Uuid,
+        after: Option<u64>,
+        initial: bool,
+        finished: bool,
+    },
     Query {
         input: Value,
         last_payload: Option<String>,
@@ -193,6 +212,7 @@ async fn serve_socket(
     actor: Actor,
     token: String,
     mut rx: broadcast::Receiver<()>,
+    mut run_logs: broadcast::Receiver<()>,
     mut socket: WebSocket,
 ) {
     let mut authority = host.auth.spaces().changes();
@@ -242,7 +262,7 @@ async fn serve_socket(
                                 continue;
                             }
                         };
-                        if handle_client_frame(&host, &actor, space, frame, &mut subs, &mut socket).await.is_err() {
+                        if subscribe::handle_client_frame(&host, &actor, space, frame, &mut subs, &mut socket).await.is_err() {
                             break;
                         }
                     }
@@ -255,6 +275,22 @@ async fn serve_socket(
                     _ => {}
                 }
             }
+            event = run_logs.recv() => {
+                if host.auth.check_session(&token).await.map(|session| session.0) != Some(actor.account) {
+                    break;
+                }
+                if matches!(event, Err(broadcast::error::RecvError::Closed)) {
+                    break;
+                }
+                let mut revoked = Vec::new();
+                for (sub, subscription) in &mut subs {
+                    if let Err(error) = run_logs::refresh(&host, &actor, space, sub, subscription, &mut socket).await {
+                        if send_error(&mut socket, Some(sub.clone()), &error).await.is_err() { return; }
+                        revoked.push(sub.clone());
+                    }
+                }
+                for sub in revoked { subs.remove(&sub); }
+            }
             event = rx.recv() => {
                 if host.auth.check_session(&token).await.map(|session| session.0) != Some(actor.account) {
                     break;
@@ -266,100 +302,6 @@ async fn serve_socket(
                         }
                     }
                     Err(broadcast::error::RecvError::Closed) => break,
-                }
-            }
-        }
-    }
-}
-
-async fn handle_client_frame(
-    host: &Arc<Host>,
-    actor: &Actor,
-    space: SpaceId,
-    frame: ClientFrame,
-    subs: &mut HashMap<String, Subscription>,
-    socket: &mut WebSocket,
-) -> std::result::Result<(), ()> {
-    match frame {
-        ClientFrame::Ping => send_frame(socket, &ServerFrame::Pong).await,
-        ClientFrame::Unsubscribe { sub } => {
-            subs.remove(&sub);
-            Ok(())
-        }
-        ClientFrame::Subscribe {
-            sub,
-            query,
-            records,
-        } => {
-            if sub.is_empty() || sub.len() > 128 {
-                return send_error(
-                    socket,
-                    Some(sub),
-                    &Error::invalid_input("Subscription ID must be 1 to 128 bytes."),
-                )
-                .await;
-            }
-            if !subs.contains_key(&sub) && subs.len() >= MAX_SUBSCRIPTIONS {
-                return send_error(
-                    socket,
-                    Some(sub),
-                    &Error::new(
-                        ErrorCode::EffectiveScopeLimitExceeded,
-                        "Too many live subscriptions on this session.",
-                    ),
-                )
-                .await;
-            }
-            match (query, records) {
-                (Some(input), None) => {
-                    let mut subscription = Subscription::Query {
-                        input,
-                        last_payload: None,
-                    };
-                    if let Err(error) =
-                        eval_subscription(host, actor, space, &sub, &mut subscription, None, socket)
-                            .await
-                    {
-                        send_error(socket, Some(sub), &error).await?;
-                    } else {
-                        subs.insert(sub, subscription);
-                    }
-                    Ok(())
-                }
-                (None, Some(req)) => {
-                    let mut subscription = Subscription::Records {
-                        item: req.item,
-                        last_anchor: req.after.clone(),
-                        last_version: 0,
-                        last_count: 0,
-                        last_meta: None,
-                    };
-                    if let Err(error) = eval_subscription(
-                        host,
-                        actor,
-                        space,
-                        &sub,
-                        &mut subscription,
-                        Some(req.after),
-                        socket,
-                    )
-                    .await
-                    {
-                        send_error(socket, Some(sub), &error).await?;
-                    } else {
-                        subs.insert(sub, subscription);
-                    }
-                    Ok(())
-                }
-                _ => {
-                    send_error(
-                        socket,
-                        Some(sub),
-                        &Error::invalid_input(
-                            "Provide either query or records in a subscribe frame.",
-                        ),
-                    )
-                    .await
                 }
             }
         }
@@ -394,6 +336,7 @@ async fn eval_subscription(
     socket: &mut WebSocket,
 ) -> calternal_types::Result<()> {
     match sub {
+        Subscription::RunLog { .. } => Ok(()),
         Subscription::Query {
             input,
             last_payload,

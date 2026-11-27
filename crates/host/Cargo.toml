@@ -14,13 +14,15 @@ getrandom.workspace = true
 calternal-auth.workspace = true
 calternal-plugin-host = { workspace = true, features = ["operations"] }
 calternal-format = { path = "../format" }
+calternal-machine = { path = "../machine" }
 calternal-fsio.workspace = true
 calternal-types.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 time = { workspace = true, features = ["formatting", "macros"] }
-tokio.workspace = true
+tokio = { workspace = true, features = ["signal"] }
+tower-http = { version = "0.7", features = ["fs"] }
 uuid = { workspace = true, features = ["v7"] }
 
 

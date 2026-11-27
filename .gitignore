@@ -23,3 +23,6 @@ apps/web/scripts/sim-shots/
 apps/web/sim-shots/
 packages/description/harness/public/
 packages/description/dist-harness/
+
+# Disposable local Chat host roots.
+/.dev-chat-host.*/

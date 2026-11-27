@@ -18,6 +18,7 @@
 mod bootstrap;
 pub mod cli;
 pub mod connection;
+pub mod egress;
 pub mod enroll;
 pub mod identity;
 pub mod link;
@@ -26,6 +27,7 @@ mod ownership;
 pub use ownership::{OwnerLock, lock_for_upgrade};
 pub mod protocol;
 mod ready;
+pub mod run_service;
 pub mod runner;
 pub mod sandbox;
 

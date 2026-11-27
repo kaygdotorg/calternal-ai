@@ -3,6 +3,7 @@
 //! - Base image by reference (`docker.io/library/alpine:3` or a digest); the image
 //!   must already be present or pullable by the machine user.
 //! - The container's private overlay is disposable. The /work and home bind mounts persist.
+//! - Harness containers use `--network=none` until mediated provider egress is proven.
 //! - `<root>/accounts/<account-id>/threads/<thread-id>/work` is bind-mounted at `/work` and is the working directory.
 //! - Limits map to `--memory`, `--cpus` and `--pids-limit`; defaults are 1 GiB and
 //!   256 processes, the configuration measured on perf-01.
@@ -15,7 +16,7 @@
 
 use std::collections::HashSet;
 use std::os::unix::process::CommandExt as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
@@ -25,6 +26,8 @@ use super::shared_broker::{Broker, ToolSandbox};
 use super::{Backend, BoxFuture, Exec, ExecRequest, Sandbox, SandboxError, SandboxResult};
 use crate::protocol::{Limits, SandboxSpec};
 
+#[cfg(target_os = "linux")]
+mod family;
 mod ownership;
 
 /// Default memory ceiling when the spec gives none.
@@ -192,7 +195,7 @@ impl Backend for PodmanBackend {
         &'a self,
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        self.start_container(spec, None)
+        self.start_container(spec, None, None, None)
     }
 
     fn start_harness<'a>(
@@ -200,7 +203,36 @@ impl Backend for PodmanBackend {
         spec: &'a SandboxSpec,
         harness: &'a crate::protocol::HarnessSandbox,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        self.start_container(spec, Some(harness))
+        self.start_container(spec, Some(harness), None, None)
+    }
+}
+
+/// Starts a harness with a read-only plugin bundle and one host-side egress socket.
+impl PodmanBackend {
+    /// Start a network-isolated harness with its installed plugin mounted
+    /// read-only at /opt/calternal-plugin and its run proxy mounted read-only at
+    /// /run/calternal-egress. Cost includes normal Podman container creation.
+    pub fn start_harness_run<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: &'a crate::protocol::HarnessSandbox,
+        plugin_root: &'a Path,
+        egress_directory: &'a Path,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        Box::pin(async move {
+            if !cfg!(target_os = "linux") || self.guest || self.kvm_fallback {
+                return Err(SandboxError(
+                    "mediated harness egress requires rootless Podman".into(),
+                ));
+            }
+            self.start_container(
+                spec,
+                Some(harness),
+                Some(plugin_root),
+                Some(egress_directory),
+            )
+            .await
+        })
     }
 }
 
@@ -209,6 +241,8 @@ impl PodmanBackend {
         &'a self,
         spec: &'a SandboxSpec,
         harness: Option<&'a crate::protocol::HarnessSandbox>,
+        plugin_root: Option<&'a Path>,
+        egress_directory: Option<&'a Path>,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
             let root = self.canonical_root().await?;
@@ -326,7 +360,29 @@ impl PodmanBackend {
                         login_env.into(),
                     ]);
                     if harness.is_some() && !self.guest {
-                        args.push("--pull=never".into());
+                        args.extend([
+                            "--network=none".into(),
+                            "--pull=never".into(),
+                            "--http-proxy=false".into(),
+                        ]);
+                        if let Some(plugin_root) = plugin_root {
+                            args.extend([
+                                "--volume".into(),
+                                format!("{}:/opt/calternal-plugin:ro", plugin_root.display()),
+                            ]);
+                        }
+                        if let Some(egress_directory) = egress_directory {
+                            args.extend([
+                                "--pid=private".into(),
+                                "--ipc=private".into(),
+                                "--cap-drop=all".into(),
+                                "--security-opt=no-new-privileges".into(),
+                                "--log-driver=none".into(),
+                                "--image-volume=ignore".into(),
+                                "--volume".into(),
+                                format!("{}:/run/calternal-egress:ro", egress_directory.display()),
+                            ]);
+                        }
                     }
                     if spec.provider_login {
                         args.extend(["--env".into(), "CALTERNAL_PROVIDER_LOGIN=1".into()]);
@@ -375,7 +431,7 @@ impl PodmanBackend {
                     args.retain(|arg| arg != "--pull=never");
                     if spec.worker.is_none() {
                         args.extend([
-                            if self.guest_network {
+                            if harness.is_none() && self.guest_network {
                                 "--network=slirp4netns:allow_host_loopback=false"
                             } else {
                                 "--network=none"
@@ -393,6 +449,7 @@ impl PodmanBackend {
                 if !self.guest
                     && spec.worker.is_none()
                     && broker.is_none()
+                    && egress_directory.is_none()
                     && let Some(exe) = super::cli_program().await
                 {
                     args.extend([
@@ -426,6 +483,12 @@ impl PodmanBackend {
                         "PATH=/home/agent/.local/bin:/opt/calternal-provider/bin:/usr/local/bin:/usr/bin:/bin".into(),
                     ]);
                 }
+                #[cfg(target_os = "linux")]
+                let pid_file = egress_directory.map(|_| dir.join("container.pid"));
+                #[cfg(target_os = "linux")]
+                if let Some(pid_file) = &pid_file {
+                    args.extend(["--pidfile".into(), pid_file.display().to_string()]);
+                }
                 args.extend([image.to_owned(), "sleep".into(), "2147483647".into()]);
                 let refs: Vec<&str> = args.iter().map(String::as_str).collect();
                 let created = podman(&self.podman, &refs).await;
@@ -436,7 +499,21 @@ impl PodmanBackend {
                 }
                 let _ = tokio::fs::remove_file(&cidfile).await;
                 let container = created?;
+                #[cfg(target_os = "linux")]
+                let family = if let Some(pid_file) = &pid_file {
+                    match family::Family::open(pid_file).await {
+                        Ok(family) => Some(family),
+                        Err(error) => {
+                            ownership::remove(&self.podman, &[&container]).await?;
+                            return Err(error);
+                        }
+                    }
+                } else {
+                    None
+                };
                 Ok(Arc::new(PodmanSandbox {
+                    #[cfg(target_os = "linux")]
+                    family,
                     podman: self.podman.clone(),
                     container,
                     dir,
@@ -456,6 +533,8 @@ impl PodmanBackend {
 
 /// One thread's container.
 pub struct PodmanSandbox {
+    #[cfg(target_os = "linux")]
+    family: Option<family::Family>,
     podman: PathBuf,
     container: String,
     dir: PathBuf,
@@ -546,6 +625,16 @@ impl Sandbox for PodmanSandbox {
         })
     }
 
+    fn terminate(&self) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async move {
+            #[cfg(target_os = "linux")]
+            if let Some(family) = &self.family {
+                return family.terminate().await;
+            }
+            self.release().await
+        })
+    }
+
     fn release(&self) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
             if let Some(broker) = &self.broker {
@@ -579,6 +668,8 @@ mod argv_tests {
             .await
             .unwrap();
         let sandbox = PodmanSandbox {
+            #[cfg(target_os = "linux")]
+            family: None,
             podman: engine,
             container: "fixture".into(),
             dir: dir.path().join("work"),

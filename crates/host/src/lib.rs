@@ -9,6 +9,7 @@ pub mod live;
 mod query;
 mod reactions;
 mod records;
+mod runs;
 mod space;
 mod worker_calls;
 mod worker_runtime;
@@ -66,6 +67,8 @@ pub struct Host {
     retention_ms: i64,
     spaces: Mutex<HashMap<SpaceId, Slot>>,
     workers: Option<WorkerRuntime>,
+    development_plugins: Vec<(String, PathBuf)>,
+    runs: Mutex<Option<Arc<calternal_machine::run_service::RunService>>>,
 }
 
 impl Host {
@@ -81,6 +84,8 @@ impl Host {
             retention_ms: i64::from(retention_days) * 86_400_000,
             spaces: Mutex::default(),
             workers: None,
+            development_plugins: Vec::new(),
+            runs: Mutex::default(),
         })
     }
 
@@ -94,6 +99,31 @@ impl Host {
     pub fn with_worker_runtime(mut self, runtime: WorkerRuntime) -> Self {
         self.workers = Some(runtime);
         self
+    }
+
+    /// Supply trusted local plugin bundles to seed the disposable browser
+    /// host's personal space on sign-in. Ordinary hosts have no seed bundles.
+    pub fn with_development_plugins(
+        mut self,
+        plugins: impl IntoIterator<Item = (String, PathBuf)>,
+    ) -> Self {
+        self.development_plugins.extend(plugins);
+        self
+    }
+
+    fn ensure_development_plugins(&self, owner: AccountId, id: SpaceId) -> Result<()> {
+        let actor = Actor::account(owner);
+        for (plugin, directory) in &self.development_plugins {
+            let installed = |space: &mut Space| Ok(space.plugins.contains_key(plugin));
+            if !self.with_space(&actor, id, installed)?
+                && let Err(error) = self.install_local(owner, id, directory, true)
+                && (error.code != calternal_types::ErrorCode::Conflict
+                    || !self.with_space(&actor, id, installed)?)
+            {
+                return Err(error);
+            }
+        }
+        Ok(())
     }
 
     /// Authenticate a bearer session and dispatch a shell call. Storage I/O
@@ -122,6 +152,11 @@ impl Host {
         space: SpaceId,
         call: Call,
     ) -> Result<Value> {
+        if matches!(actor.via, Some(Via::Agent { .. } | Via::Run { .. })) {
+            return Err(Error::forbidden(
+                "A run requires a host-owned session scope.",
+            ));
+        }
         self.dispatch(actor, space, call, worker_calls::Chain::default())
             .await
     }
@@ -156,6 +191,15 @@ impl Host {
     /// plugin via the shared actor type. A run needs a scope-aware adapter
     /// before it can call the host. This method blocks on space storage.
     pub fn call(&self, actor: Actor, id: SpaceId, call: Call) -> Result<Value> {
+        if matches!(actor.via, Some(Via::Agent { .. } | Via::Run { .. })) {
+            return Err(Error::forbidden(
+                "A run requires a host-owned session scope.",
+            ));
+        }
+        self.call_scoped(actor, id, call)
+    }
+
+    fn call_scoped(&self, actor: Actor, id: SpaceId, call: Call) -> Result<Value> {
         if call.slot_selection.is_some() {
             return Err(Error::forbidden(
                 "A slot selection requires a person’s coded operation.",
@@ -247,7 +291,7 @@ fn decode<T: serde::de::DeserializeOwned>(input: Value) -> Result<T> {
 
 fn identity(actor: &Actor) -> (&str, AccountId) {
     match &actor.via {
-        Some(Via::Plugin { plugin }) => (plugin, actor.account),
+        Some(Via::Plugin { plugin } | Via::Run { plugin, .. }) => (plugin, actor.account),
         _ => ("host", actor.account),
     }
 }

@@ -119,6 +119,11 @@ pub(crate) fn write(
             Change::Add { kind, fields, body } => {
                 space.permits(actor, &kind, true)?;
                 let declaration = space.kind(&kind)?;
+                if declaration.hidden {
+                    return Err(Error::forbidden(
+                        "Hidden kinds are operations-only on this host.",
+                    ));
+                }
                 operation(&declaration, actor, "add", None)?;
                 let mut stored = Fields::new();
                 apply_fields(&declaration.fields, &mut stored, fields, true)?;

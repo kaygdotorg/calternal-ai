@@ -9,7 +9,13 @@ use std::process::{Command, Stdio};
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = tempfile::tempdir()?;
     let auth_dir = root.path().join("auth");
-    let origin = std::env::args().nth(1).ok_or("expected browser origin")?;
+    let mut args = std::env::args().skip(1);
+    let origin = args.next().ok_or("expected browser origin")?;
+    let fixture = match args.next().as_deref() {
+        None => "apps/web/e2e/host-chat.mjs",
+        Some("runs") => "apps/web/e2e/host-runs.mjs",
+        Some(_) => return Err("expected the Chat or runs fixture".into()),
+    };
     let config = AuthConfig::new(&origin)?;
     let auth = tokio::task::spawn_blocking(move || Auth::open(&auth_dir, config)).await??;
     let setup = auth
@@ -19,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     drop(auth);
     let checkout = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut test = Command::new("node")
-        .arg(checkout.join("apps/web/e2e/host-chat.mjs"))
+        .arg(checkout.join(fixture))
         .arg("--fixture")
         .arg(root.path())
         .arg(origin)
