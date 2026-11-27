@@ -764,7 +764,7 @@
     if (op.form === "set") {
       if (isStateSetOperation(op) && op.target) {
         const key = op.target.slice("state.".length);
-        await hostCall(session, "s.state", { item: row.id, [key]: op.value });
+        await hostCall(session, "s.state", { op: "set", item: row.id, key, value: op.value });
         return;
       }
       const askEntries = (op.assignments ?? []).filter((a) => a.ask);
@@ -1227,7 +1227,7 @@
                     onmarkread={readStateKey
                       ? (anchor) => {
                           if (!session || row.state?.[readStateKey] === anchor) return;
-                          void hostCall(session, "s.state", { item: row.id, [readStateKey]: anchor }).catch(() => {});
+                          void hostCall(session, "s.state", { op: "set", item: row.id, key: readStateKey, value: anchor }).catch(() => {});
                         }
                       : undefined}
                     oneditrecord={(rec) => openEditRecord(row.id, rec)}
