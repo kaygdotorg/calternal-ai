@@ -13,7 +13,7 @@ open for this branch. Issue updates now use the signed-in Forgejo CLI on hd01.
   continuation positions are tracked in the line scanner.
 - **§4.1 and §4.3, eleventh set.** Chat's unread formula should become
   `count(records after state.read through)`, and the state key should become
-  `read through: anchor`. Lane B supplies records in ledger order with
+  `read through: record anchor`. Lane B supplies records in ledger order with
   host-owned anchors. The existing timestamp formula remains a fixture.
 - **§2.20 and §7.4, eleventh set.** Chat's coded send needs typed inputs
   for the draft, chat reference and chosen harness. Claude Code's start
@@ -31,11 +31,6 @@ open for this branch. Issue updates now use the signed-in Forgejo CLI on hd01.
 
 ## Questions for the coordinator
 
-- **§4.3 and the eleventh set.** A stored read anchor can disappear when
-  its record is removed. The current input is a visible ordered record list.
-  Should lane B pass a tombstone position for the removed anchor, or should
-  a missing anchor mark the visible list unread until the next mark-read?
-  A tombstone preserves the prior position and needs ledger support.
 - **§1.1a.** Which asset encodings and file types must the HTML/script
   classification inspect beyond textual files? The host must attest paths
   and file identity and provide content for inspection or classify opaque
@@ -65,9 +60,19 @@ open for this branch. Issue updates now use the signed-in Forgejo CLI on hd01.
   until date. The example weekly rule works. Calendar-window expansion,
   full iCalendar clauses and the start date for interval phase need more
   vectors. The engine searches at most ten years for `next()`.
-- **§2.8, thirteenth set.** The candidate record reader uses the revision 9
-  header. Lane B owns the exact syntax and verification of its added keyed
-  tag. A header alone cannot stamp a record or admit a recovered append.
+- **§2.8, thirteenth set.** The record reader ends the anchor at the first
+  space. It accepts a trailing HTML comment as opaque bytes and includes it
+  in the source range. Updating frontmatter preserves both tagged and
+  untagged record headers. Lane B verifies the token against the ledger.
+- **§4.3 and the eleventh set.** Lane B retains the ledger position of a
+  removed record. The host may supply that position as the count of visible
+  records at or before the marked anchor. The evaluator uses it to count
+  only later records. An anchor absent from both sources counts all visible
+  records as unread.
+- **§4.7.** Viewer dependence is transitive. The compiler also treats link
+  traversals and unknown setting scopes conservatively. Computed columns
+  belonging to the collection are per-query. A viewer-dependent field
+  in the shared search declaration is refused.
 - **§7.3, §7.5 and §7.6.** Sign-ins, outbound secrets, outside addresses and
   after-operation listeners are refused at install in this Chat-first path.
   The fixture uses only declared destination hosts. The host owns resolved
@@ -79,21 +84,74 @@ open for this branch. Issue updates now use the signed-in Forgejo CLI on hd01.
   no linked data or viewer state. The coordinator should confirm if typed
   receivers need optional extra inputs or versioned schema negotiation.
 
+## Example coverage
+
+| Examples | Result |
+| --- | --- |
+| Chat and Claude Code from the merged revision 9 vectors | Both plugin folders compile. Chat add, write, check and query work together. The harness program's ID is visible and only a bound file can be supplied for execution. |
+| §2.2, §3.2, §6 and §10 standalone examples | Exact minimal kind, item, sidebar and agent rules extracted from the specification. The sidebar test supplies its referenced local collections. |
+| §16 Reading List and Appendix B | Reading List and Workouts compile. Calendar and Tasks refuse the deferred `lines:` key and their in-slice forms compile. |
+| Appendix A H1–H9, H11–H22 | Covered across line grammar, item, record and formula vectors. H8 and H9 exercise grammar nesting. Installation of extensions and DAV mappings remains deferred. |
+| Appendix A H10 | The format crate provides provisional record spans. The host owns the ledger refusal and author projection. |
+| Standalone theme and profile files | §§11–12 are outside slice 0. |
+
+Short line examples that require a surrounding schema are exercised in
+context where the tests cover them. Capability examples such as reachability,
+outside writes and process dispatch require an owning host lane.
+
 ## Verification and review gate
 
 - First pass on `claude@calternal-dev-01-compute02` through
   `~/bin/lock-shared nix develop -c cargo test -j 3 -p calternal-format`:
   four tests passed for line positions, top-level lists, names and numbers.
+- Integration candidate `9415922f` passed 16 tests with default features
+  and with ASCII definitions, workspace formatting, crate Clippy and the
+  whole documentation gate under the dev VM gate locks. The clean checkout
+  needed workspace `npm ci` for the TypeScript stage.
 - The engine is pure. Its hot paths make zero reads and zero flushes.
-  The host owns durable writes, uniqueness, the authoritative history ledger
-  and access checks.
+  It compiles definitions once per load. Item frontmatter and record spans
+  each use one pass through their source region. The host owns durable
+  writes, uniqueness, the authoritative history ledger and access checks.
+- No runtime locks, I/O primitives, clocks or random IDs are introduced.
+  Lane B consumes the item, query and operation API. Agent-rule enforcement
+  and writing belongs to slice 8. All exported Rust items carry rustdoc.
 - Reuse reviewed at `5e113206` (engine and sizing spike) and `39016818`
   (host spike). The engine follows the spike's civil-day arithmetic and
   compile-once evaluation. The host spike's frontmatter writer supplied the
   source-range editing design. Its JSON and line-only readers do not
   represent the format's recursive item values.
 
+- The follow-up passed 22 native tests with default features and 21 with
+  ASCII definitions on `claude@calternal-dev-01-compute02`. The Unicode-only
+  name vector accounts for the difference. Workspace `cargo fmt --check`,
+  format crate Clippy with `-D warnings` and `scripts/check-docs.sh` passed
+  under `~/bin/lock-full nix develop -c …`. The docs gate checked 438 pages.
+
+## Wasm size
+
+The `wasm_size` example retains the folder installer, item and record
+parsers, agent-rule parser, validator, query, operation and writer. It
+was built under `lock-shared` and a Nix shell using the workspace's pinned
+Rust overlay and nixpkgs on the dev VM. The target was
+`wasm32-unknown-unknown`, using rustc 1.99.1, Cargo opt-level `z`, link-time
+optimization, one code generation unit and abort-on-panic. Binaryen 132
+`wasm-opt -Oz` and `wasm-strip` preceded Brotli quality 11 compression.
+
+| Build | Raw bytes | Brotli bytes | Change from 82 KB spike | Wasm imports |
+| --- | ---: | ---: | ---: | ---: |
+| Default Unicode validation | 665,125 | 212,360 | +130,360 B | 0 |
+| ASCII definition validation | 340,776 | 118,684 | +36,684 B | 0 |
+
+The spike linked its own narrower set of engine exports. The comparison
+above covers this crate's example entry points and keeps compression and
+optimization settings aligned. The ASCII variant accepts only ASCII
+definition text.
+
 ## Simplification opportunities
 
 - Use the operation input schema for CLI help, slot wiring and checked calls.
-- Keep one position in the read ledger so read counts avoid timestamp queries.
+- Index a read anchor's visible position once per ledger snapshot. Unread
+  counts can use that index without walking the transcript.
+- Let the client consume compiled definitions where the host can attest
+  they were checked. Measure that client path separately before deciding
+  whether it should ship the full Unicode install checks.

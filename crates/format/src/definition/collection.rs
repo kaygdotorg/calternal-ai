@@ -128,6 +128,9 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Collection, Diagnostic> {
                 entry.block()?;
                 result.fields = kind::fields(entry.children, entry.line.depth + 1, key)?;
                 result.computed = kind::computed_order(&result.fields)?;
+                for field in result.fields.values_mut() {
+                    field.viewer_dependent = field.expression.is_some();
+                }
             }
             "drop" => {
                 crate::operation::assignment(value, site)?;

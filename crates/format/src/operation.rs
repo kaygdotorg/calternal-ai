@@ -344,13 +344,13 @@ pub fn apply_operation(
         fields: computed.as_ref().unwrap_or(&stored),
         metadata: row.metadata,
     };
-    if let Some(condition) = &declared.condition {
-        if !evaluate(condition, view, context)?.truth() {
-            return Err(condition
-                .root
-                .site
-                .error("The operation's condition does not hold"));
-        }
+    if let Some(condition) = &declared.condition
+        && !evaluate(condition, view, context)?.truth()
+    {
+        return Err(condition
+            .root
+            .site
+            .error("The operation's condition does not hold"));
     }
 
     let update = |patch: &Fields| -> Result<(), Diagnostic> {
@@ -526,10 +526,10 @@ fn defaults(
     context: &EvalContext<'_>,
 ) -> Result<(), Diagnostic> {
     for (name, field) in schema {
-        if !fields.contains_key(name) {
-            if let Some(default) = &field.default {
-                fields.insert(name.clone(), evaluate(default, row, context)?);
-            }
+        if !fields.contains_key(name)
+            && let Some(default) = &field.default
+        {
+            fields.insert(name.clone(), evaluate(default, row, context)?);
         }
         if field.required && fields.get(name).is_none_or(|value| *value == Value::Empty) {
             return Err(field

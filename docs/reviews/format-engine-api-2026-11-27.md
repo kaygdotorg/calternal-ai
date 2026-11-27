@@ -111,3 +111,19 @@ conditions for a checked operation. The host applies enabled rules in plugin
 ID and file order after the ordinary check, excluding protected operations.
 It overlays already-authorized inputs on already-authorized stored fields
 and evaluates with no linked sources.
+
+## Follow-up after the integration receipt
+
+The original four lane B signatures are unchanged.
+
+- `parse_records` accepts plain revision 9 headers and headers whose anchor
+  is followed by an HTML comment. `Record::range` includes the exact header
+  and comment bytes. Only the host uses the comment for ledger verification.
+- `EvalContext::record_positions` and `QueryRowContext::record_positions` are
+  optional maps from an anchor to the number of visible records at or before
+  it in ledger order. Supply a deleted anchor's position to preserve a read
+  boundary. The kind declares this state as `read through: record anchor`.
+- `Field::is_per_viewer()` identifies a compiled field that requires the
+  viewer's authorized query context. It includes transitive dependencies.
+  The shared search index may cache fields that can be evaluated from data
+  visible to every reader. The host supplies the applicable read scope.

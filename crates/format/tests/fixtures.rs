@@ -109,6 +109,7 @@ fn chat_add_validate_query_and_write() {
     let plugin = chat();
     let kind = &plugin.kinds["chats"];
     assert_eq!(plugin.collections.len(), 5);
+    assert!(kind.fields["unread"].is_per_viewer());
     assert_eq!(plugin.sidebars["chat"].entries.len(), 5);
     assert!(!plugin.description_only);
     let context = EvalContext::default();
@@ -235,6 +236,25 @@ fn ledger_order_distinguishes_messages_with_identical_timestamps() {
         ..EvalContext::default()
     };
     let expression = parse_expression("count(records after state.read through)").unwrap();
+    assert_eq!(
+        evaluate(
+            &expression,
+            Row {
+                fields: &fields,
+                metadata: &fields
+            },
+            &context
+        )
+        .unwrap(),
+        Value::Number("1".parse().unwrap())
+    );
+    let redacted = [records[0], records[2]];
+    let positions = [("k2m8q1w4zre7k3f9".into(), 1)].into();
+    let context = EvalContext {
+        records: &redacted,
+        record_positions: Some(&positions),
+        ..context
+    };
     assert_eq!(
         evaluate(
             &expression,
@@ -397,16 +417,25 @@ fn agent_rules_need_qualified_collections_or_folder_suffixes() {
 fn record_body_starts_at_the_first_undeclared_field() {
     let plugin = chat();
     let kind = &plugin.kinds["chats"];
-    let source = "---\ntitle: Example\n---\nBefore records.\n**Lee** · 2026-11-20 17:02 ^k2m8q1w4zre7k3f9\nmentions: [user]\nNote: felt heavy\nmentions: body text\n---\n**Ari** · 2026-11-20 17:05 ^k2m8q1w4zre7k3fa\nSecond.\n";
+    let source = "---\ntitle: Example\n---\nBefore records.\n**Lee** · 2026-11-20 17:02 ^k2m8q1w4zre7k3f9 <!--ca1 AAAAAAAAAAAAAAAAAAAAAA-->\nmentions: [user]\nNote: felt heavy\nmentions: body text\n---\n**Ari** · 2026-11-20 17:05 ^k2m8q1w4zre7k3fa\nSecond.\n";
     let item = parse_item(source).unwrap();
     let records = calternal_format::parse_records(kind, &item).unwrap();
     assert_eq!(records.len(), 2);
+    assert_eq!(records[0].anchor, "k2m8q1w4zre7k3f9");
+    assert_eq!(records[1].anchor, "k2m8q1w4zre7k3fa");
     assert_eq!(records[0].body, "Note: felt heavy\nmentions: body text\n");
     assert_eq!(
         records[0].fields["mentions"],
         Value::List(vec![Value::Text("user".into())])
     );
     assert!(source[records[0].range.clone()].starts_with("**Lee**"));
+    let fields = Fields::from([("title".into(), Value::Text("Renamed".into()))]);
+    let edited = write_item(&item, &fields).unwrap();
+    assert_eq!(
+        edited,
+        source.replace("title: Example", "title: \"Renamed\"")
+    );
+    assert!(edited.contains(" <!--ca1 AAAAAAAAAAAAAAAAAAAAAA-->"));
     assert_eq!(records[1].body, "Second.\n");
 }
 
@@ -422,6 +451,7 @@ fn revision_nine_rights_sources_and_typed_inputs() {
             "  send: code",
             "  send: code\n    inputs:\n      body: long text, required\n      harness: text",
         );
+    let changed = changed.replace("read through: time", "read through: record anchor");
     let mut files = CHAT.to_vec();
     files[1].text = Some(&changed);
     let collection = files[2]
@@ -438,6 +468,10 @@ fn revision_nine_rights_sources_and_typed_inputs() {
     )
     .unwrap();
     let kind = &plugin.kinds["chats"];
+    assert_eq!(
+        kind.state["read through"].field_type,
+        Some(calternal_format::FieldType::Anchor)
+    );
     assert_eq!(kind.rights.change.as_deref(), Some("manager"));
     assert_eq!(kind.rights.read, ["editor", "bicycle-club"]);
     assert_eq!(
@@ -566,4 +600,102 @@ fn refusal_uses_only_the_installed_operation_schema() {
     )
     .unwrap_err();
     assert_eq!((error.path.as_deref(), error.line), (Some("plugin.md"), 8));
+}
+
+#[test]
+fn viewer_fields_cannot_enter_shared_search() {
+    let original = CHAT[1].text.unwrap();
+    let original = original.replace("records:\n", "  badge: = unread > 0\nrecords:\n");
+    let mut files = CHAT.to_vec();
+    files[1].text = Some(&original);
+    let options = InstallOptions {
+        official: OFFICIAL,
+        ..InstallOptions::default()
+    };
+    let plugin = parse_plugin(&files, &options).unwrap();
+    let kind = &plugin.kinds["chats"];
+    assert!(kind.fields["badge"].is_per_viewer());
+    assert!(!kind.fields["title"].is_per_viewer());
+    let invalid = original.replace(
+        "row: title, people, unread",
+        "row: title, people, unread\nsearch: badge",
+    );
+    files[1].text = Some(&invalid);
+    let error = parse_plugin(&files, &options).unwrap_err();
+    assert!(error.message.contains("shared search index"));
+}
+
+#[test]
+fn formulas_use_exact_values_and_explicit_time() {
+    let fields = Fields::from([("rule".into(), Value::Text("FREQ=WEEKLY;BYDAY=MO".into()))]);
+    let metadata = Fields::new();
+    let row = Row {
+        fields: &fields,
+        metadata: &metadata,
+    };
+    let context = EvalContext {
+        today: Some("2026-11-27"),
+        ..EvalContext::default()
+    };
+    for (formula, expected) in [
+        ("0.1 + 0.2", Value::Number("0.3".parse().unwrap())),
+        ("first(empty, 1.25)", Value::Number("1.25".parse().unwrap())),
+        (
+            "next(rule, after: today())",
+            Value::Date("2026-11-30".into()),
+        ),
+        ("date(today() + 1mo)", Value::Date("2026-12-27".into())),
+    ] {
+        assert_eq!(
+            evaluate(&parse_expression(formula).unwrap(), row, &context).unwrap(),
+            expected
+        );
+    }
+    let invalid = parse_expression("10 EUR + 10 USD").unwrap();
+    assert!(
+        evaluate(&invalid, row, &context)
+            .unwrap_err()
+            .message
+            .contains("same currency")
+    );
+}
+
+#[test]
+fn remaining_standalone_specification_examples() {
+    let document = |start: &str| {
+        blocks(SPEC)
+            .find(|block| block.starts_with(start))
+            .unwrap_or_else(|| panic!("Missing example starting with {start}"))
+    };
+    let manifest =
+        "---\nplugin: example\nname: Example\nversion: 1.0.0\nformat: 1\n---\nExample.\n";
+    let mut files = vec![
+        PluginFile {
+            path: "plugin.md",
+            text: Some(manifest),
+        },
+        PluginFile {
+            path: "kinds/reading.md",
+            text: Some(document("---\nkind: reading")),
+        },
+        PluginFile {
+            path: "sidebars/tasks.md",
+            text: Some(document("---\nsidebar: tasks")),
+        },
+    ];
+    let collections = ["today", "week", "all-tasks"].map(|id| (
+        format!("collections/{id}.md"),
+        format!("---\ncollection: {id}\ntitle: Test\nformat: 1\nfrom: files\nviews:\n  list: name\n---\n"),
+    ));
+    files.extend(collections.iter().map(|(path, text)| PluginFile {
+        path,
+        text: Some(text),
+    }));
+    let plugin = parse_plugin(&files, &InstallOptions::default()).unwrap();
+    assert_eq!(plugin.kinds["reading"].fields.len(), 1);
+    assert_eq!(plugin.sidebars["tasks"].entries.len(), 6);
+    let item = parse_item(document("---\ntitle: How Discord")).unwrap();
+    assert_eq!(item.fields()["read"], Value::Bool(false));
+    let agents = parse_agent_rules(document("---\nrules: agents")).unwrap();
+    assert_eq!(agents.rules.len(), 4);
 }

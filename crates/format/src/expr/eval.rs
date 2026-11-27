@@ -58,6 +58,9 @@ pub struct EvalContext<'a> {
     pub settings: Option<&'a Fields>,
     /// Current item's authorized records with host stamps.
     pub records: &'a [Row<'a>],
+    /// Ledger anchors mapped to the number of visible records at or before
+    /// that anchor. Entries can preserve a read position after record removal.
+    pub record_positions: Option<&'a BTreeMap<String, usize>>,
     /// The containing item when the current row is a record.
     pub item: Option<Row<'a>>,
     /// The item open in the viewer's window.
@@ -79,6 +82,9 @@ pub struct QueryRowContext<'a> {
     pub state: Option<&'a Fields>,
     /// Authoritative records in ledger order.
     pub records: &'a [Row<'a>],
+    /// Ledger anchors mapped to the number of visible records at or before
+    /// that anchor. Entries can preserve a read position after record removal.
+    pub record_positions: Option<&'a BTreeMap<String, usize>>,
     /// IDs of the already-authorized targets of this item's outgoing links.
     pub outgoing_links: &'a [&'a str],
     /// Already-authorized reverse lookup candidates.
@@ -295,26 +301,38 @@ impl Evaluator<'_, '_> {
             _ => {}
         }
 
-        if name == "count" {
-            if let NodeKind::Call(after, position) = &args[0].kind {
-                if after == "records after" {
-                    let anchor = self.eval(&position[0], element)?;
-                    let mut start = 0;
-                    if let Value::Text(anchor) = &anchor {
-                        if let Some(index) = self.context.records.iter().position(|row| {
-                            row.metadata
-                                .get("anchor")
-                                .is_some_and(|value| matches!(value, Value::Text(candidate) if candidate == anchor))
-                        }) {
-                            start = index + 1;
+        if name == "count"
+            && let NodeKind::Call(after, position) = &args[0].kind
+            && after == "records after"
+        {
+            let anchor = self.eval(&position[0], element)?;
+            let start = match &anchor {
+                Value::Text(anchor) => {
+                    if let Some(position) = self
+                        .context
+                        .record_positions
+                        .and_then(|positions| positions.get(anchor))
+                    {
+                        if *position > self.context.records.len() {
+                            return Err(site.error(
+                                "The ledger read position is outside the visible record order",
+                            ));
                         }
+                        *position
+                    } else {
+                        self.charge(self.context.records.len(), site)?;
+                        self.context.records.iter().position(|row| {
+                            row.metadata.get("anchor").is_some_and(
+                                |value| matches!(value, Value::Text(candidate) if candidate == anchor),
+                            )
+                        }).map_or(0, |index| index + 1)
                     }
-                    self.charge(self.context.records.len(), site)?;
-                    return Ok(Value::Number(Decimal::integer(
-                        (self.context.records.len() - start) as i128,
-                    )));
                 }
-            }
+                _ => 0,
+            };
+            return Ok(Value::Number(Decimal::integer(
+                (self.context.records.len() - start) as i128,
+            )));
         }
         if name == "count"
             && args.len() == 1

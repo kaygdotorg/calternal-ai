@@ -142,7 +142,7 @@ pub fn write_item(item: &Item<'_>, fields: &Fields) -> Result<String, Diagnostic
                 let replacement = entry.comment.map_or_else(String::new, |start| {
                     format!(
                         "{}{}",
-                        &item.source[start..entry.first_line.end].trim_end_matches(['\r', '\n']),
+                        item.source[start..entry.first_line.end].trim_end_matches(['\r', '\n']),
                         item.ending
                     )
                 });

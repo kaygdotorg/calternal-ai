@@ -28,7 +28,16 @@ pub struct Field {
     pub sidecar: Option<String>,
     /// Whether this setting has a per-person value.
     pub per_person: bool,
+    pub(crate) viewer_dependent: bool,
     pub(crate) site: Site,
+}
+
+impl Field {
+    /// Whether a compiled value must be evaluated in the viewer's context.
+    /// Such a value must not be published in a shared index.
+    pub fn is_per_viewer(&self) -> bool {
+        self.viewer_dependent
+    }
 }
 
 /// The type checked when a value enters a stored field.
@@ -99,6 +108,7 @@ pub(crate) fn declaration(value: &str, site: Site) -> Result<Field, Diagnostic> 
         from_metadata: false,
         sidecar: None,
         per_person: false,
+        viewer_dependent: false,
         site,
     };
     for &(flag, site) in &parts[1..] {
@@ -173,7 +183,7 @@ fn field_type(text: &str, site: Site) -> Result<FieldType, Diagnostic> {
         "file" => T::File,
         "colour" => T::Colour,
         "data" => T::Data,
-        "anchor" => T::Anchor,
+        "record anchor" => T::Anchor,
         _ if text.starts_with("number ") => {
             let units: Vec<_> = text[7..].split('|').map(str::to_owned).collect();
             if units.len() > 2

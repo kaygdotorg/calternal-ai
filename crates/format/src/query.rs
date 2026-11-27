@@ -195,6 +195,7 @@ fn prepare_row(
     }) {
         row_context.state = per_row.state;
         row_context.records = per_row.records;
+        row_context.record_positions = per_row.record_positions;
         row_context.reverse = per_row.reverse;
         row_context.outgoing_links = per_row.outgoing_links;
     }
@@ -219,17 +220,16 @@ fn prepare_row(
         fields: &fields,
         metadata: row.metadata,
     };
-    if !collection.ignoring_default {
-        if let Some(condition) = &kind.default_where {
-            if !evaluate_in(condition, row, &row_context, steps)?.truth() {
-                return Ok(None);
-            }
-        }
+    if !collection.ignoring_default
+        && let Some(condition) = &kind.default_where
+        && !evaluate_in(condition, row, &row_context, steps)?.truth()
+    {
+        return Ok(None);
     }
-    if let Some(condition) = &collection.condition {
-        if !evaluate_in(condition, row, &row_context, steps)?.truth() {
-            return Ok(None);
-        }
+    if let Some(condition) = &collection.condition
+        && !evaluate_in(condition, row, &row_context, steps)?.truth()
+    {
+        return Ok(None);
     }
     let group = collection
         .group

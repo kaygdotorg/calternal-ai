@@ -130,7 +130,10 @@ pub fn parse_plugin(
                 .ok_or_else(|| Site::START.error("Supply the definition as UTF-8 text"))?;
             match folder {
                 "kinds" => {
-                    plugin.kinds.insert(stem.into(), kind::parse(text, stem)?);
+                    plugin.kinds.insert(
+                        stem.into(),
+                        kind::parse(text, stem, &plugin.manifest.settings)?,
+                    );
                 }
                 "collections" => {
                     plugin

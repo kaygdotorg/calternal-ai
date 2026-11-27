@@ -51,29 +51,29 @@ pub fn parse_records<'a>(kind: &Kind, item: &Item<'a>) -> Result<Vec<Record<'a>>
                     reading_fields: true,
                 });
             }
-        } else if let Some(span) = &mut current {
-            if span.reading_fields {
-                let site = Site {
-                    line: initial_line + index,
-                    column: 1,
-                };
-                let declared = line.split_once(':').and_then(|(key, _)| {
-                    kind.records
-                        .get(key)?
-                        .field_type
-                        .as_ref()
-                        .map(|kind| (key, kind))
-                });
-                if let Some((key, ty)) = declared {
-                    let value = yaml::record_field(line, site)?;
-                    let value = field::coerce(ty, &value, site)?;
-                    if span.fields.insert(key.into(), value).is_some() {
-                        return Err(site.error(format!("Record field {key} is written twice")));
-                    }
-                    span.body_start = offset + raw.len();
-                } else {
-                    span.reading_fields = false;
+        } else if let Some(span) = &mut current
+            && span.reading_fields
+        {
+            let site = Site {
+                line: initial_line + index,
+                column: 1,
+            };
+            let declared = line.split_once(':').and_then(|(key, _)| {
+                kind.records
+                    .get(key)?
+                    .field_type
+                    .as_ref()
+                    .map(|kind| (key, kind))
+            });
+            if let Some((key, ty)) = declared {
+                let value = yaml::record_field(line, site)?;
+                let value = field::coerce(ty, &value, site)?;
+                if span.fields.insert(key.into(), value).is_some() {
+                    return Err(site.error(format!("Record field {key} is written twice")));
                 }
+                span.body_start = offset + raw.len();
+            } else {
+                span.reading_fields = false;
             }
         }
         offset += raw.len();
@@ -102,8 +102,16 @@ fn finish<'a>(span: Span<'a>, end: usize, text: &'a str) -> Record<'a> {
 }
 
 fn header(text: &str) -> Option<&str> {
-    let (name, tail) = text.strip_prefix("**")?.rsplit_once("** · ")?;
-    let (receipt, anchor) = tail.split_once(" ^")?;
+    let (name, tail) = text.strip_prefix("**")?.split_once("** · ")?;
+    let (receipt, suffix) = tail.split_once(" ^")?;
+    let anchor = if let Some((anchor, comment)) = suffix.split_once(' ') {
+        if !comment.starts_with("<!--") || !comment.ends_with("-->") {
+            return None;
+        }
+        anchor
+    } else {
+        suffix
+    };
     if name.is_empty()
         || receipt.len() != 16
         || !receipt.get(10..)?.starts_with(' ')

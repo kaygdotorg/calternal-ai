@@ -146,3 +146,62 @@ pub(super) fn refusal_condition(
     }
     Ok(())
 }
+
+pub(super) fn mark_viewer_fields(
+    fields: &mut BTreeMap<String, Field>,
+    order: &[String],
+    settings: &BTreeMap<String, Field>,
+) {
+    for name in order {
+        let expression = &fields[name]
+            .expression
+            .as_ref()
+            .expect("a computed field")
+            .root;
+        let dependent = viewer_dependent(expression, fields, settings);
+        fields
+            .get_mut(name)
+            .expect("a compiled field")
+            .viewer_dependent = dependent;
+    }
+}
+
+fn viewer_dependent(
+    node: &Node,
+    fields: &BTreeMap<String, Field>,
+    settings: &BTreeMap<String, Field>,
+) -> bool {
+    let depends = |node| viewer_dependent(node, fields, settings);
+    match &node.kind {
+        NodeKind::Name(name) => {
+            name == "open item" || fields.get(name).is_some_and(Field::is_per_viewer)
+        }
+        NodeKind::Member(base, field) => match &base.kind {
+            NodeKind::Name(name) if name == "state" => true,
+            NodeKind::Name(name) if name == "settings" => {
+                settings.get(field).is_none_or(|setting| setting.per_person)
+            }
+            NodeKind::Name(name) if name == "this" => {
+                fields.get(field).is_some_and(Field::is_per_viewer)
+            }
+            NodeKind::Name(name) if name == "records" => false,
+            NodeKind::Name(name) => {
+                !fields.get(name).is_some_and(|field| {
+                    matches!(
+                        field.field_type,
+                        Some(crate::FieldType::Data | crate::FieldType::Records(_))
+                    )
+                }) || depends(base)
+            }
+            _ => true,
+        },
+        NodeKind::Unary(_, value) => depends(value),
+        NodeKind::Binary(_, a, b) => depends(a) || depends(b),
+        NodeKind::Call(name, values) => {
+            matches!(name.as_str(), "from" | "links to" | "records after")
+                || values.iter().any(depends)
+        }
+        NodeKind::List(values) => values.iter().any(depends),
+        NodeKind::Value(_) => false,
+    }
+}

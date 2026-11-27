@@ -112,7 +112,7 @@ pub(crate) fn document(source: &str) -> Result<Document<'_>, Diagnostic> {
         if content.is_empty() || content == "#" || content.starts_with("# ") {
             continue;
         }
-        if indent % 2 != 0 {
+        if !indent.is_multiple_of(2) {
             return Err(site.error("Indent definitions in steps of two spaces"));
         }
         let depth = indent / 2;
@@ -464,5 +464,93 @@ mod tests {
         assert!(field_name("plan-day", Site::START).is_ok());
         assert!(kind_id("files", Site::START).is_err());
         assert!(kind_id("records", Site::START).is_err());
+    }
+}
+
+#[cfg(test)]
+mod appendix {
+    use super::*;
+    use crate::{EvalContext, Fields, Row, Value, evaluate, parse_expression};
+
+    #[test]
+    fn appendix_a_header_grammar() {
+        let input = "---\nextends:\n  [calternal-mail.messages]:\n    fields:\n      saved: yes/no\nical: VEVENT\n  title: SUMMARY\nfills:\n  calternal-chat:composer: frame frames/composer.html\n---\n";
+        let result = document(input).unwrap();
+        assert_eq!(
+            result.header[..4]
+                .iter()
+                .map(|line| line.depth)
+                .collect::<Vec<_>>(),
+            [0, 1, 2, 3]
+        );
+        assert_eq!(
+            result.header[1].entry().unwrap().unwrap().0,
+            "[calternal-mail.messages]"
+        );
+        assert_eq!(result.header[4].entry().unwrap().unwrap().1, "VEVENT");
+        assert_eq!(result.header[5].depth, 1);
+        assert_eq!(
+            result.header[7].entry().unwrap().unwrap().0,
+            "calternal-chat:composer"
+        );
+        assert_eq!(
+            result.header[7].entry().unwrap().unwrap().1,
+            "frame frames/composer.html"
+        );
+        assert_eq!(
+            parts("colour, default #c96f4a", Site::START).unwrap()[1].0,
+            "default #c96f4a"
+        );
+    }
+
+    #[cfg(feature = "unicode")]
+    #[test]
+    fn appendix_a_nfc_case_is_significant() {
+        field_name("größe", Site::START).unwrap();
+        field_name("Größe", Site::START).unwrap();
+        let item = crate::parse_item("---\ngröße: 1\nGröße: 2\n---\n").unwrap();
+        assert_ne!(item.fields()["größe"], item.fields()["Größe"]);
+    }
+
+    #[test]
+    fn appendix_a_choices_and_durations() {
+        let field = crate::field::declaration("choice(did not happen)", Site::START).unwrap();
+        assert_eq!(
+            field.field_type,
+            Some(crate::FieldType::Choice(vec!["did not happen".into()]))
+        );
+        let title = Fields::from([
+            ("status".into(), Value::Text("did not happen".into())),
+            ("priority".into(), Value::Text("high".into())),
+            ("urgent".into(), Value::Bool(true)),
+        ]);
+        let metadata = Fields::new();
+        let row = Row {
+            fields: &title,
+            metadata: &metadata,
+        };
+        for condition in [
+            "status = \"did not happen\"",
+            "priority in (\"urgent\", \"high\")",
+            "urgent",
+            "not read",
+        ] {
+            assert_eq!(
+                evaluate(
+                    &parse_expression(condition).unwrap(),
+                    row,
+                    &EvalContext::default()
+                )
+                .unwrap(),
+                Value::Bool(true)
+            );
+        }
+        assert!(crate::dates::duration("6m").is_none());
+        let diagnostic =
+            crate::field::declaration("duration, default 2m", Site { line: 6, column: 4 })
+                .unwrap_err();
+        assert_eq!(diagnostic.line, 6);
+        assert!(diagnostic.message.contains("2min"));
+        assert!(parse_expression("now() + 1mo").is_ok());
     }
 }

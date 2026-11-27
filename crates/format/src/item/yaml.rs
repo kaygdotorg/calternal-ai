@@ -265,7 +265,7 @@ fn mapping_colon(text: &str) -> Option<usize> {
     None
 }
 
-fn key_value<'a>(text: &'a str, site: Site) -> Result<(String, &'a str, usize), Diagnostic> {
+fn key_value(text: &str, site: Site) -> Result<(String, &str, usize), Diagnostic> {
     let colon =
         mapping_colon(text).ok_or_else(|| site.error("Write an item field as key: value"))?;
     let key = text[..colon].trim_end();

@@ -102,7 +102,11 @@ pub struct Kind {
     pub(crate) site: Site,
 }
 
-pub(super) fn parse(source: &str, id: &str) -> Result<Kind, Diagnostic> {
+pub(super) fn parse(
+    source: &str,
+    id: &str,
+    settings: &BTreeMap<String, Field>,
+) -> Result<Kind, Diagnostic> {
     lines::kind_id(id, Site::START)?;
     let document = definition(source)?;
     let entries = sections(&document.header, 0)?;
@@ -314,7 +318,7 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Kind, Diagnostic> {
             .site
             .error("List the operations for an operations-only kind"));
     }
-    verify_fields(&mut kind, &entries)?;
+    verify_fields(&mut kind, &entries, settings)?;
     Ok(kind)
 }
 
@@ -363,10 +367,9 @@ fn right(text: &str, site: Site, rights: &mut Rights) -> Result<(), Diagnostic> 
     if let Some(role) = text
         .strip_prefix("change ")
         .filter(|role| matches!(*role, "manager" | "owner"))
+        && rights.change.replace(role.into()).is_none()
     {
-        if rights.change.replace(role.into()).is_none() {
-            return Ok(());
-        }
+        return Ok(());
     }
     if let Some(read) = text
         .strip_prefix("read ")
@@ -424,7 +427,11 @@ pub(super) fn flat(line: &Line, entry: &Section<'_>) -> Result<(), Diagnostic> {
     Ok(())
 }
 
-fn verify_fields(kind: &mut Kind, entries: &[Section<'_>]) -> Result<(), Diagnostic> {
+fn verify_fields(
+    kind: &mut Kind,
+    entries: &[Section<'_>],
+    settings: &BTreeMap<String, Field>,
+) -> Result<(), Diagnostic> {
     let site = |key| {
         entries
             .iter()
@@ -478,43 +485,55 @@ fn verify_fields(kind: &mut Kind, entries: &[Section<'_>]) -> Result<(), Diagnos
             }
         }
     }
-    if let Some(unique) = &kind.unique {
-        if kind
+    if let Some(unique) = &kind.unique
+        && kind
             .fields
             .get(unique)
             .is_none_or(|field| field.field_type.is_none())
-        {
-            return Err(site("unique").error("Name one stored field as the uniqueness key"));
-        }
+    {
+        return Err(site("unique").error("Name one stored field as the uniqueness key"));
     }
-    if let Some(progress) = &kind.progress {
-        if kind
+    if let Some(progress) = &kind.progress
+        && kind
             .fields
             .get(progress)
             .is_none_or(|field| !matches!(field.field_type, Some(FieldType::Number(_))))
-        {
-            return Err(site("progress").error("Name a numeric field for operation progress"));
-        }
+    {
+        return Err(site("progress").error("Name a numeric field for operation progress"));
     }
-    if !matches!(kind.item, ItemForm::Binary { .. }) {
-        if let Some(field) = kind
+    if !matches!(kind.item, ItemForm::Binary { .. })
+        && let Some(field) = kind
             .fields
             .values()
             .find(|field| field.from_metadata || field.sidecar.is_some())
-        {
-            return Err(field
-                .site
-                .error("Only binary file kinds read metadata or sidecars"));
-        }
+    {
+        return Err(field
+            .site
+            .error("Only binary file kinds read metadata or sidecars"));
     }
     for fields in &kind.together {
         for field in fields {
-            if !kind.fields.contains_key(field) {
+            if kind
+                .fields
+                .get(field)
+                .is_none_or(|decl| decl.field_type.is_none())
+            {
                 return Err(site("together").error(format!("Unknown field {field}")));
             }
         }
     }
     kind.computed = computed_order(&kind.fields)?;
     kind.record_computed = computed_order(&kind.records)?;
+    super::formulas::mark_viewer_fields(&mut kind.fields, &kind.computed, settings);
+    super::formulas::mark_viewer_fields(&mut kind.records, &kind.record_computed, settings);
+    if let Some(field) = kind
+        .search
+        .iter()
+        .find(|name| kind.fields.get(*name).is_some_and(Field::is_per_viewer))
+    {
+        return Err(site("search").error(format!(
+            "The viewer-dependent field {field} cannot appear in the shared search index"
+        )));
+    }
     Ok(())
 }

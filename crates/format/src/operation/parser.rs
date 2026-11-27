@@ -74,12 +74,12 @@ pub(crate) fn parse(
         }
     }
     for operation in operations.values() {
-        if let OperationForm::Timer { after, .. } = &operation.form {
-            if !operations.contains_key(after) {
-                return Err(operation
-                    .site
-                    .error(format!("Declare the timer operation {after}")));
-            }
+        if let OperationForm::Timer { after, .. } = &operation.form
+            && !operations.contains_key(after)
+        {
+            return Err(operation
+                .site
+                .error(format!("Declare the timer operation {after}")));
         }
     }
     Ok(operations)
