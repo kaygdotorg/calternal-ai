@@ -249,7 +249,10 @@ export interface RunHandle {
   /** Status snapshot returned when the run was opened. */
   status: string;
   /** Queue input as the run actor. The result reports admission to the input channel. */
-  send(input: unknown): Promise<{ status: "queued" }>;
+  send(input: unknown): Promise<{
+    /** The input entered the run queue. Delivery to the adapter is unconfirmed. */
+    status: "queued";
+  }>;
   /** Stop the run if the current caller has access to its original scope. */
   stop(): Promise<void>;
 }
