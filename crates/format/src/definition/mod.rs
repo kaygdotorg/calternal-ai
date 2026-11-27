@@ -286,7 +286,9 @@ impl Section<'_> {
 
     pub fn expression(&self, formula: &str) -> Result<Expression, Diagnostic> {
         let start = formula.as_ptr() as usize - self.line.text.as_ptr() as usize;
-        parse::parse_at(formula, |offset| self.line.site_at(start + offset))
+        let expression = parse::parse_at(formula, |offset| self.line.site_at(start + offset))?;
+        formulas::formula_scope(&expression, false, false)?;
+        Ok(expression)
     }
 
     pub fn directive(&self) -> Result<Directive, Diagnostic> {

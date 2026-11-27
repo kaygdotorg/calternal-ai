@@ -12,6 +12,8 @@ pub struct Field {
     pub field_type: Option<FieldType>,
     /// Formula evaluated for the item or record.
     pub expression: Option<Expression>,
+    /// Civil period for a computed field, if declared.
+    pub period: Option<crate::Period>,
     /// Whether the field must have a value when the item is saved.
     pub required: bool,
     /// The expression used only when adding an item.
@@ -114,6 +116,26 @@ fn declaration_parts(
     let Some(&(first, first_site)) = parts.first() else {
         return Err(site.error("Declare a field type or formula"));
     };
+    let (first, period) = if let Some(per) = first.strip_prefix("per ") {
+        let (unit, formula) = per.split_once(' ').ok_or_else(|| {
+            first_site.error("Declare per day, week, month or year followed by = and a formula")
+        })?;
+        let period = crate::Period::from_name(unit)
+            .filter(|_| formula.starts_with("= "))
+            .ok_or_else(|| {
+                first_site.error("Declare per day, week, month or year followed by = and a formula")
+            })?;
+        (formula, Some(period))
+    } else {
+        (first, None)
+    };
+    let first_site = if period.is_some() {
+        parts[0]
+            .1
+            .after(&parts[0].0[..parts[0].0.len() - first.len()])
+    } else {
+        first_site
+    };
     let (field_type, expression) = if let Some(formula) = first.strip_prefix("= ") {
         (None, Some(parse_formula(formula, first_site.after("= "))?))
     } else {
@@ -122,6 +144,7 @@ fn declaration_parts(
     let mut field = Field {
         field_type,
         expression,
+        period,
         required: false,
         default: None,
         heading: false,

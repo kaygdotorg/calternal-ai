@@ -27,7 +27,7 @@ impl Expression {
                 NodeKind::Name(name) => {
                     !matches!(
                         name.as_str(),
-                        "this" | "item" | "open item" | "records" | "state" | "settings"
+                        "this" | "item" | "open item" | "records" | "state" | "settings" | "period"
                     ) && field(name)
                 }
                 NodeKind::Member(base, name) => {
@@ -36,8 +36,10 @@ impl Expression {
                         && field(name)
                 }
                 NodeKind::Call(name, args) => {
-                    !matches!(name.as_str(), "from" | "links to" | "records after")
-                        && args.iter().all(|arg| local(arg, field))
+                    !matches!(
+                        name.as_str(),
+                        "from" | "all" | "previous" | "links to" | "records after"
+                    ) && args.iter().all(|arg| local(arg, field))
                 }
                 NodeKind::List(values) => values.iter().all(|value| local(value, field)),
                 NodeKind::Unary(_, value) => local(value, field),

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    Diagnostic, Field, FieldType,
+    Diagnostic, Expression, Field, FieldType,
     expr::{Node, NodeKind, Op},
 };
 
@@ -69,16 +69,20 @@ fn dependencies_of<'a>(
                 .site
                 .error("In a computed field put now() directly on one side of a comparison"));
         }
+        NodeKind::Call(name, _) if name == "previous" => {}
         NodeKind::Call(name, args) => {
             let conditional_list = matches!(
                 name.as_str(),
                 "count" | "sum" | "average" | "min" | "max" | "from"
             );
             for (index, arg) in args.iter().enumerate() {
+                if index == 0 && matches!(name.as_str(), "all" | "from") {
+                    continue;
+                }
                 dependencies_of(
                     arg,
                     output,
-                    scoped || (conditional_list && index == 1),
+                    scoped || ((conditional_list || name == "all") && index == 1),
                     false,
                 )?
             }
@@ -124,7 +128,10 @@ pub(super) fn refusal_condition(
                 .error("Refusal conditions cannot navigate links, state or settings"));
         }
         NodeKind::Call(name, args) => {
-            if matches!(name.as_str(), "from" | "links to" | "records after") {
+            if matches!(
+                name.as_str(),
+                "from" | "all" | "previous" | "links to" | "records after"
+            ) {
                 return Err(node
                     .site
                     .error("Refusal conditions cannot traverse data beyond the target call"));
@@ -198,8 +205,10 @@ pub(super) fn viewer_dependent(
         NodeKind::Unary(_, value) => depends(value),
         NodeKind::Binary(_, a, b) => depends(a) || depends(b),
         NodeKind::Call(name, values) => {
-            matches!(name.as_str(), "from" | "links to" | "records after")
-                || values.iter().any(depends)
+            matches!(
+                name.as_str(),
+                "from" | "all" | "previous" | "links to" | "records after"
+            ) || values.iter().any(depends)
         }
         NodeKind::List(values) => values.iter().any(depends),
         NodeKind::Value(_) => false,
@@ -302,4 +311,47 @@ impl<'a, F: Fn(&str, &str) -> Option<&'a FieldType>> NumericProof<'_, F> {
             _ => false,
         }
     }
+}
+
+pub(super) fn formula_scope(
+    expression: &Expression,
+    per: bool,
+    totals: bool,
+) -> Result<(), Diagnostic> {
+    walk(&expression.root, &mut |node| {
+        let invalid = |message| Err(node.site.error(message));
+        match &node.kind {
+            NodeKind::Call(name, _) if name == "all" && !totals => {
+                invalid("Use all() only in a named total")
+            }
+            NodeKind::Call(name, _) if name == "previous" && !per => {
+                invalid("Use previous() only in a per-period formula")
+            }
+            NodeKind::Name(name) if name == "period" && !per => {
+                invalid("Use period only in a per-period formula")
+            }
+            _ => Ok(()),
+        }
+    })
+}
+
+pub(super) fn walk(
+    node: &Node,
+    check: &mut impl FnMut(&Node) -> Result<(), Diagnostic>,
+) -> Result<(), Diagnostic> {
+    check(node)?;
+    match &node.kind {
+        NodeKind::Call(_, nodes) | NodeKind::List(nodes) => {
+            for node in nodes {
+                walk(node, check)?;
+            }
+        }
+        NodeKind::Binary(_, a, b) => {
+            walk(a, check)?;
+            walk(b, check)?;
+        }
+        NodeKind::Member(base, _) | NodeKind::Unary(_, base) => walk(base, check)?,
+        NodeKind::Name(_) | NodeKind::Value(_) => {}
+    }
+    Ok(())
 }

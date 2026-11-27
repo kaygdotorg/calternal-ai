@@ -444,6 +444,14 @@ pub(super) fn fields(
         entry.alone()?;
         crate::lines::field_name(entry.key, entry.line.site)?;
         let field = field::declaration(entry.value, entry.site, entry.line)?;
+        if let Some(expression) = &field.expression {
+            super::formulas::formula_scope(expression, field.period.is_some(), false)?;
+        }
+        if field.period.is_some() && scope != "fields" {
+            return Err(entry
+                .site
+                .error("Declare per-period formulas on item fields"));
+        }
         if let Some(site) = field.badge
             && scope != "fields"
         {

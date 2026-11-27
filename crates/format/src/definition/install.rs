@@ -87,6 +87,61 @@ pub(super) fn verify(
         }
     }
     for collection in plugin.collections.values() {
+        for field in collection.named_totals.values() {
+            let expression = field
+                .expression
+                .as_ref()
+                .expect("named totals are computed");
+            super::formulas::walk(&expression.root, &mut |node| {
+                use crate::expr::NodeKind;
+                let NodeKind::Call(name, args) = &node.kind else {
+                    return Ok(());
+                };
+                if name != "all" {
+                    return Ok(());
+                }
+                let key =
+                    crate::expr::eval::reference_key(&args[0]).expect("checked kind selector");
+                let (owner, kind) = key.split_once('.').unwrap_or((&plugin.manifest.id, &key));
+                let err = |message| {
+                    located(
+                        node.site.error(message),
+                        &format!("collections/{}.md", collection.id),
+                    )
+                };
+                if owner != plugin.manifest.id && !plugin.manifest.reads.contains(&key) {
+                    return Err(err("Declare reads for the foreign kind in all()"));
+                }
+                let target = std::iter::once(plugin)
+                    .chain(options.installed.iter())
+                    .find(|candidate| candidate.manifest.id == owner)
+                    .and_then(|candidate| candidate.kinds.get(kind))
+                    .filter(|kind| !kind.hidden)
+                    .ok_or_else(|| err("all() requires a visible kind"))?;
+                if let Some(condition) = args.get(1) {
+                    super::formulas::walk(condition, &mut |node| {
+                        if let NodeKind::Name(name) = &node.kind
+                            && !matches!(
+                                name.as_str(),
+                                "this"
+                                    | "settings"
+                                    | "state"
+                                    | "period"
+                                    | "id"
+                                    | "kind"
+                                    | "created"
+                                    | "edited"
+                            )
+                            && !target.fields.contains_key(name)
+                        {
+                            return Err(err("Name a declared field of the whole-kind candidate"));
+                        }
+                        Ok(())
+                    })?;
+                }
+                Ok(())
+            })?;
+        }
         for source in &collection.sources {
             if let Source::Kind(kind) | Source::Records(kind) = source {
                 if let Some((plugin_id, kind_id)) = kind.split_once('.') {

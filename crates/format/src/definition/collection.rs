@@ -81,6 +81,10 @@ pub struct Collection {
     pub group: Option<Expression>,
     /// Aggregates over the overall list and each group.
     pub totals: Vec<Total>,
+    /// Whole-kind header formulas keyed by their declared names.
+    pub named_totals: BTreeMap<String, Field>,
+    /// Named header totals in source order.
+    pub named_total_order: Vec<String>,
     /// Collection-local computed columns.
     pub fields: BTreeMap<String, Field>,
     /// Expand occurrences in a date window.
@@ -94,6 +98,7 @@ pub struct Collection {
     /// Hand-added items kept as Markdown lines.
     pub body: String,
     pub(crate) computed: Vec<String>,
+    pub(crate) totals_computed: Vec<String>,
     pub(crate) site: Site,
 }
 
@@ -115,6 +120,8 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Collection, Diagnostic> {
         sort: Vec::new(),
         group: None,
         totals: Vec::new(),
+        named_totals: BTreeMap::new(),
+        named_total_order: Vec::new(),
         fields: BTreeMap::new(),
         expand_repeat: false,
         drop: None,
@@ -122,6 +129,7 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Collection, Diagnostic> {
         compiled_views: Vec::new(),
         body: document.body.into(),
         computed: Vec::new(),
+        totals_computed: Vec::new(),
         site: entries[0].site,
     };
     for entry in &entries {
@@ -219,6 +227,25 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Collection, Diagnostic> {
                 for line in entry.children {
                     kind::flat(line, entry)?;
                     let value = line.content()?;
+                    if let Some((name, formula, site)) = line.entry()? {
+                        lines::field_name(name, line.site)?;
+                        let field = crate::field::declaration(formula, site, line)?;
+                        if field.expression.is_none() || field.mark || field.is_badge() {
+                            return Err(
+                                site.error("A named total takes a formula with an optional period")
+                            );
+                        }
+                        super::formulas::formula_scope(
+                            field.expression.as_ref().unwrap(),
+                            field.period.is_some(),
+                            true,
+                        )?;
+                        if result.named_totals.insert(name.into(), field).is_some() {
+                            return Err(site.error("Name each collection total once"));
+                        }
+                        result.named_total_order.push(name.into());
+                        continue;
+                    }
                     let (total, field) = if value == "count" {
                         (value, None)
                     } else if let Some((function, field)) =
@@ -228,7 +255,7 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Collection, Diagnostic> {
                     } else {
                         return Err(line
                             .site
-                            .error("Named totals and whole-kind formulas are deferred"));
+                            .error("Write a collection aggregate or a named total formula"));
                     };
                     if !matches!(total, "count" | "sum" | "min" | "max" | "average")
                         || field.as_ref().is_some_and(String::is_empty)
@@ -260,6 +287,7 @@ pub(super) fn parse(source: &str, id: &str) -> Result<Collection, Diagnostic> {
             .error("Write each hand-added item as a Markdown list link"));
         }
     }
+    result.totals_computed = kind::computed_order(&result.named_totals)?;
     if result.sources != [Source::Files]
         && let Some(view) = result.views.iter().find(|view| view.key == "folders")
     {

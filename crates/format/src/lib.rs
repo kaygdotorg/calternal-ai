@@ -10,6 +10,7 @@ mod item;
 mod lines;
 mod note_lines;
 mod operation;
+mod period;
 mod query;
 mod repeat;
 mod value;
@@ -29,6 +30,7 @@ pub use operation::{
     Assignment, Change, Operation, OperationForm, OperationInput, apply_operation, check_item,
     operation_conditions,
 };
+pub use period::{KindRows, Period, PeriodSnapshot, evaluate_period_field};
 pub use query::{Page, QueryGroup, QueryResult, QueryRow, evaluate_query};
 pub use repeat::{
     Occurrence, OccurrenceOverride, RepeatRule, expand_repeat, next_occurrence, parse_repeat,
