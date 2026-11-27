@@ -1,7 +1,7 @@
 //! Authorized run log replay through the live window transport.
+use super::wire::LiveSocket;
 use super::{ServerFrame, Subscription, send_frame};
 use crate::Host;
-use axum::extract::ws::WebSocket;
 use calternal_types::{Actor, Error, Result, SpaceId};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ pub(super) async fn refresh(
     space: SpaceId,
     sub: &str,
     subscription: &mut Subscription,
-    socket: &mut WebSocket,
+    socket: &mut LiveSocket,
 ) -> Result<()> {
     let Subscription::RunLog {
         run,

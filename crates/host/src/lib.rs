@@ -10,6 +10,7 @@ mod query;
 mod reactions;
 mod records;
 mod runs;
+mod session;
 mod space;
 mod worker_calls;
 mod worker_runtime;
@@ -21,6 +22,7 @@ use calternal_auth::Auth;
 use calternal_types::{AccountId, Actor, Error, Result, SpaceId, Via};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use session::Session;
 use space::Space;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -69,6 +71,7 @@ pub struct Host {
     workers: Option<WorkerRuntime>,
     development_plugins: Vec<(String, PathBuf)>,
     runs: Mutex<Option<Arc<calternal_machine::run_service::RunService>>>,
+    sessions: session::Registry,
 }
 
 impl Host {
@@ -86,6 +89,7 @@ impl Host {
             workers: None,
             development_plugins: Vec::new(),
             runs: Mutex::default(),
+            sessions: session::Registry::default(),
         })
     }
 
@@ -126,21 +130,27 @@ impl Host {
         Ok(())
     }
 
-    /// Authenticate a bearer session and dispatch a shell call. Storage I/O
-    /// and the per-space lock run on a blocking thread.
+    /// Authenticate and bind the issuing installation to a shell call.
+    /// Storage I/O and the per-space lock run on a blocking thread.
     pub async fn session_call(
         self: Arc<Self>,
         bearer: &str,
         space: SpaceId,
         call: Call,
     ) -> Result<Value> {
-        let (account, _) = self
-            .auth
-            .identify(bearer)
-            .await
-            .ok_or_else(|| Error::unauthorized("Sign in to use this space."))?;
-        self.trusted_call(Actor::account(account), space, call)
-            .await
+        let session = self.authenticate(bearer).await?;
+        self.authorized_call(session, space, call).await
+    }
+
+    async fn authorized_call(
+        self: Arc<Self>,
+        session: Session,
+        space: SpaceId,
+        call: Call,
+    ) -> Result<Value> {
+        let actor = Actor::account(session.account);
+        let chain = worker_calls::Chain::for_session(session);
+        self.dispatch(actor, space, call, chain).await
     }
 
     /// Dispatch from a trusted asynchronous adapter on a blocking thread.
@@ -196,10 +206,16 @@ impl Host {
                 "A run requires a host-owned session scope.",
             ));
         }
-        self.call_scoped(actor, id, call)
+        self.call_scoped(actor, id, call, None)
     }
 
-    fn call_scoped(&self, actor: Actor, id: SpaceId, call: Call) -> Result<Value> {
+    fn call_scoped(
+        &self,
+        actor: Actor,
+        id: SpaceId,
+        call: Call,
+        session: Option<&Session>,
+    ) -> Result<Value> {
         if call.slot_selection.is_some() {
             return Err(Error::forbidden(
                 "A slot selection requires a person’s coded operation.",
@@ -213,6 +229,7 @@ impl Host {
             _ => None,
         };
         self.with_space(&actor, id, |space| {
+            let _admission = self.admit_session_blocking(session)?;
             let output = space.call(&actor, call)?;
             if let Some(recipient) = recipient {
                 space.live.notify(recipient);

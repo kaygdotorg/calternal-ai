@@ -605,3 +605,88 @@ async fn foreign_kind_viewer_state_is_absent_from_reads_queries_and_matching() {
         .unwrap();
     assert_eq!(pinned["rows"], json!([]));
 }
+
+#[tokio::test]
+async fn revoked_installation_cannot_commit_the_next_worker_callback() {
+    use calternal_auth::token::{hash, new_session_token};
+    use calternal_types::InstallationId;
+
+    let f = Fixture::new().await;
+    f.install(checkout().join("plugins-v2/calternal-chat"))
+        .await
+        .unwrap();
+    let bundle = tempfile::tempdir().unwrap();
+    observer(bundle.path());
+    let kind_path = bundle.path().join("kinds/observations.md");
+    let kind = std::fs::read_to_string(&kind_path).unwrap();
+    std::fs::write(
+        &kind_path,
+        kind.replace("  relay: code", "  pause: code\n  relay: code"),
+    )
+    .unwrap();
+    use std::io::Write;
+    std::fs::OpenOptions::new().append(true).open(bundle.path().join("operations.ts")).unwrap()
+        .write_all(br#"
+            export const pause = on.call("observations.pause", async (_, s) => {
+                const add = title => s.write([{ add: { kind: "observer.observations", fields: { title } } }]);
+                await add("before");
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                await add("after");
+            });
+        "#).unwrap();
+    f.install(bundle.path().to_owned()).await.unwrap();
+    let installation = InstallationId::new();
+    let credential = new_session_token().unwrap();
+    // A disposable auth database supplies the normal session lookup path.
+    let db_path = f._root.path().join("auth/system/auth.db");
+    let account = f.owner.to_string();
+    let digest = hash(&credential);
+    tokio::task::spawn_blocking(move || {
+        let now = calternal_types::now_ms();
+        let db = rusqlite::Connection::open(db_path).unwrap();
+        db.execute(
+            "INSERT INTO installations(id,user_id,kind,name,token_hash,created_at,last_seen_at,expires_at)
+             VALUES (?1,?2,'browser','Test browser',?3,?4,?4,?5)",
+            rusqlite::params![installation.to_string(), account, digest, now, now + 60_000],
+        ).unwrap();
+    }).await.unwrap();
+    let (host, space) = (f.host.clone(), f.space);
+    let pending = tokio::spawn(async move {
+        host.session_call(
+            &credential,
+            space,
+            Call {
+                call: "observer.observations.pause".into(),
+                input: json!({}),
+                idempotency_key: None,
+                slot_selection: None,
+            },
+        )
+        .await
+    });
+    let observation = || {
+        f.call(
+            f.owner.into(),
+            "s.query",
+            json!({"from":"observer.observations"}),
+            None,
+        )
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(6), async {
+        loop {
+            if observation().await.unwrap()["rows"][0]["fields"]["title"] == "before" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    f.auth.revoke(f.owner, installation).await.unwrap();
+    assert_eq!(
+        pending.await.unwrap().unwrap_err().code,
+        ErrorCode::Unauthorized
+    );
+    let rows = observation().await.unwrap();
+    assert_eq!(rows["rows"].as_array().unwrap().len(), 1);
+}

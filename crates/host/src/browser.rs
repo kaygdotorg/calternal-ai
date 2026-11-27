@@ -141,10 +141,7 @@ async fn call(State(host): State<Arc<Host>>, Path(space): Path<String>, req: Req
         bearer(headers)
     }
     .ok_or_else(|| Error::unauthorized("Sign in to use this space."))?;
-    let account = host
-        .identify_session(credential)
-        .await
-        .ok_or_else(|| Error::unauthorized("Sign in to use this space."))?;
+    let session = host.authenticate(credential).await?;
     let space = space.parse()?;
     let permit = admit_http_work()?;
     let (call, permit) = {
@@ -167,7 +164,7 @@ async fn call(State(host): State<Arc<Host>>, Path(space): Path<String>, req: Req
         .await
         .map_err(internal)??
     };
-    let value = host.trusted_call(account.into(), space, call).await?;
+    let value = host.authorized_call(session, space, call).await?;
     let encoded = tokio::task::spawn_blocking(move || {
         let _permit = permit;
         serde_json::to_vec(&json!({"result":value})).map_err(internal)
@@ -369,11 +366,9 @@ async fn signed_in(
 
 async fn logout(State(browser): State<Browser>, headers: HeaderMap) -> Reply {
     if let Some(token) = cookie(&headers)
-        && let Some((account, installation)) = browser.host.auth.identify(token).await
-        && let Err(error) = browser.host.auth.revoke(account, installation).await
-        && error.code() != calternal_auth::ErrorCode::NotFound
+        && let Ok(session) = browser.host.authenticate(token).await
     {
-        return Err(auth_error(error));
+        browser.host.logout(session).await.map_err(auth_error)?;
     }
     let mut response = session_cookie(StatusCode::NO_CONTENT.into_response(), "", 0);
     response

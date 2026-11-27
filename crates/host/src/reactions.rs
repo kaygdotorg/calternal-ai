@@ -77,8 +77,10 @@ impl Host {
         let host = self.clone();
         let who = actor.clone();
         let ancestry = chain.plugins.clone();
+        let session = chain.session.clone();
         let (result, events) = tokio::task::spawn_blocking(move || {
             host.with_space(&who, space, |storage| {
+                let _admission = host.admit_session_blocking(session.as_ref())?;
                 let observed = storage.observe_write(&who, call, &ancestry)?;
                 if !preview {
                     storage.live.notify(None);

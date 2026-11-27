@@ -38,7 +38,17 @@ pub(crate) struct Chain {
     pub(crate) request: Option<String>,
     pub(crate) session_item: Option<Uuid>,
     pub(crate) run: Option<crate::runs::RunScopeGrant>,
+    pub(crate) session: Option<crate::Session>,
     selection: Option<SlotGrant>,
+}
+
+impl Chain {
+    pub(crate) fn for_session(session: crate::Session) -> Self {
+        Self {
+            session: Some(session),
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -313,21 +323,27 @@ impl Host {
             match call.call.as_str() {
                 "s.run.send" | "s.run.stop" if call.slot_selection.is_none() => {
                     if call.call == "s.run.send" {
-                        self.run_send(actor, space, call.input, call.idempotency_key)
-                            .await
+                        self.run_send(
+                            actor,
+                            space,
+                            call.input,
+                            call.idempotency_key,
+                            chain.session,
+                        )
+                        .await
                     } else {
-                        self.run_stop(actor, space, call.input).await
+                        self.run_stop(actor, space, call.input, chain.session).await
                     }
                 }
                 "s.write" if self.workers.is_some() && call.slot_selection.is_none() => {
                     self.write_and_notify(actor, space, call, chain).await
                 }
                 "s.declarations" | "s.query" | "s.read" | "s.write" | "s.state" | "s.me"
-                | "s.space" | "index.rebuild" => {
-                    tokio::task::spawn_blocking(move || self.call_scoped(actor, space, call))
-                        .await
-                        .map_err(internal)?
-                }
+                | "s.space" | "index.rebuild" => tokio::task::spawn_blocking(move || {
+                    self.call_scoped(actor, space, call, chain.session.as_ref())
+                })
+                .await
+                .map_err(internal)?,
                 _ => self.dispatch_code(actor, space, call, chain).await,
             }
         })
@@ -348,9 +364,11 @@ impl Host {
         let caller_grant = chain.selection.take();
         let scope = chain.run.map(|grant| grant.item);
         let ancestry = chain.plugins.clone();
+        let session = chain.session.clone();
         let (invocation, endpoint, key, input, selection) =
             tokio::task::spawn_blocking(move || {
                 host.with_space(&who, space, |storage| {
+                    let _admission = host.admit_session_blocking(session.as_ref())?;
                     let invocation = storage.invocation(&who, &call.call, &call.input)?;
                     if scope.is_some() && scope != invocation.item {
                         return Err(Error::forbidden(
@@ -532,16 +550,25 @@ impl Host {
                                     callback.idempotency_key,
                                     chain.request.clone(),
                                     chain.session_item,
+                                    chain.session,
                                 )
                                 .await;
                         }
                         Method::RunSend => {
                             return host
-                                .run_send(actor, space, callback.input, callback.idempotency_key)
+                                .run_send(
+                                    actor,
+                                    space,
+                                    callback.input,
+                                    callback.idempotency_key,
+                                    chain.session,
+                                )
                                 .await;
                         }
                         Method::RunStop => {
-                            return host.run_stop(actor, space, callback.input).await;
+                            return host
+                                .run_stop(actor, space, callback.input, chain.session)
+                                .await;
                         }
                     };
                     chain.selection = None;

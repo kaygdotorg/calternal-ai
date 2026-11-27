@@ -1,10 +1,10 @@
 //! Decode subscription selections and send their initial snapshots.
+use super::wire::LiveSocket;
 use super::{
     ClientFrame, MAX_SUBSCRIPTIONS, ServerFrame, Subscription, eval_subscription, run_logs,
     send_error, send_frame,
 };
 use crate::Host;
-use axum::extract::ws::WebSocket;
 use calternal_types::{Actor, Error, ErrorCode, SpaceId};
 use std::{collections::HashMap, sync::Arc};
 
@@ -14,7 +14,7 @@ pub(super) async fn handle_client_frame(
     space: SpaceId,
     frame: ClientFrame,
     subs: &mut HashMap<String, Subscription>,
-    socket: &mut WebSocket,
+    socket: &mut LiveSocket,
 ) -> std::result::Result<(), ()> {
     match frame {
         ClientFrame::Ping => send_frame(socket, &ServerFrame::Pong).await,

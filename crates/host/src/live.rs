@@ -9,7 +9,7 @@ mod run_logs;
 mod subscribe;
 mod wire;
 
-use crate::{Call, Host};
+use crate::{Call, Host, Session};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use uuid::Uuid;
-use wire::{send_error, send_frame};
+use wire::{LiveSocket, send_error, send_frame};
 
 /// Maximum bytes accepted in a single client WebSocket text frame.
 pub const MAX_CLIENT_FRAME_BYTES: usize = 64 * 1024;
@@ -70,12 +70,13 @@ pub(crate) async fn ws_route(
     let Ok(space) = space.parse::<SpaceId>() else {
         return StatusCode::BAD_REQUEST.into_response();
     };
-    let Some(token) = crate::browser::cookie(&headers).map(str::to_owned) else {
+    let Some(token) = crate::browser::cookie(&headers) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    let Some(account) = host.identify_session(&token).await else {
+    let Ok(session) = host.authenticate(token).await else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
+    let account = session.account;
     let actor = Actor::account(account);
     let storage_host = host.clone();
     let viewer = actor.clone();
@@ -101,7 +102,7 @@ pub(crate) async fn ws_route(
     ws.max_message_size(MAX_CLIENT_FRAME_BYTES)
         .max_frame_size(MAX_CLIENT_FRAME_BYTES)
         .on_upgrade(move |socket| {
-            serve_socket(host, space, actor, token, receiver, run_logs, socket)
+            serve_socket(host, space, actor, session, receiver, run_logs, socket)
         })
 }
 
@@ -210,11 +211,12 @@ async fn serve_socket(
     host: Arc<Host>,
     space: SpaceId,
     actor: Actor,
-    token: String,
+    session: Session,
     mut rx: broadcast::Receiver<()>,
     mut run_logs: broadcast::Receiver<()>,
-    mut socket: WebSocket,
+    socket: WebSocket,
 ) {
+    let mut socket = LiveSocket::new(socket, host.clone(), session);
     let mut authority = host.auth.spaces().changes();
     let mut expiry = tokio::time::interval(std::time::Duration::from_secs(60));
     if send_frame(
@@ -235,18 +237,18 @@ async fn serve_socket(
     loop {
         tokio::select! {
             _ = authority.changed() => {
-                if host.auth.check_session(&token).await.map(|session| session.0) != Some(actor.account) {
+                if socket.check().await.is_err() {
                     break;
                 }
             }
             _ = expiry.tick() => {
-                if host.auth.check_session(&token).await.map(|session| session.0) != Some(actor.account) {
+                if socket.check().await.is_err() {
                     break;
                 }
             }
             incoming = socket.recv() => {
                 let Some(Ok(message)) = incoming else { break };
-                if host.identify_session(&token).await != Some(actor.account) {
+                if socket.check().await.is_err() {
                     break;
                 }
                 match message {
@@ -276,7 +278,7 @@ async fn serve_socket(
                 }
             }
             event = run_logs.recv() => {
-                if host.auth.check_session(&token).await.map(|session| session.0) != Some(actor.account) {
+                if socket.check().await.is_err() {
                     break;
                 }
                 if matches!(event, Err(broadcast::error::RecvError::Closed)) {
@@ -292,7 +294,7 @@ async fn serve_socket(
                 for sub in revoked { subs.remove(&sub); }
             }
             event = rx.recv() => {
-                if host.auth.check_session(&token).await.map(|session| session.0) != Some(actor.account) {
+                if socket.check().await.is_err() {
                     break;
                 }
                 match event {
@@ -313,7 +315,7 @@ async fn refresh_all(
     actor: &Actor,
     space: SpaceId,
     subs: &mut HashMap<String, Subscription>,
-    socket: &mut WebSocket,
+    socket: &mut LiveSocket,
 ) -> std::result::Result<(), ()> {
     let keys: Vec<String> = subs.keys().cloned().collect();
     for key in keys {
@@ -333,7 +335,7 @@ async fn eval_subscription(
     sub_id: &str,
     sub: &mut Subscription,
     initial_after: Option<Option<String>>,
-    socket: &mut WebSocket,
+    socket: &mut LiveSocket,
 ) -> calternal_types::Result<()> {
     match sub {
         Subscription::RunLog { .. } => Ok(()),
@@ -365,7 +367,7 @@ async fn eval_subscription(
                 totals: value.get("totals").cloned().unwrap_or_else(|| json!({})),
                 cursor: value.get("cursor").cloned().unwrap_or(Value::Null),
             };
-            let _ = send_frame(socket, &frame).await;
+            send_frame(socket, &frame).await.map_err(socket_closed)?;
             Ok(())
         }
         Subscription::Records {
@@ -423,7 +425,7 @@ async fn eval_subscription(
                     records: out,
                     last_anchor: tail_anchor,
                 };
-                let _ = send_frame(socket, &frame).await;
+                send_frame(socket, &frame).await.map_err(socket_closed)?;
                 return Ok(());
             }
 
@@ -444,7 +446,7 @@ async fn eval_subscription(
             if pure_append {
                 let appended = &records[*last_count..];
                 for record in appended {
-                    let _ = send_frame(
+                    send_frame(
                         socket,
                         &ServerFrame::RecordAppend {
                             sub: sub_id.to_owned(),
@@ -453,10 +455,11 @@ async fn eval_subscription(
                             record: record.clone(),
                         },
                     )
-                    .await;
+                    .await
+                    .map_err(socket_closed)?;
                 }
                 if last_meta.as_ref() != Some(&metadata) {
-                    let _ = send_frame(
+                    send_frame(
                         socket,
                         &ServerFrame::ItemChange {
                             sub: sub_id.to_owned(),
@@ -465,7 +468,8 @@ async fn eval_subscription(
                             metadata: metadata.clone(),
                         },
                     )
-                    .await;
+                    .await
+                    .map_err(socket_closed)?;
                 }
                 *last_anchor = tail_anchor;
                 *last_version = version;
@@ -490,10 +494,10 @@ async fn eval_subscription(
                 *last_version = version;
                 *last_count = records.len();
                 *last_meta = Some(metadata.clone());
-                let _ = send_frame(socket, &frame).await;
+                send_frame(socket, &frame).await.map_err(socket_closed)?;
             } else if last_meta.as_ref() != Some(&metadata) {
                 *last_meta = Some(metadata.clone());
-                let _ = send_frame(
+                send_frame(
                     socket,
                     &ServerFrame::ItemChange {
                         sub: sub_id.to_owned(),
@@ -502,11 +506,16 @@ async fn eval_subscription(
                         metadata,
                     },
                 )
-                .await;
+                .await
+                .map_err(socket_closed)?;
             }
             Ok(())
         }
     }
+}
+
+fn socket_closed(_: ()) -> Error {
+    Error::unavailable("The live socket closed.")
 }
 
 /// Slice `records` strictly after `after` when that anchor is present in the
