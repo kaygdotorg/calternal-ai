@@ -82,3 +82,13 @@ Item YAML allows 4,096 aggregate mapping and list entries and 256 bytes
 per structural key after decoding. Literal Markdown body text stays intact.
 Formula evaluation charges one step per 64 bytes of cloned fields or
 searched text, in addition to collection entries and formula nodes.
+
+## Simplification opportunities
+
+- Use one typed save context for previews and commits. Supply metadata,
+  settings, records and links only after their authority paths are wired.
+- Consolidate crash evidence into the durable preparation once the
+  separate seal-only recovery path has a documented retirement decision.
+  Completed records from earlier ledgers keep their existing hashes and
+  timestamps. An uncommitted old-format seal has no authenticated exact
+  time and stays on the outside-edit path.

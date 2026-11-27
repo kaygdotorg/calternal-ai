@@ -5,7 +5,7 @@ use crate::{Call, decode, identity, internal};
 use calternal_fsio::DataLock;
 use calternal_fsio::beneath::Folder;
 use calternal_types::{AccountId, Actor, Error, ErrorCode, Result, SpaceId};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -234,6 +234,14 @@ impl Space {
         if !self.recovery_needed {
             return Ok(());
         }
+        // A failed append finalization may have left the connection in
+        // WAL NORMAL. Re-establish FULL before replaying a pending write.
+        self.db
+            .pragma_update(None, "synchronous", "FULL")
+            .map_err(internal)?;
+        self.db
+            .pragma_update(None, "wal_autocheckpoint", 1_000)
+            .map_err(internal)?;
         let pending: Option<String> = self
             .db
             .query_row("SELECT data FROM publication WHERE id=1", [], |row| {
@@ -496,7 +504,6 @@ impl Space {
             .map_err(internal)?;
         Ok(())
     }
-
 }
 
 fn storage_child(parent: &Folder, path: &Path, name: &str, owner: u32) -> Result<Folder> {

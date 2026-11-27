@@ -44,7 +44,7 @@
     }
     // Swipe away: slide on down and fade, then it is gone.
     if (prefersReducedMotion()) return dismiss(id);
-    el.style.transition = "translate 160ms ease-out, opacity 160ms ease-out";
+    el.style.transition = "translate var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out)";
     el.style.translate = "0 100%";
     el.style.opacity = "0";
     setTimeout(() => dismiss(id), 160);
