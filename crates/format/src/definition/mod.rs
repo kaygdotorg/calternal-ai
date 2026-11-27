@@ -67,6 +67,7 @@ pub struct Directive {
     /// Nested declaration lines in source order.
     pub children: Vec<Directive>,
     pub(crate) site: Site,
+    pub(crate) fill: Option<Box<Fill>>,
 }
 
 /// Parse a plugin's definition files and check relationships within the folder.
@@ -290,6 +291,7 @@ impl Section<'_> {
             value: self.value.into(),
             children: directives(self.children)?,
             site: self.line.site,
+            fill: None,
         })
     }
 }
@@ -354,6 +356,7 @@ pub(super) fn directives(lines: &[Line]) -> Result<Vec<Directive>, Diagnostic> {
             value: value.into(),
             children: directives(&lines[at + 1..end])?,
             site: line.site,
+            fill: None,
         });
         at = end;
     }

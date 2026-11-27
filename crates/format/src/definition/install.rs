@@ -180,7 +180,7 @@ fn verify_bindings(
             }
         }
     }
-    for fill in &plugin.manifest.fills {
+    for fill in plugin.manifest.fills() {
         match &fill.binding {
             FillBinding::Frame(frame) if !paths.contains(frame.as_str()) => {
                 return Err(fill.site.error(format!("Include the frame file {frame}")));

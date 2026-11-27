@@ -232,6 +232,11 @@ fn scan(text: &str, site_at: impl Fn(usize) -> Site) -> Result<Scan, Diagnostic>
     Ok(result)
 }
 
+pub(crate) fn uncommented(text: &str, site: Site) -> Result<&str, Diagnostic> {
+    let end = scan(text, |offset| site.after(&text[..offset]))?.end;
+    Ok(text[..end].trim_end())
+}
+
 pub(crate) fn parts(text: &str, site: Site) -> Result<Vec<(&str, Site)>, Diagnostic> {
     parts_at(text, |offset| site.after(&text[..offset]))
 }

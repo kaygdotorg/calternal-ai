@@ -93,7 +93,7 @@ pub(crate) fn describe(space: &Space, actor: &Actor) -> Value {
             let cardinality = if slot.multiple { "many" } else { "single" };
             let slot_id = format!("{id}:{key}");
             let fillers = space.plugins.iter().filter_map(|(provider, bundle)| {
-                let fill = bundle.manifest.fills.iter().find(|fill| fill.place == slot_id)?;
+                let fill = bundle.manifest.fills().find(|fill| fill.place == slot_id)?;
                 let (kind, target) = visible_fill(space, actor, provider, fill)?;
                 let label = fill.label.as_deref().unwrap_or(&bundle.manifest.name);
                 Some(json!({"plugin":provider,"kind":kind,"target":target,"label":label}))
@@ -110,8 +110,7 @@ pub(crate) fn describe(space: &Space, actor: &Actor) -> Value {
         view["fills"] = Value::Object(
             plugin
                 .manifest
-                .fills
-                .iter()
+                .fills()
                 .filter_map(|fill| {
                     let (kind, target) = visible_fill(space, actor, id, fill)?;
                     let label = fill.label.as_deref().unwrap_or(&plugin.manifest.name);

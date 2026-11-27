@@ -49,8 +49,8 @@
 
 ## Simplification opportunities
 
-- Once all engine consumers have migrated, derive source-facing views, page
-  entries and fills from the compiled form instead of storing parallel lists.
+- Once all engine consumers have migrated, derive source-facing views and page
+  entries from the compiled form instead of storing parallel lists.
 - Generalize the engine's formula return-type analysis when more features need
   it, so badges and other constraints can share one inference pass.
 - Generate the browser declarations types from the host wire contract to keep

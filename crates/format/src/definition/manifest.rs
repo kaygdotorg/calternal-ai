@@ -56,8 +56,6 @@ pub struct Manifest {
     pub settings: BTreeMap<String, Field>,
     /// Declared places keyed by their plugin-local slot ID.
     pub slots: BTreeMap<String, Slot>,
-    /// Checked fillers in declaration order.
-    pub fills: Vec<Fill>,
     /// Qualified refusal rules in source order.
     pub refusals: Vec<Refusal>,
     /// Other declaration lines in file order, used by host install and clients.
@@ -67,11 +65,20 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    /// Read checked fillers in declaration order from the installed manifest.
+    pub fn fills(&self) -> impl Iterator<Item = &Fill> {
+        self.directives
+            .iter()
+            .filter(|section| section.key == "fills")
+            .flat_map(|section| &section.children)
+            .filter_map(|entry| entry.fill.as_deref())
+    }
+
     /// Find the operation named by this plugin's one fill for the specified
     /// slot. Missing, ambiguous and non-operation fills grant nothing. This
     /// reads the checked declaration in memory and performs no I/O.
     pub fn operation_fill(&self, owner: &str, slot: &str) -> Option<&str> {
-        let mut fills = self.fills.iter().filter(|fill| {
+        let mut fills = self.fills().filter(|fill| {
             fill.slot
                 .as_ref()
                 .is_some_and(|(plugin, name)| plugin == owner && name == slot)
@@ -120,7 +127,6 @@ pub(super) fn parse(
         programs: BTreeMap::new(),
         settings: BTreeMap::new(),
         slots: BTreeMap::new(),
-        fills: Vec::new(),
         refusals: Vec::new(),
         directives: Vec::new(),
         body,
@@ -241,15 +247,17 @@ pub(super) fn parse(
             }
             "slots" | "fills" => {
                 entry.block()?;
-                for place in sections(entry.children, entry.line.depth + 1)? {
+                let places = sections(entry.children, entry.line.depth + 1)?;
+                let mut directive = entry.directive()?;
+                for (place, child) in places.iter().zip(&mut directive.children) {
                     place.alone()?;
                     if entry.key == "slots" {
-                        result.slots.insert(place.key.into(), places::slot(&place)?);
+                        result.slots.insert(place.key.into(), places::slot(place)?);
                     } else {
-                        result.fills.push(places::fill(&place)?);
+                        child.fill = Some(Box::new(places::fill(place)?));
                     }
                 }
-                result.directives.push(entry.directive()?);
+                result.directives.push(directive);
             }
             "notifications" => {
                 entry.block()?;

@@ -89,6 +89,7 @@ pub(super) fn sidebar(source: &str, id: &str) -> Result<Sidebar, Diagnostic> {
                 .split_once(')')
                 .ok_or_else(|| site.error("Close the sidebar link with )"))?;
             let suffix_site = site.after(&source[..source.len() - suffix.len()]);
+            let suffix = lines::uncommented(suffix, suffix_site)?;
             if !suffix.is_empty() {
                 let token = suffix.strip_prefix(", icon: ").ok_or_else(|| {
                     suffix_site.error("Follow a collection link only with , icon: <token>")

@@ -39,7 +39,7 @@ sidebar: primary
 title: Primary
 format: 1
 ---
-- [Saved, recent](<../collections/saved.md>), icon: archive
+- [Saved, recent](<../collections/saved.md>), icon: archive # Decorative icon
 - [Default](<../collections/saved.md>)"#;
 
 fn plugin(
@@ -86,7 +86,7 @@ fn compiles_revision_10_metadata_at_install() {
     assert_eq!(composer.text, "message");
     assert_eq!(composer.draft.as_deref(), Some("draft"));
     assert_eq!(composer.quote.as_deref(), Some("reply"));
-    let fill = &plugin.manifest.fills[0];
+    let fill = plugin.manifest.fills().next().unwrap();
     assert!(matches!(&fill.binding, FillBinding::Operation(target) if target == "notes.send"));
     assert_eq!(fill.label.as_deref(), Some("A \"quoted\" title"));
     assert_eq!(
