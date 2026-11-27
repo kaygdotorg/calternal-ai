@@ -144,11 +144,13 @@ pub(super) fn slot(place: &Section<'_>) -> Result<Slot, Diagnostic> {
     Ok(slot)
 }
 
+type Clauses<'a, 'b> = &'a [(&'b str, Site)];
+
 fn composer<'a, 'b>(
     input: &str,
     text_site: Site,
-    parts: &'a [(&'b str, Site)],
-) -> Result<(ComposerBindings, &'a [(&'b str, Site)]), Diagnostic> {
+    parts: Clauses<'a, 'b>,
+) -> Result<(ComposerBindings, Clauses<'a, 'b>), Diagnostic> {
     lines::field_name(input, text_site)?;
     let mut bindings = ComposerBindings {
         text: input.into(),

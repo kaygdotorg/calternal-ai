@@ -30,6 +30,7 @@ pub struct Refusal {
     pub condition: Expression,
     /// Message shown with the declaring plugin's name when the condition holds.
     pub message: String,
+    pub(super) resolved: String,
     pub(crate) site: Site,
 }
 
@@ -58,6 +59,8 @@ pub struct Manifest {
     pub slots: BTreeMap<String, Slot>,
     /// Qualified refusal rules in source order.
     pub refusals: Vec<Refusal>,
+    /// Kind, sidebar and Home contributions in manifest order.
+    pub extensions: Vec<super::Extension>,
     /// Other declaration lines in file order, used by host install and clients.
     pub directives: Vec<Directive>,
     /// Description text shown at install.
@@ -128,6 +131,7 @@ pub(super) fn parse(
         settings: BTreeMap::new(),
         slots: BTreeMap::new(),
         refusals: Vec::new(),
+        extensions: Vec::new(),
         directives: Vec::new(),
         body,
     };
@@ -312,6 +316,11 @@ pub(super) fn parse(
                         })?;
                     references(key, 2, 3, target.line.site)?;
                     target.block()?;
+                    if target.children.is_empty() {
+                        return Err(target
+                            .site
+                            .error("Declare at least one condition for this refusal target"));
+                    }
                     for refusal in target.children {
                         kind::flat(refusal, &target)?;
                         let parts = lines::parts(refusal.content()?, refusal.site)?;
@@ -321,10 +330,20 @@ pub(super) fn parse(
                                 .site
                                 .error("Write one refusal condition and its message"));
                         };
+                        if !message.starts_with('"') || !message.ends_with('"') {
+                            return Err(
+                                message_site.error("Put the refusal sentence in double quotes")
+                            );
+                        }
+                        let sentence = text(message, *message_site, 120, false)?;
+                        if sentence.trim().is_empty() {
+                            return Err(message_site.error("Write a nonempty refusal sentence"));
+                        }
                         result.refusals.push(Refusal {
                             target: key.into(),
-                            condition: parse::parse(condition, *position)?,
-                            message: text(message, *message_site, 120, false)?,
+                            condition: parse::ordinary(condition, *position)?,
+                            message: sentence,
+                            resolved: String::new(),
                             site: refusal.site,
                         });
                     }
@@ -336,11 +355,7 @@ pub(super) fn parse(
                     key = entry.key
                 )));
             }
-            "extends" => {
-                return Err(
-                    site.error("Plugin extensions are deferred beyond the Chat-first format slice")
-                );
-            }
+            "extends" => result.extensions = super::extensions::parse(entry)?,
             key => return Err(entry.line.site.error(format!("Unknown plugin key {key}"))),
         }
     }
@@ -382,7 +397,13 @@ fn references(value: &str, min: usize, max: usize, site: Site) -> Result<Vec<Str
             if max == 2 {
                 return Err(site.error("A referenced kind uses an ID"));
             }
-            lines::operation_name(parts[parts.len() - 1], site)?;
+            let operation = parts[parts.len() - 1];
+            if !matches!(
+                operation,
+                "append record" | "change record" | "remove record"
+            ) {
+                lines::operation_name(operation, site)?;
+            }
         } else {
             lines::id(parts[parts.len() - 1], site)?;
         }

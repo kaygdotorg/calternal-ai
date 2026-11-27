@@ -8,6 +8,41 @@ pub(super) fn verify(
     paths: &BTreeSet<&str>,
     options: &InstallOptions<'_>,
 ) -> Result<(), Diagnostic> {
+    let mut claims = BTreeSet::new();
+    for claimant in options
+        .installed
+        .iter()
+        .filter(|other| other.manifest.id != plugin.manifest.id)
+        .chain(std::iter::once(plugin))
+    {
+        for kind in claimant.kinds.values() {
+            if let Some(claim) = &kind.line_claim {
+                for target in &claim.targets {
+                    let (owner, target) = target
+                        .split_once('.')
+                        .unwrap_or((&claimant.manifest.id, target));
+                    if !claims.insert((claim.form, owner, target)) {
+                        return Err(located(
+                            kind.site.error(format!(
+                                "More than one kind claims the same line form in {owner}.{target}"
+                            )),
+                            &format!("kinds/{}.md", kind.id),
+                        ));
+                    }
+                    let target_kind = std::iter::once(plugin)
+                        .chain(options.installed.iter())
+                        .find(|candidate| candidate.manifest.id == owner)
+                        .and_then(|candidate| candidate.kinds.get(target));
+                    if target_kind.is_some_and(|kind| kind.hidden) {
+                        return Err(located(
+                            kind.site.error("A line source must be visible"),
+                            "plugin.md",
+                        ));
+                    }
+                }
+            }
+        }
+    }
     let mut folders: Vec<&str> = options
         .installed
         .iter()
@@ -52,6 +87,61 @@ pub(super) fn verify(
         }
     }
     for collection in plugin.collections.values() {
+        for field in collection.named_totals.values() {
+            let expression = field
+                .expression
+                .as_ref()
+                .expect("named totals are computed");
+            super::formulas::walk(&expression.root, &mut |node| {
+                use crate::expr::NodeKind;
+                let NodeKind::Call(name, args) = &node.kind else {
+                    return Ok(());
+                };
+                if name != "all" {
+                    return Ok(());
+                }
+                let key =
+                    crate::expr::eval::reference_key(&args[0]).expect("checked kind selector");
+                let (owner, kind) = key.split_once('.').unwrap_or((&plugin.manifest.id, &key));
+                let err = |message| {
+                    located(
+                        node.site.error(message),
+                        &format!("collections/{}.md", collection.id),
+                    )
+                };
+                if owner != plugin.manifest.id && !plugin.manifest.reads.contains(&key) {
+                    return Err(err("Declare reads for the foreign kind in all()"));
+                }
+                let target = std::iter::once(plugin)
+                    .chain(options.installed.iter())
+                    .find(|candidate| candidate.manifest.id == owner)
+                    .and_then(|candidate| candidate.kinds.get(kind))
+                    .filter(|kind| !kind.hidden)
+                    .ok_or_else(|| err("all() requires a visible kind"))?;
+                if let Some(condition) = args.get(1) {
+                    super::formulas::walk(condition, &mut |node| {
+                        if let NodeKind::Name(name) = &node.kind
+                            && !matches!(
+                                name.as_str(),
+                                "this"
+                                    | "settings"
+                                    | "state"
+                                    | "period"
+                                    | "id"
+                                    | "kind"
+                                    | "created"
+                                    | "edited"
+                            )
+                            && !target.fields.contains_key(name)
+                        {
+                            return Err(err("Name a declared field of the whole-kind candidate"));
+                        }
+                        Ok(())
+                    })?;
+                }
+                Ok(())
+            })?;
+        }
         for source in &collection.sources {
             if let Source::Kind(kind) | Source::Records(kind) = source {
                 if let Some((plugin_id, kind_id)) = kind.split_once('.') {
@@ -117,7 +207,10 @@ pub(super) fn verify(
     Ok(())
 }
 
-fn operation<'a>(plugin: &'a Plugin, target: &str) -> Option<(&'a Kind, &'a crate::Operation)> {
+pub(super) fn operation<'a>(
+    plugin: &'a Plugin,
+    target: &str,
+) -> Option<(&'a Kind, &'a crate::Operation)> {
     if let Some((kind, operation)) = target.split_once('.') {
         let kind = plugin.kinds.get(kind)?;
         return kind.operations.get(operation).map(|op| (kind, op));
@@ -195,34 +288,6 @@ fn verify_bindings(
             }
             _ => {}
         }
-    }
-    for refusal in &plugin.manifest.refusals {
-        let (owner, target) = refusal.target.split_once('.').unwrap();
-        let Some(target_plugin) = options
-            .installed
-            .iter()
-            .find(|target| target.manifest.id == owner && owner != plugin.manifest.id)
-        else {
-            return Err(refusal
-                .site
-                .error("Refuse only an installed operation belonging to another plugin"));
-        };
-        let (kind, operation) = operation(target_plugin, target).ok_or_else(|| {
-            refusal
-                .site
-                .error("The refusal target must name one installed operation")
-        })?;
-        if kind.hidden {
-            return Err(refusal
-                .site
-                .error("A refusal cannot inspect an operation on another plugin's hidden kind"));
-        }
-        if operation.is_coded() && operation.inputs.is_empty() {
-            return Err(refusal
-                .site
-                .error("The refusal target has no typed operation inputs"));
-        }
-        crate::definition::formulas::refusal_condition(&refusal.condition.root, kind, operation)?;
     }
     Ok(())
 }

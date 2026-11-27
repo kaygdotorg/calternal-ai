@@ -23,6 +23,19 @@ pub(crate) fn parse(source: &str, site: Site) -> Result<Expression, Diagnostic> 
     parse_at(source, |offset| site.after(&source[..offset]))
 }
 
+pub(crate) fn ordinary(source: &str, site: Site) -> Result<Expression, Diagnostic> {
+    ordinary_at(source, |offset| site.after(&source[..offset]))
+}
+
+pub(crate) fn ordinary_at(
+    source: &str,
+    position: impl Fn(usize) -> Site,
+) -> Result<Expression, Diagnostic> {
+    let expression = parse_at(source, position)?;
+    super::formula_scope(&expression, false, false)?;
+    Ok(expression)
+}
+
 pub(crate) fn parse_at(
     source: &str,
     position: impl Fn(usize) -> Site,
@@ -434,6 +447,19 @@ fn paths(node: &Node, from_target: bool, after_target: bool) -> Result<(), Diagn
             if name == "from" && !matches!(&args[0].kind, NodeKind::Member(..)) {
                 return Err(node.site.error("Name the kind and its link field in from"));
             }
+            if name == "all" {
+                let target = super::eval::reference_key(&args[0])
+                    .ok_or_else(|| node.site.error("Name a kind in all()"))?;
+                let parts: Vec<_> = target.split('.').collect();
+                if parts.len() > 2
+                    || parts
+                        .iter()
+                        .any(|part| crate::lines::id(part, node.site).is_err())
+                    || crate::lines::kind_id(parts.last().unwrap(), node.site).is_err()
+                {
+                    return Err(node.site.error("Name a local or qualified kind in all()"));
+                }
+            }
             if name == "records after" && !after_target {
                 return Err(node
                     .site
@@ -464,8 +490,9 @@ fn arity(function: &str) -> Option<(usize, usize)> {
         "contains" | "under" | "days" | "format" => (2, 2),
         "first" => (1, usize::MAX),
         "from" => (1, 3),
+        "all" => (1, 2),
         "sum" | "count" | "min" | "max" | "average" | "next" | "round" => (1, 2),
-        "last" | "date" | "week" | "month" | "year" | "domain" | "streak" => (1, 1),
+        "previous" | "last" | "date" | "week" | "month" | "year" | "domain" | "streak" => (1, 1),
         _ => return None,
     })
 }

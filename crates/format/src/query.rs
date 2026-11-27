@@ -1,8 +1,14 @@
+mod calendar;
+pub use calendar::{CalendarOccurrence, CalendarSeries, expand_calendar_window};
+
 use std::{cmp::Ordering, collections::BTreeMap};
 
 use crate::{
     Collection, Diagnostic, EvalContext, Field, Fields, Kind, Row, Value,
-    expr::{eval::evaluate_in, math::aggregate},
+    expr::{
+        eval::{evaluate_field, evaluate_in, is_list_limit},
+        math::aggregate,
+    },
     operation::typed_fields,
 };
 
@@ -35,6 +41,10 @@ pub struct QueryResult {
     pub groups: Vec<QueryGroup>,
     /// Overall totals in collection declaration order.
     pub totals: Vec<Value>,
+    /// One value for each whole-kind header formula.
+    pub named_totals: Fields,
+    /// Diagnostics isolated to a named total. Its corresponding value is empty.
+    pub named_total_errors: BTreeMap<String, Diagnostic>,
 }
 
 /// One row in the result, backreferenced to the host input.
@@ -172,11 +182,32 @@ pub fn evaluate_query(
             computed: row.computed,
         })
         .collect();
+    let mut named_totals = Fields::new();
+    let mut named_total_errors = BTreeMap::new();
+    let metadata = Fields::new();
+    for name in &collection.totals_computed {
+        let field = &collection.named_totals[name];
+        let row = Row {
+            fields: &named_totals,
+            metadata: &metadata,
+        };
+        let allowed = steps.min(50_000);
+        let mut budget = allowed;
+        let value =
+            evaluate_field(field, row, context, &mut budget, true).unwrap_or_else(|error| {
+                named_total_errors.insert(name.clone(), error);
+                Value::Empty
+            });
+        steps -= allowed - budget;
+        named_totals.insert(name.clone(), value);
+    }
     Ok(QueryResult {
         rows,
         matched,
         groups,
         totals,
+        named_totals,
+        named_total_errors,
     })
 }
 
@@ -189,10 +220,13 @@ fn prepare_row(
     steps: &mut usize,
 ) -> Result<Option<Matched>, Diagnostic> {
     let mut row_context = *context;
+    row_context.periods = None;
     if let Some(per_row) = context.rows.and_then(|rows| match row.metadata.get("id") {
         Some(Value::Text(id)) => rows.get(id),
         _ => None,
     }) {
+        row_context.repeat_start = per_row.repeat_start.or(context.repeat_start);
+        row_context.periods = per_row.periods;
         row_context.state = per_row.state;
         row_context.records = per_row.records;
         row_context.record_positions = per_row.record_positions;
@@ -334,16 +368,20 @@ pub(crate) fn computed_values(
     steps: &mut usize,
 ) -> Result<Fields, Diagnostic> {
     for key in order {
-        let expression = schema[key].expression.as_ref().unwrap();
-        let value = evaluate_in(
-            expression,
+        let value = evaluate_field(
+            &schema[key],
             Row {
                 fields: &values,
                 metadata,
             },
             context,
             steps,
-        )?;
+            false,
+        );
+        let value = match value {
+            Err(error) if schema[key].period.is_some() && is_list_limit(&error) => Value::Empty,
+            result => result?,
+        };
         values.insert(key.clone(), value);
     }
     Ok(values)

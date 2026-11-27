@@ -8,6 +8,7 @@ use crate::{
 use super::Entry;
 
 mod render;
+mod scalar_lines;
 pub(super) use render::{quoted, render_entry};
 
 #[derive(Clone, Copy)]
@@ -124,7 +125,15 @@ impl<'a> Parser<'a> {
             let (value, comment) = without_comment(value);
             let prefix = text.len() - (text[colon + 1..].trim_start_matches(' ')).len();
             let value_site = line.site.after(&text[..prefix]);
-            let parsed = self.value(value.trim_end(), line, value_site, indent, depth)?;
+            let mut trailing = comment.map(|index| line.start + indent + prefix + index..line.end);
+            let parsed = self.value(
+                value.trim_end_matches([' ', '\t']),
+                line,
+                value_site,
+                indent,
+                depth,
+                &mut trailing,
+            )?;
             let mut last = self.at;
             while last > start + 1 && !self.lines[last - 1].significant() && !is_block(value) {
                 last -= 1
@@ -136,7 +145,7 @@ impl<'a> Parser<'a> {
                         range: line.start..self.lines[last - 1].end,
                         first_line: line.start..line.end,
                         key_end: line.start + indent + colon + 1,
-                        comment: comment.map(|index| line.start + indent + prefix + index),
+                        comment: trailing,
                         site: line.site,
                     },
                 );
@@ -148,11 +157,12 @@ impl<'a> Parser<'a> {
 
     fn value(
         &mut self,
-        raw: &str,
+        raw: &'a str,
         line: Line<'a>,
         site: Site,
         indent: usize,
         depth: usize,
+        comment: &mut Option<std::ops::Range<usize>>,
     ) -> Result<Value, Diagnostic> {
         if depth > 64 {
             return Err(site.error("Keep frontmatter nesting within 64 levels"));
@@ -161,7 +171,8 @@ impl<'a> Parser<'a> {
             return self.block(raw, line, indent);
         }
         if !raw.is_empty() {
-            return scalar(raw, site, depth, &mut self.remaining);
+            let raw = self.scalar_lines(raw, site, indent, comment)?;
+            return scalar(&raw, site, depth, &mut self.remaining);
         }
         let Some(next) = self.peek() else {
             return Ok(Value::Empty);
@@ -182,14 +193,21 @@ impl<'a> Parser<'a> {
                 break;
             };
             let (raw, _) = without_comment(rest);
-            let raw = raw.trim_end();
+            let raw = raw.trim_end_matches([' ', '\t']);
             let site = line.site.after("- ");
             entry(&mut self.remaining, site)?;
             self.at += 1;
             if !raw.is_empty() && mapping_colon(raw).is_some() && !raw.starts_with('[') {
                 entry(&mut self.remaining, site)?;
                 let (key, text, _) = key_value(raw, site)?;
-                let value = self.value(text.trim_end(), line, site, indent + 2, depth)?;
+                let value = self.value(
+                    text.trim_end_matches([' ', '\t']),
+                    line,
+                    site,
+                    indent + 2,
+                    depth,
+                    &mut None,
+                )?;
                 let mut fields = Fields::from([(key.clone(), value)]);
                 if let Some(next) = self.peek().filter(|next| next.indent > indent) {
                     for (key, value) in self.map(next.indent, depth + 1, None)? {
@@ -201,11 +219,10 @@ impl<'a> Parser<'a> {
                 values.push(Value::Map(fields));
             } else {
                 // A sibling dash is the next value, not a nested collection.
-                let next = self.peek();
-                if raw.is_empty() && next.is_none_or(|next| next.indent <= indent) {
+                if raw.is_empty() && self.peek().is_none_or(|next| next.indent <= indent) {
                     values.push(Value::Empty);
                 } else {
-                    values.push(self.value(raw, line, site, indent, depth)?);
+                    values.push(self.value(raw, line, site, indent, depth, &mut None)?);
                 }
             }
         }
@@ -316,7 +333,21 @@ fn key_value(text: &str, site: Site) -> Result<(String, &str, usize), Diagnostic
     Ok((key, text[colon + 1..].trim_start_matches(' '), colon))
 }
 
+fn plain_comment(text: &str) -> (&str, Option<usize>) {
+    let mut separated = true;
+    for (index, ch) in text.char_indices() {
+        if ch == '#' && separated {
+            return (&text[..index], Some(index));
+        }
+        separated = matches!(ch, ' ' | '\t');
+    }
+    (text, None)
+}
+
 fn without_comment(text: &str) -> (&str, Option<usize>) {
+    if !text.starts_with(['"', '\'', '[']) {
+        return plain_comment(text);
+    }
     let mut quote = None;
     let mut escaped = false;
     let mut previous = ' ';

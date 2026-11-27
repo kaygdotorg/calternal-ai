@@ -124,7 +124,7 @@ pub(super) fn parse_operation(
             }
             "phrases" if name == "add" && !phrases => phrases = true,
             _ if part.starts_with("when ") && condition.is_none() => {
-                condition = Some(expression::parse(&part[5..], site.after("when "))?)
+                condition = Some(expression::ordinary(&part[5..], site.after("when "))?)
             }
             _ if part.starts_with("within ") && within.is_none() && name == "change record" => {
                 let duration = dates::duration(&part[7..])
@@ -193,13 +193,13 @@ pub(super) fn parse_operation(
             OperationForm::Set(assignments)
         }
         _ if terms.len() == 1 && terms[0].0.starts_with("open where ") => OperationForm::Open(
-            expression::parse(&terms[0].0[11..], terms[0].1.after("open where "))?,
+            expression::ordinary(&terms[0].0[11..], terms[0].1.after("open where "))?,
         ),
         _ if terms.len() == 2
             && terms[0].0.starts_with("timer ")
             && terms[1].0.starts_with("after ") =>
         {
-            let delay = expression::parse(&terms[0].0[6..], terms[0].1.after("timer "))?;
+            let delay = expression::ordinary(&terms[0].0[6..], terms[0].1.after("timer "))?;
             let after = terms[1].0[6..].to_owned();
             OperationForm::Timer { delay, after }
         }
@@ -232,7 +232,10 @@ pub(crate) fn assignment(value: &str, site: Site) -> Result<Assignment, Diagnost
     let value = if formula == "ask" {
         None
     } else {
-        Some(expression::parse(formula, site.after(target).after(" = "))?)
+        Some(expression::ordinary(
+            formula,
+            site.after(target).after(" = "),
+        )?)
     };
     Ok(Assignment {
         target: name.into(),

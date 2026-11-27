@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
+mod extension;
 mod parser;
+pub(crate) use extension::plan_extension;
+use extension::{dispatch, set_values};
 use parser::parse_operation;
 pub(crate) use parser::{assignment, parse};
 
@@ -121,6 +124,36 @@ impl Operation {
         matches!(self.form, OperationForm::Code)
     }
 
+    pub(crate) fn refusal_input<'a>(&'a self, kind: &'a Kind, name: &str) -> Option<&'a FieldType> {
+        let schema = match &self.form {
+            OperationForm::Code => return self.inputs.get(name)?.field_type.as_ref(),
+            OperationForm::Add { .. } => &kind.fields,
+            OperationForm::Change(only)
+                if only
+                    .as_ref()
+                    .is_none_or(|fields| fields.iter().any(|field| field == name)) =>
+            {
+                &kind.fields
+            }
+            OperationForm::AppendRecord(fields) | OperationForm::ChangeRecord { fields, .. }
+                if fields.iter().any(|field| field == name) =>
+            {
+                &kind.records
+            }
+            OperationForm::Set(assignments)
+                if assignments.iter().any(|assignment| {
+                    assignment.target == name && assignment.value.is_none() && !assignment.state
+                }) =>
+            {
+                &kind.fields
+            }
+            _ => return None,
+        };
+        target_field(schema, name, self.site)
+            .ok()
+            .map(|ty| ty.unwrap_or(&FieldType::LongText))
+    }
+
     pub(crate) fn verify(
         &self,
         fields: &BTreeMap<String, Field>,
@@ -156,6 +189,13 @@ impl Operation {
         }
         Ok(())
     }
+}
+
+pub(crate) fn implicit_operation(kind: &Kind, name: &str) -> Option<Operation> {
+    if kind.editable == crate::Editability::Outside && matches!(name, "add" | "change" | "remove") {
+        return parse_operation(name, "", kind.site).ok();
+    }
+    None
 }
 
 fn target_field<'a>(
@@ -338,16 +378,12 @@ pub fn apply_operation(
     let fallback;
     let declared = match kind.operations.get(operation) {
         Some(operation) => operation,
-        None if kind.editable == crate::Editability::Outside
-            && matches!(operation, "add" | "change" | "remove") =>
-        {
-            fallback = parse_operation(operation, "", kind.site)?;
-            &fallback
-        }
         None => {
-            return Err(kind
-                .site
-                .error(format!("The kind does not declare {operation}")));
+            fallback = implicit_operation(kind, operation).ok_or_else(|| {
+                kind.site
+                    .error(format!("The kind does not declare {operation}"))
+            })?;
+            &fallback
         }
     };
     let site = declared.site;
@@ -427,33 +463,14 @@ pub fn apply_operation(
             vec![Change::Duplicate(copy)]
         }
         OperationForm::Set(assignments) => {
-            let mut fields = Fields::new();
-            let mut state = Fields::new();
-            for assign in assignments {
-                let value =
-                    match &assign.value {
-                        Some(expression) => evaluate(expression, view, context)?,
-                        None => input.fields.get(&assign.target).cloned().ok_or_else(|| {
-                            assign.site.error(format!("Supply {}", assign.target))
-                        })?,
-                    };
-                let ty = target_field(
-                    if assign.state {
-                        &kind.state
-                    } else {
-                        &kind.fields
-                    },
-                    &assign.target,
-                    assign.site,
-                )?;
-                let value = field::coerce(ty.unwrap_or(&FieldType::LongText), &value, assign.site)?;
-                let output = if assign.state {
-                    &mut state
-                } else {
-                    &mut fields
-                };
-                output.insert(assign.target.clone(), value);
-            }
+            let (fields, state) = set_values(
+                assignments,
+                &kind.fields,
+                &kind.state,
+                view,
+                input.fields,
+                context,
+            )?;
             if !fields.is_empty() {
                 update(&fields)?
             }
@@ -517,16 +534,7 @@ pub fn apply_operation(
         }],
         OperationForm::RemoveRecord => vec![Change::RemoveRecord(anchor()?)],
         OperationForm::Code => {
-            let mut fields = if declared.inputs.is_empty() {
-                input.fields.clone()
-            } else {
-                checked_input(&declared.inputs, input.fields, None, site)?
-            };
-            defaults(&declared.inputs, &mut fields, view, context)?;
-            vec![Change::Dispatch {
-                operation: operation.into(),
-                fields,
-            }]
+            vec![dispatch(declared, view, input.fields, context)?]
         }
     };
     Ok(changes)
