@@ -264,12 +264,17 @@ fn verify_bindings(
                 }
             }
             if let Some(quote) = &bindings.quote
-                && !matches!(operation.inputs.get(quote).and_then(|field| field.field_type.as_ref()),
-                    Some(FieldType::Link(target)) if target.ends_with(" records"))
+                && !operation.inputs.get(quote).is_some_and(|field| {
+                    !field.required
+                        && matches!(
+                            field.field_type.as_ref(),
+                            Some(FieldType::Link(target)) if target.ends_with(" records")
+                        )
+                })
             {
                 return Err(bindings
                     .quote_site
-                    .error("Bind the quote to a record-link operation input"));
+                    .error("Bind the quote to an optional record-link operation input"));
             }
         }
     }
