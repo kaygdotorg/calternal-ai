@@ -31,6 +31,9 @@ use uuid::Uuid;
 
 use podman_guard::PodmanGuard;
 
+// Rootless Podman startup contention can exhaust the wrapper readiness deadline.
+static CONTAINER_TEST: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 struct AllowAll;
 impl RunAuthorizer for AllowAll {
     fn may_read<'a>(
@@ -182,6 +185,7 @@ async fn collect_reply(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn input_is_actor_bound_logs_are_ordered_and_direct_network_is_unavailable() {
+    let _serial = CONTAINER_TEST.lock().await;
     let root = tempfile::tempdir().unwrap();
     let Some(backend) = backend(root.path()).await else {
         return;
@@ -232,6 +236,7 @@ async fn input_is_actor_bound_logs_are_ordered_and_direct_network_is_unavailable
 
 #[tokio::test(flavor = "multi_thread")]
 async fn declared_host_tunnels_to_the_local_test_server_from_the_fake_provider() {
+    let _serial = CONTAINER_TEST.lock().await;
     let root = tempfile::tempdir().unwrap();
     let Some(backend) = backend(root.path()).await else {
         return;
@@ -264,6 +269,7 @@ async fn declared_host_tunnels_to_the_local_test_server_from_the_fake_provider()
 
 #[tokio::test(flavor = "multi_thread")]
 async fn stop_kills_the_ignoring_fake_process_family_within_two_seconds() {
+    let _serial = CONTAINER_TEST.lock().await;
     let root = tempfile::tempdir().unwrap();
     let Some(backend) = backend(root.path()).await else {
         return;
@@ -319,4 +325,45 @@ async fn stop_kills_the_ignoring_fake_process_family_within_two_seconds() {
     timeout(Duration::from_secs(2), run.wait_exit())
         .await
         .expect("run did not report exit after Stop");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn operator_sign_in_is_read_only_and_egress_remains_restricted() {
+    let _serial = CONTAINER_TEST.lock().await;
+    let root = tempfile::tempdir().unwrap();
+    if backend(root.path()).await.is_none() {
+        return;
+    }
+    let _containers = PodmanGuard::new(root.path());
+    let profile = tempfile::tempdir().unwrap();
+    std::fs::write(profile.path().join("synthetic"), "test fixture").unwrap();
+    let backend = PodmanBackend::new("podman", root.path(), image())
+        .with_run_sign_in(profile.path().to_owned())
+        .unwrap();
+    let service = make_service(Arc::new(backend), "127.0.0.1:9".parse().unwrap());
+    let (request, actor) = request();
+    let mut run = service.start(request).await.unwrap();
+    let name = PodmanBackend::container_name(actor.account.as_uuid(), run.id);
+    let result = tokio::process::Command::new("podman")
+        .args([
+            "exec",
+            &name,
+            "/bin/sh",
+            "-ec",
+            r#"test "$(cat /run/calternal-provider-login/synthetic)" = 'test fixture'
+               ! touch /run/calternal-provider-login/modified"#,
+        ])
+        .output()
+        .await
+        .unwrap();
+    assert!(result.status.success());
+    assert!(!profile.path().join("modified").exists());
+    send_start(&service, run.id, &actor).await;
+    send(&service, run.id, &actor, 2, send_prompt("egress-denied")).await;
+    assert_eq!(
+        collect_reply(&mut run.events, &mut Vec::new(), &mut 0).await,
+        "Egress: refused"
+    );
+    service.stop(run.id, &actor).await.unwrap();
+    let _ = run.wait_exit().await;
 }

@@ -211,6 +211,7 @@ async fn serve_connection(
         return;
     };
     if !policy.allows(&host) {
+        eprintln!("harness egress refused undeclared host {host}");
         refuse(&mut client, "403 Forbidden").await;
         return;
     }
@@ -222,6 +223,7 @@ async fn serve_connection(
         }
     };
     if addresses.iter().any(|address| is_denied_address(*address)) {
+        eprintln!("harness egress refused unsafe DNS answer for {host}");
         refuse(&mut client, "403 Forbidden").await;
         return;
     }
