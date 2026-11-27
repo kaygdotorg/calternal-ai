@@ -1,10 +1,9 @@
+use super::Rights;
 use std::collections::BTreeMap;
 
 pub(super) use super::formulas::computed_order;
 
-use super::{
-    Directive, Section, definition, format, list, matching_id, name, path, required, sections, text,
-};
+use super::{Section, definition, format, list, matching_id, name, path, required, sections, text};
 use crate::{
     Diagnostic, Expression, Field, FieldType, Operation, dates, field,
     lines::{self, Line, Site},
@@ -33,15 +32,6 @@ pub enum ItemForm {
         /// Whether related originals form a single item.
         paired: bool,
     },
-}
-
-/// The restrictions declared for the host's authorization check.
-#[derive(Clone, Debug, Default)]
-pub struct Rights {
-    /// The minimum role to change the kind, when narrower than the default.
-    pub change: Option<String>,
-    /// An allow-list of minimum roles and group IDs for reading.
-    pub read: Vec<String>,
 }
 
 /// One checked component in a kind page.
@@ -108,6 +98,10 @@ pub struct Kind {
     pub search: Vec<String>,
     /// Fields that stay visible when a page is extended.
     pub protected: Vec<String>,
+    /// Note line notation and source kinds claimed by this kind.
+    pub line_claim: Option<super::LineClaim>,
+    /// Checked calendar or contact mappings for host adapters.
+    pub dav: Vec<super::DavMapping>,
     /// The numeric field surfaced as operation progress.
     pub progress: Option<String>,
     /// The Markdown copied into the host-authored folder description.
@@ -162,6 +156,8 @@ pub(super) fn parse(
         search: Vec::new(),
         protected: Vec::new(),
         progress: None,
+        line_claim: None,
+        dav: Vec::new(),
         body,
         computed: Vec::new(),
         record_computed: Vec::new(),
@@ -185,6 +181,7 @@ pub(super) fn parse(
                 | "operations"
                 | "rights"
                 | "vcard"
+                | "ical"
         ) {
             entry.alone()?
         }
@@ -227,7 +224,7 @@ pub(super) fn parse(
                 }
             }
             "editable" => return Err(site.error("A hidden kind is always operations only")),
-            "rights" => rights(entry, &mut kind.rights)?,
+            "rights" => super::rights::parse(entry, &mut kind.rights)?,
             "fields" | "records" | "state" => {
                 entry.block()?;
                 let parsed = fields(children, entry.line.depth + 1, key)?;
@@ -269,7 +266,7 @@ pub(super) fn parse(
                         .map(|(value, site)| text(value, *site, 120, false))
                         .transpose()?;
                     let start = predicate.as_ptr() as usize - child.text.as_ptr() as usize;
-                    let predicate = crate::expr::parse::parse_at(predicate, |offset| {
+                    let predicate = crate::expr::parse::ordinary_at(predicate, |offset| {
                         child.site_at(start + offset)
                     })?;
                     let _ = site;
@@ -322,15 +319,7 @@ pub(super) fn parse(
             "search" => kind.search = list(value, site)?,
             "protected" => kind.protected = list(value, site)?,
             "progress" => kind.progress = Some(value.into()),
-            "lines" | "ical" => {
-                return Err(site.error(format!(
-                    "{key} is deferred beyond the Chat-first format slice"
-                )));
-            }
-            "vcard" => {
-                let _: Directive = entry.directive()?;
-                return Err(site.error("vcard mapping is deferred with ical"));
-            }
+            "lines" | "ical" | "vcard" => {}
             _ => return Err(entry.line.site.error(format!("Unknown kind key {key}"))),
         }
     }
@@ -363,6 +352,13 @@ pub(super) fn parse(
             .error("List the operations for an operations-only kind"));
     }
     verify_fields(&mut kind, &entries, settings)?;
+    for entry in &entries {
+        match entry.key {
+            "lines" => kind.line_claim = Some(super::line_claims::parse(entry, &kind)?),
+            "ical" | "vcard" => kind.dav.push(super::dav::parse(entry, &kind)?),
+            _ => {}
+        }
+    }
     Ok(kind)
 }
 
@@ -395,41 +391,6 @@ fn item_form(value: &str, site: Site) -> Result<ItemForm, Diagnostic> {
     Err(site.error("Use file, folder with <main file>, or file(<media types>)"))
 }
 
-fn rights(entry: &Section<'_>, rights: &mut Rights) -> Result<(), Diagnostic> {
-    if entry.children.is_empty() {
-        return right(entry.value, entry.site, rights);
-    }
-    entry.block()?;
-    for line in entry.children {
-        flat(line, entry)?;
-        right(line.content()?, line.site, rights)?;
-    }
-    Ok(())
-}
-
-fn right(text: &str, site: Site, rights: &mut Rights) -> Result<(), Diagnostic> {
-    if let Some(role) = text
-        .strip_prefix("change ")
-        .filter(|role| matches!(*role, "manager" | "owner"))
-        && rights.change.replace(role.into()).is_none()
-    {
-        return Ok(());
-    }
-    if let Some(read) = text
-        .strip_prefix("read ")
-        .filter(|_| rights.read.is_empty())
-    {
-        rights.read = list(read, site)?;
-        if !rights.read.is_empty() {
-            for audience in &rights.read {
-                lines::id(audience, site)?
-            }
-            return Ok(());
-        }
-    }
-    Err(site.error("Declare each right once as change manager, change owner, or read followed by roles or groups"))
-}
-
 pub(super) fn fields(
     lines: &[Line],
     depth: usize,
@@ -440,6 +401,14 @@ pub(super) fn fields(
         entry.alone()?;
         crate::lines::field_name(entry.key, entry.line.site)?;
         let field = field::declaration(entry.value, entry.site, entry.line)?;
+        if let Some(expression) = &field.expression {
+            super::formulas::formula_scope(expression, field.period.is_some(), false)?;
+        }
+        if field.period.is_some() && scope != "fields" {
+            return Err(entry
+                .site
+                .error("Declare per-period formulas on item fields"));
+        }
         if let Some(site) = field.badge
             && scope != "fields"
         {
@@ -535,6 +504,17 @@ fn verify_fields(
             .is_none_or(|field| field.field_type.is_none())
     {
         return Err(site("unique").error("Name one stored field as the uniqueness key"));
+    }
+    let mut protected = std::collections::BTreeSet::new();
+    for name in &kind.protected {
+        if !kind.fields.contains_key(name) && !matches!(name.as_str(), "id" | "created" | "edited")
+        {
+            return Err(site("protected")
+                .error(format!("Name a declared protected field instead of {name}")));
+        }
+        if !protected.insert(name) {
+            return Err(site("protected").error(format!("List protected field {name} once")));
+        }
     }
     if let Some(progress) = &kind.progress
         && kind

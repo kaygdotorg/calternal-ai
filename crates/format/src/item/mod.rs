@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, ops::Range};
 
 use crate::{
     Diagnostic, Fields, Value,
-    lines::{Site, newline},
+    lines::{Site, header_line, header_window, newline},
 };
 
 /// An item with decoded fields and the source needed for lossless field edits.
@@ -27,7 +27,7 @@ pub(super) struct Entry {
     pub range: Range<usize>,
     pub first_line: Range<usize>,
     pub key_end: usize,
-    pub comment: Option<usize>,
+    pub comment: Option<Range<usize>>,
     pub site: Site,
 }
 
@@ -56,7 +56,8 @@ impl<'a> Item<'a> {
 
 /// Read frontmatter from a Markdown item. The body is never rewritten on read.
 pub fn parse_item(source: &str) -> Result<Item<'_>, Diagnostic> {
-    let ending = if source
+    let window = header_window(source);
+    let ending = if window
         .lines()
         .next()
         .is_some_and(|line| source[line.len()..].starts_with("\r\n"))
@@ -65,7 +66,7 @@ pub fn parse_item(source: &str) -> Result<Item<'_>, Diagnostic> {
     } else {
         "\n"
     };
-    let mut lines = source.split_inclusive('\n').enumerate();
+    let mut lines = window.split_inclusive('\n').enumerate();
     let Some((_, opening)) = lines.next() else {
         return Ok(Item {
             source,
@@ -90,7 +91,7 @@ pub fn parse_item(source: &str) -> Result<Item<'_>, Diagnostic> {
     let mut yaml = Vec::new();
     for (index, raw) in lines {
         let text = newline(raw);
-        if text == "---" {
+        if text == "---" && (raw.ends_with('\n') || offset + raw.len() == source.len()) {
             let (fields, entries) = yaml::parse(&yaml)?;
             return Ok(Item {
                 source,
@@ -102,11 +103,12 @@ pub fn parse_item(source: &str) -> Result<Item<'_>, Diagnostic> {
             });
         }
         let line = index + 1;
+        header_line(Site { line, column: 1 }, offset + raw.len())?;
         yaml.push(yaml::Line::new(text, line, offset, offset + raw.len())?);
         offset += raw.len();
     }
     Err(Site {
-        line: source.lines().count() + 1,
+        line: window.lines().count() + 1,
         column: 1,
     }
     .error("Close the item frontmatter with a line containing only ---"))
@@ -120,11 +122,7 @@ pub fn write_item(item: &Item<'_>, fields: &Fields) -> Result<String, Diagnostic
     let mut edits = Vec::new();
     let mut additions = String::new();
     for (key, value) in fields {
-        if key.is_empty() || key.contains(char::is_control) {
-            return Err(item
-                .site(key)
-                .error("Use a nonempty field key without controls"));
-        }
+        yaml::check_key(key, item.site(key))?;
         if matches!(
             key.as_str(),
             "id" | "kind" | "created" | "edited" | "at" | "author" | "anchor"
@@ -139,12 +137,8 @@ pub fn write_item(item: &Item<'_>, fields: &Fields) -> Result<String, Diagnostic
         }
         match (entry, value) {
             (Some(entry), Value::Empty) => {
-                let replacement = entry.comment.map_or_else(String::new, |start| {
-                    format!(
-                        "{}{}",
-                        item.source[start..entry.first_line.end].trim_end_matches(['\r', '\n']),
-                        item.ending
-                    )
+                let replacement = entry.comment.clone().map_or_else(String::new, |range| {
+                    format!("{}{}", newline(&item.source[range]), item.ending)
                 });
                 edits.push((entry.range.clone(), replacement));
             }
@@ -152,7 +146,8 @@ pub fn write_item(item: &Item<'_>, fields: &Fields) -> Result<String, Diagnostic
                 let key_prefix = &item.source[entry.first_line.start..entry.key_end];
                 let comment = entry
                     .comment
-                    .map(|start| newline(&item.source[start..entry.first_line.end]));
+                    .clone()
+                    .map(|range| newline(&item.source[range]));
                 let replacement = yaml::render_entry(key_prefix, value, comment, item.ending)?;
                 edits.push((entry.range.clone(), replacement));
             }
@@ -211,6 +206,44 @@ mod tests {
     }
 
     #[test]
+    fn folds_multiline_scalars_and_keeps_their_source() {
+        let source = concat!(
+            "---\r\n",
+            "plain: first\r\n  second\r\n\r\n  third # plain comment\r\n",
+            "single: 'can''t\r\n  drop # text\r\n\r\n  line' # quoted comment\r\n",
+            "double: \"joined\\\r\n  word and\r\n  space\"\r\n",
+            "list:\r\n  - first\r\n    second\r\n  - 'next\r\n    entry'\r\n",
+            "flow: [one\r\n  two, 'love\r\n\r\n  words',\r\n  [yes, 2]] # list\r\n",
+            "---\r\nBody\r\n",
+        );
+        let item = parse_item(source).unwrap();
+        let text = |s: &str| Value::Text(s.into());
+        assert_eq!(item.fields()["plain"], text("first second\nthird"));
+        assert_eq!(item.fields()["single"], text("can't drop # text\nline"));
+        assert_eq!(item.fields()["double"], text("joinedword and space"));
+        assert_eq!(
+            item.fields()["list"],
+            Value::List(vec![text("first second"), text("next entry")])
+        );
+        let Value::List(flow) = &item.fields()["flow"] else {
+            panic!("flow list")
+        };
+        assert_eq!(flow[0], text("one two"));
+        assert_eq!(flow[1], text("love\nwords"));
+        assert_eq!(write_item(&item, item.fields()).unwrap(), source);
+        let replacement = text("first\n\nreplacement  \n");
+        let result = write_item(
+            &item,
+            &Fields::from([("single".into(), replacement.clone())]),
+        )
+        .unwrap();
+        assert!(result.contains("# quoted comment\r\n"));
+        assert!(result.contains("third # plain comment\r\n"));
+        assert_eq!(parse_item(&result).unwrap().fields()["single"], replacement);
+        assert!(parse_item("---\nwrong: \"unclosed\nnext: data\n---\n").is_err());
+    }
+
+    #[test]
     fn built_ins_and_disallowed_yaml_are_refused() {
         for bad in ["&a 1", "*alias", "!tag x", "{a: 1}", "['x'"] {
             assert!(
@@ -226,5 +259,20 @@ mod tests {
             )
             .is_err()
         );
+    }
+    #[test]
+    fn frontmatter_limits_apply_before_body_and_reject_structural_controls() {
+        let too_many_lines = format!("---\n{}---\n", "# ignored\n".repeat(4097));
+        let too_many_bytes = format!("---\ntext: {}\n---\n", "a".repeat(256 * 1024));
+        let too_many_entries = format!("---\nlist: [{}0]\n---\n", "0,".repeat(4096));
+        for source in [&too_many_lines, &too_many_bytes, &too_many_entries] {
+            assert!(parse_item(source).is_err());
+        }
+        for key in ["bad\u{202e}", r#""bad\u202e""#, r#""bad\u0001""#] {
+            assert!(parse_item(&format!("---\nouter:\n  {key}: text\n---\n")).is_err());
+        }
+        let body = format!("\u{202e} literal\n{}", "a".repeat(256 * 1024));
+        let source = format!("---\nvalid: yes\n---\n{body}");
+        assert_eq!(parse_item(&source).unwrap().body(), body);
     }
 }

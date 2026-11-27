@@ -27,9 +27,9 @@ Handle for a run in the current operation.
 
 ### send()
 
-> **send**(`input`): `Promise`\<`void`\>
+> **send**(`input`): `Promise`\<\{ `status`: `"queued"`; \}\>
 
-Send input as the run actor, subject to the host check.
+Queue input as the run actor. The result reports admission to the input channel.
 
 #### Parameters
 
@@ -39,7 +39,7 @@ Send input as the run actor, subject to the host check.
 
 #### Returns
 
-`Promise`\<`void`\>
+`Promise`\<\{ `status`: `"queued"`; \}\>
 
 ***
 
@@ -47,7 +47,7 @@ Send input as the run actor, subject to the host check.
 
 > **stop**(): `Promise`\<`void`\>
 
-Stop the run if the current caller may read the target.
+Stop the run if the current caller has access to its original scope.
 
 #### Returns
 

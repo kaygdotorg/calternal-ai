@@ -2,9 +2,7 @@
 
 use crate::{Call, Host, WRITE_BYTES, internal};
 use axum::body::to_bytes;
-use axum::extract::{
-    ConnectInfo, DefaultBodyLimit, Path, Request, State, rejection::JsonRejection,
-};
+use axum::extract::{ConnectInfo, Path, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -13,10 +11,11 @@ use axum::{
     routing::{get, post},
 };
 use calternal_auth::AuthConfig;
-use calternal_types::{AccountId, Error, ErrorCode};
+use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 const SESSION: &str = "__Host-calternal_session";
 const AUTH_BYTES: usize = 64 * 1024;
@@ -40,7 +39,6 @@ pub fn router(host: Arc<Host>, config: AuthConfig) -> Router {
     Router::new()
         .route("/v1/spaces/{space}/call", post(call))
         .route("/v1/spaces/{space}/live", get(crate::live::ws_route))
-        .layer(DefaultBodyLimit::max(WRITE_BYTES))
         .with_state(host)
         .merge(auth)
         .layer(middleware::from_fn_with_state(origin, origin_guard))
@@ -120,32 +118,109 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
         .strip_prefix("Bearer ")
 }
 
-async fn call(
-    State(host): State<Arc<Host>>,
-    Path(space): Path<String>,
-    headers: HeaderMap,
-    body: Result<Json<Call>, JsonRejection>,
-) -> Reply {
-    let credential = if headers.contains_key(header::COOKIE) {
-        cookie(&headers)
-    } else {
-        bearer(&headers)
-    }
-    .ok_or_else(|| Error::unauthorized("Sign in to use this space."))?;
-    let Json(call) = body.map_err(|error| {
-        if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
-            Error::new(ErrorCode::TooLarge, "The call exceeds 16 MiB.")
-        } else {
-            Error::invalid_input("Expected a JSON call envelope.")
-        }
-    })?;
-    let value = host.session_call(credential, space.parse()?, call).await?;
-    Ok(Json(json!({"result":value})).into_response())
+const BODY_DEADLINE: Duration = Duration::from_secs(10);
+const MAX_LOGIN_WORK: usize = 8;
+
+fn admit_login_work() -> Result<OwnedSemaphorePermit, Failure> {
+    static ADMISSION: std::sync::LazyLock<Arc<Semaphore>> =
+        std::sync::LazyLock::new(|| Arc::new(Semaphore::new(MAX_LOGIN_WORK)));
+    ADMISSION.clone().try_acquire_owned().map_err(|_| {
+        Error::new(
+            ErrorCode::RetryAfter,
+            "The host is processing too many requests.",
+        )
+        .into()
+    })
 }
 
-async fn session_info(host: &Host, account: AccountId) -> Result<Value, Failure> {
+async fn admit_http_call(
+    host: &Arc<Host>,
+    account: AccountId,
+    space: SpaceId,
+) -> Result<OwnedSemaphorePermit, Failure> {
+    let host = host.clone();
+    let slot = tokio::task::spawn_blocking(move || {
+        // An authenticated caller can reserve work only for its personal space.
+        // Avoid opening storage or occupying a slot for arbitrary path input.
+        if !host
+            .auth
+            .spaces()
+            .is_personal_space(account, space)
+            .map_err(internal)?
+        {
+            return Err(Error::not_found("Personal space was not found."));
+        }
+        host.space_slot(space)
+    })
+    .await
+    .map_err(internal)??;
+    slot.http_work.clone().try_acquire_owned().map_err(|_| {
+        Error::new(
+            ErrorCode::RetryAfter,
+            "This space is processing too many requests.",
+        )
+        .into()
+    })
+}
+
+async fn call(State(host): State<Arc<Host>>, Path(space): Path<String>, req: Request) -> Reply {
+    let headers = req.headers();
+    let credential = if headers.contains_key(header::COOKIE) {
+        cookie(headers)
+    } else {
+        bearer(headers)
+    }
+    .ok_or_else(|| Error::unauthorized("Sign in to use this space."))?;
+    let session = host.authenticate(credential).await?;
+    let space = space.parse()?;
+    let permit = admit_http_call(&host, session.account, space).await?;
+    let (call, permit) = {
+        if !is_json(&req) {
+            return Err(Error::invalid_input("Expected a JSON call envelope.").into());
+        }
+        let bytes = bounded_body(req, WRITE_BYTES, "The call exceeds 16 MiB.").await?;
+        tokio::task::spawn_blocking(move || {
+            let call = serde_json::from_slice::<Call>(&bytes)
+                .map_err(|_| Error::invalid_input("Expected a JSON call envelope."))?;
+            if call.call.len() > 256
+                || call.slot_selection.as_ref().is_some_and(|selection| {
+                    selection.slot.len() > 128 || selection.filler.len() > 128
+                })
+            {
+                return Err(Error::invalid_input("Call or slot selector is too long."));
+            }
+            Ok((call, permit))
+        })
+        .await
+        .map_err(internal)??
+    };
+    let value = host.authorized_call(session, space, call).await?;
+    let encoded = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        serde_json::to_vec(&json!({"result":value})).map_err(internal)
+    })
+    .await
+    .map_err(internal)??;
+    Ok(([(header::CONTENT_TYPE, "application/json")], encoded).into_response())
+}
+
+async fn session_payload(host: &Arc<Host>, account: AccountId) -> Result<Value, Failure> {
     let (name, space) = personal_space(host, account).await?;
-    Ok(json!({"account":account,"name":name,"space":space}))
+    let mut payload = json!({"session":{"account":account,"name":name,"space":space}});
+    if !host.development_plugins.is_empty() {
+        let host = host.clone();
+        let seeded =
+            tokio::task::spawn_blocking(move || host.ensure_development_plugins(account, space))
+                .await;
+        if !matches!(seeded, Ok(Ok(()))) {
+            eprintln!("calternal-host: development bundle initialization is pending");
+            payload["initialization"] = json!({
+                "status":"pending",
+                "retry":"Refresh your sign-in status to retry preview initialization."
+            });
+        }
+    }
+    Ok(payload)
 }
 
 async fn personal_space(
@@ -174,11 +249,12 @@ async fn status(State(browser): State<Browser>, headers: HeaderMap) -> Reply {
         None => None,
     };
     let setup = browser.host.auth.setup_needed().await.map_err(auth_error)?;
-    let session = match account {
-        Some(account) => session_info(&browser.host, account).await?,
-        None => Value::Null,
+    let mut payload = match account {
+        Some(account) => session_payload(&browser.host, account).await?,
+        None => json!({"session":null}),
     };
-    Ok(Json(json!({"setup":setup,"session":session})).into_response())
+    payload["setup"] = json!(setup);
+    Ok(Json(payload).into_response())
 }
 
 #[derive(Deserialize)]
@@ -201,19 +277,30 @@ struct Finish {
 #[serde(deny_unknown_fields)]
 struct Empty {}
 
-async fn body<T: serde::de::DeserializeOwned>(req: Request) -> Result<T, Failure> {
-    if !req
-        .headers()
+fn is_json(req: &Request) -> bool {
+    req.headers()
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.split(';').next())
         .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"))
-    {
+}
+
+async fn bounded_body(
+    req: Request,
+    limit: usize,
+    too_large: &'static str,
+) -> Result<axum::body::Bytes, Failure> {
+    tokio::time::timeout(BODY_DEADLINE, to_bytes(req.into_body(), limit))
+        .await
+        .map_err(|_| Error::invalid_input("Request body did not arrive in time."))?
+        .map_err(|_| Error::new(ErrorCode::TooLarge, too_large).into())
+}
+
+async fn body<T: serde::de::DeserializeOwned>(req: Request) -> Result<T, Failure> {
+    if !is_json(&req) {
         return Err(Error::invalid_input("Sign-in requests must be JSON.").into());
     }
-    let bytes = to_bytes(req.into_body(), AUTH_BYTES)
-        .await
-        .map_err(|_| Error::new(ErrorCode::TooLarge, "Sign-in body exceeds 64 KiB."))?;
+    let bytes = bounded_body(req, AUTH_BYTES, "Sign-in body exceeds 64 KiB.").await?;
     Ok(serde_json::from_slice(&bytes)
         .map_err(|_| Error::invalid_input("Check the JSON request."))?)
 }
@@ -240,10 +327,21 @@ async fn login_start(
     req: Request,
 ) -> Reply {
     let source = source(&browser.config, peer, req.headers());
-    let auth = &browser.host.auth;
-    auth.admit_http_login(&source).map_err(auth_error)?;
+    let permit = admit_login_work()?;
+    let auth = browser.host.auth.clone();
+    let (auth, source, permit) = tokio::task::spawn_blocking(move || {
+        auth.admit_http_login(&source).map_err(auth_error)?;
+        Ok::<_, Failure>((auth, source, permit))
+    })
+    .await
+    .map_err(internal)??;
     let Empty {} = body(req).await?;
-    let (ceremony, options) = auth.start_http_login(None, &source).map_err(auth_error)?;
+    let (ceremony, options) = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        auth.start_http_login(None, &source).map_err(auth_error)
+    })
+    .await
+    .map_err(internal)??;
     Ok(Json(json!({"ceremony":ceremony,"options":options})).into_response())
 }
 
@@ -293,14 +391,7 @@ async fn signed_in(
     token: String,
     codes: Vec<String>,
 ) -> Reply {
-    let (name, space) = personal_space(&browser.host, account).await?;
-    if !browser.host.development_plugins.is_empty() {
-        let host = browser.host.clone();
-        tokio::task::spawn_blocking(move || host.ensure_development_plugins(account, space))
-            .await
-            .map_err(internal)??;
-    }
-    let mut payload = json!({"session":{"account":account,"name":name,"space":space}});
+    let mut payload = session_payload(&browser.host, account).await?;
     if !codes.is_empty() {
         payload["recovery_codes"] = json!(codes);
     }
@@ -313,11 +404,9 @@ async fn signed_in(
 
 async fn logout(State(browser): State<Browser>, headers: HeaderMap) -> Reply {
     if let Some(token) = cookie(&headers)
-        && let Some((account, installation)) = browser.host.auth.identify(token).await
-        && let Err(error) = browser.host.auth.revoke(account, installation).await
-        && error.code() != calternal_auth::ErrorCode::NotFound
+        && let Ok(session) = browser.host.authenticate(token).await
     {
-        return Err(auth_error(error));
+        browser.host.logout(session).await.map_err(auth_error)?;
     }
     let mut response = session_cookie(StatusCode::NO_CONTENT.into_response(), "", 0);
     response
@@ -444,83 +533,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn development_sign_in_seeds_both_bundles_once() {
-        use crate::WorkerRuntime;
-        use calternal_auth::Auth;
-        use std::path::PathBuf;
+    async fn unauthenticated_call_rejects_before_deserializing_envelope() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-        fn executable(name: &str) -> PathBuf {
-            std::env::split_paths(&std::env::var_os("PATH").unwrap())
-                .map(|dir| dir.join(name))
-                .find(|path| path.is_file())
-                .unwrap()
-                .canonicalize()
-                .unwrap()
-        }
-
-        let data = tempfile::tempdir().unwrap();
-        let root = data.path().to_owned();
+        let root = tempfile::tempdir().unwrap();
         let config = AuthConfig::new("http://localhost").unwrap();
-        let auth_path = root.join("auth");
+        let auth_path = root.path().join("auth");
         let auth_config = config.clone();
-        let auth = tokio::task::spawn_blocking(move || Auth::open(&auth_path, auth_config))
-            .await
-            .unwrap()
-            .unwrap();
-        let account = auth.create("Dev owner").await.unwrap().id;
-        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .unwrap();
-        let runtime = WorkerRuntime::new(
-            executable("bwrap"),
-            executable("node"),
-            repo.join("packages/plugin-sdk"),
-        )
+        let auth = tokio::task::spawn_blocking(move || {
+            calternal_auth::Auth::open(&auth_path, auth_config)
+        })
+        .await
+        .unwrap()
         .unwrap();
-        let host = Host::new(root, auth, 7)
-            .unwrap()
-            .with_worker_runtime(runtime)
-            .with_development_plugins(
-                ["calternal-chat", "calternal-chat-claude-code"]
-                    .map(|id| (id.to_owned(), repo.join("plugins-v2").join(id))),
-            );
-        let browser = Browser {
-            host: Arc::new(host),
-            config: Arc::new(config),
-        };
-        let (_, space) = personal_space(&browser.host, account).await.ok().unwrap();
-        for _ in 0..2 {
-            let result = signed_in(
-                &browser,
-                account,
-                "synthetic-fixture-session".into(),
-                Vec::new(),
-            )
-            .await;
-            assert_eq!(result.ok().unwrap().status(), StatusCode::OK);
-        }
-        let result = browser
-            .host
-            .clone()
-            .trusted_call(
-                account.into(),
-                space,
-                Call {
-                    call: "s.declarations".into(),
-                    input: json!({}),
-                    idempotency_key: None,
-                    slot_selection: None,
-                },
-            )
-            .await
-            .unwrap();
-        let plugins = result["plugins"].as_array().unwrap();
-        for id in ["calternal-chat", "calternal-chat-claude-code"] {
-            assert_eq!(
-                plugins.iter().filter(|plugin| plugin["id"] == id).count(),
-                1
-            );
-        }
+        let host = Arc::new(Host::new(root.path().into(), auth, 7).unwrap());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = router(host, config);
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
+        client.write_all(format!(
+            "POST /v1/spaces/{}/call HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer invalid\r\nContent-Type: application/json\r\nContent-Length: 1\r\nConnection: close\r\n\r\n{{",
+            calternal_types::SpaceId::new(),
+        ).as_bytes()).await.unwrap();
+        let mut response = String::new();
+        client.read_to_string(&mut response).await.unwrap();
+        assert!(response.starts_with("HTTP/1.1 401 "), "{response}");
+        server.abort();
     }
 }
+
+#[cfg(test)]
+#[path = "browser/tests.rs"]
+mod bundle_tests;

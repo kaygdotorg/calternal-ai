@@ -279,3 +279,19 @@ fn continued_clauses_point_to_the_physical_line() {
         "numeric result",
     );
 }
+
+#[test]
+fn a_composer_quote_cannot_bind_a_required_input() {
+    let required = KIND.replace(
+        "reply: link(notes records)",
+        "reply: link(notes records), required",
+    );
+    at(
+        plugin(MANIFEST, &required, COLLECTION, SIDEBAR).unwrap_err(),
+        "plugin.md",
+        MANIFEST,
+        "reply, picked",
+        true,
+        "optional record-link",
+    );
+}

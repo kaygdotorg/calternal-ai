@@ -50,7 +50,10 @@ pub(crate) fn describe(space: &Space, actor: &Actor) -> Value {
                     key.clone(),
                     json!({
                         "id":key,"qualified":qualify(id,key),"plugin":id,"title":collection.title,
-                        "from":from,"sort":sort,"views":views,"icon":collection.icon
+                        "from":from,"sort":sort,"views":views,"icon":collection.icon,
+                        "grouped":collection.group.is_some(),
+                        "totals":collection.totals.iter().map(|total| json!({"function":total.function,"field":total.field})).collect::<Vec<_>>(),
+                        "namedTotals":collection.named_total_order
                     }),
                 ))
             })
@@ -179,7 +182,7 @@ fn qualify(plugin: &str, key: &str) -> String {
 }
 
 fn kind_json(plugin: &str, qualified: &str, kind: &format::Kind) -> Value {
-    let page = kind
+    let mut page = kind
         .compiled_page
         .iter()
         .map(|entry| match entry {
@@ -190,11 +193,28 @@ fn kind_json(plugin: &str, qualified: &str, kind: &format::Kind) -> Value {
             PageEntry::Field(name) => json!({"kind":"field","name":name}),
         })
         .collect::<Vec<_>>();
+    if page.is_empty() && !kind.hidden {
+        page.extend(
+            kind.fields
+                .keys()
+                .map(|name| json!({"kind":"field","name":name})),
+        );
+        page.push(json!({"kind":"body"}));
+    }
+    let operations = kind
+        .operations
+        .values()
+        .map(|op| (op.name.clone(), operation_json(op)))
+        .chain(
+            kind.implicit_operations()
+                .map(|op| (op.name.clone(), operation_json(&op))),
+        )
+        .collect::<Map<_, _>>();
     json!({
         "id":kind.id,"qualified":qualified,"plugin":plugin,"name":kind.name,"folder":kind.folder,
         "editable":if kind.editable == format::Editability::Outside {"outside"} else {"operations"},
         "fields":fields_json(&kind.fields),"records":fields_json(&kind.records),"state":fields_json(&kind.state),
-        "row":kind.row,"page":page,"operations":kind.operations.iter().map(|(name, op)| (name.clone(), operation_json(op))).collect::<Map<_,_>>()
+        "row":kind.row,"page":page,"progress":kind.progress,"search":kind.search,"together":kind.together,"operations":operations
     })
 }
 
@@ -205,8 +225,15 @@ fn fields_json(fields: &BTreeMap<String, Field>) -> Map<String, Value> {
             "type":field.field_type.as_ref().map(field_type).unwrap_or_else(|| "computed".into()),
             "required":field.required,
             "computed":field.expression.is_some(),
+            "mark":field.mark,
             "badge":field.is_badge(),
         });
+        if let Some(FieldType::Choice(choices)) = &field.field_type {
+            view["choices"] = json!(choices);
+        }
+        if let Some(FieldType::List(item)) = &field.field_type {
+            view["itemType"] = json!(field_type(item));
+        }
         if let Some(default) = field.default.as_ref().and_then(constant) {
             view["default"] = default;
         }
@@ -288,7 +315,7 @@ fn operation_json(operation: &format::Operation) -> Value {
                                 None => json!({"target":target,"computed":true}),
                             }
                         } else {
-                            json!({"target":target,"value":"ask"})
+                            json!({"target":target,"value":"ask","ask":true})
                         }
                     })
                     .collect(),

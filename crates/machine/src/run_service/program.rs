@@ -6,7 +6,7 @@ use super::RunError;
 /// How the host resolved the run's data scope.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunScope {
-    /// The current chat session, fixed to its target list when the run starts.
+    /// The current session, fixed to its target list when the run starts.
     Session,
 }
 

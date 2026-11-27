@@ -11,6 +11,8 @@ test-space-carrier = []
 
 [dependencies]
 calternal-types.workspace = true
+calternal-format = { path = "../format", default-features = false }
+ipnet = "2"
 calternal-fsio.workspace = true
 calternal-cli.workspace = true
 calternal-plugin-host.workspace = true

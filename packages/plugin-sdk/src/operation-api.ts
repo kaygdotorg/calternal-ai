@@ -1,5 +1,136 @@
 /** Author-facing coded operations for the primitives-only plugin host. @module */
 
+// BEGIN HOST OPERATION CONTRACT
+/** A kind query or a stored collection query accepted by the standalone host. */
+export type Query =
+  | {
+      /** Qualified kind name. */
+      "from": string;
+      /** Formula predicate evaluated by the host. */
+      "where"?: string;
+      /** Ordered sort expressions, up to eight for an ad hoc query. */
+      "sort"?: readonly string[];
+      /** Case-insensitive substring in the kind’s declared search fields. */
+      "search"?: string;
+      /** Opaque cursor from the previous page. */
+      "cursor"?: string;
+      /** Page size up to 200. */
+      "limit"?: number;
+    }
+  | {
+      /** Qualified collection name. */
+      "collection": string;
+      /** Case-insensitive substring in the kind’s declared search fields. */
+      "search"?: string;
+      /** Opaque cursor from the previous page. */
+      "cursor"?: string;
+      /** Page size up to 200. */
+      "limit"?: number;
+    };
+
+/** Changes supported by the host's atomic write route. */
+export type Change =
+  | {
+      /** Create an item with initial values. */
+      "add": {
+        /** Qualified kind in which to create the item. */
+        "kind": string;
+        /** Declared field values to store. */
+        "fields"?: Fields;
+        /** Markdown body to store. */
+        "body"?: string;
+      };
+    }
+  | {
+      /** Update fields or Markdown. */
+      "change": {
+        /** UUID of the item addressed by the change. */
+        "item": ItemId;
+        /** Declared field values to store. */
+        "fields"?: Fields;
+        /** Markdown body to store. */
+        "body"?: string;
+        /** Required current version for a conditional change. */
+        "base"?: number;
+      };
+    }
+  | {
+      /** Evaluate a declared item assignment and commit its changes atomically. */
+      "perform": {
+        /** UUID of the item addressed by the change. */
+        "item": ItemId;
+        /** Name of the declared operation to evaluate on the current item. */
+        "operation": string;
+        /** Declared field values to store. */
+        "fields"?: Fields;
+        /** Required current version for a conditional change. */
+        "base"?: number;
+      };
+    }
+  | {
+      /** Remove an item. */
+      "remove": {
+        /** UUID of the item addressed by the change. */
+        "item": ItemId;
+      };
+    }
+  | {
+      /** Append one record and let the host stamp it. */
+      "append record": {
+        /** UUID of the item addressed by the change. */
+        "item": ItemId;
+        /** Unstamped record fields and body. */
+        "record": RecordBody;
+      };
+    }
+  | {
+      /** Change the record identified by its anchor. */
+      "change record": {
+        /** UUID of the item addressed by the change. */
+        "item": ItemId;
+        /** Anchor in the item's record stream. */
+        "anchor": string;
+        /** Unstamped record fields and body. */
+        "record": RecordBody;
+      };
+    }
+  | {
+      /** Remove the record identified by its anchor. */
+      "remove record": {
+        /** UUID of the item addressed by the change. */
+        "item": ItemId;
+        /** Anchor in the item's record stream. */
+        "anchor": string;
+      };
+    };
+
+/** Change discriminants accepted by the host. */
+export const operationChanges = ["add","change","perform","remove","append record","change record","remove record"] as const;
+
+/** Callback wire names accepted by the host. */
+export const operationMethods = {
+  /** Query rows through the host. */
+  query: "s.query",
+  /** Read an item through the host. */
+  read: "s.read",
+  /** Commit or preview an ordered list atomically through the host. */
+  write: "s.write",
+  /** Get or set viewer state through the host. */
+  state: "s.state",
+  /** Invoke a declared operation through the host. */
+  call: "s.call",
+  /** Start a run through the host. */
+  run: "s.run",
+  /** Send input to a run through the host. */
+  runSend: "s.run.send",
+  /** Stop a run through the host. */
+  runStop: "s.run.stop",
+} as const;
+
+/** One callback wire name. */
+export type OperationMethod = typeof operationMethods[keyof typeof operationMethods];
+// END HOST OPERATION CONTRACT
+
 /** Host-assigned item UUID. */
 export type ItemId = string;
 /** Host-assigned person UUID used in person and people fields. */
@@ -27,35 +158,6 @@ export interface OperationFailure {
   next: string;
 }
 
-/** A kind query or a stored collection query. */
-export type Query =
-  | {
-      /** Qualified kind name. */
-      from: string;
-      /** Formula predicate evaluated by the host. */
-      where?: string;
-      /** Ordered sort expressions. */
-      sort?: readonly string[];
-      /** Grouping field. */
-      group?: string;
-      /** Requested aggregation expressions. */
-      totals?: readonly string[];
-      /** Field projection. */
-      fields?: readonly string[];
-      /** Opaque cursor from the previous page. */
-      cursor?: string;
-      /** Page size up to 200. */
-      limit?: number;
-    }
-  | {
-      /** Qualified collection name. */
-      collection: string;
-      /** Opaque cursor from the previous page. */
-      cursor?: string;
-      /** Page size up to 200. */
-      limit?: number;
-    };
-
 /** Projected item returned by a query. */
 export interface Row {
   /** Item UUID. */
@@ -66,6 +168,8 @@ export interface Row {
   fields: Fields;
   /** Computed fields evaluated for the acting person. */
   computed: Fields;
+  /** Group keys for this row in a grouped collection. */
+  groups?: unknown[];
   /** Host version for a conditional write. */
   version: number;
 }
@@ -74,8 +178,19 @@ export interface Row {
 export interface Page {
   /** Rows in the requested order. */
   rows: Row[];
-  /** Computed aggregate results. */
-  totals: Fields;
+  /** Overall aggregates in declaration order, or an empty object without aggregates. */
+  totals: unknown[] | Record<string, never>;
+  /** Group key, matched row count and pre-page aggregates for each visible group. */
+  groups: {
+    /** Value used by the collection to identify this group. */
+    key: unknown;
+    /** Number of matching items in this group before pagination. */
+    matched: number;
+    /** Group aggregates in the collection's declaration order. */
+    totals: unknown[];
+  }[];
+  /** Computed collection header totals keyed by declared name. */
+  namedTotals: Fields;
   /** Opaque next-page cursor, or null on the last page. */
   cursor: string | null;
 }
@@ -95,80 +210,6 @@ export interface RecordBody {
   /** The record's Markdown body. */
   body?: string;
 }
-
-/** One write in the atomic change list. Each entry names exactly one change. */
-export type Change =
-  | {
-      /** Create an item with initial values. */
-      add: {
-        /** Kind in which the item belongs. */
-        kind: string;
-        /** Initial declared field values. */
-        fields: Fields;
-        /** Initial Markdown body. */
-        body?: string;
-      };
-    }
-  | {
-      /** Update fields or Markdown. */
-      change: {
-        /** Item to update. */
-        item: ItemId;
-        /** New values for the named fields. */
-        fields?: Fields;
-        /** Replacement Markdown body. */
-        body?: string;
-        /** Required current version for a conditional update. */
-        base?: number;
-      };
-    }
-  | {
-      /** Remove an item. */
-      remove: {
-        /** Item to remove. */
-        item: ItemId;
-      };
-    }
-  | {
-      /** Move an item within its kind. */
-      move: {
-        /** Item to move. */
-        item: ItemId;
-        /** Destination subfolder within the kind. */
-        folder?: string;
-        /** Destination filename within the kind. */
-        file?: string;
-      };
-    }
-  | {
-      /** Append one record and let the host stamp it. */
-      "append record": {
-        /** Item whose record stream receives the append. */
-        item: ItemId;
-        /** Unstamped record fields and body. */
-        record: RecordBody;
-      };
-    }
-  | {
-      /** Change the record identified by its anchor. */
-      "change record": {
-        /** Item holding the record. */
-        item: ItemId;
-        /** Anchor in the item's record stream. */
-        anchor: string;
-        /** Updated declared fields and body. */
-        record: RecordBody;
-      };
-    }
-  | {
-      /** Remove the record identified by its anchor. */
-      "remove record": {
-        /** Item holding the record. */
-        item: ItemId;
-        /** Anchor in the item's record stream. */
-        anchor: string;
-      };
-    };
 
 /** Receipts in change-list order. */
 export interface WriteResult {
@@ -207,9 +248,12 @@ export interface RunHandle {
   id: string;
   /** Status snapshot returned when the run was opened. */
   status: string;
-  /** Send input as the run actor, subject to the host check. */
-  send(input: unknown): Promise<void>;
-  /** Stop the run if the current caller may read the target. */
+  /** Queue input as the run actor. The result reports admission to the input channel. */
+  send(input: unknown): Promise<{
+    /** The input entered the run queue. Delivery to the adapter is unconfirmed. */
+    status: "queued";
+  }>;
+  /** Stop the run if the current caller has access to its original scope. */
   stop(): Promise<void>;
 }
 
@@ -228,9 +272,10 @@ export interface OperationsContext {
     /** Store the acting person's value. */
     set(item: ItemId, key: string, value: unknown): Promise<unknown>;
   };
-  /** Invoke another plugin's listed operation through the same authority check. */
+  /** Invoke a declared operation using its plugin.kind.operation identifier. */
   call(operation: string, input: unknown): Promise<unknown>;
-  /** Start a declared program with a host-checked scope and targets. */
+  /** Start a declared program in the current session. The host needs an
+   * operator-configured run service to admit the program. */
   run(program: string, options: { scope?: "session"; targets: readonly ItemId[] }): Promise<RunHandle>;
   /** Verified actor and current role for this delivery. */
   readonly me: Readonly<{

@@ -6,10 +6,12 @@ pub mod browser;
 mod declarations;
 mod installation;
 pub mod live;
+mod maintenance;
 mod query;
 mod reactions;
 mod records;
 mod runs;
+mod session;
 mod space;
 mod worker_calls;
 mod worker_runtime;
@@ -19,8 +21,10 @@ pub use worker_runtime::WorkerRuntime;
 
 use calternal_auth::Auth;
 use calternal_types::{AccountId, Actor, Error, Result, SpaceId, Via};
+use maintenance::Slot;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use session::Session;
 use space::Space;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -57,8 +61,6 @@ pub struct SlotSelection {
     pub filler: String,
 }
 
-type Slot = Arc<Mutex<Option<Space>>>;
-
 /// The one call dispatcher. It opens space storage on demand and serializes
 /// publication only within the affected space.
 pub struct Host {
@@ -69,6 +71,8 @@ pub struct Host {
     workers: Option<WorkerRuntime>,
     development_plugins: Vec<(String, PathBuf)>,
     runs: Mutex<Option<Arc<calternal_machine::run_service::RunService>>>,
+    sessions: session::Registry,
+    live_accounts: live::Accounts,
 }
 
 impl Host {
@@ -86,6 +90,8 @@ impl Host {
             workers: None,
             development_plugins: Vec::new(),
             runs: Mutex::default(),
+            sessions: session::Registry::default(),
+            live_accounts: live::Accounts::default(),
         })
     }
 
@@ -102,7 +108,8 @@ impl Host {
     }
 
     /// Supply trusted local plugin bundles to seed the disposable browser
-    /// host's personal space on sign-in. Ordinary hosts have no seed bundles.
+    /// host's personal space on sign-in and authenticated session status.
+    /// Ordinary hosts have no seed bundles.
     pub fn with_development_plugins(
         mut self,
         plugins: impl IntoIterator<Item = (String, PathBuf)>,
@@ -113,34 +120,47 @@ impl Host {
 
     fn ensure_development_plugins(&self, owner: AccountId, id: SpaceId) -> Result<()> {
         let actor = Actor::account(owner);
-        for (plugin, directory) in &self.development_plugins {
-            let installed = |space: &mut Space| Ok(space.plugins.contains_key(plugin));
-            if !self.with_space(&actor, id, installed)?
-                && let Err(error) = self.install_local(owner, id, directory, true)
+        let missing = self.with_space(&actor, id, |space| {
+            Ok(self
+                .development_plugins
+                .iter()
+                .filter(|(plugin, _)| !space.plugins.contains_key(plugin))
+                .collect::<Vec<_>>())
+        })?;
+        let mut result = Ok(());
+        for (plugin, directory) in missing {
+            if let Err(error) = self.install_local(owner, id, directory, true)
                 && (error.code != calternal_types::ErrorCode::Conflict
-                    || !self.with_space(&actor, id, installed)?)
+                    || !self
+                        .with_space(&actor, id, |space| Ok(space.plugins.contains_key(plugin)))?)
             {
-                return Err(error);
+                result = result.and(Err(error));
             }
         }
-        Ok(())
+        result
     }
 
-    /// Authenticate a bearer session and dispatch a shell call. Storage I/O
-    /// and the per-space lock run on a blocking thread.
+    /// Authenticate and bind the issuing installation to a shell call.
+    /// Storage I/O and the per-space lock run on a blocking thread.
     pub async fn session_call(
         self: Arc<Self>,
         bearer: &str,
         space: SpaceId,
         call: Call,
     ) -> Result<Value> {
-        let (account, _) = self
-            .auth
-            .identify(bearer)
-            .await
-            .ok_or_else(|| Error::unauthorized("Sign in to use this space."))?;
-        self.trusted_call(Actor::account(account), space, call)
-            .await
+        let session = self.authenticate(bearer).await?;
+        self.authorized_call(session, space, call).await
+    }
+
+    async fn authorized_call(
+        self: Arc<Self>,
+        session: Session,
+        space: SpaceId,
+        call: Call,
+    ) -> Result<Value> {
+        let actor = Actor::account(session.account);
+        let chain = worker_calls::Chain::for_session(session);
+        self.dispatch(actor, space, call, chain).await
     }
 
     /// Dispatch from a trusted asynchronous adapter on a blocking thread.
@@ -173,12 +193,12 @@ impl Host {
         official: bool,
     ) -> Result<()> {
         let actor = Actor::account(owner);
-        self.with_space(&actor, id, |_| Ok(()))?;
+        let processes = self.with_space(&actor, id, |space| Ok(space.worker_processes.clone()))?;
         let files = installation::bundle(directory)?;
         let registration = match (self.workers.as_ref(), files.get("operations.ts")) {
             (Some(runtime), Some(source)) => {
                 let snapshot = WorkerRuntime::snapshot(source)?;
-                Some(block_on(runtime.probe(snapshot.path()))??)
+                Some(block_on(runtime.probe(snapshot.path(), processes))??)
             }
             _ => None,
         };
@@ -196,23 +216,38 @@ impl Host {
                 "A run requires a host-owned session scope.",
             ));
         }
-        self.call_scoped(actor, id, call)
+        self.call_scoped(actor, id, call, None, None)
     }
 
-    fn call_scoped(&self, actor: Actor, id: SpaceId, call: Call) -> Result<Value> {
+    fn call_scoped(
+        &self,
+        actor: Actor,
+        id: SpaceId,
+        call: Call,
+        session: Option<&Session>,
+        run: Option<&runs::RunScopeGrant>,
+    ) -> Result<Value> {
         if call.slot_selection.is_some() {
             return Err(Error::forbidden(
                 "A slot selection requires a person’s coded operation.",
             ));
         }
         let recipient = match call.call.as_str() {
-            "s.write" if call.input.get("preview") != Some(&Value::Bool(true)) => Some(None),
             "s.state" if call.input.get("op").and_then(Value::as_str) == Some("set") => {
                 Some(Some(actor.account))
             }
             _ => None,
         };
         self.with_space(&actor, id, |space| {
+            let _admission = self.admit_session_blocking(session)?;
+            space.runs.admit(run)?;
+            if call.call == "s.write" {
+                let written = space.write_call(&actor, call)?;
+                if written.disposition == crate::write::Disposition::Committed {
+                    space.live.notify(None);
+                }
+                return Ok(written.value);
+            }
             let output = space.call(&actor, call)?;
             if let Some(recipient) = recipient {
                 space.live.notify(recipient);
@@ -234,6 +269,15 @@ impl Host {
         id: SpaceId,
         f: impl FnOnce(&mut Space) -> Result<T>,
     ) -> Result<T> {
+        self.with_space_slot(actor, id, |space, _| f(space))
+    }
+
+    fn with_space_slot<T>(
+        &self,
+        actor: &Actor,
+        id: SpaceId,
+        f: impl FnOnce(&mut Space, &Slot) -> Result<T>,
+    ) -> Result<T> {
         if matches!(actor.via, Some(Via::Agent { .. })) {
             return Err(Error::forbidden("Run scope is required for this call."));
         }
@@ -248,24 +292,22 @@ impl Host {
         {
             return Err(Error::not_found("Personal space was not found."));
         }
-        let slot = {
-            let mut slots = self.spaces.lock().map_err(internal)?;
-            slots.entry(id).or_default().clone()
-        };
+        let slot = self.space_slot(id)?;
         // Keep the space lock across persistence so publication, recovery and
         // receipt lookup see the same version of the filesystem and ledger.
-        let mut opened = slot.lock().map_err(internal)?;
-        if opened.is_none() {
+        let mut opened = slot.resident.lock().map_err(internal)?;
+        opened.visited = std::time::Instant::now();
+        if opened.space.is_none() {
             let display = self.owner_display(actor.account)?;
             let mut space = Space::open(&self.root, id, self.retention_ms)?;
             space.scope_existing_viewer_state(actor.account)?;
             space.owner_display = Some((actor.account, display));
-            *opened = Some(space);
+            opened.space = Some(space);
         }
-        let space = opened.as_mut().expect("space initialized");
+        let space = opened.space.as_mut().expect("space initialized");
         space.recover()?;
         space.expire_trash()?;
-        f(space)
+        f(space, &slot)
     }
 }
 

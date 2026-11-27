@@ -16,16 +16,16 @@ type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
 #[tokio::main]
 async fn main() -> CliResult<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if let [command, root, web, chat, harness] = args.as_slice()
-        && command == "dev-serve"
+    if let [command, root, web, sources @ ..] = args.as_slice()
+        && matches!(command.as_str(), "dev-serve" | "preview-serve")
     {
-        return dev::serve(
-            Path::new(root),
-            Path::new(web),
-            Path::new(chat),
-            Path::new(harness),
-        )
-        .await;
+        let (sources, port) = if command == "preview-serve" {
+            let (port, sources) = sources.split_last().ok_or("Supply a preview port.")?;
+            (sources, Some(port.parse()?))
+        } else {
+            (sources, None)
+        };
+        return dev::serve(Path::new(root), Path::new(web), sources, port).await;
     }
     let [command, root, origin, rest @ ..] = args.as_slice() else {
         return Err("usage: calternal-host serve ROOT ORIGIN ADDRESS | install ROOT ORIGIN OWNER SPACE DIRECTORY [--official]".into());
@@ -107,16 +107,67 @@ impl RunningEngine {
 
 async fn attach_runs(host: Host, root: &Path) -> CliResult<(Arc<Host>, Option<RunningEngine>)> {
     let host = Arc::new(host);
-    let image = match std::env::var("CALTERNAL_RUN_IMAGE") {
-        Ok(image) => image,
-        Err(std::env::VarError::NotPresent) => return Ok((host, None)),
-        Err(error) => return Err(error.into()),
+    host.start_maintenance();
+    let [real_image, account, space, program, credential] = [
+        "CALTERNAL_REAL_RUN_IMAGE",
+        "CALTERNAL_RUN_SIGN_IN_ACCOUNT",
+        "CALTERNAL_RUN_SIGN_IN_SPACE",
+        "CALTERNAL_RUN_SIGN_IN_PROGRAM",
+        "CALTERNAL_RUN_SIGN_IN_FILE",
+    ]
+    .map(std::env::var_os);
+    let (image, sign_in) = match (real_image, account, space, program, credential) {
+        (Some(image), Some(account), Some(space), Some(program), Some(credential)) => {
+            let image = image
+                .into_string()
+                .map_err(|_| "Invalid real run image ID.")?;
+            let hex = image.strip_prefix("sha256:").unwrap_or(&image);
+            if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err("Real run images must use a full local image ID.".into());
+            }
+            let account = account
+                .to_str()
+                .ok_or("Invalid run sign-in account.")?
+                .parse()?;
+            let space = space
+                .to_str()
+                .ok_or("Invalid run sign-in space.")?
+                .parse()?;
+            let program = program
+                .into_string()
+                .map_err(|_| "Invalid run sign-in program.")?;
+            (
+                image,
+                Some((account, space, program, PathBuf::from(credential))),
+            )
+        }
+        (None, None, None, None, None) => match std::env::var("CALTERNAL_RUN_IMAGE") {
+            Ok(image) => (image, None),
+            Err(std::env::VarError::NotPresent) => return Ok((host, None)),
+            Err(error) => return Err(error.into()),
+        },
+        _ => {
+            return Err(
+                "Configure the real run image ID and all four run sign-in settings.".into(),
+            );
+        }
     };
     let root = root.join("runs");
     let lock_root = root.clone();
     let lock = tokio::task::spawn_blocking(move || calternal_fsio::DataLock::acquire(&lock_root))
         .await??;
-    let backend = Arc::new(PodmanBackend::new("podman", root, &image));
+    let mut backend = PodmanBackend::new("podman", root, &image);
+    if let Some((account, space, program, credential)) = sign_in {
+        backend = backend.with_run_sign_in(account, space, program, credential)?;
+    }
+    if let Some(cidrs) = std::env::var_os("CALTERNAL_RUN_EGRESS_EXCLUDE") {
+        backend = backend.with_run_egress_exclusions(
+            cidrs
+                .to_str()
+                .ok_or("Invalid run egress exclusion setting.")?,
+        )?;
+    }
+    let backend = Arc::new(backend);
     backend.initialize().await?;
     let host = host.with_podman_runs(backend.clone(), image);
     Ok((

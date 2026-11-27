@@ -11,11 +11,12 @@ use std::os::unix::fs::MetadataExt;
 use uuid::Uuid;
 
 mod append;
+mod linked;
 mod seal;
 
 #[cfg(target_os = "linux")]
 pub(crate) use append::append;
-pub(crate) use append::{recover_tail, recovered, replay_recovered};
+pub(crate) use append::recover_pending;
 
 const CROCKFORD: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
@@ -36,7 +37,7 @@ impl From<&Metadata> for Signature {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct Record {
     pub(crate) anchor: String,
     pub(crate) offset: u64,
@@ -57,11 +58,15 @@ pub(crate) struct Input {
 
 impl Space {
     pub(crate) fn records(&self, item: Uuid) -> Result<Vec<Record>> {
+        self.records_limited(item, -1)
+    }
+
+    pub(crate) fn records_limited(&self, item: Uuid, limit: i64) -> Result<Vec<Record>> {
         let mut stmt = self.db.prepare_cached(
-            "SELECT anchor,offset,length,author,at,hash,ordinal FROM records WHERE item=?1 ORDER BY ordinal",
+            "SELECT anchor,offset,length,author,at,hash,ordinal FROM records WHERE item=?1 ORDER BY ordinal LIMIT ?2",
         ).map_err(internal)?;
         let rows = stmt
-            .query_map([item.to_string()], |row| {
+            .query_map(params![item.to_string(), limit], |row| {
                 Ok((
                     row.get(0)?,
                     row.get::<_, i64>(1)? as u64,
@@ -269,7 +274,7 @@ pub(crate) fn escape_body(body: &str) -> String {
 }
 
 fn view(data: &[u8], anchor: &str, author: &str, at: i64, kind: &Kind) -> Result<Value> {
-    let (fields, body) = content(data, kind)?;
+    let (fields, body) = content(data, kind, true)?;
     let mut record =
         json!({"anchor":anchor, "author":author, "at":at, "fields":fields, "body":body});
     if let Some(run) = data
@@ -285,7 +290,7 @@ fn view(data: &[u8], anchor: &str, author: &str, at: i64, kind: &Kind) -> Result
     Ok(record)
 }
 
-fn content(data: &[u8], kind: &Kind) -> Result<(Fields, String)> {
+fn content(data: &[u8], kind: &Kind, include_fields: bool) -> Result<(Fields, String)> {
     let (_, tail) = std::str::from_utf8(data)
         .map_err(internal)?
         .split_once('\n')
@@ -299,10 +304,12 @@ fn content(data: &[u8], kind: &Kind) -> Result<(Fields, String)> {
         if !kind.records.contains_key(name) {
             break;
         }
-        fields.insert(
-            name.to_owned(),
-            serde_json::from_str(raw).map_err(internal)?,
-        );
+        if include_fields {
+            fields.insert(
+                name.to_owned(),
+                serde_json::from_str(raw).map_err(internal)?,
+            );
+        }
         body = rest;
     }
     let body: String = body
@@ -336,7 +343,7 @@ pub(crate) fn encode(
         return Err(Error::forbidden("This kind does not hold records."));
     }
     let (mut fields, previous_body) = existing
-        .map(|(_, data)| content(data, kind))
+        .map(|(_, data)| content(data, kind, true))
         .transpose()?
         .unwrap_or_default();
     apply_fields(&kind.records, &mut fields, input.fields, existing.is_none())?;
@@ -358,7 +365,7 @@ pub(crate) fn encode(
             display_name.push(letter);
         }
     }
-    let when = time::OffsetDateTime::from_unix_timestamp(at / 1000)
+    let when = time::OffsetDateTime::from_unix_timestamp(at.div_euclid(1000))
         .map_err(internal)?
         .format(time::macros::format_description!(
             "[year]-[month]-[day] [hour]:[minute]"

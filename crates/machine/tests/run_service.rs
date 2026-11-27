@@ -31,6 +31,9 @@ use uuid::Uuid;
 
 use podman_guard::PodmanGuard;
 
+// Rootless Podman startup contention can exhaust the wrapper readiness deadline.
+static CONTAINER_TEST: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 struct AllowAll;
 impl RunAuthorizer for AllowAll {
     fn may_read<'a>(
@@ -182,6 +185,7 @@ async fn collect_reply(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn input_is_actor_bound_logs_are_ordered_and_direct_network_is_unavailable() {
+    let _serial = CONTAINER_TEST.lock().await;
     let root = tempfile::tempdir().unwrap();
     let Some(backend) = backend(root.path()).await else {
         return;
@@ -232,6 +236,7 @@ async fn input_is_actor_bound_logs_are_ordered_and_direct_network_is_unavailable
 
 #[tokio::test(flavor = "multi_thread")]
 async fn declared_host_tunnels_to_the_local_test_server_from_the_fake_provider() {
+    let _serial = CONTAINER_TEST.lock().await;
     let root = tempfile::tempdir().unwrap();
     let Some(backend) = backend(root.path()).await else {
         return;
@@ -264,6 +269,7 @@ async fn declared_host_tunnels_to_the_local_test_server_from_the_fake_provider()
 
 #[tokio::test(flavor = "multi_thread")]
 async fn stop_kills_the_ignoring_fake_process_family_within_two_seconds() {
+    let _serial = CONTAINER_TEST.lock().await;
     let root = tempfile::tempdir().unwrap();
     let Some(backend) = backend(root.path()).await else {
         return;
@@ -319,4 +325,148 @@ async fn stop_kills_the_ignoring_fake_process_family_within_two_seconds() {
     timeout(Duration::from_secs(2), run.wait_exit())
         .await
         .expect("run did not report exit after Stop");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn operator_sign_in_mounts_one_file_for_one_account_space_and_program() {
+    let _serial = CONTAINER_TEST.lock().await;
+    let root = tempfile::tempdir().unwrap();
+    if backend(root.path()).await.is_none() {
+        return;
+    }
+    let _containers = PodmanGuard::new(root.path());
+    let profile = tempfile::tempdir().unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    let credential = profile.path().join(".credentials.json");
+    std::fs::write(&credential, "test fixture").unwrap();
+    std::fs::set_permissions(&credential, std::fs::Permissions::from_mode(0o600)).unwrap();
+    std::fs::write(profile.path().join("unrelated"), "unrelated file").unwrap();
+    let (request, actor) = request();
+    let qualified = "calternal-chat-claude-code.calternal-provider-claude-code";
+    let backend = PodmanBackend::new("podman", root.path(), image())
+        .with_run_sign_in(actor.account, request.space, qualified.into(), credential)
+        .unwrap();
+    let service = make_service(Arc::new(backend), "127.0.0.1:9".parse().unwrap());
+    for (account, space, other_program) in [
+        (AccountId::new(), request.space, false),
+        (actor.account, SpaceId::new(), false),
+        (actor.account, request.space, true),
+    ] {
+        let program = if other_program {
+            ProgramBinding::new(
+                "calternal-chat-claude-code",
+                "untrusted",
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../plugins-v2/calternal-chat-claude-code"),
+                "programs/calternal-provider-claude-code",
+                false,
+                ["api.anthropic.com"],
+            )
+            .unwrap()
+        } else {
+            request.program.clone()
+        };
+        let denied = service
+            .start(StartRun {
+                program,
+                space,
+                scope: request.scope,
+                targets: request.targets.clone(),
+                actor: Actor::account(account),
+            })
+            .await;
+        assert!(matches!(denied, Err(RunError::Sandbox(error)) if
+            error.to_string().contains("cannot use operator sign-in")));
+    }
+    let mut run = service.start(request).await.unwrap();
+    let name = PodmanBackend::container_name(actor.account.as_uuid(), run.id);
+    let result = tokio::process::Command::new("podman")
+        .args([
+            "exec",
+            &name,
+            "/bin/sh",
+            "-ec",
+            r#"test "$(cat /run/calternal-provider-login/.credentials.json)" = 'test fixture'
+               test ! -e /run/calternal-provider-login/unrelated
+               ! printf changed >> /run/calternal-provider-login/.credentials.json
+               test "$(stat -f -c %T /home/agent)" = tmpfs
+               grep -Eq ' /home/agent tmpfs [^ ]*size=65536k' /proc/mounts
+               ! touch /opt/outside-tmpfs"#,
+        ])
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "credential mount boundary check failed"
+    );
+    assert_eq!(
+        std::fs::read_to_string(profile.path().join(".credentials.json")).unwrap(),
+        "test fixture"
+    );
+    send_start(&service, run.id, &actor).await;
+    send(&service, run.id, &actor, 2, send_prompt("egress-denied")).await;
+    assert_eq!(
+        collect_reply(&mut run.events, &mut Vec::new(), &mut 0).await,
+        "Egress: refused"
+    );
+    service.stop(run.id, &actor).await.unwrap();
+    let _ = run.wait_exit().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fake_run_uses_a_read_only_root_and_bounded_temporary_writes() {
+    let _serial = CONTAINER_TEST.lock().await;
+    let root = tempfile::tempdir().unwrap();
+    let Some(backend) = backend(root.path()).await else {
+        return;
+    };
+    let _containers = PodmanGuard::new(root.path());
+    let service = make_service(backend, "127.0.0.1:9".parse().unwrap());
+    let (request, actor) = request();
+    let run = service.start(request).await.unwrap();
+    let name = PodmanBackend::container_name(actor.account.as_uuid(), run.id);
+    let output = tokio::process::Command::new("podman")
+        .args([
+            "exec",
+            &name,
+            "/bin/sh",
+            "-ec",
+            r#"if touch /opt/unbounded 2>/dev/null; then exit 1; fi
+               if touch /work/unbounded 2>/dev/null; then exit 2; fi
+               test "$(stat -f -c %T /home/agent)" = tmpfs
+               grep -Eq ' /home/agent tmpfs [^ ]*size=65536k' /proc/mounts
+               grep -Eq ' /tmp tmpfs [^ ]*size=16384k' /proc/mounts
+               printf fixture > /home/agent/writable"#,
+        ])
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "run mount boundary: {:?}",
+        output.status.code()
+    );
+    assert!(!root.path().join("accounts").exists());
+    service.stop(run.id, &actor).await.unwrap();
+    let _ = run.wait_exit().await;
+}
+
+#[tokio::test]
+async fn startup_sweeps_owned_run_artifacts() {
+    use calternal_machine::sandbox::Backend;
+
+    let _serial = CONTAINER_TEST.lock().await;
+    let root = tempfile::tempdir().unwrap();
+    let Some(backend) = backend(root.path()).await else {
+        return;
+    };
+    let _containers = PodmanGuard::new(root.path());
+    let leftover = root.path().join("run-work/run.leftover");
+    let outside = root.path().join("other/keep");
+    tokio::fs::create_dir_all(&leftover).await.unwrap();
+    tokio::fs::create_dir_all(&outside).await.unwrap();
+    backend.initialize().await.unwrap();
+    assert!(!leftover.exists());
+    assert!(outside.exists());
 }

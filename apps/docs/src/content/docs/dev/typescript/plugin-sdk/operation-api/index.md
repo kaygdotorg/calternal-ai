@@ -35,6 +35,7 @@ Author-facing coded operations for the primitives-only plugin host.
 - [Fields](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/fields/)
 - [ItemId](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemid/)
 - [ItemLink](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/itemlink/)
+- [OperationMethod](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/operationmethod/)
 - [PersonId](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/personid/)
 - [Query](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/query/)
 - [RecordLink](/docs/dev/typescript/plugin-sdk/operation-api/type-aliases/recordlink/)
@@ -42,4 +43,6 @@ Author-facing coded operations for the primitives-only plugin host.
 ## Variables
 
 - [on](/docs/dev/typescript/plugin-sdk/operation-api/variables/on/)
+- [operationChanges](/docs/dev/typescript/plugin-sdk/operation-api/variables/operationchanges/)
 - [operationCodes](/docs/dev/typescript/plugin-sdk/operation-api/variables/operationcodes/)
+- [operationMethods](/docs/dev/typescript/plugin-sdk/operation-api/variables/operationmethods/)

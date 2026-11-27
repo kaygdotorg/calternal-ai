@@ -432,6 +432,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "calternal-format"
+version = "0.1.0"
+dependencies = [
+ "semver",
+]
+
+[[package]]
 name = "calternal-fsio"
 version = "0.1.0"
 dependencies = [
@@ -448,11 +455,13 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "calternal-cli",
+ "calternal-format",
  "calternal-fsio",
  "calternal-plugin-host",
  "calternal-types",
  "clap",
  "futures-util",
+ "ipnet",
  "reqwest",
  "ring",
  "rustix",

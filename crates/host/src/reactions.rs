@@ -1,11 +1,19 @@
 //! Post-commit observations, assembled while the changed row is still current.
+
+mod outbox;
 use crate::declarations::Plugin;
+use crate::maintenance::Slot;
 use crate::space::{Row, Space};
 use crate::worker_calls::Chain;
+use crate::write::Disposition;
 use crate::{Call, Host, identity, internal};
 use calternal_format::Source;
 use calternal_plugin_host::operations::{Delivery, Event, EventKind, Person};
-use calternal_types::{Actor, Result, SpaceId};
+use calternal_types::{Actor, Error, ErrorCode, Result, SpaceId};
+pub(crate) use outbox::expire_pending;
+use outbox::{Claim, OUTBOX_BYTES, OUTBOX_REQUESTS, has_outbox};
+use rusqlite::params;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -49,6 +57,7 @@ pub(crate) fn resolve_selector(
     (owner == id || plugin.manifest.reads.contains(&kind)).then_some((None, kind))
 }
 
+#[derive(Serialize, Deserialize)]
 struct Listener {
     plugin: String,
     selector: String,
@@ -56,6 +65,7 @@ struct Listener {
     kind: String,
 }
 
+#[derive(Serialize, Deserialize)]
 struct Observation {
     plugin: String,
     selector: String,
@@ -63,6 +73,21 @@ struct Observation {
     key: String,
     before: Option<Value>,
     after: Value,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Before {
+    row: Value,
+    matches: Vec<bool>,
+    bytes: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Prepared {
+    actor: Actor,
+    key: String,
+    before: BTreeMap<Uuid, Before>,
+    listeners: Vec<Listener>,
 }
 
 impl Host {
@@ -73,22 +98,30 @@ impl Host {
         call: Call,
         chain: Chain,
     ) -> Result<Value> {
-        let preview = call.input.get("preview") == Some(&Value::Bool(true));
         let host = self.clone();
         let who = actor.clone();
         let ancestry = chain.plugins.clone();
-        let (result, events) = tokio::task::spawn_blocking(move || {
-            host.with_space(&who, space, |storage| {
-                let observed = storage.observe_write(&who, call, &ancestry)?;
-                if !preview {
+        let session = chain.session.clone();
+        let run = chain.run;
+        let (result, batch) = tokio::task::spawn_blocking(move || {
+            host.with_space_slot(&who, space, |storage, slot| {
+                let _admission = host.admit_session_blocking(session.as_ref())?;
+                storage.runs.admit(run.as_ref())?;
+                let (result, disposition, batch) =
+                    storage.observe_write(&who, call, &ancestry, slot)?;
+                if disposition == Disposition::Committed {
                     storage.live.notify(None);
                 }
-                Ok(observed)
+                Ok((result, batch))
             })
         })
         .await
         .map_err(internal)??;
+        let Some((claim, events)) = batch else {
+            return Ok(result);
+        };
         for event in events {
+            let event_key = event.key.clone();
             let host = self.clone();
             let watcher = match &chain.run {
                 Some(grant) => Actor::run(actor.account, &event.plugin, grant.id),
@@ -135,8 +168,22 @@ impl Host {
                     .await
             }
             .await;
-            if let Err(error) = delivery {
-                eprintln!("calternal-host: change delivery failed ({:?})", error.code);
+            match delivery {
+                Ok(_) => {
+                    let host = self.clone();
+                    let actor = actor.clone();
+                    let gesture = claim.id;
+                    tokio::task::spawn_blocking(move || {
+                        host.with_space(&actor, space, |storage| {
+                            storage.ack_observation(&gesture, &event_key)
+                        })
+                    })
+                    .await
+                    .map_err(internal)??;
+                }
+                Err(error) => {
+                    eprintln!("calternal-host: change delivery failed ({:?})", error.code);
+                }
             }
         }
         Ok(result)
@@ -174,92 +221,152 @@ impl Space {
     fn observe_write(
         &mut self,
         actor: &Actor,
-        call: Call,
+        mut call: Call,
         ancestry: &[String],
-    ) -> Result<(Value, Vec<Observation>)> {
-        let listeners = self.listeners(actor, ancestry);
-        if listeners.is_empty() || call.input.get("preview") == Some(&Value::Bool(true)) {
-            return self.call(actor, call).map(|value| (value, Vec::new()));
+        slot: &Slot,
+    ) -> Result<(Value, Disposition, Option<(Claim, Vec<Observation>)>)> {
+        let standalone = |space: &mut Self, call| {
+            space
+                .write_call(actor, call)
+                .map(|written| (written.value, written.disposition, None))
+        };
+        if call.input.get("preview") == Some(&Value::Bool(true)) {
+            return standalone(self, call);
         }
-        let items = call.input["changes"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .take(1_000)
-            .filter_map(|change| Uuid::parse_str(change.get("item")?.as_str()?).ok())
-            .collect::<BTreeSet<_>>();
-        let before = items
-            .into_iter()
-            .filter_map(|id| {
-                let row = self.rows.get(&id)?;
-                let snapshot = snapshot(row);
-                let membership = listeners
-                    .iter()
-                    .map(|listener| self.matches(actor, listener, row))
-                    .collect::<Vec<_>>();
-                Some((id, (snapshot, membership)))
-            })
-            .collect::<BTreeMap<_, _>>();
+        let now = calternal_types::now_ms();
+        let cutoff = now - self.retention_ms;
+        let listeners = self.listeners(actor, ancestry);
+        if !has_outbox(&self.db)? {
+            if listeners.is_empty() {
+                return standalone(self, call);
+            }
+            self.initialize_outbox()?;
+        }
+        // Finish a committed preparation while its post-write row is current.
+        self.recover_observations(cutoff)?;
         let key = call
             .idempotency_key
-            .clone()
-            .unwrap_or_else(|| Uuid::now_v7().to_string());
-        let result = self.call(actor, call)?;
-        let ids = result["changes"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|change| Uuid::parse_str(change.get("id")?.as_str()?).ok())
-            .collect::<BTreeSet<_>>();
-        let mut events = Vec::new();
-        for id in ids {
-            let previous = before.get(&id);
-            let current = self.rows.get(&id);
-            let after = current.map(snapshot).unwrap_or_default();
-            if previous.map(|(value, _)| value) == Some(&after) {
+            .get_or_insert_with(|| Uuid::now_v7().to_string())
+            .clone();
+        let write = self.prepare_write(actor, call)?;
+        let receipt = write.receipt.as_ref().expect("observed write key");
+        let writer = &receipt.actor;
+        let gesture = receipt.proof.gesture;
+        let outbox_key = self.hash(&serde_json::to_vec(&(writer, &gesture)).map_err(internal)?);
+        if receipt.replay.is_some() || listeners.is_empty() {
+            let written = crate::write::write(self, actor, write)?;
+            let batch = if written.disposition == Disposition::Replayed {
+                self.claim_observations(slot, outbox_key, cutoff)?
+            } else {
+                None
+            };
+            return Ok((written.value, written.disposition, batch));
+        }
+        expire_pending(&self.db, cutoff)?;
+        let count = self
+            .db
+            .query_row(
+                "SELECT count(*) FROM (
+                SELECT gesture FROM pending_observations UNION
+                SELECT gesture FROM prepared_observations
+            )",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(internal)?;
+        if count >= OUTBOX_REQUESTS {
+            return Err(Error::unavailable(
+                "Too many change deliveries are awaiting retry.",
+            ));
+        }
+        let items = write.targets().collect::<BTreeSet<_>>();
+        let mut before = BTreeMap::new();
+        let mut prior_bytes = 0usize;
+        for id in items {
+            let Some(row) = self.rows.get(&id) else {
+                continue;
+            };
+            if !listeners
+                .iter()
+                .any(|listener| listener.kind == row.head.kind)
+            {
                 continue;
             }
-            for (index, listener) in listeners.iter().enumerate() {
-                let before_member = previous.is_some_and(|(_, membership)| membership[index]);
-                let after_member = current.is_some_and(|row| self.matches(actor, listener, row));
-                if before_member || after_member {
-                    let key = blake3::Hash::from_bytes(
-                        self.hash(
-                            &serde_json::to_vec(&(
-                                actor,
-                                &key,
-                                id,
-                                &listener.plugin,
-                                &listener.selector,
-                            ))
-                            .map_err(internal)?,
-                        ),
-                    )
-                    .to_hex()
-                    .to_string();
-                    events.push(Observation {
-                        plugin: listener.plugin.clone(),
-                        selector: listener.selector.clone(),
-                        item: id,
-                        key,
-                        before: previous.map(|(value, _)| value.clone()),
-                        after: after.clone(),
-                    });
-                }
+            let bytes = row.head.prefix as usize;
+            prior_bytes = prior_bytes.saturating_add(bytes);
+            if prior_bytes > OUTBOX_BYTES {
+                return Err(observation_limit());
             }
+            let before_row = snapshot(row);
+            let membership = listeners
+                .iter()
+                .map(|listener| self.matches(actor, listener, row))
+                .collect::<Vec<_>>();
+            before.insert(
+                id,
+                Before {
+                    row: before_row,
+                    matches: membership,
+                    bytes,
+                },
+            );
         }
-        Ok((result, events))
+        let prepared = Prepared {
+            actor: actor.clone(),
+            key,
+            before,
+            listeners,
+        };
+        let data = calternal_plugin_host::bounded_json(&prepared, OUTBOX_BYTES)
+            .map_err(|_| observation_limit())?;
+        self.db
+            .execute(
+                "INSERT OR REPLACE INTO prepared_observations VALUES (?1,?2,?3,?4,?5)",
+                params![&outbox_key[..], writer, &gesture[..], now, data],
+            )
+            .map_err(internal)?;
+        let written = match crate::write::write(self, actor, write) {
+            Ok(result) => result,
+            Err(error) => {
+                // These refusals happen before publication. Keep the
+                // preparation on internal failures that recovery may finish.
+                if matches!(
+                    error.code,
+                    ErrorCode::InvalidInput
+                        | ErrorCode::Forbidden
+                        | ErrorCode::NotFound
+                        | ErrorCode::TooLarge
+                ) {
+                    self.remove_prepared(&outbox_key)?;
+                }
+                return Err(error);
+            }
+        };
+        if let Err(error) = self.finish_prepared(&prepared, &written.value, outbox_key, now) {
+            eprintln!(
+                "calternal-host: could not record change deliveries ({:?})",
+                error.code
+            );
+        }
+        let batch = self.claim_observations(slot, outbox_key, cutoff)?;
+        Ok((written.value, written.disposition, batch))
     }
 
     fn matches(&self, actor: &Actor, listener: &Listener, row: &Row) -> bool {
         if listener.kind != row.head.kind {
             return false;
         }
+        let viewer = match &actor.via {
+            Some(calternal_types::Via::Run { id, .. }) => {
+                Actor::run(actor.account, &listener.plugin, *id)
+            }
+            _ => Actor::plugin(actor.account, &listener.plugin),
+        };
         match &listener.collection {
             None => true,
             Some(id) => self
                 .collection(id)
-                .and_then(|collection| crate::query::contains(self, actor, collection, row))
+                .and_then(|collection| crate::query::contains(self, &viewer, collection, row))
                 .unwrap_or_else(|error| {
                     let _ = internal(error);
                     false
@@ -268,6 +375,16 @@ impl Space {
     }
 }
 
+fn observation_limit() -> Error {
+    Error::new(
+        ErrorCode::TooLarge,
+        "Change deliveries exceed the observation budget.",
+    )
+}
+
 fn snapshot(row: &Row) -> Value {
     json!({"id":row.head.id,"kind":row.head.kind,"fields":row.fields,"version":row.head.version})
 }
+
+#[cfg(test)]
+mod tests;

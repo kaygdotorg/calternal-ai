@@ -7,15 +7,25 @@ use crate::{
 };
 
 mod collection;
+mod dav;
+mod extensions;
+pub use extensions::{Extension, ExtensionPage, KindExtension, KindSelector, SidebarExtension};
 mod formulas;
 mod install;
 mod kind;
+mod refusals;
+mod rights;
+pub use refusals::{RefusalCall, RefusalMatch, evaluate_refusals};
+pub use rights::{ChangeRight, ReadAudience, Rights};
+mod line_claims;
+pub use dav::{DavComponent, DavMapping, DavProperty};
+pub use line_claims::{CheckboxMapping, LineClaim, LineForm};
 mod manifest;
 mod places;
 mod secondary;
 
 pub use collection::{Collection, CollectionView, ShareSource, Sort, Source, Total};
-pub use kind::{Editability, ItemForm, Kind, PageEntry, Rights};
+pub use kind::{Editability, ItemForm, Kind, PageEntry};
 pub use manifest::{Manifest, Program, Refusal};
 pub use places::{ComposerBindings, Fill, FillBinding, Slot};
 pub use secondary::{AgentRule, AgentRules, Sidebar, SidebarEntry, parse_agent_rules};
@@ -159,6 +169,8 @@ pub fn parse_plugin(
         parse().map_err(|error| located(error, file.path))?;
     }
     install::verify(&plugin, &paths, options)?;
+    refusals::verify(&mut plugin.manifest, options).map_err(|error| located(error, "plugin.md"))?;
+    extensions::verify(&plugin, options, &paths).map_err(|error| located(error, "plugin.md"))?;
     Ok(plugin)
 }
 
@@ -282,7 +294,7 @@ impl Section<'_> {
 
     pub fn expression(&self, formula: &str) -> Result<Expression, Diagnostic> {
         let start = formula.as_ptr() as usize - self.line.text.as_ptr() as usize;
-        parse::parse_at(formula, |offset| self.line.site_at(start + offset))
+        parse::ordinary_at(formula, |offset| self.line.site_at(start + offset))
     }
 
     pub fn directive(&self) -> Result<Directive, Diagnostic> {

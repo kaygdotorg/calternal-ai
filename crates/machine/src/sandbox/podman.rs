@@ -22,13 +22,18 @@ use std::sync::{Arc, Mutex};
 use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
 use uuid::Uuid;
 
-use super::shared_broker::{Broker, ToolSandbox};
+use super::shared_broker::Broker;
 use super::{Backend, BoxFuture, Exec, ExecRequest, Sandbox, SandboxError, SandboxResult};
-use crate::protocol::{Limits, SandboxSpec};
+use crate::protocol::SandboxSpec;
 
 #[cfg(target_os = "linux")]
 mod family;
 mod ownership;
+mod run_mounts;
+mod run_sign_in;
+mod start;
+
+use run_sign_in::RunSignIn;
 
 /// Default memory ceiling when the spec gives none.
 pub const DEFAULT_MEMORY_BYTES: u64 = 1 << 30;
@@ -43,6 +48,8 @@ pub struct PodmanBackend {
     guest: bool,
     kvm_fallback: bool,
     guest_network: bool,
+    run_sign_in: Option<RunSignIn>,
+    run_egress_exclusions: Arc<[ipnet::IpNet]>,
 }
 
 impl PodmanBackend {
@@ -60,7 +67,37 @@ impl PodmanBackend {
             guest: false,
             kvm_fallback: false,
             guest_network: false,
+            run_sign_in: None,
+            run_egress_exclusions: Arc::default(),
         }
+    }
+
+    /// Authorize one account, space and qualified program to mount an
+    /// operator-owned credential file. Configuration validates syntax only.
+    /// The operator must control the private file and its ancestor directories.
+    pub fn with_run_sign_in(
+        mut self,
+        account: calternal_types::AccountId,
+        space: calternal_types::SpaceId,
+        program: String,
+        credential_file: PathBuf,
+    ) -> SandboxResult<Self> {
+        self.run_sign_in = Some(RunSignIn::new(account, space, program, credential_file)?);
+        Ok(self)
+    }
+
+    /// Reject resolved run egress addresses in these comma-separated CIDRs
+    /// in addition to the built-in special-use address exclusions.
+    pub fn with_run_egress_exclusions(
+        mut self,
+        cidrs: &str,
+    ) -> Result<Self, crate::egress::EgressError> {
+        self.run_egress_exclusions = crate::egress::exclusions(cidrs)?;
+        Ok(self)
+    }
+
+    pub(crate) fn run_egress_exclusions(&self) -> Arc<[ipnet::IpNet]> {
+        self.run_egress_exclusions.clone()
     }
 
     pub(crate) fn kvm_fallback(mut self) -> Self {
@@ -103,6 +140,10 @@ impl PodmanBackend {
             .map_err(SandboxError::new)
     }
 
+    pub(crate) async fn run_work_root(&self) -> SandboxResult<PathBuf> {
+        Ok(self.canonical_root().await?.join(run_mounts::WORK_ROOT))
+    }
+
     /// Account-qualified container name, so a caller reusing another account's
     /// thread UUID can never address its mounts or login home.
     pub fn container_name(account_id: Uuid, thread_id: Uuid) -> String {
@@ -115,6 +156,7 @@ async fn podman(bin: &std::path::Path, args: &[&str]) -> SandboxResult<String> {
     let out = tokio::process::Command::new(bin)
         .args(args)
         .stdin(std::process::Stdio::null())
+        .kill_on_drop(true)
         .output()
         .await
         .map_err(|e| SandboxError(format!("cannot run podman: {}", e.kind())))?;
@@ -140,11 +182,14 @@ impl Backend for PodmanBackend {
         Box::pin(async move {
             let root = self.canonical_root().await?;
             ownership::sweep(&self.podman, &root).await?;
-            match tokio::fs::remove_dir_all(self.root.join("workers")).await {
-                Ok(()) => Ok(()),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                Err(e) => Err(SandboxError::new(e)),
+            for directory in ["workers", run_mounts::WORK_ROOT] {
+                match tokio::fs::remove_dir_all(root.join(directory)).await {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(SandboxError::new(e)),
+                }
             }
+            Ok(())
         })
     }
     fn preference(&self) -> &'static str {
@@ -195,7 +240,7 @@ impl Backend for PodmanBackend {
         &'a self,
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        self.start_container(spec, None, None, None)
+        self.start_container(spec, None, None, None, None)
     }
 
     fn start_harness<'a>(
@@ -203,7 +248,7 @@ impl Backend for PodmanBackend {
         spec: &'a SandboxSpec,
         harness: &'a crate::protocol::HarnessSandbox,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        self.start_container(spec, Some(harness), None, None)
+        self.start_container(spec, Some(harness), None, None, None)
     }
 }
 
@@ -218,6 +263,7 @@ impl PodmanBackend {
         harness: &'a crate::protocol::HarnessSandbox,
         plugin_root: &'a Path,
         egress_directory: &'a Path,
+        program: &'a str,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
             if !cfg!(target_os = "linux") || self.guest || self.kvm_fallback {
@@ -225,308 +271,18 @@ impl PodmanBackend {
                     "mediated harness egress requires rootless Podman".into(),
                 ));
             }
+            let credential = match &self.run_sign_in {
+                Some(sign_in) => Some(sign_in.credential(spec, program).await?),
+                None => None,
+            };
             self.start_container(
                 spec,
                 Some(harness),
                 Some(plugin_root),
                 Some(egress_directory),
+                credential,
             )
             .await
-        })
-    }
-}
-
-impl PodmanBackend {
-    fn start_container<'a>(
-        &'a self,
-        spec: &'a SandboxSpec,
-        harness: Option<&'a crate::protocol::HarnessSandbox>,
-        plugin_root: Option<&'a Path>,
-        egress_directory: Option<&'a Path>,
-    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        Box::pin(async move {
-            let root = self.canonical_root().await?;
-            let name = Self::container_name(spec.account_id, spec.thread_id);
-            let worker_dir = if self.guest {
-                PathBuf::from("/run/agent/workers")
-            } else {
-                root.join("workers")
-            }
-            .join(spec.thread_id.to_string());
-            let result = async {
-                let account = root.join("accounts").join(spec.account_id.to_string());
-                let dir = if spec.worker.is_some() {
-                    worker_dir.clone()
-                } else {
-                    account.join("threads").join(spec.thread_id.to_string())
-                };
-                if spec.shared_tools.is_some()
-                    && (self.guest || self.kvm_fallback || spec.provider_login
-                        || spec.shared_provider_sponsor.is_none() || spec.worker.is_some()
-                        || harness.is_some())
-                {
-                    return Err(SandboxError("shared tools require a dedicated Podman harness".into()));
-                }
-                let (home, login) = if spec.shared_tools.is_some() {
-                    (PathBuf::new(), PathBuf::new())
-                } else { match harness {
-                    Some(harness) => super::provider_home::prepare_harness(
-                        account, &dir, spec, harness,
-                    ).await?,
-                    None => super::provider_home::prepare(account, &dir, spec).await?,
-                }};
-                let work = dir.join("work");
-                tokio::fs::create_dir_all(&work).await.map_err(|e| {
-                    SandboxError(format!("cannot create work directory: {}", e.kind()))
-                })?;
-                if let Some(worker) = &spec.worker {
-                    super::worker::prepare(&work, worker).await?;
-                }
-                let Limits {
-                    memory_bytes,
-                    cpu_millis,
-                    pids,
-                } = if spec.worker.is_some() {
-                    super::worker::LIMITS
-                } else {
-                    spec.limits
-                };
-                let image = if self.guest {
-                    &self.default_image
-                } else {
-                    spec.image.as_deref().unwrap_or(&self.default_image)
-                };
-                let label = format!("org.calternal.thread={}", spec.thread_id);
-                let home_mount = format!("{}:/home/agent", home.display());
-                let mount = if harness.is_some_and(|harness| harness.workspace_read_only) {
-                    format!("{}:/work:ro", work.display())
-                } else {
-                    format!("{}:/work", work.display())
-                };
-                let memory = memory_bytes.unwrap_or(DEFAULT_MEMORY_BYTES).to_string();
-                let pids = pids.unwrap_or(DEFAULT_PIDS).to_string();
-                let mut args: Vec<String> = [
-                    "run",
-                    "-d",
-                    "--name",
-                    &name,
-                    "--label",
-                    &label,
-                    "--init",
-                    "--memory",
-                    &memory,
-                    "--pids-limit",
-                    &pids,
-                ]
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-                let broker = if let Some(tools) = spec.shared_tools {
-                    let space = spec.space_id.ok_or_else(|| SandboxError("missing sandbox space".into()))?;
-                    let broker = Broker::start(&root, &dir, space, tools.provider, ToolSandbox {
-                        podman: self.podman.clone(),
-                        image: image.to_owned(),
-                        root_label: ownership::root_label(&root),
-                        work: work.clone(),
-                        writable: !tools.workspace_read_only,
-                    }).await?;
-                    args.extend([
-                        "--pull=never".into(), "--network=none".into(), "--read-only".into(),
-                        "--pid=private".into(), "--ipc=private".into(), "--cap-drop=all".into(),
-                        "--security-opt=no-new-privileges".into(), "--http-proxy=false".into(),
-                        "--log-driver=none".into(), "--image-volume=ignore".into(), "--tmpfs".into(), "/home/agent:mode=0700".into(),
-                        "--volume".into(), format!("{}:/run/calternal-broker:ro", broker.directory.display()),
-                        "--env".into(), "HOME=/home/agent".into(),
-                    ]);
-                    Some(broker)
-                } else {
-                    args.extend([
-                        "--volume".into(), mount, "--volume".into(), home_mount,
-                        "--workdir".into(), "/work".into(), "--env".into(), "HOME=/home/agent".into(),
-                    ]);
-                    None
-                };
-                if spec.worker.is_none() && broker.is_none() {
-                    let login_env = if harness.is_some() {
-                        "CALTERNAL_PROVIDER_LOGIN_DIR=/run/calternal-provider-login"
-                    } else {
-                        "CALTERNAL_CLAUDE_LOGIN_DIR=/run/calternal-provider-login"
-                    };
-                    let mode = if harness.is_some_and(|harness| !harness.legacy_profile) || spec.provider_login { "rw" } else { "ro" };
-                    args.extend([
-                        "--volume".into(),
-                        format!("{}:/run/calternal-provider-login:{mode}", login.display()),
-                        "--env".into(),
-                        login_env.into(),
-                    ]);
-                    if harness.is_some() && !self.guest {
-                        args.extend([
-                            "--network=none".into(),
-                            "--pull=never".into(),
-                            "--http-proxy=false".into(),
-                        ]);
-                        if let Some(plugin_root) = plugin_root {
-                            args.extend([
-                                "--volume".into(),
-                                format!("{}:/opt/calternal-plugin:ro", plugin_root.display()),
-                            ]);
-                        }
-                        if let Some(egress_directory) = egress_directory {
-                            args.extend([
-                                "--pid=private".into(),
-                                "--ipc=private".into(),
-                                "--cap-drop=all".into(),
-                                "--security-opt=no-new-privileges".into(),
-                                "--log-driver=none".into(),
-                                "--image-volume=ignore".into(),
-                                "--volume".into(),
-                                format!("{}:/run/calternal-egress:ro", egress_directory.display()),
-                            ]);
-                        }
-                    }
-                    if spec.provider_login {
-                        args.extend(["--env".into(), "CALTERNAL_PROVIDER_LOGIN=1".into()]);
-                    }
-                }
-                if spec.worker.is_some() {
-                    // A worker sees only code. In particular it never inherits the
-                    // account home, writable work tree, CLI or Nix store mounts.
-                    let seccomp = super::worker::seccomp(&dir).await?;
-                    args = [
-                        "run",
-                        "-d",
-                        "--pull=never",
-                        "--name",
-                        &name,
-                        "--label",
-                        &label,
-                        "--init",
-                        "--network=none",
-                        "--read-only",
-                        "--read-only-tmpfs=false",
-                        "--cap-drop=all",
-                        "--security-opt=no-new-privileges",
-                        &format!("--security-opt=seccomp={}", seccomp.display()),
-                        "--log-driver=none",
-                        "--memory",
-                        &memory,
-                        "--memory-swap",
-                        &memory,
-                        "--pids-limit",
-                        &pids,
-                        "--volume",
-                        &format!(
-                            "{}:/plugin:ro",
-                            spec.code_directory.as_ref().unwrap_or(&work).display()
-                        ),
-                        "--workdir",
-                        "/plugin",
-                    ]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect();
-                }
-                if self.guest {
-                    args.extend(["--cgroup-parent".into(), "/agent/ctr".into()]);
-                    args.retain(|arg| arg != "--pull=never");
-                    if spec.worker.is_none() {
-                        args.extend([
-                            if harness.is_none() && self.guest_network {
-                                "--network=slirp4netns:allow_host_loopback=false"
-                            } else {
-                                "--network=none"
-                            }.into(),
-                            "--log-driver=none".into(),
-                            "--volume".into(),
-                            "/opt/calternal:/usr/local/bin/calternal:ro".into(),
-                        ]);
-                    }
-                }
-                // Linux hosts supply the matching operation CLI read-only. Other
-                // host platforms must put a Linux CLI in the container image.
-                // Nix builds retain immutable store references for their libraries.
-                #[cfg(target_os = "linux")]
-                if !self.guest
-                    && spec.worker.is_none()
-                    && broker.is_none()
-                    && egress_directory.is_none()
-                    && let Some(exe) = super::cli_program().await
-                {
-                    args.extend([
-                        "--volume".into(),
-                        format!("{}:/usr/local/bin/calternal:ro", exe.display()),
-                    ]);
-                    if tokio::fs::try_exists("/nix/store").await.unwrap_or(false) {
-                        args.extend(["--volume".into(), "/nix/store:/nix/store:ro".into()]);
-                    }
-                }
-                if self.kvm_fallback && spec.worker.is_none() {
-                    args.push("--network=none".into());
-                }
-                if let Some(m) = cpu_millis {
-                    args.push("--cpus".into());
-                    args.push(format!("{}.{:03}", m / 1000, m % 1000));
-                }
-                // A failed create may leave a stopped container. A private cidfile
-                // identifies only this attempt, even if the requested name is busy.
-                let cidfile = dir.join(format!("create-{}.cid", Uuid::new_v4()));
-                args.extend([
-                    "--cidfile".into(),
-                    cidfile.display().to_string(),
-                    "--label".into(),
-                    ownership::root_label(&root),
-                ]);
-                if self.guest {
-                    args.extend([
-                        "--rootfs".into(),
-                        "--env".into(),
-                        "PATH=/home/agent/.local/bin:/opt/calternal-provider/bin:/usr/local/bin:/usr/bin:/bin".into(),
-                    ]);
-                }
-                #[cfg(target_os = "linux")]
-                let pid_file = egress_directory.map(|_| dir.join("container.pid"));
-                #[cfg(target_os = "linux")]
-                if let Some(pid_file) = &pid_file {
-                    args.extend(["--pidfile".into(), pid_file.display().to_string()]);
-                }
-                args.extend([image.to_owned(), "sleep".into(), "2147483647".into()]);
-                let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-                let created = podman(&self.podman, &refs).await;
-                if created.is_err()
-                    && let Ok(id) = tokio::fs::read_to_string(&cidfile).await
-                {
-                    ownership::remove(&self.podman, &[id.trim()]).await?;
-                }
-                let _ = tokio::fs::remove_file(&cidfile).await;
-                let container = created?;
-                #[cfg(target_os = "linux")]
-                let family = if let Some(pid_file) = &pid_file {
-                    match family::Family::open(pid_file).await {
-                        Ok(family) => Some(family),
-                        Err(error) => {
-                            ownership::remove(&self.podman, &[&container]).await?;
-                            return Err(error);
-                        }
-                    }
-                } else {
-                    None
-                };
-                Ok(Arc::new(PodmanSandbox {
-                    #[cfg(target_os = "linux")]
-                    family,
-                    podman: self.podman.clone(),
-                    container,
-                    dir,
-                    clients: Mutex::new(HashSet::new()),
-                    worker: spec.worker.is_some(),
-                    broker,
-                }) as Arc<dyn Sandbox>)
-            }
-            .await;
-            if result.is_err() && spec.worker.is_some() {
-                let _ = tokio::fs::remove_dir_all(&worker_dir).await;
-            }
-            result
         })
     }
 }

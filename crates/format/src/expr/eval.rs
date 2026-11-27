@@ -1,9 +1,13 @@
 use std::collections::BTreeMap;
 
+mod scoped;
+pub(crate) use scoped::{is_list_limit, reference_key};
+
 use super::math::{aggregate, comparison, day_value, math};
 
 use super::{Expression, Node, NodeKind, Op};
 use crate::{Decimal, Diagnostic, Fields, Value, dates, lines::Site};
+use crate::{Field, KindRows, Period, PeriodSnapshot};
 
 /// An item or record supplied by the host, with authoritative fields separate.
 #[derive(Clone, Copy, Debug)]
@@ -14,20 +18,20 @@ pub struct Row<'a> {
     pub metadata: &'a Fields,
 }
 
-impl Row<'_> {
+impl<'a> Row<'a> {
     pub(crate) fn value(&self, name: &str) -> Value {
-        self.metadata
-            .get(name)
-            .or_else(|| {
-                (!matches!(
-                    name,
-                    "id" | "kind" | "created" | "edited" | "author" | "at" | "anchor"
-                ))
-                .then(|| self.fields.get(name))
-                .flatten()
-            })
-            .cloned()
-            .unwrap_or_default()
+        self.get(name).cloned().unwrap_or_default()
+    }
+
+    pub(crate) fn get(self, name: &str) -> Option<&'a Value> {
+        self.metadata.get(name).or_else(|| {
+            (!matches!(
+                name,
+                "id" | "kind" | "created" | "edited" | "author" | "at" | "anchor"
+            ))
+            .then(|| self.fields.get(name))
+            .flatten()
+        })
     }
 
     fn as_value(self) -> Value {
@@ -52,6 +56,12 @@ pub struct EvalContext<'a> {
     pub now: Option<&'a str>,
     /// Offset supplied by the host for civil-date conversion of offset times.
     pub offset_seconds: Option<i32>,
+    /// Original recurrence seed in the row's civil calendar, when known.
+    pub repeat_start: Option<&'a str>,
+    /// Whole-kind inputs for the current header formula.
+    pub kinds: Option<&'a KindRows<'a>>,
+    /// Current and historical values for the active civil periods.
+    pub periods: Option<&'a BTreeMap<Period, PeriodSnapshot<'a>>>,
     /// Per-viewer state of the current item.
     pub state: Option<&'a Fields>,
     /// Resolved per-viewer and per-space setting values.
@@ -78,6 +88,10 @@ pub struct EvalContext<'a> {
 /// Viewer data to use when a query evaluates one item.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct QueryRowContext<'a> {
+    /// Original recurrence seed in the row's civil calendar, when known.
+    pub repeat_start: Option<&'a str>,
+    /// Period history specific to this authorized item.
+    pub periods: Option<&'a BTreeMap<Period, PeriodSnapshot<'a>>>,
     /// State fields for this person and item.
     pub state: Option<&'a Fields>,
     /// Authoritative records in ledger order.
@@ -101,19 +115,56 @@ pub fn evaluate(
     evaluate_in(expression, row, context, &mut steps)
 }
 
+/// Evaluate a formula using at most 50,000 steps from the caller's remaining
+/// budget. Charged work includes variable-sized copies before they allocate.
+pub fn evaluate_bounded(
+    expression: &Expression,
+    row: Row<'_>,
+    context: &EvalContext<'_>,
+    steps: &mut usize,
+) -> Result<Value, Diagnostic> {
+    let allowed = (*steps).min(50_000);
+    let mut remaining = allowed;
+    let result = evaluate_in(expression, row, context, &mut remaining);
+    *steps -= allowed - remaining;
+    result
+}
+
 pub(crate) fn evaluate_in(
     expression: &Expression,
     row: Row<'_>,
     context: &EvalContext<'_>,
     steps: &mut usize,
 ) -> Result<Value, Diagnostic> {
-    let mut evaluator = Evaluator {
-        context,
-        row,
-        steps,
-        hops: 0,
-    };
-    evaluator.eval(&expression.root, None)
+    Evaluator::new(row, context, steps).eval(&expression.root, None)
+}
+
+pub(crate) fn evaluate_field(
+    field: &Field,
+    row: Row<'_>,
+    context: &EvalContext<'_>,
+    steps: &mut usize,
+    named_total: bool,
+) -> Result<Value, Diagnostic> {
+    let mut evaluator = Evaluator::new(row, context, steps);
+    evaluator.named_total = named_total;
+    if let Some(period) = field.period {
+        evaluator.period = Some(period);
+        evaluator.snapshot = context.periods.and_then(|periods| periods.get(&period));
+        if evaluator
+            .snapshot
+            .map(|snapshot| snapshot.date)
+            .or(context.today)
+            .and_then(|date| period.label(date))
+            .is_none()
+        {
+            return Ok(Value::Empty);
+        }
+    }
+    evaluator.eval(
+        &field.expression.as_ref().expect("a computed field").root,
+        None,
+    )
 }
 
 struct Evaluator<'a, 'b> {
@@ -121,9 +172,39 @@ struct Evaluator<'a, 'b> {
     row: Row<'a>,
     steps: &'b mut usize,
     hops: usize,
+    candidate: Option<Row<'a>>,
+    named_total: bool,
+    period: Option<Period>,
+    snapshot: Option<&'a PeriodSnapshot<'a>>,
+    historical: bool,
 }
 
-impl Evaluator<'_, '_> {
+impl<'a, 'b> Evaluator<'a, 'b> {
+    fn new(row: Row<'a>, context: &'b EvalContext<'a>, steps: &'b mut usize) -> Self {
+        Self {
+            context,
+            row,
+            steps,
+            hops: 0,
+            candidate: None,
+            named_total: false,
+            period: None,
+            snapshot: None,
+            historical: false,
+        }
+    }
+
+    fn active_row(&self) -> Option<Row<'a>> {
+        if !self.historical {
+            return Some(self.row);
+        }
+        let fields = self.snapshot?.fields?;
+        Some(Row {
+            fields,
+            metadata: self.row.metadata,
+        })
+    }
+
     fn charge(&mut self, count: usize, site: Site) -> Result<(), Diagnostic> {
         *self.steps = self
             .steps
@@ -132,17 +213,66 @@ impl Evaluator<'_, '_> {
         Ok(())
     }
 
+    fn charge_bytes(&mut self, bytes: usize, site: Site) -> Result<(), Diagnostic> {
+        self.charge(bytes.div_ceil(64), site)
+    }
+
+    fn charge_fields(&mut self, fields: &Fields, site: Site) -> Result<(), Diagnostic> {
+        self.charge(fields.len(), site)?;
+        for (key, value) in fields {
+            self.charge_bytes(key.len(), site)?;
+            self.charge_value(value, site)?;
+        }
+        Ok(())
+    }
+
+    fn charge_value(&mut self, value: &Value, site: Site) -> Result<(), Diagnostic> {
+        match value {
+            Value::Text(text) | Value::Date(text) | Value::Time(text) => {
+                self.charge_bytes(text.len(), site)
+            }
+            Value::Map(fields) => self.charge_fields(fields, site),
+            Value::List(values) => {
+                self.charge(values.len(), site)?;
+                for value in values {
+                    self.charge_value(value, site)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn clone_value(&mut self, value: Option<&Value>, site: Site) -> Result<Value, Diagnostic> {
+        if let Some(value) = value {
+            self.charge_value(value, site)?;
+        }
+        Ok(value.cloned().unwrap_or_default())
+    }
+
+    fn clone_row(&mut self, row: Option<Row<'_>>, site: Site) -> Result<Value, Diagnostic> {
+        let Some(row) = row else {
+            return Ok(Value::Empty);
+        };
+        self.charge_fields(row.fields, site)?;
+        self.charge_fields(row.metadata, site)?;
+        Ok(row.as_value())
+    }
+
     fn eval(&mut self, node: &Node, element: Option<&Value>) -> Result<Value, Diagnostic> {
         self.charge(1, node.site)?;
         match &node.kind {
-            NodeKind::Value(value) => Ok(value.clone()),
+            NodeKind::Value(value) => self.clone_value(Some(value), node.site),
             NodeKind::Name(name) => self.name(name, element, node.site),
             NodeKind::Member(base, field) => self.member(base, field, element, node.site),
-            NodeKind::List(values) => values
-                .iter()
-                .map(|value| self.eval(value, element))
-                .collect::<Result<Vec<_>, _>>()
-                .map(Value::List),
+            NodeKind::List(values) => {
+                self.charge(values.len(), node.site)?;
+                values
+                    .iter()
+                    .map(|value| self.eval(value, element))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(Value::List)
+            }
             NodeKind::Unary(op, operand) => {
                 let value = self.eval(operand, element)?;
                 if *op == Op::Not {
@@ -179,31 +309,40 @@ impl Evaluator<'_, '_> {
         element: Option<&Value>,
         site: Site,
     ) -> Result<Value, Diagnostic> {
-        Ok(match name {
-            "this" => self.row.as_value(),
-            "item" => self.context.item.map_or(Value::Empty, Row::as_value),
-            "open item" => self.context.open_item.map_or(Value::Empty, Row::as_value),
+        match name {
+            "this" => self.clone_row(self.active_row(), site),
+            "period" if self.period.is_some() => {
+                let date = self
+                    .snapshot
+                    .map(|snapshot| snapshot.date)
+                    .or(self.context.today);
+                Ok(date
+                    .and_then(|date| self.period?.label(date))
+                    .map_or(Value::Empty, Value::Text))
+            }
+            "item" => self.clone_row(self.context.item, site),
+            "open item" => self.clone_row(self.context.open_item, site),
             "records" => {
                 self.charge(self.context.records.len(), site)?;
-                Value::List(
-                    self.context
-                        .records
-                        .iter()
-                        .map(|row| row.as_value())
-                        .collect(),
-                )
+                self.context
+                    .records
+                    .iter()
+                    .map(|row| self.clone_row(Some(*row), site))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(Value::List)
             }
-            _ => element.map_or_else(
-                || self.row.value(name),
-                |value| {
-                    if let Value::Map(fields) = value {
-                        fields.get(name).cloned().unwrap_or_default()
-                    } else {
-                        Value::Empty
-                    }
-                },
-            ),
-        })
+            _ => {
+                let value = match element {
+                    None => self
+                        .candidate
+                        .or(self.active_row())
+                        .and_then(|row| row.get(name)),
+                    Some(Value::Map(fields)) => fields.get(name),
+                    Some(_) => None,
+                };
+                self.clone_value(value, site)
+            }
+        }
     }
 
     fn member(
@@ -214,20 +353,30 @@ impl Evaluator<'_, '_> {
         site: Site,
     ) -> Result<Value, Diagnostic> {
         if let NodeKind::Name(name) = &base.kind {
+            let row = match name.as_str() {
+                "this" => Some(self.active_row()),
+                "item" => Some(self.context.item),
+                "open item" => Some(self.context.open_item),
+                _ => None,
+            };
+            if let Some(row) = row {
+                let value = row.and_then(|row| row.get(field));
+                return self.clone_value(value, site);
+            }
             let scope = match name.as_str() {
                 "state" => Some(self.context.state),
                 "settings" => Some(self.context.settings),
                 _ => None,
             };
             if let Some(scope) = scope {
-                return Ok(scope
-                    .and_then(|fields| fields.get(field))
-                    .cloned()
-                    .unwrap_or_default());
+                return self.clone_value(scope.and_then(|fields| fields.get(field)), site);
             }
         }
         let base = self.eval(base, element)?;
         if let Value::List(values) = base {
+            if values.len() > 1_000 && values.iter().any(|value| matches!(value, Value::Text(_))) {
+                return Err(scoped::too_many_matches(site));
+            }
             self.charge(values.len(), site)?;
             return values
                 .into_iter()
@@ -241,15 +390,16 @@ impl Evaluator<'_, '_> {
     fn read_member(&mut self, value: Value, field: &str, site: Site) -> Result<Value, Diagnostic> {
         match value {
             Value::Map(mut fields) => Ok(fields.remove(field).unwrap_or_default()),
-            Value::Text(key) => self
-                .link(&key, site)
-                .map(|row| row.map_or(Value::Empty, |row| row.value(field))),
+            Value::Text(key) => {
+                let value = self.link(&key, site)?.and_then(|row| row.get(field));
+                self.clone_value(value, site)
+            }
             Value::Empty => Ok(Value::Empty),
             _ => Err(site.error("This value has no fields")),
         }
     }
 
-    fn link(&self, key: &str, site: Site) -> Result<Option<Row<'_>>, Diagnostic> {
+    fn link(&self, key: &str, site: Site) -> Result<Option<Row<'a>>, Diagnostic> {
         if self.hops >= 1 {
             return Err(site.error("A formula follows at most one link"));
         }
@@ -284,6 +434,8 @@ impl Evaluator<'_, '_> {
                 })));
             }
             "from" => return self.reverse(args, element, site),
+            "all" => return self.all(args, site),
+            "previous" => return self.previous(&args[0], site),
             "today" => {
                 return Ok(self
                     .context
@@ -295,8 +447,8 @@ impl Evaluator<'_, '_> {
                 return Ok(self
                     .context
                     .now
-                    .filter(|value| dates::time(value).is_some())
-                    .map_or(Value::Empty, |time| Value::Time(time.into())));
+                    .and_then(dates::clock_seconds)
+                    .map_or(Value::Empty, Value::Time));
             }
             _ => {}
         }
@@ -348,7 +500,15 @@ impl Evaluator<'_, '_> {
             "count" | "sum" | "average" | "min" | "max" | "first" | "last"
         ) {
             if let Value::List(values) = first {
-                let values = self.filter(values, args.get(1), site, 10_000)?;
+                let limit = if values.iter().any(|value| {
+                    matches!(value, Value::Text(key)
+                    if args.get(1).is_some() || self.context.links.is_some_and(|links| links.contains_key(key)))
+                }) {
+                    1_000
+                } else {
+                    10_000
+                };
+                let values = self.filter(values, args.get(1), site, limit)?;
                 return aggregate(name, values, site);
             }
             if name == "first" {
@@ -378,8 +538,12 @@ impl Evaluator<'_, '_> {
             .transpose()?
             .unwrap_or_default();
         let result = match (name, first, second) {
-            ("contains", Value::Text(text), Value::Text(part)) => Value::Bool(text.contains(&part)),
+            ("contains", Value::Text(text), Value::Text(part)) => {
+                self.charge_bytes(text.len().saturating_add(part.len()), site)?;
+                Value::Bool(text.contains(&part))
+            }
             ("domain", Value::Text(url), _) => {
+                self.charge_bytes(url.len(), site)?;
                 super::functions::domain(&url).map_or(Value::Empty, Value::Text)
             }
             ("under", Value::List(tags), Value::Text(parent)) => {
@@ -420,11 +584,36 @@ impl Evaluator<'_, '_> {
                 super::functions::format(value, &pattern, site)?
             }
             ("next", Value::Text(rule), after) => {
-                let start = day_value(&after, self.context.offset_seconds)
-                    .or_else(|| self.context.today.and_then(dates::day));
-                match start {
-                    Some(start) => super::functions::next(&rule, start, self.steps, site)?,
-                    None => Value::Empty,
+                let civil = |value: &Value| match value {
+                    Value::Date(value) | Value::Time(value) | Value::Text(value) => {
+                        Some(value.clone())
+                    }
+                    _ => None,
+                };
+                let seed = self
+                    .context
+                    .repeat_start
+                    .map(str::to_owned)
+                    .or_else(|| civil(&self.row.value("start")))
+                    .or_else(|| civil(&self.row.value("scheduled")));
+                let after = civil(&after)
+                    .or_else(|| {
+                        seed.as_deref()
+                            .filter(|value| dates::time(value).is_some())
+                            .and_then(|_| self.context.now.and_then(dates::clock_seconds))
+                    })
+                    .or_else(|| self.context.today.map(str::to_owned));
+                if let Some(after) = after {
+                    let seed = if self.row.value("repeat from") == Value::Text("completion".into())
+                    {
+                        &after
+                    } else {
+                        seed.as_ref().unwrap_or(&after)
+                    };
+                    crate::repeat::next_in(&rule, seed, &after, self.steps, site)?
+                        .unwrap_or_default()
+                } else {
+                    Value::Empty
                 }
             }
             ("streak", Value::List(records), _) => super::functions::streak(records),
@@ -432,82 +621,6 @@ impl Evaluator<'_, '_> {
             _ => return Err(site.error(format!("The arguments to {name} have the wrong types"))),
         };
         Ok(result)
-    }
-
-    fn reverse(
-        &mut self,
-        args: &[Node],
-        outer: Option<&Value>,
-        site: Site,
-    ) -> Result<Value, Diagnostic> {
-        if outer.is_some() || self.hops != 0 {
-            return Err(site.error("A formula follows at most one link"));
-        }
-        let key = reverse_key(&args[0])
-            .ok_or_else(|| site.error("Name a kind and its link field in from"))?;
-        let predicate = args.get(1).filter(
-            |node| !matches!(&node.kind, NodeKind::Name(name) if name == "ignoring default"),
-        );
-        let candidates = self
-            .context
-            .reverse
-            .and_then(|reverse| reverse.get(&key))
-            .map_or(&[][..], Vec::as_slice);
-        if candidates.len() > 10_000 {
-            return Err(site.error("Too many items to test"));
-        }
-        self.charge(candidates.len(), site)?;
-        self.hops += 1;
-        let values = self.filter(
-            candidates.iter().map(|row| row.as_value()).collect(),
-            predicate,
-            site,
-            1000,
-        );
-        self.hops -= 1;
-        values.map(Value::List)
-    }
-
-    fn filter(
-        &mut self,
-        values: Vec<Value>,
-        predicate: Option<&Node>,
-        site: Site,
-        limit: usize,
-    ) -> Result<Vec<Value>, Diagnostic> {
-        if values.len() > 10_000 {
-            return Err(site.error("Too many items to test"));
-        }
-        self.charge(values.len(), site)?;
-        let mut output = Vec::new();
-        for value in values {
-            if let Some(condition) = predicate {
-                let scope = match &value {
-                    Value::Text(key) => self.link(key, site)?.map_or(Value::Empty, Row::as_value),
-                    _ => value.clone(),
-                };
-                let previous = self.hops;
-                self.hops += usize::from(matches!(value, Value::Text(_)));
-                let passes = self.eval(condition, Some(&scope));
-                self.hops = previous;
-                if !passes?.truth() {
-                    continue;
-                }
-            }
-            if output.len() == limit {
-                return Err(site.error("Too many items matched the formula"));
-            }
-            output.push(value);
-        }
-        Ok(output)
-    }
-}
-
-fn reverse_key(node: &Node) -> Option<String> {
-    match &node.kind {
-        NodeKind::Name(name) => Some(name.clone()),
-        NodeKind::Member(base, field) => Some(format!("{}.{}", reverse_key(base)?, field)),
-        _ => None,
     }
 }
 
@@ -522,3 +635,6 @@ fn round_places(value: Value, site: Site) -> Result<u32, Diagnostic> {
         _ => Err(site.error("The number of decimal places must be a whole number")),
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,6 +1,8 @@
 //! Bounded newline JSON frames for the owned child pipes.
 use std::io;
 use std::str::FromStr;
+use std::sync::LazyLock;
+use tokio::sync::Semaphore;
 
 use calternal_types::{Error, ErrorCode};
 use serde::{Deserialize, Serialize};
@@ -13,7 +15,7 @@ use super::Delivery;
 const VERSION: u8 = 1;
 // A 32 MiB read can expand when serialized as JSON. The route separately
 // limits the underlying item and write sizes.
-const MAX_FRAME: usize = 64 * 1024 * 1024;
+pub(super) const MAX_FRAME: usize = 64 * 1024 * 1024;
 
 /// The ten on-wire format §8.1 classifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -211,7 +213,8 @@ pub(super) async fn receive(
     reader: &mut BufReader<impl AsyncRead + Unpin>,
     invocation: Uuid,
     next_id: u32,
-) -> Result<Message, Error> {
+    remaining: usize,
+) -> Result<(Message, usize), Error> {
     let mut bytes = Vec::new();
     loop {
         let chunk = reader.fill_buf().await.map_err(|_| disconnected())?;
@@ -220,7 +223,7 @@ pub(super) async fn receive(
         }
         let ending = chunk.iter().position(|&byte| byte == b'\n');
         let size = ending.unwrap_or(chunk.len());
-        if size > MAX_FRAME - bytes.len() {
+        if size > MAX_FRAME.min(remaining).saturating_sub(bytes.len()) {
             return Err(oversized());
         }
         bytes.extend_from_slice(&chunk[..size]);
@@ -229,6 +232,29 @@ pub(super) async fn receive(
             break;
         }
     }
+    let length = bytes.len();
+    Ok((
+        codec(move || decode(bytes, invocation, next_id)).await?,
+        length,
+    ))
+}
+
+pub(super) async fn codec<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
+    static ADMISSION: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(8));
+    let permit = ADMISSION
+        .try_acquire()
+        .map_err(|_| Code::Limit.error("The plugin codec is busy.", "Retry the operation."))?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
+    .map_err(|_| disconnected())?
+}
+
+fn decode(bytes: Vec<u8>, invocation: Uuid, next_id: u32) -> Result<Message, Error> {
     match crate::strict_json::parse(&bytes).map_err(|_| invalid())? {
         Incoming::Call(frame)
             if frame.v == VERSION && frame.invocation == invocation && frame.id == next_id =>
@@ -293,6 +319,7 @@ pub(super) fn invoke(invocation: Uuid, delivery: &Delivery) -> Result<Vec<u8>, E
             space: Space { id: delivery.space },
             event: &delivery.event,
         },
+        MAX_FRAME,
     )
 }
 
@@ -300,6 +327,7 @@ pub(super) fn reply(
     invocation: Uuid,
     id: u32,
     result: &Result<Value, Error>,
+    remaining: usize,
 ) -> Result<Vec<u8>, Error> {
     let outcome = match result {
         Ok(result) => Reply::Success { result },
@@ -307,17 +335,21 @@ pub(super) fn reply(
             error: error.into(),
         },
     };
-    encode(invocation, Outgoing::Reply { id, outcome })
+    encode(
+        invocation,
+        Outgoing::Reply { id, outcome },
+        MAX_FRAME.min(remaining),
+    )
 }
 
-fn encode(invocation: Uuid, body: Outgoing<'_>) -> Result<Vec<u8>, Error> {
+fn encode(invocation: Uuid, body: Outgoing<'_>, maximum: usize) -> Result<Vec<u8>, Error> {
     let mut bytes = crate::bounded::json(
         &Envelope {
             v: VERSION,
             invocation,
             body,
         },
-        MAX_FRAME,
+        maximum,
     )
     .map_err(|_| oversized())?;
     bytes.push(b'\n');
@@ -372,7 +404,7 @@ mod tests {
         ] {
             let line = format!("{{\"v\":1,\"invocation\":\"{invocation}\",{body}}}\n");
             let mut input = BufReader::new(line.as_bytes());
-            let error = receive(&mut input, invocation, 1)
+            let error = receive(&mut input, invocation, 1, MAX_FRAME)
                 .await
                 .err()
                 .expect("bad frame");
@@ -383,6 +415,6 @@ mod tests {
             "{{\"v\":1,\"invocation\":\"{stale}\",\"type\":\"complete\",\"result\":null}}\n"
         );
         let mut input = BufReader::new(line.as_bytes());
-        assert!(receive(&mut input, invocation, 1).await.is_err());
+        assert!(receive(&mut input, invocation, 1, MAX_FRAME).await.is_err());
     }
 }

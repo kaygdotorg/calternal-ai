@@ -69,16 +69,20 @@ fn dependencies_of<'a>(
                 .site
                 .error("In a computed field put now() directly on one side of a comparison"));
         }
+        NodeKind::Call(name, _) if name == "previous" => {}
         NodeKind::Call(name, args) => {
             let conditional_list = matches!(
                 name.as_str(),
                 "count" | "sum" | "average" | "min" | "max" | "from"
             );
             for (index, arg) in args.iter().enumerate() {
+                if index == 0 && matches!(name.as_str(), "all" | "from") {
+                    continue;
+                }
                 dependencies_of(
                     arg,
                     output,
-                    scoped || (conditional_list && index == 1),
+                    scoped || ((conditional_list || name == "all") && index == 1),
                     false,
                 )?
             }
@@ -109,11 +113,12 @@ pub(super) fn refusal_condition(
     match &node.kind {
         NodeKind::Value(_) => {}
         NodeKind::Name(name) => {
-            if !op.inputs.contains_key(name)
-                && kind
-                    .fields
-                    .get(name)
-                    .is_none_or(|field| field.field_type.is_none())
+            if op.refusal_input(kind, name).is_none()
+                && (op.name == "add"
+                    || kind
+                        .fields
+                        .get(name)
+                        .is_none_or(|field| field.field_type.is_none()))
             {
                 return Err(node.site.error(format!("The refusal cannot read {name} from the authorized inputs or stored target fields")));
             }
@@ -124,7 +129,10 @@ pub(super) fn refusal_condition(
                 .error("Refusal conditions cannot navigate links, state or settings"));
         }
         NodeKind::Call(name, args) => {
-            if matches!(name.as_str(), "from" | "links to" | "records after") {
+            if matches!(
+                name.as_str(),
+                "from" | "all" | "previous" | "today" | "now" | "links to" | "records after"
+            ) {
                 return Err(node
                     .site
                     .error("Refusal conditions cannot traverse data beyond the target call"));
@@ -166,7 +174,7 @@ pub(super) fn mark_viewer_fields(
     }
 }
 
-fn viewer_dependent(
+pub(super) fn viewer_dependent(
     node: &Node,
     fields: &BTreeMap<String, Field>,
     settings: &BTreeMap<String, Field>,
@@ -198,8 +206,10 @@ fn viewer_dependent(
         NodeKind::Unary(_, value) => depends(value),
         NodeKind::Binary(_, a, b) => depends(a) || depends(b),
         NodeKind::Call(name, values) => {
-            matches!(name.as_str(), "from" | "links to" | "records after")
-                || values.iter().any(depends)
+            matches!(
+                name.as_str(),
+                "from" | "all" | "previous" | "links to" | "records after"
+            ) || values.iter().any(depends)
         }
         NodeKind::List(values) => values.iter().any(depends),
         NodeKind::Value(_) => false,
@@ -303,3 +313,5 @@ impl<'a, F: Fn(&str, &str) -> Option<&'a FieldType>> NumericProof<'_, F> {
         }
     }
 }
+
+pub(super) use crate::expr::{formula_scope, walk};

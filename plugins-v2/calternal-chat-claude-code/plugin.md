@@ -8,6 +8,7 @@ programs:
   calternal-provider-claude-code: executable programs/calternal-provider-claude-code
 reads: calternal-chat.chats
 calls: calternal-chat.chats.send
+replies: calternal-chat.chats.send
 sends out: api.anthropic.com
 fills:
   calternal-chat:harness: operation start, as "Claude Code"

@@ -23,6 +23,6 @@ Event context attached by the host. The key is stable across replay.
 | <a id="before"></a> `before?` | `unknown` | Visible previous item data when available. |
 | <a id="item"></a> `item` | `string` \| `null` | Addressed item, or null for an itemless operation. |
 | <a id="key"></a> `key` | `string` | Opaque identifier for this logical delivery. |
-| <a id="kind"></a> `kind` | `"call"` \| `"change"` | The registration that opened this event. |
+| <a id="kind"></a> `kind` | `"change"` \| `"call"` | The registration that opened this event. |
 | <a id="request"></a> `request?` | `string` | Host request identifier when available. |
 | <a id="selected_operation"></a> `selected_operation?` | `string` | Qualified operation resolved from the person's slot selection, when present. |

@@ -110,10 +110,15 @@ pub struct Registrations {
 
 /// Run a trusted, isolated launcher in registration-only mode. The launcher
 /// must exit after emitting one bounded selector catalogue, with no event,
-/// verified actor or host callbacks exposed. Costs one cold process start.
-pub async fn probe(command: Command, deadline: Duration) -> Result<Registrations, Error> {
+/// verified actor or host callbacks exposed. A process slot is held through
+/// exit. Costs one cold process start.
+pub async fn probe(
+    command: Command,
+    deadline: Duration,
+    processes: Arc<Semaphore>,
+) -> Result<Registrations, Error> {
     const LIMIT: u64 = 64 * 1024;
-    let mut worker = tokio::task::spawn_blocking(move || Worker::spawn(command))
+    let mut worker = tokio::task::spawn_blocking(move || Worker::spawn(command, processes))
         .await
         .map_err(|_| wire::disconnected())??;
     drop(worker.input);
@@ -136,20 +141,31 @@ pub async fn probe(command: Command, deadline: Duration) -> Result<Registrations
         if !status.success() || !bytes.ends_with(b"\n") {
             return Err(wire::disconnected());
         }
-        crate::strict_json::parse(&bytes).map_err(|_| {
-            Code::Invalid.error(
-                "The operation registrations are invalid.",
-                "Check operations.ts.",
-            )
+        wire::codec(move || {
+            crate::strict_json::parse(&bytes).map_err(|_| {
+                Code::Invalid.error(
+                    "The operation registrations are invalid.",
+                    "Check operations.ts.",
+                )
+            })
         })
+        .await
     })
     .await;
-    outcome.unwrap_or_else(|_| {
-        Err(Code::Timeout.error(
-            "The installation probe did not finish.",
-            "Check operations.ts.",
-        ))
-    })
+    match outcome {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(error)) => {
+            let _ = worker.child.kill().await;
+            Err(error)
+        }
+        Err(_) => {
+            let _ = worker.child.kill().await;
+            Err(Code::Timeout.error(
+                "The installation probe did not finish.",
+                "Check operations.ts.",
+            ))
+        }
+    }
 }
 
 /// On-demand operation worker for one registered plugin in one space.
@@ -170,16 +186,19 @@ impl Operations {
     /// Its own process boundary must deny ambient filesystem, network and
     /// credentials and terminate descendants when the supervisor exits.
     /// The supervisor clears inherited environment and owns all three pipes.
-    /// Cost is one idle task and one admission slot per installed coded plugin.
+    /// All endpoints and probes in a space share the supplied process budget.
+    /// A child holds one slot through its exit, including while it is idle.
+    /// Construction creates one idle task and starts no child.
     pub fn new(
         space: SpaceId,
         declared: impl Fn(EventKind, &str) -> bool + Send + Sync + 'static,
         launch: impl Fn() -> Command + Send + Sync + 'static,
         idle: Duration,
         deadline: Duration,
+        processes: Arc<Semaphore>,
     ) -> Self {
         let (jobs, pending) = mpsc::channel(1);
-        tokio::spawn(serve(pending, launch, idle, deadline));
+        tokio::spawn(serve(pending, launch, idle, deadline, processes));
         Self {
             space,
             declared: Box::new(declared),
@@ -235,6 +254,7 @@ async fn serve(
     launch: impl Fn() -> Command + Send + Sync + 'static,
     idle: Duration,
     deadline: Duration,
+    processes: Arc<Semaphore>,
 ) {
     let launch = Arc::new(launch);
     let mut worker: Option<Worker> = None;
@@ -269,7 +289,9 @@ async fn serve(
             continue;
         }
         let invocation = Uuid::new_v4();
-        let first = match wire::invoke(invocation, &delivery) {
+        let encoded =
+            wire::codec(move || Ok((wire::invoke(invocation, &delivery)?, delivery.event))).await;
+        let (first, event) = match encoded {
             Ok(first) => first,
             Err(error) => {
                 drop(_permit);
@@ -279,10 +301,14 @@ async fn serve(
         };
         if worker.is_none() {
             let launcher = Arc::clone(&launch);
-            match tokio::task::spawn_blocking(move || Worker::spawn(launcher())).await {
+            let capacity = Arc::clone(&processes);
+            match tokio::task::spawn_blocking(move || Worker::spawn(launcher(), capacity)).await {
                 Ok(Ok(running)) => worker = Some(running),
-                _ => {
-                    let error = wire::disconnected();
+                failure => {
+                    let error = match failure {
+                        Ok(Err(error)) => error,
+                        _ => wire::disconnected(),
+                    };
                     drop(_permit);
                     let _ = result.send(Err(error));
                     continue;
@@ -295,7 +321,7 @@ async fn serve(
             &mut running.output,
             invocation,
             &first,
-            &delivery.event,
+            &event,
             &mut route,
         );
         let outcome = tokio::select! {
@@ -326,10 +352,17 @@ struct Worker {
     child: Child,
     input: ChildStdin,
     output: BufReader<ChildStdout>,
+    _space_slot: OwnedSemaphorePermit,
 }
 
 impl Worker {
-    fn spawn(mut command: Command) -> Result<Self, Error> {
+    fn spawn(mut command: Command, processes: Arc<Semaphore>) -> Result<Self, Error> {
+        let slot = processes.try_acquire_owned().map_err(|_| {
+            Code::Limit.error(
+                "This space has too many active plugin workers.",
+                "Retry after another worker exits.",
+            )
+        })?;
         let mut child = command
             .env_clear()
             .stdin(Stdio::piped())
@@ -344,6 +377,7 @@ impl Worker {
             child,
             input,
             output,
+            _space_slot: slot,
         })
     }
 }
@@ -357,6 +391,9 @@ async fn exchange(
     route: &mut Route,
 ) -> Result<Result<Value, Error>, Error> {
     wire::send(input, first).await?;
+    const MAX_CALLBACKS: u32 = 64;
+    // Charge the encoded arguments and replies against one invocation budget.
+    let mut remaining = wire::MAX_FRAME;
     let mut id = 1u32;
     let mut writes = 0u32;
     let mut states = 0u32;
@@ -364,7 +401,9 @@ async fn exchange(
     let mut runs = 0u32;
     let mut run_inputs = 0u32;
     loop {
-        let (received, method, args) = match wire::receive(output, invocation, id).await? {
+        let (message, bytes) = wire::receive(output, invocation, id, remaining).await?;
+        remaining -= bytes;
+        let (received, method, args) = match message {
             wire::Message::Call { id, method, input } => (id, method, input),
             wire::Message::Complete(result) => {
                 return Ok(result.map(|value| match event.kind {
@@ -373,6 +412,12 @@ async fn exchange(
                 }));
             }
         };
+        if id > MAX_CALLBACKS {
+            return Err(Code::Limit.error(
+                "The operation exceeded its callback budget.",
+                "Reduce the callbacks used by one operation.",
+            ));
+        }
         let ordinal = match method {
             Method::Write => Some(("write", &mut writes)),
             Method::State if args.get("op").and_then(Value::as_str) == Some("set") => {
@@ -403,11 +448,76 @@ async fn exchange(
             })
             .await
         };
-        let reply = match wire::reply(invocation, received, &result) {
-            Ok(frame) => frame,
-            Err(error) => wire::reply(invocation, received, &Err(error))?,
-        };
+        let reply = wire::codec(move || {
+            wire::reply(invocation, received, &result, remaining)
+                .or_else(|error| wire::reply(invocation, received, &Err(error), remaining))
+        })
+        .await?;
+        remaining -= reply.len().saturating_sub(1); // The wire newline is outside the JSON budget.
         wire::send(input, &reply).await?;
-        id = id.checked_add(1).ok_or_else(wire::oversized)?;
+        id += 1;
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[tokio::test]
+    async fn invocation_stops_before_dispatching_the_sixty_fifth_callback() {
+        let space = SpaceId::new();
+        let worker = Operations::new(
+            space,
+            |_, _| true,
+            || {
+                let mut command = Command::new("/bin/sh");
+                command.arg("-c").arg(r#"
+                    IFS= read -r request
+                    invocation=${request#*'"invocation":"'}
+                    invocation=${invocation%%'"'*}
+                    id=1
+                    while [ "$id" -le 65 ]; do
+                        printf '{"v":1,"invocation":"%s","type":"call","id":%s,"call":"s.query","input":{}}\n' "$invocation" "$id"
+                        IFS= read -r reply || exit 0
+                        id=$((id+1))
+                    done
+                    printf '{"v":1,"invocation":"%s","type":"complete","result":null}\n' "$invocation"
+                "#);
+                command
+            },
+            Duration::from_secs(1),
+            Duration::from_secs(5),
+            Arc::new(Semaphore::new(1)),
+        );
+        let callbacks = Arc::new(AtomicUsize::new(0));
+        let recorded = callbacks.clone();
+        let result = worker
+            .invoke(
+                Delivery {
+                    selector: "items.probe".into(),
+                    input: Value::Null,
+                    me: Person {
+                        id: AccountId::new(),
+                        role: "owner".into(),
+                    },
+                    space,
+                    event: Event {
+                        kind: EventKind::Call,
+                        key: "fixture".into(),
+                        item: None,
+                        before: None,
+                        request: None,
+                        selected_operation: None,
+                    },
+                },
+                move |_| {
+                    recorded.fetch_add(1, Ordering::Relaxed);
+                    async { Ok(Value::Null) }
+                },
+            )
+            .await;
+        assert_eq!(Code::from_error(&result.unwrap_err()), Code::Limit);
+        assert_eq!(callbacks.load(Ordering::Relaxed), 64);
     }
 }

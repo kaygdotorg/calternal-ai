@@ -43,7 +43,8 @@ pub(crate) fn check(value: &impl Serialize, maximum: usize) -> Result<(), Error>
     )
     .map_err(|_| Error::TooLarge)
 }
-pub(crate) fn json(value: &impl Serialize, maximum: usize) -> Result<Vec<u8>, Error> {
+/// Encode JSON with an exact byte ceiling checked before each buffer write.
+pub fn json(value: &impl Serialize, maximum: usize) -> Result<Vec<u8>, Error> {
     let mut buffer = Buffer {
         bytes: Vec::with_capacity(maximum.min(4096)),
         budget: Budget {

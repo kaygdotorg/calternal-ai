@@ -1,14 +1,19 @@
 //! Batch planning followed by durable publication through the space ledger.
+mod apply;
+mod declared;
+
+use apply::apply;
+
 use crate::declarations::{Fields, Kind, OperationForm, apply_fields, write_item};
 use crate::records::{self, Record};
-use crate::space::{Head, ITEM_BYTES, Row, Space};
+use crate::space::{Head, ITEM_BYTES, Receipt, Row, Space};
 use crate::{WRITE_BYTES, identity, internal, result};
 use calternal_fsio::names;
 use calternal_types::{Actor, Error, ErrorCode, Result};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -34,6 +39,13 @@ enum Change {
         #[serde(default)]
         fields: Fields,
         body: Option<String>,
+        base: Option<u64>,
+    },
+    Perform {
+        item: Uuid,
+        operation: String,
+        #[serde(default)]
+        fields: Fields,
         base: Option<u64>,
     },
     Remove {
@@ -65,12 +77,47 @@ struct Working {
     retired: bool,
 }
 
-pub(crate) fn write(
-    space: &mut Space,
+/// Whether storage published new content, replayed a receipt, or computed a preview.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Disposition {
+    Committed,
+    Replayed,
+    Previewed,
+}
+
+/// The store's write output and the decision used to publish invalidations.
+pub(crate) struct Written {
+    pub(crate) value: Value,
+    pub(crate) disposition: Disposition,
+}
+
+/// A decoded write and its once-checked receipt, used under the space lock.
+pub(crate) struct PreparedWrite {
+    input: Write,
+    identity: String,
+    pub(crate) receipt: Option<Receipt>,
+}
+
+impl PreparedWrite {
+    pub(crate) fn targets(&self) -> impl Iterator<Item = Uuid> + '_ {
+        self.input.changes.iter().filter_map(|change| match change {
+            Change::Add { .. } => None,
+            Change::Update { item, .. }
+            | Change::Perform { item, .. }
+            | Change::Remove { item }
+            | Change::Append { item, .. }
+            | Change::Edit { item, .. }
+            | Change::Redact { item, .. } => Some(*item),
+        })
+    }
+}
+
+pub(crate) fn prepare(
+    space: &Space,
     actor: &Actor,
     input: Write,
     key: Option<String>,
-) -> Result<Value> {
+) -> Result<PreparedWrite> {
     if input.changes.is_empty() || input.changes.len() > 1_000 {
         return Err(Error::invalid_input(
             "A write must have between 1 and 1,000 changes.",
@@ -86,18 +133,24 @@ pub(crate) fn write(
     } else {
         space.receipt(&format!("write:{identity}"), key.as_deref(), &encoded)?
     };
+    Ok(PreparedWrite {
+        input,
+        identity,
+        receipt,
+    })
+}
+
+pub(crate) fn write(space: &mut Space, actor: &Actor, prepared: PreparedWrite) -> Result<Written> {
+    let PreparedWrite {
+        input,
+        identity,
+        receipt,
+    } = prepared;
     if let Some(value) = receipt.as_ref().and_then(|entry| entry.replay.clone()) {
-        return Ok(value);
-    }
-    if let Some(receipt) = &receipt
-        && let Some(recovered) = records::recovered(space, actor, receipt)?
-    {
-        if let [Change::Append { item, record }] = input.changes.as_slice()
-            && *item == recovered.item
-        {
-            return records::replay_recovered(space, actor, record.clone(), receipt, recovered);
-        }
-        return Err(Error::request_reused());
+        return Ok(Written {
+            value,
+            disposition: Disposition::Replayed,
+        });
     }
     let now = calternal_types::now_ms();
     #[cfg(target_os = "linux")]
@@ -108,7 +161,11 @@ pub(crate) fn write(
         space.permits(actor, &head.kind, true)?;
         let kind = space.kind(&head.kind)?;
         operation(&kind, actor, "append record", None)?;
-        return records::append(space, actor, head, record.clone(), now, receipt.as_ref());
+        let value = records::append(space, actor, head, record.clone(), now, receipt.as_ref())?;
+        return Ok(Written {
+            value,
+            disposition: Disposition::Committed,
+        });
     }
     let mut working = BTreeMap::<Uuid, Working>::new();
     let mut outputs = Vec::with_capacity(input.changes.len());
@@ -162,6 +219,7 @@ pub(crate) fn write(
             other => {
                 let id = match &other {
                     Change::Update { item, .. }
+                    | Change::Perform { item, .. }
                     | Change::Remove { item }
                     | Change::Append { item, .. }
                     | Change::Edit { item, .. }
@@ -248,9 +306,46 @@ pub(crate) fn write(
             ));
         }
     }
+    let added = working
+        .values()
+        .filter(|item| item.before.is_none() && !item.retired)
+        .count();
+    if added != 0 {
+        let trash: i64 = space
+            .db
+            .query_row("SELECT count(*) FROM trash", [], |row| row.get(0))
+            .map_err(internal)?;
+        if (space.rows.len() + added) as i64 + trash > crate::space::SPACE_ITEMS as i64 {
+            return Err(Error::new(
+                ErrorCode::TooLarge,
+                "The space has reached its item and Trash limit.",
+            ));
+        }
+    }
+    let mut destinations = BTreeSet::new();
+    let live = space
+        .rows
+        .iter()
+        .filter(|(id, _)| !working.contains_key(id))
+        .map(|(_, row)| &row.head)
+        .chain(
+            working
+                .values()
+                .filter(|item| !item.retired)
+                .map(|item| &item.row.head),
+        );
+    for head in live {
+        if !destinations.insert(names::fold(&head.path)) {
+            return Err(Error::conflict("Multiple items would share a destination."));
+        }
+    }
+
     let value = result(outputs);
     if input.preview {
-        return Ok(value);
+        return Ok(Written {
+            value,
+            disposition: Disposition::Previewed,
+        });
     }
 
     space.recovery_needed = true;
@@ -353,6 +448,11 @@ pub(crate) fn write(
     )
     .map_err(internal)?;
     tx.commit().map_err(internal)?;
+    for (id, current) in &working {
+        if current.retired {
+            space.runs.cancel_target(*id);
+        }
+    }
     space.finish(&placements)?;
     for (id, current) in working {
         space.seen.remove(&id);
@@ -362,7 +462,10 @@ pub(crate) fn write(
             space.rows.insert(id, current.row);
         }
     }
-    Ok(value)
+    Ok(Written {
+        value,
+        disposition: Disposition::Committed,
+    })
 }
 
 fn operation(kind: &Kind, actor: &Actor, action: &str, fields: Option<&Fields>) -> Result<()> {
@@ -410,7 +513,7 @@ fn path_for(
         None => kind.file.clone(),
     };
     let mut stem = names::stem_from_title(&value);
-    if matches!(names::fold(&stem).as_str(), "agents" | "claude" | "gemini") {
+    if names::is_instruction_file(&format!("{stem}.md")) {
         stem.push_str(" 2");
     }
     let candidate = |filename: &str| {
@@ -441,7 +544,8 @@ fn path_for(
         .map(|item| names::fold(&item.row.head.path))
         .collect();
     let file = names::unique_md_name(&stem, |filename| {
-        if old_path.is_some_and(|old| names::fold(old) == candidate(filename)) {
+        let folded = names::fold(&candidate(filename));
+        if old_path.is_some_and(|old| names::fold(old) == folded) {
             return false;
         }
         let entry = if kind.main.is_some() {
@@ -449,7 +553,7 @@ fn path_for(
         } else {
             filename
         };
-        on_disk.contains(entry) || planned.contains(&candidate(filename))
+        on_disk.contains(entry) || planned.contains(&folded)
     });
     let path = candidate(&file);
     if calternal_types::is_reserved_space_path(&path) {
@@ -462,126 +566,6 @@ fn path_for(
             path
         },
     )
-}
-
-fn apply(
-    space: &Space,
-    actor: &Actor,
-    kind: &Kind,
-    item: &mut Working,
-    change: Change,
-    now: i64,
-) -> Result<(&'static str, Option<String>)> {
-    let head = &mut item.row.head;
-    match change {
-        Change::Update {
-            fields, body, base, ..
-        } => {
-            operation(kind, actor, "change", Some(&fields))?;
-            if body.is_some()
-                && actor.via.is_none()
-                && kind
-                    .operations
-                    .get("change")
-                    .is_some_and(|operation| matches!(&operation.form, OperationForm::Change(Some(only)) if !only.iter().any(|field| field == "body")))
-            {
-                return Err(Error::forbidden(
-                    "The built-in operation cannot change the body.",
-                ));
-            }
-            if base.is_some_and(|base| base != head.version) {
-                return Err(Error::conflict("The item version changed."));
-            }
-            let before = head.prefix as usize;
-            let original = std::str::from_utf8(&item.bytes[..before]).map_err(internal)?;
-            apply_fields(&kind.fields, &mut item.row.fields, fields.clone(), false)?;
-            let changed = body.as_deref().map(records::escape_body);
-            let mut prefix = write_item(original, &fields, changed.as_deref(), kind)?.into_bytes();
-            head.hash = space.hash(&prefix);
-            head.prefix = prefix.len() as u64;
-            for record in &mut item.records {
-                record.offset = record.offset - before as u64 + head.prefix;
-            }
-            prefix.extend_from_slice(&item.bytes[before..]);
-            item.bytes = prefix;
-            Ok(("change", None))
-        }
-        Change::Remove { .. } => {
-            if head.author != actor.account.to_string() {
-                operation(kind, actor, "remove", None)?;
-            }
-            item.retired = true;
-            Ok(("remove", None))
-        }
-        Change::Append { record, .. } => {
-            operation(kind, actor, "append record", None)?;
-            let (row, bytes) = records::encode(
-                space,
-                kind,
-                actor,
-                record,
-                None,
-                (item.bytes.len() as u64, head.version + 1),
-                now,
-            )?;
-            let anchor = row.anchor.clone();
-            item.records.push(row);
-            item.bytes.extend_from_slice(&bytes);
-            Ok(("append record", Some(anchor)))
-        }
-        Change::Edit { anchor, record, .. } => {
-            operation(kind, actor, "change record", None)?;
-            let index = record_index(&item.records, &anchor)?;
-            let previous = &item.records[index];
-            records::can_edit(kind, actor, previous, now)?;
-            let (row, bytes) = records::encode(
-                space,
-                kind,
-                actor,
-                record,
-                Some((
-                    previous,
-                    previous
-                        .bytes(&item.bytes)
-                        .ok_or_else(|| internal("record bytes are missing"))?,
-                )),
-                (previous.offset, previous.ordinal),
-                now,
-            )?;
-            replace_record(item, index, &bytes);
-            item.records[index] = row;
-            Ok(("change record", Some(anchor)))
-        }
-        Change::Redact { anchor, .. } => {
-            let index = record_index(&item.records, &anchor)?;
-            if item.records[index].author != actor.account.to_string() {
-                return Err(Error::forbidden(
-                    "Only the record's author can remove it in this slice.",
-                ));
-            }
-            replace_record(item, index, &[]);
-            item.records.remove(index);
-            Ok(("remove record", Some(anchor)))
-        }
-        Change::Add { .. } => unreachable!(),
-    }
-}
-
-fn record_index(records: &[Record], anchor: &str) -> Result<usize> {
-    records
-        .iter()
-        .position(|record| record.anchor == anchor)
-        .ok_or_else(|| Error::not_found("Record was not found."))
-}
-
-fn replace_record(item: &mut Working, index: usize, bytes: &[u8]) {
-    let row = &item.records[index];
-    let start = row.offset as usize;
-    let end = start + row.length as usize;
-    item.bytes.splice(start..end, bytes.iter().copied());
-    for row in &mut item.records[index + 1..] {
-        row.offset = row.offset - (end - start) as u64 + bytes.len() as u64;
-    }
 }
 
 #[cfg(test)]

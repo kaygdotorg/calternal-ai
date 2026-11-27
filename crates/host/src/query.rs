@@ -1,16 +1,25 @@
 //! Select authorized rows and supply viewer context to the pure format engine.
+mod ad_hoc;
+mod budget;
+mod projection;
+mod search;
+
+#[cfg(test)]
+mod tests;
+
 use crate::declarations::{self, Collection, FieldType, Kind};
 use crate::internal;
 use crate::records::Record;
 use crate::space::{Row, Space};
+use ad_hoc::ad_hoc;
+use budget::Budget;
 use calternal_format as format;
-use calternal_types::{Actor, Error, ErrorCode, Result};
+use calternal_types::{Actor, Error, ErrorCode, Result, Via};
 use rusqlite::{OptionalExtension, params};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::sync::OnceLock;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -22,6 +31,7 @@ pub(crate) struct Query {
     filter: Option<String>,
     #[serde(default)]
     sort: Vec<String>,
+    search: Option<String>,
     cursor: Option<String>,
     limit: Option<usize>,
 }
@@ -92,22 +102,30 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
         .map(Uuid::parse_str)
         .transpose()
         .map_err(|_| Error::invalid_input("Invalid query cursor."))?;
-    let rows = space
-        .rows
-        .values()
-        .filter(|row| row.head.kind == from)
-        .collect::<Vec<_>>();
-    let inputs = rows
-        .iter()
-        .map(|row| {
-            let records = if kind.records.is_empty() {
-                Vec::new()
-            } else {
-                space.records(row.head.id)?
-            };
-            query_input(space, actor, &kind, row, &records)
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let mut budget = Budget::default();
+    let clock = declarations::clock()?;
+    let mut search = search::Search::new(input.search.as_deref(), &kind.search)?;
+    let mut rows = Vec::new();
+    let mut inputs = Vec::new();
+    for row in space.rows.values().filter(|row| row.head.kind == from) {
+        budget.row(row)?;
+        let records = if kind.records.is_empty() {
+            Vec::new()
+        } else {
+            budget.records(space, row.head.id)?
+        };
+        inputs.push(query_input(
+            space,
+            actor,
+            &kind,
+            row,
+            &records,
+            &clock,
+            &mut budget,
+        )?);
+        search.index_body(space, row)?;
+        rows.push(row);
+    }
     let result = execute(
         &collection,
         &kind,
@@ -116,50 +134,19 @@ pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value>
             offset: 0,
             limit: rows.len(),
         },
+        &clock,
+        &|index, row| search.matches(index, row),
+        &mut budget,
     )?;
-    let start = cursor
-        .map(|cursor| {
-            result
-                .rows
-                .iter()
-                .position(|selected| rows[selected.index].head.id == cursor)
-                .map(|position| position + 1)
-                .ok_or_else(|| Error::conflict("The query cursor is no longer present."))
-        })
-        .transpose()?
-        .unwrap_or(0);
-    let page = calternal_types::Page::from_lookahead(
-        result
-            .rows
-            .into_iter()
-            .skip(start)
-            .take(limit + 1)
-            .collect(),
+    projection::page(
+        &kind,
+        &rows,
+        &inputs,
+        result,
+        cursor,
         limit,
-        |selected| rows[selected.index].head.id,
-    );
-    let totals = result
-        .totals
-        .iter()
-        .map(declarations::as_json)
-        .collect::<Vec<_>>();
-    let (today, now) = declarations::clock()?;
-    let rows = page
-        .rows
-        .into_iter()
-        .map(|selected| {
-            render_row(
-                &kind,
-                rows[selected.index],
-                &inputs[selected.index],
-                &selected.computed,
-                &today,
-                &now,
-            )
-        })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(
-        json!({"rows":rows,"totals":if totals.is_empty() {json!({})} else {json!(totals)}, "cursor":page.next}),
+        &clock,
+        &mut budget,
     )
 }
 
@@ -167,74 +154,61 @@ pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
     let row = space.row(input.item)?;
     space.permits(actor, &row.head.kind, false)?;
     let kind = space.kind(&row.head.kind)?;
-    let bytes = space.read_item(&row.head)?;
-    let records = space.records(input.item)?;
-    let views = space.record_views(&row.head, &bytes, &records, &kind)?;
-    let prefix = std::str::from_utf8(&bytes[..row.head.prefix as usize]).map_err(internal)?;
-    let body = declarations::item_body(prefix)?;
-    let mut collection = ad_hoc(None, &[])?;
-    collection.ignoring_default = true;
-    let input = query_input(space, actor, &kind, row, &records)?;
-    let result = execute(
-        &collection,
-        &kind,
-        std::slice::from_ref(&input),
-        format::Page {
-            offset: 0,
-            limit: 1,
-        },
-    )?;
-    let (today, now) = declarations::clock()?;
-    let mut result = render_row(&kind, row, &input, &result.rows[0].computed, &today, &now)?;
-    result["body"] = json!(body);
-    result["records"] = json!(views);
-    if matches!(actor.via, Some(calternal_types::Via::Run { .. })) {
-        let row = result.as_object_mut().expect("rendered read row");
-        for field in ["state", "when", "computed"] {
-            row.remove(field);
+    let mut budget = Budget::default();
+    let records = budget.records(space, input.item)?;
+    let file = space.open_regular(&row.head.path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            Error::conflict("The item file is missing from disk.")
+        } else {
+            internal(error)
         }
-    }
+    })?;
+    let bytes = crate::space::bounded_read(file, budget.limit())?;
+    // The parser and projected values can each own a copy of the source.
+    budget.bytes(bytes.len().saturating_mul(3) as u64)?;
+    let views = space.record_views(&row.head, &bytes, &records, &kind)?;
+    let prefix = bytes
+        .get(..row.head.prefix as usize)
+        .ok_or_else(|| Error::conflict("The item file changed outside the host."))?;
+    let prefix = std::str::from_utf8(prefix).map_err(internal)?;
+    let body = declarations::item_body(prefix)?;
+    let mut result = if matches!(actor.via, Some(Via::Run { .. })) {
+        projection::base(row, &mut budget)?
+    } else {
+        let mut collection = ad_hoc(None, &[])?;
+        collection.ignoring_default = true;
+        let clock = declarations::clock()?;
+        let input = query_input(space, actor, &kind, row, &records, &clock, &mut budget)?;
+        let result = execute(
+            &collection,
+            &kind,
+            std::slice::from_ref(&input),
+            format::Page {
+                offset: 0,
+                limit: 1,
+            },
+            &clock,
+            &|_, _| true,
+            &mut budget,
+        )?;
+        projection::row(
+            &kind,
+            row,
+            &input,
+            &result.rows[0].computed,
+            &clock,
+            &mut budget,
+        )?
+    };
+    result["body"] = Value::String(body.to_owned());
+    result["records"] = Value::Array(views);
     Ok(result)
-}
-
-fn ad_hoc(filter: Option<&str>, sorts: &[String]) -> Result<Collection> {
-    static EMPTY: OnceLock<Result<Collection>> = OnceLock::new();
-    // The engine currently exposes a plugin parser as the collection
-    // constructor. Compile a dependency-free empty plan once for ad hoc calls.
-    let empty = EMPTY.get_or_init(|| {
-        let files = [
-            format::PluginFile { path:"plugin.md", text:Some("---\nplugin: query-template\nname: Query template\nversion: 1.0.0\nformat: 1\n---\n") },
-            format::PluginFile { path:"collections/query.md", text:Some("---\ncollection: query\ntitle: Query\nformat: 1\nfrom: virtual.items\nviews:\n  list: id\n---\n") },
-        ];
-        format::parse_plugin(&files, &format::InstallOptions::default()).map_err(declarations::invalid)?
-            .collections.remove("query").ok_or_else(|| internal("missing ad hoc query template"))
-    });
-    let mut collection = empty.as_ref().map_err(Clone::clone)?.clone();
-    collection.condition = filter
-        .map(format::parse_expression)
-        .transpose()
-        .map_err(declarations::invalid)?;
-    collection.sort = sorts
-        .iter()
-        .map(|column| {
-            let (field, descending) = if let Some(field) = column.strip_suffix(" desc") {
-                (field, true)
-            } else {
-                (column.strip_suffix(" asc").unwrap_or(column), false)
-            };
-            format::Sort {
-                field: field.to_owned(),
-                descending,
-            }
-        })
-        .collect();
-    Ok(collection)
 }
 
 struct QueryInput {
     fields: format::Fields,
     metadata: format::Fields,
-    state: format::Fields,
+    state: Option<format::Fields>,
     records: Vec<format::Fields>,
     record_positions: BTreeMap<String, usize>,
 }
@@ -245,35 +219,50 @@ fn query_input(
     kind: &Kind<'_>,
     row: &Row,
     records: &[Record],
+    clock: &(String, String),
+    budget: &mut Budget,
 ) -> Result<QueryInput> {
     let owner = kind.id.split_once('.').expect("qualified kind").0;
-    let mut state = format::Fields::new();
+    let state_allowed = match &actor.via {
+        None => true,
+        Some(Via::Plugin { plugin }) => plugin == owner,
+        _ => false,
+    };
+    let mut state = state_allowed.then(format::Fields::new);
     let mut record_positions = BTreeMap::new();
-    if !kind.state.is_empty() {
+    if let Some(state) = &mut state
+        && !kind.state.is_empty()
+    {
         let mut stmt = space
             .db
             .prepare_cached(
                 "SELECT name,value,ordinal FROM viewer_state WHERE plugin=?1 AND item=?2 AND account=?3",
             )
             .map_err(internal)?;
-        let rows = stmt
-            .query_map(
-                params![owner, row.head.id.to_string(), actor.account.to_string()],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, Option<i64>>(2)?,
-                    ))
-                },
-            )
+        let mut rows = stmt
+            .query(params![
+                owner,
+                row.head.id.to_string(),
+                actor.account.to_string()
+            ])
             .map_err(internal)?;
-        for entry in rows {
-            let (key, raw, position) = entry.map_err(internal)?;
-            let Some(field) = kind.state.get(&key) else {
+        while let Some(entry) = rows.next().map_err(internal)? {
+            let key = entry
+                .get_ref(0)
+                .map_err(internal)?
+                .as_str()
+                .map_err(internal)?;
+            let raw = entry
+                .get_ref(1)
+                .map_err(internal)?
+                .as_str()
+                .map_err(internal)?;
+            let position: Option<i64> = entry.get(2).map_err(internal)?;
+            budget.bytes((key.len() + 64 + raw.len().saturating_mul(2)) as u64)?;
+            let Some(field) = kind.state.get(key) else {
                 continue;
             };
-            let value: Value = serde_json::from_str(&raw).map_err(internal)?;
+            let value: Value = serde_json::from_str(raw).map_err(internal)?;
             if let Some(position) = position {
                 let anchor = value
                     .as_str()
@@ -293,13 +282,27 @@ fn query_input(
             } else {
                 declarations::as_format(&value)?
             };
-            state.insert(key, value);
+            state.insert(key.to_owned(), value);
         }
+        let empty = format::Fields::new();
+        let row = format::Row {
+            fields: &empty,
+            metadata: &empty,
+        };
+        let context = format::EvalContext {
+            today: Some(&clock.0),
+            now: Some(&clock.1),
+            offset_seconds: Some(0),
+            ..format::EvalContext::default()
+        };
         for (name, field) in &kind.state {
             if !state.contains_key(name)
-                && let Some(default) = declarations::field_default(field)?
+                && let Some(default) = &field.default
             {
-                state.insert(name.clone(), declarations::as_format(&default)?);
+                budget.bytes((name.len() + 64) as u64)?;
+                let value =
+                    budget.work(|steps| format::evaluate_bounded(default, row, &context, steps))?;
+                state.insert(name.clone(), value);
             }
         }
     }
@@ -322,6 +325,9 @@ fn query_input(
             ]))
         })
         .collect::<Result<Vec<_>>>()?;
+    for (key, value) in &row.fields {
+        budget.json(key, value)?;
+    }
     Ok(QueryInput {
         fields: declarations::as_fields(&row.fields)?,
         metadata: format::Fields::from([
@@ -342,17 +348,30 @@ pub(crate) fn contains(
     row: &Row,
 ) -> Result<bool> {
     let kind = space.kind(&row.head.kind)?;
+    let mut budget = Budget::default();
+    budget.row(row)?;
     let records = if kind.records.is_empty() {
         Vec::new()
     } else {
-        space.records(row.head.id)?
+        budget.records(space, row.head.id)?
     };
-    let input = query_input(space, actor, &kind, row, &records)?;
+    let clock = declarations::clock()?;
+    let input = query_input(space, actor, &kind, row, &records, &clock, &mut budget)?;
     let page = format::Page {
         offset: 0,
         limit: 1,
     };
-    Ok(!execute(collection, &kind, &[input], page)?.rows.is_empty())
+    Ok(!execute(
+        collection,
+        &kind,
+        &[input],
+        page,
+        &clock,
+        &|_, _| true,
+        &mut budget,
+    )?
+    .rows
+    .is_empty())
 }
 
 fn execute(
@@ -360,6 +379,9 @@ fn execute(
     kind: &Kind<'_>,
     inputs: &[QueryInput],
     page: format::Page,
+    clock: &(String, String),
+    matches_row: &dyn Fn(usize, format::Row<'_>) -> bool,
+    budget: &mut Budget,
 ) -> Result<format::QueryResult> {
     let empty = format::Fields::new();
     let rows = inputs
@@ -392,81 +414,32 @@ fn execute(
             (
                 id.clone(),
                 format::QueryRowContext {
-                    state: Some(&input.state),
+                    state: input.state.as_ref(),
                     records,
-                    record_positions: Some(&input.record_positions),
+                    record_positions: input.state.as_ref().map(|_| &input.record_positions),
                     ..format::QueryRowContext::default()
                 },
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let (today, now) = declarations::clock()?;
     let context = format::EvalContext {
-        today: Some(&today),
-        now: Some(&now),
+        today: Some(&clock.0),
+        now: Some(&clock.1),
         offset_seconds: Some(0),
         rows: Some(&contexts),
         ..format::EvalContext::default()
     };
-    format::evaluate_query(collection, kind.compiled, &rows, page, &context)
-        .map_err(declarations::invalid)
-}
-
-fn render_row(
-    kind: &Kind<'_>,
-    row: &Row,
-    input: &QueryInput,
-    computed: &format::Fields,
-    today: &str,
-    now: &str,
-) -> Result<Value> {
-    let empty = format::Fields::new();
-    let records = input
-        .records
-        .iter()
-        .map(|metadata| format::Row {
-            fields: &empty,
-            metadata,
-        })
-        .collect::<Vec<_>>();
-    let context = format::EvalContext {
-        today: Some(today),
-        now: Some(now),
-        offset_seconds: Some(0),
-        state: Some(&input.state),
-        records: &records,
-        record_positions: Some(&input.record_positions),
-        ..format::EvalContext::default()
-    };
-    let when = format::operation_conditions(
-        kind.compiled,
-        format::Row {
-            fields: &input.fields,
-            metadata: &input.metadata,
-        },
-        computed,
-        &context,
-    )
-    .map_err(declarations::invalid)?;
-    let computed = declarations::as_json(&format::Value::Map(computed.clone()));
-    let state = kind
-        .state
-        .keys()
-        .map(|key| {
-            (
-                key.clone(),
-                input
-                    .state
-                    .get(key)
-                    .map(declarations::as_json)
-                    .unwrap_or_default(),
-            )
-        })
-        .collect::<serde_json::Map<_, _>>();
-    Ok(
-        json!({"id":row.head.id,"kind":row.head.kind,"fields":row.fields,"computed":computed,
-        "state":state,"when":when,"version":row.head.version,"edited":row.head.edited}),
-    )
+    budget.work(|steps| {
+        format::evaluate_query_bounded(
+            collection,
+            kind.compiled,
+            &rows,
+            page,
+            &context,
+            matches_row,
+            steps,
+        )
+    })
 }
 
 pub(crate) fn state(

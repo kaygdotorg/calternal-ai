@@ -1,8 +1,8 @@
 //! Authorized run log replay through the live window transport.
+use super::wire::LiveSocket;
 use super::{ServerFrame, Subscription, send_frame};
 use crate::Host;
-use axum::extract::ws::WebSocket;
-use calternal_types::{Actor, Error, Result, SpaceId};
+use calternal_types::{Actor, Result, SpaceId};
 use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -20,7 +20,7 @@ pub(super) async fn refresh(
     space: SpaceId,
     sub: &str,
     subscription: &mut Subscription,
-    socket: &mut WebSocket,
+    socket: &mut LiveSocket,
 ) -> Result<()> {
     let Subscription::RunLog {
         run,
@@ -40,13 +40,12 @@ pub(super) async fn refresh(
     if *initial || batch.has_changes() {
         send_frame(
             socket,
-            &ServerFrame::RunLog {
+            ServerFrame::RunLog {
                 sub: sub.to_owned(),
                 batch,
             },
         )
-        .await
-        .map_err(|_| Error::unavailable("The live socket closed."))?;
+        .await?;
     }
     *initial = false;
     *after = Some(offset);

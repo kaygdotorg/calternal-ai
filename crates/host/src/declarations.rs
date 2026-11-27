@@ -1,4 +1,5 @@
 //! Adapter from verified bundle bytes and JSON values to the pure format engine.
+mod admission;
 pub(crate) mod browser;
 
 use calternal_format as format;
@@ -104,33 +105,14 @@ pub(crate) fn parse_plugin(
         },
     )
     .map_err(invalid)?;
-    let manifest = &plugin.manifest;
-    // Program and destination declarations feed the scope-checked run service;
-    // they do not grant a container ambient network or filesystem access.
-    if manifest.directives.iter().any(|key| {
-        matches!(
-            key.key.as_str(),
-            "extends"
-                | "outside"
-                | "notifications"
-                | "sign-ins"
-                | "secrets"
-                | "listens"
-                | "refuses"
-        )
-    }) {
-        return Err(Error::forbidden(
-            "This host slice cannot grant the plugin's declarations.",
-        ));
-    }
+    admission::check(&plugin)?;
     for kind in plugin.kinds.values() {
-        if !kind.rights.read.is_empty()
-            || kind.plus_marked_folders
+        if kind.plus_marked_folders
             || kind.unique.is_some()
             || (!kind.hidden && kind.keep.is_some())
             || matches!(kind.item, format::ItemForm::Binary { .. })
             || (!kind.hidden && kind.folder.as_ref().is_none_or(|name| !plain_folder(name)))
-            || matches!(&kind.item, format::ItemForm::Folder(main) if reserved_name(main) || main.contains('/'))
+            || matches!(&kind.item, format::ItemForm::Folder(main) if calternal_fsio::names::is_instruction_file(main) || main.contains('/'))
             || (kind.file.contains(['{', '}'])
                 && kind
                     .file
@@ -149,15 +131,10 @@ pub(crate) fn parse_plugin(
 fn plain_folder(name: &str) -> bool {
     calternal_fsio::beneath::plain_parts(name).is_ok()
         && name.split('/').all(|part| {
-            !part.starts_with('.') && !part.contains(['{', '}']) && !reserved_name(part)
+            !part.starts_with('.')
+                && !part.contains(['{', '}'])
+                && !calternal_fsio::names::is_instruction_file(part)
         })
-}
-
-fn reserved_name(value: &str) -> bool {
-    matches!(
-        calternal_fsio::names::fold(value).as_str(),
-        "agents.md" | "claude.md" | "gemini.md" | ".cursorrules"
-    )
 }
 
 pub(crate) fn apply_fields(
@@ -206,6 +183,9 @@ pub(crate) fn accepts(field: &FieldType, value: &Value) -> bool {
         FieldType::Time => value.as_str().is_some_and(|raw| {
             time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339).is_ok()
         }),
+        FieldType::Date | FieldType::When | FieldType::Url | FieldType::Repeat => value
+            .as_str()
+            .is_some_and(|text| field.accepts_value(&format::Value::Text(text.into()))),
         FieldType::Anchor => value.as_str().is_some_and(crate::records::valid_anchor),
         FieldType::Choice(options) => value
             .as_str()

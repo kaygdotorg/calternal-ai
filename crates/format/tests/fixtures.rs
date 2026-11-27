@@ -223,6 +223,54 @@ fn claude_code_reads_its_fixture_and_needs_a_bound_program() {
 }
 
 #[test]
+fn reply_declarations_select_existing_calls_on_the_slot_owner() {
+    let options = InstallOptions {
+        official: OFFICIAL,
+        installed: &[chat()],
+        ..InstallOptions::default()
+    };
+    let source = HARNESS[0].text.unwrap();
+    let reply = "replies: calternal-chat.chats.send";
+    let parse = |manifest: &str| {
+        let mut files = HARNESS.to_vec();
+        files[0].text = Some(manifest);
+        parse_plugin(&files, &options)
+    };
+    assert_eq!(
+        parse(source).unwrap().manifest.replies["calternal-chat.chats"],
+        "calternal-chat.chats.send"
+    );
+    assert!(
+        parse(&source.replace(reply, ""))
+            .unwrap()
+            .manifest
+            .replies
+            .is_empty()
+    );
+    for replacement in [
+        "replies: calternal-chat.send",
+        "replies: calternal-chat.chats.rename",
+        "replies: calternal-chat.chats.send, calternal-chat.chats.rename",
+    ] {
+        assert_eq!(
+            parse(&source.replace(reply, replacement))
+                .unwrap_err()
+                .path
+                .as_deref(),
+            Some("plugin.md")
+        );
+    }
+    assert!(
+        parse(&source.replace(
+            "calls: calternal-chat.chats.send",
+            "calls: calternal-chat.chats.rename",
+        ))
+        .is_err()
+    );
+    assert!(parse(&source.replace("calternal-chat:harness:", "calternal-chat:missing:")).is_err());
+}
+
+#[test]
 fn ledger_order_distinguishes_messages_with_identical_timestamps() {
     let fields = Fields::new();
     let stamps = ["k2m8q1w4zre7k3f8", "k2m8q1w4zre7k3f9", "k2m8q1w4zre7k3fa"].map(|anchor| {
@@ -379,32 +427,31 @@ fn reading_list_and_appendix_b() {
                 text: Some(document),
             },
         ];
-        let result = parse_plugin(&files, &InstallOptions::default());
-        if matches!(id, "events" | "tasks") {
-            let error = result.unwrap_err();
-            assert!(error.message.contains("lines is deferred"), "{id}: {error}");
-            let narrowed = document
-                .lines()
-                .filter(|line| {
-                    !line.starts_with("lines: ")
-                        && !line.starts_with("ical: ")
-                        && !line.starts_with("  title: SUMMARY")
-                        && !line.starts_with("  start: DTSTART")
-                        && !line.starts_with("  end: DTEND")
-                        && !line.starts_with("  location: LOCATION")
-                        && !line.starts_with("  repeat: RRULE")
-                        && !line.starts_with("  exceptions: EXDATE")
-                        && !line.starts_with("  alert: VALARM")
-                        && !line.starts_with("  body: DESCRIPTION")
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            let mut narrowed_files = files;
-            narrowed_files[2].text = Some(&narrowed);
-            parse_plugin(&narrowed_files, &InstallOptions::default())
-                .unwrap_or_else(|error| panic!("{id}: {error}"));
-        } else {
-            result.unwrap_or_else(|error| panic!("{id}: {error}"));
+        let compiled = parse_plugin(&files, &InstallOptions::default())
+            .unwrap_or_else(|error| panic!("{id}: {error}"));
+        let kind = &compiled.kinds[id];
+        if id == "events" {
+            assert_eq!(kind.line_claim.as_ref().unwrap().targets, ["days"]);
+            assert_eq!(kind.dav[0].properties.len(), 8);
+            let lines =
+                calternal_format::scan_note_lines("23:30 - 01:00 Late session\nall day Away")
+                    .unwrap();
+            let claim = kind.line_claim.as_ref().unwrap();
+            let timed = claim.time_fields(&lines[0].item, "2026-11-27").unwrap();
+            assert_eq!(timed["end"], Value::Time("2026-11-28T01:00:00".into()));
+            let all_day = claim.time_fields(&lines[1].item, "2026-11-27").unwrap();
+            assert_eq!(all_day["start"], Value::Date("2026-11-27".into()));
+        }
+        if id == "tasks" {
+            let claim = kind.line_claim.as_ref().unwrap();
+            assert_eq!(
+                claim.targets,
+                ["calternal-notes.notes", "calternal-calendar.days"]
+            );
+            assert_eq!(
+                claim.checkbox.as_ref().unwrap().value('X'),
+                Some(&Value::Text("done".into()))
+            );
         }
         count += 1;
     }
@@ -716,4 +763,130 @@ fn remaining_standalone_specification_examples() {
     assert_eq!(item.fields()["read"], Value::Bool(false));
     let agents = parse_agent_rules(document("---\nrules: agents")).unwrap();
     assert_eq!(agents.rules.len(), 4);
+}
+
+#[test]
+fn calendar_and_expanding_collections_share_the_window_engine() {
+    use calternal_format::{
+        CalendarSeries, OccurrenceOverride, expand_calendar_window, parse_repeat,
+    };
+    let manifest =
+        "---\nplugin: calendar\nname: Calendar\nformat: 1\nversion: 1.0.0\n---\nEvents.\n";
+    let kind = "---\nkind: entries\nname: Entry\nformat: 1\nfolder: Entries\neditable: outside\nfields:\n  start: when\n  repeat: repeat\n---\nEntries.\n";
+    let rule = parse_repeat("FREQ=WEEKLY;BYDAY=MO,TH,FR").unwrap();
+    let override_slot = [OccurrenceOverride {
+        original: "2026-11-23",
+        start: "2026-11-26",
+    }];
+    let input = [
+        CalendarSeries {
+            index: 2,
+            start: "2026-11-23",
+            rule: Some(&rule),
+            exclusions: &["2026-11-27"],
+            overrides: &override_slot,
+        },
+        CalendarSeries {
+            index: 9,
+            start: "2026-11-25T11:00:00",
+            rule: None,
+            exclusions: &[],
+            overrides: &[],
+        },
+    ];
+    for view in [
+        "views:\n  calendar: start\n",
+        "expand: repeat\nviews:\n  list: start\n",
+    ] {
+        let collection = format!(
+            "---\ncollection: entries\ntitle: Entries\nformat: 1\nfrom: entries\n{view}---\n"
+        );
+        let plugin = parse_plugin(
+            &[
+                PluginFile {
+                    path: "plugin.md",
+                    text: Some(manifest),
+                },
+                PluginFile {
+                    path: "kinds/entries.md",
+                    text: Some(kind),
+                },
+                PluginFile {
+                    path: "collections/entries.md",
+                    text: Some(&collection),
+                },
+            ],
+            &InstallOptions::default(),
+        )
+        .unwrap();
+        let occurrences = expand_calendar_window(
+            &plugin.collections["entries"],
+            &input,
+            "2026-11-24",
+            "2026-11-28",
+        )
+        .unwrap();
+        assert_eq!(
+            occurrences
+                .iter()
+                .map(|slot| slot.index)
+                .collect::<Vec<_>>(),
+            [9, 2, 2]
+        );
+        assert_eq!(
+            occurrences[1].occurrence.original,
+            Value::Date("2026-11-23".into())
+        );
+    }
+}
+
+#[test]
+fn contacts_mapping_and_duplicate_line_claims_are_checked() {
+    let manifest =
+        "---\nplugin: example\nname: Example\nformat: 1\nversion: 1.0.0\n---\nExample.\n";
+    let contact = concat!(
+        "---\nkind: contacts\nname: Contact\nformat: 1\nfolder: Contacts\neditable: outside\n",
+        "fields:\n  title: text, required\n  email: text\n  note: long text\n",
+        "vcard:\n  title: FN\n  email: EMAIL\n  note: NOTE\n---\nContacts.\n",
+    );
+    let files = [
+        PluginFile {
+            path: "plugin.md",
+            text: Some(manifest),
+        },
+        PluginFile {
+            path: "kinds/contacts.md",
+            text: Some(contact),
+        },
+    ];
+    let contacts = parse_plugin(&files, &InstallOptions::default()).unwrap();
+    assert_eq!(
+        contacts.kinds["contacts"].dav[0].component,
+        calternal_format::DavComponent::Card
+    );
+    let unsafe_contact = contact.replace("email: EMAIL", "email: URL");
+    let mut invalid = files;
+    invalid[1].text = Some(&unsafe_contact);
+    assert!(parse_plugin(&invalid, &InstallOptions::default()).is_err());
+
+    let checkboxes = concat!(
+        "---\nkind: entries\nname: Entry\nformat: 1\nfolder: Entries\neditable: outside\n",
+        "lines: checkbox in [notes.pages]\nfields:\n  done: yes/no\n---\nEntries.\n",
+    );
+    let other = checkboxes
+        .replace("kind: entries", "kind: other")
+        .replace("folder: Entries", "folder: Other");
+    let files = [
+        files[0],
+        PluginFile {
+            path: "kinds/entries.md",
+            text: Some(checkboxes),
+        },
+        PluginFile {
+            path: "kinds/other.md",
+            text: Some(&other),
+        },
+    ];
+    let error = parse_plugin(&files, &InstallOptions::default()).unwrap_err();
+    assert!(error.message.contains("same line form"));
 }

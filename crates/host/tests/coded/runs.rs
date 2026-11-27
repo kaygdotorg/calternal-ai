@@ -1,6 +1,8 @@
 //! Test the real harness with the fake provider image.
 use super::*;
 
+static PODMAN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[tokio::test]
 async fn selected_harness_replies_once_and_enforces_actor_scope_and_egress() {
     use calternal_machine::sandbox::podman::PodmanBackend;
@@ -10,6 +12,7 @@ async fn selected_harness_replies_once_and_enforces_actor_scope_and_egress() {
         eprintln!("SKIPPED: set CALTERNAL_TEST_PROVIDER_IMAGE to run the fake provider");
         return;
     };
+    let _serial = PODMAN.lock().await;
     let f = Fixture::new().await;
     let root = f._root.path().join("runs");
     let _containers = podman_guard::PodmanGuard::new(&root);
@@ -99,32 +102,55 @@ async fn selected_harness_replies_once_and_enforces_actor_scope_and_egress() {
     assert_eq!(records[1]["body"], "Echo: hello from host");
     assert_eq!(records[1]["run"], run);
 
-    send_input(caller.clone(), 3, json!("egress-denied"))
-        .await
-        .unwrap();
+    let queued = json!({"id":run,"input":{"version":1,"seq":3,
+        "command":{"type":"send","prompt":"egress-denied","context":[]}}});
+    for _ in 0..2 {
+        let receipt = f
+            .call(
+                caller.clone(),
+                "s.run.send",
+                queued.clone(),
+                Some("queued-input"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(receipt, json!({"status":"queued"}));
+    }
+    let mut changed = queued;
+    changed["input"]["command"]["prompt"] = json!("different input");
+    assert_eq!(
+        f.call(caller.clone(), "s.run.send", changed, Some("queued-input"))
+            .await
+            .unwrap_err()
+            .code,
+        ErrorCode::Conflict,
+    );
     let records = wait_for(3).await;
     assert_eq!(records[2]["body"], "Egress: refused");
     assert_eq!(records[2]["run"], run);
-    send_input(caller.clone(), 4, json!("hold: stop family"))
-        .await
-        .unwrap();
     let container =
         PodmanBackend::container_name(f.owner.as_uuid(), run.as_str().unwrap().parse().unwrap());
-    tokio::time::timeout(Duration::from_secs(10), async {
+    send_input(caller.clone(), 4, json!("hold: ignore signals"))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(12), async {
         loop {
-            let top = tokio::process::Command::new("podman")
+            let processes = tokio::process::Command::new("podman")
                 .args(["top", &container, "args"])
                 .output()
                 .await
                 .unwrap();
-            if String::from_utf8_lossy(&top.stdout).contains("sleep 60") {
+            if String::from_utf8_lossy(&processes.stdout)
+                .lines()
+                .any(|line| line.trim() == "sleep 60")
+            {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(30)).await;
         }
     })
     .await
-    .expect("the fake provider process family never started");
+    .expect("fake provider did not start the process family");
     let started = std::time::Instant::now();
     f.call(caller.clone(), "s.run.stop", json!({"id":run}), None)
         .await
@@ -145,7 +171,7 @@ async fn selected_harness_replies_once_and_enforces_actor_scope_and_egress() {
 mod podman_guard;
 
 #[tokio::test]
-async fn sandbox_callbacks_keep_the_original_chat_scope() {
+async fn sandbox_callbacks_keep_scope_and_target_removal_stops_the_run() {
     use calternal_machine::sandbox::podman::PodmanBackend;
     use std::time::Duration;
 
@@ -153,6 +179,7 @@ async fn sandbox_callbacks_keep_the_original_chat_scope() {
         eprintln!("SKIPPED: set CALTERNAL_TEST_PROVIDER_IMAGE to exercise sandbox callbacks");
         return;
     };
+    let _serial = PODMAN.lock().await;
     let f = Fixture::new().await;
     let root = f._root.path().join("runs");
     let _containers = podman_guard::PodmanGuard::new(&root);
@@ -181,6 +208,7 @@ programs:
   check: executable programs/check
 reads: calternal-chat.chats
 calls: calternal-chat.chats.send
+replies: calternal-chat.chats.send
 fills:
   calternal-chat:harness: operation start, as "Scope check"
 ---
@@ -314,6 +342,31 @@ await input.next();
         .await
         .unwrap();
     assert!(read["records"].as_array().unwrap().is_empty());
+    let run = id.as_str().unwrap().parse().unwrap();
+    let container = PodmanBackend::container_name(f.owner.as_uuid(), run);
+    f.call(
+        actor.clone(),
+        "s.write",
+        json!({"changes":[{"op":"remove","item":item}]}),
+        Some("remove-target"),
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            let status = tokio::process::Command::new("podman")
+                .args(["top", &container])
+                .output()
+                .await
+                .unwrap();
+            if !status.status.success() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+    })
+    .await
+    .expect("removing the target did not terminate the sandbox");
     f.call(actor, "s.run.stop", json!({"id":id}), None)
         .await
         .unwrap();
