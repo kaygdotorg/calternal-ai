@@ -1,12 +1,16 @@
-//! Query the rebuildable field index and evaluate viewer-dependent values.
-use crate::declarations::{Fields, Kind};
+//! Select authorized rows and supply viewer context to the pure format engine.
+use crate::declarations::{self, Collection, FieldType, Kind};
 use crate::internal;
+use crate::records::Record;
 use crate::space::{Row, Space};
+use calternal_format as format;
 use calternal_types::{Actor, Error, ErrorCode, Result};
 use rusqlite::{OptionalExtension, params};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::cmp::Ordering;
+use std::borrow::Cow;
+use std::collections::BTreeMap;
+use std::sync::OnceLock;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -43,107 +47,110 @@ pub(crate) enum State {
 }
 
 pub(crate) fn query(space: &Space, actor: &Actor, input: Query) -> Result<Value> {
-    let (from, filter, sort) = match (&input.from, &input.collection) {
-        (Some(from), None) => (from, input.filter.as_deref(), &input.sort),
-        (None, Some(collection)) if input.filter.is_none() && input.sort.is_empty() => {
-            let declaration = space.collection(collection)?;
-            (
-                &declaration.from,
-                declaration.filter.as_deref(),
-                &declaration.sort,
-            )
+    let (from, collection) = match (&input.from, &input.collection) {
+        (Some(from), None) => (
+            from.to_owned(),
+            Cow::Owned(ad_hoc(input.filter.as_deref(), &input.sort)?),
+        ),
+        (None, Some(id)) if input.filter.is_none() && input.sort.is_empty() => {
+            let collection = space.collection(id)?;
+            if collection.share_source == format::ShareSource::Shared {
+                return Err(Error::forbidden(
+                    "Shared collections are outside this host slice.",
+                ));
+            }
+            let [format::Source::Kind(from)] = collection.sources.as_slice() else {
+                return Err(Error::invalid_input("A collection must select one kind."));
+            };
+            let owner = id.split_once('.').expect("qualified collection").0;
+            let from = if from.contains('.') {
+                from.clone()
+            } else {
+                format!("{owner}.{from}")
+            };
+            (from, Cow::Borrowed(collection))
         }
         _ => return Err(Error::invalid_input("Select one kind or one collection.")),
     };
-    space.permits(actor, from, false)?;
-    let kind = space.kind(from)?;
-    let page_size = input.limit.unwrap_or(200);
-    if !(1..=200).contains(&page_size) {
+    space.permits(actor, &from, false)?;
+    let kind = space.kind(&from)?;
+    let limit = input.limit.unwrap_or(200);
+    if !(1..=200).contains(&limit) {
         return Err(Error::invalid_input("A query page holds up to 200 rows."));
     }
-    let sort = sort
-        .iter()
-        .map(|field| {
-            let (field, descending) = if let Some(key) = field.strip_suffix(" desc") {
-                (key, true)
-            } else {
-                (field.strip_suffix(" asc").unwrap_or(field), false)
-            };
-            if field != "edited" && field != "manual" && !kind.fields.contains_key(field) {
-                return Err(Error::invalid_input("Unknown sort field."));
-            }
-            Ok((field, descending))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let filters = [kind.filter.as_deref(), filter]
-        .into_iter()
-        .flatten()
-        .map(|condition| Condition::parse(kind, condition))
-        .collect::<Result<Vec<_>>>()?;
+    for sort in &collection.sort {
+        if !matches!(sort.field.as_str(), "manual" | "edited" | "id" | "kind")
+            && !kind.fields.contains_key(&sort.field)
+            && !collection.fields.contains_key(&sort.field)
+        {
+            return Err(Error::invalid_input("Unknown sort field."));
+        }
+    }
     let cursor = input
         .cursor
         .as_deref()
-        .map(|id| Uuid::parse_str(id).map_err(|_| Error::invalid_input("Invalid query cursor.")))
-        .transpose()?;
-    let mut rows = Vec::new();
-    for row in space.rows.values().filter(|row| row.head.kind == *from) {
-        let mut allowed = true;
-        for filter in &filters {
-            if !filter.matches(space, kind, row)? {
-                allowed = false;
-                break;
-            }
-        }
-        if allowed {
-            let sort_keys = sort
-                .iter()
-                .map(|(field, _)| {
-                    if *field == "edited" {
-                        Ok(json!(row.head.edited))
-                    } else if *field == "manual" {
-                        Ok(Value::Null)
-                    } else if let Some(formula) =
-                        kind.fields.get(*field).and_then(|f| f.computed.as_deref())
-                    {
-                        evaluate(space, kind, row, formula)
-                    } else {
-                        Ok(row.fields.get(*field).cloned().unwrap_or(Value::Null))
-                    }
-                })
-                .collect::<Result<Vec<_>>>()?;
-            rows.push((row, sort_keys));
-        }
-    }
-    rows.sort_by(|(a, keys_a), (b, keys_b)| {
-        sort.iter()
-            .zip(keys_a.iter().zip(keys_b))
-            .map(|((_, desc), (a, b))| {
-                let order = compare(a, b);
-                if *desc { order.reverse() } else { order }
-            })
-            .find(|order| *order != Ordering::Equal)
-            .unwrap_or_else(|| a.head.id.cmp(&b.head.id))
-    });
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|_| Error::invalid_input("Invalid query cursor."))?;
+    let rows = space
+        .rows
+        .values()
+        .filter(|row| row.head.kind == from)
+        .collect::<Vec<_>>();
+    let inputs = rows
+        .iter()
+        .map(|row| {
+            let records = if kind.records.is_empty() {
+                Vec::new()
+            } else {
+                space.records(row.head.id)?
+            };
+            query_input(space, &kind, row, &records)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let result = execute(
+        &collection,
+        &kind,
+        &inputs,
+        format::Page {
+            offset: 0,
+            limit: rows.len(),
+        },
+    )?;
     let start = cursor
         .map(|cursor| {
-            rows.iter()
-                .position(|(row, _)| row.head.id == cursor)
-                .map(|n| n + 1)
+            result
+                .rows
+                .iter()
+                .position(|selected| rows[selected.index].head.id == cursor)
+                .map(|position| position + 1)
                 .ok_or_else(|| Error::conflict("The query cursor is no longer present."))
         })
         .transpose()?
         .unwrap_or(0);
     let page = calternal_types::Page::from_lookahead(
-        rows.into_iter().skip(start).take(page_size + 1).collect(),
-        page_size,
-        |(row, _)| row.head.id,
+        result
+            .rows
+            .into_iter()
+            .skip(start)
+            .take(limit + 1)
+            .collect(),
+        limit,
+        |selected| rows[selected.index].head.id,
     );
-    let results = page
-        .rows
+    let totals = result
+        .totals
         .iter()
-        .map(|(row, _)| render_row(space, kind, row))
-        .collect::<Result<Vec<_>>>()?;
-    Ok(json!({"rows":results,"totals":{},"cursor":page.next}))
+        .map(declarations::as_json)
+        .collect::<Vec<_>>();
+    let rows = page
+        .rows
+        .into_iter()
+        .map(|selected| render_row(rows[selected.index], &selected.computed))
+        .collect::<Vec<_>>();
+    Ok(
+        json!({"rows":rows,"totals":if totals.is_empty() {json!({})} else {json!(totals)}, "cursor":page.next}),
+    )
 }
 
 pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
@@ -152,13 +159,220 @@ pub(crate) fn read(space: &Space, actor: &Actor, input: Read) -> Result<Value> {
     let kind = space.kind(&row.head.kind)?;
     let bytes = space.read_item(&row.head)?;
     let records = space.records(input.item)?;
-    let views = space.record_views(&row.head, &bytes, &records, kind)?;
+    let views = space.record_views(&row.head, &bytes, &records, &kind)?;
     let prefix = std::str::from_utf8(&bytes[..row.head.prefix as usize]).map_err(internal)?;
-    let body = crate::declarations::item_body(prefix)?;
-    let mut result = render_row(space, kind, row)?;
+    let body = declarations::item_body(prefix)?;
+    let mut collection = ad_hoc(None, &[])?;
+    collection.ignoring_default = true;
+    let result = execute(
+        &collection,
+        &kind,
+        &[query_input(space, &kind, row, &records)?],
+        format::Page {
+            offset: 0,
+            limit: 1,
+        },
+    )?;
+    let mut result = render_row(row, &result.rows[0].computed);
     result["body"] = json!(body);
     result["records"] = json!(views);
     Ok(result)
+}
+
+fn ad_hoc(filter: Option<&str>, sorts: &[String]) -> Result<Collection> {
+    static EMPTY: OnceLock<Result<Collection>> = OnceLock::new();
+    // The engine currently exposes a plugin parser as the collection
+    // constructor. Compile a dependency-free empty plan once for ad hoc calls.
+    let empty = EMPTY.get_or_init(|| {
+        let files = [
+            format::PluginFile { path:"plugin.md", text:Some("---\nplugin: query-template\nname: Query template\nversion: 1.0.0\nformat: 1\n---\n") },
+            format::PluginFile { path:"collections/query.md", text:Some("---\ncollection: query\ntitle: Query\nformat: 1\nfrom: virtual.items\nviews:\n  list: id\n---\n") },
+        ];
+        format::parse_plugin(&files, &format::InstallOptions::default()).map_err(declarations::invalid)?
+            .collections.remove("query").ok_or_else(|| internal("missing ad hoc query template"))
+    });
+    let mut collection = empty.as_ref().map_err(Clone::clone)?.clone();
+    collection.condition = filter
+        .map(format::parse_expression)
+        .transpose()
+        .map_err(declarations::invalid)?;
+    collection.sort = sorts
+        .iter()
+        .map(|column| {
+            let (field, descending) = if let Some(field) = column.strip_suffix(" desc") {
+                (field, true)
+            } else {
+                (column.strip_suffix(" asc").unwrap_or(column), false)
+            };
+            format::Sort {
+                field: field.to_owned(),
+                descending,
+            }
+        })
+        .collect();
+    Ok(collection)
+}
+
+struct QueryInput {
+    fields: format::Fields,
+    metadata: format::Fields,
+    state: format::Fields,
+    records: Vec<format::Fields>,
+    record_positions: BTreeMap<String, usize>,
+}
+
+fn query_input(
+    space: &Space,
+    kind: &Kind<'_>,
+    row: &Row,
+    records: &[Record],
+) -> Result<QueryInput> {
+    let owner = kind.id.split_once('.').expect("qualified kind").0;
+    let mut state = format::Fields::new();
+    let mut record_positions = BTreeMap::new();
+    if !kind.state.is_empty() {
+        let mut stmt = space
+            .db
+            .prepare_cached(
+                "SELECT name,value,ordinal FROM viewer_state WHERE plugin=?1 AND item=?2",
+            )
+            .map_err(internal)?;
+        let rows = stmt
+            .query_map(params![owner, row.head.id.to_string()], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                ))
+            })
+            .map_err(internal)?;
+        for entry in rows {
+            let (key, raw, position) = entry.map_err(internal)?;
+            let Some(field) = kind.state.get(&key) else {
+                continue;
+            };
+            let value: Value = serde_json::from_str(&raw).map_err(internal)?;
+            if let Some(position) = position {
+                let anchor = value
+                    .as_str()
+                    .ok_or_else(|| internal("invalid stored anchor"))?;
+                record_positions.insert(
+                    anchor.to_owned(),
+                    records.partition_point(|row| row.ordinal as i64 <= position),
+                );
+            }
+            let value = if field.field_type == Some(FieldType::Time) {
+                format::Value::Time(
+                    value
+                        .as_str()
+                        .ok_or_else(|| internal("invalid stored time"))?
+                        .to_owned(),
+                )
+            } else {
+                declarations::as_format(&value)?
+            };
+            state.insert(key, value);
+        }
+        for (name, field) in &kind.state {
+            if !state.contains_key(name)
+                && let Some(default) = declarations::field_default(field)?
+            {
+                state.insert(name.clone(), declarations::as_format(&default)?);
+            }
+        }
+    }
+
+    let at = |milliseconds| -> Result<format::Value> {
+        let stamp =
+            time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(milliseconds) * 1_000_000)
+                .map_err(internal)?
+                .format(&time::format_description::well_known::Rfc3339)
+                .map_err(internal)?;
+        Ok(format::Value::Time(stamp))
+    };
+    let stamps = records
+        .iter()
+        .map(|record| {
+            Ok(format::Fields::from([
+                ("anchor".into(), format::Value::Text(record.anchor.clone())),
+                ("author".into(), format::Value::Text(record.author.clone())),
+                ("at".into(), at(record.at)?),
+            ]))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(QueryInput {
+        fields: declarations::as_fields(&row.fields)?,
+        metadata: format::Fields::from([
+            ("id".into(), format::Value::Text(row.head.id.to_string())),
+            ("kind".into(), format::Value::Text(row.head.kind.clone())),
+            ("edited".into(), at(row.head.edited)?),
+        ]),
+        state,
+        records: stamps,
+        record_positions,
+    })
+}
+
+fn execute(
+    collection: &Collection,
+    kind: &Kind<'_>,
+    inputs: &[QueryInput],
+    page: format::Page,
+) -> Result<format::QueryResult> {
+    let empty = format::Fields::new();
+    let rows = inputs
+        .iter()
+        .map(|input| format::Row {
+            fields: &input.fields,
+            metadata: &input.metadata,
+        })
+        .collect::<Vec<_>>();
+    let records_by_item = inputs
+        .iter()
+        .map(|input| {
+            input
+                .records
+                .iter()
+                .map(|record| format::Row {
+                    fields: &empty,
+                    metadata: record,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let contexts = inputs
+        .iter()
+        .zip(&records_by_item)
+        .map(|(input, records)| {
+            let format::Value::Text(id) = &input.metadata["id"] else {
+                unreachable!("host item ID")
+            };
+            (
+                id.clone(),
+                format::QueryRowContext {
+                    state: Some(&input.state),
+                    records,
+                    record_positions: Some(&input.record_positions),
+                    ..format::QueryRowContext::default()
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let (today, now) = declarations::clock()?;
+    let context = format::EvalContext {
+        today: Some(&today),
+        now: Some(&now),
+        offset_seconds: Some(0),
+        rows: Some(&contexts),
+        ..format::EvalContext::default()
+    };
+    format::evaluate_query(collection, kind.compiled, &rows, page, &context)
+        .map_err(declarations::invalid)
+}
+
+fn render_row(row: &Row, computed: &format::Fields) -> Value {
+    let computed = declarations::as_json(&format::Value::Map(computed.clone()));
+    json!({"id":row.head.id,"kind":row.head.kind,"fields":row.fields,"computed":computed,"version":row.head.version})
 }
 
 pub(crate) fn state(
@@ -186,13 +400,18 @@ pub(crate) fn state(
         .0
         .to_owned();
     let Some(value) = set else {
-        return Ok(json!({"value":state_value(space, kind, item, &name)?}));
+        return Ok(json!({"value":state_value(space, &kind, item, &name)?}));
     };
-    if !value.is_null() && !field.accepts(&value) {
+    if !value.is_null()
+        && !field
+            .field_type
+            .as_ref()
+            .is_some_and(|field| declarations::accepts(field, &value))
+    {
         return Err(Error::invalid_input("State value has the wrong type."));
     }
     let effective = if value.is_null() {
-        field.default.clone().unwrap_or_default()
+        declarations::field_default(field)?.unwrap_or_default()
     } else {
         value.clone()
     };
@@ -212,7 +431,7 @@ pub(crate) fn state(
     if let Some(replay) = receipt.as_ref().and_then(|receipt| receipt.replay.clone()) {
         return Ok(replay);
     }
-    let is_anchor = field.anchor();
+    let is_anchor = field.field_type == Some(FieldType::Anchor);
     let tx = space.db.transaction().map_err(internal)?;
     let ordinal = if is_anchor && !value.is_null() {
         let ordinal: Option<i64> = tx
@@ -274,196 +493,5 @@ fn state_value(space: &Space, kind: &Kind, item: Uuid, name: &str) -> Result<Val
         .map_err(internal)?;
     stored
         .map(|raw| serde_json::from_str(&raw).map_err(internal))
-        .unwrap_or_else(|| Ok(field.default.clone().unwrap_or_default()))
-}
-
-fn render_row(space: &Space, kind: &Kind, row: &Row) -> Result<Value> {
-    let computed = kind
-        .fields
-        .iter()
-        .filter_map(|(key, field)| field.computed.as_deref().map(|f| (key, f)))
-        .map(|(key, formula)| Ok((key.clone(), evaluate(space, kind, row, formula)?)))
-        .collect::<Result<Fields>>()?;
-    Ok(
-        json!({"id":row.head.id,"kind":row.head.kind,"fields":row.fields,"computed":computed,"version":row.head.version}),
-    )
-}
-
-fn evaluate(space: &Space, kind: &Kind, row: &Row, formula: &str) -> Result<Value> {
-    if let Some(key) = formula
-        .strip_prefix("count(records after state.")
-        .and_then(|f| f.strip_suffix(')'))
-    {
-        if !kind.state.get(key).is_some_and(|field| field.anchor()) {
-            return Err(Error::invalid_input(
-                "Record position needs a declared anchor key.",
-            ));
-        }
-        let owner = kind.id.split_once('.').expect("qualified kind").0;
-        let count: i64 = space
-            .db
-            .query_row(
-                "SELECT count(*) FROM records WHERE item=?1 AND ordinal>COALESCE(
-                (SELECT ordinal FROM viewer_state WHERE plugin=?2 AND item=?1 AND name=?3),0)",
-                params![row.head.id.to_string(), owner, key],
-                |row| row.get(0),
-            )
-            .map_err(internal)?;
-        return Ok(json!(count));
-    }
-    // Temporary format-engine stub for the record-count expression. The
-    // declaration supplies the state key, and the ledger supplies the times.
-    if let Some(inside) = formula
-        .strip_prefix("if(state.")
-        .and_then(|f| f.strip_suffix("))"))
-        && let Some((key, comparison)) =
-            inside.split_once(" = empty, count(records), count(records, at > state.")
-        && key == comparison
-    {
-        let value = state_value(space, kind, row.head.id, key)?;
-        let after = value
-            .as_str()
-            .and_then(|raw| {
-                time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339)
-                    .ok()
-            })
-            .map(|at| (at.unix_timestamp_nanos() / 1_000_000) as i64)
-            .unwrap_or(i64::MIN);
-        let count: i64 = space
-            .db
-            .query_row(
-                "SELECT count(*) FROM records WHERE item=?1 AND at>?2",
-                params![row.head.id.to_string(), after],
-                |row| row.get(0),
-            )
-            .map_err(internal)?;
-        return Ok(json!(count));
-    }
-    Err(Error::invalid_input("The formula needs the format engine."))
-}
-
-enum Condition<'a> {
-    Truth {
-        key: &'a str,
-        negated: bool,
-    },
-    Compare {
-        key: &'a str,
-        count: bool,
-        op: &'a str,
-        value: Value,
-    },
-    And(Vec<Condition<'a>>),
-}
-
-impl<'a> Condition<'a> {
-    fn parse(kind: &Kind, source: &'a str) -> Result<Self> {
-        if source.contains(" and ") {
-            return Ok(Self::And(
-                source
-                    .split(" and ")
-                    .map(|part| Self::parse(kind, part))
-                    .collect::<Result<Vec<_>>>()?,
-            ));
-        }
-        let valid = |key: &str| {
-            kind.fields.contains_key(key)
-                || key
-                    .strip_prefix("state.")
-                    .is_some_and(|key| kind.state.contains_key(key))
-        };
-        for op in [" >= ", " <= ", " != ", " = ", " > ", " < "] {
-            if let Some((key, raw)) = source.split_once(op) {
-                let count = key
-                    .strip_prefix("count(")
-                    .and_then(|key| key.strip_suffix(')'));
-                let key = count.unwrap_or(key);
-                if valid(key) {
-                    let value = match raw {
-                        "yes" => Value::Bool(true),
-                        "no" => Value::Bool(false),
-                        "empty" => Value::Null,
-                        _ => serde_json::from_str(raw)
-                            .map_err(|_| Error::invalid_input("Unsupported filter value."))?,
-                    };
-                    return Ok(Self::Compare {
-                        key,
-                        count: count.is_some(),
-                        op: op.trim(),
-                        value,
-                    });
-                }
-            }
-        }
-        let (key, negated) = source
-            .strip_prefix("not ")
-            .map_or((source, false), |key| (key, true));
-        if valid(key) {
-            return Ok(Self::Truth { key, negated });
-        }
-        Err(Error::invalid_input("Unsupported query condition."))
-    }
-
-    fn matches(&self, space: &Space, kind: &Kind, row: &Row) -> Result<bool> {
-        let value = |key: &str| -> Result<Value> {
-            if let Some(key) = key.strip_prefix("state.") {
-                state_value(space, kind, row.head.id, key)
-            } else if let Some(formula) = kind
-                .fields
-                .get(key)
-                .and_then(|field| field.computed.as_deref())
-            {
-                evaluate(space, kind, row, formula)
-            } else {
-                Ok(row.fields.get(key).cloned().unwrap_or_default())
-            }
-        };
-        match self {
-            Self::Truth { key, negated } => Ok(value(key)?.as_bool().unwrap_or(false) != *negated),
-            Self::Compare {
-                key,
-                count,
-                op,
-                value: expected,
-            } => {
-                let mut actual = value(key)?;
-                if *count {
-                    actual = json!(actual.as_array().map_or(0, Vec::len));
-                }
-                let order = compare(&actual, expected);
-                Ok(match *op {
-                    "=" => actual == *expected,
-                    "!=" => actual != *expected,
-                    ">" => order.is_gt(),
-                    "<" => order.is_lt(),
-                    ">=" => order.is_ge(),
-                    "<=" => order.is_le(),
-                    _ => unreachable!(),
-                })
-            }
-            Self::And(conditions) => {
-                for condition in conditions {
-                    if !condition.matches(space, kind, row)? {
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
-            }
-        }
-    }
-}
-
-fn compare(a: &Value, b: &Value) -> Ordering {
-    match (a, b) {
-        (Value::Null, Value::Null) => Ordering::Equal,
-        (Value::Null, _) => Ordering::Less,
-        (_, Value::Null) => Ordering::Greater,
-        (Value::Number(a), Value::Number(b)) => a
-            .as_f64()
-            .zip(b.as_f64())
-            .map_or(Ordering::Equal, |(a, b)| a.total_cmp(&b)),
-        (Value::String(a), Value::String(b)) => a.cmp(b),
-        (Value::Bool(a), Value::Bool(b)) => a.cmp(b),
-        _ => a.to_string().cmp(&b.to_string()),
-    }
+        .unwrap_or_else(|| Ok(declarations::field_default(field)?.unwrap_or_default()))
 }

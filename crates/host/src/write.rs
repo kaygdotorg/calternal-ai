@@ -1,5 +1,5 @@
 //! Batch planning followed by durable publication through the space ledger.
-use crate::declarations::{Fields, Kind, apply_fields, write_item};
+use crate::declarations::{Fields, Kind, OperationForm, apply_fields, write_item};
 use crate::records::{self, Record};
 use crate::space::{Head, ITEM_BYTES, Row, Space};
 use crate::{WRITE_BYTES, identity, internal, result};
@@ -89,6 +89,16 @@ pub(crate) fn write(
     if let Some(value) = receipt.as_ref().and_then(|entry| entry.replay.clone()) {
         return Ok(value);
     }
+    if let Some(receipt) = &receipt
+        && let Some(recovered) = records::recovered(space, actor, receipt)?
+    {
+        if let [Change::Append { item, record }] = input.changes.as_slice()
+            && *item == recovered.item
+        {
+            return records::replay_recovered(space, actor, record.clone(), receipt, recovered);
+        }
+        return Err(Error::request_reused());
+    }
     let now = calternal_types::now_ms();
     #[cfg(target_os = "linux")]
     if !input.preview
@@ -97,7 +107,7 @@ pub(crate) fn write(
         let head = space.row(*item)?.head.clone();
         space.permits(actor, &head.kind, true)?;
         let kind = space.kind(&head.kind)?;
-        operation(kind, actor, "append record", None)?;
+        operation(&kind, actor, "append record", None)?;
         return records::append(space, actor, head, record.clone(), now, receipt.as_ref());
     }
     let mut working = BTreeMap::<Uuid, Working>::new();
@@ -109,13 +119,14 @@ pub(crate) fn write(
             Change::Add { kind, fields, body } => {
                 space.permits(actor, &kind, true)?;
                 let declaration = space.kind(&kind)?;
-                operation(declaration, actor, "add", None)?;
+                operation(&declaration, actor, "add", None)?;
                 let mut stored = Fields::new();
                 apply_fields(&declaration.fields, &mut stored, fields, true)?;
                 let id = Uuid::now_v7();
-                let path = path_for(space, declaration, &stored, id, None, &working)?;
-                let body = records::escape_body(body.as_deref().unwrap_or(&declaration.template));
-                let bytes = prefix(&stored, &body)?;
+                let path = path_for(space, &declaration, &stored, id, None, &working)?;
+                let body = records::escape_body(body.as_deref().unwrap_or(declaration.template));
+                let bytes =
+                    write_item("---\n---\n", &stored, Some(&body), &declaration)?.into_bytes();
                 let size = bytes.len() as u64;
                 let head = Head {
                     id,
@@ -174,8 +185,12 @@ pub(crate) fn write(
                     });
                 }
                 let previous = working.get(&id).expect("planned item");
-                let path_field = space.kind(&previous.row.head.kind)?.filename_field();
+                let path_field = space
+                    .kind(&previous.row.head.kind)?
+                    .filename_field()
+                    .map(str::to_owned);
                 let old_path_value = path_field
+                    .as_deref()
                     .and_then(|key| previous.row.fields.get(key))
                     .cloned();
                 let current = working.get_mut(&id).expect("planned item");
@@ -184,13 +199,23 @@ pub(crate) fn write(
                         "A removed item cannot be changed again in the same write.",
                     ));
                 }
-                let kind = space.kind(&current.row.head.kind)?;
-                let action = apply(space, actor, kind, current, other, now)?;
-                if old_path_value.as_ref() != path_field.and_then(|key| current.row.fields.get(key))
+                let qualified = current.row.head.kind.clone();
+                let kind = space.kind(&qualified)?;
+                let action = apply(space, actor, &kind, current, other, now)?;
+                if old_path_value.as_ref()
+                    != path_field
+                        .as_deref()
+                        .and_then(|key| current.row.fields.get(key))
                 {
                     let row = current.row.clone();
-                    let path =
-                        path_for(space, kind, &row.fields, id, Some(&row.head.path), &working)?;
+                    let path = path_for(
+                        space,
+                        &kind,
+                        &row.fields,
+                        id,
+                        Some(&row.head.path),
+                        &working,
+                    )?;
                     working.get_mut(&id).expect("planned item").row.head.path = path;
                 }
                 (id, action.0, action.1)
@@ -249,7 +274,7 @@ pub(crate) fn write(
             kind.id.split_once('.').expect("qualified kind").1,
             kind.id.split_once('.').expect("qualified kind").0,
             actor.account,
-            kind.instructions
+            kind.body
         );
         let instruction_path = format!("{dir}/AGENTS.md");
         if instruction_paths.insert(instruction_path.clone())
@@ -340,21 +365,18 @@ fn operation(kind: &Kind, actor: &Actor, action: &str, fields: Option<&Fields>) 
     if actor.via.is_some() && kind.id.starts_with(&format!("{plugin}.")) {
         return Ok(());
     }
-    let declaration = kind.operations.get(action).map(String::as_str);
-    if declaration.is_some_and(|line| line.contains("when ") || line.starts_with("code"))
+    let declaration = kind.operations.get(action);
+    if declaration.is_some_and(|operation| operation.condition.is_some() || operation.is_coded())
         || (declaration.is_none()
-            && !(kind.outside && matches!(action, "add" | "change" | "remove")))
+            && !(kind.outside() && matches!(action, "add" | "change" | "remove")))
     {
         return Err(Error::forbidden(
             "This operation requires the kind's declared operation.",
         ));
     }
-    if let (Some(only), Some(fields)) = (
-        declaration.and_then(|line| line.strip_prefix("only ")),
-        fields,
-    ) && fields
-        .keys()
-        .any(|key| !only.split(", ").any(|field| field == key))
+    if let (Some(operation), Some(fields)) = (declaration, fields)
+        && let OperationForm::Change(Some(only)) = &operation.form
+        && fields.keys().any(|key| !only.contains(key))
     {
         return Err(Error::forbidden(
             "The built-in operation cannot change those fields.",
@@ -371,24 +393,18 @@ fn path_for(
     old_path: Option<&str>,
     planned: &BTreeMap<Uuid, Working>,
 ) -> Result<String> {
-    let title = if let Some(pattern) = &kind.file {
-        if let Some(key) = pattern.strip_prefix('{').and_then(|v| v.strip_suffix('}')) {
-            fields
-                .get(key)
-                .and_then(Value::as_str)
-                .ok_or_else(|| Error::invalid_input("The filename field must be text."))?
-                .to_owned()
-        } else {
-            return Err(Error::invalid_input("Unsupported file pattern."));
-        }
-    } else {
-        fields
-            .get("title")
+    let value = match kind.filename_field() {
+        Some(key) => fields
+            .get(key)
             .and_then(Value::as_str)
-            .map(str::to_owned)
-            .unwrap_or_else(|| id.to_string())
+            .ok_or_else(|| Error::invalid_input("The filename field must be text."))?
+            .to_owned(),
+        None if kind.file == kind.compiled.id && !kind.fields.contains_key("title") => {
+            id.to_string()
+        }
+        None => kind.file.clone(),
     };
-    let mut stem = names::stem_from_title(&title);
+    let mut stem = names::stem_from_title(&value);
     if matches!(names::fold(&stem).as_str(), "agents" | "claude" | "gemini") {
         stem.push_str(" 2");
     }
@@ -404,7 +420,7 @@ fn path_for(
         }
     };
     let listed = space
-        .open_folder(&kind.folder, false)
+        .open_folder(kind.folder, false)
         .map(|folder| folder.names());
     let on_disk: std::collections::BTreeSet<_> = match listed {
         Ok(names) => names
@@ -443,14 +459,6 @@ fn path_for(
     )
 }
 
-fn prefix(fields: &Fields, body: &str) -> Result<Vec<u8>> {
-    let mut markdown = write_item(fields, body)?;
-    if !markdown.ends_with('\n') {
-        markdown.push('\n');
-    }
-    Ok(markdown.into_bytes())
-}
-
 fn apply(
     space: &Space,
     actor: &Actor,
@@ -470,7 +478,7 @@ fn apply(
                 && kind
                     .operations
                     .get("change")
-                    .is_some_and(|line| line.starts_with("only "))
+                    .is_some_and(|operation| matches!(&operation.form, OperationForm::Change(Some(only)) if !only.iter().any(|field| field == "body")))
             {
                 return Err(Error::forbidden(
                     "The built-in operation cannot change the body.",
@@ -480,12 +488,10 @@ fn apply(
                 return Err(Error::conflict("The item version changed."));
             }
             let before = head.prefix as usize;
-            let original = crate::declarations::item_body(
-                std::str::from_utf8(&item.bytes[..before]).map_err(internal)?,
-            )?;
-            apply_fields(&kind.fields, &mut item.row.fields, fields, false)?;
+            let original = std::str::from_utf8(&item.bytes[..before]).map_err(internal)?;
+            apply_fields(&kind.fields, &mut item.row.fields, fields.clone(), false)?;
             let changed = body.as_deref().map(records::escape_body);
-            let mut prefix = prefix(&item.row.fields, changed.as_deref().unwrap_or(original))?;
+            let mut prefix = write_item(original, &fields, changed.as_deref(), kind)?.into_bytes();
             head.hash = space.hash(&prefix);
             head.prefix = prefix.len() as u64;
             for record in &mut item.records {

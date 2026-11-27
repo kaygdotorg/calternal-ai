@@ -137,7 +137,7 @@ fn installs_chat_adds_markdown_and_rebuilds_query() {
     assert_eq!(before["rows"][0]["computed"]["unread"], 0);
     assert_eq!(
         std::fs::read_to_string(f.space_path().join("Chats/A small chat/chat.md")).unwrap(),
-        "---\narchived: false\ntitle: A small chat\n---\n"
+        "---\narchived: false\ntitle: \"A small chat\"\n---\n"
     );
     let installed = f
         .space_path()

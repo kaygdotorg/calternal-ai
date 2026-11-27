@@ -14,9 +14,11 @@ awk '
     /fsync\(|fdatasync\(|syncfs\(/ && /ledger\.sqlite3/ { ledger_flush++ }
     /fsync\(|fdatasync\(|syncfs\(/ && !/chat\.md|ledger\.sqlite3/ { other_flush++ }
     /(^|[[:space:]])(read|pread64)\(/ && /chat\.md/ { item_read++ }
+    /(^|[[:space:]])(read|pread64)\(/ && /ledger\.sqlite3/ { ledger_read++ }
+    /(^|[[:space:]])(read|pread64)\(/ && /auth\.db/ { authority_read++ }
     END {
         if (!ended || item_flush != 1000) exit 1
-        printf "1000 appends: %d item reads, %d item flushes, %d ledger flushes, %d other flushes\n",
-            item_read, item_flush, ledger_flush, other_flush
+        printf "1000 appends: %d item reads, %d ledger reads, %d authority reads, %d item flushes, %d ledger flushes, %d other flushes\n",
+            item_read, ledger_read, authority_read, item_flush, ledger_flush, other_flush
     }
 ' "$trace"

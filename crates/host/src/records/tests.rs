@@ -1,4 +1,5 @@
 //! Exercise crash recovery at the boundary between the file and ledger flush.
+use super::append::{append_result, make_append};
 use super::*;
 use crate::Call;
 use calternal_types::{AccountId, SpaceId};
@@ -6,6 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 const REQUEST: &[u8] = b"fixture canonical write request";
+const MESSAGE: &str = "Message left by the interrupted request";
 const GESTURE: &str = "one-gesture";
 
 struct Fixture {
@@ -53,9 +55,9 @@ impl Fixture {
             .unwrap();
         let input = Input {
             fields: Fields::new(),
-            body: Some("Message left by the interrupted request".to_owned()),
+            body: Some(MESSAGE.to_owned()),
         };
-        let (next, record, bytes, _) = make_append(
+        let (next, record, bytes) = make_append(
             &self.space,
             head,
             &self.actor,
@@ -116,7 +118,7 @@ impl Fixture {
         assert!(bytes.len() as u64 > head.length);
         let kind = self.space.kind(&head.kind).unwrap();
         assert_eq!(
-            self.space.record_views(head, &bytes, &[], kind).unwrap()[0]["author"],
+            self.space.record_views(head, &bytes, &[], &kind).unwrap()[0]["author"],
             "outside"
         );
     }
@@ -133,17 +135,28 @@ fn recovers_a_complete_append_and_its_retry_receipt() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].author, f.actor.account.to_string());
     assert_eq!(f.space.row(head.id).unwrap().head.version, head.version + 1);
-    let receipt = f
-        .space
-        .receipt(&f.scope(), Some(GESTURE), REQUEST)
-        .unwrap()
-        .unwrap();
-    assert_eq!(receipt.replay, Some(expected));
-    assert!(
-        f.space
-            .receipt(&f.scope(), Some(GESTURE), b"different request")
-            .is_err()
+    let stamp = std::str::from_utf8(&tail).unwrap().lines().next().unwrap();
+    let comment_start = stamp.find(seal::PREFIX).unwrap();
+    assert_eq!(stamp.len() - comment_start, 34);
+    let replay = |f: &mut Fixture, message: &str| {
+        f.space.call(&f.actor, Call {
+        call: "s.write".into(),
+        input: json!({"changes":[{"op":"append record","item":head.id,"record":{"body":message}}]}),
+        idempotency_key: Some(GESTURE.into()),
+    })
+    };
+    assert_eq!(
+        replay(&mut f, "Different message").unwrap_err().code,
+        calternal_types::ErrorCode::Conflict
     );
+    let changed_operation = f.space.call(&f.actor, Call {
+        call: "s.write".into(),
+        input: json!({"changes":[{"op":"change","item":head.id,"fields":{"archived":true}}]}),
+        idempotency_key: Some(GESTURE.into()),
+    }).unwrap_err();
+    assert_eq!(changed_operation.code, calternal_types::ErrorCode::Conflict);
+    assert_eq!(replay(&mut f, MESSAGE).unwrap(), expected);
+    assert_eq!(replay(&mut f, MESSAGE).unwrap(), expected);
     f = f.reopen();
     assert_eq!(f.space.records(head.id).unwrap().len(), 1);
 }
@@ -193,4 +206,26 @@ fn a_complete_append_with_changed_content_stays_outside() {
     f.append_uncommitted(&head, &tail);
     f = f.reopen();
     f.verify_outside(&head);
+}
+
+#[test]
+fn the_author_can_edit_only_inside_the_declared_window() {
+    let mut f = Fixture::new();
+    let head = f.add("First");
+    let now = calternal_types::now_ms();
+    let kind = f.space.kind(&head.kind).unwrap();
+    let (_, record, _) = make_append(
+        &f.space,
+        &head,
+        &f.actor,
+        Input {
+            fields: Fields::new(),
+            body: Some(MESSAGE.into()),
+        },
+        now - 47 * 3_600_000,
+        None,
+    )
+    .unwrap();
+    assert!(can_edit(&kind, &f.actor, &record, now).is_ok());
+    assert!(can_edit(&kind, &f.actor, &record, now + 2 * 3_600_000).is_err());
 }

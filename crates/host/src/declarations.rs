@@ -1,174 +1,163 @@
-//! Temporary adapter for the format engine sketch. The host owns filesystem
-//! safety and authority. This module owns interpretation of definition text.
-
-use crate::internal;
-use calternal_types::{Error, Result};
+//! Adapter from verified bundle bytes and JSON values to the pure format engine.
+use calternal_format as format;
+use calternal_types::{AccountId, Error, Result};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
+use std::ops::Deref;
 
 pub(crate) type Fields = Map<String, Value>;
+pub(crate) use format::{Collection, Field, FieldType, OperationForm, Plugin};
 
-#[derive(Clone)]
-pub(crate) struct Plugin {
-    pub(crate) id: String,
-    pub(crate) reads: Vec<String>,
-    pub(crate) kinds: BTreeMap<String, Kind>,
-    pub(crate) collections: BTreeMap<String, Collection>,
+pub(crate) struct Kind<'a> {
+    pub(crate) id: &'a str,
+    pub(crate) folder: &'a str,
+    pub(crate) main: Option<&'a str>,
+    pub(crate) template: &'a str,
+    pub(crate) compiled: &'a format::Kind,
 }
 
-#[derive(Clone)]
-pub(crate) struct Kind {
-    pub(crate) id: String,
-    pub(crate) folder: String,
-    pub(crate) file: Option<String>,
-    pub(crate) main: Option<String>,
-    pub(crate) instructions: String,
-    pub(crate) template: String,
-    pub(crate) fields: BTreeMap<String, Field>,
-    pub(crate) records: BTreeMap<String, Field>,
-    pub(crate) state: BTreeMap<String, Field>,
-    pub(crate) operations: BTreeMap<String, String>,
-    pub(crate) outside: bool,
-    pub(crate) filter: Option<String>,
-}
+impl Deref for Kind<'_> {
+    type Target = format::Kind;
 
-#[derive(Clone)]
-pub(crate) struct Field {
-    specification: String,
-    pub(crate) default: Option<Value>,
-    pub(crate) computed: Option<String>,
-}
-
-#[derive(Clone)]
-pub(crate) struct Collection {
-    pub(crate) from: String,
-    pub(crate) filter: Option<String>,
-    pub(crate) sort: Vec<String>,
-}
-
-pub(crate) fn name(value: &str) -> bool {
-    value.len() <= 64
-        && value.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
-        && value
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-}
-
-fn invalid(path: &str, line: usize, reason: &str) -> Error {
-    Error::invalid_input(format!("{path}:{line}: {reason}"))
-}
-
-fn split(source: &str) -> Option<(&str, &str)> {
-    let source = source.strip_prefix("---\n")?;
-    if let Some(body) = source.strip_prefix("---\n") {
-        return Some(("", body));
+    fn deref(&self) -> &Self::Target {
+        self.compiled
     }
-    source
-        .split_once("\n---\n")
-        .or_else(|| source.strip_suffix("\n---").map(|head| (head, "")))
 }
 
-struct Definition<'a> {
-    keys: BTreeMap<&'a str, &'a str>,
-    blocks: BTreeMap<&'a str, BTreeMap<String, String>>,
-    body: &'a str,
-}
-
-fn definition<'a>(path: &str, source: &'a str) -> Result<Definition<'a>> {
-    let (header, body) =
-        split(source).ok_or_else(|| invalid(path, 1, "Expected a Markdown definition."))?;
-    let mut keys = BTreeMap::new();
-    let mut blocks = BTreeMap::<_, BTreeMap<_, _>>::new();
-    let mut block = None;
-    for (index, line) in header.lines().enumerate() {
-        if line.trim().is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let line_number = index + 2;
-        if let Some(line) = line.strip_prefix("  ") {
-            let parent =
-                block.ok_or_else(|| invalid(path, line_number, "Unexpected indentation."))?;
-            let (key, value) = line
-                .split_once(": ")
-                .or_else(|| line.strip_suffix(':').map(|key| (key, "")))
-                .unwrap_or((line, ""));
-            if blocks
-                .entry(parent)
-                .or_default()
-                .insert(key.to_owned(), value.to_owned())
-                .is_some()
-            {
-                return Err(invalid(path, line_number, "Repeated definition line."));
-            }
-            continue;
-        }
-        let (key, value) = line
-            .split_once(": ")
-            .or_else(|| line.strip_suffix(':').map(|key| (key, "")))
-            .ok_or_else(|| invalid(path, line_number, "Expected a definition key."))?;
-        if keys.insert(key, value).is_some() {
-            return Err(invalid(path, line_number, "Repeated definition key."));
-        }
-        block = value.is_empty().then_some(key);
-    }
-    if keys.get("format") != Some(&"1") {
-        return Err(invalid(path, 1, "Expected format 1."));
-    }
-    Ok(Definition { keys, blocks, body })
-}
-
-impl Kind {
+impl Kind<'_> {
     pub(crate) fn filename_field(&self) -> Option<&str> {
-        match &self.file {
-            Some(pattern) => pattern.strip_prefix('{')?.strip_suffix('}'),
-            None => self.fields.contains_key("title").then_some("title"),
-        }
+        self.file.strip_prefix('{')?.strip_suffix('}')
+    }
+
+    pub(crate) fn outside(&self) -> bool {
+        self.editable == format::Editability::Outside
     }
 }
 
-impl Field {
-    fn parse(specification: String) -> Self {
-        let default = specification
-            .split(", ")
-            .find_map(|part| part.strip_prefix("default "))
-            .map(|raw| match raw {
-                "yes" => Value::Bool(true),
-                "no" => Value::Bool(false),
-                _ => serde_yaml::from_str(raw).unwrap_or_else(|_| Value::String(raw.to_owned())),
-            });
-        let computed = specification.strip_prefix("= ").map(str::to_owned);
-        Self {
-            specification,
-            default,
-            computed,
+pub(crate) fn invalid(error: format::Diagnostic) -> Error {
+    Error::invalid_input(error.to_string())
+}
+
+pub(crate) fn view_kind<'a>(id: &'a str, plugin: &'a Plugin, key: &str) -> Option<Kind<'a>> {
+    let compiled = plugin.kinds.get(key)?;
+    Some(Kind {
+        id,
+        folder: compiled.folder.as_deref()?,
+        main: match &compiled.item {
+            format::ItemForm::Folder(main) => Some(main),
+            _ => None,
+        },
+        template: compiled
+            .template
+            .as_ref()
+            .and_then(|template| plugin.templates.get(template))
+            .map_or("", String::as_str),
+        compiled,
+    })
+}
+
+pub(crate) fn parse_plugin(
+    entries: &BTreeMap<String, Vec<u8>>,
+    official: bool,
+    expected_id: Option<&str>,
+    installed: &[Plugin],
+) -> Result<Plugin> {
+    let files = entries
+        .iter()
+        .map(|(path, data)| format::PluginFile {
+            path,
+            text: path
+                .ends_with(".md")
+                .then(|| std::str::from_utf8(data).ok())
+                .flatten(),
+        })
+        .collect::<Vec<_>>();
+    // The operator-approved local source is the developer path. Extract its
+    // candidate pair for the engine policy, which validates the manifest once.
+    let current = files
+        .iter()
+        .find(|file| file.path == "plugin.md")
+        .and_then(|file| file.text);
+    let header_value = |key: &str| {
+        current?
+            .split("\n---")
+            .next()?
+            .lines()
+            .find_map(|line| line.strip_prefix(key))
+    };
+    let mut trusted = installed
+        .iter()
+        .filter(|plugin| plugin.manifest.id.starts_with("calternal-"))
+        .map(|plugin| (plugin.manifest.id.as_str(), plugin.manifest.name.as_str()))
+        .collect::<Vec<_>>();
+    if official && let (Some(id), Some(name)) = (header_value("plugin: "), header_value("name: ")) {
+        trusted.push((id, name));
+    }
+    let plugin = format::parse_plugin(
+        &files,
+        &format::InstallOptions {
+            expected_id,
+            official: &trusted,
+            installed,
+        },
+    )
+    .map_err(invalid)?;
+    let manifest = &plugin.manifest;
+    if !manifest.destinations.is_empty()
+        || !manifest.programs.is_empty()
+        || manifest.directives.iter().any(|key| {
+            matches!(
+                key.key.as_str(),
+                "extends"
+                    | "outside"
+                    | "notifications"
+                    | "sign-ins"
+                    | "secrets"
+                    | "listens"
+                    | "refuses"
+            )
+        })
+    {
+        return Err(Error::forbidden(
+            "This host slice cannot grant the plugin's declarations.",
+        ));
+    }
+    for kind in plugin.kinds.values() {
+        if kind.hidden
+            || !kind.rights.read.is_empty()
+            || kind.plus_marked_folders
+            || kind.unique.is_some()
+            || kind.keep.is_some()
+            || matches!(kind.item, format::ItemForm::Binary { .. })
+            || kind.folder.as_ref().is_none_or(|name| !plain_folder(name))
+            || matches!(&kind.item, format::ItemForm::Folder(main) if reserved_name(main) || main.contains('/'))
+            || (kind.file.contains(['{', '}'])
+                && kind
+                    .file
+                    .strip_prefix('{')
+                    .and_then(|s| s.strip_suffix('}'))
+                    .is_none_or(|name| name.contains(['{', '}', ':'])))
+        {
+            return Err(Error::forbidden(
+                "The kind declares storage or authority outside this host slice.",
+            ));
         }
     }
+    Ok(plugin)
+}
 
-    pub(crate) fn anchor(&self) -> bool {
-        self.specification.split(", ").next() == Some("record anchor")
-    }
+fn plain_folder(name: &str) -> bool {
+    calternal_fsio::beneath::plain_parts(name).is_ok()
+        && name.split('/').all(|part| {
+            !part.starts_with('.') && !part.contains(['{', '}']) && !reserved_name(part)
+        })
+}
 
-    pub(crate) fn accepts(&self, value: &Value) -> bool {
-        let ty = self.specification.split(", ").next().unwrap_or_default();
-        match ty {
-            "record anchor" => value.as_str().is_some_and(crate::records::valid_anchor),
-            "yes/no" => value.is_boolean(),
-            "people" => value
-                .as_array()
-                .is_some_and(|values| values.iter().all(Value::is_string)),
-            "time" => value.as_str().is_some_and(|raw| {
-                time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339)
-                    .is_ok()
-            }),
-            "text" | "long text" => value.is_string(),
-            "number" => value.is_number(),
-            _ if ty.starts_with("links(") => value
-                .as_array()
-                .is_some_and(|values| values.iter().all(Value::is_string)),
-            _ if ty.starts_with("link(") => value.is_string(),
-            _ => false,
-        }
-    }
+fn reserved_name(value: &str) -> bool {
+    matches!(
+        calternal_fsio::names::fold(value).as_str(),
+        "agents.md" | "claude.md" | "gemini.md" | ".cursorrules"
+    )
 }
 
 pub(crate) fn apply_fields(
@@ -180,269 +169,196 @@ pub(crate) fn apply_fields(
     for (key, value) in fields {
         let field = schema
             .get(&key)
-            .filter(|field| field.computed.is_none())
-            .ok_or_else(|| Error::invalid_input("Field is undeclared or computed."))?;
+            .filter(|field| !field.from_metadata && field.sidecar.is_none())
+            .and_then(|field| field.field_type.as_ref())
+            .ok_or_else(|| Error::invalid_input("Field is undeclared or read-only."))?;
         if value.is_null() {
             existing.remove(&key);
-        } else if field.accepts(&value) {
+        } else if accepts(field, &value) {
             existing.insert(key, value);
         } else {
             return Err(Error::invalid_input("Field value has the wrong type."));
         }
     }
     for (key, field) in schema {
-        if new && let Some(default) = &field.default {
-            existing.entry(key).or_insert_with(|| default.clone());
-        }
-        if field
-            .specification
-            .split(", ")
-            .any(|flag| flag == "required")
+        if new
             && !existing.contains_key(key)
+            && let Some(default) = field_default(field)?
         {
+            existing.insert(key.clone(), default);
+        }
+        if field.required && !existing.contains_key(key) {
             return Err(Error::invalid_input("A required field is missing."));
         }
     }
     Ok(())
 }
 
-pub(crate) fn parse_plugin(files: &BTreeMap<String, Vec<u8>>, official: bool) -> Result<Plugin> {
-    let source = |path: &str| -> Result<&str> {
-        let bytes = files
-            .get(path)
-            .ok_or_else(|| invalid(path, 1, "Definition is missing."))?;
-        std::str::from_utf8(bytes).map_err(|_| invalid(path, 1, "Definition must be UTF-8."))
-    };
-    let manifest = definition("plugin.md", source("plugin.md")?)?;
-    let id = manifest
-        .keys
-        .get("plugin")
-        .copied()
-        .filter(|id| name(id))
-        .ok_or_else(|| invalid("plugin.md", 1, "Invalid plugin ID."))?;
-    if matches!(
-        id,
-        "space" | "home" | "files" | "lines" | "calternal" | "outside"
-    ) || (id.starts_with("calternal-") && !official)
-    {
-        return Err(Error::forbidden("That plugin ID is reserved."));
+pub(crate) fn accepts(field: &FieldType, value: &Value) -> bool {
+    match field {
+        FieldType::Bool => value.is_boolean(),
+        FieldType::Text => value.as_str().is_some_and(|v| !v.contains(['\r', '\n'])),
+        FieldType::LongText | FieldType::Link(_) => value.is_string(),
+        FieldType::Number(units) => units.is_empty() && value.is_number(),
+        FieldType::Person => value
+            .as_str()
+            .is_some_and(|id| AccountId::parse(id).is_ok()),
+        FieldType::Time => value.as_str().is_some_and(|raw| {
+            time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339).is_ok()
+        }),
+        FieldType::Anchor => value.as_str().is_some_and(crate::records::valid_anchor),
+        FieldType::Choice(options) => value
+            .as_str()
+            .is_some_and(|selected| options.iter().any(|option| option == selected)),
+        FieldType::List(item) => value
+            .as_array()
+            .is_some_and(|items| items.iter().all(|value| accepts(item, value))),
+        _ => false,
     }
-    if manifest.keys.keys().any(|key| {
-        !matches!(
-            *key,
-            "plugin"
-                | "name"
-                | "icon"
-                | "version"
-                | "format"
-                | "sends out"
-                | "slots"
-                | "fills"
-                | "reads"
-        )
-    }) || manifest
-        .keys
-        .get("sends out")
-        .is_some_and(|value| *value != "nothing")
-    {
-        return Err(Error::forbidden(
-            "This host slice cannot approve the plugin's declarations.",
-        ));
-    }
-    let reads = manifest
-        .keys
-        .get("reads")
-        .into_iter()
-        .flat_map(|value| value.split(", "))
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
-        .collect();
-    let mut plugin = Plugin {
-        id: id.to_owned(),
-        reads,
-        kinds: BTreeMap::new(),
-        collections: BTreeMap::new(),
-    };
-    for path in files.keys() {
-        if let Some(key) = entry(path, "kinds/") {
-            let mut def = definition(path, source(path)?)?;
-            if def.keys.keys().any(|key| {
-                !matches!(
-                    *key,
-                    "kind"
-                        | "name"
-                        | "format"
-                        | "folder"
-                        | "file"
-                        | "item"
-                        | "editable"
-                        | "template"
-                        | "fields"
-                        | "records"
-                        | "state"
-                        | "row"
-                        | "page"
-                        | "operations"
-                        | "default where"
-                )
-            }) {
-                return Err(invalid(
-                    path,
-                    1,
-                    "Kind key is outside the temporary format adapter.",
-                ));
-            }
-            if def.keys.get("kind") != Some(&key) || !name(key) {
-                return Err(invalid(path, 1, "Kind ID must match its filename."));
-            }
-            let folder = def
-                .keys
-                .get("folder")
-                .filter(|v| !v.is_empty())
-                .ok_or_else(|| invalid(path, 1, "A folder is required."))?
-                .to_string();
-            if calternal_fsio::beneath::plain_parts(&folder).is_err()
-                || folder.split('/').any(|part| {
-                    part.starts_with('.')
-                        || matches!(
-                            calternal_fsio::names::fold(part).as_str(),
-                            "agents.md" | "claude.md" | "gemini.md" | ".cursorrules"
-                        )
-                        || part.contains(['{', '}', '\\'])
-                })
-            {
-                return Err(invalid(
-                    path,
-                    1,
-                    "Only literal, visible folder paths are supported.",
-                ));
-            }
-            let file = def.keys.get("file").map(|value| value.to_string());
-            let main = match def.keys.get("item").copied().unwrap_or("file") {
-                "file" => None,
-                raw => Some(
-                    raw.strip_prefix("folder with ")
-                        .filter(|v| {
-                            v.ends_with(".md")
-                                && !v.starts_with('.')
-                                && !v.contains(['/', '\\'])
-                                && !matches!(*v, "AGENTS.md" | "CLAUDE.md" | "GEMINI.md")
-                        })
-                        .ok_or_else(|| invalid(path, 1, "Unsupported item form."))?
-                        .to_owned(),
-                ),
-            };
-            let outside = match def.keys.get("editable") {
-                Some(&"outside") => true,
-                Some(&"operations") => false,
-                _ => return Err(invalid(path, 1, "A valid editable mode is required.")),
-            };
-            let template = def
-                .keys
-                .get("template")
-                .map(|template| source(&format!("templates/{template}.md")))
-                .transpose()?
-                .unwrap_or("")
-                .to_owned();
-            let mut fields = |section| {
-                def.blocks
-                    .remove(section)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|(key, spec)| (key, Field::parse(spec)))
-                    .collect()
-            };
-            let fields_map = fields("fields");
-            let records = fields("records");
-            let state = fields("state");
-            plugin.kinds.insert(
-                key.to_owned(),
-                Kind {
-                    id: format!("{id}.{key}"),
-                    folder,
-                    file,
-                    main,
-                    outside,
-                    template,
-                    instructions: def.body.to_owned(),
-                    fields: fields_map,
-                    records,
-                    state,
-                    operations: def.blocks.remove("operations").unwrap_or_default(),
-                    filter: def.keys.get("default where").map(|value| value.to_string()),
-                },
-            );
-        } else if let Some(key) = entry(path, "collections/") {
-            let def = definition(path, source(path)?)?;
-            if def.keys.get("collection") != Some(&key) || !name(key) {
-                return Err(invalid(path, 1, "Collection ID must match its filename."));
-            }
-            let from = def
-                .keys
-                .get("from")
-                .ok_or_else(|| invalid(path, 1, "Expected the collection source."))?;
-            plugin.collections.insert(
-                key.to_owned(),
-                Collection {
-                    from: if from.contains('.') {
-                        from.to_string()
-                    } else {
-                        format!("{id}.{from}")
-                    },
-                    filter: def.keys.get("where").map(|value| value.to_string()),
-                    sort: def
-                        .keys
-                        .get("sort")
-                        .into_iter()
-                        .flat_map(|value| value.split(", "))
-                        .map(str::to_owned)
-                        .collect(),
-                },
-            );
-        } else if entry(path, "sidebars/").is_some() {
-            definition(path, source(path)?)?;
-        } else if path != "plugin.md"
-            && path != "operations.ts"
-            && entry(path, "templates/").is_none()
-        {
-            return Err(invalid(
-                path,
-                1,
-                "This bundle entry is outside the host slice.",
-            ));
-        }
-    }
-    Ok(plugin)
 }
 
-fn entry<'a>(path: &'a str, directory: &str) -> Option<&'a str> {
-    let name = path.strip_prefix(directory)?.strip_suffix(".md")?;
-    (!name.contains('/')).then_some(name)
+pub(crate) fn field_default(field: &Field) -> Result<Option<Value>> {
+    let Some(default) = &field.default else {
+        return Ok(None);
+    };
+    let empty = format::Fields::new();
+    let (today, now) = clock()?;
+    let context = format::EvalContext {
+        today: Some(&today),
+        now: Some(&now),
+        offset_seconds: Some(0),
+        ..format::EvalContext::default()
+    };
+    let result = format::evaluate(
+        default,
+        format::Row {
+            fields: &empty,
+            metadata: &empty,
+        },
+        &context,
+    )
+    .map_err(invalid)?;
+    Ok(Some(as_json(&result)))
 }
 
-pub(crate) fn item_body(source: &str) -> Result<&str> {
-    split(source)
-        .map(|(_, body)| body)
-        .ok_or_else(|| Error::invalid_input("Item needs YAML frontmatter."))
+pub(crate) fn clock() -> Result<(String, String)> {
+    let now = time::OffsetDateTime::now_utc();
+    let today = now.date().to_string();
+    let now = now
+        .format(&time::format_description::well_known::Rfc3339)
+        .map_err(crate::internal)?;
+    Ok((today, now))
+}
+
+pub(crate) fn as_fields(fields: &Fields) -> Result<format::Fields> {
+    fields
+        .iter()
+        .map(|(key, value)| Ok((key.clone(), as_format(value)?)))
+        .collect()
+}
+
+pub(crate) fn as_format(value: &Value) -> Result<format::Value> {
+    use format::Value as F;
+    Ok(match value {
+        Value::Null => F::Empty,
+        Value::Bool(value) => F::Bool(*value),
+        Value::Number(value) => F::Number(
+            value
+                .to_string()
+                .parse()
+                .map_err(|_| Error::invalid_input("Number is outside the format decimal range."))?,
+        ),
+        Value::String(value) => F::Text(value.clone()),
+        Value::Array(items) => F::List(items.iter().map(as_format).collect::<Result<_>>()?),
+        Value::Object(values) => F::Map(as_fields(values)?),
+    })
+}
+
+pub(crate) fn as_json(value: &format::Value) -> Value {
+    use format::Value as F;
+    match value {
+        F::Empty => Value::Null,
+        F::Bool(value) => Value::Bool(*value),
+        F::Number(value) => serde_json::from_str(&value.to_string())
+            .unwrap_or_else(|_| Value::String(value.to_string())),
+        F::Text(value) | F::Date(value) | F::Time(value) => Value::String(value.clone()),
+        F::List(items) => Value::Array(items.iter().map(as_json).collect()),
+        F::Map(items) => Value::Object(
+            items
+                .iter()
+                .map(|(key, value)| (key.clone(), as_json(value)))
+                .collect(),
+        ),
+        F::Money { amount, currency } => Value::String(format!("{amount} {currency}")),
+        F::Duration { months, seconds } => serde_json::json!({"months":months,"seconds":seconds}),
+    }
 }
 
 pub(crate) fn parse_item(source: &str) -> Result<(Fields, &str)> {
-    let (yaml, body) =
-        split(source).ok_or_else(|| Error::invalid_input("Item needs YAML frontmatter."))?;
-    let fields = if yaml.is_empty() {
-        Fields::new()
-    } else {
-        serde_yaml::from_str(yaml)
-            .map_err(|_| Error::invalid_input("Item frontmatter is invalid."))?
-    };
-    Ok((fields, body))
+    let item = format::parse_item(source).map_err(invalid)?;
+    let fields = item
+        .fields()
+        .iter()
+        .filter(|(name, _)| {
+            !matches!(
+                name.as_str(),
+                "id" | "kind" | "created" | "edited" | "at" | "author" | "anchor"
+            )
+        })
+        .map(|(name, value)| (name.clone(), as_json(value)))
+        .collect();
+    Ok((fields, item.body()))
 }
 
-pub(crate) fn write_item(fields: &Fields, body: &str) -> Result<String> {
-    let yaml = if fields.is_empty() {
-        String::new()
-    } else {
-        serde_yaml::to_string(fields).map_err(internal)?
-    };
-    Ok(format!("---\n{yaml}---\n{body}"))
+pub(crate) fn item_body(source: &str) -> Result<&str> {
+    // The indexed prefix has already been parsed and authenticated.
+    if let Some(rest) = source.strip_prefix("---\n") {
+        return Ok(rest
+            .strip_prefix("---\n")
+            .or_else(|| rest.split_once("\n---\n").map(|(_, body)| body))
+            .unwrap_or(""));
+    }
+    Ok(format::parse_item(source).map_err(invalid)?.body())
+}
+
+pub(crate) fn write_item(
+    source: &str,
+    patch: &Fields,
+    body: Option<&str>,
+    kind: &Kind<'_>,
+) -> Result<String> {
+    let original = format::parse_item(source).map_err(invalid)?;
+    let mut markdown = format::write_item(&original, &as_fields(patch)?).map_err(invalid)?;
+    if let Some(body) = body {
+        markdown.truncate(markdown.len() - original.body().len());
+        markdown.push_str(body);
+    }
+    if !markdown.ends_with('\n') {
+        markdown.push('\n');
+    }
+    let updated = format::parse_item(&markdown).map_err(invalid)?;
+    let (today, now) = clock()?;
+    format::check_item(
+        kind.compiled,
+        &updated,
+        &format::EvalContext {
+            today: Some(&today),
+            now: Some(&now),
+            offset_seconds: Some(0),
+            ..format::EvalContext::default()
+        },
+    )
+    .map_err(invalid)?;
+    Ok(markdown)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn exact_json_decimals_survive_the_format_boundary() {
+        let raw = "0.100000000000000001";
+        let value = serde_json::from_str(raw).unwrap();
+        let typed = super::as_format(&value).unwrap();
+        assert_eq!(super::as_json(&typed).to_string(), raw);
+    }
 }

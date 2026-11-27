@@ -1,5 +1,6 @@
 //! Personal-space host for the Markdown plugin format.
 #![deny(missing_docs)]
+#![forbid(unsafe_code)]
 
 mod declarations;
 mod installation;

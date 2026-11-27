@@ -1,7 +1,7 @@
 //! Ledger-backed Markdown records. Disk headers carry no authority.
-use crate::declarations::{Fields, Kind, apply_fields};
+use crate::declarations::{Fields, Kind, OperationForm, apply_fields};
 use crate::internal;
-use crate::space::{Head, Receipt, Space};
+use crate::space::{Head, Space};
 use calternal_types::{Actor, Error, Result};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
@@ -10,9 +10,12 @@ use std::fs::Metadata;
 use std::os::unix::fs::MetadataExt;
 use uuid::Uuid;
 
+mod append;
 mod seal;
 
-use seal::Claim;
+#[cfg(target_os = "linux")]
+pub(crate) use append::append;
+pub(crate) use append::{recover_tail, recovered, replay_recovered};
 
 const CROCKFORD: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
@@ -55,7 +58,7 @@ pub(crate) struct Input {
 impl Space {
     pub(crate) fn records(&self, item: Uuid) -> Result<Vec<Record>> {
         let mut stmt = self.db.prepare_cached(
-            "SELECT anchor,offset,length,author,at,hash,ordinal FROM records WHERE item=?1 ORDER BY offset",
+            "SELECT anchor,offset,length,author,at,hash,ordinal FROM records WHERE item=?1 ORDER BY ordinal",
         ).map_err(internal)?;
         let rows = stmt
             .query_map([item.to_string()], |row| {
@@ -213,12 +216,18 @@ impl Record {
 }
 
 fn anchor() -> Result<String> {
-    let mut bytes = [0; 16];
-    getrandom::fill(&mut bytes[..10]).map_err(internal)?;
-    let bits = u128::from_le_bytes(bytes);
-    Ok((0..16)
+    let mut bytes = [0; 10];
+    getrandom::fill(&mut bytes).map_err(internal)?;
+    Ok(anchor_text(bytes))
+}
+
+fn anchor_text(bytes: [u8; 10]) -> String {
+    let mut expanded = [0; 16];
+    expanded[..10].copy_from_slice(&bytes);
+    let bits = u128::from_le_bytes(expanded);
+    (0..16)
         .map(|i| CROCKFORD[((bits >> (75 - 5 * i)) & 31) as usize] as char)
-        .collect())
+        .collect()
 }
 
 pub(crate) fn link(path: &str, anchor: &str) -> String {
@@ -239,7 +248,7 @@ pub(crate) fn valid_anchor(anchor: &str) -> bool {
 
 fn header_anchor(line: &str) -> Option<&str> {
     let line = line
-        .strip_suffix("-->")
+        .strip_suffix(seal::SUFFIX)
         .and_then(|line| line.rsplit_once(seal::PREFIX))
         .map_or(line, |(header, _)| header);
     let (_, rest) = line.strip_prefix("**")?.split_once("** · ")?;
@@ -374,249 +383,23 @@ pub(crate) fn can_edit(kind: &Kind, actor: &Actor, record: &Record, now: i64) ->
     if record.author != actor.account.to_string() {
         return Err(Error::forbidden("Only the record's author can change it."));
     }
-    if let Some(raw) = kind.operations.get("change record").and_then(|line| {
-        line.split(", ")
-            .find_map(|part| part.strip_prefix("within "))
-    }) {
-        let (number, unit) = raw.split_at(raw.len().saturating_sub(1));
-        let multiplier = match unit {
-            "h" => 3_600_000,
-            "m" => 60_000,
-            "d" => 86_400_000,
-            _ => return Err(Error::invalid_input("Unsupported edit window.")),
-        };
-        let limit = number
-            .parse::<i64>()
-            .ok()
-            .and_then(|n| n.checked_mul(multiplier))
+    if let Some(operation) = kind.operations.get("change record")
+        && let OperationForm::ChangeRecord {
+            within: Some(calternal_format::Value::Duration { months, seconds }),
+            ..
+        } = &operation.form
+    {
+        if *months != 0 {
+            return Err(Error::invalid_input(
+                "An edit window must specify elapsed time.",
+            ));
+        }
+        let limit = seconds
+            .checked_mul(1000)
             .ok_or_else(|| Error::invalid_input("Invalid edit window."))?;
         if now.saturating_sub(record.at) > limit {
             return Err(Error::forbidden("The record's edit window has closed."));
         }
-    }
-    Ok(())
-}
-
-/// Fast path adapted from the host spike. The checked directory descriptor
-/// pins the read handle and procfs reopens the same inode with write access.
-#[cfg(target_os = "linux")]
-pub(crate) fn append(
-    space: &mut Space,
-    actor: &Actor,
-    head: Head,
-    input: Input,
-    now: i64,
-    receipt: Option<&crate::space::Receipt>,
-) -> Result<Value> {
-    use std::io::Read;
-    use std::os::{fd::AsRawFd, unix::fs::FileExt};
-
-    let mut read = space.open_regular(&head.path).map_err(internal)?;
-    let metadata = read.metadata().map_err(internal)?;
-    let initial = Signature::from(&metadata);
-    if metadata.nlink() != 1 || metadata.len() != head.length {
-        return Err(Error::conflict("The record stream has outside changes."));
-    }
-    if space.seen.get(&head.id) != Some(&initial) {
-        let rows = space.records(head.id)?;
-        let mut bytes = Vec::with_capacity(head.length as usize);
-        (&mut read)
-            .take(head.length + 1)
-            .read_to_end(&mut bytes)
-            .map_err(internal)?;
-        if bytes.len() as u64 != head.length
-            || !bytes
-                .get(..head.prefix as usize)
-                .is_some_and(|p| space.hash(p) == head.hash)
-            || rows.iter().any(|row| {
-                !row.bytes(&bytes)
-                    .is_some_and(|data| space.hash(data) == row.hash)
-            })
-        {
-            return Err(Error::conflict("The record stream has outside changes."));
-        }
-    }
-    let file = std::fs::OpenOptions::new()
-        .write(true)
-        .open(format!("/proc/self/fd/{}", read.as_raw_fd()))
-        .map_err(internal)?;
-    if Signature::from(&file.metadata().map_err(internal)?) != initial {
-        return Err(Error::conflict(
-            "The record stream changed during the call.",
-        ));
-    }
-    let end = head.length;
-    let (next, record, bytes, claim) = make_append(space, &head, actor, input, now, receipt)?;
-    let output = append_result(&next, &record);
-    let tx = space.db.transaction().map_err(internal)?;
-    stamp_append(
-        &tx,
-        space.retention_ms,
-        &next,
-        &record,
-        &claim.actor,
-        receipt,
-        &output,
-    )?;
-    if let Err(error) = file
-        .write_all_at(&bytes, end)
-        .and_then(|_| file.sync_data())
-    {
-        file.set_len(end)
-            .and_then(|_| file.sync_data())
-            .map_err(internal)?;
-        return Err(internal(error));
-    }
-    if let Err(error) = tx.commit() {
-        space.recovery_needed = true;
-        return Err(internal(error));
-    }
-    let id = next.id;
-    space.rows.get_mut(&id).expect("indexed record item").head = next;
-    if let Ok(metadata) = file.metadata() {
-        space.seen.insert(id, Signature::from(&metadata));
-    } else {
-        space.seen.remove(&id);
-    }
-    Ok(output)
-}
-
-fn make_append(
-    space: &Space,
-    head: &Head,
-    actor: &Actor,
-    input: Input,
-    now: i64,
-    receipt: Option<&Receipt>,
-) -> Result<(Head, Record, Vec<u8>, Claim)> {
-    let kind = space.kind(&head.kind)?;
-    let (mut record, mut bytes) = encode(
-        space,
-        kind,
-        actor,
-        input,
-        None,
-        (head.length, head.version + 1),
-        now,
-    )?;
-    let claim = Claim {
-        actor: actor.clone(),
-        at: now,
-        proof: receipt.map(|receipt| receipt.proof),
-    };
-    claim.seal(space, head, &mut bytes)?;
-    record.length = bytes.len() as u64;
-    record.hash = space.hash(&bytes);
-    let mut next = head.clone();
-    next.version += 1;
-    next.edited = now;
-    next.length += record.length;
-    if next.length > crate::space::ITEM_BYTES as u64 {
-        return Err(Error::new(
-            calternal_types::ErrorCode::TooLarge,
-            "The item exceeds 32 MiB.",
-        ));
-    }
-    Ok((next, record, bytes, claim))
-}
-
-pub(crate) fn recover_tail(
-    space: &mut Space,
-    head: &mut Head,
-    bytes: &[u8],
-    file: &std::fs::File,
-    signature: Signature,
-) -> Result<()> {
-    let tail = &bytes[head.length as usize..];
-    let Some((claim, anchor)) = Claim::verify(space, head, tail) else {
-        return Ok(());
-    };
-    let rows = space.records(head.id)?;
-    if rows.iter().any(|row| {
-        !row.bytes(bytes)
-            .is_some_and(|data| space.hash(data) == row.hash)
-    }) {
-        return Ok(());
-    }
-    let record = Record {
-        anchor,
-        offset: head.length,
-        length: tail.len() as u64,
-        author: claim.actor.account.to_string(),
-        at: claim.at,
-        ordinal: head.version + 1,
-        hash: space.hash(tail),
-    };
-    let mut next = head.clone();
-    next.version = record.ordinal;
-    next.edited = record.at;
-    next.length += record.length;
-    let attribution = serde_json::to_string(&claim.actor).map_err(internal)?;
-    let cutoff = calternal_types::now_ms() - space.retention_ms;
-    let receipt = claim
-        .proof
-        .filter(|_| claim.at >= cutoff)
-        .map(|proof| Receipt::recover(format!("write:{attribution}"), proof, cutoff));
-    // A process crash can leave complete, unflushed bytes in the page
-    // cache. Re-establish file durability before committing the recovered receipt.
-    if Signature::from(&file.metadata().map_err(internal)?) != signature {
-        return Err(Error::conflict(
-            "The recovery file changed during verification.",
-        ));
-    }
-    file.sync_data().map_err(internal)?;
-    let output = append_result(&next, &record);
-    let tx = space.db.transaction().map_err(internal)?;
-    stamp_append(
-        &tx,
-        space.retention_ms,
-        &next,
-        &record,
-        &claim.actor,
-        receipt.as_ref(),
-        &output,
-    )?;
-    tx.commit().map_err(internal)?;
-    *head = next;
-    Ok(())
-}
-
-fn append_result(head: &Head, record: &Record) -> Value {
-    crate::result(vec![json!({
-        "id":head.id,"version":head.version,"anchor":record.anchor,
-        "link":link(&head.path, &record.anchor),
-    })])
-}
-
-fn stamp_append(
-    tx: &Connection,
-    retention_ms: i64,
-    head: &Head,
-    record: &Record,
-    actor: &Actor,
-    receipt: Option<&Receipt>,
-    output: &Value,
-) -> Result<()> {
-    tx.execute(
-        "DELETE FROM history WHERE at<?1",
-        [calternal_types::now_ms() - retention_ms],
-    )
-    .map_err(internal)?;
-    record.insert(tx, head.id)?;
-    tx.execute(
-        "UPDATE head SET data=?2 WHERE id=?1",
-        params![
-            head.id.to_string(),
-            serde_json::to_string(head).map_err(internal)?
-        ],
-    )
-    .map_err(internal)?;
-    tx.execute(
-        "INSERT INTO history(item,version,actor,action,anchor,at) VALUES(?1,?2,?3,'append record',?4,?5)",
-        params![head.id.to_string(), head.version as i64, serde_json::to_string(actor).map_err(internal)?, record.anchor, record.at],
-    ).map_err(internal)?;
-    if let Some(receipt) = receipt {
-        receipt.store(tx, output, record.at)?;
     }
     Ok(())
 }

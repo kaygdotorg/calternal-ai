@@ -2,7 +2,7 @@
 use crate::declarations;
 use crate::internal;
 use crate::space::{Space, bounded_read};
-use calternal_fsio::{beneath::Folder, names};
+use calternal_fsio::beneath::Folder;
 use calternal_types::{Error, Result};
 use rusqlite::params;
 use std::collections::BTreeMap;
@@ -33,7 +33,8 @@ impl Space {
             if digest != self.bundle_digest(&files) {
                 return Err(Error::conflict("An installed plugin was altered on disk."));
             }
-            let plugin = declarations::parse_plugin(&files, true)?;
+            let installed = plugins.values().cloned().collect::<Vec<_>>();
+            let plugin = declarations::parse_plugin(&files, true, Some(&name), &installed)?;
             plugins.insert(name, plugin);
         }
         self.plugins = plugins;
@@ -53,34 +54,14 @@ impl Space {
 
     pub(crate) fn install(&mut self, source: &Path, official: bool) -> Result<()> {
         let files = bundle(source)?;
-        let declaration = declarations::parse_plugin(&files, official)?;
-        if self.plugins.contains_key(&declaration.id) {
+        let installed = self.plugins.values().cloned().collect::<Vec<_>>();
+        let declaration = declarations::parse_plugin(&files, official, None, &installed)?;
+        if self.plugins.contains_key(&declaration.manifest.id) {
             return Err(Error::conflict(
                 "A plugin with that ID is already installed.",
             ));
         }
-        let mut folders = self
-            .plugins
-            .values()
-            .flat_map(|p| p.kinds.values())
-            .map(|k| names::fold(&k.folder))
-            .collect::<Vec<_>>();
-        for kind in declaration.kinds.values() {
-            let path = names::fold(&kind.folder);
-            if folders.iter().any(|other| {
-                path == *other
-                    || path
-                        .strip_prefix(other)
-                        .is_some_and(|tail| tail.starts_with('/'))
-                    || other
-                        .strip_prefix(&path)
-                        .is_some_and(|tail| tail.starts_with('/'))
-            }) {
-                return Err(Error::conflict("Installed kind folders must be disjoint."));
-            }
-            folders.push(path);
-        }
-        let base = format!(".calternal/plugins/{}", declaration.id);
+        let base = format!(".calternal/plugins/{}", declaration.manifest.id);
         match self.open_folder(&base, false) {
             Ok(_) => {
                 return Err(Error::conflict(
@@ -99,7 +80,7 @@ impl Space {
         let tx = self.db.transaction().map_err(internal)?;
         tx.execute(
             "INSERT INTO installations VALUES(?1,?2)",
-            params![declaration.id, &digest[..]],
+            params![declaration.manifest.id, &digest[..]],
         )
         .map_err(internal)?;
         tx.execute(
@@ -109,7 +90,8 @@ impl Space {
         .map_err(internal)?;
         tx.commit().map_err(internal)?;
         self.finish(&placements)?;
-        self.plugins.insert(declaration.id.clone(), declaration);
+        self.plugins
+            .insert(declaration.manifest.id.clone(), declaration);
         Ok(())
     }
 }
@@ -141,6 +123,16 @@ fn visit(
                 out,
             )?;
         } else {
+            let definition = if parent.is_empty() {
+                matches!(name.as_str(), "plugin.md" | "operations.ts")
+            } else {
+                name.ends_with(".md")
+            };
+            if !definition {
+                return Err(Error::forbidden(
+                    "Plugin assets and frames are outside this host slice.",
+                ));
+            }
             let file = dir.open_file(&name).map_err(internal)?;
             if file.metadata().map_err(internal)?.nlink() != 1 {
                 return Err(Error::invalid_input("Plugin contains a hard-linked file."));
@@ -161,4 +153,15 @@ fn bundle_from(dir: &Folder) -> Result<BTreeMap<String, Vec<u8>>> {
     let mut remaining = PLUGIN_BYTES;
     visit(dir, "", &mut remaining, &mut files)?;
     Ok(files)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn extensions_do_not_authorize_unclassified_assets() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("image.png"), b"<svg/>").unwrap();
+        let error = super::bundle(root.path()).unwrap_err();
+        assert_eq!(error.code, calternal_types::ErrorCode::Forbidden);
+    }
 }

@@ -37,13 +37,19 @@ CREATE TABLE IF NOT EXISTS records (
   PRIMARY KEY (item,anchor)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS record_anchor ON records(anchor);
-CREATE INDEX IF NOT EXISTS records_order ON records(item, offset);
 CREATE INDEX IF NOT EXISTS records_ordinal ON records(item, ordinal);
 CREATE TABLE IF NOT EXISTS receipts (
   actor TEXT NOT NULL, gesture BLOB NOT NULL, fingerprint BLOB NOT NULL,
   result TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (actor, gesture)
 );
 CREATE INDEX IF NOT EXISTS receipts_age ON receipts(at);
+CREATE TABLE IF NOT EXISTS recovered_appends (
+  tag BLOB PRIMARY KEY, item TEXT NOT NULL, actor TEXT NOT NULL, ordinal INTEGER NOT NULL,
+  offset INTEGER NOT NULL, anchor TEXT NOT NULL, at INTEGER NOT NULL,
+  effect BLOB NOT NULL, result TEXT NOT NULL, kind TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS recovered_lookup ON recovered_appends(actor,at);
+CREATE INDEX IF NOT EXISTS recovered_expiry ON recovered_appends(at);
 CREATE TABLE IF NOT EXISTS viewer_state (
   plugin TEXT NOT NULL, item TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL, ordinal INTEGER,
   PRIMARY KEY(plugin,item,name)
@@ -174,6 +180,12 @@ impl Space {
             return Ok(());
         }
         let tx = self.db.transaction().map_err(internal)?;
+        tx.execute(
+            "DELETE FROM recovered_appends WHERE at<?1",
+            [now - self.retention_ms],
+        )
+        .map_err(internal)?;
+
         let entries = {
             let mut stmt = tx
                 .prepare_cached("SELECT item FROM trash WHERE until<=?1 ORDER BY until LIMIT 64")
@@ -252,10 +264,12 @@ impl Space {
             .ok_or_else(|| Error::conflict("The item file is missing from disk."))
     }
 
-    pub(crate) fn kind(&self, qualified: &str) -> Result<&Kind> {
+    pub(crate) fn kind<'a>(&'a self, qualified: &'a str) -> Result<Kind<'a>> {
         qualified
             .split_once('.')
-            .and_then(|(plugin, id)| self.plugins.get(plugin)?.kinds.get(id))
+            .and_then(|(plugin, id)| {
+                declarations::view_kind(qualified, self.plugins.get(plugin)?, id)
+            })
             .ok_or_else(|| Error::not_found("Kind was not found."))
     }
 
@@ -281,7 +295,7 @@ impl Space {
                 && self
                     .plugins
                     .get(plugin)
-                    .is_some_and(|decl| decl.reads.iter().any(|id| id == kind)))
+                    .is_some_and(|decl| decl.manifest.reads.iter().any(|id| id == kind)))
         {
             Ok(())
         } else {
@@ -497,15 +511,6 @@ pub(crate) struct ReceiptProof {
 }
 
 impl Receipt {
-    pub(crate) fn recover(actor: String, proof: ReceiptProof, cutoff: i64) -> Self {
-        Self {
-            actor,
-            proof,
-            cutoff,
-            replay: None,
-        }
-    }
-
     pub(crate) fn store(&self, tx: &Connection, value: &Value, now: i64) -> Result<()> {
         tx.execute("DELETE FROM receipts WHERE at<?1", [self.cutoff])
             .map_err(internal)?;
