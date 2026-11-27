@@ -1,0 +1,39 @@
+# Host call route · 2026-11-27
+
+Browser and CLI calls go through `POST /v1/spaces/{space}/call`. The
+space is a UUID. The HTTP adapter resolves a bearer session through the
+auth crate. The request body carries no person, role, plugin identity or
+run scope. In-process adapters supply those from their trusted session or
+worker context. The worker transport can wrap the same operation and input
+in its own frame.
+
+```json
+{"call":"s.query","input":{"from":"calternal-chat.chats","where":"not archived","sort":["title asc"],"limit":50}}
+```
+
+Success is `{"result": ...}`. The error body is `{"error":{"code": "...",
+"message": "...", "next": "..."}}`. The error codes follow format §8.1.
+
+| Call | Input | Result |
+| --- | --- | --- |
+| `s.query` | `{from, where?, sort?, cursor?, limit?}` or `{collection, cursor?, limit?}`. Collection names are qualified plugin and collection IDs. | `{rows, totals, cursor}`. Rows contain `id`, `kind`, `fields`, `computed` and `version`. `cursor` is opaque and null on the last page. |
+| `s.read` | `{item}` | `{id, kind, fields, computed, body, records, version}` |
+| `s.write` | `{changes, preview?}`. Each change has an `op` tag. | `{changes:[{id, version, anchor?}]}` in input order. Preview performs validation and returns the planned changes. |
+| `s.state` | `{op:"get",item,key}` or `{op:"set",item,key,value}` | `{value}` |
+| `s.me` | `{}` | `{id,role}` |
+| `s.space` | `{}` | `{id}` |
+
+`s.write` change tags and payloads are `add {kind,fields,body?}`,
+`change {item,fields?,body?,base?}`, `remove {item}`,
+`append record {item,record:{fields?,body?}}`,
+`change record {item,anchor,record:{fields?,body?}}` and
+`remove record {item,anchor}`. Output records add the host's
+`anchor`, `author` and `at` fields. An adapter may pass
+`idempotency_key` at the envelope level. The host scopes receipts to
+the verified person, space and plugin. Reusing a live key with different
+input yields `conflict`.
+
+This is the adapter contract for slices 1 and 2. The plugin process lane
+supplies operation dispatch and event context. The runs lane supplies the
+trusted run context. Run calls require a scope binding before they can use
+this route.
