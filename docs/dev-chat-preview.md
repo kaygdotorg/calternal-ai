@@ -73,9 +73,21 @@ to the fake. The image must be present locally before a run starts.
 
 Egress stays at the exact plugin-declared name `api.anthropic.com` on port
 443 through the host CONNECT proxy. Valid undeclared hostnames and names
-with unsafe DNS answers are logged on rejection. Real provider execution is
-pending coordinator verification. Credential refresh that needs a write or
-an undeclared host can fail with this setup.
+with unsafe DNS answers are logged on rejection. The proxy records only
+host names and forwarded byte counts.
+
+A disposable host test on November 27 reached `api.anthropic.com` using
+the read-only test sign-in. The CLI's local status reported signed in, but
+the provider rejected the turn with `authentication_failed`. The proxy
+recorded no refused host names. The next check is to renew the test sign-in
+outside the sandbox and retry with the same read-only mount and egress
+policy. Credential refresh inside the run can fail if it needs a write or
+an undeclared host.
+
+The single-turn Playwright script is `apps/web/e2e/host-real-provider.mjs`.
+It skips unless both real provider settings are present, starts its own
+disposable host, and sends one short prompt per invocation. Set `HOST_BIN`
+if the host binary is outside `target/debug/calternal-host`.
 
 ## Browser verification
 
