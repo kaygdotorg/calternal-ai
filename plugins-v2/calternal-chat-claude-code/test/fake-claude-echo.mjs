@@ -2,8 +2,6 @@
 import net from "node:net";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 
 const args = process.argv.slice(2);
 if (args[0] === "auth" && args[1] === "status") process.exit(1);
@@ -107,14 +105,7 @@ if (prompt.startsWith("hold:")) {
   `], { stdio: ["ignore", "pipe", "ignore"] });
   const [ready] = await once(heldChild.stdout, "data");
   if (ready.toString().trim() !== "READY") throw new Error("process family did not start");
-  if (prompt === "hold: stop family") {
-    const address = join(process.env.HOME, "hold-ready.sock");
-    if (!existsSync(address)) throw new Error("missing readiness receiver");
-    const socket = net.createConnection(address);
-    await once(socket, "connect");
-    socket.end("READY\n");
-    await once(socket, "close");
-  }
+
 }
 
 const emit = value => process.stdout.write(JSON.stringify(value) + "\n");

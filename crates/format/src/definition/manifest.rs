@@ -49,6 +49,10 @@ pub struct Manifest {
     pub reads: Vec<String>,
     /// Qualified operations this plugin may attempt to call.
     pub calls: Vec<String>,
+    /// Reply operations keyed by the fully qualified session target kind.
+    /// These select among existing calls and grant no additional authority.
+    pub replies: BTreeMap<String, String>,
+    pub(crate) reply_site: Site,
     /// Declared outbound destinations.
     pub destinations: Vec<String>,
     /// Program bindings keyed by declaration ID.
@@ -126,6 +130,8 @@ pub(super) fn parse(
         icon: None,
         reads: Vec::new(),
         calls: Vec::new(),
+        replies: BTreeMap::new(),
+        reply_site: Site::START,
         destinations: Vec::new(),
         programs: BTreeMap::new(),
         settings: BTreeMap::new(),
@@ -188,14 +194,26 @@ pub(super) fn parse(
             "needs" => result.directives.push(entry.directive()?),
             "reads" => result.reads = references(value, 2, 2, site)?,
             "calls" => result.calls = references(value, 2, 3, site)?,
+            "replies" => {
+                result.reply_site = site;
+                for target in references(value, 3, 3, site)? {
+                    let (kind, _) = target.rsplit_once('.').expect("qualified reply operation");
+                    if result.replies.insert(kind.into(), target).is_some() {
+                        return Err(
+                            site.error("Declare at most one reply operation per target kind")
+                        );
+                    }
+                }
+            }
             "sends out" => {
                 if value != "nothing" {
-                    result.destinations = list(value, site)?;
-                    for host in &result.destinations {
-                        if !matches!(host.as_str(), "a server you name" | "the public web") {
-                            hostname(host, site)?
-                        }
-                    }
+                    result.destinations = list(value, site)?
+                        .into_iter()
+                        .map(|host| match host.as_str() {
+                            "a server you name" | "the public web" => Ok(host),
+                            _ => hostname(&host, site),
+                        })
+                        .collect::<Result<_, _>>()?;
                 }
             }
             "programs" => {
@@ -411,19 +429,7 @@ fn references(value: &str, min: usize, max: usize, site: Site) -> Result<Vec<Str
     Ok(values)
 }
 
-pub(super) fn hostname(host: &str, site: Site) -> Result<(), Diagnostic> {
-    if host.len() > 253
-        || host.split('.').any(|label| {
-            label.is_empty()
-                || label.len() > 63
-                || label.starts_with('-')
-                || label.ends_with('-')
-                || !label
-                    .bytes()
-                    .all(|ch| ch.is_ascii_alphanumeric() || ch == b'-')
-        })
-    {
-        return Err(site.error("Use an ASCII hostname without a URL path"));
-    }
-    Ok(())
+pub(super) fn hostname(host: &str, site: Site) -> Result<String, Diagnostic> {
+    crate::outbound_dns_name(host)
+        .ok_or_else(|| site.error("Use a fully qualified public ASCII hostname"))
 }

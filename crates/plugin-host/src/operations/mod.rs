@@ -110,10 +110,15 @@ pub struct Registrations {
 
 /// Run a trusted, isolated launcher in registration-only mode. The launcher
 /// must exit after emitting one bounded selector catalogue, with no event,
-/// verified actor or host callbacks exposed. Costs one cold process start.
-pub async fn probe(command: Command, deadline: Duration) -> Result<Registrations, Error> {
+/// verified actor or host callbacks exposed. A process slot is held through
+/// exit. Costs one cold process start.
+pub async fn probe(
+    command: Command,
+    deadline: Duration,
+    processes: Arc<Semaphore>,
+) -> Result<Registrations, Error> {
     const LIMIT: u64 = 64 * 1024;
-    let mut worker = tokio::task::spawn_blocking(move || Worker::spawn(command))
+    let mut worker = tokio::task::spawn_blocking(move || Worker::spawn(command, processes))
         .await
         .map_err(|_| wire::disconnected())??;
     drop(worker.input);
@@ -147,12 +152,20 @@ pub async fn probe(command: Command, deadline: Duration) -> Result<Registrations
         .await
     })
     .await;
-    outcome.unwrap_or_else(|_| {
-        Err(Code::Timeout.error(
-            "The installation probe did not finish.",
-            "Check operations.ts.",
-        ))
-    })
+    match outcome {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(error)) => {
+            let _ = worker.child.kill().await;
+            Err(error)
+        }
+        Err(_) => {
+            let _ = worker.child.kill().await;
+            Err(Code::Timeout.error(
+                "The installation probe did not finish.",
+                "Check operations.ts.",
+            ))
+        }
+    }
 }
 
 /// On-demand operation worker for one registered plugin in one space.
@@ -173,16 +186,19 @@ impl Operations {
     /// Its own process boundary must deny ambient filesystem, network and
     /// credentials and terminate descendants when the supervisor exits.
     /// The supervisor clears inherited environment and owns all three pipes.
-    /// Cost is one idle task and one admission slot per installed coded plugin.
+    /// All endpoints and probes in a space share the supplied process budget.
+    /// A child holds one slot through its exit, including while it is idle.
+    /// Construction creates one idle task and starts no child.
     pub fn new(
         space: SpaceId,
         declared: impl Fn(EventKind, &str) -> bool + Send + Sync + 'static,
         launch: impl Fn() -> Command + Send + Sync + 'static,
         idle: Duration,
         deadline: Duration,
+        processes: Arc<Semaphore>,
     ) -> Self {
         let (jobs, pending) = mpsc::channel(1);
-        tokio::spawn(serve(pending, launch, idle, deadline));
+        tokio::spawn(serve(pending, launch, idle, deadline, processes));
         Self {
             space,
             declared: Box::new(declared),
@@ -238,6 +254,7 @@ async fn serve(
     launch: impl Fn() -> Command + Send + Sync + 'static,
     idle: Duration,
     deadline: Duration,
+    processes: Arc<Semaphore>,
 ) {
     let launch = Arc::new(launch);
     let mut worker: Option<Worker> = None;
@@ -284,10 +301,14 @@ async fn serve(
         };
         if worker.is_none() {
             let launcher = Arc::clone(&launch);
-            match tokio::task::spawn_blocking(move || Worker::spawn(launcher())).await {
+            let capacity = Arc::clone(&processes);
+            match tokio::task::spawn_blocking(move || Worker::spawn(launcher(), capacity)).await {
                 Ok(Ok(running)) => worker = Some(running),
-                _ => {
-                    let error = wire::disconnected();
+                failure => {
+                    let error = match failure {
+                        Ok(Err(error)) => error,
+                        _ => wire::disconnected(),
+                    };
                     drop(_permit);
                     let _ = result.send(Err(error));
                     continue;
@@ -331,10 +352,17 @@ struct Worker {
     child: Child,
     input: ChildStdin,
     output: BufReader<ChildStdout>,
+    _space_slot: OwnedSemaphorePermit,
 }
 
 impl Worker {
-    fn spawn(mut command: Command) -> Result<Self, Error> {
+    fn spawn(mut command: Command, processes: Arc<Semaphore>) -> Result<Self, Error> {
+        let slot = processes.try_acquire_owned().map_err(|_| {
+            Code::Limit.error(
+                "This space has too many active plugin workers.",
+                "Retry after another worker exits.",
+            )
+        })?;
         let mut child = command
             .env_clear()
             .stdin(Stdio::piped())
@@ -349,6 +377,7 @@ impl Worker {
             child,
             input,
             output,
+            _space_slot: slot,
         })
     }
 }
@@ -459,6 +488,7 @@ mod tests {
             },
             Duration::from_secs(1),
             Duration::from_secs(5),
+            Arc::new(Semaphore::new(1)),
         );
         let callbacks = Arc::new(AtomicUsize::new(0));
         let recorded = callbacks.clone();

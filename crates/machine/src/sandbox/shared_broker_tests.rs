@@ -98,7 +98,7 @@ async fn mcp_tool(broker: &Broker, fixture: &Path, command: &str) -> serde_json:
         "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",
-        "params": {"name": CODEX_METHOD, "arguments": {"command": command}},
+        "params": {"name": WORKSPACE_TOOL_METHOD, "arguments": {"command": command}},
     });
     let mut input = child.stdin.take().unwrap();
     input

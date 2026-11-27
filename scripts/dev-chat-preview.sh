@@ -10,16 +10,27 @@ port=24317
 
 if [[ ${1:-} == --build-release && $# == 2 ]]; then
     release=$2
+    release_name=${release##*/}
+    if [[ ! $release_name =~ ^release\.[A-Za-z0-9]{8}$ ]]; then
+        printf 'Expected a release.XXXXXXXX directory.\n' >&2
+        exit 2
+    fi
+    tag="localhost/calternal-dev-chat-fake:$release_name"
+    printf '%s\n' "$tag" >"$release/image.tag"
     cd "$checkout"
-    "$checkout/scripts/dev-chat-host.sh" --build
-    image_key=$(printf '%s\n' "$checkout" | cksum)
+    CALTERNAL_DEV_FAKE_IMAGE="$tag" "$checkout/scripts/dev-chat-host.sh" --build
+    image_id=$(podman image inspect --format '{{.Id}}' "$tag")
+    if [[ ! $image_id =~ ^(sha256:)?[0-9a-f]{64}$ ]]; then
+        printf 'Podman did not report a full image ID.\n' >&2
+        exit 1
+    fi
     install -m 700 "${CARGO_TARGET_DIR:-$checkout/target}/debug/calternal-host" "$release/calternal-host"
     cp -R apps/web/dist "$release/web"
     mkdir "$release/sdk"
     cp -R packages/plugin-sdk/dist packages/plugin-sdk/package.json "$release/sdk/"
     cp -R plugins-v2/{calternal-chat,calternal-chat-claude-code,calternal-reading-list,calternal-tasks} "$release/"
     printf 'CALTERNAL_WORKER_BWRAP=%s\nCALTERNAL_WORKER_NODE=%s\nCALTERNAL_RUN_IMAGE=%s\n' \
-        "$(command -v bwrap)" "$(command -v node)" "localhost/calternal-dev-chat-fake:${image_key%% *}" >"$release/runtime.env"
+        "$(command -v bwrap)" "$(command -v node)" "$image_id" >"$release/runtime.env"
     exit
 fi
 if (( $# )); then
@@ -36,9 +47,24 @@ if ! systemctl --user is-active --quiet "$unit" && [[ -n $(ss -Hln "sport = :$po
 fi
 
 release=$(mktemp -d "$root/build/release.XXXXXXXX")
+discard_release() {
+    local directory=$1 tag
+    if [[ -f $directory/image.tag ]]; then
+        read -r tag <"$directory/image.tag"
+        if [[ ! $tag =~ ^localhost/calternal-dev-chat-fake:release\.[A-Za-z0-9]{8}$ ||
+              $tag != "localhost/calternal-dev-chat-fake:${directory##*/}" ]]; then
+            printf 'Invalid fake image tag in %s\n' "$directory" >&2
+            return 1
+        fi
+        if podman image exists "$tag"; then
+            podman image rm "$tag" >/dev/null || return 1
+        fi
+    fi
+    find "$directory" -depth -delete
+}
 discard_unpublished() {
     if [[ $(readlink "$root/current" || true) != "$release" ]]; then
-        find "$release" -depth -delete
+        discard_release "$release"
     fi
 }
 trap discard_unpublished EXIT
@@ -84,7 +110,7 @@ if systemctl --user start "$unit"; then
             systemctl --user enable "$unit"
             for old in "$root"/build/release.*; do
                 if [[ -d $old && ! -L $old && $old != "$release" && $old != "$previous" ]]; then
-                    find "$old" -depth -delete
+                    discard_release "$old"
                 fi
             done
             printf 'ssh -L %s:127.0.0.1:%s claude@calternal-dev-01-compute02\n' "$port" "$port"

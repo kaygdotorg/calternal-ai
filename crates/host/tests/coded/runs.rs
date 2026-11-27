@@ -102,38 +102,55 @@ async fn selected_harness_replies_once_and_enforces_actor_scope_and_egress() {
     assert_eq!(records[1]["body"], "Echo: hello from host");
     assert_eq!(records[1]["run"], run);
 
-    send_input(caller.clone(), 3, json!("egress-denied"))
-        .await
-        .unwrap();
+    let queued = json!({"id":run,"input":{"version":1,"seq":3,
+        "command":{"type":"send","prompt":"egress-denied","context":[]}}});
+    for _ in 0..2 {
+        let receipt = f
+            .call(
+                caller.clone(),
+                "s.run.send",
+                queued.clone(),
+                Some("queued-input"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(receipt, json!({"status":"queued"}));
+    }
+    let mut changed = queued;
+    changed["input"]["command"]["prompt"] = json!("different input");
+    assert_eq!(
+        f.call(caller.clone(), "s.run.send", changed, Some("queued-input"))
+            .await
+            .unwrap_err()
+            .code,
+        ErrorCode::Conflict,
+    );
     let records = wait_for(3).await;
     assert_eq!(records[2]["body"], "Egress: refused");
     assert_eq!(records[2]["run"], run);
-    // The fake provider signals only after its SIGINT-ignoring grandchild
-    // has started sleep. Use the already-mounted, disposable account home.
-    use std::os::fd::AsRawFd;
-    use tokio::io::AsyncReadExt;
-    let home = root
-        .join("accounts")
-        .join(f.owner.to_string())
-        .join("spaces")
-        .join(f.space.to_string())
-        .join("provider-homes/calternal-chat-claude-code");
-    let dir = tokio::fs::File::open(&home).await.unwrap();
-    let endpoint = format!("/proc/self/fd/{}/hold-ready.sock", dir.as_raw_fd());
-    let readiness = tokio::net::UnixListener::bind(endpoint).unwrap();
-    send_input(caller.clone(), 4, json!("hold: stop family"))
-        .await
-        .unwrap();
-    tokio::time::timeout(Duration::from_secs(30), async {
-        let (mut stream, _) = readiness.accept().await.unwrap();
-        let mut signal = [0; 6];
-        stream.read_exact(&mut signal).await.unwrap();
-        assert_eq!(&signal, b"READY\n");
-    })
-    .await
-    .expect("the fake provider did not signal process-family readiness");
     let container =
         PodmanBackend::container_name(f.owner.as_uuid(), run.as_str().unwrap().parse().unwrap());
+    send_input(caller.clone(), 4, json!("hold: ignore signals"))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(12), async {
+        loop {
+            let processes = tokio::process::Command::new("podman")
+                .args(["top", &container, "args"])
+                .output()
+                .await
+                .unwrap();
+            if String::from_utf8_lossy(&processes.stdout)
+                .lines()
+                .any(|line| line.trim() == "sleep 60")
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+    })
+    .await
+    .expect("fake provider did not start the process family");
     let started = std::time::Instant::now();
     f.call(caller.clone(), "s.run.stop", json!({"id":run}), None)
         .await
@@ -154,7 +171,7 @@ async fn selected_harness_replies_once_and_enforces_actor_scope_and_egress() {
 mod podman_guard;
 
 #[tokio::test]
-async fn sandbox_callbacks_keep_the_original_chat_scope() {
+async fn sandbox_callbacks_keep_scope_and_target_removal_stops_the_run() {
     use calternal_machine::sandbox::podman::PodmanBackend;
     use std::time::Duration;
 
@@ -191,6 +208,7 @@ programs:
   check: executable programs/check
 reads: calternal-chat.chats
 calls: calternal-chat.chats.send
+replies: calternal-chat.chats.send
 fills:
   calternal-chat:harness: operation start, as "Scope check"
 ---
@@ -324,6 +342,31 @@ await input.next();
         .await
         .unwrap();
     assert!(read["records"].as_array().unwrap().is_empty());
+    let run = id.as_str().unwrap().parse().unwrap();
+    let container = PodmanBackend::container_name(f.owner.as_uuid(), run);
+    f.call(
+        actor.clone(),
+        "s.write",
+        json!({"changes":[{"op":"remove","item":item}]}),
+        Some("remove-target"),
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            let status = tokio::process::Command::new("podman")
+                .args(["top", &container])
+                .output()
+                .await
+                .unwrap();
+            if !status.status.success() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+    })
+    .await
+    .expect("removing the target did not terminate the sandbox");
     f.call(actor, "s.run.stop", json!({"id":id}), None)
         .await
         .unwrap();

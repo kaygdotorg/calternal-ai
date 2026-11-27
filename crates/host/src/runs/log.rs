@@ -1,5 +1,8 @@
 //! Bounded run output and exclusive offsets for replay.
-use std::{collections::VecDeque, sync::Mutex};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use calternal_machine::run_service::{RunEvent, RunEventKind};
@@ -15,7 +18,7 @@ pub(super) struct Log(Mutex<Retained>);
 
 #[derive(Default)]
 struct Retained {
-    events: VecDeque<RunEvent>,
+    events: VecDeque<Arc<RunEvent>>,
     bytes: usize,
 }
 
@@ -72,7 +75,7 @@ impl Log {
             retained.bytes -= self::size(&old);
         }
         retained.bytes += size;
-        retained.events.push_back(event);
+        retained.events.push_back(Arc::new(event));
     }
 
     pub(super) fn after(&self, run: Uuid, offset: Option<u64>) -> Result<Batch> {
@@ -89,10 +92,15 @@ impl Log {
             .events
             .back()
             .is_some_and(|event| matches!(event.event, RunEventKind::Exit(_)));
-        let chunks = retained
+        let events = retained
             .events
             .iter()
             .filter(|event| event.sequence > offset)
+            .cloned()
+            .collect::<Vec<_>>();
+        drop(retained);
+        let chunks = events
+            .iter()
             .map(|event| Chunk {
                 offset: event.sequence,
                 output: match &event.event {

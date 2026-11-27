@@ -29,6 +29,7 @@ use uuid::Uuid;
 const MAX_RUNS: usize = 32;
 const MAX_TARGETS: usize = 32;
 const TERMINATE_LIMIT: Duration = Duration::from_millis(1800);
+const CLEANUP_LIMIT: Duration = Duration::from_secs(12);
 const SOCKET_IN_CONTAINER: &str = "/run/calternal-egress/proxy.sock";
 
 /// A start request already authorized by the host route.
@@ -87,22 +88,27 @@ pub struct RunHandle {
     pub id: Uuid,
     /// Bounded ordered log stream. A stalled reader applies backpressure.
     pub events: mpsc::Receiver<RunEvent>,
-    /// Final status becomes available even if the log stream is not consumed.
-    pub exit: watch::Receiver<Option<ExitInfo>>,
+    exit: watch::Receiver<Option<ExitInfo>>,
 }
 
 impl RunHandle {
-    /// Wait until the machine reports the process exit.
-    pub async fn wait_exit(&mut self) -> ExitInfo {
-        loop {
-            if let Some(exit) = self.exit.borrow().clone() {
-                return exit;
-            }
-            if self.exit.changed().await.is_err() {
-                return ExitInfo {
-                    error: Some("run status channel closed".into()),
-                    ..ExitInfo::default()
-                };
+    /// Observe process exit independently of ownership of the log stream.
+    /// Each waiter holds its own receiver and reports a closed status channel.
+    pub fn wait_exit(
+        &self,
+    ) -> impl std::future::Future<Output = ExitInfo> + Send + 'static + use<> {
+        let mut exit = self.exit.clone();
+        async move {
+            loop {
+                if let Some(status) = exit.borrow().clone() {
+                    return status;
+                }
+                if exit.changed().await.is_err() {
+                    return ExitInfo {
+                        error: Some("run status channel closed".into()),
+                        ..ExitInfo::default()
+                    };
+                }
             }
         }
     }
@@ -195,12 +201,35 @@ struct RunResources {
 }
 
 impl RunResources {
-    async fn cleanup(&self) {
-        if let Some(proxy) = self.proxy.lock().await.take() {
-            let _ = proxy.shutdown().await;
+    async fn cleanup(&self, id: Uuid) {
+        let proxy = self.proxy.lock().await.take();
+        if let Some(proxy) = proxy {
+            cleanup_proxy(id, proxy).await;
         }
-        let _ = self.sandbox.stop().await;
+        cleanup_sandbox(id, self.sandbox.as_ref()).await;
         self.directory.cleanup().await;
+    }
+}
+
+async fn cleanup_sandbox(id: Uuid, sandbox: &dyn Sandbox) {
+    for attempt in 1..=2 {
+        if matches!(
+            tokio::time::timeout(CLEANUP_LIMIT, sandbox.stop()).await,
+            Ok(Ok(()))
+        ) {
+            return;
+        }
+        eprintln!("harness run {id} sandbox cleanup failed (attempt {attempt})");
+    }
+    eprintln!("harness run {id} artifacts scheduled for startup sweep");
+}
+
+async fn cleanup_proxy(id: Uuid, proxy: ConnectProxy) {
+    if !matches!(
+        tokio::time::timeout(CLEANUP_LIMIT, proxy.shutdown()).await,
+        Ok(Ok(()))
+    ) {
+        eprintln!("harness run {id} proxy cleanup failed");
     }
 }
 
@@ -215,7 +244,7 @@ impl RunService {
             backend,
             image,
             authorizer,
-            Arc::new(SystemResolver),
+            Arc::new(SystemResolver::default()),
             Arc::new(TcpDialer),
         )
     }
@@ -271,24 +300,22 @@ impl RunService {
             }
         }
 
-        let directory = tokio::task::spawn_blocking(tempfile::tempdir)
+        let run_root = self.inner.backend.run_work_root().await?;
+        let directory = tokio::task::spawn_blocking(move || RunDirectory::create(&run_root))
             .await
             .map_err(|_| RunError::Task)??;
-        let directory = RunDirectory::from_tempdir(directory);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            tokio::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700))
-                .await?;
-        }
         let proxy = ConnectProxy::start(
-            &directory.path().join("proxy.sock"),
-            request.program.policy.clone(),
+            &directory.socket_path("proxy.sock"),
+            request
+                .program
+                .policy
+                .clone()
+                .excluding(self.inner.backend.run_egress_exclusions()),
             Arc::clone(&self.inner.resolver),
             Arc::clone(&self.inner.dialer),
         )
         .await?;
-        let mut control = RunControl::start(&directory.path().join("control.sock")).await?;
+        let mut control = RunControl::start(&directory.socket_path("control.sock")).await?;
         let run_id = Uuid::now_v7();
         let spec = SandboxSpec {
             code_directory: None,
@@ -310,15 +337,25 @@ impl RunService {
             legacy_profile: false,
             guest_image_digest: None,
         };
+        let program = format!(
+            "{}.{}",
+            request.program.plugin_id, request.program.program_id
+        );
         let sandbox = match self
             .inner
             .backend
-            .start_harness_run(&spec, &harness, &plugin_root, directory.path())
+            .start_harness_run(
+                &spec,
+                &harness,
+                &plugin_root,
+                &directory.sockets(),
+                &program,
+            )
             .await
         {
             Ok(sandbox) => sandbox,
             Err(error) => {
-                let _ = proxy.shutdown().await;
+                cleanup_proxy(run_id, proxy).await;
                 return Err(RunError::Sandbox(error));
             }
         };
@@ -344,19 +381,19 @@ impl RunService {
         {
             Ok(exec) => exec,
             Err(error) => {
-                let _ = sandbox.release().await;
-                let _ = proxy.shutdown().await;
+                cleanup_sandbox(run_id, sandbox.as_ref()).await;
+                cleanup_proxy(run_id, proxy).await;
                 return Err(RunError::Sandbox(error));
             }
         };
         let Some(input) = exec.input.take() else {
-            let _ = sandbox.release().await;
-            let _ = proxy.shutdown().await;
+            cleanup_sandbox(run_id, sandbox.as_ref()).await;
+            cleanup_proxy(run_id, proxy).await;
             return Err(RunError::InputUnavailable);
         };
         if let Err(error) = control.wait_ready().await {
-            let _ = sandbox.release().await;
-            let _ = proxy.shutdown().await;
+            cleanup_sandbox(run_id, sandbox.as_ref()).await;
+            cleanup_proxy(run_id, proxy).await;
             return Err(RunError::Egress(error));
         }
         let resources = Arc::new(RunResources {
@@ -382,7 +419,7 @@ impl RunService {
             let mut runs = self.inner.runs.write().await;
             if runs.contains_key(&run_id) {
                 drop(runs);
-                resources.cleanup().await;
+                resources.cleanup(run_id).await;
                 return Err(RunError::Task);
             }
             runs.insert(run_id, Arc::clone(&state));
@@ -404,7 +441,9 @@ impl RunService {
         })
     }
 
-    /// Send one bounded frame from the exact actor that started the run.
+    /// Enqueue one bounded frame from the exact actor that started the run.
+    /// Successful admission means the channel accepted it. Adapter processing
+    /// can still fail if the process exits before it reads the frame.
     pub async fn send_input(
         &self,
         run_id: Uuid,
@@ -424,6 +463,9 @@ impl RunService {
             .ok_or(RunError::NotActive)?;
         if &state.actor != actor {
             return Err(RunError::InputActor);
+        }
+        if *state.stopping.borrow() {
+            return Err(RunError::NotActive);
         }
         state
             .input
@@ -450,6 +492,24 @@ impl RunService {
         {
             return Err(RunError::StopNotAllowed);
         }
+        Self::terminate_state(&state).await
+    }
+
+    /// Terminate a known run by UUID after trusted host authorization or target
+    /// retirement. No target lookup is needed. Bounds the process kill to 1.8 seconds.
+    pub async fn terminate(&self, run_id: Uuid) -> Result<(), RunError> {
+        let state = self
+            .inner
+            .runs
+            .read()
+            .await
+            .get(&run_id)
+            .cloned()
+            .ok_or(RunError::NotActive)?;
+        Self::terminate_state(&state).await
+    }
+
+    async fn terminate_state(state: &RunState) -> Result<(), RunError> {
         state.stopping.send_replace(true);
         match tokio::time::timeout(TERMINATE_LIMIT, state.resources.sandbox.terminate()).await {
             Ok(result) => result.map_err(RunError::Sandbox),
@@ -491,7 +551,12 @@ async fn monitor_run(
             }
         }
     };
-    let _ = resources.sandbox.terminate().await;
+    if !matches!(
+        tokio::time::timeout(TERMINATE_LIMIT, resources.sandbox.terminate()).await,
+        Ok(Ok(()))
+    ) {
+        eprintln!("harness run {run_id} process cleanup failed");
+    }
     exit.send_replace(Some(info.clone()));
     if let Some(service) = service.upgrade() {
         service.runs.write().await.remove(&run_id);
@@ -505,7 +570,7 @@ async fn monitor_run(
     } else if log_open {
         let _ = send_run_event(&log, &mut stopping, terminal).await;
     }
-    resources.cleanup().await;
+    resources.cleanup(run_id).await;
 }
 
 async fn send_run_event(
@@ -524,3 +589,7 @@ async fn send_run_event(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "run_service/exit_tests.rs"]
+mod exit_tests;

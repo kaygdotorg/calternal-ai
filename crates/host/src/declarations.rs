@@ -112,7 +112,7 @@ pub(crate) fn parse_plugin(
             || (!kind.hidden && kind.keep.is_some())
             || matches!(kind.item, format::ItemForm::Binary { .. })
             || (!kind.hidden && kind.folder.as_ref().is_none_or(|name| !plain_folder(name)))
-            || matches!(&kind.item, format::ItemForm::Folder(main) if reserved_name(main) || main.contains('/'))
+            || matches!(&kind.item, format::ItemForm::Folder(main) if calternal_fsio::names::is_instruction_file(main) || main.contains('/'))
             || (kind.file.contains(['{', '}'])
                 && kind
                     .file
@@ -131,15 +131,10 @@ pub(crate) fn parse_plugin(
 fn plain_folder(name: &str) -> bool {
     calternal_fsio::beneath::plain_parts(name).is_ok()
         && name.split('/').all(|part| {
-            !part.starts_with('.') && !part.contains(['{', '}']) && !reserved_name(part)
+            !part.starts_with('.')
+                && !part.contains(['{', '}'])
+                && !calternal_fsio::names::is_instruction_file(part)
         })
-}
-
-fn reserved_name(value: &str) -> bool {
-    matches!(
-        calternal_fsio::names::fold(value).as_str(),
-        "agents.md" | "claude.md" | "gemini.md" | ".cursorrules"
-    )
 }
 
 pub(crate) fn apply_fields(

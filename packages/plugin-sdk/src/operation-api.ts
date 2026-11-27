@@ -248,9 +248,12 @@ export interface RunHandle {
   id: string;
   /** Status snapshot returned when the run was opened. */
   status: string;
-  /** Send input as the run actor, subject to the host check. */
-  send(input: unknown): Promise<void>;
-  /** Stop the run if the current caller may read the target. */
+  /** Queue input as the run actor. The result reports admission to the input channel. */
+  send(input: unknown): Promise<{
+    /** The input entered the run queue. Delivery to the adapter is unconfirmed. */
+    status: "queued";
+  }>;
+  /** Stop the run if the current caller has access to its original scope. */
   stop(): Promise<void>;
 }
 

@@ -92,13 +92,34 @@ pub fn evaluate_query_matching(
     context: &EvalContext<'_>,
     matches_row: &dyn Fn(usize, Row<'_>) -> bool,
 ) -> Result<QueryResult, Diagnostic> {
-    let mut steps = 1_000_000_usize;
+    evaluate_query_bounded(
+        collection,
+        kind,
+        rows,
+        page,
+        context,
+        matches_row,
+        &mut 1_000_000,
+    )
+}
+
+/// Evaluate matching rows within a caller-supplied cumulative work budget.
+/// Charges formulas and sized copies before allocating query intermediates.
+pub fn evaluate_query_bounded(
+    collection: &Collection,
+    kind: &Kind,
+    rows: &[Row<'_>],
+    page: Page,
+    context: &EvalContext<'_>,
+    matches_row: &dyn Fn(usize, Row<'_>) -> bool,
+    steps: &mut usize,
+) -> Result<QueryResult, Diagnostic> {
     let mut matches = Vec::new();
     for (index, row) in rows.iter().enumerate() {
-        steps = steps
+        *steps = steps
             .checked_sub(1)
             .ok_or_else(|| collection.site.error("The collection query is too costly"))?;
-        let allowed = steps.min(50_000);
+        let allowed = (*steps).min(50_000);
         let mut item_steps = allowed;
         if let Some(row) = prepare_row(
             collection,
@@ -111,14 +132,14 @@ pub fn evaluate_query_matching(
         )? {
             matches.push(row);
         }
-        steps -= allowed - item_steps;
+        *steps -= allowed - item_steps;
     }
     let sort_steps = matches
         .len()
         .saturating_mul(matches.len().checked_ilog2().unwrap_or(0) as usize)
         .saturating_mul(collection.sort.len());
     let total_steps = matches.len().saturating_mul(collection.totals.len());
-    steps = steps
+    *steps = steps
         .checked_sub(sort_steps.saturating_add(total_steps))
         .ok_or_else(|| collection.site.error("The collection query is too costly"))?;
     matches.sort_by(|a, b| {
@@ -142,22 +163,24 @@ pub fn evaluate_query_matching(
         }
         a.index.cmp(&b.index)
     });
-    let aggregate_rows = |items: &[&Matched]| -> Result<Vec<Value>, Diagnostic> {
-        collection
-            .totals
-            .iter()
-            .enumerate()
-            .map(|(index, total)| {
-                let values = items
-                    .iter()
-                    .map(|row| row.totals[index].clone())
-                    .filter(|value| *value != Value::Empty)
-                    .collect();
-                aggregate(&total.function, values, collection.site)
-            })
-            .collect()
-    };
-    let totals = aggregate_rows(&matches.iter().collect::<Vec<_>>())?;
+    let aggregate_rows =
+        |items: &[&Matched], steps: &mut usize| -> Result<Vec<Value>, Diagnostic> {
+            collection
+                .totals
+                .iter()
+                .enumerate()
+                .map(|(index, total)| {
+                    let values = items
+                        .iter()
+                        .map(|row| &row.totals[index])
+                        .filter(|value| **value != Value::Empty)
+                        .map(|value| charged_copy(Some(value), steps, collection.site))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    aggregate(&total.function, values, collection.site)
+                })
+                .collect()
+        };
+    let totals = aggregate_rows(&matches.iter().collect::<Vec<_>>(), steps)?;
     let mut groups: Vec<(Value, Vec<&Matched>)> = Vec::new();
     for row in &matches {
         let keys = match &row.group {
@@ -171,7 +194,7 @@ pub fn evaluate_query_matching(
                 continue;
             }
             seen.push(key);
-            steps = steps
+            *steps = steps
                 .checked_sub(
                     groups
                         .len()
@@ -182,7 +205,8 @@ pub fn evaluate_query_matching(
             if let Some((_, members)) = groups.iter_mut().find(|(group_key, _)| group_key == key) {
                 members.push(row);
             } else {
-                groups.push((key.clone(), vec![row]));
+                let key = charged_copy(Some(key), steps, collection.site)?;
+                groups.push((key, vec![row]));
             }
         }
     }
@@ -192,7 +216,7 @@ pub fn evaluate_query_matching(
             Ok(QueryGroup {
                 key,
                 matched: members.len(),
-                totals: aggregate_rows(&members)?,
+                totals: aggregate_rows(&members, steps)?,
             })
         })
         .collect::<Result<_, Diagnostic>>()?;
@@ -220,14 +244,14 @@ pub fn evaluate_query_matching(
             fields: &named_totals,
             metadata: &metadata,
         };
-        let allowed = steps.min(50_000);
+        let allowed = (*steps).min(50_000);
         let mut budget = allowed;
         let value =
             evaluate_field(field, row, context, &mut budget, true).unwrap_or_else(|error| {
                 named_total_errors.insert(name.clone(), error);
                 Value::Empty
             });
-        steps -= allowed - budget;
+        *steps -= allowed - budget;
         named_totals.insert(name.clone(), value);
     }
     Ok(QueryResult {
@@ -262,6 +286,15 @@ fn prepare_row(
         row_context.record_positions = per_row.record_positions;
         row_context.reverse = per_row.reverse;
         row_context.outgoing_links = per_row.outgoing_links;
+    }
+    for (key, value) in row.fields {
+        charge_copy(
+            key.len()
+                .saturating_add(value.copy_bytes())
+                .saturating_mul(2),
+            steps,
+            collection.site,
+        )?;
     }
     let stored = typed_fields(&kind.fields, row.fields, |_| kind.site, true)?;
     let fields = computed_values(
@@ -303,35 +336,60 @@ fn prepare_row(
         .as_ref()
         .map(|group| evaluate_in(group, row, &row_context, steps))
         .transpose()?;
+    let sort = collection
+        .sort
+        .iter()
+        .map(|sort| charged_copy(row.get(&sort.field), steps, collection.site))
+        .collect::<Result<_, _>>()?;
+    let totals = collection
+        .totals
+        .iter()
+        .map(|total| match &total.field {
+            Some(field) => charged_copy(row.get(field), steps, collection.site),
+            None => Ok(Value::Bool(true)),
+        })
+        .collect::<Result<_, _>>()?;
+    let mut fields = fields;
+    let mut computed = Fields::new();
+    for field in kind.computed.iter().chain(&collection.computed) {
+        if let Some(value) = fields.remove(field) {
+            charge_copy(
+                field.len().saturating_add(std::mem::size_of::<Value>()),
+                steps,
+                collection.site,
+            )?;
+            computed.insert(field.clone(), value);
+        }
+    }
     Ok(Some(Matched {
         index,
-        sort: collection
-            .sort
-            .iter()
-            .map(|sort| row.value(&sort.field))
-            .collect(),
-        totals: collection
-            .totals
-            .iter()
-            .map(|total| {
-                total
-                    .field
-                    .as_ref()
-                    .map_or(Value::Bool(true), |field| row.value(field))
-            })
-            .collect(),
+        sort,
+        totals,
         group,
-        computed: kind
-            .computed
-            .iter()
-            .chain(&collection.computed)
-            .filter_map(|field| {
-                fields
-                    .get(field)
-                    .map(|value| (field.clone(), value.clone()))
-            })
-            .collect(),
+        computed,
     }))
+}
+
+fn charge_copy(
+    bytes: usize,
+    steps: &mut usize,
+    site: crate::lines::Site,
+) -> Result<(), Diagnostic> {
+    *steps = steps
+        .checked_sub(bytes.div_ceil(64))
+        .ok_or_else(|| site.error("The collection query is too costly"))?;
+    Ok(())
+}
+
+fn charged_copy(
+    value: Option<&Value>,
+    steps: &mut usize,
+    site: crate::lines::Site,
+) -> Result<Value, Diagnostic> {
+    if let Some(value) = value {
+        charge_copy(value.copy_bytes(), steps, site)?;
+    }
+    Ok(value.cloned().unwrap_or_default())
 }
 
 fn sort_values(a: &Value, b: &Value) -> Ordering {

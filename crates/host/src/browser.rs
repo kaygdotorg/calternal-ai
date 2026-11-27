@@ -11,7 +11,7 @@ use axum::{
     routing::{get, post},
 };
 use calternal_auth::AuthConfig;
-use calternal_types::{AccountId, Error, ErrorCode};
+use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
@@ -119,15 +119,45 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
 }
 
 const BODY_DEADLINE: Duration = Duration::from_secs(10);
-const MAX_HTTP_WORK: usize = 8;
+const MAX_LOGIN_WORK: usize = 8;
 
-fn admit_http_work() -> Result<OwnedSemaphorePermit, Failure> {
+fn admit_login_work() -> Result<OwnedSemaphorePermit, Failure> {
     static ADMISSION: std::sync::LazyLock<Arc<Semaphore>> =
-        std::sync::LazyLock::new(|| Arc::new(Semaphore::new(MAX_HTTP_WORK)));
+        std::sync::LazyLock::new(|| Arc::new(Semaphore::new(MAX_LOGIN_WORK)));
     ADMISSION.clone().try_acquire_owned().map_err(|_| {
         Error::new(
             ErrorCode::RetryAfter,
             "The host is processing too many requests.",
+        )
+        .into()
+    })
+}
+
+async fn admit_http_call(
+    host: &Arc<Host>,
+    account: AccountId,
+    space: SpaceId,
+) -> Result<OwnedSemaphorePermit, Failure> {
+    let host = host.clone();
+    let slot = tokio::task::spawn_blocking(move || {
+        // An authenticated caller can reserve work only for its personal space.
+        // Avoid opening storage or occupying a slot for arbitrary path input.
+        if !host
+            .auth
+            .spaces()
+            .is_personal_space(account, space)
+            .map_err(internal)?
+        {
+            return Err(Error::not_found("Personal space was not found."));
+        }
+        host.space_slot(space)
+    })
+    .await
+    .map_err(internal)??;
+    slot.http_work.clone().try_acquire_owned().map_err(|_| {
+        Error::new(
+            ErrorCode::RetryAfter,
+            "This space is processing too many requests.",
         )
         .into()
     })
@@ -143,7 +173,7 @@ async fn call(State(host): State<Arc<Host>>, Path(space): Path<String>, req: Req
     .ok_or_else(|| Error::unauthorized("Sign in to use this space."))?;
     let session = host.authenticate(credential).await?;
     let space = space.parse()?;
-    let permit = admit_http_work()?;
+    let permit = admit_http_call(&host, session.account, space).await?;
     let (call, permit) = {
         if !is_json(&req) {
             return Err(Error::invalid_input("Expected a JSON call envelope.").into());
@@ -174,15 +204,23 @@ async fn call(State(host): State<Arc<Host>>, Path(space): Path<String>, req: Req
     Ok(([(header::CONTENT_TYPE, "application/json")], encoded).into_response())
 }
 
-async fn session_info(host: &Arc<Host>, account: AccountId) -> Result<Value, Failure> {
+async fn session_payload(host: &Arc<Host>, account: AccountId) -> Result<Value, Failure> {
     let (name, space) = personal_space(host, account).await?;
+    let mut payload = json!({"session":{"account":account,"name":name,"space":space}});
     if !host.development_plugins.is_empty() {
         let host = host.clone();
-        tokio::task::spawn_blocking(move || host.ensure_development_plugins(account, space))
-            .await
-            .map_err(internal)??;
+        let seeded =
+            tokio::task::spawn_blocking(move || host.ensure_development_plugins(account, space))
+                .await;
+        if !matches!(seeded, Ok(Ok(()))) {
+            eprintln!("calternal-host: development bundle initialization is pending");
+            payload["initialization"] = json!({
+                "status":"pending",
+                "retry":"Refresh your sign-in status to retry preview initialization."
+            });
+        }
     }
-    Ok(json!({"account":account,"name":name,"space":space}))
+    Ok(payload)
 }
 
 async fn personal_space(
@@ -211,11 +249,12 @@ async fn status(State(browser): State<Browser>, headers: HeaderMap) -> Reply {
         None => None,
     };
     let setup = browser.host.auth.setup_needed().await.map_err(auth_error)?;
-    let session = match account {
-        Some(account) => session_info(&browser.host, account).await?,
-        None => Value::Null,
+    let mut payload = match account {
+        Some(account) => session_payload(&browser.host, account).await?,
+        None => json!({"session":null}),
     };
-    Ok(Json(json!({"setup":setup,"session":session})).into_response())
+    payload["setup"] = json!(setup);
+    Ok(Json(payload).into_response())
 }
 
 #[derive(Deserialize)]
@@ -288,7 +327,7 @@ async fn login_start(
     req: Request,
 ) -> Reply {
     let source = source(&browser.config, peer, req.headers());
-    let permit = admit_http_work()?;
+    let permit = admit_login_work()?;
     let auth = browser.host.auth.clone();
     let (auth, source, permit) = tokio::task::spawn_blocking(move || {
         auth.admit_http_login(&source).map_err(auth_error)?;
@@ -352,7 +391,7 @@ async fn signed_in(
     token: String,
     codes: Vec<String>,
 ) -> Reply {
-    let mut payload = json!({"session":session_info(&browser.host, account).await?});
+    let mut payload = session_payload(&browser.host, account).await?;
     if !codes.is_empty() {
         payload["recovery_codes"] = json!(codes);
     }
@@ -494,111 +533,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn development_status_backfills_missing_bundles_and_preserves_existing_items() {
-        use crate::WorkerRuntime;
-        use calternal_auth::Auth;
-        use std::path::PathBuf;
-
-        fn executable(name: &str) -> PathBuf {
-            std::env::split_paths(&std::env::var_os("PATH").unwrap())
-                .map(|dir| dir.join(name))
-                .find(|path| path.is_file())
-                .unwrap()
-                .canonicalize()
-                .unwrap()
-        }
-
-        let data = tempfile::tempdir().unwrap();
-        let root = data.path().to_owned();
-        let config = AuthConfig::new("http://localhost").unwrap();
-        let auth_path = root.join("auth");
-        let auth_config = config.clone();
-        let auth = tokio::task::spawn_blocking(move || Auth::open(&auth_path, auth_config))
-            .await
-            .unwrap()
-            .unwrap();
-        let account = auth.create("Dev owner").await.unwrap().id;
-        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .unwrap();
-        let runtime = WorkerRuntime::new(
-            executable("bwrap"),
-            executable("node"),
-            repo.join("packages/plugin-sdk"),
-        )
-        .unwrap();
-        let original = ["calternal-chat", "calternal-chat-claude-code"];
-        let added = ["calternal-reading-list", "calternal-tasks"];
-        let bundle = |id: &str| (id.to_owned(), repo.join("plugins-v2").join(id));
-        let host = Host::new(root.clone(), auth.clone(), 7)
-            .unwrap()
-            .with_worker_runtime(runtime.clone())
-            .with_development_plugins(original.map(bundle));
-        let browser = Browser {
-            host: Arc::new(host),
-            config: Arc::new(config),
-        };
-        let (_, space) = personal_space(&browser.host, account).await.ok().unwrap();
-        let signed_in = signed_in(
-            &browser,
-            account,
-            "synthetic-fixture-session".into(),
-            Vec::new(),
-        )
-        .await;
-        assert_eq!(signed_in.ok().unwrap().status(), StatusCode::OK);
-        let call = |host: Arc<Host>, name: &str, input| {
-            host.trusted_call(
-                account.into(),
-                space,
-                Call {
-                    call: name.into(),
-                    input,
-                    idempotency_key: None,
-                    slot_selection: None,
-                },
-            )
-        };
-        let created = call(
-            browser.host.clone(),
-            "s.write",
-            json!({"changes":[
-                {"op":"add","kind":"calternal-chat.chats","fields":{"title":"Existing item"}}
-            ]}),
-        )
-        .await
-        .unwrap();
-        let item = created["changes"][0]["id"].clone();
-        drop(browser);
-
-        let host = Arc::new(
-            Host::new(root, auth, 7)
-                .unwrap()
-                .with_worker_runtime(runtime)
-                .with_development_plugins(original.into_iter().chain(added).map(bundle)),
-        );
-        for _ in 0..2 {
-            let session = session_info(&host, account).await.ok().unwrap();
-            assert_eq!(session["space"], json!(space));
-        }
-        let catalog = call(host.clone(), "s.declarations", json!({}))
-            .await
-            .unwrap();
-        let plugins = catalog["plugins"].as_array().unwrap();
-        assert_eq!(plugins.len(), 4);
-        for id in original.into_iter().chain(added) {
-            assert_eq!(
-                plugins.iter().filter(|plugin| plugin["id"] == id).count(),
-                1
-            );
-        }
-        let item = call(host, "s.read", json!({"item":item})).await.unwrap();
-        assert_eq!(item["fields"]["title"], "Existing item");
-        assert_eq!(item["version"], 1);
-    }
-
-    #[tokio::test]
     async fn unauthenticated_call_rejects_before_deserializing_envelope() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -628,3 +562,7 @@ mod tests {
         server.abort();
     }
 }
+
+#[cfg(test)]
+#[path = "browser/tests.rs"]
+mod bundle_tests;

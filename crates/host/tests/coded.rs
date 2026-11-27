@@ -828,3 +828,75 @@ async fn coded_route_rejects_two_part_alias() {
         .await;
     assert_eq!(alias.unwrap_err().code, ErrorCode::Forbidden);
 }
+
+#[tokio::test]
+async fn coded_worker_process_admission_is_shared_within_one_space() {
+    let f = Fixture::new().await;
+    let second = f.auth.create("Another owner").await.unwrap().id;
+    let auth = f.auth.clone();
+    let second_space = tokio::task::spawn_blocking(move || {
+        auth.spaces()
+            .list(second)
+            .unwrap()
+            .into_iter()
+            .find(|space| space.personal)
+            .unwrap()
+            .id
+    })
+    .await
+    .unwrap();
+    let roots = tempfile::tempdir().unwrap();
+    let mut endpoints = Vec::new();
+    for index in 0..5 {
+        let id = format!("worker-{index}");
+        let path = roots.path().join(&id);
+        std::fs::create_dir_all(path.join("kinds")).unwrap();
+        std::fs::write(
+            path.join("plugin.md"),
+            format!("---\nplugin: {id}\nname: Worker {index}\nversion: 1.0.0\nformat: 1\n---\n"),
+        )
+        .unwrap();
+        std::fs::write(path.join("kinds/jobs.md"),
+            "---\nkind: jobs\nname: Jobs\nformat: 1\nhidden: keep 7d\nfields:\n  title: text, required\noperations:\n  ping: code\n---\nTest worker admission.\n"
+        ).unwrap();
+        std::fs::write(path.join("operations.ts"),
+            "import { on } from '@calternal/plugin-sdk'; export const ping = on.call('jobs.ping', () => 'ready');"
+        ).unwrap();
+        f.install(path.clone()).await.unwrap();
+        endpoints.push((id, path));
+    }
+    for (id, _) in &endpoints[..4] {
+        let result = f
+            .call(f.owner.into(), &format!("{id}.jobs.ping"), json!({}), None)
+            .await
+            .unwrap();
+        assert_eq!(result, "ready");
+    }
+    let (extra, path) = endpoints.last().unwrap();
+    let endpoint = format!("{extra}.jobs.ping");
+    let overflow = f.call(f.owner.into(), &endpoint, json!({}), None).await;
+    assert_eq!(overflow.unwrap_err().code, ErrorCode::RetryAfter);
+
+    let host = f.host.clone();
+    let path = path.clone();
+    tokio::task::spawn_blocking(move || host.install_local(second, second_space, &path, true))
+        .await
+        .unwrap()
+        .unwrap();
+    let result = f
+        .host
+        .clone()
+        .trusted_call(
+            second.into(),
+            second_space,
+            Call {
+                call: endpoint,
+                input: json!({}),
+                idempotency_key: None,
+                slot_selection: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(result, "ready");
+}

@@ -2,6 +2,9 @@
 mod log;
 mod output;
 
+#[cfg(test)]
+mod tests;
+
 use crate::{Call, Host, decode, internal, space::Receipt};
 use calternal_machine::{
     run_service::{
@@ -20,7 +23,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tokio::sync::{Mutex as AsyncMutex, broadcast};
+use tokio::sync::{Mutex as AsyncMutex, broadcast, watch};
 use uuid::Uuid;
 
 const MAX_RUNS_PER_SPACE: usize = 32;
@@ -35,6 +38,29 @@ pub(crate) struct Runs {
 }
 
 impl Runs {
+    fn find(&self, id: Uuid) -> Result<&Arc<Run>> {
+        self.entries
+            .iter()
+            .find(|run| run.grant.id == id)
+            .ok_or_else(|| Error::not_found("Run was not found."))
+    }
+
+    // This runs under the same per-space lock as Stop and persistent writes.
+    pub(crate) fn admit(&self, grant: Option<&RunScopeGrant>) -> Result<()> {
+        if let Some(grant) = grant {
+            self.find(grant.id)?.admit_callback()?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn cancel_target(&self, item: Uuid) {
+        for run in &self.entries {
+            if run.grant.item == item && !run.stopped.load(Ordering::Acquire) {
+                run.cancelled.send_replace(true);
+            }
+        }
+    }
+
     pub(crate) fn is_active(&self) -> bool {
         self.entries
             .iter()
@@ -56,6 +82,8 @@ impl Default for Runs {
 struct Run {
     grant: RunScopeGrant,
     actor: Actor,
+    target_kind: String,
+    cancelled: watch::Sender<bool>,
     log: Log,
     notify: broadcast::Sender<()>,
     stopped: AtomicBool,
@@ -63,6 +91,21 @@ struct Run {
 }
 
 impl Run {
+    fn admit_callback(&self) -> Result<()> {
+        if *self.cancelled.borrow() || self.stopped.load(Ordering::Acquire) {
+            return Err(Error::not_found("Run has stopped."));
+        }
+        Ok(())
+    }
+
+    async fn wait_cancelled(&self) {
+        let _ = self
+            .cancelled
+            .subscribe()
+            .wait_for(|cancelled| *cancelled)
+            .await;
+    }
+
     fn publish(&self, event: RunEvent) {
         self.log.publish(event);
         let _ = self.notify.send(());
@@ -273,15 +316,15 @@ impl Host {
                     manifest.destinations.iter().map(String::as_str),
                 )
                 .map_err(run_error)?;
-                let reply = kind == "calternal-chat.chats"
-                    && manifest
-                        .calls
-                        .iter()
-                        .any(|name| matches!(name.as_str(), "calternal-chat.chats.send"));
-                Ok((Some((program, reply)), receipt, storage.runs.logs.clone()))
+                let reply = manifest.replies.get(&kind).cloned();
+                Ok((
+                    Some((program, reply, kind)),
+                    receipt,
+                    storage.runs.logs.clone(),
+                ))
             })
             .await?;
-        let Some((program, reply)) = binding else {
+        let Some((program, reply, target_kind)) = binding else {
             drop(self.admit_session(installation.as_ref()).await?);
             let mut result = receipt.replay.expect("replayed start receipt");
             let id: StopInput = decode(json!({"id":result["id"]}))?;
@@ -314,6 +357,8 @@ impl Host {
         let run = Arc::new(Run {
             grant: RunScopeGrant { id, space, item },
             actor: actor.clone(),
+            target_kind,
+            cancelled: watch::channel(false).0,
             log: Log::default(),
             notify,
             stopped: AtomicBool::new(false),
@@ -326,15 +371,40 @@ impl Host {
         if let Err(error) = self
             .run_storage(actor.clone(), space, move |storage| {
                 let _admission = host.admit_session_blocking(installation.as_ref())?;
+                let kind = &storage.row(item)?.head.kind;
+                if *kind != publish.target_kind {
+                    return Err(Error::conflict(
+                        "The run target changed kind during launch.",
+                    ));
+                }
+                storage.permits(&publish.actor, kind, false)?;
                 save_start(storage, &receipt, &stored)?;
                 storage.runs.entries.push_back(publish);
                 Ok(())
             })
             .await
         {
-            let _ = service.stop(id, &actor).await;
+            if let Err(error) = service.terminate(id).await
+                && !matches!(error, RunError::NotActive)
+            {
+                eprintln!("calternal-host: provisional run {id} termination: {error}");
+            }
             return Err(error);
         }
+        let exit = handle.wait_exit();
+        let cancel = Arc::clone(&run);
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = exit => {}
+                _ = cancel.wait_cancelled() => {
+                    if let Err(error) = service.terminate(id).await
+                        && !matches!(error, RunError::NotActive)
+                    {
+                        eprintln!("calternal-host: cancelled run {id} termination: {error}");
+                    }
+                }
+            }
+        });
         tokio::spawn(output::monitor(Arc::downgrade(&self), run, handle, reply));
         Ok(result)
     }
@@ -347,7 +417,13 @@ impl Host {
         key: Option<String>,
         installation: Option<crate::Session>,
     ) -> Result<Value> {
-        let input: SendInput = decode(input)?;
+        let (input, digest) = tokio::task::spawn_blocking(move || {
+            let input: SendInput = decode(input)?;
+            let digest = blake3::hash(&encode_run_input(&input.input)?);
+            Ok::<_, Error>((input, digest))
+        })
+        .await
+        .map_err(internal)??;
         let run = self
             .find_run(actor.clone(), space, input.id)
             .await
@@ -364,30 +440,27 @@ impl Host {
             ));
         }
         let mut sends = run.sends.lock().await;
-        let digest = blake3::hash(&serde_json::to_vec(&input.input).map_err(internal)?);
         if let Some(previous) = key.as_ref().and_then(|key| sends.get(key)) {
             return if previous == &digest {
-                Ok(Value::Null)
+                Ok(json!({"status":"queued"}))
             } else {
                 Err(Error::request_reused())
             };
         }
-        if run.stopped.load(Ordering::Acquire) {
-            return Err(Error::not_found("Run has stopped."));
-        }
+        run.admit_callback()?;
         if key.is_some() && sends.len() >= MAX_SEND_RECEIPTS {
             return Err(Error::unavailable("This run has too many input receipts."));
         }
         let value = output::resolve_prompt(&self, &run, input.input).await?;
-        let mut bytes = serde_json::to_vec(&value).map_err(internal)?;
-        bytes.push(b'\n');
-        if bytes.len() > MAX_FRAME_BYTES + 1 {
-            return Err(Error::new(
-                ErrorCode::TooLarge,
-                "Run input exceeds the frame limit.",
-            ));
-        }
+        let bytes = tokio::task::spawn_blocking(move || {
+            let mut bytes = encode_run_input(&value)?;
+            bytes.push(b'\n');
+            Ok::<_, Error>(bytes)
+        })
+        .await
+        .map_err(internal)??;
         let _admission = self.admit_session(installation.as_ref()).await?;
+        run.admit_callback()?;
         self.run_service()?
             .send_input(input.id, &run.actor, bytes)
             .await
@@ -395,7 +468,7 @@ impl Host {
         if let Some(key) = key {
             sends.insert(key, digest);
         }
-        Ok(Value::Null)
+        Ok(json!({"status":"queued"}))
     }
 
     pub(crate) async fn run_stop(
@@ -406,10 +479,18 @@ impl Host {
         installation: Option<crate::Session>,
     ) -> Result<Value> {
         let input: StopInput = decode(input)?;
-        let run = self.find_run(actor.clone(), space, input.id).await?;
-        let _admission = self.admit_session(installation.as_ref()).await?;
+        let host = self.clone();
+        let run = self
+            .run_storage(actor.clone(), space, move |storage| {
+                let run = storage.runs.find(input.id)?;
+                storage.permits(&actor, &run.target_kind, false)?;
+                let _admission = host.admit_session_blocking(installation.as_ref())?;
+                run.cancelled.send_replace(true);
+                Ok(Arc::clone(run))
+            })
+            .await?;
         if !run.stopped.load(Ordering::Acquire) {
-            match self.run_service()?.stop(input.id, &actor).await {
+            match self.run_service()?.terminate(run.grant.id).await {
                 Ok(()) | Err(RunError::NotActive) => run.stopped.store(true, Ordering::Release),
                 Err(error) => return Err(run_error(error)),
             }
@@ -424,7 +505,10 @@ impl Host {
         id: Uuid,
         offset: Option<u64>,
     ) -> Result<LogBatch> {
-        self.find_run(actor, space, id).await?.log.after(id, offset)
+        let run = self.find_run(actor, space, id).await?;
+        tokio::task::spawn_blocking(move || run.log.after(id, offset))
+            .await
+            .map_err(internal)?
     }
 
     fn run_service(&self) -> Result<Arc<RunService>> {
@@ -454,12 +538,7 @@ impl Host {
         id: Uuid,
     ) -> Result<Arc<Run>> {
         self.run_storage(actor.clone(), space, move |storage| {
-            let run = storage
-                .runs
-                .entries
-                .iter()
-                .find(|run| run.grant.id == id)
-                .ok_or_else(|| Error::not_found("Run was not found."))?;
+            let run = storage.runs.find(id)?;
             storage.permits(&actor, &storage.row(run.grant.item)?.head.kind, false)?;
             Ok(Arc::clone(run))
         })
@@ -477,6 +556,11 @@ impl Host {
             .await
             .map_err(internal)?
     }
+}
+
+fn encode_run_input(value: &Value) -> Result<Vec<u8>> {
+    calternal_plugin_host::bounded_json(value, MAX_FRAME_BYTES)
+        .map_err(|_| run_error(RunError::InputTooLarge))
 }
 
 fn save_start(storage: &mut crate::space::Space, receipt: &Receipt, result: &Value) -> Result<()> {
@@ -501,61 +585,5 @@ fn run_error(error: RunError) -> Error {
             eprintln!("calternal-host: run service: {error}");
             Error::unavailable("The run service could not complete the request.")
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn scoped_route_checks_every_target_before_dispatch() {
-        let grant = RunScopeGrant {
-            id: Uuid::now_v7(),
-            space: SpaceId::new(),
-            item: Uuid::now_v7(),
-        };
-        let actor = Actor::run(calternal_types::AccountId::new(), "harness", grant.id);
-        let other = Uuid::now_v7();
-        for (call, input) in [
-            ("s.read", json!({"item":other})),
-            (
-                "s.state",
-                json!({"item":other,"op":"get","key":"read through"}),
-            ),
-            ("s.query", json!({"from":"calternal-chat.chats"})),
-            (
-                "calternal-chat.chats.send",
-                json!({"item":other,"text":"outside"}),
-            ),
-            (
-                "s.write",
-                json!({"changes":[{"op":"append record","item":grant.item},{"op":"append record","item":other}]}),
-            ),
-        ] {
-            let call = Call {
-                call: call.into(),
-                input,
-                idempotency_key: None,
-                slot_selection: None,
-            };
-            assert_eq!(
-                grant.check(&actor, grant.space, &call).unwrap_err().code,
-                ErrorCode::Forbidden
-            );
-        }
-        let read = Call {
-            call: "s.read".into(),
-            input: json!({"item":grant.item}),
-            idempotency_key: None,
-            slot_selection: None,
-        };
-        assert!(grant.check(&actor, grant.space, &read).is_ok());
-        assert!(
-            grant
-                .check(&Actor::account(actor.account), grant.space, &read)
-                .is_err()
-        );
-        assert!(grant.check(&actor, SpaceId::new(), &read).is_err());
     }
 }

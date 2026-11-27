@@ -23,6 +23,8 @@ pub(crate) type Slot = Arc<SpaceSlot>;
 pub(crate) struct SpaceSlot {
     pub(crate) resident: Mutex<Resident>,
     pub(crate) observing: Mutex<std::collections::BTreeSet<[u8; 32]>>,
+    pub(crate) http_work: Arc<tokio::sync::Semaphore>,
+    pub(crate) live_codecs: Arc<tokio::sync::Semaphore>,
 }
 
 pub(crate) struct Resident {
@@ -70,6 +72,8 @@ impl Host {
                 visited: Instant::now(),
             }),
             observing: Mutex::default(),
+            http_work: Arc::new(tokio::sync::Semaphore::new(8)),
+            live_codecs: Arc::new(tokio::sync::Semaphore::new(8)),
         });
         registry.insert(id, slot.clone());
         Ok(slot)
@@ -216,12 +220,6 @@ impl Host {
         tx.execute(
             "DELETE FROM receipts WHERE rowid IN
                 (SELECT rowid FROM receipts WHERE at<?1 ORDER BY at LIMIT 64)",
-            [cutoff],
-        )
-        .map_err(internal)?;
-        tx.execute(
-            "DELETE FROM recovered_appends WHERE rowid IN
-                (SELECT rowid FROM recovered_appends WHERE at<?1 ORDER BY at LIMIT 64)",
             [cutoff],
         )
         .map_err(internal)?;

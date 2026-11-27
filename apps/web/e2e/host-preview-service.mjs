@@ -22,10 +22,11 @@ export function startPreview(directory, origin) {
     "--setenv=PATH=/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin",
     `--setenv=CALTERNAL_WORKER_SDK=${release}/sdk`,
     `--property=EnvironmentFile=${scratch}/runtime.env`,
-    "--property=UnsetEnvironment=CALTERNAL_REAL_RUN_IMAGE CALTERNAL_RUN_SIGN_IN_DIR",
+    "--property=UnsetEnvironment=CALTERNAL_REAL_RUN_IMAGE CALTERNAL_RUN_SIGN_IN_ACCOUNT CALTERNAL_RUN_SIGN_IN_SPACE CALTERNAL_RUN_SIGN_IN_PROGRAM CALTERNAL_RUN_SIGN_IN_FILE",
     "--property=Restart=on-failure", "--property=RestartSec=3", "--property=UMask=0077",
     process.env.HOST_BIN, "preview-serve", directory, `${release}/web`,
-    `${release}/calternal-chat`, `${release}/calternal-chat-claude-code`, new URL(origin).port,
+    `${release}/calternal-chat`, `${release}/calternal-chat-claude-code`,
+    `${release}/calternal-reading-list`, `${release}/calternal-tasks`, new URL(origin).port,
   ], { stdio: "inherit" });
 }
 

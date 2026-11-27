@@ -127,16 +127,17 @@ impl Host {
                 .filter(|(plugin, _)| !space.plugins.contains_key(plugin))
                 .collect::<Vec<_>>())
         })?;
+        let mut result = Ok(());
         for (plugin, directory) in missing {
             if let Err(error) = self.install_local(owner, id, directory, true)
                 && (error.code != calternal_types::ErrorCode::Conflict
                     || !self
                         .with_space(&actor, id, |space| Ok(space.plugins.contains_key(plugin)))?)
             {
-                return Err(error);
+                result = result.and(Err(error));
             }
         }
-        Ok(())
+        result
     }
 
     /// Authenticate and bind the issuing installation to a shell call.
@@ -192,12 +193,12 @@ impl Host {
         official: bool,
     ) -> Result<()> {
         let actor = Actor::account(owner);
-        self.with_space(&actor, id, |_| Ok(()))?;
+        let processes = self.with_space(&actor, id, |space| Ok(space.worker_processes.clone()))?;
         let files = installation::bundle(directory)?;
         let registration = match (self.workers.as_ref(), files.get("operations.ts")) {
             (Some(runtime), Some(source)) => {
                 let snapshot = WorkerRuntime::snapshot(source)?;
-                Some(block_on(runtime.probe(snapshot.path()))??)
+                Some(block_on(runtime.probe(snapshot.path(), processes))??)
             }
             _ => None,
         };
@@ -215,7 +216,7 @@ impl Host {
                 "A run requires a host-owned session scope.",
             ));
         }
-        self.call_scoped(actor, id, call, None)
+        self.call_scoped(actor, id, call, None, None)
     }
 
     fn call_scoped(
@@ -224,6 +225,7 @@ impl Host {
         id: SpaceId,
         call: Call,
         session: Option<&Session>,
+        run: Option<&runs::RunScopeGrant>,
     ) -> Result<Value> {
         if call.slot_selection.is_some() {
             return Err(Error::forbidden(
@@ -231,7 +233,6 @@ impl Host {
             ));
         }
         let recipient = match call.call.as_str() {
-            "s.write" if call.input.get("preview") != Some(&Value::Bool(true)) => Some(None),
             "s.state" if call.input.get("op").and_then(Value::as_str) == Some("set") => {
                 Some(Some(actor.account))
             }
@@ -239,6 +240,14 @@ impl Host {
         };
         self.with_space(&actor, id, |space| {
             let _admission = self.admit_session_blocking(session)?;
+            space.runs.admit(run)?;
+            if call.call == "s.write" {
+                let written = space.write_call(&actor, call)?;
+                if written.disposition == crate::write::Disposition::Committed {
+                    space.live.notify(None);
+                }
+                return Ok(written.value);
+            }
             let output = space.call(&actor, call)?;
             if let Some(recipient) = recipient {
                 space.live.notify(recipient);

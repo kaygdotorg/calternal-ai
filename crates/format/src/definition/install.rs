@@ -264,12 +264,17 @@ fn verify_bindings(
                 }
             }
             if let Some(quote) = &bindings.quote
-                && !matches!(operation.inputs.get(quote).and_then(|field| field.field_type.as_ref()),
-                    Some(FieldType::Link(target)) if target.ends_with(" records"))
+                && !operation.inputs.get(quote).is_some_and(|field| {
+                    !field.required
+                        && matches!(
+                            field.field_type.as_ref(),
+                            Some(FieldType::Link(target)) if target.ends_with(" records")
+                        )
+                })
             {
                 return Err(bindings
                     .quote_site
-                    .error("Bind the quote to a record-link operation input"));
+                    .error("Bind the quote to an optional record-link operation input"));
             }
         }
     }
@@ -287,6 +292,58 @@ fn verify_bindings(
                 verify_operation_fill(plugin, options, fill, target)?;
             }
             _ => {}
+        }
+    }
+    verify_replies(plugin, options)?;
+    Ok(())
+}
+
+fn verify_replies(plugin: &Plugin, options: &InstallOptions<'_>) -> Result<(), Diagnostic> {
+    let manifest = &plugin.manifest;
+    let site = manifest.reply_site;
+    for (target_kind, target) in &manifest.replies {
+        if !manifest.calls.contains(target) || !manifest.reads.contains(target_kind) {
+            return Err(site.error("Declare reads and calls for the reply target"));
+        }
+        let (owner_id, kind_id) = target_kind.split_once('.').expect("qualified reply kind");
+        let owner = options
+            .installed
+            .iter()
+            .find(|candidate| candidate.manifest.id == owner_id)
+            .ok_or_else(|| site.error("Install the reply target's slot owner first"))?;
+        let fills_owner = manifest.fills().any(|fill| {
+            matches!(fill.binding, FillBinding::Operation(_))
+                && fill.slot.as_ref().is_some_and(|(owner_id, slot)| {
+                    owner_id == &owner.manifest.id && owner.manifest.slots.contains_key(slot)
+                })
+        });
+        if !fills_owner {
+            return Err(
+                site.error("The reply operation must belong to a filled operation slot's owner")
+            );
+        }
+        let (_, local) = target.split_once('.').expect("qualified reply operation");
+        let (_, reply) = operation(owner, local)
+            .filter(|(_, op)| op.is_coded() && op.condition.is_none())
+            .ok_or_else(|| {
+                site.error("Declare an unconditional coded operation to receive replies")
+            })?;
+        let item = reply
+            .inputs
+            .get("item")
+            .and_then(|field| field.field_type.as_ref());
+        let text = reply
+            .inputs
+            .get("text")
+            .and_then(|field| field.field_type.as_ref());
+        if !matches!(item, Some(FieldType::Link(kind)) if kind == kind_id || kind == target_kind)
+            || !matches!(text, Some(FieldType::Text | FieldType::LongText))
+            || reply
+                .inputs
+                .iter()
+                .any(|(key, field)| field.required && !matches!(key.as_str(), "text" | "item"))
+        {
+            return Err(site.error("A reply operation must accept the session item and reply text"));
         }
     }
     Ok(())

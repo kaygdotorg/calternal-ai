@@ -16,6 +16,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use calternal_fsio::beneath::Folder;
+use calternal_plugin_host::shared_tools::{
+    WORKSPACE_TOOL_METHOD, WORKSPACE_TOOL_NAME, WORKSPACE_TOOL_NAMESPACE, isolate_request,
+};
 use calternal_types::SpaceId;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::Deserialize;
@@ -158,10 +161,7 @@ fn load_credential(
         let directory = Folder::open(root)?
             .child("broker-credentials", false)?
             .child(&space.to_string(), false)?;
-        let file = directory.open_file(match provider {
-            SharedToolsProvider::Claude => "anthropic.key",
-            SharedToolsProvider::Codex => "openai.key",
-        })?;
+        let file = directory.open_file(provider.credential_name())?;
         if file.metadata()?.permissions().mode() & 0o077 != 0 {
             return Err(std::io::Error::other("credential permissions"));
         }
@@ -180,31 +180,10 @@ fn load_credential(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| SandboxError("invalid machine-local provider key".into()))?;
-    let mut value = match provider {
-        SharedToolsProvider::Claude => HeaderValue::from_str(key),
-        SharedToolsProvider::Codex => HeaderValue::from_str(&format!("Bearer {key}")),
-    }
-    .map_err(|_| SandboxError("invalid machine-local provider key".into()))?;
+    let mut value = HeaderValue::from_str(&provider.format_credential(key))
+        .map_err(|_| SandboxError("invalid machine-local provider key".into()))?;
     value.set_sensitive(true);
     Ok(value)
-}
-
-impl Gateway {
-    fn upstream(&self, path: &str) -> Option<(&'static str, &'static str)> {
-        match (self.provider, path) {
-            (SharedToolsProvider::Claude, "/v1/messages") => {
-                Some(("https://api.anthropic.com/v1/messages", "x-api-key"))
-            }
-            (SharedToolsProvider::Claude, "/v1/messages/count_tokens") => Some((
-                "https://api.anthropic.com/v1/messages/count_tokens",
-                "x-api-key",
-            )),
-            (SharedToolsProvider::Codex, "/v1/responses") => {
-                Some(("https://api.openai.com/v1/responses", "authorization"))
-            }
-            _ => None,
-        }
-    }
 }
 
 async fn dispatch(State(state): State<Arc<Gateway>>, request: Request) -> Response {
@@ -230,7 +209,7 @@ async fn dispatch(State(state): State<Arc<Gateway>>, request: Request) -> Respon
     if path == "/tool" {
         return run_tool(&state, &body).await;
     }
-    let Some((url, auth)) = state.upstream(path) else {
+    let Some((url, auth)) = state.provider.upstream(path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let Some(body) = isolate_request(&body, state.provider) else {
@@ -245,11 +224,9 @@ async fn dispatch(State(state): State<Arc<Gateway>>, request: Request) -> Respon
         .post(url)
         .header(header::CONTENT_TYPE, "application/json")
         .header(auth, state.credential.clone());
-    if state.provider == SharedToolsProvider::Claude {
-        for name in ["anthropic-version", "anthropic-beta"] {
-            if let Some(value) = parts.headers.get(name) {
-                call = call.header(name, value);
-            }
+    for &name in state.provider.forwarded_headers() {
+        if let Some(value) = parts.headers.get(name) {
+            call = call.header(name, value);
         }
     }
     let Ok(reply) = call.body(body).send().await else {
@@ -318,39 +295,6 @@ async fn dispatch(State(state): State<Arc<Gateway>>, request: Request) -> Respon
     ([(header::CONTENT_TYPE, content_type)], guard).into_response()
 }
 
-const TOOL: &str = "mcp__workspace__workspace_command";
-const CODEX_NAMESPACE: &str = "mcp__workspace";
-const CODEX_METHOD: &str = "workspace_command";
-
-fn isolate_request(body: &[u8], provider: SharedToolsProvider) -> Option<Vec<u8>> {
-    let mut body: serde_json::Value = serde_json::from_slice(body).ok()?;
-    let contents = body.as_object_mut()?;
-    // Provider-hosted MCP servers bypass the machine's tool executor.
-    contents.remove("mcp_servers");
-    if let Some(tools) = contents.get_mut("tools") {
-        tools.as_array_mut()?.retain_mut(|tool| match provider {
-            SharedToolsProvider::Claude => {
-                tool["name"] == TOOL && tool.get("type").is_none_or(|kind| kind == "custom")
-            }
-            SharedToolsProvider::Codex => {
-                if tool["type"] == "function" && tool["name"] == TOOL {
-                    return true;
-                }
-                if tool["type"] != "namespace" || tool["name"] != CODEX_NAMESPACE {
-                    return false;
-                }
-                tool["tools"].as_array_mut().is_some_and(|functions| {
-                    functions.retain(|function| {
-                        function["type"] == "function" && function["name"] == CODEX_METHOD
-                    });
-                    !functions.is_empty()
-                })
-            }
-        });
-    }
-    serde_json::to_vec(&body).ok()
-}
-
 fn event_end(buffer: &[u8]) -> Option<usize> {
     let lf = buffer
         .windows(2)
@@ -393,10 +337,10 @@ fn valid_reply(body: &[u8]) -> bool {
                 let name = fields.get("name").and_then(|name| name.as_str());
                 let namespace = fields.get("namespace").and_then(|name| name.as_str());
                 let allowed_call = match kind {
-                    Some("tool_use") => name == Some(TOOL),
+                    Some("tool_use") => name == Some(WORKSPACE_TOOL_NAME),
                     Some("function_call") => match namespace {
-                        Some(CODEX_NAMESPACE) => name == Some(CODEX_METHOD),
-                        None => name == Some(TOOL),
+                        Some(WORKSPACE_TOOL_NAMESPACE) => name == Some(WORKSPACE_TOOL_METHOD),
+                        None => name == Some(WORKSPACE_TOOL_NAME),
                         _ => false,
                     },
                     Some("custom_tool_call") => false,

@@ -7,7 +7,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::process::Command;
+use tokio::sync::Semaphore;
 
+pub(crate) const SPACE_WORKER_PROCESSES: usize = 4;
 const DEADLINE: Duration = Duration::from_secs(6);
 const IDLE: Duration = Duration::from_secs(30);
 
@@ -139,10 +141,14 @@ impl WorkerRuntime {
         })
     }
 
-    pub(crate) async fn probe(&self, source: &Path) -> Result<Registrations> {
+    pub(crate) async fn probe(
+        &self,
+        source: &Path,
+        processes: Arc<Semaphore>,
+    ) -> Result<Registrations> {
         let mut command = self.command(source);
         command.arg("--probe");
-        operations::probe(command, DEADLINE).await
+        operations::probe(command, DEADLINE, processes).await
     }
 
     pub(crate) fn snapshot(bytes: &[u8]) -> Result<TempDir> {
@@ -156,6 +162,7 @@ impl WorkerRuntime {
         space: SpaceId,
         bytes: &[u8],
         registration: &Registrations,
+        processes: Arc<Semaphore>,
     ) -> Result<Arc<Operations>> {
         let source = Self::snapshot(bytes)?;
         let launcher = self.clone();
@@ -169,6 +176,7 @@ impl WorkerRuntime {
             move || launcher.command(source.path()),
             IDLE,
             DEADLINE,
+            processes,
         )))
     }
 
@@ -287,7 +295,10 @@ mod tests {
                 .any(|args| args[0] == "--size" && args[2] == "--tmpfs")
         );
         assert!(args.windows(2).any(|args| args == ["--remount-ro", "/"]));
-        let registrations = runtime.probe(source.path()).await.unwrap();
+        let registrations = runtime
+            .probe(source.path(), Arc::new(Semaphore::new(1)))
+            .await
+            .unwrap();
         assert!(registrations.calls.is_empty());
     }
 }

@@ -1,16 +1,19 @@
 //! Translate installed harness output to calls while preserving the run grant.
+mod decoder;
+
+use self::decoder::{Action, Decoder};
 use super::{Run, RunScopeGrant};
-use crate::{Call, Host, decode, worker_calls::Chain};
+use crate::{Call, Host, worker_calls::Chain};
 use calternal_machine::{
     protocol::{ExitInfo, Stream},
     run_service::{RunEvent, RunEventKind, RunHandle},
 };
 use calternal_plugin_host::operations::Code;
 use calternal_types::{Actor, Error, MAX_FRAME_BYTES, Result};
-use serde::Deserialize;
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::{
-    sync::{Arc, Weak, atomic::Ordering},
+    sync::{Arc, Weak},
     time::Duration,
 };
 
@@ -36,42 +39,22 @@ pub(super) async fn resolve_prompt(host: &Arc<Host>, run: &Run, mut input: Value
         .run_storage(actor.clone(), run.grant.space, move |storage| {
             let row = storage.row(item)?;
             storage.permits(&actor, &row.head.kind, false)?;
-            let records = storage.records(item)?;
-            let (position, _) = records
-                .iter()
-                .enumerate()
-                .find(|(_, record)| record.anchor == anchor)
-                .ok_or_else(|| {
-                    Error::forbidden("The prompt record is outside this run's session.")
-                })?;
-            let bytes = storage.read_verified(&row.head, &records)?;
             let kind = storage.kind(&row.head.kind)?;
-            let views = storage.record_views(&row.head, &bytes, &records, &kind)?;
-            views
-                .get(position)
-                .and_then(|view| view["body"].as_str())
-                .map(str::to_owned)
-                .ok_or_else(|| Error::forbidden("The prompt record is unavailable."))
+            storage.linked_record_body(&row.head, &kind, &anchor)
         })
         .await?;
-    command.insert("prompt".into(), json!(body));
+    command.insert("prompt".into(), Value::String(body));
     Ok(input)
 }
 
-#[derive(Deserialize)]
-struct Callback {
-    id: u64,
-    call: String,
-    input: Value,
-}
-
-pub(super) async fn monitor(host: Weak<Host>, run: Arc<Run>, mut handle: RunHandle, append: bool) {
-    let mut pending = Vec::<u8>::new();
-    let mut reply = String::new();
-    let mut overflow = false;
-    let mut turn = 0_u64;
+pub(super) async fn monitor(
+    host: Weak<Host>,
+    run: Arc<Run>,
+    mut handle: RunHandle,
+    reply_call: Option<String>,
+) {
+    let mut decoder = Decoder::new(reply_call.is_some());
     let mut sequence = 0;
-    let mut callback = 0;
     while let Some(event) = handle.events.recv().await {
         sequence = event.sequence;
         if let RunEventKind::Exit(_) = event.event {
@@ -82,84 +65,47 @@ pub(super) async fn monitor(host: Weak<Host>, run: Arc<Run>, mut handle: RunHand
             stream: Stream::Stdout,
             bytes,
         } = &event.event
+            && run.admit_callback().is_ok()
         {
-            pending.extend(bytes);
-            let mut consumed = 0;
-            for line in pending.split_inclusive(|byte| *byte == b'\n') {
-                if !line.ends_with(b"\n") {
-                    break;
-                }
-                consumed += line.len();
-                if line.len() > MAX_FRAME_BYTES {
-                    overflow = true;
-                    continue;
-                }
-                let Ok(frame) = serde_json::from_slice::<Value>(line) else {
-                    continue;
-                };
-                if let Some(request) = frame.get("host_call") {
-                    if let Ok(request) = decode::<Callback>(request.clone())
-                        && request.id > callback
-                        && let Some(host) = host.upgrade()
-                    {
-                        callback = request.id;
+            let bytes = bytes.clone();
+            let decoded = tokio::task::spawn_blocking(move || {
+                let actions = decoder.feed(&bytes);
+                (decoder, actions)
+            })
+            .await;
+            let Ok((next, actions)) = decoded else {
+                run.cancelled.send_replace(true);
+                break;
+            };
+            decoder = next;
+            for action in actions {
+                let Some(host) = host.upgrade() else { break };
+                match action {
+                    Action::Callback(request) => {
+                        let id = request.id;
                         let outcome = dispatch(
                             &host,
                             &run,
                             request.call,
                             request.input,
-                            format!("callback-{callback}"),
+                            format!("callback-{id}"),
                         )
                         .await;
-                        let response = match outcome {
-                            Ok(result) => json!({"host_reply":{"id":callback,"result":result}}),
-                            Err(error) => json!({"host_reply":{"id":callback,"error":{
-                                "code": Code::from_error(&error)
-                            }}}),
-                        };
-                        if let Ok(mut bytes) = serde_json::to_vec(&response) {
-                            bytes.push(b'\n');
-                            if let Ok(service) = host.run_service() {
-                                let _ = service.send_input(run.grant.id, &run.actor, bytes).await;
-                            }
-                        }
-                    }
-                    continue;
-                }
-                if !append {
-                    continue;
-                }
-                let event = &frame["event"];
-                match event["type"].as_str() {
-                    Some("text_delta") => {
-                        if let Some(text) = event["text"].as_str() {
-                            if reply.len() + text.len() <= MAX_FRAME_BYTES {
-                                reply.push_str(text);
-                            } else {
-                                overflow = true;
-                            }
-                        }
-                    }
-                    Some("done") => {
-                        turn += 1;
-                        if event["outcome"] == "done"
-                            && !reply.trim().is_empty()
-                            && !overflow
-                            && !run.stopped.load(Ordering::Acquire)
-                            && let Some(host) = host.upgrade()
+                        if run.admit_callback().is_ok()
+                            && let Ok(Some(bytes)) =
+                                tokio::task::spawn_blocking(move || encode_callback(id, outcome))
+                                    .await
+                            && let Ok(service) = host.run_service()
                         {
-                            append_reply(&host, &run, turn, std::mem::take(&mut reply)).await;
+                            let _ = service.send_input(run.grant.id, &run.actor, bytes).await;
                         }
-                        reply.clear();
-                        overflow = false;
                     }
-                    _ => {}
+                    Action::Reply { turn, text } => {
+                        if let Some(call) = reply_call.as_deref() {
+                            append_reply(&host, &run, call, turn, text).await;
+                        }
+                    }
                 }
-            }
-            pending.drain(..consumed);
-            if pending.len() > MAX_FRAME_BYTES {
-                pending.clear();
-                overflow = true;
             }
         }
         run.publish(event);
@@ -174,22 +120,54 @@ pub(super) async fn monitor(host: Weak<Host>, run: Arc<Run>, mut handle: RunHand
     });
 }
 
-async fn append_reply(host: &Arc<Host>, run: &Run, turn: u64, text: String) {
-    let input = json!({"item":run.grant.item,"text":text});
+fn encode_callback(id: u64, result: Result<Value>) -> Option<Vec<u8>> {
+    #[derive(Serialize)]
+    struct Envelope {
+        host_reply: Reply,
+    }
+
+    #[derive(Serialize)]
+    #[serde(untagged)]
+    enum Reply {
+        Success { id: u64, result: Value },
+        Failure { id: u64, error: Failure },
+    }
+
+    #[derive(Serialize)]
+    struct Failure {
+        code: Code,
+    }
+
+    let host_reply = match result {
+        Ok(result) => Reply::Success { id, result },
+        Err(error) => Reply::Failure {
+            id,
+            error: Failure {
+                code: Code::from_error(&error),
+            },
+        },
+    };
+    let mut bytes =
+        calternal_plugin_host::bounded_json(&Envelope { host_reply }, MAX_FRAME_BYTES).ok()?;
+    bytes.push(b'\n');
+    Some(bytes)
+}
+
+async fn append_reply(host: &Arc<Host>, run: &Run, call: &str, turn: u64, text: String) {
+    let text: Arc<str> = text.into();
+    let item = run.grant.item;
     let key = format!("reply-{turn}");
-    // Chat may still hold its single worker admission slot for the original
-    // Send. Retry with the same append receipt key through that admission.
+    // The slot owner may still be processing the original invocation.
+    // Retry with the same key so the reply can be published only once.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(7);
-    loop {
-        match dispatch(
-            host,
-            run,
-            "calternal-chat.chats.send".into(),
-            input.clone(),
-            key.clone(),
-        )
-        .await
-        {
+    while run.admit_callback().is_ok() {
+        let text = Arc::clone(&text);
+        let Ok(input) =
+            tokio::task::spawn_blocking(move || json!({"item":item,"text":&*text})).await
+        else {
+            break;
+        };
+        match dispatch(host, run, call.to_owned(), input, key.clone()).await {
             Err(error)
                 if error.code == calternal_types::ErrorCode::RetryAfter
                     && tokio::time::Instant::now() < deadline =>
@@ -216,17 +194,21 @@ async fn dispatch(
     let plugin = crate::identity(&run.actor).0;
     let mut chain = Chain::default();
     chain.run = Some(run.grant);
-    host.clone()
-        .dispatch(
-            Actor::run(run.actor.account, plugin, id),
-            space,
-            Call {
-                call,
-                input,
-                idempotency_key: Some(format!("run:{id}:{key}")),
-                slot_selection: None,
-            },
-            chain,
-        )
-        .await
+    run.admit_callback()?;
+    let dispatch = host.clone().dispatch(
+        Actor::run(run.actor.account, plugin, id),
+        space,
+        Call {
+            call,
+            input,
+            idempotency_key: Some(format!("run:{id}:{key}")),
+            slot_selection: None,
+        },
+        chain,
+    );
+    tokio::select! {
+        biased;
+        _ = run.wait_cancelled() => Err(Error::not_found("Run has stopped.")),
+        result = dispatch => result,
+    }
 }

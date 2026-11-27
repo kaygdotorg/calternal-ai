@@ -69,6 +69,29 @@ impl Fixture {
         (append_result(&next, &record), bytes)
     }
 
+    fn prepare_at(&self, head: &Head, at: i64) -> Vec<u8> {
+        let input = Input {
+            fields: Fields::new(),
+            body: Some(MESSAGE.into()),
+        };
+        let receipt = self
+            .space
+            .receipt(&self.scope(), Some(GESTURE), REQUEST)
+            .unwrap()
+            .unwrap();
+        let (next, record, bytes) =
+            make_append(&self.space, head, &self.actor, input, at, Some(&receipt)).unwrap();
+        super::append::Pending {
+            next,
+            record,
+            actor: &self.actor,
+            receipt: Some(&receipt),
+        }
+        .stage(&self.space.db, &bytes)
+        .unwrap();
+        bytes
+    }
+
     fn path(&self, head: &Head) -> PathBuf {
         self.root
             .path()
@@ -125,42 +148,21 @@ impl Fixture {
 }
 
 #[test]
-fn recovers_a_complete_append_and_its_retry_receipt() {
+fn a_sealed_append_without_preparation_cannot_promote_a_retry() {
     let mut f = Fixture::new();
     let head = f.add("First");
-    let (expected, tail) = f.tail(&head);
+    let (_, tail) = f.tail(&head);
     f.append_uncommitted(&head, &tail);
     f = f.reopen();
-    let rows = f.space.records(head.id).unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].author, f.actor.account.to_string());
-    assert_eq!(f.space.row(head.id).unwrap().head.version, head.version + 1);
-    let stamp = std::str::from_utf8(&tail).unwrap().lines().next().unwrap();
-    let comment_start = stamp.find(seal::PREFIX).unwrap();
-    assert_eq!(stamp.len() - comment_start, 36);
-    let replay = |f: &mut Fixture, message: &str| {
-        f.space.call(&f.actor, Call {
+    let equivalent_body = format!("{MESSAGE}\n");
+    let error = f.space.call(&f.actor, Call {
         call: "s.write".into(),
-        input: json!({"changes":[{"op":"append record","item":head.id,"record":{"body":message}}]}),
-        idempotency_key: Some(GESTURE.into()),
-        slot_selection: None,
-    })
-    };
-    assert_eq!(
-        replay(&mut f, "Different message").unwrap_err().code,
-        calternal_types::ErrorCode::Conflict
-    );
-    let changed_operation = f.space.call(&f.actor, Call {
-        call: "s.write".into(),
-        input: json!({"changes":[{"op":"change","item":head.id,"fields":{"archived":true}}]}),
+        input: json!({"changes":[{"op":"append record","item":head.id,"record":{"body":equivalent_body}}]}),
         idempotency_key: Some(GESTURE.into()),
         slot_selection: None,
     }).unwrap_err();
-    assert_eq!(changed_operation.code, calternal_types::ErrorCode::Conflict);
-    assert_eq!(replay(&mut f, MESSAGE).unwrap(), expected);
-    assert_eq!(replay(&mut f, MESSAGE).unwrap(), expected);
-    f = f.reopen();
-    assert_eq!(f.space.records(head.id).unwrap().len(), 1);
+    assert_eq!(error.code, calternal_types::ErrorCode::Conflict);
+    f.verify_outside(&head);
 }
 
 #[test]
@@ -237,7 +239,7 @@ fn recovered_append_keeps_authenticated_milliseconds() {
     let mut f = Fixture::new();
     let head = f.add("Precise");
     let at = calternal_types::now_ms().div_euclid(60_000) * 60_000 + 59_123;
-    let (_, tail) = f.tail_at(&head, at);
+    let tail = f.prepare_at(&head, at);
     f.append_uncommitted(&head, &tail);
     let f = f.reopen();
     assert_eq!(f.space.records(head.id).unwrap()[0].at, at);
@@ -254,7 +256,7 @@ fn recovered_run_append_authenticates_run_id_and_milliseconds() {
     let id = Uuid::new_v4();
     f.actor = Actor::run(f.actor.account, "calternal-chat", id);
     let at = calternal_types::now_ms().div_euclid(60_000) * 60_000 + 23_456;
-    let (_, tail) = f.tail_at(&head, at);
+    let tail = f.prepare_at(&head, at);
     let claim = seal::verify(&f.space, &head, &tail).unwrap().unwrap();
     assert_eq!((claim.actor, claim.at), (f.actor.clone(), at));
     let text = std::str::from_utf8(&tail).unwrap();
@@ -351,4 +353,35 @@ fn durable_append_preparation_repairs_partial_bytes_and_preserves_outside_edits(
             }
         }
     }
+}
+
+#[test]
+fn linked_prompt_reads_and_verifies_only_its_record() {
+    use std::os::unix::fs::FileExt;
+    let mut f = Fixture::new();
+    let item = f.add("Prompt");
+    for text in ["selected body", "sibling body"] {
+        f.space.call(&f.actor, Call {
+            call: "s.write".into(),
+            input: json!({"changes":[{"op":"append record","item":item.id,"record":{"body":text}}]}),
+            idempotency_key: None,
+            slot_selection: None,
+        }).unwrap();
+    }
+    let head = &f.space.row(item.id).unwrap().head;
+    let records = f.space.records(item.id).unwrap();
+    let sibling = &records[1];
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(f.path(head))
+        .unwrap();
+    file.write_all_at(b"X", sibling.offset + sibling.length - 3)
+        .unwrap();
+    let kind = f.space.kind(&head.kind).unwrap();
+    let read = |anchor| f.space.linked_record_body(head, &kind, anchor);
+    assert_eq!(read(&records[0].anchor).unwrap(), "selected body");
+    assert_eq!(
+        read(&sibling.anchor).unwrap_err().code,
+        calternal_types::ErrorCode::Conflict
+    );
 }

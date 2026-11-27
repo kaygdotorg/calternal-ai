@@ -16,7 +16,7 @@ use std::sync::OnceLock;
 use uuid::Uuid;
 
 mod maintenance;
-pub(crate) use maintenance::{Receipt, receipt_capacity};
+pub(crate) use maintenance::Receipt;
 
 pub(crate) const TRASH_MS: i64 = 30 * 86_400_000;
 /// Maximum indexed items and retained Trash entries in one space.
@@ -36,9 +36,6 @@ PRAGMA synchronous=FULL;
 PRAGMA secure_delete=ON;
 CREATE TABLE IF NOT EXISTS key_material (id INTEGER PRIMARY KEY CHECK(id=1), key BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS head (id TEXT PRIMARY KEY, data TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS installations (
-  sequence INTEGER PRIMARY KEY, plugin TEXT NOT NULL UNIQUE, digest BLOB NOT NULL
-);
 CREATE TABLE IF NOT EXISTS worker_registrations (plugin TEXT PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS trash (item TEXT PRIMARY KEY, until INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS trash_expiry ON trash(until);
@@ -60,26 +57,15 @@ CREATE TABLE IF NOT EXISTS receipts (
   result TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (actor, gesture)
 );
 CREATE INDEX IF NOT EXISTS receipts_age ON receipts(at);
-CREATE TABLE IF NOT EXISTS recovered_appends (
-  tag BLOB PRIMARY KEY, item TEXT NOT NULL, actor TEXT NOT NULL, ordinal INTEGER NOT NULL,
-  offset INTEGER NOT NULL, anchor TEXT NOT NULL, at INTEGER NOT NULL,
-  effect BLOB NOT NULL, result TEXT NOT NULL, kind TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS recovered_lookup ON recovered_appends(actor,at);
-CREATE INDEX IF NOT EXISTS recovered_expiry ON recovered_appends(at);
 CREATE TABLE IF NOT EXISTS receipt_usage (
   id INTEGER PRIMARY KEY CHECK(id=1), total INTEGER NOT NULL
 );
 INSERT INTO receipt_usage SELECT 1,
-  (SELECT count(*) FROM receipts) + (SELECT count(*) FROM recovered_appends)
+  (SELECT count(*) FROM receipts)
   WHERE NOT EXISTS (SELECT 1 FROM receipt_usage WHERE id=1);
 CREATE TRIGGER IF NOT EXISTS receipt_added AFTER INSERT ON receipts
   BEGIN UPDATE receipt_usage SET total=total+1 WHERE id=1; END;
 CREATE TRIGGER IF NOT EXISTS receipt_removed AFTER DELETE ON receipts
-  BEGIN UPDATE receipt_usage SET total=total-1 WHERE id=1; END;
-CREATE TRIGGER IF NOT EXISTS recovered_added AFTER INSERT ON recovered_appends
-  BEGIN UPDATE receipt_usage SET total=total+1 WHERE id=1; END;
-CREATE TRIGGER IF NOT EXISTS recovered_removed AFTER DELETE ON recovered_appends
   BEGIN UPDATE receipt_usage SET total=total-1 WHERE id=1; END;
 CREATE TABLE IF NOT EXISTS pending_append (
   id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL, bytes BLOB NOT NULL
@@ -88,6 +74,25 @@ CREATE TABLE IF NOT EXISTS publication (
   id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL
 );
 ";
+
+// Retire unpromoted seal receipts on the first open of an earlier ledger.
+fn retire_seal_receipts(db: &mut Connection) -> Result<()> {
+    let existing = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='recovered_appends')",
+        [],
+        |row| row.get::<_, bool>(0),
+    ).map_err(internal)?;
+    if existing {
+        let tx = db.transaction().map_err(internal)?;
+        tx.execute_batch(
+            "DROP TABLE recovered_appends;
+             UPDATE receipt_usage SET total=(SELECT count(*) FROM receipts) WHERE id=1;",
+        )
+        .map_err(internal)?;
+        tx.commit().map_err(internal)?;
+    }
+    Ok(())
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct Head {
@@ -126,6 +131,7 @@ pub(crate) struct Space {
     pub(crate) live: crate::live::Hub,
     pub(crate) runs: crate::runs::Runs,
     pub(crate) code: BTreeMap<String, InstalledCode>,
+    pub(crate) worker_processes: std::sync::Arc<tokio::sync::Semaphore>,
     pub(crate) retention_ms: i64,
     pub(crate) key: [u8; 32],
     pub(crate) storage_owner: u32,
@@ -164,8 +170,10 @@ impl Space {
         let lock = DataLock::acquire_at(&private_handle, &private).map_err(internal)?;
         let ledger = private.join("ledger.sqlite3");
         calternal_fsio::private::file(&ledger).map_err(internal)?;
-        let db = Connection::open(ledger).map_err(internal)?;
+        let mut db = Connection::open(ledger).map_err(internal)?;
         db.execute_batch(SCHEMA).map_err(internal)?;
+        crate::installation::ensure_sequence(&mut db)?;
+        retire_seal_receipts(&mut db)?;
         db.execute_batch(VIEWER_STATE_SCHEMA).map_err(internal)?;
         let key: Option<Vec<u8>> = db
             .query_row("SELECT key FROM key_material WHERE id=1", [], |row| {
@@ -195,6 +203,9 @@ impl Space {
             live: crate::live::Hub::default(),
             runs: crate::runs::Runs::default(),
             code: BTreeMap::new(),
+            worker_processes: std::sync::Arc::new(tokio::sync::Semaphore::new(
+                crate::worker_runtime::SPACE_WORKER_PROCESSES,
+            )),
             retention_ms,
             key,
             storage_owner: owner,
@@ -347,7 +358,7 @@ impl Space {
         }
     }
 
-    pub(crate) fn call(&mut self, actor: &Actor, call: Call) -> Result<Value> {
+    fn check_actor(&self, actor: &Actor) -> Result<()> {
         if let Some(
             calternal_types::Via::Plugin { plugin } | calternal_types::Via::Run { plugin, .. },
         ) = &actor.via
@@ -355,6 +366,32 @@ impl Space {
         {
             return Err(Error::forbidden("The calling plugin is unavailable."));
         }
+        Ok(())
+    }
+
+    pub(crate) fn prepare_write(
+        &self,
+        actor: &Actor,
+        call: Call,
+    ) -> Result<crate::write::PreparedWrite> {
+        self.check_actor(actor)?;
+        crate::write::prepare(self, actor, decode(call.input)?, call.idempotency_key)
+    }
+
+    pub(crate) fn write_call(
+        &mut self,
+        actor: &Actor,
+        call: Call,
+    ) -> Result<crate::write::Written> {
+        let prepared = self.prepare_write(actor, call)?;
+        crate::write::write(self, actor, prepared)
+    }
+
+    pub(crate) fn call(&mut self, actor: &Actor, call: Call) -> Result<Value> {
+        if call.call == "s.write" {
+            return Ok(self.write_call(actor, call)?.value);
+        }
+        self.check_actor(actor)?;
         match call.call.as_str() {
             "s.me" => Ok(json!({"id":actor.account,"role":"owner"})),
             "s.space" => Ok(json!({"id":self.id})),
@@ -367,9 +404,6 @@ impl Space {
             }),
             "s.query" => crate::query::query(self, actor, decode(call.input)?),
             "s.read" => crate::query::read(self, actor, decode(call.input)?),
-            "s.write" => {
-                crate::write::write(self, actor, decode(call.input)?, call.idempotency_key)
-            }
             "s.state" => {
                 crate::query::state(self, actor, decode(call.input)?, call.idempotency_key)
             }
@@ -397,10 +431,9 @@ impl Space {
                 .map_err(internal)?
         };
         for encoded in heads {
-            let mut head: Head = serde_json::from_str(&encoded).map_err(internal)?;
+            let head: Head = serde_json::from_str(&encoded).map_err(internal)?;
             let file = self.open_regular(&head.path).map_err(internal)?;
-            let signature = crate::records::Signature::from(&file.metadata().map_err(internal)?);
-            let bytes = bounded_read(file.try_clone().map_err(internal)?, ITEM_BYTES)?;
+            let bytes = bounded_read(file, ITEM_BYTES)?;
             let prefix = bytes
                 .get(..head.prefix as usize)
                 .ok_or_else(|| Error::conflict("Item file was shortened on disk."))?;
@@ -408,9 +441,6 @@ impl Space {
                 return Err(Error::conflict(
                     "Item frontmatter or body was altered on disk.",
                 ));
-            }
-            if bytes.len() as u64 > head.length {
-                crate::records::recover_tail(self, &mut head, &bytes, &file, signature)?;
             }
             let (fields, _) =
                 declarations::parse_item(std::str::from_utf8(prefix).map_err(internal)?)?;
