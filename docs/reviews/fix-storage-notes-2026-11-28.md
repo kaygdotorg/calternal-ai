@@ -32,3 +32,11 @@ Morning question: should the operator support offline hand-editing of a space
 immediately after a host crash, before recovery? Running recovery first avoids
 ambiguity about matching prefixes at the cost of an explicit recovery step.
 The lane assumes the operator completes recovery before making offline edits.
+
+S8 borrows the growing reload catalog as a slice and indexes it after
+validation. The live install path still clones the existing map into a slice.
+To make both paths borrow their catalog directly, the declarations and format
+owners can change `declarations::parse_plugin` and
+`format::InstallOptions::installed` to accept a slice of borrowed definitions
+or a borrowed keyed catalog. New SQLite ledgers use an integer primary key
+for order. Existing add-only ledgers keep their recorded SQLite row order.

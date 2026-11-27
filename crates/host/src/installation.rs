@@ -16,11 +16,13 @@ const PLUGIN_FILES: usize = 256;
 
 impl Space {
     pub(crate) fn load_plugins(&mut self) -> Result<()> {
-        let mut plugins = BTreeMap::new();
+        let mut plugins = Vec::new();
         let mut code = BTreeMap::new();
+        // The INTEGER PRIMARY KEY is a durable alias for rowid. Older
+        // add-only ledgers can still be read in their recorded rowid order.
         let mut stmt = self
             .db
-            .prepare_cached("SELECT i.plugin,i.digest,r.data FROM installations AS i LEFT JOIN worker_registrations AS r ON r.plugin=i.plugin")
+            .prepare_cached("SELECT i.plugin,i.digest,r.data FROM installations AS i LEFT JOIN worker_registrations AS r ON r.plugin=i.plugin ORDER BY i.rowid")
             .map_err(internal)?;
         let trusted = stmt
             .query_map([], |row| {
@@ -40,8 +42,7 @@ impl Space {
             if digest != self.bundle_digest(&files) {
                 return Err(Error::conflict("An installed plugin was altered on disk."));
             }
-            let installed = plugins.values().cloned().collect::<Vec<_>>();
-            let plugin = declarations::parse_plugin(&files, true, Some(&name), &installed)?;
+            let plugin = declarations::parse_plugin(&files, true, Some(&name), &plugins)?;
             check_save_context(&plugin)?;
             if let Some(registration) = registration {
                 let registration = serde_json::from_str(&registration).map_err(internal)?;
@@ -55,10 +56,12 @@ impl Space {
                     .and_then(|existing| existing.endpoint.clone());
                 code.insert(name.clone(), installed);
             }
-            plugins.insert(name, plugin);
+            plugins.push(plugin);
         }
         self.browser_catalog.take();
-        self.plugins = plugins;
+        self.plugins = plugins.into_iter()
+            .map(|plugin| (plugin.manifest.id.clone(), plugin))
+            .collect();
         self.code = code;
         Ok(())
     }
@@ -115,7 +118,7 @@ impl Space {
             .collect::<Result<Vec<_>>>()?;
         let tx = self.db.transaction().map_err(internal)?;
         tx.execute(
-            "INSERT INTO installations VALUES(?1,?2)",
+            "INSERT INTO installations(plugin,digest) VALUES(?1,?2)",
             params![declaration.manifest.id, &digest[..]],
         )
         .map_err(internal)?;
@@ -226,6 +229,30 @@ fn bundle_from(dir: &Folder) -> Result<BTreeMap<String, Vec<u8>>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn installation_sequence_is_persisted_in_insertion_order() {
+        let root = tempfile::tempdir().unwrap();
+        let id = calternal_types::SpaceId::new();
+        let mut space = super::Space::open(root.path(), id, 86_400_000).unwrap();
+        for plugin in ["z-first", "a-last"] {
+            let files = [("plugin.md".into(), format!(
+                "---\nplugin: {plugin}\nname: {plugin}\nversion: 1.0.0\nformat: 1\nsends out: nothing\n---\nInstalled.\n"
+            ).into_bytes())].into_iter().collect();
+            space.install(files, false, None).unwrap();
+        }
+        drop(space);
+        let mut opened = super::Space::open(root.path(), id, 86_400_000).unwrap();
+        opened.db.execute_batch("PRAGMA reverse_unordered_selects=ON; VACUUM;").unwrap();
+        let sequence: (i64, i64) = opened.db.query_row(
+            "SELECT (SELECT sequence FROM installations WHERE plugin='z-first'),
+                    (SELECT sequence FROM installations WHERE plugin='a-last')", [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert!(sequence.0 < sequence.1);
+        opened.load_plugins().unwrap();
+        assert_eq!(opened.plugins.len(), 2);
+    }
+
     #[test]
     fn extensions_do_not_authorize_unclassified_assets() {
         let root = tempfile::tempdir().unwrap();
