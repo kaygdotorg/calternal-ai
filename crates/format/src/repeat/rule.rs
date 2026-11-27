@@ -154,8 +154,10 @@ pub(super) fn parse_at(text: &str, site: Site) -> Result<RepeatRule, Diagnostic>
                         };
                         Some((weekday(name)?, ordinal))
                     })
-                    .collect::<Option<_>>()
-                    .ok_or_else(reject)?;
+                    .collect::<Option<BTreeSet<_>>>()
+                    .ok_or_else(reject)?
+                    .into_iter()
+                    .collect();
             }
             "BYMONTHDAY" => rule.month_days = numeric(-31, 31, true)?,
             "BYMONTH" => rule.months = numeric(1, 12, false)?,
