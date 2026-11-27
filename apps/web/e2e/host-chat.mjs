@@ -357,6 +357,7 @@ async function fixture(directory, origin, setupCode) {
     // Append in A -> appears live in B
     await a.page.fill('textarea[aria-label="Write"]', "Second live message");
     await a.page.click('button[aria-label="Send"]');
+    await a.page.waitForSelector('[data-record-anchor]:has-text("Second live message")');
     await b.page.waitForSelector('[data-record-anchor]:has-text("Second live message")');
 
     // Offline reconnect from last anchor
@@ -425,7 +426,8 @@ async function fixture(directory, origin, setupCode) {
 
     // Phone 390 light & dark — sidebar/list (strip visible) and open chat (strip hidden!)
     const phone = await openContext(browser, { width: 390, height: 844 });
-    await phone.cdp.send("WebAuthn.addCredential", { authenticatorId: phone.authenticatorId, credential: credentials[0] });
+    const { credentials: latestCreds } = await b.cdp.send("WebAuthn.getCredentials", { authenticatorId: b.authenticatorId });
+    await phone.cdp.send("WebAuthn.addCredential", { authenticatorId: phone.authenticatorId, credential: latestCreds[0] });
     await phone.page.goto(`${origin}/host?scheme=light`);
     await phone.page.waitForSelector('h1:has-text("Sign in")');
     await phone.page.click('button:has-text("Sign in with a passkey")');
@@ -436,6 +438,7 @@ async function fixture(directory, origin, setupCode) {
 
     await phone.page.click('[data-sidebar-body] button:has-text("Release prep v2") >> nth=0');
     await phone.page.waitForSelector('[data-open-title]:has-text("Release prep v2")');
+    await phone.page.mouse.move(0, 0);
     await phone.page.waitForTimeout(400);
     assert.equal(
       await phone.page.locator('[data-switcher]').count(),
@@ -452,6 +455,7 @@ async function fixture(directory, origin, setupCode) {
 
     await phone.page.click('[data-sidebar-body] button:has-text("Release prep v2") >> nth=0');
     await phone.page.waitForSelector('[data-open-title]:has-text("Release prep v2")');
+    await phone.page.mouse.move(0, 0);
     await phone.page.waitForTimeout(400);
     assert.equal(await phone.page.locator('[data-switcher]').count(), 0);
     await phone.page.screenshot({ path: path.join(SHOT_DIR, "pair-390-dark-real.png") });

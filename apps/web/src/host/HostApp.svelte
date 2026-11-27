@@ -283,7 +283,11 @@
 
   function openItem(row: RowData) {
     itemsById = { ...itemsById, [row.id]: row };
-    wins.openItemById(row.id);
+    if (wins.focused?.kind === "collection") {
+      wins.navigate("item", row.id);
+    } else {
+      wins.openItemById(row.id);
+    }
     pushed = true;
   }
 
@@ -589,7 +593,7 @@
         home={sidebarTitle === "calternal"}
         onhome={() => { activePluginId = null; wins.clear(); }}
         {narrow}
-        cursive={sidebarTitle === "calternal"}
+        cursive={true}
         accountName={session.name}
         {accountItems}
         onAccountPick={(id) => { if (id === "scheme") toggleScheme(); else if (id === "out") void handleSignOut(); }}
@@ -679,7 +683,7 @@
                   {row}
                   {kind}
                   records={recordsByItem[row.id] ?? []}
-                  viewerId={session.account}
+                  viewerId={session?.account ?? ""}
                   composer={comp}
                   pickerSlot={picker}
                   {activeRun}

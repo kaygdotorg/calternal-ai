@@ -132,8 +132,68 @@ lookup per candidate. The append includes the record snapshot read for the
 subscriber and the publication reads after rename. The SQLite page cache
 can satisfy a logical lookup without a read syscall.
 
+## Lane E second pass: shared mockup shell & browser follow-up
+
+### One shared shell (`packages/canvas-shell`, `@calternal/canvas-shell`)
+
+Instead of imitating the mockup in `apps/web/src/host/`, the approved shell from `origin/lane/threads-ui:apps/mockup/src/` was extracted into a single workspace package [`packages/canvas-shell`](../../packages/canvas-shell/package.json) (`@calternal/canvas-shell`) imported by **both** `apps/mockup` and `apps/web`:
+
+- **Why a workspace package (`packages/canvas-shell`) instead of a relative directory:** Both `apps/web` and `apps/mockup` are npm workspaces in root `package.json` and already consume `@calternal/ui` as a sibling workspace package. Putting the shell in `packages/canvas-shell` gives Vite, Svelte, and `svelte-check` clean package boundaries, zero cross-app relative paths, and one copy of `Canvas.svelte`, `Sidebar.svelte`, `AppStrip.svelte`, `Av.svelte`, `AppIcon.svelte`, `rows.css`, `windows.svelte.ts`, `layout.svelte.ts`, `motion.ts`, `lib/intent.ts`, and `scripts/check-chrome.mjs`.
+- **Seam:** `apps/mockup` keeps its fixture data (`data/apps.ts`, `data/collections.ts`, `data/plugins.ts`) and mockup-only tweaks (`tweaks.svelte.ts`, `SidebarMenu`, `NewSpace`, `PluginSheet`) and passes them into `@calternal/canvas-shell`. `apps/web/src/host/HostApp.svelte` feeds the exact same `@calternal/canvas-shell` components from `s.declarations`, `s.query`, and `LiveClient` — all 756 lines of custom shell markup and CSS were deleted.
+- **No-top-band gate:** `packages/canvas-shell/scripts/check-chrome.mjs` runs as part of both `@calternal/mockup` and `@calternal/web` builds and checks `packages/canvas-shell/src/canvas/Canvas.svelte`, `apps/mockup/src`, and `apps/web/src/host`.
+
+### Browser follow-up items completed
+
+1. **Passkey sign-in & ADR 0030 sign-out (`HostSignIn.svelte`, `client.ts`):** Replaced the preview name field with `sessionStatus()` on boot, first-owner setup with setup code + passkey creation, one-time recovery codes display (2-column monospace grid, copy button, confirmation checkbox), and passkey sign-in. Sign-out flushes pending local changes (3 s timeout), sets `calternal_pending_logout=1` if offline for retry on return, clears account-scoped storage, broadcasts `calternal-auth` across tabs, and navigates back to sign-in.
+2. **Typed `operation.inputs`, `row.when`, and `FieldDecl.computed` (`format.ts`, `HostApp.svelte`, `HostCollection.svelte`, `HostSidebar.svelte`):** All coded forms read `operation.inputs` and send `item` only (no singular-kind alias). Item menus and window menus filter strictly by server-evaluated `row.when[operation.name]`. Numeric badges read `FieldDecl.computed` and the declared field name (`unread` is never hardcoded; `grep -rniE "chat|unread" apps/web/src/host/` returns zero matches).
+3. **Slot-driven composer & harness picker + streaming surface (`HostRecords.svelte`, `format.ts`, `client.ts`):** Resolves the composer slot and secondary person-picked slot (`harness`) strictly from `s.declarations` (`PluginDecl.slots`). Choosing a filler sends `slot_selection: { slot, filler }` with `send` per `host-call-route-2026-11-27.md`. Includes a growing streamed reply bubble and `Stop` control with motion driven against a local fixture (`window.__hostLive.startStreamDemo`).
+4. **Screenshot & responsive fixes:** Phone bottom strip (`AppStrip`) is hidden while a page/chat is open (`narrow && !pushed`); collection row second line aligns directly under its title; personal chats only (no multi-person fixture data); timestamps use `--ink-2` for high contrast in both light and dark themes.
+5. **Removed all plugin guesses:** Deleted `entryIcon()` substring matching in `HostSidebar.svelte` and the hardcoded `"unread"` aria-label in `HostCollection.svelte`.
+
+### What the declarations do not say
+
+Where `s.declarations` or the plugin format does not currently declare a UI detail, the client refuses to guess and records the gap here:
+
+| Area | What `s.declarations` currently provides | What is missing (needed from format / host) |
+| --- | --- | --- |
+| Sidebar entry icons | `SidebarEntryDecl` has `type`, `title`, `collection`. | An optional `icon` token per sidebar entry or collection, so the client never infers icons from IDs or titles. |
+| Row badge designation & label | `kind.row` lists field names (`title`, `people`, `unread`); `FieldDecl` has `computed` and `type`. | Which computed numeric field is the row's badge (versus another numeric column) and its display/accessibility label format. |
+| Filler display label (`as`) | `SlotDecl.fillers` has `plugin`, `kind`, `target`. | The human-readable label from `fills: <slot> as "<label>"` (client currently falls back to the filler plugin's `name`). |
+| Composer slot contract | `PluginDecl.slots` names the slot (`composer`), `kind`, and `fillers` (`operation send`). | Explicit binding keys for the text input, draft persistence (`state.draft`), and how a quoted record anchor converts to a link. |
+| Host plugin refusal for `calternal-chat-claude-code` | `plugins-v2/calternal-chat-claude-code` declares `programs:` and `sends out:`. | `crates/host/src/declarations.rs` currently refuses plugins with `programs:` / `sends out:` for this host slice, so `host-chat.mjs` installs a disposable `test-harness` filler to test real end-to-end `slot_selection` on `calternal-host`. |
+
+### Side-by-side comparison (`pair-<size>-<scheme>-mockup.png` vs `-real.png`)
+
+All pairs are saved in `/tmp/browser-chat-shots/` on `hd01` (`pair-1280-light`, `pair-1280-dark`, `pair-390-light`, `pair-390-dark`, plus `desktop-1280-{light,dark}-list.png` and `phone-390-{light,dark}-list.png`).
+
+| Visible element | Mockup (`http://10.69.69.237:4313/`) | Real client (`/host` on `calternal-host`) | Reason |
+| --- | --- | --- | --- |
+| Shell chrome (wallpaper, sidebar on wallpaper, floating window card, traffic-light pill, centred title pill, right Share/`…` pill, bottom-left 3 pills, bottom-centre strip, phone hide-strip-when-pushed) | `@calternal/canvas-shell` | Identical `@calternal/canvas-shell` | Shared one-copy package; zero layout or material differences. |
+| Right-side `Details` / `Assistant` inspector column (desktop) & `i` button (phone) | Shown on desktop right of canvas (`Details` / `Assistant` panel) | Omitted (`…` window menu on phone) | `s.declarations` does not declare an inspector/assistant panel for this host slice. |
+| Sidebar top-left `Chat` heading font | Cursive wordmark face (`--wm-font`) | Sans-serif `--font-ui` | `apps/web/scripts/fonts.mjs` ships Inter/JetBrains Mono and does not bundle the mockup's cursive display face (`--wm-font` falls back to `--font-ui`). |
+| Sidebar top-right `…` button | Shown next to hide-sidebar toggle (`SidebarMenu` for mockup custom sections) | Hide-sidebar toggle only | Sidebar section editing / file-based custom sidebars are mockup-only and not yet backed by host calls. |
+| Sidebar sections & rows | Mockup fixtures (`Groups`, `People`, `Cals`, `Harnesses`, `Archived`, pinned avatar strip, `+ Add a section`) | Live `sidebars/chat.md` sections (`Pinned`, `Chats`, `Groups`, `People`, `Archived`) with personal chats only | Real client renders strictly what `s.declarations` and `s.query` return; personal-space host has personal chats only (no multi-person seed data, no `Cals` or `Harnesses` sections in `sidebars/chat.md`, no pinned-strip view mode declared). |
+| Transcript content | Multi-person fixture conversation with code block, attachment, `@` mentions, unread divider, `"Sending…"` bubble | Owner's live personal messages (`Release prep v2`) with day pill (`Today`) and high-contrast `--ink-2` timestamps | Real host has personal chats only (owner's own sent messages); attachments and `@` mention jump buttons are not yet wired on the host. |
+| Composer controls | Paperclip (left), `Message` input, `Ask an agent` pill (desktop) / sparkle circle (phone), Send arrow | `Write…` input, `Harness` pill (desktop) / sparkle circle (phone) from `s.declarations`, Send arrow | Paperclip omitted because file attachments are not yet wired on the host; placeholder uses generic `"Write…"` and picker label uses declared slot name `"Harness"` (no hardcoded Chat/agent strings). |
+| Bottom-centre strip items | `Chat`, `Notes`, `Mail` | `Chat`, `+` | Only `calternal-chat` is installed in the test space; `AppStrip` clamps its track width to the actual slot count so there is no trailing empty space. |
+
+## Verification on the development VM (second pass)
+
+Ran in `~/Developer/lanes/browser-chat` on `claude@calternal-dev-01-compute02` under `~/bin/lock-shared nix develop -c bash -c`:
+
+- `node packages/canvas-shell/scripts/check-chrome.mjs`: `window chrome check: ok`
+- `npm run build --workspace @calternal/web`: `check-chrome` ok, `prepare:assets` ok, `svelte-check --tsconfig ./tsconfig.json` 0 errors, `vite build` ok
+- `npm run build --workspace @calternal/mockup`: `check-chrome` ok, `tokens` ok, `assets` ok, `vite build` ok
+- `HOST_SHOT_DIR=/tmp/browser-chat-shots node apps/web/e2e/host-chat.mjs`: all 5 suites passed (`exit 0`):
+  - `PASS 1`: passkey setup, one-time recovery codes, sign-out, passkey sign-in, cookie & origin checks
+  - `PASS 2`: create chat, choose `Test Harness` from `[data-slot-picker="harness"]`, send with `slot_selection` verified via `s.query` on `test-harness.runs`, rename via `operation.inputs`, and `row.when` menu filtering (`Pin` / `Unpin` flip)
+  - `PASS 3`: growing streamed reply and `Stop` control fixture
+  - `PASS 4`: two-context live append, offline reconnect from last anchor, and sign-out revocation
+  - `PASS 5`: all 12 real + mockup side-by-side screenshots captured and verified
+
 ## Simplification opportunities
 
-- Give the format engine typed presentation nodes for sidebar and collection view directives so the host can project them without splitting their already-validated display strings.
+- Give the format engine typed presentation nodes for sidebar and collection view directives (including optional entry `icon` and `strip` vs `list` layout) so the host can project them without splitting display strings and the client never needs defaults.
+- Expose filler `as` labels on `SlotDecl.fillers` and an explicit composer slot contract (text input key, draft state key, quote link key) in `s.declarations` so `resolveComposerSlot` / `resolvePickerSlot` need zero heuristics.
 - Share the caller-safe HTTP and live error response adapter when the call route becomes the workspace default.
 - Deliver record-tail reads from the ledger after an anchor. The current window rereads the authorized snapshot on a live append, which can dominate I/O for longer chats.

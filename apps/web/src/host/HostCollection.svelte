@@ -98,7 +98,7 @@
             data-item-id={row.id}
             onclick={() => onopen(row)}
           >
-            <span class="lead" aria-hidden="true"><Av name={title} size={28} /></span>
+            <span class="lead" aria-hidden="true"><Av name={title} size="28px" /></span>
             <span class="mid">
               <span class="row-title">{title}</span>
               {#if edited}<span class="row-sub">{edited}</span>{/if}

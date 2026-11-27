@@ -103,7 +103,7 @@
                   aria-current={selectedItemId === row.id ? "true" : undefined}
                   onclick={() => onopenItem(row)}
                 >
-                  <span class="lead" aria-hidden="true"><Av name={title} size={28} /></span>
+                  <span class="lead" aria-hidden="true"><Av name={title} size="28px" /></span>
                   <span class="rt">{title}</span>
                   {#if edited}<span class="tm">{edited}</span>{/if}
                   {#if badge}<span class="cn" aria-label={`${badge.value} ${badge.name}`}>{badge.value}</span>{/if}

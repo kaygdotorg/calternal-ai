@@ -42,7 +42,8 @@
   } = $props();
 
   const mode = $derived(labelsMode === "auto" ? (narrow ? "icons" : "text") : labelsMode);
-  const count = $derived(narrow ? 5 : maxCount);
+  const totalSlots = $derived(items.length + (onadd ? 1 : 0));
+  const count = $derived(Math.min(narrow ? 5 : maxCount, Math.max(1, totalSlots)));
   const ITEM = $derived(mode === "icons" ? (narrow ? 44 : 36) : mode === "both" ? 112 : 92);
   let track = $state<HTMLElement>();
   let more = $state({ l: false, r: false });

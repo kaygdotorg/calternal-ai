@@ -128,9 +128,13 @@
   let atEnd = $state(true);
 
   const draftKey = $derived(`calternal.host.draft.${row.id}`);
+  let lastDraftKey = "";
   $effect(() => {
+    const key = draftKey;
+    if (key === lastDraftKey) return;
+    lastDraftKey = key;
     try {
-      draft = localStorage.getItem(draftKey) ?? "";
+      draft = localStorage.getItem(key) ?? "";
     } catch {
       draft = "";
     }
@@ -205,12 +209,13 @@
     sendError = "";
     const quoteAnchor = quoting?.anchor;
     const filler = selectedFiller;
+    draft = "";
+    quoting = null;
+    saveDraft();
     try {
       await onsend(text, quoteAnchor, filler);
-      draft = "";
-      quoting = null;
-      saveDraft();
     } catch (err) {
+      draft = text;
       sendError = err instanceof Error ? err.message : "Could not send.";
     } finally {
       sending = false;
@@ -341,6 +346,16 @@
         <p class="cerr" role="alert">{sendError}</p>
       {/if}
       <div class="crow">
+        <textarea
+          rows="1"
+          bind:value={draft}
+          oninput={saveDraft}
+          placeholder="Write…"
+          aria-label="Write"
+          onkeydown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) void submitComposer(e);
+          }}
+        ></textarea>
         {#if pickerSlot}
           <button
             type="button"
@@ -361,16 +376,6 @@
             </span>
           </button>
         {/if}
-        <textarea
-          rows="1"
-          bind:value={draft}
-          oninput={saveDraft}
-          placeholder="Write…"
-          aria-label="Write"
-          onkeydown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) void submitComposer(e);
-          }}
-        ></textarea>
         {#if activeRun && onstoprun}
           <button
             type="button"
@@ -695,6 +700,14 @@
   .slot-btn.picked {
     background: var(--accent-soft);
     color: var(--accent);
+  }
+  @media (max-width: 520px) {
+    .slot-btn:not(.picked) {
+      width: 34px;
+      padding: 0;
+      justify-content: center;
+    }
+    .slot-btn:not(.picked) .slot-lbl { display: none; }
   }
 
   textarea {
