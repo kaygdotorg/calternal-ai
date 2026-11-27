@@ -76,13 +76,23 @@ pub(super) fn page(
             Ok(row)
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok(Value::Object(serde_json::Map::from_iter([
+    let mut page = serde_json::Map::from_iter([
         ("rows".into(), Value::Array(rows)),
         ("totals".into(), totals),
         ("groups".into(), Value::Array(groups)),
         ("namedTotals".into(), map(&result.named_totals, budget)?),
         ("cursor".into(), json!(page.next)),
-    ])))
+    ]);
+    if !result.named_total_errors.is_empty() {
+        let mut errors = serde_json::Map::new();
+        for (name, diagnostic) in result.named_total_errors {
+            let message = diagnostic.to_string();
+            budget.bytes(name.len().saturating_add(message.len()).saturating_add(64) as u64)?;
+            errors.insert(name, Value::String(message));
+        }
+        page.insert("namedTotalErrors".into(), Value::Object(errors));
+    }
+    Ok(Value::Object(page))
 }
 
 fn list(values: Vec<format::Value>, budget: &mut Budget) -> Result<Value> {
